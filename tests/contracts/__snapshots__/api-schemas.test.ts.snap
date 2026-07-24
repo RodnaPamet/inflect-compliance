@@ -93,6 +93,12 @@ exports[`API contract — per-schema snapshots schema: AssetBulkImportRequest 1`
               "null"
             ]
           },
+          "retentionUntil": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cpe": {
             "type": [
               "string",

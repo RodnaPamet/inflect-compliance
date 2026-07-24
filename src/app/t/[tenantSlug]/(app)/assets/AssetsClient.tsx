@@ -313,6 +313,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         if (action === 'delete') {
             const idSet = new Set(ids);
             setSelected(new Set());
+            // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window), NOT display refiltering — server owns the list filter; mutate() restores on Undo/failure.
             assetsQuery.mutate((cur) => (cur ?? []).filter((a) => !idSet.has(a.id)), {
                 revalidate: false,
             });
