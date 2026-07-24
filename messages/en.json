@@ -318,7 +318,7 @@
       "audits": "Audits",
       "tests": "Control tests",
       "total": "Total",
-      "noData": "No data for this metric yet.",
+      "noData": "No data for this metric yet",
       "trendComing": "Trend history is still being collected for this metric."
     },
     "exceptions": {
