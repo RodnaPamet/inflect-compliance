@@ -12,6 +12,7 @@
  * `<NewAssetModal>` + `<NewAssetFields>` mount with no caller-side
  * changes.
  */
+import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useZodForm } from '@/lib/hooks/use-zod-form';
 import {
@@ -68,6 +69,7 @@ export function useNewAssetForm({
     onSuccess,
 }: UseNewAssetFormOptions): NewAssetFormReturn {
     const apiUrl = useTenantApiUrl();
+    const t = useTranslations('assets');
     const zod = useZodForm({
         schema: NewAssetFormSchema,
         initial: INITIAL,
@@ -101,7 +103,7 @@ export function useNewAssetForm({
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                throw new Error(err.error?.message || 'Failed to create asset');
+                throw new Error(err.error?.message || t('form.createFailed'));
             }
             const asset = await res.json();
             onSuccess(asset);

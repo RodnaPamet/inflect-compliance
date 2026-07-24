@@ -383,6 +383,9 @@ export interface AssetImportResult {
     skipped: number;
     createdIds: string[];
     errors: { row: number; name: string; message: string }[];
+    /** Per-row dedupe skips with a reason code: `existing` (name already in the
+     *  tenant) or `duplicateInFile` (repeated earlier in the same CSV). */
+    skippedRows: { row: number; name: string; reason: 'existing' | 'duplicateInFile' }[];
 }
 
 /**
@@ -434,8 +437,9 @@ export async function bulkImportAssets(
         return { existingNames: existing.map((a: { name: string }) => a.name), ownerByKey };
     });
 
-    const seen = new Set(existingNames.map((n) => n.trim().toLowerCase()));
-    const result: AssetImportResult = { created: 0, skipped: 0, createdIds: [], errors: [] };
+    const existingSet = new Set(existingNames.map((n) => n.trim().toLowerCase()));
+    const seen = new Set(existingSet);
+    const result: AssetImportResult = { created: 0, skipped: 0, createdIds: [], errors: [], skippedRows: [] };
 
     // ─── In-memory validation + normalisation pass (NO writes) ───
     // Per-row validation errors + dedupe skips are isolated here, BEFORE any
@@ -453,6 +457,11 @@ export async function bulkImportAssets(
         }
         if (seen.has(nameLc)) {
             result.skipped += 1;
+            result.skippedRows.push({
+                row: i,
+                name: row.name ?? '',
+                reason: existingSet.has(nameLc) ? 'existing' : 'duplicateInFile',
+            });
             continue;
         }
         seen.add(nameLc);
@@ -491,6 +500,7 @@ export async function bulkImportAssets(
                 businessProcesses: row.businessProcesses,
                 dataResidency: row.dataResidency,
                 retention: row.retention,
+                retentionUntil: row.retentionUntil ? new Date(row.retentionUntil) : null,
                 externalRef: row.externalRef,
                 cpe: row.cpe,
                 vendor: row.vendor,

@@ -33,6 +33,7 @@ type ParsedRow = {
     dependencies?: string;
     businessProcesses?: string;
     retention?: string;
+    retentionUntil?: string;
     dataResidency?: string;
     cpe?: string;
     vendor?: string;
@@ -52,7 +53,12 @@ export default function AssetImportPage() {
     const fileRef = useRef<HTMLInputElement>(null);
     const [rows, setRows] = useState<ParsedRow[]>([]);
     const [importing, setImporting] = useState(false);
-    const [result, setResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+    const [result, setResult] = useState<{
+        created: number;
+        skipped: number;
+        errors: string[];
+        skippedRows: { row: number; name: string; reason: string }[];
+    } | null>(null);
 
     // Single-line CSV field split — handles quoted fields containing commas
     // and escaped "" quotes (the naive `line.split(',')` broke on both).
@@ -136,6 +142,7 @@ export default function AssetImportPage() {
                 dependencies: col(cols, 'dependencies'),
                 businessProcesses: col(cols, 'businessprocesses'),
                 retention: col(cols, 'retention'),
+                retentionUntil: col(cols, 'retentionuntil'),
                 dataResidency: col(cols, 'dataresidency'),
                 cpe: col(cols, 'cpe'),
                 vendor: col(cols, 'vendor'),
@@ -184,6 +191,7 @@ export default function AssetImportPage() {
             if (row.dependencies) a.dependencies = row.dependencies;
             if (row.businessProcesses) a.businessProcesses = row.businessProcesses;
             if (row.retention) a.retention = row.retention;
+            if (row.retentionUntil) a.retentionUntil = row.retentionUntil;
             if (row.dataResidency) a.dataResidency = row.dataResidency;
             if (row.cpe) a.cpe = row.cpe;
             if (row.vendor) a.vendor = row.vendor;
@@ -194,6 +202,9 @@ export default function AssetImportPage() {
 
         let created = 0;
         let skipped = 0;
+        // Per-row skipped-duplicate reasons surfaced from the server so the
+        // user sees WHICH rows were dropped and why, not just a bare count.
+        const skippedRows: { row: number; name: string; reason: string }[] = [];
         if (assets.length > 0) {
             try {
                 const res = await fetch(apiUrl('/assets/bulk/import'), {
@@ -211,11 +222,14 @@ export default function AssetImportPage() {
                 for (const e of (data.errors ?? []) as { row: number; name: string; message: string }[]) {
                     errors.push(`${t('import.rowLabel', { num: e.row, name: e.name || '—' })}: ${e.message}`);
                 }
+                for (const s of (data.skippedRows ?? []) as { row: number; name: string; reason: string }[]) {
+                    skippedRows.push(s);
+                }
             } catch (err) {
                 errors.push(err instanceof Error ? err.message : String(err));
             }
         }
-        setResult({ created, skipped, errors });
+        setResult({ created, skipped, errors, skippedRows });
         setImporting(false);
     };
 
@@ -328,9 +342,17 @@ Prod DB,DATA_STORE,ACTIVE,DBA,Confidential,eu-west-1,5,5,4,CMDB-1042,"Auth servi
                         {t('import.importComplete', { created: result.created, total: rows.length })}
                     </p>
                     {result.skipped > 0 && (
-                        <p className="text-sm text-content-muted">
-                            {t('import.skippedDuplicates', { count: result.skipped })}
-                        </p>
+                        <div className="space-y-1">
+                            <p className="text-sm text-content-muted">
+                                {t('import.skippedDuplicates', { count: result.skipped })}
+                            </p>
+                            {result.skippedRows.map((s, i) => (
+                                <p key={i} className="text-xs text-content-subtle">
+                                    {t('import.rowLabel', { num: s.row, name: s.name || '—' })}:{' '}
+                                    {t(`import.skipReason.${s.reason}` as Parameters<typeof t>[0])}
+                                </p>
+                            ))}
+                        </div>
                     )}
                     {result.errors.length > 0 && (
                         <div className="space-y-1">
