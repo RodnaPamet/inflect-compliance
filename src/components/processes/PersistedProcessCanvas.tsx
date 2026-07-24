@@ -122,6 +122,9 @@ import {
     type CanvasCommandGroup,
 } from "./CanvasCommandPalette";
 import { CanvasDocumentBar } from "./CanvasDocumentBar";
+import { ProcessTemplateModal } from "./ProcessTemplateModal";
+import { getProcessMapTemplate } from "./process-map-templates";
+import { createMapFromTemplate } from "@/lib/processes/create-map-from-template";
 import { CanvasDrillBreadcrumb } from "./CanvasDrillBreadcrumb";
 import { useCanvasDrillStack } from "@/lib/processes/use-canvas-drill-stack";
 import {
@@ -348,6 +351,9 @@ function Inner({
     const [saving, setSaving] = useState(false);
     const [creating, setCreating] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
+    // Starter-template picker (DOCUMENT maps) — cloning a built-in map into a
+    // fresh one instead of authoring from a blank canvas.
+    const [templateModalOpen, setTemplateModalOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
     // Epic P1 — bumped by the STALE_DATA Reload toast to re-trigger
     // the load effect without flickering through activeId=null.
@@ -983,6 +989,30 @@ function Inner({
                 onActiveIdChange(data.id);
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Create failed");
+            } finally {
+                setCreating(false);
+            }
+        },
+        [tenantSlug, processes, onProcessesChange, onActiveIdChange],
+    );
+
+    // ─── Create new process FROM a starter template ─────────────────
+    // The two-round-trip create+save lives in the helper module; the canvas
+    // just wires state + list splice (helper-module-per-feature pattern).
+    const handleNewFromTemplate = useCallback(
+        async (templateId: string) => {
+            const template = getProcessMapTemplate(templateId);
+            if (!template) return;
+            setCreating(true);
+            setError(null);
+            try {
+                const summary = await createMapFromTemplate(tenantSlug, template);
+                onProcessesChange([summary, ...processes]);
+                onActiveIdChange(summary.id);
+            } catch (err) {
+                setError(
+                    err instanceof Error ? err.message : "Template create failed",
+                );
             } finally {
                 setCreating(false);
             }
@@ -1779,6 +1809,13 @@ function Inner({
                     disabled: creating,
                     onSelect: () => handleNew("AUTOMATION"),
                 },
+                {
+                    id: "new-from-template",
+                    label: t("cmdNewFromTemplateLabel"),
+                    description: t("cmdNewFromTemplateDesc"),
+                    disabled: creating,
+                    onSelect: () => setTemplateModalOpen(true),
+                },
             ],
         },
         {
@@ -1953,6 +1990,11 @@ function Inner({
             data-mobile-layout={isMobile ? "true" : undefined}
         >
             <CanvasCommandPalette groups={commandGroups} />
+            <ProcessTemplateModal
+                open={templateModalOpen}
+                setOpen={setTemplateModalOpen}
+                onUse={handleNewFromTemplate}
+            />
             {/* R31 Bundle 3 (PR 1) — the document bar. Pre-R31 this
                 row carried the document selector + name + actions
                 ONLY; the page above it carried a separate breadcrumb
@@ -2251,7 +2293,11 @@ function Inner({
                     onDrop={onDrop}
                 >
                     {showEmpty && (
-                        <CanvasEmpty onNew={handleNew} creating={creating} />
+                        <CanvasEmpty
+                            onNew={handleNew}
+                            onStartFromTemplate={() => setTemplateModalOpen(true)}
+                            creating={creating}
+                        />
                     )}
                     {!showEmpty && nodes.length === 0 && !loading && (
                         // R31 — quieter empty-but-loaded hint.
@@ -2501,9 +2547,11 @@ function Inner({
 
 function CanvasEmpty({
     onNew,
+    onStartFromTemplate,
     creating,
 }: {
     onNew: () => void;
+    onStartFromTemplate: () => void;
     creating: boolean;
 }): ReactNode {
     const t = useTranslations("automation.canvas");
@@ -2526,15 +2574,28 @@ function CanvasEmpty({
                 <p className="text-xs text-content-muted">
                     {t("emptyBody")}
                 </p>
-                <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={onNew}
-                    disabled={creating}
-                    data-testid="empty-state-new-btn"
-                >
-                    {creating ? t("creating") : t("createFirstProcess")}
-                </Button>
+                <div className="flex flex-col items-center gap-compact">
+                    <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={onNew}
+                        disabled={creating}
+                        data-testid="empty-state-new-btn"
+                    >
+                        {creating ? t("creating") : t("createFirstProcess")}
+                    </Button>
+                    {/* Starter templates — clone a common compliance process
+                        shape instead of authoring from a blank canvas. */}
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={onStartFromTemplate}
+                        disabled={creating}
+                        data-testid="empty-state-template-btn"
+                    >
+                        {t("startFromTemplate")}
+                    </Button>
+                </div>
             </div>
         </div>
     );

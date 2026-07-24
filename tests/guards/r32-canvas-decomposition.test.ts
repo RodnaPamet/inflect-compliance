@@ -195,15 +195,23 @@ describe("R32-PR10 — canvas decomposition (document bar)", () => {
             //     PATCH/DELETE fetches live in the helper
             //     src/lib/processes/switch-canvas-mode.ts and the delete
             //     modal lives in its own CanvasMapDeleteControl.tsx.
+            //   - 2550 → 2610 (process-map starter templates) — a
+            //     `handleNewFromTemplate` thin callback + template modal
+            //     mount + a "New from template" palette command + the
+            //     empty-state "Start from a template" affordance. ~61
+            //     lines of canvas wiring; the heavy two-round-trip
+            //     create+save lives in the helper
+            //     src/lib/processes/create-map-from-template.ts and the
+            //     picker in its own ProcessTemplateModal.tsx.
             // Future P6 follow-ups follow the same helper-module-
             // per-feature pattern.
             const src = read(
                 "src/components/processes/PersistedProcessCanvas.tsx",
             );
             const lines = src.split("\n").length;
-            // Floor bumped by the lifecycle-UI delta (status + delete
-            // handlers). Still a downward ratchet.
-            expect(lines).toBeLessThan(2550);
+            // Floor bumped by the starter-template wiring delta (heavy
+            // create+save extracted to a helper). Still a downward ratchet.
+            expect(lines).toBeLessThan(2610);
         });
     });
 });

@@ -116,7 +116,25 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
     );
 
     const actionConfig = (detail?.actionConfigJson ?? {}) as Record<string, unknown>;
-    const filterConditions = detail?.triggerFilterJson?.conditions ?? [];
+    // triggerFilterJson is a FilterGroup, a legacy flat map, or null. This
+    // read-only sheet summarises the flat LEAF conditions of a group; a legacy
+    // map or nested sub-groups don't render as a condition list here (the full
+    // shape is preserved for editing on the builder/canvas).
+    const triggerFilter = detail?.triggerFilterJson ?? null;
+    const filterGroup =
+        triggerFilter &&
+        typeof triggerFilter === 'object' &&
+        'conditions' in triggerFilter &&
+        Array.isArray((triggerFilter as { conditions?: unknown }).conditions)
+            ? (triggerFilter as {
+                  logic?: 'AND' | 'OR';
+                  conditions: Array<{ field?: string; operator?: string; value?: unknown }>;
+              })
+            : null;
+    const filterConditions = (filterGroup?.conditions ?? []).filter(
+        (c): c is { field: string; operator: string; value: unknown } =>
+            !!c && typeof c === 'object' && typeof (c as { field?: unknown }).field === 'string',
+    );
     const webhookHeaders = Object.keys(
         (actionConfig.headers as Record<string, string> | undefined) ?? {},
     );
@@ -196,10 +214,10 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                                 <p className="text-xs font-medium text-content-muted">
                                                     {t('ruleDetail.triggerFilter')}
                                                 </p>
-                                                {detail.triggerFilterJson?.logic && (
+                                                {filterGroup?.logic && (
                                                     <ConfigRow
                                                         label={t('ruleDetail.matchLogic')}
-                                                        value={detail.triggerFilterJson.logic}
+                                                        value={filterGroup.logic}
                                                     />
                                                 )}
                                                 <ul className="space-y-tight">
@@ -211,7 +229,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                                             {c.field} {c.operator}{' '}
                                                             {Array.isArray(c.value)
                                                                 ? c.value.join(', ')
-                                                                : c.value}
+                                                                : asStr(c.value)}
                                                         </li>
                                                     ))}
                                                 </ul>
@@ -378,6 +396,22 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                                     <ConfigRow
                                                         label={t('ruleDetail.breachAction')}
                                                         value={detail.slaBreachActionType}
+                                                    />
+                                                )}
+                                                {/* Breach action config — show WHO gets
+                                                    notified and WHAT, not just the action
+                                                    type, so the read view reflects the full
+                                                    configured breach behavior. */}
+                                                {(detail.slaBreachConfigJson?.userIds?.length ?? 0) > 0 && (
+                                                    <ConfigRow
+                                                        label={t('ruleDetail.breachRecipients')}
+                                                        value={detail.slaBreachConfigJson!.userIds!.length}
+                                                    />
+                                                )}
+                                                {detail.slaBreachConfigJson?.message && (
+                                                    <ConfigRow
+                                                        label={t('ruleDetail.breachMessage')}
+                                                        value={detail.slaBreachConfigJson.message}
                                                     />
                                                 )}
                                             </div>

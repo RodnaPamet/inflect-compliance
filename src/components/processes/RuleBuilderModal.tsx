@@ -50,6 +50,84 @@ interface Condition {
     value: string;
 }
 
+// Raw stored filter shapes — mirror `app-layer/automation/types.ts`. The flat
+// builder edits a SINGLE-level condition list; the evaluator (`filters.ts`)
+// additionally accepts nested `FilterGroup`s and the legacy flat equality map.
+// Both are handled at hydration so editing a rule never wipes a filter the
+// tabular UI can't fully draw.
+interface RawCondition {
+    field: string;
+    operator: Operator;
+    value: string | number | boolean | string[];
+}
+interface RawGroup {
+    logic: 'AND' | 'OR';
+    conditions: Array<RawCondition | RawGroup>;
+}
+type RawLegacyFilter = Record<string, string | number | boolean>;
+type RawFilter = RawGroup | RawLegacyFilter;
+
+function isRawGroup(f: unknown): f is RawGroup {
+    return (
+        !!f &&
+        typeof f === 'object' &&
+        'logic' in f &&
+        'conditions' in f &&
+        Array.isArray((f as RawGroup).conditions)
+    );
+}
+
+/** Filter value → the string the flat builder edits (arrays join to CSV). */
+function filterValueToStr(v: unknown): string {
+    if (Array.isArray(v)) return v.join(',');
+    return typeof v === 'string' ? v : v == null ? '' : String(v);
+}
+
+/**
+ * Hydrate the stored filter into the flat builder's `logic` + `conditions`.
+ *
+ *   - `null`                    → no filter.
+ *   - flat `FilterGroup`        → one editable row per leaf condition.
+ *   - legacy flat map           → one `eq` row per key (builder round-trips it
+ *                                 into an evaluator-equivalent FilterGroup).
+ *   - `FilterGroup` w/ a nested sub-group → NOT representable by the flat UI, so
+ *     the whole filter is stashed in `preservedFilter` and passed through
+ *     verbatim on save; the condition editor is replaced by a read-only notice.
+ *     This is what stops an edit from flattening or nulling an advanced filter.
+ */
+function hydrateFilter(raw: RawFilter | null | undefined): {
+    logic: 'AND' | 'OR';
+    conditions: Condition[];
+    preservedFilter: RawFilter | null;
+} {
+    if (!raw) return { logic: 'AND', conditions: [], preservedFilter: null };
+    if (isRawGroup(raw)) {
+        const hasNested = raw.conditions.some((c) => isRawGroup(c));
+        if (hasNested) {
+            return { logic: raw.logic ?? 'AND', conditions: [], preservedFilter: raw };
+        }
+        return {
+            logic: raw.logic ?? 'AND',
+            conditions: (raw.conditions as RawCondition[]).map((c) => ({
+                field: c.field,
+                operator: c.operator,
+                value: filterValueToStr(c.value),
+            })),
+            preservedFilter: null,
+        };
+    }
+    // Legacy flat equality map { field: value } → flat `eq` rows.
+    return {
+        logic: 'AND',
+        conditions: Object.entries(raw).map(([field, value]) => ({
+            field,
+            operator: 'eq' as Operator,
+            value: filterValueToStr(value),
+        })),
+        preservedFilter: null,
+    };
+}
+
 /** Surface-namespace resolver (`useTranslations('automation.ruleBuilder')`). */
 type RuleTranslate = ReturnType<typeof useTranslations>;
 
@@ -72,6 +150,10 @@ interface BuilderState {
     triggerEvent: string;
     logic: 'AND' | 'OR';
     conditions: Condition[];
+    /** Set when the stored filter uses a shape the flat editor can't draw
+     *  (a nested sub-group). Passed through verbatim on save so editing the
+     *  rest of the rule never wipes or flattens it; null for editable filters. */
+    preservedFilter: RawFilter | null;
     actionType: ActionType;
     notify: { userIds: string[]; message: string; linkUrl: string };
     task: {
@@ -111,6 +193,7 @@ const EMPTY: BuilderState = {
     triggerEvent: '',
     logic: 'AND',
     conditions: [],
+    preservedFilter: null,
     actionType: 'NOTIFY_USER',
     notify: { userIds: [], message: '', linkUrl: '' },
     task: { title: '', severity: '', priority: '', assigneeUserId: '', linkEntityType: '', linkEntityIdField: '' },
@@ -136,10 +219,10 @@ export interface RuleDetail {
     name: string;
     triggerEvent: string;
     actionType: ActionType;
-    triggerFilterJson: {
-        logic?: 'AND' | 'OR';
-        conditions?: Array<{ field: string; operator: Operator; value: string | string[] }>;
-    } | null;
+    // The stored filter is a `FilterGroup` (possibly with nested sub-groups) OR
+    // the legacy flat equality map OR null — NOT flat-only. Typing it flat is
+    // exactly what let nested/legacy filters silently hydrate to nothing.
+    triggerFilterJson: RawFilter | null;
     actionConfigJson: Record<string, unknown> | null;
     slaWindowMinutes: number | null;
     slaBreachActionType: 'NOTIFY_USER' | null;
@@ -156,16 +239,15 @@ export function detailToBuilderState(d: RuleDetail): BuilderState {
     const ac = (d.actionConfigJson ?? {}) as Record<string, unknown>;
     const str = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v));
     const arr = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : []);
+    // Hydrate the filter across all three authoring shapes (flat group / nested
+    // group / legacy map). A nested filter round-trips via `preservedFilter`.
+    const filter = hydrateFilter(d.triggerFilterJson);
     return {
         name: d.name ?? '',
         triggerEvent: d.triggerEvent ?? '',
-        logic: d.triggerFilterJson?.logic ?? 'AND',
-        conditions: (d.triggerFilterJson?.conditions ?? []).map((c) => ({
-            field: c.field,
-            operator: c.operator,
-            // in/not_in store a value set; the builder edits it as CSV.
-            value: Array.isArray(c.value) ? c.value.join(',') : str(c.value),
-        })),
+        logic: filter.logic,
+        conditions: filter.conditions,
+        preservedFilter: filter.preservedFilter,
         actionType: d.actionType,
         notify:
             d.actionType === 'NOTIFY_USER'
@@ -283,9 +365,12 @@ function buildActionConfig(form: BuilderState): Record<string, unknown> {
     }
 }
 
-function buildTriggerFilter(form: BuilderState):
-    | { logic: 'AND' | 'OR'; conditions: Array<{ field: string; operator: Operator; value: string | string[] }> }
-    | null {
+function buildTriggerFilter(form: BuilderState): RawFilter | null {
+    // A filter the flat builder couldn't represent (nested group) is carried
+    // through verbatim — NEVER rebuilt from the (empty) flat conditions. This is
+    // the load-bearing guard: a builder that failed to draw a non-empty filter
+    // must never let its empty state null or flatten the stored filter.
+    if (form.preservedFilter) return form.preservedFilter;
     const valid = form.conditions.filter((c) => c.field && c.value !== '');
     if (valid.length === 0) return null;
     return {
@@ -368,6 +453,14 @@ const TASK_SEVERITY_OPTIONS: ComboboxOption[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITI
     (v) => ({ value: v, label: v }),
 );
 const TASK_PRIORITY_OPTIONS: ComboboxOption[] = ['P0', 'P1', 'P2', 'P3'].map(
+    (v) => ({ value: v, label: v }),
+);
+// The CREATE_TASK executor (action-executor.ts::createTask) only resolves a
+// linked entity when linkEntityType === 'Control'; any other value silently
+// produces an UNLINKED task. Offer only what the executor actually links, so
+// no selectable value no-ops. Extend this list only in lockstep with the
+// executor learning to resolve more entity types.
+const TASK_LINK_ENTITY_OPTIONS: ComboboxOption[] = ['Control'].map(
     (v) => ({ value: v, label: v }),
 );
 const WEBHOOK_METHOD_OPTIONS: ComboboxOption[] = ['POST', 'PUT', 'PATCH'].map(
@@ -620,7 +713,20 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
 
                 {step === 2 && (
                     <div className="space-y-default">
-                        {availableFields.length === 0 ? (
+                        {form.preservedFilter ? (
+                            // This rule's filter uses nested AND/OR grouping the
+                            // flat editor can't draw. Show it read-only and leave
+                            // it untouched — `buildTriggerFilter` passes it through
+                            // verbatim, so saving here never wipes or flattens it.
+                            <div className="rounded-[8px] border border-border-subtle bg-bg-subtle p-default space-y-tight">
+                                <p className="text-sm font-medium text-content-emphasis">
+                                    {t('advancedFilterTitle')}
+                                </p>
+                                <p className="text-sm text-content-muted">
+                                    {t('advancedFilterBody')}
+                                </p>
+                            </div>
+                        ) : availableFields.length === 0 ? (
                             <p className="text-sm text-content-muted">
                                 {t('filterableFieldsHint')}
                             </p>
@@ -888,12 +994,19 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                         The executor reads the entity id from the trigger
                                         payload at `linkEntityIdField`. */}
                                     <FormField label={t('taskLinkEntityType')} description={t('taskLinkEntityHint')}>
-                                        <Input
-                                            value={form.task.linkEntityType}
-                                            onChange={(e) =>
-                                                patch({ task: { ...form.task, linkEntityType: e.target.value } })
+                                        <Combobox
+                                            options={TASK_LINK_ENTITY_OPTIONS}
+                                            selected={
+                                                TASK_LINK_ENTITY_OPTIONS.find(
+                                                    (o) => o.value === form.task.linkEntityType,
+                                                ) ?? null
+                                            }
+                                            setSelected={(o) =>
+                                                patch({ task: { ...form.task, linkEntityType: o?.value ?? '' } })
                                             }
                                             placeholder={t('taskLinkEntityTypePlaceholder')}
+                                            forceDropdown
+                                            matchTriggerWidth
                                         />
                                     </FormField>
                                     <FormField label={t('taskLinkEntityIdField')}>

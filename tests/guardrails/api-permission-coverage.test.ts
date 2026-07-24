@@ -79,6 +79,20 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/gap-assessments',
         why: 'NIS2 gap-assessment delegation — dispatch/list/finalize are assessment-admin actions (admin.manage). Per-respondent answering is self-service under the separate /gap-assignments root (ctx-scoped in the usecase).',
     },
+    // Report export surface — the UI gates these on reports.export; the API
+    // must match. Narrow leaf roots so only the export handlers are in scope.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/reports/pdf/generate',
+        why: 'PDF report generation — an export action gated on reports.export.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/reports/soa/export.csv',
+        why: 'SoA / coverage CSV export — an export action gated on reports.export.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/risks/reports',
+        why: 'Risk-report generation (POST) is an export action gated on reports.export. The GET (list) plus the schedule/template config CRUD + already-generated-run download siblings are excluded below with reasons.',
+    },
 ];
 
 /**
@@ -129,6 +143,25 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
     {
         relPath: 'api/admin/tenants/[slug]/transfer-ownership/route.ts',
         reason: 'Platform-admin-key-gated: transfer-ownership — tenant-scope does not apply.',
+    },
+    // Risk-report siblings pulled in by the `risks/reports` privileged root.
+    // Only the POST /risks/reports generate handler is an export action (gated
+    // on reports.export in the same file). These siblings are NOT exports:
+    {
+        relPath: 'api/t/[tenantSlug]/risks/reports/templates/route.ts',
+        reason: 'Report TEMPLATE metadata CRUD (list/create a template definition) — not an export; authorised at the usecase layer for tenant members.',
+    },
+    {
+        relPath: 'api/t/[tenantSlug]/risks/reports/schedules/route.ts',
+        reason: 'Recurring-delivery SCHEDULE config CRUD (list/create) — not an export itself; the scheduled delivery job runs server-side. Generation is gated at POST /risks/reports.',
+    },
+    {
+        relPath: 'api/t/[tenantSlug]/risks/reports/schedules/[scheduleId]/route.ts',
+        reason: 'Recurring-delivery SCHEDULE config CRUD (patch/delete) — not an export itself; the scheduled delivery job runs server-side.',
+    },
+    {
+        relPath: 'api/t/[tenantSlug]/risks/reports/[reportId]/download/route.ts',
+        reason: 'Retrieval of an already-generated report run scoped to the tenant — a view-level action mirroring the /risks/reports page download affordance. The privileged export-GENERATION action is gated at POST /risks/reports.',
     },
 ];
 

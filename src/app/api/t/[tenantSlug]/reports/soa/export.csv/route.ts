@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { getSoA } from '@/app-layer/usecases/soa';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { logEvent } from '@/app-layer/events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 
@@ -32,9 +32,8 @@ function escapeCSV(value: string | null | undefined): string {
     return s;
 }
 
-export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
+export const GET = withApiErrorHandling(
+    requirePermission('reports.export', async (req: NextRequest, _routeArgs, ctx) => {
 
     // PR-H — scope to the selected framework; the CSV names the real framework.
     const requestedFramework =
@@ -149,4 +148,5 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
             'Cache-Control': 'no-cache, no-store',
         },
     });
-});
+    }),
+);

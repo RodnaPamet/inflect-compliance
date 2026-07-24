@@ -16,7 +16,6 @@ describe('Automation Epic 5 — SLA timer & enforcement', () => {
         const src = read('prisma/schema/automation.prisma');
         for (const f of [
             'slaWindowMinutes',
-            'slaReminderMinutes',
             'slaBreachActionType',
             'slaBreachConfigJson',
         ]) {

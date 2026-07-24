@@ -583,9 +583,11 @@ function SoARow({
                                     </div>
                                     <div className="flex items-center gap-tight">
                                         {c.justification && (
-                                            <span className="text-content-muted max-w-trunc-default truncate" title={c.justification}>
-                                                {c.justification}
-                                            </span>
+                                            <Tooltip content={c.justification}>
+                                                <span className="text-content-muted max-w-trunc-default truncate">
+                                                    {c.justification}
+                                                </span>
+                                            </Tooltip>
                                         )}
                                         {c.applicability === 'NOT_APPLICABLE' && !c.justification && canEdit && (
                                             <Button

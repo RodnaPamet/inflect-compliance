@@ -92,8 +92,11 @@ export default function GovernanceGraphPage() {
                     >
                         <div className="flex items-center justify-between">
                             <span className="font-medium text-content-emphasis">{n.name}</span>
-                            <StatusBadge variant={n.canvasMode === 'AUTOMATION' ? 'info' : 'neutral'}>
-                                {t(`governance.canvasMode.${n.canvasMode === 'AUTOMATION' ? 'AUTOMATION' : 'DOCUMENT'}`)}
+                            {/* The governance graph only sources AUTOMATION maps
+                                (getGovernanceGraph filters canvasMode: 'AUTOMATION'),
+                                so every node is an automation map. */}
+                            <StatusBadge variant="info">
+                                {t('governance.canvasMode.AUTOMATION')}
                             </StatusBadge>
                         </div>
                         <div className="mt-2 flex items-center gap-default text-xs text-content-muted tabular-nums">

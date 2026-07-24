@@ -7,6 +7,14 @@
  * Exclusions:
  *   - SoA print view (`reports/soa/print/`) — semantic HTML required for print CSS
  *   - RBAC page (`admin/rbac/`) — server component; DataTable is client-only
+ *   - SoA report table (`reports/soa/SoAClient.tsx`) — bespoke master/detail
+ *     with (a) per-row conditional gap highlighting (`hasGap → bg-bg-error`, a
+ *     load-bearing compliance-scan signal) which `<DataTable>`'s public API
+ *     exposes no per-row `className`/`rowProps` hook for, and (b) single-row
+ *     click-to-expand semantics (`<DataTable>` offers only uncontrolled
+ *     multi-expand). `<DataTable>` can host the expandable sub-row, but not the
+ *     row-styling contract this SoA view depends on. Also pre-exempted in
+ *     `no-raw-tables-in-app-pages.test.ts` as "bespoke SoA reading order".
  *
  * After migrating a surface, decrease the baseline.
  */
@@ -19,6 +27,10 @@ const APP_PAGES = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 const EXCLUDED_PATHS = [
     'reports/soa/print/',  // Print view — raw table is correct for print CSS
     'admin/rbac/',          // Server component — DataTable requires client
+    // Bespoke SoA master/detail: per-row gap highlighting + single-row
+    // click-to-expand that <DataTable>'s public API can't express (see the
+    // header comment). Already exempt in no-raw-tables-in-app-pages.test.ts.
+    'reports/soa/SoAClient.tsx',
 ];
 
 function walk(dir: string): string[] {
@@ -68,7 +80,7 @@ describe('Epic 52 — DataTable migration ratchet', () => {
      * After Epic 52 migration batch: reduced to target below.
      * Lower this number whenever you migrate a surface.
      */
-    const RAW_TABLE_BASELINE = 13; // admin/members(2), admin/roles(2), controls/[controlId](3), tasks/[taskId](1), vendors/[vendorId](3), reports/soa/SoAClient(1) — admin/api-keys migrated to DataTable in the finishing pass; access-reviews/[reviewId]/AccessReviewDetailClient(1) — Epic G-4 master/detail with inline decision controls (same shape as AuditsClient, also excluded by table-platform-drift)
+    const RAW_TABLE_BASELINE = 12; // admin/members(2), admin/roles(2), controls/[controlId](3), tasks/[taskId](1), vendors/[vendorId](3) — admin/api-keys migrated to DataTable in the finishing pass; access-reviews/[reviewId]/AccessReviewDetailClient(1) — Epic G-4 master/detail with inline decision controls (same shape as AuditsClient, also excluded by table-platform-drift); reports/soa/SoAClient now in EXCLUDED_PATHS (bespoke per-row-styled master/detail)
 
     it('raw <table> count does not exceed the baseline', () => {
         const { count, files } = countRawTables();

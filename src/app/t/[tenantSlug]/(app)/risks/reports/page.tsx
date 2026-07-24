@@ -18,6 +18,9 @@ import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { formatDateTime } from '@/lib/format-date';
 import { useTranslations } from 'next-intl';
+import type { KeyedMutator } from 'swr';
+import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToastWithUndo } from '@/components/ui/hooks';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 
@@ -39,7 +42,10 @@ export default function RiskReportsPage() {
     const templates = reportsQuery.data?.templates ?? [];
     const reports = reportsQuery.data?.reports ?? [];
     const schedules = schedulesQuery.data?.schedules ?? [];
-    const [busy, setBusy] = useState(false);
+    const toast = useToast();
+    // Per-row generate state (item 2): the template id whose request is in
+    // flight, so only the clicked row shows "generating…" + disables.
+    const [generatingId, setGeneratingId] = useState<string | null>(null);
 
     // RISK_DEEP_DIVE single-risk scope (per template row).
     const [deepDiveRisk, setDeepDiveRisk] = useState<Record<string, string | null>>({});
@@ -47,15 +53,19 @@ export default function RiskReportsPage() {
     const isDeepDive = (tpl: Template) => tpl.type === 'RISK_DEEP_DIVE';
 
     const generate = async (tpl: Template, format: 'PDF' | 'CSV' | 'PPTX') => {
-        setBusy(true);
+        setGeneratingId(tpl.id);
         try {
             const riskId = isDeepDive(tpl) ? deepDiveRisk[tpl.id] ?? undefined : undefined;
-            await fetch(apiUrl('/risks/reports'), {
+            const res = await fetch(apiUrl('/risks/reports'), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ templateId: tpl.id, format, ...(riskId ? { parameters: { riskId } } : {}) }),
             });
+            if (!res.ok) throw new Error('Failed to generate report');
             await reportsQuery.mutate();
-        } finally { setBusy(false); }
+            toast.success(t('reports.generateSuccess', { format }));
+        } catch {
+            toast.error(t('reports.generateFailed'));
+        } finally { setGeneratingId(null); }
     };
 
     const nameOf = (id: string) => templates.find((tpl) => tpl.id === id)?.name ?? '—';
@@ -88,9 +98,12 @@ export default function RiskReportsPage() {
                                     </div>
                                 )}
                             </div>
-                            <Button size="sm" variant="primary" onClick={() => generate(tpl, 'PDF')} disabled={busy}>{t('reports.generatePdf')}</Button>
-                            <Button size="sm" variant="secondary" onClick={() => generate(tpl, 'PPTX')} disabled={busy}>PPTX</Button>
-                            <Button size="sm" variant="secondary" onClick={() => generate(tpl, 'CSV')} disabled={busy}>CSV</Button>
+                            <Button size="sm" variant="primary" onClick={() => generate(tpl, 'PDF')} disabled={generatingId === tpl.id}>{t('reports.generatePdf')}</Button>
+                            <Button size="sm" variant="secondary" onClick={() => generate(tpl, 'PPTX')} disabled={generatingId === tpl.id}>PPTX</Button>
+                            <Button size="sm" variant="secondary" onClick={() => generate(tpl, 'CSV')} disabled={generatingId === tpl.id}>CSV</Button>
+                            {generatingId === tpl.id && (
+                                <span className="text-xs text-content-muted" data-testid={`generating-${tpl.id}`}>{t('reports.generating')}</span>
+                            )}
                         </li>
                     ))}
                 </ul>
@@ -104,7 +117,7 @@ export default function RiskReportsPage() {
                 schedules={schedules}
                 loading={schedulesQuery.isLoading}
                 error={schedulesQuery.error}
-                onChanged={() => schedulesQuery.mutate()}
+                mutate={schedulesQuery.mutate}
                 nameOf={nameOf}
                 t={t}
             />
@@ -142,6 +155,7 @@ export default function RiskReportsPage() {
 type Tr = (k: string, v?: Record<string, string | number | Date>) => string;
 
 function NewTemplateForm({ apiUrl, onCreated, t }: { apiUrl: (p: string) => string; onCreated: () => void; t: Tr }) {
+    const toast = useToast();
     const [open, setOpen] = useState(false);
     const [name, setName] = useState('');
     const [type, setType] = useState('PORTFOLIO_SUMMARY');
@@ -156,11 +170,14 @@ function NewTemplateForm({ apiUrl, onCreated, t }: { apiUrl: (p: string) => stri
         if (!name.trim()) return;
         setBusy(true);
         try {
-            await fetch(apiUrl('/risks/reports/templates'), {
+            const res = await fetch(apiUrl('/risks/reports/templates'), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: name.trim(), type }),
             });
+            if (!res.ok) throw new Error('Failed to create template');
             setName(''); setType('PORTFOLIO_SUMMARY'); setOpen(false); onCreated();
+        } catch {
+            toast.error(t('reports.templateCreateFailed'));
         } finally { setBusy(false); }
     };
     if (!open) {
@@ -181,21 +198,27 @@ function NewTemplateForm({ apiUrl, onCreated, t }: { apiUrl: (p: string) => stri
 }
 
 function SchedulesCard({
-    apiUrl, templates, schedules, loading, error, onChanged, nameOf, t,
+    apiUrl, templates, schedules, loading, error, mutate, nameOf, t,
 }: {
     apiUrl: (p: string) => string;
     templates: Template[];
     schedules: Schedule[];
     loading: boolean;
     error: unknown;
-    onChanged: () => void;
+    mutate: KeyedMutator<{ schedules: Schedule[] }>;
     nameOf: (id: string) => string;
     t: Tr;
 }) {
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     const [templateId, setTemplateId] = useState('');
     const [cadence, setCadence] = useState<(typeof CADENCES)[number]>('MONTHLY');
     const [recipients, setRecipients] = useState('');
     const [scheduleRiskId, setScheduleRiskId] = useState<string | null>(null);
+    // Item 4 — optional SharePoint delivery destination (backend already
+    // supports it via createSchedule's sharePointDriveId/sharePointFolderId).
+    const [spDriveId, setSpDriveId] = useState('');
+    const [spFolderId, setSpFolderId] = useState('');
     const [busy, setBusy] = useState(false);
     // Edit-in-place state (item 2): the schedule id being edited + its draft.
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -207,24 +230,46 @@ function SchedulesCard({
     // A RISK_DEEP_DIVE schedule must carry the same single-risk scope the
     // one-off generate path sends, or it silently runs portfolio-wide.
     const selectedIsDeepDive = templates.find((tpl) => tpl.id === templateId)?.type === 'RISK_DEEP_DIVE';
+    // Match the usecase's validation: a schedule needs at least one recipient
+    // OR a SharePoint destination (createSchedule throws otherwise).
+    const canCreate =
+        !!templateId && (!!recipients.trim() || !!spDriveId.trim());
 
     const create = async () => {
         const emails = recipients.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
-        if (!templateId || emails.length === 0) return;
+        if (!templateId || (emails.length === 0 && !spDriveId.trim())) return;
         setBusy(true);
         try {
             const riskId = selectedIsDeepDive ? scheduleRiskId ?? undefined : undefined;
-            await fetch(apiUrl('/risks/reports/schedules'), {
+            const res = await fetch(apiUrl('/risks/reports/schedules'), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ templateId, cadence, recipients: emails, ...(riskId ? { parameters: { riskId } } : {}) }),
+                body: JSON.stringify({
+                    templateId, cadence, recipients: emails,
+                    ...(riskId ? { parameters: { riskId } } : {}),
+                    ...(spDriveId.trim() ? { sharePointDriveId: spDriveId.trim() } : {}),
+                    ...(spFolderId.trim() ? { sharePointFolderId: spFolderId.trim() } : {}),
+                }),
             });
-            setTemplateId(''); setRecipients(''); setScheduleRiskId(null); onChanged();
+            if (!res.ok) throw new Error('Failed to create schedule');
+            setTemplateId(''); setRecipients(''); setScheduleRiskId(null);
+            setSpDriveId(''); setSpFolderId('');
+            await mutate();
+        } catch {
+            toast.error(t('reports.scheduleCreateFailed'));
         } finally { setBusy(false); }
     };
 
     const patch = async (id: string, body: Record<string, unknown>) => {
-        await fetch(apiUrl(`/risks/reports/schedules/${id}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        onChanged();
+        const res = await fetch(apiUrl(`/risks/reports/schedules/${id}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!res.ok) throw new Error('Failed to update schedule');
+        await mutate();
+    };
+    const togglePause = async (s: Schedule) => {
+        try {
+            await patch(s.id, { isActive: !s.isActive });
+        } catch {
+            toast.error(t('reports.scheduleUpdateFailed'));
+        }
     };
 
     const startEdit = (s: Schedule) => {
@@ -239,11 +284,30 @@ function SchedulesCard({
         try {
             await patch(id, { cadence: editCadence, recipients: emails });
             setEditingId(null);
+        } catch {
+            toast.error(t('reports.scheduleUpdateFailed'));
         } finally { setBusy(false); }
     };
-    const remove = async (id: string) => {
-        await fetch(apiUrl(`/risks/reports/schedules/${id}`), { method: 'DELETE' });
-        onChanged();
+    // Item 3 — delayed-commit delete (Epic 67). Optimistically drop the row
+    // from the SWR cache, fire the real DELETE after the undo window, and
+    // restore the cached list on Undo / failure. See docs/destructive-actions.md.
+    const removeSchedule = (id: string) => {
+        const previous = schedules;
+        mutate({ schedules: schedules.filter((s) => s.id !== id) }, { revalidate: false });
+        triggerUndoToast({
+            message: t('reports.scheduleDeletedToast'),
+            undoMessage: t('reports.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/risks/reports/schedules/${id}`), { method: 'DELETE' });
+                if (!res.ok) throw new Error('Failed to delete schedule');
+                await mutate();
+            },
+            undoAction: () => { mutate({ schedules: previous }, { revalidate: false }); },
+            onError: () => {
+                toast.error(t('reports.scheduleDeleteFailed'));
+                mutate({ schedules: previous }, { revalidate: false });
+            },
+        });
     };
 
     return (
@@ -261,7 +325,20 @@ function SchedulesCard({
                 <label className="block flex-1 min-w-[12rem]"><span className="text-xs text-content-muted">{t('reports.scheduleRecipients')}</span>
                     <Input value={recipients} onChange={(e) => setRecipients(e.target.value)} placeholder={t('reports.scheduleRecipientsPlaceholder')} />
                 </label>
-                <Button variant="secondary" onClick={create} disabled={busy || !templateId || !recipients.trim()} id="schedule-create-btn">{t('reports.scheduleCreate')}</Button>
+                <Button variant="secondary" onClick={create} disabled={busy || !canCreate} id="schedule-create-btn">{t('reports.scheduleCreate')}</Button>
+            </div>
+
+            {/* Item 4 — optional SharePoint delivery destination. A schedule
+                needs at least one recipient OR a SharePoint drive (the usecase
+                enforces the same). Folder is optional within the drive. */}
+            <div className="flex flex-wrap items-end gap-default">
+                <label className="block w-full sm:w-72"><span className="text-xs text-content-muted">{t('reports.scheduleSharePointDrive')}</span>
+                    <Input id="schedule-sp-drive" value={spDriveId} onChange={(e) => setSpDriveId(e.target.value)} placeholder={t('reports.scheduleSharePointDrivePlaceholder')} />
+                </label>
+                <label className="block w-full sm:w-72"><span className="text-xs text-content-muted">{t('reports.scheduleSharePointFolder')}</span>
+                    <Input id="schedule-sp-folder" value={spFolderId} onChange={(e) => setSpFolderId(e.target.value)} placeholder={t('reports.scheduleSharePointFolderPlaceholder')} />
+                </label>
+                <p className="w-full text-xs text-content-subtle">{t('reports.scheduleDestinationHint')}</p>
             </div>
 
             {selectedIsDeepDive && (
@@ -305,8 +382,8 @@ function SchedulesCard({
                                     {s.nextRunAt && <span className="text-xs text-content-subtle">{t('reports.nextRun', { date: formatDateTime(s.nextRunAt) })}</span>}
                                     <span className="ml-auto flex gap-tight">
                                         <Button size="sm" variant="ghost" onClick={() => startEdit(s)} data-testid={`schedule-edit-btn-${s.id}`}>{t('reports.scheduleEdit')}</Button>
-                                        <Button size="sm" variant="ghost" onClick={() => patch(s.id, { isActive: !s.isActive })} data-testid={`schedule-toggle-${s.id}`}>{s.isActive ? t('reports.schedulePause') : t('reports.scheduleResume')}</Button>
-                                        <Button size="sm" variant="ghost" className="text-content-error" onClick={() => remove(s.id)} data-testid={`schedule-delete-${s.id}`}>{t('reports.scheduleDelete')}</Button>
+                                        <Button size="sm" variant="ghost" onClick={() => togglePause(s)} data-testid={`schedule-toggle-${s.id}`}>{s.isActive ? t('reports.schedulePause') : t('reports.scheduleResume')}</Button>
+                                        <Button size="sm" variant="ghost" className="text-content-error" onClick={() => removeSchedule(s.id)} data-testid={`schedule-delete-${s.id}`}>{t('reports.scheduleDelete')}</Button>
                                     </span>
                                 </>
                             )}

@@ -1,4 +1,5 @@
 import { getPermissionsForRole } from '@/lib/permissions';
+import { hasPermission } from '@/lib/security/permission-middleware';
 
 describe('Permissions Map', () => {
     it('grants full access to ADMIN', () => {
@@ -50,4 +51,26 @@ describe('Permissions Map', () => {
         expect(permissions.admin.manage).toBe(false);
         expect(permissions.reports.export).toBe(false);
     });
+});
+
+// The report export routes (POST /reports/pdf/generate, GET
+// /reports/soa/export.csv, POST /risks/reports) are wrapped with
+// requirePermission('reports.export', …), which gates on hasPermission(...).
+// This locks in that a READER is denied while every writer/exporter role is
+// allowed — the exact resolution the middleware performs.
+describe('reports.export gate (requirePermission key)', () => {
+    it('denies READER', () => {
+        expect(
+            hasPermission(getPermissionsForRole('READER'), 'reports.export'),
+        ).toBe(false);
+    });
+
+    it.each(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR'] as const)(
+        'allows %s',
+        (role) => {
+            expect(
+                hasPermission(getPermissionsForRole(role), 'reports.export'),
+            ).toBe(true);
+        },
+    );
 });

@@ -112,7 +112,6 @@ const ScheduleConfig = z
 // SLA (Epic 5) + chain (Epic 7) fields — shared by create/update.
 const SlaFields = {
     slaWindowMinutes: z.number().int().min(1).max(525600).nullable().optional(),
-    slaReminderMinutes: z.number().int().min(1).max(525600).nullable().optional(),
     slaBreachActionType: z.nativeEnum(AutomationActionType).nullable().optional(),
     slaBreachConfig: z.record(z.string(), z.unknown()).nullable().optional(),
     nextRuleId: z.string().min(1).nullable().optional(),

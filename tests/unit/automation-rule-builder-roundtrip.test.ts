@@ -12,6 +12,9 @@ import {
     buildRulePayload,
     type RuleDetail,
 } from '@/components/processes/RuleBuilderModal';
+import { matchesFilter } from '@/app-layer/automation/filters';
+import type { AutomationDomainEvent } from '@/app-layer/automation/event-contracts';
+import type { AutomationTriggerFilter } from '@/app-layer/automation/types';
 
 const cases: Array<{ name: string; detail: RuleDetail }> = [
     {
@@ -178,5 +181,82 @@ describe('rule-builder edit round-trip (save with no changes is a no-op)', () =>
         expect(payload.nextRuleId).toBe(detail.nextRuleId);
         expect(payload.nextRuleDelay).toBe(detail.nextRuleDelay);
         expect(payload.elseRuleId).toBe(detail.elseRuleId);
+    });
+});
+
+// ─── Bug 1: editing must never wipe a filter the tabular builder can't
+// author (nested groups, legacy flat maps). Bug 2: a typed eq/neq filter
+// still matches after the round-trip. ────────────────────────────────────
+function ruleWithFilter(triggerFilterJson: RuleDetail['triggerFilterJson']): RuleDetail {
+    return {
+        name: 'Filtered rule',
+        triggerEvent: 'RISK_CREATED',
+        actionType: 'NOTIFY_USER',
+        triggerFilterJson,
+        actionConfigJson: { userIds: ['u1'], message: 'x' },
+        slaWindowMinutes: null,
+        slaBreachActionType: null,
+        slaBreachConfigJson: null,
+        scheduleConfigJson: null,
+        nextRuleId: null,
+        nextRuleDelay: null,
+        elseRuleId: null,
+    };
+}
+
+function eventWithData(data: Record<string, unknown>): AutomationDomainEvent {
+    return {
+        event: 'RISK_CREATED',
+        tenantId: 't',
+        entityType: 'Risk',
+        entityId: 'r-1',
+        actorUserId: null,
+        emittedAt: new Date(),
+        data,
+    } as unknown as AutomationDomainEvent;
+}
+
+describe('edit preserves filters regardless of authoring source', () => {
+    it('canvas/API nested-group filter survives a no-op edit verbatim', () => {
+        const nested: AutomationTriggerFilter = {
+            logic: 'AND',
+            conditions: [
+                { field: 'score', operator: 'gt', value: 10 },
+                {
+                    logic: 'OR',
+                    conditions: [
+                        { field: 'category', operator: 'eq', value: 'SEC' },
+                        { field: 'category', operator: 'eq', value: 'COMP' },
+                    ],
+                },
+            ],
+        };
+        const payload = buildRulePayload(detailToBuilderState(ruleWithFilter(nested)));
+        // Never nulled, never flattened — passed through byte-for-byte.
+        expect(payload.triggerFilter).toEqual(nested);
+        // And it still evaluates: score>10 AND category in {SEC,COMP}.
+        expect(matchesFilter(eventWithData({ score: 18, category: 'SEC' }), payload.triggerFilter)).toBe(true);
+        expect(matchesFilter(eventWithData({ score: 5, category: 'SEC' }), payload.triggerFilter)).toBe(false);
+    });
+
+    it('legacy flat-map filter is not nulled and still matches after an edit', () => {
+        const legacy: AutomationTriggerFilter = { category: 'SEC', score: 5 };
+        const payload = buildRulePayload(detailToBuilderState(ruleWithFilter(legacy)));
+        // The builder hydrates a legacy map into editable eq rows, so it
+        // round-trips to an evaluator-equivalent FilterGroup — NOT null.
+        expect(payload.triggerFilter).not.toBeNull();
+        expect(matchesFilter(eventWithData({ category: 'SEC', score: 5 }), payload.triggerFilter)).toBe(true);
+        expect(matchesFilter(eventWithData({ category: 'COMP', score: 5 }), payload.triggerFilter)).toBe(false);
+    });
+
+    it('typed `score eq 5` still matches {score: 5} after an edit', () => {
+        const eqFilter: AutomationTriggerFilter = {
+            logic: 'AND',
+            conditions: [{ field: 'score', operator: 'eq', value: 5 }],
+        };
+        const payload = buildRulePayload(detailToBuilderState(ruleWithFilter(eqFilter)));
+        expect(payload.triggerFilter).not.toBeNull();
+        expect(matchesFilter(eventWithData({ score: 5 }), payload.triggerFilter)).toBe(true);
+        expect(matchesFilter(eventWithData({ score: 6 }), payload.triggerFilter)).toBe(false);
     });
 });

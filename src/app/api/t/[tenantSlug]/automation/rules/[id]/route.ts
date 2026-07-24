@@ -49,7 +49,6 @@ export const PUT = withApiErrorHandling(
             status: body.status,
             priority: body.priority,
             slaWindowMinutes: body.slaWindowMinutes,
-            slaReminderMinutes: body.slaReminderMinutes,
             slaBreachActionType: body.slaBreachActionType,
             slaBreachConfig: body.slaBreachConfig,
             nextRuleId: body.nextRuleId,

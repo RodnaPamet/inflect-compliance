@@ -26,6 +26,30 @@ import type {
 } from './types';
 import { isFilterGroup } from './types';
 
+/**
+ * Equality with the same value coercion `gt`/`lt` already apply — so a filter
+ * whose value was authored, round-tripped through the builder, or stored as a
+ * string ("5", "true") still matches a typed payload value (5, true). Strict
+ * equality first (fast path for exact string/enum matches); then number- and
+ * boolean-aware coercion keyed on the ACTUAL payload value's type, which is
+ * authoritative — never on a guess about the filter value's type.
+ */
+function looseEquals(actual: unknown, value: unknown): boolean {
+    if (actual === value) return true;
+    if (
+        typeof actual === 'number' &&
+        (typeof value === 'string' || typeof value === 'number')
+    ) {
+        const n = Number(value);
+        return !Number.isNaN(n) && actual === n;
+    }
+    if (typeof actual === 'boolean') {
+        if (typeof value === 'boolean') return actual === value;
+        return (value === 'true' && actual) || (value === 'false' && !actual);
+    }
+    return false;
+}
+
 function evalCondition(
     cond: FilterCondition,
     data: Record<string, unknown>,
@@ -38,9 +62,9 @@ function evalCondition(
     const { operator, value } = cond;
     switch (operator) {
         case 'eq':
-            return actual === value;
+            return looseEquals(actual, value);
         case 'neq':
-            return actual !== value;
+            return !looseEquals(actual, value);
         case 'in':
             return Array.isArray(value) && value.includes(String(actual));
         case 'not_in':
@@ -73,7 +97,9 @@ function evalLegacy(
     for (const [key, expected] of Object.entries(filter)) {
         const actual = data[key];
         if (actual === undefined) return false;
-        if (actual !== expected) return false;
+        // Same coercion as the FilterGroup `eq` path, so a legacy map that was
+        // hydrated → re-saved through the (string-valued) builder still matches.
+        if (!looseEquals(actual, expected)) return false;
     }
     return true;
 }

@@ -246,9 +246,6 @@ model AutomationRule {
   /// executions synchronously, so this only catches genuinely stuck runs
   /// (unresponsive webhook, dead worker). See sla-monitor.ts.
   slaWindowMinutes    Int?
-  /// Optional reminder lead time (minutes before breach). Reserved for the
-  /// reminder sweep; the monitor reads it but reminder fan-out is a follow-up.
-  slaReminderMinutes  Int?
   /// Action fired on breach + its config.
   slaBreachActionType AutomationActionType?
   slaBreachConfigJson Json?

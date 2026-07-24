@@ -8,8 +8,8 @@
  * Otherwise returns the PDF as application/pdf.
  */
 import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { z } from 'zod';
 import { ReportType } from '@/lib/pdf/types';
 import type { WatermarkMode } from '@/lib/pdf/types';
@@ -58,9 +58,8 @@ function collectPdfBuffer(pdfDoc: PDFKit.PDFDocument): Promise<Buffer> {
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-export const POST = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
+export const POST = withApiErrorHandling(
+    requirePermission('reports.export', async (req: NextRequest, _routeArgs, ctx) => {
 
     // ─── Plan check: PDF exports require TRIAL+ ───
     await requireFeature(ctx.tenantId, FEATURES.PDF_EXPORTS);
@@ -154,5 +153,6 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
             'Content-Length': String(pdfBuffer.length),
         },
     });
-});
+    }),
+);
 

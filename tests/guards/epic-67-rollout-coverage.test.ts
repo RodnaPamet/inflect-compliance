@@ -64,6 +64,14 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Evidence↔control unlink (evidence detail sheet)',
         handlers: ['handleUnlinkControl'],
     },
+    {
+        // Report-schedule delete on the risk-reports page — was a
+        // fire-and-forget DELETE, now a deferred-commit undo flow with
+        // an optimistic SWR-cache drop.
+        file: 'src/app/t/[tenantSlug]/(app)/risks/reports/page.tsx',
+        name: 'Report-schedule delete (risk reports)',
+        handlers: ['removeSchedule'],
+    },
 ];
 
 function loadFile(file: string): string {

@@ -181,3 +181,86 @@ describe('matchesFilter — FilterGroup DSL v2', () => {
         expect(matchesFilter(evt, { logic: 'AND', conditions: [] })).toBe(true);
     });
 });
+
+// ─── eq/neq type coercion (Bug 2) ──────────────────────────────────────
+// The visual builder authors every filter value as a STRING (HTML inputs),
+// so a `score eq 5` rule edited + saved becomes value:'5'. eq/neq must still
+// match the typed numeric/boolean payload — coercion keyed on the payload's
+// (authoritative) type, mirroring what gt/lt already do.
+describe('matchesFilter — eq/neq coerce string filter values to the payload type', () => {
+    const evt = riskEvent({ title: 'Breach', score: 5, category: 'SEC' });
+
+    it('numeric eq matches a string-authored value', () => {
+        expect(
+            matchesFilter(evt, {
+                logic: 'AND',
+                conditions: [{ field: 'score', operator: 'eq', value: '5' }],
+            }),
+        ).toBe(true);
+        expect(
+            matchesFilter(evt, {
+                logic: 'AND',
+                conditions: [{ field: 'score', operator: 'eq', value: '6' }],
+            }),
+        ).toBe(false);
+    });
+
+    it('numeric neq is the negation of the coerced eq', () => {
+        expect(
+            matchesFilter(evt, {
+                logic: 'AND',
+                conditions: [{ field: 'score', operator: 'neq', value: '5' }],
+            }),
+        ).toBe(false);
+        expect(
+            matchesFilter(evt, {
+                logic: 'AND',
+                conditions: [{ field: 'score', operator: 'neq', value: '6' }],
+            }),
+        ).toBe(true);
+    });
+
+    it('numeric eq still matches a typed numeric value (no regression)', () => {
+        expect(
+            matchesFilter(evt, {
+                logic: 'AND',
+                conditions: [{ field: 'score', operator: 'eq', value: 5 }],
+            }),
+        ).toBe(true);
+    });
+
+    it('boolean eq matches a string-authored "true"/"false"', () => {
+        const boolEvt = {
+            event: 'TEST_RUN_COMPLETED',
+            tenantId: 't',
+            entityType: 'ControlTestRun',
+            entityId: 'r-1',
+            actorUserId: null,
+            emittedAt: new Date(),
+            data: { testPlanId: 'p', active: true },
+        } as unknown as AutomationDomainEvent;
+        expect(
+            matchesFilter(boolEvt, {
+                logic: 'AND',
+                conditions: [{ field: 'active', operator: 'eq', value: 'true' }],
+            }),
+        ).toBe(true);
+        expect(
+            matchesFilter(boolEvt, {
+                logic: 'AND',
+                conditions: [{ field: 'active', operator: 'eq', value: 'false' }],
+            }),
+        ).toBe(false);
+        expect(
+            matchesFilter(boolEvt, {
+                logic: 'AND',
+                conditions: [{ field: 'active', operator: 'eq', value: true }],
+            }),
+        ).toBe(true);
+    });
+
+    it('legacy flat map coerces the same way', () => {
+        expect(matchesFilter(evt, { score: '5' })).toBe(true);
+        expect(matchesFilter(evt, { score: '6' })).toBe(false);
+    });
+});

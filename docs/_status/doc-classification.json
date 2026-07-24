@@ -1720,6 +1720,12 @@
         },
         "docs/implementation-notes/2026-07-23-dashboard-round-2.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-07-23-rule-builder-filter-fidelity.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-07-23-process-map-templates-and-automation-polish.md": {
+            "class": "historical"
         }
     }
 }

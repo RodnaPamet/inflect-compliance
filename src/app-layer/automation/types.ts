@@ -118,7 +118,6 @@ export function isFilterGroup(f: unknown): f is FilterGroup {
 /** SLA + chain fields shared by create/update (Epics 5, 7). */
 export interface AutomationRuleSlaInput {
     slaWindowMinutes?: number | null;
-    slaReminderMinutes?: number | null;
     slaBreachActionType?: AutomationActionType | null;
     slaBreachConfig?: Record<string, unknown> | null;
     /** Epic 7 — chain to this rule after success. */

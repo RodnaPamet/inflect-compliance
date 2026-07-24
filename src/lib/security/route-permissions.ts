@@ -336,6 +336,36 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'incidents.view',
         note: 'List / detail incident reads — compliance visibility for every member.',
     },
+
+    // ── Report export surface (reports.export) ──────────────────────
+    // The UI gates these three export actions with
+    // <RequirePermission resource="reports" action="export"> — the API
+    // must enforce the same or the gate is UI-only. READER has
+    // reports.export=false; EDITOR/AUDITOR/ADMIN/OWNER have it true.
+    {
+        path: new RegExp(`^${T}\\/reports\\/pdf\\/generate$`),
+        methods: ['POST'],
+        permission: 'reports.export',
+        note:
+            'Generates a branded PDF report (audit-readiness / risk-register / ' +
+            'gap-analysis) and streams or persists it — an export action.',
+    },
+    {
+        path: new RegExp(`^${T}\\/reports\\/soa\\/export\\.csv$`),
+        methods: ['GET'],
+        permission: 'reports.export',
+        note:
+            'Exports the Statement of Applicability / coverage CSV — an export ' +
+            'action carrying aggregated compliance posture out of the app.',
+    },
+    {
+        path: new RegExp(`^${T}\\/risks\\/reports$`),
+        methods: ['POST'],
+        permission: 'reports.export',
+        note:
+            'Generates a risk report run (PDF/CSV/PPTX) — an export action. The ' +
+            'GET on the same path (list templates + recent runs) stays open.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

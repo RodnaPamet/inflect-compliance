@@ -14,6 +14,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > fails CI until satisfied. Structural ratchets certify *shape*; behavioural
 > ratchets certify *conduct* — the platform enforces both.
 
+## Working agreements (Claude Code sessions)
+
+Operator-set workflow directives for how Claude drives changes in this repo
+(set 2026-07-23 by the repo owner). These persist here because the remote
+execution environment is ephemeral — only committed files survive.
+
+- **Always open a PR after completing a prompt's work.** Once the branch has
+  the finished commits pushed, open (or update) the PR for it — don't leave the
+  work sitting on the branch. This overrides the default "don't open a PR unless
+  asked" posture for this repo.
+- **Merge all green PRs.** When a PR's required checks are all green, merge it
+  (standing authorization — no per-PR confirmation needed). "Green" means every
+  required check has completed successfully; a pending or failing required check
+  is NOT green. Never bypass a red/failing check or admin-merge past CI — a
+  blocked PR gets driven to green (fix the failure) or the blocker gets
+  surfaced, never force-merged.
+
 ## Commands
 
 ```bash
