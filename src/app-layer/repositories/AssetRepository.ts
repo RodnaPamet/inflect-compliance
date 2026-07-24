@@ -18,12 +18,22 @@ export interface AssetListParams {
     filters?: AssetFilters;
 }
 
+/**
+ * Hard ceiling for the flat (non-paginated) `list` / `listDeleted` reads.
+ * The list page windows client-side over the returned array, so it needs the
+ * full set — but "full" must still be bounded so one tenant can never pull an
+ * unbounded row count in a single query. Tenants above this use the cursor-
+ * paginated `listPaginated` path.
+ */
+const FLAT_LIST_CAP = 1000;
+
 export class AssetRepository {
     static async list(db: PrismaTx, ctx: RequestContext, filters?: AssetFilters) {
         const where = AssetRepository._buildWhere(ctx, filters);
         return db.asset.findMany({
             where,
             orderBy: { createdAt: 'desc' },
+            take: FLAT_LIST_CAP,
             include: {
                 _count: { select: { controls: true } },
                 ownerUser: { select: { id: true, name: true, email: true } },
@@ -44,6 +54,7 @@ export class AssetRepository {
         return db.asset.findMany(withDeleted({
             where,
             orderBy: { deletedAt: 'desc' as const },
+            take: FLAT_LIST_CAP,
             include: {
                 _count: { select: { controls: true } },
                 ownerUser: { select: { id: true, name: true, email: true } },

@@ -78,6 +78,15 @@ const mockAssetCtrl = AssetControlRepository as jest.Mocked<typeof AssetControlR
 const mockAssetRisk = AssetRiskRepository as jest.Mocked<typeof AssetRiskRepository>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
 
+// mapAssetToControl/mapAssetToRisk verify the asset + target exist in the
+// tenant before linking; a tx whose asset/control/risk findFirst return a row
+// so the existence checks pass and the emit logic under test is reached.
+const linkTx = {
+    asset: { findFirst: jest.fn().mockResolvedValue({ id: 'a1' }) },
+    control: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) },
+    risk: { findFirst: jest.fn().mockResolvedValue({ id: 'r1' }) },
+};
+
 beforeEach(() => {
     jest.clearAllMocks();
 });
@@ -104,7 +113,7 @@ describe('assertCanManage — mutation RBAC gate', () => {
 
     it('allows an EDITOR to map a control to a risk and emits a relationship event', async () => {
         mockCtrlRisk.link.mockResolvedValueOnce({ id: 'link-1' } as never);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(linkTx as never));
 
         const result = await mapControlToRisk(
             makeRequestContext('EDITOR'),
@@ -121,7 +130,7 @@ describe('assertCanManage — mutation RBAC gate', () => {
 
     it('allows an OWNER to map a control to a risk (OWNER is a superset of ADMIN)', async () => {
         mockCtrlRisk.link.mockResolvedValueOnce({ id: 'link-2' } as never);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(linkTx as never));
 
         await expect(
             mapControlToRisk(makeRequestContext('OWNER'), 'c1', 'r1'),
@@ -137,7 +146,7 @@ describe('mapAssetToRisk — link / update / no-op emit logic', () => {
             exposureLevel: 'DIRECT',
             rationale: 'r',
         } as never);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(linkTx as never));
 
         await mapAssetToRisk(makeRequestContext('EDITOR'), 'a1', 'r1', 'DIRECT', 'r');
 
@@ -155,7 +164,7 @@ describe('mapAssetToRisk — link / update / no-op emit logic', () => {
             exposureLevel: 'DIRECT', // changed
             rationale: 'r',
         } as never);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(linkTx as never));
 
         await mapAssetToRisk(makeRequestContext('EDITOR'), 'a1', 'r1', 'DIRECT', 'r');
 
@@ -173,7 +182,7 @@ describe('mapAssetToRisk — link / update / no-op emit logic', () => {
             exposureLevel: 'DIRECT',
             rationale: 'same',
         } as never);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(linkTx as never));
 
         await mapAssetToRisk(makeRequestContext('EDITOR'), 'a1', 'r1', 'DIRECT', 'same');
 
@@ -186,7 +195,7 @@ describe('getControlTraceability — read path', () => {
     it('does not gate reads by role and fans out the repo queries (incl. process placement)', async () => {
         mockCtrlRisk.listByControl.mockResolvedValueOnce([{ id: 'r1' }] as never);
         mockAssetCtrl.listByControl.mockResolvedValueOnce([{ id: 'a1' }] as never);
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(linkTx as never));
 
         // even a READER can read the traceability graph
         const result = await getControlTraceability(makeRequestContext('READER'), 'c1');

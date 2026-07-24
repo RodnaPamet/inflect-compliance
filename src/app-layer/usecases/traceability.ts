@@ -2,7 +2,7 @@ import { RequestContext } from '../types';
 import { ControlRiskRepository, AssetControlRepository, AssetRiskRepository } from '../repositories/TraceabilityRepository';
 import { ProcessMapRepository } from '../repositories/ProcessMapRepository';
 import { logEvent } from '../events/audit';
-import { forbidden } from '@/lib/errors/types';
+import { forbidden, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { policyCountsWhere } from '@/lib/policy/coverage-predicate';
 
@@ -61,6 +61,16 @@ export async function listControlAssets(ctx: RequestContext, controlId: string) 
 export async function mapAssetToControl(ctx: RequestContext, assetId: string, controlId: string, coverageType?: string, rationale?: string) {
     assertCanManage(ctx);
     return runInTenantContext(ctx, async (db) => {
+        // Both the URL asset AND the body-supplied control must live in the
+        // caller's tenant — the link insert stamps ctx.tenantId regardless, so
+        // an unverified target id would cross-link another tenant's control.
+        // 404 (not 403) keeps the id namespace non-enumerable.
+        const [asset, control] = await Promise.all([
+            db.asset.findFirst({ where: { id: assetId, tenantId: ctx.tenantId }, select: { id: true } }),
+            db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId }, select: { id: true } }),
+        ]);
+        if (!asset) throw notFound('Asset not found');
+        if (!control) throw notFound('Control not found');
         const link = await AssetControlRepository.link(db, ctx.tenantId, assetId, controlId, coverageType || null, rationale || null, ctx.userId);
         await logEvent(db, ctx, { action: 'ASSET_CONTROL_LINKED', entityType: 'Asset', entityId: assetId, details: `Linked to control ${controlId}`, detailsJson: { category: 'relationship', operation: 'linked', sourceEntity: 'Asset', sourceId: assetId, targetEntity: 'Control', targetId: controlId, relation: coverageType || 'FULL' }, metadata: { controlId, coverageType } });
         return link;
@@ -90,6 +100,14 @@ export async function listRiskAssets(ctx: RequestContext, riskId: string) {
 export async function mapAssetToRisk(ctx: RequestContext, assetId: string, riskId: string, exposureLevel?: string, rationale?: string) {
     assertCanManage(ctx);
     return runInTenantContext(ctx, async (db) => {
+        // Verify both the URL asset AND the body-supplied risk live in the
+        // caller's tenant before linking (see mapAssetToControl). 404 otherwise.
+        const [asset, risk] = await Promise.all([
+            db.asset.findFirst({ where: { id: assetId, tenantId: ctx.tenantId }, select: { id: true } }),
+            db.risk.findFirst({ where: { id: riskId, tenantId: ctx.tenantId }, select: { id: true } }),
+        ]);
+        if (!asset) throw notFound('Asset not found');
+        if (!risk) throw notFound('Risk not found');
         const existing = await AssetRiskRepository.findLink(db, ctx.tenantId, assetId, riskId);
         const link = await AssetRiskRepository.link(db, ctx.tenantId, assetId, riskId, exposureLevel || null, rationale || null, ctx.userId);
         if (!existing) {

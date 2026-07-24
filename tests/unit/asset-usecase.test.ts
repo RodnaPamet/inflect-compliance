@@ -23,6 +23,9 @@
 
 const mockDb = {
     asset: { findFirst: jest.fn(), findMany: jest.fn() },
+    // create/updateAsset validate a supplied ownerUserId is an ACTIVE member;
+    // default the membership lookup to a hit so owner-bearing writes proceed.
+    tenantMembership: { findFirst: jest.fn().mockResolvedValue({ userId: 'owner-user' }) },
     evidence: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     // Evidence↔Asset is a join now (one artifact reusable across many
     // assets); the singular `Evidence.assetId` survives only as the

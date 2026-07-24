@@ -5,10 +5,12 @@ import { jsonResponse } from '@/lib/api-response';
 
 type AssetDetailParams = { tenantSlug: string; id: string };
 
-// Purge is a hard delete — gated like every other asset mutation (matches the
-// DELETE handler's `assets.edit`) so the denial audits cleanly via the Epic C.1
-// permission guard instead of a bare tenant-context check.
-export const POST = withApiErrorHandling(requirePermission<AssetDetailParams>('assets.edit', async (_req, { params }, ctx) => {
+// Purge is an IRREVERSIBLE hard delete — the usecase asserts canAdmin, so the
+// route gate must match at the admin level (not the `assets.edit` a mere
+// EDITOR holds) or an EDITOR is denied by the usecase AFTER passing the route
+// gate, and the denial never audits at the permission layer. `admin.manage`
+// mirrors assertCanAdmin (OWNER/ADMIN).
+export const POST = withApiErrorHandling(requirePermission<AssetDetailParams>('admin.manage', async (_req, { params }, ctx) => {
     const { id } = await params;
     const result = await purgeAsset(ctx, id);
     return jsonResponse(result);
