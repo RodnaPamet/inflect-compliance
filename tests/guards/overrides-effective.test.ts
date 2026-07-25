@@ -52,12 +52,26 @@
  *
  * ─── What this guard deliberately does NOT do ───────────────────────
  *
- * It cannot tell you a NEWER patched version exists upstream — that
- * needs the registry, i.e. the network, which a Jest guard must not
- * touch. That half is
- * `.github/workflows/override-freshness.yml` (scheduled, non-blocking).
- * The two are complementary: this one proves the override bites, the
- * workflow proves it still points at the current fix.
+ * It cannot tell you a NEWER patched version exists upstream, and it
+ * cannot tell you whether a recorded `advisory` id is even REAL. Both
+ * need the registry / advisory database, i.e. the network, which a
+ * Jest guard must not touch. That half is
+ * `.github/workflows/override-freshness.yml` (scheduled, non-blocking),
+ * driving `scripts/check-override-freshness.mjs`.
+ *
+ * The blind spot is not hypothetical either. Check A below asserts an
+ * advisory id matches `/^(GHSA-|CVE-)/` — a SHAPE test. Four entries
+ * once sat green with ids that were shape-valid and substantively
+ * wrong: `picomatch` carried an `ip` SSRF advisory, `tmp` carried an
+ * id that does not exist, and `protobufjs` / `@grpc/grpc-js` carried
+ * real advisories patched in majors far below the floors they were
+ * supposedly justifying (2026-07-25). Offline, all four are
+ * indistinguishable from correct. The script now resolves every id
+ * against the GitHub Advisory Database and compares its real
+ * `first_patched_version` against `patchedFrom`.
+ *
+ * The two halves are complementary: this one proves the override
+ * bites, the script proves the facts it bites on are true.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -182,175 +196,23 @@ interface OverrideEntry {
     currentlyInert?: string;
 }
 
-const OVERRIDE_REGISTRY: Record<string, OverrideEntry> = {
-    undici: {
-        kind: 'security',
-        advisory: 'GHSA-c76h-2ccp-4975',
-        patchedFrom: '7.28.0',
-        reason:
-            'Pulled transitively by the OpenTelemetry / fetch stack. The <7.28.0 line mishandles ' +
-            'redirect header stripping. No direct dependency on undici, so an override is the only lever.',
-    },
-    tar: {
-        kind: 'security',
-        advisory: 'CVE-2026-59871',
-        patchedFrom: '7.5.18',
-        reason:
-            'Two advisories on the 7.5.x line: the original path-traversal on extraction ' +
-            '(GHSA-8489-44mv-ggj8, fixed 7.5.16, added in #1252 alongside the undici pin) and the ' +
-            'follow-up CVE-2026-59871 / GHSA-w8wr-v893-vjvp (affects <=7.5.17). Floor raised ' +
-            '7.5.16 → 7.5.18 on 2026-07-25 for the latter.',
-        currentlyInert:
-            'The ONLY tar in the tree is npm\'s bundled copy (node_modules/npm/node_modules/tar), ' +
-            'reached via libnpmdiff / node-gyp / pacote. npm ships its dependencies bundled, so an ' +
-            'override cannot rewrite them — what actually cleared CVE-2026-59871 was bumping the ' +
-            '`npm` pin to ^11.18.0, whose bundle carries tar 7.5.19. Kept as a floor in case tar ' +
-            're-enters the real tree (the guard will then require this note to be removed), but it ' +
-            'is protecting nothing today.',
-    },
-    npm: {
-        kind: 'security',
-        advisory: 'GHSA-4v6q-8jgv-6q2j',
-        patchedFrom: '11.18.0',
-        reason:
-            'Dev-only, via @semantic-release/npm. Forces the release tooling onto a patched npm CLI. ' +
-            'npm bundles its own dependency tree, which overrides cannot rewrite (see the ' +
-            'BUNDLED_TREE_PREFIX carve-out below) — so this pin is ALSO the only lever for the ' +
-            'bundled tar and brace-expansion. Floor raised 11.17.0 → 11.18.0 on 2026-07-25: the ' +
-            '11.18.0 bundle ships tar 7.5.19 (CVE-2026-59871) and brace-expansion 5.0.7 ' +
-            '(CVE-2026-13149), moving both off their vulnerable versions. npm 12.x requires ' +
-            'Node ^24.15 (we run 24.14), so 11.18 is the ceiling until the runtime moves.',
-    },
-    picomatch: {
-        kind: 'security',
-        advisory: 'GHSA-c2c7-rcm5-vvqj',
-        patchedFrom: '4.0.4',
-        reason:
-            'ReDoS via extglob quantifiers on adversarial glob input, reached through the test/build ' +
-            'matcher chain. The same 4.0.4 release fixes GHSA-3v7f-55p6-f55p (method injection in ' +
-            'POSIX character classes), so one floor clears both. Was recorded as GHSA-2p57-rm9w-gvfp ' +
-            'until 2026-07-25 — that id is an `ip` SSRF advisory and has nothing to do with picomatch.',
-    },
-    protobufjs: {
-        kind: 'security',
-        advisory: 'GHSA-j3f2-48v5-ccww',
-        patchedFrom: '8.6.6',
-        reason:
-            'DoS via an infinite loop in .proto parsing, affecting >=8.0.0 <=8.6.5. Pulled by the ' +
-            'OpenTelemetry OTLP exporter, which sits in the production tree. Floor raised 8.2.0 → ' +
-            '8.6.6 on 2026-07-25: the old floor targeted GHSA-jggg-4jg4-v7c6 (fixed 8.2.0) and had ' +
-            'been superseded, so it admitted the still-vulnerable 8.6.5. The previously recorded ' +
-            'GHSA-h755-8qp9-cq85 is real but patched at 6.11.4 / 7.2.5 — it never justified an 8.x floor.',
-    },
-    '@hono/node-server': {
-        kind: 'security',
-        advisory: 'GHSA-qgpw-5v7x-8v3v',
-        patchedFrom: '2.0.5',
-        reason: 'Request-smuggling via ambiguous framing. Paired with the `hono` override below.',
-    },
-    'fast-uri': {
-        kind: 'security',
-        advisory: 'GHSA-cfj4-hx58-2j6q',
-        patchedFrom: '3.1.3',
-        reason:
-            'ReDoS in URI parsing, reached through the Ajv/schema-validation chain. Completed the ' +
-            'npm-audit clean-up in #1693.',
-    },
-    hono: {
-        kind: 'security',
-        advisory: 'GHSA-hcxr-2v8p-3vqw',
-        patchedFrom: '4.12.27',
-        reason:
-            'Middleware auth bypass on crafted paths. THE cautionary entry: this was pinned ^4.12.23 ' +
-            'while the lockfile sat on vulnerable 4.12.25 — the range permitted the fix but nothing ' +
-            'pulled it in. Raising a floor is not enough; the lockfile has to move too.',
-    },
-    tmp: {
-        kind: 'security',
-        advisory: 'GHSA-7c78-jf6q-g5cm',
-        patchedFrom: '0.2.7',
-        reason:
-            'Path traversal via a type-confusion bypass of `_assertPath`, affecting >=0.2.6 <0.2.7. ' +
-            'Reached through build/test tooling. Floor raised 0.2.6 → 0.2.7 on 2026-07-25: the old ' +
-            'floor cleared the EARLIER traversal (GHSA-ph9p-34f9-6g65, unsanitized prefix/postfix, ' +
-            'fixed 0.2.6) but admitted 0.2.6 itself, which the follow-up advisory affects. The ' +
-            'previously recorded GHSA-52f5-9888-68mp does not exist — the real low-severity ' +
-            'arbitrary-write entry is GHSA-52f5-9888-hmc6, fixed back in 0.2.4.',
-    },
-    '@grpc/grpc-js': {
-        kind: 'security',
-        advisory: 'GHSA-5375-pq7m-f5r2',
-        patchedFrom: '1.14.4',
-        reason:
-            'A malformed request crashes the server; the 1.14.x line is fixed in 1.14.4. Pulled by ' +
-            'the OpenTelemetry gRPC exporter in the production tree. The same release fixes ' +
-            'GHSA-99f4-grh7-6pcq (malformed compressed message). Was recorded as GHSA-7v5v-9h63-cj86 ' +
-            'until 2026-07-25 — real, but patched at 1.8.22 / 1.9.15 / 1.10.9, so it never justified ' +
-            'a 1.14.4 floor.',
-    },
-    uuid: {
-        kind: 'security',
-        advisory: 'GHSA-w5hq-g745-h8pq',
-        patchedFrom: '11.1.1',
-        reason:
-            'Missing buffer bounds check in v3/v5/v6 when `buf` is provided. next-auth@4 declares ' +
-            'uuid@^8.3.2 and the whole <11.1.1 line is affected, so forcing the patched major is the ' +
-            'only fix. next-auth uses the version-stable named exports (v4, …), unchanged v8 → v11.',
-    },
-    'brace-expansion': {
-        kind: 'security',
-        advisory: 'GHSA-v6h2-p8h4-qcjw',
-        patchedFrom: '5.0.7',
-        reason:
-            'ReDoS. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window is ' +
-            'affected — the 1.x and 2.x lines predate the regression and are deliberately left alone ' +
-            'rather than force-marched to a breaking major.',
-    },
-    'js-yaml': {
-        kind: 'security',
-        advisory: 'GHSA-52cp-r559-cp3m',
-        patchedFrom: '4.3.0',
-        reason:
-            'High-severity advisory (CVE-2026-59869) affecting js-yaml >=4.0.0 <4.3.0, reached ' +
-            'transitively through cosmiconfig in the dev tree. Range-KEYED (`js-yaml@>=4.0.0 ' +
-            '<4.3.0`) so it moves ONLY the vulnerable 4.x instance up to 4.3.0 and leaves the ' +
-            'separate @istanbuljs/load-nyc-config 3.15.0 nested pin (js-yaml 3.x API) untouched. ' +
-            'Added 2026-07-25.',
-    },
-    sharp: {
-        kind: 'security',
-        advisory: 'CVE-2026-33327',
-        patchedFrom: '0.35.3',
-        reason:
-            'HIGH libvips CVEs (CVE-2026-33327/33328/35590/35591) affect sharp <0.35.0, pulled ' +
-            'transitively via next@16. #1694 pins the EXACT tested build 0.35.3 (not a caret range) ' +
-            'to clear the moderate+ npm-audit gate that had turned main red fleet-wide; the recorded ' +
-            'floor is therefore the pin itself, well above the vulnerable <0.35.0 window.',
-    },
-    valibot: {
-        kind: 'security',
-        advisory: 'GHSA-5qjj-4xww-7phc',
-        patchedFrom: '1.4.2',
-        reason:
-            'Moderate advisory pulled transitively through the production prisma / @prisma/dev chain. ' +
-            'No direct dependency on valibot, so forcing the patched 1.x line through an override is ' +
-            'the only lever. Added in #1698 alongside the js-yaml direct bump.',
-    },
-    '@typescript-eslint/eslint-plugin': {
-        kind: 'peer-bridge',
-        reason:
-            'Keeps every @typescript-eslint entry-point on one version. A split graph makes the ' +
-            'parser and plugin disagree about AST shape.',
-    },
-    '@typescript-eslint/parser': {
-        kind: 'peer-bridge',
-        reason: 'Paired with the plugin override above — same version, one AST contract.',
-    },
-    'typescript-eslint': {
-        kind: 'peer-bridge',
-        reason: 'The umbrella package; pinned with its two constituents so flat config resolves one line.',
-    },
-};
+/**
+ * The registry is DATA, held in `override-registry.json` rather than
+ * inline here.
+ *
+ * That split is load-bearing, not tidiness: the network half
+ * (`scripts/check-override-freshness.mjs`) verifies each recorded
+ * `advisory` against the GitHub Advisory Database and checks that its
+ * real fixed version still matches `patchedFrom`. A plain `.mjs`
+ * script cannot import a TypeScript test module (the `describe` calls
+ * would execute), so an inline registry would have forced the script
+ * to either re-declare the same facts — two sources that drift — or
+ * parse TypeScript with a regex that fails silently. One JSON file,
+ * two readers.
+ */
+const OVERRIDE_REGISTRY: Record<string, OverrideEntry> = readJson(
+    'tests/guards/override-registry.json',
+);
 
 /**
  * npm ships its dependencies BUNDLED — they live inside the published
@@ -428,6 +290,33 @@ describe('package.json overrides — effective and explained', () => {
         // If the block moves or is renamed, every `for` below iterates
         // zero times and the suite passes green while checking nothing.
         expect(overrides.length).toBeGreaterThanOrEqual(10);
+    });
+
+    it('loads the registry file (a truncated JSON cannot go unnoticed)', () => {
+        // The registry moved out to JSON so the freshness script can
+        // read it too. That buys a new failure mode the inline literal
+        // did not have: a file that fails to parse, or parses to `{}`,
+        // would make check A fail loudly — but a file that lost only
+        // SOME entries would not. Pin the floor.
+        expect(Object.keys(OVERRIDE_REGISTRY).length).toBeGreaterThanOrEqual(15);
+    });
+
+    it('every registry entry is well-formed (including unused ones)', () => {
+        // Check A only validates entries reachable from `overrides`.
+        // This one validates the FILE, so a malformed entry is caught
+        // even in the window before its override lands — and so the
+        // freshness script can trust the shape of what it reads.
+        const malformed = Object.entries(OVERRIDE_REGISTRY).filter(([, e]) => {
+            if (e.kind !== 'security' && e.kind !== 'peer-bridge') return true;
+            if (typeof e.reason !== 'string' || e.reason.length <= 40) return true;
+            if (e.kind === 'security') {
+                if (!/^(GHSA-|CVE-)/.test(e.advisory ?? '')) return true;
+                if (!/^\d+\.\d+\.\d+$/.test(e.patchedFrom ?? '')) return true;
+            }
+            if (e.currentlyInert !== undefined && typeof e.currentlyInert !== 'string') return true;
+            return false;
+        });
+        expect(malformed.map(([name]) => name)).toEqual([]);
     });
 
     describe('A. every version-forcing override is registered', () => {

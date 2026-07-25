@@ -87,19 +87,41 @@ them. What actually keeps that copy safe is the `npm` pin (raised to
 not the `tar` entry. An override that reads as protection while
 protecting nothing is worse than no override.
 
+**A floor stops excluding anything when a follow-up advisory lands.**
+`tmp` was pinned `^0.2.6` for a traversal fixed in 0.2.6 — then a
+second advisory landed affecting 0.2.6 itself. `protobufjs` was pinned
+`^8.2.0` for a fix in 8.2.0, later superseded by one in 8.6.6. Both
+floors still *looked* like remediation, and `npm audit` stayed green
+because the lockfile happened to sit on something patched. The floor,
+not just the lockfile, has to be re-checked when a package already
+pinned here gets a new advisory.
+
+**A recorded advisory id can be wrong.** Four registry entries once
+cited advisories that were shape-valid and substantively wrong:
+`picomatch` carried an `ip` SSRF id, `tmp` carried an id that does not
+exist, and `protobufjs` / `@grpc/grpc-js` carried real advisories
+patched in majors far below the floors they were justifying. Nothing
+offline can tell the difference.
+
 Two complementary checks cover these:
 
 | Check | Runs | Catches |
 |---|---|---|
-| `tests/guards/overrides-effective.test.ts` | every CI run, offline | unregistered override · a floor lowered below the recorded fix · an override that rewrites nothing (must be declared `currentlyInert` with a reason) · a stale inert note |
-| `.github/workflows/override-freshness.yml` | weekly + manual, hits the npm registry | the hono shape — a newer version exists *inside* the range but the lockfile is behind. Also notes when the newest release sits *outside* the range (the fix may have moved past the pinned major). |
+| `tests/guards/overrides-effective.test.ts` | every CI run, offline | unregistered override · a floor lowered below the recorded fix · an override that rewrites nothing (must be declared `currentlyInert` with a reason) · a stale inert note · a malformed registry entry |
+| `.github/workflows/override-freshness.yml` | weekly + manual, hits the npm registry and the GitHub Advisory Database | the hono shape — a newer version exists *inside* the range but the lockfile is behind · a floor that is **itself** still affected by some advisory · a recorded advisory id that does not resolve, covers a different package, or was fixed in a version other than `patchedFrom`. Also notes when the newest release sits *outside* the range. |
 
 The split is deliberate: a Jest guard must not make network calls, and
-the registry is the only place the "is there a newer fix?" answer
-lives. The workflow is **non-blocking** — it warns and maintains one
-tracking issue. `npm audit` remains the gate that blocks merges,
-because it blocks on evidence of a real advisory rather than on version
+the registry / advisory database is the only place the "is there a
+newer fix?" and "is this advisory even real?" answers live. The
+workflow is **non-blocking** — it warns and maintains one tracking
+issue. `npm audit` remains the gate that blocks merges, because it
+blocks on evidence of a real advisory rather than on version
 arithmetic.
+
+The registry itself lives in `tests/guards/override-registry.json` —
+data, read by both halves. It is JSON rather than an inline literal
+precisely so the network half can verify the same facts the offline
+guard asserts, instead of re-declaring them and drifting.
 
 Note that **Dependabot does not update `overrides`** — it moves
 declared dependencies. That is exactly the gap the weekly job covers.
@@ -109,7 +131,22 @@ Run it locally with:
 ```bash
 node scripts/check-override-freshness.mjs        # warn-only
 node scripts/check-override-freshness.mjs --json # machine-readable
+node scripts/check-override-freshness.mjs --self-test  # prove the comparators work
 ```
+
+`GITHUB_TOKEN` is picked up when set. Without it the advisory API
+allows 60 requests/hour — enough for one local run, not for a busy
+runner, and a rate-limited run reports `skip` rather than a clean bill
+of health. Locally: `GITHUB_TOKEN=$(gh auth token) node scripts/…`.
+
+**The comparators are self-tested.** Every finding depends on two
+hand-rolled version comparators, and one that returns "not affected"
+unconditionally would report all-clear forever. `--self-test` pins
+their behaviour and runs as a blocking step in the workflow before the
+report is believed — it caught exactly that bug on the day the
+advisory checks were written (GitHub writes `>= 0.2.6, < 0.2.7` with a
+space after the operator, which the first tokenizer split into bare
+operators, making every range read as "unknown").
 
 ## Deterministic installs — `npm ci`
 
