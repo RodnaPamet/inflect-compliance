@@ -43,6 +43,16 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
     useTenantSWR: (...args: unknown[]) => mockSWR(...args),
 }));
 
+// IncidentsClient now derives its detail-route hrefs via useTenantHref,
+// which throws outside a TenantProvider. This render harness doesn't mount
+// one (same reason it mocks next/navigation + next-intl), so stub the hook
+// to the same slug-prefixing shape the provider produces.
+jest.mock('@/lib/tenant-context-provider', () => ({
+    ...jest.requireActual('@/lib/tenant-context-provider'),
+    useTenantHref: () => (path: string) =>
+        `/t/acme${path.startsWith('/') ? path : `/${path}`}`,
+}));
+
 import { IncidentsClient, nextOpenDeadline, type IncidentRow } from '@/app/t/[tenantSlug]/(app)/incidents/IncidentsClient';
 import { NewIncidentModal } from '@/app/t/[tenantSlug]/(app)/incidents/NewIncidentModal';
 

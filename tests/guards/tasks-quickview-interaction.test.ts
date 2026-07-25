@@ -33,7 +33,16 @@ describe('Tasks list page — non-modal quick-view side panel', () => {
     });
 
     it('row double-click still navigates to the full detail page', () => {
-        expect(tasks).toMatch(/onRowClick=\{[\s\S]{0,120}\/tasks\/\$\{row\.original\.id\}/);
+        // Behaviour, not syntax: the row action must navigate to the task
+        // detail route. Previously this matched the handler body inline in
+        // the JSX prop, which quietly required the identity-unstable form
+        // — an inline arrow rebuilds the table model between the two
+        // clicks of a double-click, so the gesture never fires. See
+        // `datatable-stable-row-identity.test.ts`.
+        expect(tasks).toMatch(/onRowClick=\{handleTaskRowClick\}/);
+        expect(tasks).toMatch(
+            /const handleTaskRowClick = useCallback\([\s\S]{0,200}\/tasks\/\$\{row\.original\.id\}/,
+        );
     });
 
     it('the old modal TaskDetailSheet is gone', () => {

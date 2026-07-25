@@ -641,6 +641,13 @@ function ControlsPageInner({
         [router, tenantHref],
     );
     const getControlRowId = useCallback((c: ControlListItem) => c.id, []);
+    const handleRowPrefetch = useCallback(
+        (row: Row<ControlListItem>) => {
+            router.prefetch(tenantHref(`/controls/${row.original.id}`));
+            prefetchData(CACHE_KEYS.controls.pageData(row.original.id));
+        },
+        [router, tenantHref, prefetchData],
+    );
     // Controls PR-1 — expandable rows: a control with tasks shows a chevron;
     // expanding renders its tasks inline (lazy-fetched). Stable refs so a
     // selection/expand re-render doesn't rebuild the table model.
@@ -965,6 +972,14 @@ function ControlsPageInner({
             },
         },
     ]), [appPermissions, tenantHref, taskStats, openControlQuickView, verdictMap]);
+
+    // `orderColumns` spreads its input, so it returns a NEW array every
+    // call — calling it inline in the `table` object would undo the memo
+    // above and rebuild the table model on every render.
+    const orderedControlColumns = useMemo(
+        () => orderColumns(controlColumns),
+        [orderColumns, controlColumns],
+    );
 
     // The bulk-action UI lives in the DataTable's header-row selection
     // toolbar via the canonical <BulkActionBar> (`selectionControls`) — the
@@ -1421,7 +1436,7 @@ function ControlsPageInner({
                 // `onReachEnd` sentinel (below) appends the next batch on
                 // scroll — load-on-scroll, no "Load more" button.
                 data: visibleControls,
-                columns: orderColumns(controlColumns),
+                columns: orderedControlColumns,
                 loading,
                 getRowId: getControlRowId,
                 // PR-1 — sortable headers, matching the org-level
@@ -1448,7 +1463,7 @@ function ControlsPageInner({
                 // old "Load more controls" button.
                 onReachEnd: hasMoreControls ? loadMoreControls : undefined,
                 onRowClick: handleRowClick,
-                onRowPrefetch: (row) => { router.prefetch(tenantHref(`/controls/${row.original.id}`)); prefetchData(CACHE_KEYS.controls.pageData(row.original.id)); },
+                onRowPrefetch: handleRowPrefetch,
                 emptyState: hasActive ? (
                     <EmptyState
                         size="sm"

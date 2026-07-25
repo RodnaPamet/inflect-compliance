@@ -130,8 +130,14 @@ describe('Risks list — Epic 44.4 column + matrix wiring', () => {
     });
 
     it('preserves row navigation to the detail page', () => {
+        // Row navigation is a stable `useCallback` handler, not an inline
+        // arrow: a fresh `onRowClick` identity per render rebuilds the
+        // DataTable model between a row's two clicks and kills double-click
+        // navigation. Assert the behaviour (push to the tenant-scoped
+        // /risks/ detail route) against the named handler.
+        expect(clientSrc).toMatch(/onRowClick=\{handleRiskRowClick\}/);
         expect(clientSrc).toMatch(
-            /onRowClick=\{[\s\S]{0,200}router\.push\([\s\S]{0,200}\/risks\//,
+            /handleRiskRowClick\s*=\s*useCallback\([\s\S]{0,160}router\.push\(\s*tenantHref\(`\/risks\//,
         );
     });
 

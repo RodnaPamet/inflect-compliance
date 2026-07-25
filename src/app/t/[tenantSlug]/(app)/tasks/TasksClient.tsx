@@ -42,7 +42,7 @@ import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
-import { useCurrentUserId } from '@/lib/tenant-context-provider';
+import { useCurrentUserId, useTenantHref } from '@/lib/tenant-context-provider';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
@@ -164,7 +164,10 @@ function TasksPageInner({
     // TP-6 — the signed-in user, for the "Assigned to me" quick filter.
     const currentUserId = useCurrentUserId();
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
-    const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
+    // Stable across renders — it feeds `taskColumns`' dep array, so a bare
+    // arrow here would rebuild the table model mid-double-click and kill
+    // row navigation (the PoliciesClient regression, #1678).
+    const tenantHref = useTenantHref();
     const { mutate: swrMutate } = useSWRConfig();
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
@@ -738,6 +741,30 @@ function TasksPageInner({
 
     }, [appPermissions.tasks.edit, selected, tasks.length, tenantHref, t]);
 
+    // `orderColumns` returns a NEW array every call (it spreads `columns`),
+    // so calling it inline in JSX would hand DataTable a fresh `columns`
+    // identity every render even though `taskColumns` above memoises
+    // correctly. Memoise the ordered result too.
+    const orderedTaskColumns = useMemo(
+        () => orderColumns(taskColumns),
+        [orderColumns, taskColumns],
+    );
+
+    // Stable table-model identities — see the note on `tenantHref`.
+    const getTaskRowId = useCallback((task: TaskListItem) => task.id, []);
+    const handleTaskRowClick = useCallback(
+        (row: { original: TaskListItem }) =>
+            router.push(tenantHref(`/tasks/${row.original.id}`)),
+        [router, tenantHref],
+    );
+    const handleTaskRowPrefetch = useCallback(
+        (row: { original: TaskListItem }) => {
+            router.prefetch(tenantHref(`/tasks/${row.original.id}`));
+            prefetchData(`/tasks/${row.original.id}`);
+        },
+        [router, tenantHref, prefetchData],
+    );
+
     // Quick-view side panel. Keyed by task id so switching to another task
     // forces a fresh mount → openOnMount re-fires and TaskEditPanel re-seeds
     // from the newly-clicked row (it seeds form state on mount only). The
@@ -886,9 +913,9 @@ function TasksPageInner({
                     fillBody
                     onReachEnd={hasMoreTasks ? loadMoreTasks : undefined}
                     data={visibleTasks}
-                    columns={orderColumns(taskColumns)}
+                    columns={orderedTaskColumns}
                     loading={loading}
-                    getRowId={(t) => t.id}
+                    getRowId={getTaskRowId}
                     sortableColumns={sortableColumns}
                     sortBy={sortBy}
                     sortOrder={sortOrder}
@@ -914,8 +941,8 @@ function TasksPageInner({
                             entityLabel={t('list.entityLabel')}
                         />
                     )}
-                    onRowClick={(row) => router.push(tenantHref(`/tasks/${row.original.id}`))}
-                    onRowPrefetch={(row) => { router.prefetch(tenantHref(`/tasks/${row.original.id}`)); prefetchData(`/tasks/${row.original.id}`); }}
+                    onRowClick={handleTaskRowClick}
+                    onRowPrefetch={handleTaskRowPrefetch}
                     emptyState={
                         hasActive ? (
                             <EmptyState

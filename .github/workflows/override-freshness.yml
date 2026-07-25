@@ -1,0 +1,169 @@
+# ───────────────────────────────────────────────────────────────
+#  Override Freshness — keep `overrides` pointing at the CURRENT fix
+#
+#  `package.json`'s `overrides` block forces patched versions of
+#  transitive dependencies we don't control. It has a silent decay
+#  mode: the range keeps ADMITTING the patched release while the
+#  lockfile quietly sits on an older one that still satisfies it.
+#
+#  That is not hypothetical. `hono` was pinned `^4.12.23`; the range
+#  permitted the patched 4.12.31; the lockfile never moved and the tree
+#  sat on vulnerable 4.12.25 until the audit gate went red weeks later.
+#  Every offline signal read "remediated".
+#
+#  The offline guard (`tests/guards/overrides-effective.test.ts`) proves
+#  each override is registered, forces its recorded patched floor, and
+#  actually rewrites every resolved instance. It cannot know what exists
+#  upstream — that needs the registry. This job is that half.
+#
+#  Non-blocking BY DESIGN: it warns and writes a job summary, and never
+#  fails the build. `npm audit` is the gate that blocks merges, and it
+#  blocks on evidence of a real advisory rather than version arithmetic.
+#  Escalation is `--strict` on the script below.
+# ───────────────────────────────────────────────────────────────
+name: Override Freshness
+
+on:
+  schedule:
+    # 05:00 UTC Mondays — after Dependabot's 08:00 Europe/Sofia window
+    # would have opened its PRs, so a lag this job reports is one
+    # Dependabot did NOT handle. Dependabot does not touch `overrides`,
+    # which is precisely the gap being covered here.
+    - cron: '0 5 * * 1'
+  # Manual trigger for verifying a fix without waiting a week.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: override-freshness
+  cancel-in-progress: true
+
+jobs:
+  freshness:
+    name: "Override freshness (lockfile vs registry)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      # The comparators decide every finding, so a broken one reports a
+      # clean bill of health forever. Prove the tool works before
+      # believing what it says — this step is deliberately BLOCKING
+      # even though the report below is not.
+      - name: Self-test the comparators
+        run: node scripts/check-override-freshness.mjs --self-test
+
+      # No `npm ci` — the script reads package.json + package-lock.json
+      # directly and talks to the registry over fetch. Installing the
+      # tree would add minutes and change nothing it looks at.
+      - name: Check override freshness
+        id: check
+        env:
+          # The advisory API allows 60 requests/hour unauthenticated,
+          # which this run can exceed. Without the token the advisory
+          # checks degrade to `skip` findings — green for the wrong
+          # reason, the failure mode this whole job exists to prevent.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/check-override-freshness.mjs --json > findings.json
+          node scripts/check-override-freshness.mjs
+          echo "lagging=$(node -e "
+            const f=require('./findings.json');
+            console.log(f.filter(x=>x.level==='lagging').length);
+          ")" >> "$GITHUB_OUTPUT"
+          echo "wrong=$(node -e "
+            const f=require('./findings.json');
+            console.log(f.filter(x=>x.level==='advisory'||x.level==='floor').length);
+          ")" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the tracking issue
+        if: steps.check.outputs.lagging != '0' || steps.check.outputs.wrong != '0'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const all = require('./findings.json');
+            const findings = all.filter((f) => f.level === 'lagging');
+            const floors = all.filter((f) => f.level === 'floor');
+            const advisories = all.filter((f) => f.level === 'advisory');
+            const title = 'Dependency overrides are behind their own ranges';
+            const body = [
+              // Registry-correctness first: a floor that no longer
+              // excludes anything, or an entry citing an advisory that
+              // says something else, invalidates the offline guard's
+              // green tick — that outranks a lagging lockfile.
+              ...(floors.length ? [
+                '## Floors that no longer exclude anything',
+                '',
+                'The pinned floor is ITSELF a version the advisory still affects, so the override',
+                'protects nothing even while `npm audit` stays green on a luckier lockfile.',
+                '',
+                '| Package | Override | Advisory | Severity | Raise to |',
+                '|---|---|---|---|---|',
+                ...floors.map((f) => `| \`${f.name}\` | \`${f.spec}\` | ${f.advisory} (${f.vulnerableRange}) | ${f.severity} | \`^${f.fixedIn}\` |`),
+                '',
+              ] : []),
+              ...(advisories.length ? [
+                '## Registry entries that misstate their advisory',
+                '',
+                'The offline guard can only check that an advisory id is SHAPED like one. These',
+                'resolved against the GitHub Advisory Database and disagreed with what is recorded.',
+                '',
+                '| Package | Recorded | Problem |',
+                '|---|---|---|',
+                ...advisories.map((f) => `| \`${f.name}\` | ${f.advisory} | ${f.note} |`),
+                '',
+              ] : []),
+              ...(findings.length ? [
+                '## Lockfile behind its own override range',
+                '',
+                'One or more `overrides` entries permit a newer version than the lockfile carries.',
+                '',
+                'This is the shape that let `hono` sit on a vulnerable 4.12.25 while pinned `^4.12.23`:',
+                'the range admitted the fix, but nothing pulled it in.',
+                '',
+                '| Package | Override | Locked | Available in range |',
+                '|---|---|---|---|',
+                ...findings.map((f) => `| \`${f.name}\` | \`${f.spec}\` | ${f.locked} | ${f.newestInRange} |`),
+                '',
+                '**Fix:** `npm update ' + findings.map((f) => f.name).join(' ') + '` and commit the lockfile.',
+                '',
+                'Raising the floor in `package.json` alone does NOT move the lockfile.',
+                '',
+              ] : []),
+              `_Generated by [Override Freshness](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})._`,
+            ].join('\n');
+
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'dependencies',
+            });
+            const existing = open.find((i) => i.title === title);
+
+            if (existing) {
+              // Update in place rather than stacking a new issue every
+              // week — a weekly cron that opens duplicates trains people
+              // to ignore it.
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['dependencies', 'automated'],
+              });
+            }

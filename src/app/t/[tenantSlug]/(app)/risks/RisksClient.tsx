@@ -6,6 +6,7 @@
 
 /* eslint-disable react-hooks/exhaustive-deps -- Various useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers/derived arrays recreated each render). The proper structural fix is wrapping parent-level callbacks in useCallback. Tracked as follow-up; existing per-line eslint-disable-next-line markers preserved. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { mutate as globalMutate } from 'swr';
@@ -242,7 +243,9 @@ function RisksPageInner({
     // They now live behind a labeled "Views ▾" menu.
     const [viewsOpen, setViewsOpen] = useState(false);
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
-    const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
+    // Stable across renders — a bare arrow here rebuilds the table model
+    // mid-double-click and kills row navigation (#1678).
+    const tenantHref = useTenantHref();
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
     // RQ3-4 — per-risk tail percentiles (RQ3-1 cache); failure-soft:
@@ -1035,6 +1038,29 @@ function RisksPageInner({
         },
     ]), [t, tx, getRiskBand, matrixConfig, tailByRisk, sortAccessors, staleById]);
 
+    // `orderColumns` spreads its input, so it returns a NEW array every
+    // call. Calling it inline in JSX would hand DataTable a fresh
+    // `columns` identity every render despite the memo above.
+    const orderedRiskColumns = useMemo(
+        () => orderColumns(riskTableColumns),
+        [orderColumns, riskTableColumns],
+    );
+
+    // Stable table-model identities — see the note on `tenantHref`.
+    const getRiskRowId = useCallback((r: RiskListItem) => r.id, []);
+    const handleRiskRowClick = useCallback(
+        (row: { original: RiskListItem }) =>
+            router.push(tenantHref(`/risks/${row.original.id}`)),
+        [router, tenantHref],
+    );
+    const handleRiskRowPrefetch = useCallback(
+        (row: { original: RiskListItem }) => {
+            router.prefetch(tenantHref(`/risks/${row.original.id}`));
+            prefetchData(`/risks/${row.original.id}`);
+        },
+        [router, tenantHref, prefetchData],
+    );
+
     // Right-rail Phase 3 — the AI assist co-pilot rail. A persistent,
     // co-resident entry point to the AI risk-assessment flow that
     // follows the user across the register. Gated on write permission
@@ -1354,9 +1380,9 @@ function RisksPageInner({
                         fillBody
                         onReachEnd={hasMoreRisks ? loadMoreRisks : undefined}
                         data={visibleRisks}
-                        columns={orderColumns(riskTableColumns)}
+                        columns={orderedRiskColumns}
                         loading={loading}
-                        getRowId={(r) => r.id}
+                        getRowId={getRiskRowId}
                         sortableColumns={sortableRiskColumns}
                         sortBy={sortBy}
                         sortOrder={sortOrder}
@@ -1367,8 +1393,8 @@ function RisksPageInner({
                             setSortBy(nextBy);
                             setSortOrder(nextOrder);
                         }}
-                        onRowClick={(row) => router.push(tenantHref(`/risks/${row.original.id}`))}
-                        onRowPrefetch={(row) => { router.prefetch(tenantHref(`/risks/${row.original.id}`)); prefetchData(`/risks/${row.original.id}`); }}
+                        onRowClick={handleRiskRowClick}
+                        onRowPrefetch={handleRiskRowPrefetch}
                         selectionEnabled
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),

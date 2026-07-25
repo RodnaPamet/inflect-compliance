@@ -6,7 +6,8 @@
  * Internal Audit area (reached via the "Business Continuity" pill beside
  * Incidents). Built on EntityListPage + FilterToolbar + DataTable.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus } from '@/components/ui/icons/nucleo/plus';
@@ -87,6 +88,7 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
         [tx, tGroup],
     );
     const router = useRouter();
+    const tenantHref = useTenantHref();
     const searchParams = useSearchParams();
     const { state, hasActive } = useFilters();
     const [showNew, setShowNew] = useState(false);
@@ -183,6 +185,15 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
         [tx],
     );
 
+    // Stable table-model identities — a fresh identity here rebuilds
+    // the table model mid-double-click and kills row navigation (#1678).
+    const getBiaRowId = useCallback((r: BiaRow) => r.id, []);
+    const handleBiaRowClick = useCallback(
+        (row: { original: BiaRow }) =>
+            router.push(tenantHref(`/audits/business-continuity/${row.original.id}`)),
+        [router, tenantHref],
+    );
+
     return (
         <>
             <EntityListPage<BiaRow>
@@ -210,8 +221,8 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
                 table={{
                     data: rows,
                     columns,
-                    getRowId: (r) => r.id,
-                    onRowClick: (row) => router.push(`/t/${tenantSlug}/audits/business-continuity/${row.original.id}`),
+                    getRowId: getBiaRowId,
+                    onRowClick: handleBiaRowClick,
                     resourceName: (plural) => (plural ? tx('bia.resourceAnalyses') : tx('bia.resourceAnalysis')),
                     emptyState: (
                         <EmptyState

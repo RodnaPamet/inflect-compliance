@@ -1261,6 +1261,27 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         ];
     }, [orderColumns, evidenceColumns, tx]);
 
+    // Stable table-model identities — a fresh identity here rebuilds the
+    // table model mid-double-click and kills row navigation (#1678).
+    const getEvidenceRowId = useCallback((ev: EvidenceRow) => ev.id, []);
+    const openEvidenceDetail = useCallback((id: string) => {
+        setDetailEvidenceId(id);
+        setDetailSheetOpen(true);
+    }, []);
+    const handleEvidenceRowClick = useCallback(
+        (row: { original: EvidenceRow }) => openEvidenceDetail(row.original.id),
+        [openEvidenceDetail],
+    );
+    const handleEvidenceCardClick = useCallback(
+        (ev: EvidenceRow) => openEvidenceDetail(ev.id),
+        [openEvidenceDetail],
+    );
+    const handleEvidenceRowPrefetch = useCallback(
+        (row: { original: EvidenceRow }) =>
+            prefetchData(CACHE_KEYS.evidence.detail(row.original.id)),
+        [prefetchData],
+    );
+
     return (
         <ListPageShell className="animate-fadeIn gap-section">
             <ListPageShell.Header>
@@ -1665,10 +1686,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         // EP-2 Part 2 — click-to-open (same handler the
                         // table row uses) + bulk-selection parity + a
                         // localized download label on every card.
-                        onRowClick={(ev) => {
-                            setDetailEvidenceId(ev.id);
-                            setDetailSheetOpen(true);
-                        }}
+                        onRowClick={handleEvidenceCardClick}
                         selectedIds={selected}
                         onToggleSelect={(id, next) =>
                             setSelected((prev) => {
@@ -1692,7 +1710,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         // Evidence is bounded, mirroring the Controls page.
                         virtualize={false}
                         onReachEnd={hasMoreEvidence ? loadMoreEvidence : undefined}
-                        getRowId={(ev) => ev.id}
+                        getRowId={getEvidenceRowId}
                         // Column resizing is opt-in per table (disabled
                         // by default since #823). Re-enabled here only —
                         // the Evidence Library's wide title/folder/owner
@@ -1715,13 +1733,8 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         // record. Pre-B5 the table was read-only
                         // until you clicked a specific cell-level
                         // action button.
-                        onRowClick={(row) => {
-                            setDetailEvidenceId(row.original.id);
-                            setDetailSheetOpen(true);
-                        }}
-                        onRowPrefetch={(row) =>
-                            prefetchData(CACHE_KEYS.evidence.detail(row.original.id))
-                        }
+                        onRowClick={handleEvidenceRowClick}
+                        onRowPrefetch={handleEvidenceRowPrefetch}
                         selectionEnabled
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),

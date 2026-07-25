@@ -34,7 +34,10 @@ describe('B5 — Evidence workflow completion', () => {
         it('EvidenceClient mounts the sheet + wires row-click', () => {
             expect(client).toMatch(/import \{ EvidenceDetailSheet \}/);
             expect(client).toMatch(/<EvidenceDetailSheet\b/);
-            expect(client).toMatch(/onRowClick=\{\(row\) => \{/);
+            // Row-click is a stable `useCallback` handler (not an inline
+            // arrow) so the DataTable model keeps a constant identity across
+            // a row's two clicks — otherwise double-click navigation dies.
+            expect(client).toMatch(/onRowClick=\{handleEvidenceRowClick\}/);
             expect(client).toMatch(/setDetailSheetOpen\(true\)/);
         });
     });
