@@ -193,6 +193,8 @@ export const CACHE_KEYS = {
         // to the dashboard's fixed 30-day window.
         trends: (days = 30) => `/dashboard/trends?days=${days}` as const,
         postureSummary: () => '/dashboard/posture-summary' as const,
+        /** On-demand data for a swappable custom-KPI card (assets/audits/tests). */
+        kpi: (key: string) => `/dashboard/kpi/${key}` as const,
     },
     coverage: {
         home: () => '/coverage' as const,

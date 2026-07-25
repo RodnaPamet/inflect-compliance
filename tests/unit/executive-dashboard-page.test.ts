@@ -121,10 +121,18 @@ describe('Dashboard Widget Composition', () => {
         expect(content).toContain('<StatusBreakdown');
     });
 
-    test('has exactly 6 KPI cards for executive grid', () => {
+    test('has the 6 fixed KPI cards plus the swappable custom-KPI tile', () => {
         const content = readAll();
         const kpiCount = (content.match(/<KpiCard/g) || []).length;
-        expect(kpiCount).toBe(6);
+        // 6 fixed executive-grid tiles (coverage/risks/evidence/tasks/
+        // policies/findings) + 1 swappable "custom KPI" tile rendered by
+        // <CustomKpiPanel> (assets/audits/tests, chosen via a picker).
+        expect(kpiCount).toBe(7);
+        // The fixed grid itself still declares exactly six tiles.
+        expect((content.match(/id="kpi-(coverage|risks|evidence|tasks|policies|findings)"/g) || []).length).toBe(6);
+        // The custom tile is present and distinct.
+        expect(content).toContain('id="custom-kpi-tile"');
+        expect(content).toContain('<CustomKpiPanel');
     });
 });
 

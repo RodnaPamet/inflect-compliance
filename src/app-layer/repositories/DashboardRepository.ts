@@ -151,6 +151,31 @@ export interface AssetSummary {
 }
 
 /**
+ * Audit-cycle summary — the counts that back the swappable "Audits"
+ * KPI card + its status pie. Excludes soft-deleted cycles.
+ */
+export interface AuditSummary {
+    total: number;
+    planning: number;
+    inProgress: number;
+    ready: number;
+    complete: number;
+}
+
+/**
+ * Control-test-run summary — backs the swappable "Tests" KPI card +
+ * its pass/fail pie. `pending` counts runs with no recorded result yet
+ * (status PLANNED/RUNNING); `total` is every run.
+ */
+export interface TestSummary {
+    total: number;
+    pass: number;
+    fail: number;
+    inconclusive: number;
+    pending: number;
+}
+
+/**
  * Risk heatmap cell — one cell in the likelihood × impact matrix.
  */
 export interface RiskHeatmapCell {
@@ -641,6 +666,58 @@ export class DashboardRepository {
         ]);
 
         return { total, active, highCriticality, retired };
+    }
+
+    /**
+     * Audit-cycle status counts for the swappable "Audits" KPI card.
+     * One `groupBy` over the `(tenantId, deletedAt)` index; excludes
+     * soft-deleted cycles so the pie mirrors the live Audits view.
+     */
+    static async getAuditSummary(db: PrismaTx, ctx: RequestContext): Promise<AuditSummary> {
+        const grouped = await db.auditCycle.groupBy({
+            by: ['status'],
+            where: { tenantId: ctx.tenantId, deletedAt: null },
+            _count: { _all: true },
+        });
+        const by = (s: string) =>
+            grouped.find((g) => g.status === s)?._count._all ?? 0;
+        const planning = by('PLANNING');
+        const inProgress = by('IN_PROGRESS');
+        const ready = by('READY');
+        const complete = by('COMPLETE');
+        return {
+            total: planning + inProgress + ready + complete,
+            planning,
+            inProgress,
+            ready,
+            complete,
+        };
+    }
+
+    /**
+     * Control-test-run result counts for the swappable "Tests" KPI
+     * card. One `groupBy` over the `(tenantId, result)` index; a null
+     * result (run not yet resolved) is folded into `pending`.
+     */
+    static async getTestSummary(db: PrismaTx, ctx: RequestContext): Promise<TestSummary> {
+        const grouped = await db.controlTestRun.groupBy({
+            by: ['result'],
+            where: { tenantId: ctx.tenantId },
+            _count: { _all: true },
+        });
+        const by = (r: string | null) =>
+            grouped.find((g) => g.result === r)?._count._all ?? 0;
+        const pass = by('PASS');
+        const fail = by('FAIL');
+        const inconclusive = by('INCONCLUSIVE');
+        const pending = by(null);
+        return {
+            total: pass + fail + inconclusive + pending,
+            pass,
+            fail,
+            inconclusive,
+            pending,
+        };
     }
 
     /**

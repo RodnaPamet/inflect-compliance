@@ -67,12 +67,22 @@ import {
     FileText,
     TrendingUp,
     ArrowUpRight,
+    Boxes,
+    ClipboardCheck,
+    FlaskConical,
+    type LucideIcon,
 } from 'lucide-react';
 
 import OnboardingBanner from '@/components/onboarding/OnboardingBanner';
 import { Skeleton } from '@/components/ui/skeleton';
 import KpiCard from '@/components/ui/KpiCard';
 import ProgressCard from '@/components/ui/ProgressCard';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { useLocalStorage } from '@/components/ui/hooks';
+import type {
+    DashboardKpiCardDto,
+    SwappableKpiKey,
+} from '@/app-layer/usecases/dashboard';
 // PR3 perf: lazy-load the heavy viz components (visx + motion) so their code
 // splits into separate chunks loaded after the KPI/hero shell. `ssr: false`
 // keeps the heavy chart JS off the server-render + initial critical path; a
@@ -322,6 +332,15 @@ export default function DashboardClient({
                  charts to that focus and re-render their data. ─── */}
             <InteractiveKpiGrid exec={exec} trendBundle={trendBundle} t={t} />
 
+            {/* ─── Swappable custom-KPI card ───
+                 A picker chooses a KPI from a catalog that isn't part of
+                 the fixed executive payload (assets / audits / control
+                 tests); the chosen KPI swaps BOTH its tile and the pie it
+                 renders. Loaded on demand. "Pie now, trends later" — the
+                 trend slot shows a collecting-data notice until snapshot
+                 history exists. */}
+            <CustomKpiPanel />
+
             {/* ─── Control Coverage + Risk Distribution ─── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-default">
                 <ChartFocusWrapper kpiKey="coverage">
@@ -440,10 +459,11 @@ export default function DashboardClient({
                         showSwapToggle={false}
                     />
                 </ChartFocusWrapper>
-                <ChartFocusWrapper kpiKey="evidence">
+                <ChartFocusWrapper kpiKey="evidence" className="h-full">
                     <ExpiryCalendar
                         id="expiry-calendar"
                         items={exec.upcomingExpirations}
+                        fill
                     />
                 </ChartFocusWrapper>
             </div>
@@ -519,12 +539,18 @@ function ChartFocusWrapper({
     kpiKey,
     children,
     id,
+    className,
 }: {
     kpiKey: DashboardKpiKey;
     children: React.ReactNode;
     /** Optional anchor id so the KPI click-to-scroll can target a
         chart that has no inner id of its own (e.g. the trend cards). */
     id?: string;
+    /** Extra classes on the wrapper. Used to (a) stretch a wrapper to
+        its grid cell (`h-full`, so a short child fills the row height)
+        and (b) give the borderless trend tiles a segregating surface
+        (`border …`). */
+    className?: string;
 }) {
     const { selectedKpi } = useDashboardChartFocus();
     const isFocused = selectedKpi === kpiKey;
@@ -540,6 +566,7 @@ function ChartFocusWrapper({
                 isFocused &&
                     "ring-2 ring-brand-default ring-offset-2 ring-offset-bg-page",
                 isDimmed && "opacity-60",
+                className,
             )}
         >
             {children}
@@ -566,7 +593,12 @@ function KpiTile({
     children: React.ReactNode;
 }) {
     return (
-        <div className="relative">
+        // `h-full` so the tile fills its (grid-stretched) cell; combined
+        // with `h-full` on the inner KpiCard this equalises every tile's
+        // height regardless of whether it carries a sparkline. Without it
+        // the trend-less Open-tasks / Policies tiles rendered shorter than
+        // their sparkline-bearing siblings.
+        <div className="relative h-full">
             {children}
             <Link
                 href={drillHref}
@@ -653,6 +685,7 @@ function InteractiveKpiGrid({
             <KpiTile drillHref={href('/controls')} drillLabel={t('openList', { label: t('controls') })}>
                 <KpiCard
                     id="kpi-coverage"
+                    className="h-full"
                     label={t('controls')}
                     value={exec.controlCoverage.coveragePercent}
                     format="percent"
@@ -668,6 +701,7 @@ function InteractiveKpiGrid({
             <KpiTile drillHref={href('/risks')} drillLabel={t('openList', { label: t('risks') })}>
                 <KpiCard
                     id="kpi-risks"
+                    className="h-full"
                     label={t('risks')}
                     value={exec.stats.risks}
                     icon={AlertTriangle}
@@ -682,6 +716,7 @@ function InteractiveKpiGrid({
             <KpiTile drillHref={href('/evidence')} drillLabel={t('openList', { label: t('evidence') })}>
                 <KpiCard
                     id="kpi-evidence"
+                    className="h-full"
                     label={t('evidence')}
                     value={exec.stats.evidence}
                     icon={Paperclip}
@@ -696,6 +731,7 @@ function InteractiveKpiGrid({
             <KpiTile drillHref={href('/tasks?status=OPEN,TRIAGED,IN_PROGRESS,IN_REVIEW,BLOCKED')} drillLabel={t('openList', { label: t('openTasks') })}>
                 <KpiCard
                     id="kpi-tasks"
+                    className="h-full"
                     label={t('openTasks')}
                     value={exec.stats.openTasks}
                     icon={CheckCircle2}
@@ -708,6 +744,7 @@ function InteractiveKpiGrid({
             <KpiTile drillHref={href('/policies')} drillLabel={t('openList', { label: t('policies') })}>
                 <KpiCard
                     id="kpi-policies"
+                    className="h-full"
                     label={t("policies")}
                     value={exec.policySummary.total}
                     icon={FileText}
@@ -720,6 +757,7 @@ function InteractiveKpiGrid({
             <KpiTile drillHref={href('/findings')} drillLabel={t('openList', { label: t('openFindings') })}>
                 <KpiCard
                     id="kpi-findings"
+                    className="h-full"
                     label={t('openFindings')}
                     value={exec.stats.openFindings}
                     icon={Bug}
@@ -731,6 +769,152 @@ function InteractiveKpiGrid({
                 />
             </KpiTile>
         </div>
+    );
+}
+
+// ─── Swappable custom-KPI panel ──────────────────────────────────────
+//
+// A self-contained "pick a KPI" card. The picker chooses from a catalog
+// (assets / audits / control tests) that lives OUTSIDE the fixed
+// executive payload; selecting one swaps both the tile and the pie it
+// renders, fetched on demand from `/dashboard/kpi/{key}`. The selection
+// persists in localStorage. Trends are deferred ("pie now, trends
+// later") — the third cell shows a collecting-data notice until the
+// daily snapshot series carries these entities.
+
+const SWAPPABLE_KPI_META: Record<
+    SwappableKpiKey,
+    { icon: LucideIcon; gradient: string; drill: string }
+> = {
+    assets: { icon: Boxes, gradient: 'from-cyan-500 to-blue-500', drill: '/assets' },
+    audits: { icon: ClipboardCheck, gradient: 'from-violet-500 to-purple-500', drill: '/audits' },
+    tests: { icon: FlaskConical, gradient: 'from-teal-500 to-emerald-500', drill: '/tests' },
+};
+
+function CustomKpiPanel() {
+    const t = useTranslations('dashboard');
+    const href = useTenantHref();
+    const router = useRouter();
+    const [selected, setSelected] = useLocalStorage<SwappableKpiKey>(
+        'dashboard.customKpi',
+        'assets',
+    );
+    const { data, isLoading } = useTenantSWR<DashboardKpiCardDto>(
+        CACHE_KEYS.dashboard.kpi(selected),
+    );
+
+    // `t()` returns a string; deriving the label directly (rather than
+    // reading it back off ComboboxOption.label, which is typed ReactNode)
+    // keeps `selectedLabel` a string for the KpiCard label + openList arg.
+    const labelFor = (k: SwappableKpiKey): string => t(`customKpi.${k}`);
+    const options: ComboboxOption[] = [
+        { value: 'assets', label: labelFor('assets') },
+        { value: 'audits', label: labelFor('audits') },
+        { value: 'tests', label: labelFor('tests') },
+    ];
+    const selectedLabel = labelFor(selected);
+    const meta = SWAPPABLE_KPI_META[selected];
+    // Enrich each API segment with the drill-through href so the donut
+    // arc + legend row are clickable (DonutChart only wires the click
+    // when a segment carries an href). Every slice of one KPI opens that
+    // KPI's entity list.
+    const segments = (data?.segments ?? []).map((seg) => ({
+        ...seg,
+        href: href(meta.drill),
+    }));
+    const total = segments.reduce((sum, seg) => sum + seg.value, 0);
+
+    return (
+        <Card id="custom-kpi-panel" className="space-y-default">
+            <div className="flex flex-col gap-tight sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <Heading level={3}>{t('customKpi.title')}</Heading>
+                    <p className="text-xs text-content-muted mt-0.5">
+                        {t('customKpi.subtitle')}
+                    </p>
+                </div>
+                <div className="w-full sm:w-56" id="custom-kpi-picker">
+                    <Combobox
+                        options={options}
+                        selected={options.find((o) => o.value === selected) ?? null}
+                        setSelected={(o) => o && setSelected(o.value as SwappableKpiKey)}
+                        aria-label={t('customKpi.pick')}
+                        forceDropdown
+                        matchTriggerWidth
+                    />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 items-stretch gap-default md:grid-cols-3">
+                {/* Tile — swaps with the selection. */}
+                <KpiTile
+                    drillHref={href(meta.drill)}
+                    drillLabel={t('openList', { label: selectedLabel })}
+                >
+                    <KpiCard
+                        id="custom-kpi-tile"
+                        className="h-full"
+                        label={selectedLabel}
+                        value={isLoading ? null : data?.headline ?? null}
+                        loading={isLoading}
+                        icon={meta.icon}
+                        gradient={meta.gradient}
+                        subtitle={data?.subtitle}
+                    />
+                </KpiTile>
+
+                {/* Pie — the "different pie chart" this KPI renders. */}
+                <div
+                    className={cn(cardVariants({ density: 'none' }), 'flex items-center')}
+                    data-testid="custom-kpi-pie"
+                >
+                    {isLoading ? (
+                        <Skeleton className="mx-auto h-[130px] w-[130px] rounded-full" />
+                    ) : total > 0 ? (
+                        <div className="grid w-full grid-cols-2 items-center gap-default">
+                            <DonutChart
+                                id="custom-kpi-donut"
+                                segments={segments}
+                                size={130}
+                                centerLabel={String(total)}
+                                centerSub={t('customKpi.total')}
+                                showLegend={false}
+                                onSegmentClick={(s) => s.href && router.push(s.href)}
+                            />
+                            <div className="space-y-tight">
+                                {segments.map((seg) => (
+                                    <DonutLegendRow
+                                        key={seg.label}
+                                        label={seg.label}
+                                        value={seg.value}
+                                        dotColor={seg.color}
+                                        href={seg.href}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="mx-auto text-sm text-content-muted">
+                            {t('customKpi.noData')}
+                        </p>
+                    )}
+                </div>
+
+                {/* Trend — deferred. Pie now, trends later. */}
+                <div
+                    className={cn(
+                        cardVariants({ density: 'none' }),
+                        'flex flex-col items-center justify-center gap-tight text-center',
+                    )}
+                    data-testid="custom-kpi-trend"
+                >
+                    <TrendingUp className="size-5 text-content-subtle" aria-hidden="true" />
+                    <p className="max-w-[24ch] text-xs text-content-muted">
+                        {t('customKpi.trendComing')}
+                    </p>
+                </div>
+            </div>
+        </Card>
     );
 }
 
@@ -1038,11 +1222,11 @@ function ComplianceAlerts({ exec, t }: { exec: ExecutiveDashboardPayload; t: (ke
     if (stats.highRisks > 0)
         alerts.push({ color: 'bg-orange-500', text: t('highCriticalRisks', { count: stats.highRisks }) });
     if (taskSummary.overdue > 0)
-        alerts.push({ color: 'bg-bg-error-emphasis', text: `${taskSummary.overdue} overdue tasks` });
+        alerts.push({ color: 'bg-bg-error-emphasis', text: t('overdueTasksAlert', { count: taskSummary.overdue }) });
     if (policySummary.overdueReview > 0)
-        alerts.push({ color: 'bg-bg-warning-emphasis', text: `${policySummary.overdueReview} policies need review` });
+        alerts.push({ color: 'bg-bg-warning-emphasis', text: t('policiesNeedReview', { count: policySummary.overdueReview }) });
     if (vendorSummary.overdueReview > 0)
-        alerts.push({ color: 'bg-purple-500', text: `${vendorSummary.overdueReview} vendors need review` });
+        alerts.push({ color: 'bg-purple-500', text: t('vendorsNeedReview', { count: vendorSummary.overdueReview }) });
     if (stats.openFindings > 0)
         alerts.push({ color: 'bg-purple-500', text: t('openAuditFindings', { count: stats.openFindings }) });
 
@@ -1190,6 +1374,10 @@ function TreatmentPlanCard({
 
 // ─── Trend Section ─────────────────────────────────────────────────
 
+// Shared classes for the four Compliance-trend tiles: a subtle card
+// border + inset padding so each sparkline is visually segregated.
+const trendTileClass = 'border border-border-subtle bg-bg-subtle/20 p-3';
+
 function TrendSection({ trends }: { trends: TrendPayload }) {
     const t = useTranslations('dashboard');
     const coveragePoints = trends.dataPoints.map((d) => ({
@@ -1223,8 +1411,12 @@ function TrendSection({ trends }: { trends: TrendPayload }) {
                 evidence cards above the trend section had this binding;
                 clicking the findings or risks KPI cards only dimmed
                 things without lighting any chart up. */}
+            {/* Each tile carries a subtle border + inset so the four
+                sparklines read as discrete cells rather than blending
+                into one continuous strip. `trendTileClass` keeps the
+                four wrappers identical. */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-default">
-                <ChartFocusWrapper kpiKey="coverage">
+                <ChartFocusWrapper kpiKey="coverage" className={trendTileClass}>
                     <TrendCard
                         label={t("coverage")}
                         value={coveragePoints[coveragePoints.length - 1].value}
@@ -1233,7 +1425,7 @@ function TrendSection({ trends }: { trends: TrendPayload }) {
                         colorClassName="text-content-success"
                     />
                 </ChartFocusWrapper>
-                <ChartFocusWrapper kpiKey="risks">
+                <ChartFocusWrapper kpiKey="risks" className={trendTileClass}>
                     <TrendCard
                         label={t("openRisks")}
                         value={risksOpenPoints[risksOpenPoints.length - 1].value}
@@ -1241,7 +1433,7 @@ function TrendSection({ trends }: { trends: TrendPayload }) {
                         colorClassName="text-content-warning"
                     />
                 </ChartFocusWrapper>
-                <ChartFocusWrapper kpiKey="evidence">
+                <ChartFocusWrapper kpiKey="evidence" className={trendTileClass}>
                     <TrendCard
                         label={t("overdueEvidenceLabel")}
                         value={evidenceOverduePoints[evidenceOverduePoints.length - 1].value}
@@ -1249,7 +1441,7 @@ function TrendSection({ trends }: { trends: TrendPayload }) {
                         colorClassName="text-content-error"
                     />
                 </ChartFocusWrapper>
-                <ChartFocusWrapper kpiKey="findings" id="findings-trend">
+                <ChartFocusWrapper kpiKey="findings" id="findings-trend" className={trendTileClass}>
                     <TrendCard
                         label={t("openFindings")}
                         value={findingsPoints[findingsPoints.length - 1].value}
