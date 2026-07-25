@@ -50,8 +50,12 @@ const RISK_STATUS_VALUES = ['OPEN', 'MITIGATING', 'MITIGATED', 'ACCEPTED', 'CLOS
 describe('Risks filter config', () => {
     it('manages the documented key set', () => {
         // PR-K added residual score, treatment, quantified, and stale.
+        // `cell` is the exact (likelihood, impact) matrix-cell filter the
+        // heatmap drill-down sets — `score` (the PRODUCT) cannot express a
+        // single cell, so a cell click used to over-select every cell
+        // sharing the product.
         expect([...RISK_FILTER_KEYS].sort()).toEqual(
-            ['category', 'ownerUserId', 'quantified', 'residualScore', 'score', 'stale', 'status', 'treatment'].sort(),
+            ['category', 'cell', 'ownerUserId', 'quantified', 'residualScore', 'score', 'stale', 'status', 'treatment'].sort(),
         );
     });
 

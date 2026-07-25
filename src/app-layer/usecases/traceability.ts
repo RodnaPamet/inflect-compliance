@@ -5,10 +5,11 @@ import { logEvent } from '../events/audit';
 import { forbidden, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { policyCountsWhere } from '@/lib/policy/coverage-predicate';
-
-function assertCanRead(ctx: RequestContext) {
-    // All roles can read traceability
-}
+// The real read gate. A file-local `assertCanRead(ctx) {}` no-op used to
+// shadow this import, silently un-gating every list*/get*Traceability read —
+// the traceability graph exposes control/risk/asset titles, so it must sit
+// behind the same canRead check as every other read surface.
+import { assertCanRead } from '../policies/common';
 
 function assertCanManage(ctx: RequestContext) {
     // Epic 1 — OWNER is a superset of ADMIN per CLAUDE.md RBAC.
@@ -32,6 +33,16 @@ export async function listRiskControls(ctx: RequestContext, riskId: string) {
 export async function mapControlToRisk(ctx: RequestContext, controlId: string, riskId: string, rationale?: string) {
     assertCanManage(ctx);
     return runInTenantContext(ctx, async (db) => {
+        // Both endpoints must live in the caller's tenant — the join row is
+        // stamped with ctx.tenantId regardless, so an unverified id would
+        // forge a cross-tenant link. 404 keeps the id namespace opaque.
+        // (Same shape as mapAssetToControl / mapAssetToRisk below.)
+        const [control, risk] = await Promise.all([
+            db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId }, select: { id: true } }),
+            db.risk.findFirst({ where: { id: riskId, tenantId: ctx.tenantId }, select: { id: true } }),
+        ]);
+        if (!control) throw notFound('Control not found');
+        if (!risk) throw notFound('Risk not found');
         const link = await ControlRiskRepository.link(db, ctx.tenantId, controlId, riskId, rationale || null, ctx.userId);
         await logEvent(db, ctx, { action: 'CONTROL_RISK_LINKED', entityType: 'Control', entityId: controlId, details: `Linked to risk ${riskId}`, detailsJson: { category: 'relationship', operation: 'linked', sourceEntity: 'Control', sourceId: controlId, targetEntity: 'Risk', targetId: riskId, relation: 'mitigates' }, metadata: { riskId, rationale } });
         return link;

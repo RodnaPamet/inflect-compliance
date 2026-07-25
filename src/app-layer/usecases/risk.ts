@@ -155,6 +155,25 @@ export async function getRisk(ctx: RequestContext, id: string) {
     });
 }
 
+/**
+ * Reject an `ownerUserId` that is not an ACTIVE member of the caller's tenant.
+ *
+ * `Risk.ownerUserId` is an FK to the GLOBAL `User` table, so the database
+ * accepts any existing user id — including one from another tenant. Every
+ * write path that takes an owner straight from the request body therefore has
+ * to check membership itself; `bulkImportRisks` already resolves owners
+ * against the ACTIVE-member roster, and this is the same rule for the
+ * single-write + bulk-assign paths. `null`/'' (clear the owner) is always
+ * allowed; only a non-empty id is verified.
+ */
+async function assertActiveOwner(db: PrismaTx, tenantId: string, ownerUserId: string) {
+    const member = await db.tenantMembership.findFirst({
+        where: { tenantId, userId: ownerUserId, status: 'ACTIVE' },
+        select: { userId: true },
+    });
+    if (!member) throw badRequest('Owner must be an active member of this tenant');
+}
+
 export async function createRisk(ctx: RequestContext, data: {
     title: string;
     description?: string | null;
@@ -173,6 +192,7 @@ export async function createRisk(ctx: RequestContext, data: {
     assertCanWrite(ctx);
 
     const created = await runInTenantContext(ctx, async (db) => {
+        if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
         // Tenant lookup is global (Tenant table has no RLS)
         const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
         const maxScale = tenant?.maxRiskScale || 5;
@@ -393,6 +413,10 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
             data.residualLikelihood !== undefined && data.residualImpact !== undefined
                 ? calculateRiskScore(data.residualLikelihood, data.residualImpact, maxScale)
                 : undefined;
+
+        // A newly-supplied owner must be an active member; `undefined` leaves
+        // it untouched and ''/null clears it — neither needs the check.
+        if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
 
         // Capture the prior owner so the assignment notification only
         // fires on an actual change (not on every unrelated risk edit).
@@ -1058,6 +1082,9 @@ export async function bulkAssignRisk(
 ) {
     assertCanWrite(ctx);
     const updated = await runInTenantContext(ctx, async (db) => {
+        // Same membership rule as the single-write paths — a bulk assign
+        // must not be a back door to stamping a foreign user id on N risks.
+        if (ownerUserId) await assertActiveOwner(db, ctx.tenantId, ownerUserId);
         const rows = await RiskRepository.listByIds(db, ctx, riskIds);
         if (rows.length === 0) return 0;
         await RiskRepository.bulkUpdate(db, ctx, riskIds, {

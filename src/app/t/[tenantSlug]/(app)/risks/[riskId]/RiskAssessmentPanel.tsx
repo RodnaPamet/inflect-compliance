@@ -85,6 +85,51 @@ interface OwnerChoice {
     label: string;
 }
 
+/**
+ * The five independently-savable steps of the assessment panel. Save failures
+ * are keyed by step so one failing step never blanks the others.
+ */
+type AssessmentStep = 'inherent' | 'accept' | 'residual' | 'treatment' | 'review';
+
+/**
+ * Inline, dismissible error for a single step. Rendered next to the step's own
+ * action — the panel stays mounted, so the user keeps their place and their
+ * unsaved edits in the other steps.
+ */
+function StepError({
+    message,
+    onDismiss,
+    onRetry,
+    retryLabel,
+    dismissLabel,
+    testId,
+}: {
+    message: string;
+    onDismiss: () => void;
+    onRetry?: () => void;
+    retryLabel: string;
+    dismissLabel: string;
+    testId: string;
+}) {
+    return (
+        <div
+            role="alert"
+            data-testid={testId}
+            className="flex flex-wrap items-center gap-tight rounded-md border border-border-error bg-bg-error/10 px-default py-tight text-sm text-content-error"
+        >
+            <span className="min-w-0 flex-1 break-words">{message}</span>
+            {onRetry ? (
+                <Button size="xs" variant="secondary" onClick={onRetry}>
+                    {retryLabel}
+                </Button>
+            ) : null}
+            <Button size="xs" variant="ghost" onClick={onDismiss}>
+                {dismissLabel}
+            </Button>
+        </div>
+    );
+}
+
 function BandChip({ score, config }: { score: number; config: RiskMatrixConfigShape }) {
     const band = resolveBandForScore(score, config.bands);
     return (
@@ -148,7 +193,24 @@ export function RiskAssessmentPanel({
     // no independent re-fetch. Local alias keeps the existing call sites.
     const config = matrixConfig;
     const [suggestion, setSuggestion] = useState<ResidualSuggestionPayload | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    // The panel used to keep ONE `error` state shared by the initial load AND
+    // all five save handlers, and returned early on it — so a failed Save on
+    // Step 4 unmounted Steps 1–3 and the user lost their place. Load failures
+    // (nothing to render without the suggestion) still replace the panel; SAVE
+    // failures are scoped to the step that raised them and render inline.
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [stepErrors, setStepErrors] = useState<Partial<Record<AssessmentStep, string>>>({});
+    const setStepError = useCallback((step: AssessmentStep, message: string) => {
+        setStepErrors((prev) => ({ ...prev, [step]: message }));
+    }, []);
+    const clearStepError = useCallback((step: AssessmentStep) => {
+        setStepErrors((prev) => {
+            if (!(step in prev)) return prev;
+            const next = { ...prev };
+            delete next[step];
+            return next;
+        });
+    }, []);
     // RQ3-7 — currently-breached KRIs for this risk. Drives the
     // re-assess nudge: a sensor fired, the conclusion should catch
     // up. Failure-soft — a failed load just hides the nudge.
@@ -187,9 +249,9 @@ export function RiskAssessmentPanel({
 
     const loadSuggestion = useCallback(async () => {
         const res = await fetch(apiUrl(`/risks/${riskId}/residual-suggestion`));
-        if (!res.ok) throw new Error(`Failed to load control derivation (${res.status})`);
+        if (!res.ok) throw new Error(t('assessment.failedLoadStatus', { status: res.status }));
         setSuggestion(await res.json());
-    }, [apiUrl, riskId]);
+    }, [apiUrl, riskId, t]);
 
     useEffect(() => {
         let cancelled = false;
@@ -197,7 +259,7 @@ export function RiskAssessmentPanel({
             try {
                 await loadSuggestion();
             } catch (err) {
-                if (!cancelled) setError(err instanceof Error ? err.message : t('assessment.failedLoad'));
+                if (!cancelled) setLoadError(err instanceof Error ? err.message : t('assessment.failedLoad'));
             }
         })();
         return () => { cancelled = true; };
@@ -215,8 +277,25 @@ export function RiskAssessmentPanel({
         return () => { cancelled = true; };
     }, [apiUrl, riskId]);
 
-    if (error) {
-        return <div className={cn(cardVariants({ density: 'compact' }), 'border-border-error text-content-error text-sm')}>{error}</div>;
+    if (loadError) {
+        return (
+            <div className={cn(cardVariants({ density: 'compact' }), 'space-y-tight border-border-error text-sm')}>
+                <p className="text-content-error">{loadError}</p>
+                <Button
+                    size="sm"
+                    variant="secondary"
+                    data-testid="assessment-load-retry"
+                    onClick={() => {
+                        setLoadError(null);
+                        void loadSuggestion().catch((err) =>
+                            setLoadError(err instanceof Error ? err.message : t('assessment.failedLoad')),
+                        );
+                    }}
+                >
+                    {t('assessment.retry')}
+                </Button>
+            </div>
+        );
     }
     if (!suggestion) {
         return <SkeletonCard lines={4} />;
@@ -229,19 +308,19 @@ export function RiskAssessmentPanel({
 
     const saveInherent = async () => {
         setSavingInherent(true);
-        setError(null);
+        clearStepError('inherent');
         try {
             const res = await fetch(apiUrl(`/risks/${riskId}`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ likelihood, impact }),
             });
-            if (!res.ok) throw new Error(`Failed to save assessment (${res.status})`);
+            if (!res.ok) throw new Error(t('assessment.failedSaveStatus', { status: res.status }));
             if (overriding) setResidualBaselineDirty(true);
             onRiskUpdated();
             await loadSuggestion();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('assessment.failedSave'));
+            setStepError('inherent', err instanceof Error ? err.message : t('assessment.failedSave'));
         } finally {
             setSavingInherent(false);
         }
@@ -249,7 +328,7 @@ export function RiskAssessmentPanel({
 
     const acceptSuggestion = async () => {
         setAccepting(true);
-        setError(null);
+        clearStepError('accept');
         try {
             // Body carries ONLY the justification — values are
             // recomputed server-side (RQ2-2 contract).
@@ -258,7 +337,7 @@ export function RiskAssessmentPanel({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ justification: justification || null }),
             });
-            if (!res.ok) throw new Error(`Failed to accept suggestion (${res.status})`);
+            if (!res.ok) throw new Error(t('assessment.failedAcceptStatus', { status: res.status }));
             // RQ3-OB-D — "accepting deserves an answer". The success
             // toast carries the SERVER-derived one-liner (composed in
             // acceptResidualSuggestion from the recomputed values), so
@@ -270,7 +349,7 @@ export function RiskAssessmentPanel({
             onRiskUpdated();
             await loadSuggestion();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('assessment.failedAccept'));
+            setStepError('accept', err instanceof Error ? err.message : t('assessment.failedAccept'));
         } finally {
             setAccepting(false);
         }
@@ -278,7 +357,7 @@ export function RiskAssessmentPanel({
 
     const saveResidualOverride = async () => {
         setSavingResidual(true);
-        setError(null);
+        clearStepError('residual');
         try {
             const res = await fetch(apiUrl(`/risks/${riskId}`), {
                 method: 'PUT',
@@ -289,13 +368,13 @@ export function RiskAssessmentPanel({
                     scoreJustification: justification || null,
                 }),
             });
-            if (!res.ok) throw new Error(`Failed to save residual (${res.status})`);
+            if (!res.ok) throw new Error(t('assessment.failedResidualStatus', { status: res.status }));
             setOverriding(false);
             setResidualBaselineDirty(false);
             onRiskUpdated();
             await loadSuggestion();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('assessment.failedSave'));
+            setStepError('residual', err instanceof Error ? err.message : t('assessment.failedSave'));
         } finally {
             setSavingResidual(false);
         }
@@ -306,17 +385,17 @@ export function RiskAssessmentPanel({
     // concern). A PUT that carries just `treatment` leaves the score alone.
     const saveTreatment = async (decision: string) => {
         setSavingTreatment(true);
-        setError(null);
+        clearStepError('treatment');
         try {
             const res = await fetch(apiUrl(`/risks/${riskId}`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ treatment: decision || null }),
             });
-            if (!res.ok) throw new Error(`Failed to save treatment (${res.status})`);
+            if (!res.ok) throw new Error(t('assessment.failedTreatmentStatus', { status: res.status }));
             onRiskUpdated();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('assessment.failedSave'));
+            setStepError('treatment', err instanceof Error ? err.message : t('assessment.failedSave'));
         } finally {
             setSavingTreatment(false);
         }
@@ -324,7 +403,7 @@ export function RiskAssessmentPanel({
 
     const saveReviewDate = async () => {
         setSavingReview(true);
-        setError(null);
+        clearStepError('review');
         try {
             const res = await fetch(apiUrl(`/risks/${riskId}`), {
                 method: 'PUT',
@@ -333,11 +412,11 @@ export function RiskAssessmentPanel({
                     nextReviewAt: reviewDate ? reviewDate.toISOString() : null,
                 }),
             });
-            if (!res.ok) throw new Error(`Failed to save review date (${res.status})`);
+            if (!res.ok) throw new Error(t('assessment.failedReviewStatus', { status: res.status }));
             toast.success(t('assessment.saveReviewDate'));
             onRiskUpdated();
         } catch (err) {
-            setError(err instanceof Error ? err.message : t('assessment.failedSave'));
+            setStepError('review', err instanceof Error ? err.message : t('assessment.failedSave'));
         } finally {
             setSavingReview(false);
         }
@@ -429,6 +508,16 @@ export function RiskAssessmentPanel({
                         />
                     </div>
                 </div>
+                {stepErrors.inherent ? (
+                    <StepError
+                        testId="assessment-error-inherent"
+                        message={stepErrors.inherent}
+                        onRetry={() => { void saveInherent(); }}
+                        onDismiss={() => clearStepError('inherent')}
+                        retryLabel={t('assessment.retry')}
+                        dismissLabel={t('assessment.dismiss')}
+                    />
+                ) : null}
                 {canWrite && inherentDirty && (
                     <div className="flex justify-end">
                         <Button
@@ -543,6 +632,16 @@ export function RiskAssessmentPanel({
                     </div>
                 </div>
 
+                {stepErrors.accept ? (
+                    <StepError
+                        testId="assessment-error-accept"
+                        message={stepErrors.accept}
+                        onRetry={() => { void acceptSuggestion(); }}
+                        onDismiss={() => clearStepError('accept')}
+                        retryLabel={t('assessment.retry')}
+                        dismissLabel={t('assessment.dismiss')}
+                    />
+                ) : null}
                 {canWrite && !overriding && (
                     <Button variant="secondary" id="override-residual-btn" onClick={() => setOverriding(true)}>
                         {t('assessment.assessResidualManually')}
@@ -622,6 +721,16 @@ export function RiskAssessmentPanel({
                                 {savingResidual ? t('saving') : t('assessment.saveResidual')}
                             </Button>
                         </div>
+                        {stepErrors.residual ? (
+                            <StepError
+                                testId="assessment-error-residual"
+                                message={stepErrors.residual}
+                                onRetry={() => { void saveResidualOverride(); }}
+                                onDismiss={() => clearStepError('residual')}
+                                retryLabel={t('assessment.retry')}
+                                dismissLabel={t('assessment.dismiss')}
+                            />
+                        ) : null}
                     </div>
                 )}
             </div>
@@ -649,6 +758,15 @@ export function RiskAssessmentPanel({
                             disabled={!canWrite || savingTreatment}
                         />
                     </FormField>
+                    {stepErrors.treatment ? (
+                        <StepError
+                            testId="assessment-error-treatment"
+                            message={stepErrors.treatment}
+                            onDismiss={() => clearStepError('treatment')}
+                            retryLabel={t('assessment.retry')}
+                            dismissLabel={t('assessment.dismiss')}
+                        />
+                    ) : null}
                     <FormField
                         label={t('assessment.reviewCadenceLabel')}
                         hint={t('assessment.reviewCadenceHelp')}
@@ -667,6 +785,16 @@ export function RiskAssessmentPanel({
                             )}
                         </div>
                     </FormField>
+                    {stepErrors.review ? (
+                        <StepError
+                            testId="assessment-error-review"
+                            message={stepErrors.review}
+                            onRetry={() => { void saveReviewDate(); }}
+                            onDismiss={() => clearStepError('review')}
+                            retryLabel={t('assessment.retry')}
+                            dismissLabel={t('assessment.dismiss')}
+                        />
+                    ) : null}
                 </div>
 
                 {/* Guided workflow status */}

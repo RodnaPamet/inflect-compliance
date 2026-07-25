@@ -18,6 +18,14 @@ export interface RiskFilters {
     residualScoreMin?: number;
     residualScoreMax?: number;
     treatment?: string;
+    /**
+     * Exact (likelihood, impact) matrix cell(s) as comma-joined
+     * `L{likelihood}xI{impact}` tokens (e.g. `L2xI6,L3xI4`). Distinct from
+     * `scoreMin/Max`: score is the PRODUCT, so a score range cannot express
+     * "this one cell" — 2×6 and 3×4 both score 12. The heatmap drill-down
+     * uses this so a cell click lands on exactly that cell's risks.
+     */
+    cell?: string;
     /** 'yes' → has a FAIR ALE or an SLE×ARO pair; 'no' → neither. */
     quantified?: 'yes' | 'no';
     /**
@@ -130,6 +138,18 @@ export class RiskRepository {
             where.score = {};
             if (filters.scoreMin !== undefined) where.score.gte = filters.scoreMin;
             if (filters.scoreMax !== undefined) where.score.lte = filters.scoreMax;
+        }
+        if (filters.cell) {
+            // Parse `L{l}xI{i}` tokens → an OR over exact (likelihood, impact)
+            // pairs. Composed under AND so it never clobbers the `q` search OR.
+            const pairs = filters.cell
+                .split(',')
+                .map((tok) => /^L(\d+)xI(\d+)$/i.exec(tok.trim()))
+                .filter((m): m is RegExpExecArray => m !== null)
+                .map((m) => ({ likelihood: Number(m[1]), impact: Number(m[2]) }));
+            if (pairs.length > 0) {
+                where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), { OR: pairs }];
+            }
         }
         if (filters.category) where.category = filters.category;
         if (filters.ownerUserId) where.ownerUserId = filters.ownerUserId;
@@ -247,10 +267,23 @@ export class RiskRepository {
 
     /**
      * Link a control to a risk.
+     *
+     * BOTH sides must live in the caller's tenant. The join row is stamped
+     * with `ctx.tenantId` regardless, so verifying only the risk (the URL id)
+     * would let a body-supplied `controlId` from another tenant be linked in —
+     * a cross-tenant reference forged through an otherwise-authorised call.
+     * Returns null (→ 404 at the route) when either side is missing, so the
+     * id namespace stays non-enumerable.
      */
     static async linkControl(db: PrismaTx, ctx: RequestContext, riskId: string, controlId: string) {
-        const existing = await this.getById(db, ctx, riskId);
-        if (!existing) return null;
+        const [existing, control] = await Promise.all([
+            this.getById(db, ctx, riskId),
+            db.control.findFirst({
+                where: { id: controlId, tenantId: ctx.tenantId },
+                select: { id: true },
+            }),
+        ]);
+        if (!existing || !control) return null;
 
         return db.riskControl.create({
             data: { tenantId: ctx.tenantId, riskId, controlId },

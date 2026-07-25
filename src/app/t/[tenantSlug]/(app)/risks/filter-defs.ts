@@ -119,6 +119,20 @@ function riskFilterDefsInput(t: T, tGroup: TGroup) {
             },
             resetBehavior: 'clearable',
         },
+        // Exact (likelihood, impact) matrix cell(s), as `L{l}xI{i}` tokens.
+        // The heatmap drill-down uses THIS, not the `score` range: score is
+        // the PRODUCT, so a `score=12` range also drags in every other cell
+        // with the same product (2×6, 3×4, 4×3, 6×2). Set programmatically by
+        // the heatmap / collision callout; renders as a clearable pill.
+        cell: {
+            label: t('filters.cell'),
+            description: t('filters.cellDesc'),
+            group: tGroup('quantitative'),
+            icon: Activity,
+            options: null,
+            multiple: true,
+            resetBehavior: 'clearable',
+        },
         // PR-K — after-controls posture: residual score range so a reviewer
         // can slice the register by residual band, not just inherent.
         residualScore: {

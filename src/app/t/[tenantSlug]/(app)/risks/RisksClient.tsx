@@ -51,7 +51,7 @@ import {
 } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
-import { useThresholdLoadMore } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import { AiAssistRail } from '@/components/ui/ai-assist-rail';
 import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
@@ -238,6 +238,8 @@ function RisksPageInner({
     translations: t,
 }: RisksClientProps) {
     const tx = useTranslations('risks');
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     // P3 — the analytical views were ~8 tooltip-only icon buttons (undiscoverable).
     // They now live behind a labeled "Views ▾" menu.
     const [viewsOpen, setViewsOpen] = useState(false);
@@ -362,34 +364,76 @@ function RisksPageInner({
     // ─── Bulk actions (canonical BulkActionBar) ───
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [bulkApplying, setBulkApplying] = useState(false);
+    /** Revalidate the register + the dashboard cards a bulk write shifts. */
+    const revalidateAfterBulk = useCallback(async () => {
+        await risksQuery.mutate();
+        // A bulk status change / delete shifts the dashboard's Risk
+        // KPI + severity distribution — refresh the executive card
+        // stack (exact-key match on the SWR entry the dashboard reads).
+        await globalMutate(apiUrl(CACHE_KEYS.dashboard.executive()));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- apiUrl is a stable per-render closure over tenantSlug
+    }, [risksQuery, tenantSlug]);
+
     const handleBulkApply = async (action: string, value: string) => {
         const ids = Array.from(selected);
         if (!action || ids.length === 0) return;
+
+        // Bulk delete is a soft/restorable delete → Epic 67 undo-toast rather
+        // than a blocking confirm: drop the rows from the SWR cache now, fire
+        // the real DELETE after the undo window, restore on Undo / failure.
+        // See docs/destructive-actions.md.
+        if (action === 'delete') {
+            const idSet = new Set(ids);
+            setSelected(new Set());
+            risksQuery.mutate(
+                // guardrail-ignore: optimistic-delete cache update (drops the just-deleted rows for the undo window), NOT display refiltering — the server still owns the list filter and mutate() restores on Undo/failure.
+                (cur) => (cur ? { ...cur, rows: cur.rows.filter((r: RiskListItem) => !idSet.has(r.id)) } : cur),
+                { revalidate: false },
+            );
+            triggerUndoToast({
+                message: tx('bulk.deletedToast', { count: ids.length }),
+                undoMessage: tx('bulk.undo'),
+                action: async () => {
+                    const res = await fetch(apiUrl('/risks/bulk/delete'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ riskIds: ids }),
+                    });
+                    if (!res.ok) throw new Error('Bulk delete failed');
+                    await revalidateAfterBulk();
+                },
+                undoAction: () => { void risksQuery.mutate(); },
+                onError: () => {
+                    toast.error(tx('bulk.actionFailed'));
+                    void risksQuery.mutate();
+                },
+            });
+            return;
+        }
+
         setBulkApplying(true);
         try {
             const url = action === 'status'
                 ? apiUrl('/risks/bulk/status')
-                : action === 'delete'
-                    ? apiUrl('/risks/bulk/delete')
-                    : apiUrl('/risks/bulk/assign');
+                : apiUrl('/risks/bulk/assign');
             const body =
                 action === 'status'
                     ? { riskIds: ids, status: value }
-                    : action === 'delete'
-                        ? { riskIds: ids }
-                        : { riskIds: ids, ownerUserId: value || null };
+                    : { riskIds: ids, ownerUserId: value || null };
             const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
             if (!res.ok) throw new Error('Bulk action failed');
-            await risksQuery.mutate();
-            // A bulk status change / delete shifts the dashboard's Risk
-            // KPI + severity distribution — refresh the executive card
-            // stack (exact-key match on the SWR entry the dashboard reads).
-            await globalMutate(apiUrl(CACHE_KEYS.dashboard.executive()));
+            await revalidateAfterBulk();
+            // Only a SUCCESSFUL apply clears the selection — a failed bulk
+            // leaves the rows selected so the user can retry without
+            // re-picking them.
             setSelected(new Set());
+            toast.success(tx('bulk.applied', { count: ids.length }));
+        } catch {
+            toast.error(tx('bulk.actionFailed'));
         } finally {
             setBulkApplying(false);
         }
@@ -440,7 +484,10 @@ function RisksPageInner({
                     />
                 ),
             },
-            { value: 'delete', label: tx('bulk.delete'), confirm: true },
+            // No `confirm` — bulk delete is a reversible soft delete surfaced
+            // through the Epic 67 undo-toast in handleBulkApply, not a
+            // blocking confirm dialog.
+            { value: 'delete', label: tx('bulk.delete') },
         ],
         [tenantSlug, tx],
     );
@@ -808,22 +855,27 @@ function RisksPageInner({
                     // popover lazy-fetches on open (no per-row cost).
                     <span className="inline-flex items-center gap-tight">
                         <RiskScoreExplainer tenantSlug={tenantSlug} riskId={row.original.id} label={`${score} · ${band.name}`}>
-                            <span
-                                className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 font-bold tabular-nums text-content-emphasis"
-                                style={{
-                                    backgroundColor: `${band.color}33`, // 20% alpha
-                                }}
-                                title={`${band.name} (${score})`}
-                                data-band={band.name}
-                                data-testid={`risk-score-${row.original.id}`}
-                            >
+                            {/* Epic 56 — hover hint via <Tooltip>, never a raw
+                                `title=`. Nested INSIDE the explainer's click
+                                trigger so hover names the band and click still
+                                opens the score breakdown. */}
+                            <Tooltip content={`${band.name} (${score})`}>
                                 <span
-                                    aria-hidden="true"
-                                    className="inline-block w-1.5 h-1.5 rounded-full"
-                                    style={{ backgroundColor: band.color }}
-                                />
-                                {score}
-                            </span>
+                                    className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 font-bold tabular-nums text-content-emphasis"
+                                    style={{
+                                        backgroundColor: `${band.color}33`, // 20% alpha
+                                    }}
+                                    data-band={band.name}
+                                    data-testid={`risk-score-${row.original.id}`}
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className="inline-block w-1.5 h-1.5 rounded-full"
+                                        style={{ backgroundColor: band.color }}
+                                    />
+                                    {score}
+                                </span>
+                            </Tooltip>
                         </RiskScoreExplainer>
                         {/* RQ2-5 / RQ3-4 — qual ↔ quant side by
                             side: quantified rows carry the compact
@@ -838,13 +890,14 @@ function RisksPageInner({
                                 { money: formatCompactCurrency, compact: true },
                             );
                             return label !== null ? (
-                                <span
-                                    className="text-[10px] tabular-nums text-content-muted"
-                                    title={tx('aleTitle')}
-                                    data-testid={`risk-ale-${row.original.id}`}
-                                >
-                                    {label}
-                                </span>
+                                <Tooltip content={tx('aleTitle')}>
+                                    <span
+                                        className="text-[10px] tabular-nums text-content-muted"
+                                        data-testid={`risk-ale-${row.original.id}`}
+                                    >
+                                        {label}
+                                    </span>
+                                </Tooltip>
                             ) : null;
                         })()}
                     </span>
@@ -1310,8 +1363,10 @@ function RisksPageInner({
                                             className="flex w-full items-center justify-between gap-default rounded p-2 text-left text-sm hover:bg-bg-muted/50 transition-colors duration-100 ease-out"
                                             data-testid={`risk-collision-${c.likelihood}-${c.impact}`}
                                             onClick={() => {
-                                                const score = c.likelihood * c.impact;
-                                                filterCtx.set('score', `${score}|${score}`);
+                                                // Scope to the exact cell, not
+                                                // its score product (see the
+                                                // heatmap onCellClick note).
+                                                filterCtx.set('cell', `L${c.likelihood}xI${c.impact}`);
                                                 setView('register');
                                             }}
                                         >
@@ -1339,13 +1394,12 @@ function RisksPageInner({
                         title={t.heatmapTitle}
                         mode="bubble"
                         onCellClick={(cell) => {
-                            // Drill into the risks that share this
-                            // (likelihood, impact) cell by setting the
-                            // score range filter on the cell's score —
-                            // single-score range collapses to the
-                            // matching cell.
-                            const score = cell.likelihood * cell.impact;
-                            filterCtx.set('score', `${score}|${score}`);
+                            // Drill into EXACTLY this (likelihood, impact)
+                            // cell. Filtering by score would drag in every
+                            // other cell sharing the product (score 12 =
+                            // 2×6, 3×4, 4×3, 6×2), so the drill-down showed
+                            // rows the user never clicked on.
+                            filterCtx.set('cell', `L${cell.likelihood}xI${cell.impact}`);
                             setView('register');
                         }}
                     />

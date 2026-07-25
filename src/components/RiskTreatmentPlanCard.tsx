@@ -20,6 +20,9 @@ import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/components/ui/hooks';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@/lib/format-date';
@@ -387,6 +390,7 @@ function MilestoneRowItem({
     onMutated: () => void;
 }) {
     const t = useTranslations('panels.treatment');
+    const toast = useToast();
     const completed = milestone.completedAt !== null;
     const [completing, setCompleting] = useState(false);
     const handleComplete = async () => {
@@ -402,12 +406,14 @@ function MilestoneRowItem({
             );
             if (!res.ok) {
                 const text = await res.text();
-                throw new Error(text || 'Failed to complete milestone');
+                throw new Error(text || t('milestoneCompleteFailed'));
             }
             onMutated();
-        } catch {
-            // No error surface on this inline control — mirror the prior
-            // fire-and-forget milestone-complete mutation (no onError).
+        } catch (err) {
+            // Surface the failure: the checkbox is driven by
+            // `milestone.completedAt` (server state), so on failure it snaps
+            // back unchecked — without a toast the click just looked ignored.
+            toast.error(err instanceof Error ? err.message : t('milestoneCompleteFailed'));
         } finally {
             setCompleting(false);
         }
@@ -505,7 +511,7 @@ function CreatePlanDialog({
             });
             if (!res.ok) {
                 const text = await res.text();
-                throw new Error(text || 'Failed to create plan');
+                throw new Error(text || t('createPlanFailed'));
             }
             onSuccess();
         } catch (err) {
@@ -615,7 +621,7 @@ function AddMilestoneDialog({
             });
             if (!res.ok) {
                 const text = await res.text();
-                throw new Error(text || 'Failed to add milestone');
+                throw new Error(text || t('addMilestoneFailed'));
             }
             onSuccess();
         } catch (err) {
@@ -633,8 +639,7 @@ function AddMilestoneDialog({
             <Modal.Body>
                 <div className="space-y-default">
                     <FormField label={t('milestoneTitleLabel')} required>
-                        <input
-                            className="input"
+                        <Input
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             placeholder={t('milestonePlaceholder')}
@@ -642,8 +647,7 @@ function AddMilestoneDialog({
                         />
                     </FormField>
                     <FormField label={t('descriptionOptional')}>
-                        <textarea
-                            className="input"
+                        <Textarea
                             rows={3}
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
@@ -704,7 +708,7 @@ function CompletePlanDialog({
             });
             if (!res.ok) {
                 const text = await res.text();
-                throw new Error(text || 'Failed to complete plan');
+                throw new Error(text || t('completePlanFailed'));
             }
             onSuccess();
         } catch (err) {
@@ -724,8 +728,7 @@ function CompletePlanDialog({
                         <strong>{t('completeRule2')}</strong>.
                     </p>
                     <FormField label={t('closingRemarkLabel')} required>
-                        <textarea
-                            className="input"
+                        <Textarea
                             rows={3}
                             value={closingRemark}
                             onChange={(e) => setClosingRemark(e.target.value)}

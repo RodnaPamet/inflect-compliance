@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { useTenantApiUrl, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { formatDate } from '@/lib/format-date';
@@ -22,13 +23,33 @@ export function RiskHistoryPanel({ riskId }: { riskId: string }) {
     const apiUrl = useTenantApiUrl();
     const money = useMoneyFormatter();
     const [history, setHistory] = useState<Snap[] | null>(null);
+    // A failed/HTTP-error load used to be swallowed (`.catch(() => {})`),
+    // leaving `history` null forever — the "loading" copy rendered as a
+    // permanent state with no way out. Track the failure and offer a retry.
+    const [failed, setFailed] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
 
     useEffect(() => {
         let live = true;
-        fetch(apiUrl(`/risks/${riskId}/history`)).then((r) => (r.ok ? r.json() : null)).then((d) => { if (live && d) setHistory(d.history); }).catch(() => {});
+        setFailed(false);
+        fetch(apiUrl(`/risks/${riskId}/history`))
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            .then((d) => { if (live) setHistory(d.history ?? []); })
+            .catch(() => { if (live) setFailed(true); });
         return () => { live = false; };
-    }, [apiUrl, riskId]);
+    }, [apiUrl, riskId, reloadKey]);
 
+    if (failed) {
+        return (
+            <Card className="space-y-default p-6" data-testid="risk-history-error">
+                <p className="text-sm text-content-error">{t('history.loadFailed')}</p>
+                <Button size="sm" variant="secondary" onClick={() => setReloadKey((n) => n + 1)}>
+                    {t('history.retry')}
+                </Button>
+            </Card>
+        );
+    }
     if (!history) return <Card className="p-6"><p className="text-sm text-content-muted">{t('history.loading')}</p></Card>;
     if (history.length === 0) {
         return <Card className="p-6"><p className="text-sm text-content-muted">{t('history.empty')}</p></Card>;

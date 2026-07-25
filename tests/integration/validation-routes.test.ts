@@ -29,11 +29,18 @@ jest.mock('@/app-layer/context', () => ({
         tenantId: 't-test',
         userId: 'u-test',
         role: 'OWNER',
-        appPermissions: { policies: { view: true, create: true, edit: true, approve: true } },
+        appPermissions: {
+            policies: { view: true, create: true, edit: true, approve: true },
+            // The risk PUT gates on `risks.edit` before body validation —
+            // grant it so the assertion under test (400, not 403) is reached.
+            risks: { view: true, create: true, edit: true },
+        },
     }),
 }));
 
-import { PUT as RisksPut } from '@/app/api/risks/[id]/route';
+// The non-tenant-scoped `/api/risks/[id]` duplicate was deleted; the
+// tenant-scoped route is the only risk-update surface now.
+import { PUT as RisksPut } from '@/app/api/t/[tenantSlug]/risks/[id]/route';
 import { POST as EvidencePost } from '@/app/api/evidence/route';
 
 describe('Validation Layer Integration', () => {
@@ -68,13 +75,13 @@ describe('Validation Layer Integration', () => {
             expect(data.error.message).toBe('Invalid JSON payload');
         });
 
-        it('PUT /api/risks/123 returns 400 on out-of-bounds numbers', async () => {
-            const req = new NextRequest('http://localhost/api/risks/123', {
+        it('PUT /api/t/:tenantSlug/risks/:id returns 400 on out-of-bounds numbers', async () => {
+            const req = new NextRequest('http://localhost/api/t/acme/risks/123', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ impact: 99 }), // max is 10
             });
-            const res = await RisksPut(req, { params: { id: '123' } } as any);
+            const res = await RisksPut(req, { params: { tenantSlug: 'acme', id: '123' } } as any);
             expect(res.status).toBe(400);
 
             const data = await res.json();
