@@ -41,8 +41,18 @@ jest.mock('@/lib/security/encryption', () => ({
 }));
 
 jest.mock('@/lib/security/sanitize', () => ({
-    // Strip a naive <script> tag so the "sanitised on write" assertion is real.
-    sanitizePlainText: jest.fn((s: any) => (s == null ? '' : String(s).replace(/<[^>]*>/g, ''))),
+    // Strip tags so the "sanitised on write" assertion is real. Applied
+    // repeatedly until stable: a single pass over nested markup (`<scr<x>ipt>`)
+    // can re-form the very sequence it just removed.
+    sanitizePlainText: jest.fn((s: any) => {
+        if (s == null) return '';
+        let out = String(s);
+        for (let prev = ''; out !== prev; ) {
+            prev = out;
+            out = out.replace(/<[^>]*>/g, '');
+        }
+        return out;
+    }),
 }));
 
 jest.mock('@/lib/audit', () => ({
@@ -531,7 +541,9 @@ describe('addShareComment', () => {
         expect(createArg.data.auditPackId).toBe('p-1');
         expect(createArg.data.auditPackShareId).toBe('s-1');
         expect(createArg.data.kind).toBe('FINDING');
-        expect(createArg.data.body).not.toMatch(/<script>/);
+        // Case-insensitive and open-ended: `<SCRIPT>` / `<script src=…>` are the
+        // same failure as `<script>`, so the assertion must catch them too.
+        expect(createArg.data.body).not.toMatch(/<script/i);
         expect(createArg.data.authorLabel).toBe('jane@auditco.com');
         // External actor — audit row carries no platform userId.
         expect(appendCalls).toHaveLength(1);

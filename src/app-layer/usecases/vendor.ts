@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { VendorStatus } from '@prisma/client';
 import { RequestContext } from '../types';
 import { VendorRepository, VendorDocumentRepository, VendorLinkRepository, VendorFilters, VendorListParams } from '../repositories/VendorRepository';
 import { QuestionnaireRepository, VendorAssessmentRepository } from '../repositories/AssessmentRepository';

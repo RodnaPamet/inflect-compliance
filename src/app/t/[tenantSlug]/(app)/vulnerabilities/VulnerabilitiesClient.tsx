@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox, type Member } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
-import { startOfUtcDay, toYMD } from '@/components/ui/date-picker/date-utils';
+import { toYMD } from '@/components/ui/date-picker/date-utils';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { Modal } from '@/components/ui/modal';

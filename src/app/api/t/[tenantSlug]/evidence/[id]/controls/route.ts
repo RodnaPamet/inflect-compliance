@@ -3,7 +3,6 @@
  * EP-3 — link an existing evidence record to a control (creates one
  * EvidenceControlLink). Idempotent on the (evidence, control) pair.
  */
-import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { linkEvidenceToControl } from '@/app-layer/usecases/evidence';
 import { withValidatedBody } from '@/lib/validation/route';

@@ -25,7 +25,7 @@ import { assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
 import { WorkItemStatus } from '@prisma/client';
-import { worstStatus, isImplemented, rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-rollup';
+import { isImplemented, rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-rollup';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
 import type {
