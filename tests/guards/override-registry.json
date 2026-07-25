@@ -1,9 +1,9 @@
 {
     "undici": {
         "kind": "security",
-        "advisory": "GHSA-c76h-2ccp-4975",
+        "advisory": "GHSA-vxpw-j846-p89q",
         "patchedFrom": "7.28.0",
-        "reason": "Pulled transitively by the OpenTelemetry / fetch stack. The <7.28.0 line mishandles redirect header stripping. No direct dependency on undici, so an override is the only lever."
+        "reason": "undici WebSocket client DoS (CVE-2026-12151, high), fixed in 6.27.0 / 7.28.0 / 8.5.0. undici is a direct production dependency (^7.28.0); the override aligns the whole tree to the patched 7.28.0 line, which also clears the cluster of undici advisories fixed there (SOCKS5 cross-origin routing, TLS-cert-validation bypass, Set-Cookie header injection). Was recorded as GHSA-c76h-2ccp-4975 until 2026-07-25 — a real undici advisory but fixed at 5.28.5 / 6.21.1 / 7.2.3, so it never justified a 7.28.0 floor."
     },
     "tar": {
         "kind": "security",
@@ -32,21 +32,21 @@
     },
     "@hono/node-server": {
         "kind": "security",
-        "advisory": "GHSA-qgpw-5v7x-8v3v",
+        "advisory": "GHSA-frvp-7c67-39w9",
         "patchedFrom": "2.0.5",
-        "reason": "Request-smuggling via ambiguous framing. Paired with the `hono` override below."
+        "reason": "Path traversal in serve-static on Windows via an encoded backslash (%5C), fixed 2.0.5. Paired with the `hono` override below. Was recorded as GHSA-qgpw-5v7x-8v3v until 2026-07-25 — that id does not resolve as an npm advisory."
     },
     "fast-uri": {
         "kind": "security",
-        "advisory": "GHSA-cfj4-hx58-2j6q",
+        "advisory": "GHSA-4c8g-83qw-93j6",
         "patchedFrom": "3.1.3",
-        "reason": "ReDoS in URI parsing, reached through the Ajv/schema-validation chain. Completed the npm-audit clean-up in #1693."
+        "reason": "fast-uri host confusion via failed IDN canonicalization (high), fixed 3.1.3. Reached through the Ajv/schema-validation chain; completed the npm-audit clean-up in #1693. Was recorded as GHSA-cfj4-hx58-2j6q until 2026-07-25 — that id does not resolve as an npm advisory."
     },
     "hono": {
         "kind": "security",
-        "advisory": "GHSA-hcxr-2v8p-3vqw",
+        "advisory": "GHSA-w62v-xxxg-mg59",
         "patchedFrom": "4.12.27",
-        "reason": "Middleware auth bypass on crafted paths. THE cautionary entry: this was pinned ^4.12.23 while the lockfile sat on vulnerable 4.12.25 — the range permitted the fix but nothing pulled it in. Raising a floor is not enough; the lockfile has to move too."
+        "reason": "Server-side XSS via a JSX escaping bypass in cx() (fixed 4.12.27), one of a cluster of hono advisories fixed in that release. THE cautionary entry: pinned ^4.12.23 while the lockfile sat on vulnerable 4.12.25 — the range permitted the fix but nothing pulled it in. Raising a floor is not enough; the lockfile has to move too. Was recorded as GHSA-hcxr-2v8p-3vqw until 2026-07-25 — that id does not resolve as an npm advisory."
     },
     "tmp": {
         "kind": "security",
@@ -68,9 +68,9 @@
     },
     "brace-expansion": {
         "kind": "security",
-        "advisory": "GHSA-v6h2-p8h4-qcjw",
+        "advisory": "GHSA-3jxr-9vmj-r5cp",
         "patchedFrom": "5.0.7",
-        "reason": "ReDoS. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window is affected — the 1.x and 2.x lines predate the regression and are deliberately left alone rather than force-marched to a breaking major."
+        "reason": "DoS via exponential-time expansion of consecutive braces (CVE-2026-13149, high), fixed 5.0.7. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window is affected — the 1.x and 2.x lines predate the regression and are deliberately left alone rather than force-marched to a breaking major. Was recorded as GHSA-v6h2-p8h4-qcjw until 2026-07-25 — a real brace-expansion ReDoS but fixed at 1.1.12 / 2.0.2 / 3.0.1 / 4.0.1, so it never justified a 5.0.7 floor."
     },
     "js-yaml": {
         "kind": "security",
