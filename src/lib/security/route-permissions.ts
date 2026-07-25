@@ -366,6 +366,31 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Generates a risk report run (PDF/CSV/PPTX) — an export action. The ' +
             'GET on the same path (list templates + recent runs) stays open.',
     },
+
+    // ── Asset bulk mutations + purge (Epic C.1 audit consistency) ────
+    {
+        path: new RegExp(`^${T}\\/assets\\/bulk\\/(status|assign|delete)$`),
+        methods: ['POST'],
+        permission: 'assets.edit',
+        note:
+            'Bulk asset status change / owner assign / soft-delete — asset ' +
+            'mutations; gated so denials audit at the permission layer.',
+    },
+    {
+        path: new RegExp(`^${T}\\/assets\\/bulk\\/import$`),
+        methods: ['POST'],
+        permission: 'assets.create',
+        note: 'Bulk asset CSV import — creates assets, so gated on assets.create.',
+    },
+    {
+        path: new RegExp(`^${T}\\/assets\\/[^/]+\\/purge$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'IRREVERSIBLE hard delete of a soft-deleted asset — the usecase ' +
+            'asserts canAdmin, so the route gate matches at admin.manage ' +
+            '(OWNER/ADMIN), not the assets.edit an EDITOR holds.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

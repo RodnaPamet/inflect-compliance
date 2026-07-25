@@ -1,9 +1,8 @@
 import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { bulkImportAssets } from '@/app-layer/usecases/asset';
-import { withValidatedBody } from '@/lib/validation/route';
 import { BulkImportAssetsSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
 /**
@@ -12,17 +11,9 @@ import { jsonResponse } from '@/lib/api-response';
  * owners to members; the response reports created / skipped / per-row errors.
  */
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        BulkImportAssetsSchema,
-        async (
-            req: NextRequest,
-            { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
-            body,
-        ) => {
-            const params = await paramsPromise;
-            const ctx = await getTenantCtx(params, req);
-            const result = await bulkImportAssets(ctx, body.assets);
-            return jsonResponse(result);
-        },
-    ),
+    requirePermission('assets.create', async (req: NextRequest, _routeArgs, ctx) => {
+        const body = BulkImportAssetsSchema.parse(await req.json());
+        const result = await bulkImportAssets(ctx, body.assets);
+        return jsonResponse(result);
+    }),
 );

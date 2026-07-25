@@ -93,6 +93,14 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/risks/reports',
         why: 'Risk-report generation (POST) is an export action gated on reports.export. The GET (list) plus the schedule/template config CRUD + already-generated-run download siblings are excluded below with reasons.',
     },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/assets/bulk',
+        why: 'Asset bulk mutations (status/assign/delete = assets.edit, import = assets.create) — gated so denials audit at the C.1 layer, matching the usecase asserts.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/assets/[id]/purge',
+        why: 'Irreversible asset hard-delete — admin.manage, matching the usecase assertCanAdmin. Narrow leaf root so only the purge handler is in scope (its assets/[id] siblings are not).',
+    },
 ];
 
 /**

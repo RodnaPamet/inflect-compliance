@@ -13,6 +13,7 @@
  * as every other repository read.
  */
 import { RequestContext } from '../types';
+import { assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 
@@ -142,6 +143,7 @@ async function mappingsForControls(
 // ─── Public usecases ───
 
 export function getAssetInheritedEvidence(ctx: RequestContext, assetId: string) {
+    assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const { controlIds, byId } = await controlsForAsset(db, ctx.tenantId, assetId);
         return evidenceForControls(db, ctx.tenantId, controlIds, byId);
@@ -149,6 +151,7 @@ export function getAssetInheritedEvidence(ctx: RequestContext, assetId: string) 
 }
 
 export function getRiskInheritedEvidence(ctx: RequestContext, riskId: string) {
+    assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const { controlIds, byId } = await controlsForRisk(db, ctx.tenantId, riskId);
         return evidenceForControls(db, ctx.tenantId, controlIds, byId);
@@ -156,6 +159,7 @@ export function getRiskInheritedEvidence(ctx: RequestContext, riskId: string) {
 }
 
 export function getAssetInheritedTestPlans(ctx: RequestContext, assetId: string) {
+    assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const { controlIds, byId } = await controlsForAsset(db, ctx.tenantId, assetId);
         return testPlansForControls(db, ctx.tenantId, controlIds, byId);
@@ -163,6 +167,7 @@ export function getAssetInheritedTestPlans(ctx: RequestContext, assetId: string)
 }
 
 export function getRiskInheritedTestPlans(ctx: RequestContext, riskId: string) {
+    assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const { controlIds, byId } = await controlsForRisk(db, ctx.tenantId, riskId);
         return testPlansForControls(db, ctx.tenantId, controlIds, byId);
@@ -170,6 +175,7 @@ export function getRiskInheritedTestPlans(ctx: RequestContext, riskId: string) {
 }
 
 export function getAssetInheritedMappings(ctx: RequestContext, assetId: string) {
+    assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const { controlIds, byId } = await controlsForAsset(db, ctx.tenantId, assetId);
         return mappingsForControls(db, ctx.tenantId, controlIds, byId);
@@ -177,6 +183,7 @@ export function getAssetInheritedMappings(ctx: RequestContext, assetId: string) 
 }
 
 export function getRiskInheritedMappings(ctx: RequestContext, riskId: string) {
+    assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const { controlIds, byId } = await controlsForRisk(db, ctx.tenantId, riskId);
         return mappingsForControls(db, ctx.tenantId, controlIds, byId);
@@ -184,6 +191,7 @@ export function getRiskInheritedMappings(ctx: RequestContext, riskId: string) {
 }
 
 export function getPolicyInheritedMappings(ctx: RequestContext, policyId: string) {
+    assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const { controlIds, byId } = await controlsForPolicy(db, ctx.tenantId, policyId);
         return mappingsForControls(db, ctx.tenantId, controlIds, byId);

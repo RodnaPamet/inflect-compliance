@@ -4,7 +4,7 @@ import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import type { TaskLinkEntityType, AssetType, AssetStatus, Prisma } from '@prisma/client';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound } from '@/lib/errors/types';
+import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -220,6 +220,21 @@ interface CreateAssetInput {
 }
 type UpdateAssetInput = Partial<CreateAssetInput>;
 
+/**
+ * Reject an ownerUserId that is not an ACTIVE member of the tenant. The owner
+ * FK is only NULL-checked by the DB, so an arbitrary — or another tenant's —
+ * user id would otherwise be written as the asset's owner. Tenant-scoped +
+ * status-filtered so a removed or invited-but-inactive member can't be
+ * assigned. Throws `badRequest` (400) on a non-member id.
+ */
+async function assertActiveOwner(db: PrismaTx, tenantId: string, ownerUserId: string) {
+    const member = await db.tenantMembership.findFirst({
+        where: { tenantId, userId: ownerUserId, status: 'ACTIVE' },
+        select: { userId: true },
+    });
+    if (!member) throw badRequest('Owner must be an active member of this tenant');
+}
+
 export async function createAsset(ctx: RequestContext, data: CreateAssetInput) {
     assertCanWrite(ctx);
 
@@ -232,6 +247,7 @@ export async function createAsset(ctx: RequestContext, data: CreateAssetInput) {
     const createA = data.availability ?? 3;
 
     return runInTenantContext(ctx, async (db) => {
+        if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
         const asset = await AssetRepository.create(db, ctx, {
             name: data.name,
             type: data.type as AssetType,
@@ -282,6 +298,11 @@ export async function updateAsset(ctx: RequestContext, id: string, data: UpdateA
         // an actual change, not on every unrelated asset edit.
         const before = await AssetRepository.getById(db, ctx, id);
         const previousOwnerId = before?.ownerUserId ?? null;
+
+        // Validate a newly-supplied owner (non-empty string) is an active
+        // member. `undefined` leaves it unchanged; `''`/null clears it — neither
+        // needs a membership check.
+        if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
 
         // Re-derive the stored criticality from the effective C/I/A triad
         // (this-edit value ?? prior value ?? default 3). Always recomputing
@@ -418,7 +439,7 @@ export async function bulkImportAssets(
 
     // One up-front read pass: the existing-name set (dedupe) + the member
     // roster (owner resolution). Everything else is in-memory.
-    const { existingNames, ownerByKey } = await runInTenantContext(ctx, async (db) => {
+    const { existingNames, ownerByKey, memberIds } = await runInTenantContext(ctx, async (db) => {
         const existing = await db.asset.findMany({ // guardrail-allow: unbounded — dedupe needs the full tenant name set; selects `name` only (tiny rows).
             where: { tenantId: ctx.tenantId },
             select: { name: true },
@@ -428,13 +449,15 @@ export async function bulkImportAssets(
             select: { userId: true, user: { select: { name: true, email: true } } },
         });
         const ownerByKey = new Map<string, string>();
+        const memberIds = new Set<string>();
         for (const m of members) {
+            memberIds.add(m.userId);
             const name = m.user?.name?.trim().toLowerCase();
             const email = m.user?.email?.trim().toLowerCase();
             if (name) ownerByKey.set(name, m.userId);
             if (email) ownerByKey.set(email, m.userId);
         }
-        return { existingNames: existing.map((a: { name: string }) => a.name), ownerByKey };
+        return { existingNames: existing.map((a: { name: string }) => a.name), ownerByKey, memberIds };
     });
 
     const existingSet = new Set(existingNames.map((n) => n.trim().toLowerCase()));
@@ -470,6 +493,10 @@ export async function bulkImportAssets(
         // fallback when it matches no one.
         let ownerUserId = row.ownerUserId ?? null;
         let owner = row.owner ?? null;
+        // Never write an explicit ownerUserId that isn't an active member of
+        // this tenant (a forged / cross-tenant id) — drop it and let the
+        // free-text `owner` resolution below still apply as a fallback.
+        if (ownerUserId && !memberIds.has(ownerUserId)) ownerUserId = null;
         if (!ownerUserId && owner) {
             const match = ownerByKey.get(owner.trim().toLowerCase());
             if (match) {

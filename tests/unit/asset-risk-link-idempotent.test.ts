@@ -10,7 +10,16 @@ jest.mock('@/app-layer/events/audit', () => ({
 
 const mockFindUnique = jest.fn();
 const mockUpsert = jest.fn();
-const mockTx = { assetRiskLink: { findUnique: mockFindUnique, upsert: mockUpsert } };
+// mapAssetToRisk verifies both the asset and the risk exist in the tenant
+// before linking — the tx mock returns a row for each so the existence checks
+// pass and the audit-differentiation behaviour under test is reached.
+const mockAssetFindFirst = jest.fn().mockResolvedValue({ id: 'asset-1' });
+const mockRiskFindFirst = jest.fn().mockResolvedValue({ id: 'risk-1' });
+const mockTx = {
+    assetRiskLink: { findUnique: mockFindUnique, upsert: mockUpsert },
+    asset: { findFirst: mockAssetFindFirst },
+    risk: { findFirst: mockRiskFindFirst },
+};
 
 import { mapAssetToRisk } from '@/app-layer/usecases/traceability';
 import { logEvent } from '@/app-layer/events/audit';
