@@ -467,7 +467,9 @@
       "selectStatus": "Select status...",
       "assignOwner": "Assign owner",
       "ownerPlaceholder": "Owner (blank = unassign)",
-      "delete": "Delete"
+      "delete": "Delete",
+      "deletedToast": "{count, plural, one {# asset deleted} other {# assets deleted}}",
+      "actionFailed": "Bulk action failed. Please try again."
     },
     "statusOption": {
       "ACTIVE": "Active",
@@ -508,7 +510,9 @@
       "retentionNote": "Human-readable policy note (e.g. “7 years”). The structured date below drives auto-retirement.",
       "retentionUntil": "Retention until",
       "retentionUntilPlaceholder": "Select a date…",
-      "retentionUntilNote": "Structured expiry date — the asset is auto-retired after it."
+      "retentionUntilNote": "Structured expiry date — the asset is auto-retired after it.",
+      "saveFailed": "Couldn't save the asset. Please try again.",
+      "createFailed": "Couldn't create the asset. Please try again."
     },
     "crit": {
       "heading": "Asset Criticality",
@@ -651,7 +655,10 @@
       "deleteConfirmDesc": "The asset is soft-deleted and can be restored from the Deleted assets view.",
       "deleteConfirmLabel": "Delete asset",
       "contextNotesCaption": "Free-text notes — not structured linkage. See “Where used in process maps” above for authoritative process usage.",
-      "retentionUntil": "Retention until"
+      "retentionUntil": "Retention until",
+      "deletedToast": "Asset deleted",
+      "undo": "Undo",
+      "deleteFailed": "Couldn't delete the asset. Please try again."
     },
     "filters": {
       "type": "Type",
@@ -720,7 +727,7 @@
     "import": {
       "title": "Import assets from CSV",
       "csvFormat": "CSV format",
-      "csvDesc": "Upload a CSV file with at minimum a Name column. Optional columns: Type, Status, Owner, Classification, Confidentiality, Integrity, Availability (1-5), Criticality, CPE, Vendor, Product, Version.",
+      "csvDesc": "Upload a CSV file with at minimum a Name column. Optional columns: Type, Status, Owner, Classification, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (YYYY-MM-DD), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
       "chooseFile": "Choose CSV file",
       "assetsToImport": "{count} asset(s) to import",
       "importing": "Importing… ({count})",
@@ -748,7 +755,11 @@
       "errStatus": "Invalid status: {value}",
       "errCia": "CIA values must be between 1 and 5",
       "errTypeRequired": "Type is required",
-      "skippedDuplicates": "Skipped {count} duplicate(s) — an asset with that name already exists"
+      "skippedDuplicates": "Skipped {count} duplicate(s) — an asset with that name already exists",
+      "skipReason": {
+        "existing": "Duplicate name — an asset with that name already exists",
+        "duplicateInFile": "Duplicate name — repeated earlier in this file"
+      }
     },
     "list": {
       "ownerImported": "imported"
@@ -768,7 +779,10 @@
       "emptyTitle": "No deleted assets",
       "emptyDesc": "Deleted assets appear here and can be restored.",
       "byUnknown": "Unknown",
-      "byWhen": "Deleted {when} by {who}"
+      "byWhen": "Deleted {when} by {who}",
+      "undo": "Undo",
+      "restoredToast": "Asset restored",
+      "restoreFailed": "Couldn't restore the asset. Please try again."
     }
   },
   "risks": {

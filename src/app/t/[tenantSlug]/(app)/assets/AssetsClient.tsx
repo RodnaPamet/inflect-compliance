@@ -17,7 +17,7 @@ import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { Tooltip } from '@/components/ui/tooltip';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { ListPageShell } from '@/components/layout/ListPageShell';
-import { useThresholdLoadMore } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import { buildAssetFilters, ASSET_FILTER_KEYS } from './filter-defs';
 import { Button } from '@/components/ui/button';
@@ -151,6 +151,8 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // pattern). `tx` is the live next-intl translator for the strings this
     // island localizes directly under the `assets` namespace.
     const tx = useTranslations('assets');
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     // Modal-form follow-up — create-asset modal mounted off the list,
     // auto-opening on `?create=1` (the redirect target from
     // `/assets/new`). Matches the canonical NewVendorModal wiring.
@@ -302,21 +304,50 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     const [bulkApplying, setBulkApplying] = useState(false);
     const handleBulkApply = async (action: string, value: string, _label: string) => {
         if (!action || selected.size === 0) return;
+        const ids = Array.from(selected);
+
+        // Bulk delete is a soft/restorable delete → Epic 67 undo-toast instead
+        // of a blocking confirm. Optimistically drop the rows from the SWR
+        // cache, fire the real bulk-delete after the undo window, restore on
+        // Undo / failure. See docs/destructive-actions.md.
+        if (action === 'delete') {
+            const idSet = new Set(ids);
+            setSelected(new Set());
+            // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window), NOT display refiltering — server owns the list filter; mutate() restores on Undo/failure.
+            assetsQuery.mutate((cur) => (cur ?? []).filter((a) => !idSet.has(a.id)), {
+                revalidate: false,
+            });
+            triggerUndoToast({
+                message: tx('bulk.deletedToast', { count: ids.length }),
+                undoMessage: tx('deleted.undo'),
+                action: async () => {
+                    const res = await fetch(apiUrl('/assets/bulk/delete'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ assetIds: ids }),
+                    });
+                    if (!res.ok) throw new Error('Bulk delete failed');
+                    await assetsQuery.mutate();
+                },
+                undoAction: () => { assetsQuery.mutate(); },
+                onError: () => {
+                    toast.error(tx('bulk.actionFailed'));
+                    assetsQuery.mutate();
+                },
+            });
+            return;
+        }
+
         setBulkApplying(true);
         try {
-            const ids = Array.from(selected);
             const url =
                 action === 'status'
                     ? apiUrl('/assets/bulk/status')
-                    : action === 'delete'
-                        ? apiUrl('/assets/bulk/delete')
-                        : apiUrl('/assets/bulk/assign');
+                    : apiUrl('/assets/bulk/assign');
             const body =
                 action === 'status'
                     ? { assetIds: ids, status: value }
-                    : action === 'delete'
-                        ? { assetIds: ids }
-                        : { assetIds: ids, ownerUserId: value || null };
+                    : { assetIds: ids, ownerUserId: value || null };
             const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -326,6 +357,8 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             // Revalidate the same key the table reads (the active filtered list).
             await assetsQuery.mutate();
             setSelected(new Set());
+        } catch {
+            toast.error(tx('bulk.actionFailed'));
         } finally {
             setBulkApplying(false);
         }
@@ -374,7 +407,9 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     />
                 ),
             },
-            { value: 'delete', label: tx('bulk.delete'), confirm: true },
+            // No `confirm` — bulk delete is a soft delete surfaced through the
+            // Epic 67 undo-toast (handleBulkApply), not a blocking confirm.
+            { value: 'delete', label: tx('bulk.delete') },
         ],
         [tenantSlug, tx],
     );
@@ -567,11 +602,17 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
 
     // ─── Deleted-asset lifecycle actions ───
     const handleRestore = async (id: string) => {
-        const res = await fetch(apiUrl(`/assets/${id}/restore`), {
-            method: 'POST',
-            credentials: 'same-origin',
-        });
-        if (res.ok) await assetsQuery.mutate();
+        try {
+            const res = await fetch(apiUrl(`/assets/${id}/restore`), {
+                method: 'POST',
+                credentials: 'same-origin',
+            });
+            if (!res.ok) throw new Error('Restore failed');
+            await assetsQuery.mutate();
+            toast.success(tx('deleted.restoredToast'));
+        } catch {
+            toast.error(tx('deleted.restoreFailed'));
+        }
     };
     const closePurge = () => {
         setPurgeTarget(null);

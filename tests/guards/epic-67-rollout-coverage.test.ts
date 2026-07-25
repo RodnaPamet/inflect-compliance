@@ -72,6 +72,21 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Report-schedule delete (risk reports)',
         handlers: ['removeSchedule'],
     },
+    {
+        // Single-asset soft-delete on the asset detail page — was a
+        // blocking ConfirmDialog, now optimistic navigate + undo window.
+        file: 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx',
+        name: 'Asset delete (asset detail)',
+        handlers: ['handleDelete'],
+    },
+    {
+        // Bulk asset soft-delete on the list — was a confirm:true bulk
+        // action, now an optimistic SWR-cache drop + undo window (the
+        // delete branch of handleBulkApply).
+        file: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
+        name: 'Bulk asset delete (assets list)',
+        handlers: ['handleBulkApply'],
+    },
 ];
 
 function loadFile(file: string): string {

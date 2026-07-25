@@ -11,6 +11,8 @@
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
@@ -56,14 +58,12 @@ export function EditAssetFields({
     return (
         <>
         <div className="grid grid-cols-2 gap-default">
-            <div>
-                <label className="input-label">{t('form.nameRequired')}</label>
-                <input
-                    className="input"
+            <FormField label={t('form.nameRequired')}>
+                <Input
                     value={form.fields.name}
                     onChange={(e) => form.setField('name', e.target.value)}
                 />
-            </div>
+            </FormField>
             <div>
                 <label className="input-label">{t('type')}</label>
                 <Combobox
@@ -132,14 +132,12 @@ export function EditAssetFields({
                     caret
                 />
             </div>
-            <div>
-                <label className="input-label">{t('location')}</label>
-                <input
-                    className="input"
+            <FormField label={t('location')}>
+                <Input
                     value={form.fields.location}
                     onChange={(e) => form.setField('location', e.target.value)}
                 />
-            </div>
+            </FormField>
             <div>
                 <label className="input-label">{t('dataResidency')}</label>
                 <Combobox
@@ -181,27 +179,22 @@ export function EditAssetFields({
         {/* Context — external reference + dependencies / business processes /
             retention. Persisted by the API; previously surfaced in no form. */}
         <div className="grid grid-cols-2 gap-default">
-            <div>
-                <label className="input-label">{t('form.externalRef')}</label>
-                <input
-                    className="input"
+            <FormField label={t('form.externalRef')}>
+                <Input
                     id="asset-edit-external-ref"
                     value={form.fields.externalRef ?? ''}
                     onChange={(e) => form.setField('externalRef', e.target.value)}
                     placeholder={t('form.externalRefPlaceholder')}
                 />
-            </div>
-            <div>
-                <label className="input-label">{t('form.retention')}</label>
-                <input
-                    className="input"
+            </FormField>
+            <FormField label={t('form.retention')} description={t('form.retentionNote')}>
+                <Input
                     id="asset-edit-retention"
                     value={form.fields.retention ?? ''}
                     onChange={(e) => form.setField('retention', e.target.value)}
                     placeholder={t('form.retentionPlaceholder')}
                 />
-                <p className="mt-1 text-xs text-content-subtle">{t('form.retentionNote')}</p>
-            </div>
+            </FormField>
             <div>
                 <label className="input-label">{t('form.retentionUntil')}</label>
                 <DatePicker
@@ -212,28 +205,22 @@ export function EditAssetFields({
                 />
                 <p className="mt-1 text-xs text-content-subtle">{t('form.retentionUntilNote')}</p>
             </div>
-            <div>
-                <label className="input-label">{t('form.dependencies')}</label>
-                <input
-                    className="input"
+            <FormField label={t('form.dependencies')} description={t('form.dependenciesNote')}>
+                <Input
                     id="asset-edit-dependencies"
                     value={form.fields.dependencies ?? ''}
                     onChange={(e) => form.setField('dependencies', e.target.value)}
                     placeholder={t('form.dependenciesPlaceholder')}
                 />
-                <p className="mt-1 text-xs text-content-subtle">{t('form.dependenciesNote')}</p>
-            </div>
-            <div>
-                <label className="input-label">{t('form.businessProcesses')}</label>
-                <input
-                    className="input"
+            </FormField>
+            <FormField label={t('form.businessProcesses')} description={t('form.businessProcessesNote')}>
+                <Input
                     id="asset-edit-business-processes"
                     value={form.fields.businessProcesses ?? ''}
                     onChange={(e) => form.setField('businessProcesses', e.target.value)}
                     placeholder={t('form.businessProcessesPlaceholder')}
                 />
-                <p className="mt-1 text-xs text-content-subtle">{t('form.businessProcessesNote')}</p>
-            </div>
+            </FormField>
         </div>
         </>
     );

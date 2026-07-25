@@ -138,6 +138,12 @@
                     "null"
                   ]
                 },
+                "retentionUntil": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "cpe": {
                   "type": [
                     "string",

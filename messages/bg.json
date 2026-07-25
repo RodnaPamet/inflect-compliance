@@ -467,7 +467,9 @@
       "selectStatus": "Изберете статус...",
       "assignOwner": "Назначи отговорник",
       "ownerPlaceholder": "Отговорник (празно = премахване)",
-      "delete": "Изтрий"
+      "delete": "Изтрий",
+      "deletedToast": "{count, plural, one {# актив е изтрит} other {# актива са изтрити}}",
+      "actionFailed": "Груповото действие е неуспешно. Опитайте отново."
     },
     "statusOption": {
       "ACTIVE": "Активен",
@@ -508,7 +510,9 @@
       "retentionNote": "Четима политика (напр. „7 години“). Структурираната дата отдолу задвижва авто-архивирането.",
       "retentionUntil": "Задържане до",
       "retentionUntilPlaceholder": "Изберете дата…",
-      "retentionUntilNote": "Структурирана дата на изтичане — активът се архивира автоматично след нея."
+      "retentionUntilNote": "Структурирана дата на изтичане — активът се архивира автоматично след нея.",
+      "saveFailed": "Активът не можа да бъде запазен. Опитайте отново.",
+      "createFailed": "Активът не можа да бъде създаден. Опитайте отново."
     },
     "crit": {
       "heading": "Критичност на актива",
@@ -651,7 +655,10 @@
       "deleteConfirmDesc": "Активът се архивира и може да бъде възстановен от изгледа „Изтрити активи“.",
       "deleteConfirmLabel": "Изтрий актив",
       "contextNotesCaption": "Свободен текст — не е структурирана връзка. Вижте „Къде се използва в процесни карти“ по-горе за меродавна употреба.",
-      "retentionUntil": "Задържане до"
+      "retentionUntil": "Задържане до",
+      "deletedToast": "Активът е изтрит",
+      "undo": "Отмяна",
+      "deleteFailed": "Активът не можа да бъде изтрит. Опитайте отново."
     },
     "filters": {
       "type": "Тип",
@@ -720,7 +727,7 @@
     "import": {
       "title": "Импортиране на активи от CSV",
       "csvFormat": "CSV формат",
-      "csvDesc": "Качете CSV файл, съдържащ поне колона Name. Незадължителни колони: Type, Status, Owner, Classification, Confidentiality, Integrity, Availability (1-5), Criticality, CPE, Vendor, Product, Version.",
+      "csvDesc": "Качете CSV файл с поне колона Name. Незадължителни колони: Type, Status, Owner, Classification, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (ГГГГ-ММ-ДД), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
       "chooseFile": "Изберете CSV файл",
       "assetsToImport": "{count} актив(а) за импортиране",
       "importing": "Импортиране… ({count})",
@@ -748,7 +755,11 @@
       "errStatus": "Невалидно състояние: {value}",
       "errCia": "Стойностите на CIA трябва да са между 1 и 5",
       "errTypeRequired": "Типът е задължителен",
-      "skippedDuplicates": "Пропуснати {count} дубликат(а) — актив с това име вече съществува"
+      "skippedDuplicates": "Пропуснати {count} дубликат(а) — актив с това име вече съществува",
+      "skipReason": {
+        "existing": "Дублирано име — вече съществува актив с това име",
+        "duplicateInFile": "Дублирано име — повторено по-рано в този файл"
+      }
     },
     "list": {
       "ownerImported": "импортиран"
@@ -768,7 +779,10 @@
       "emptyTitle": "Няма изтрити активи",
       "emptyDesc": "Изтритите активи се показват тук и могат да бъдат възстановени.",
       "byUnknown": "Неизвестен",
-      "byWhen": "Изтрито {when} от {who}"
+      "byWhen": "Изтрито {when} от {who}",
+      "undo": "Отмяна",
+      "restoredToast": "Активът е възстановен",
+      "restoreFailed": "Активът не можа да бъде възстановен. Опитайте отново."
     }
   },
   "risks": {

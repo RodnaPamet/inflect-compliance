@@ -112,6 +112,9 @@ export const BulkImportAssetsSchema = z.object({
         businessProcesses: z.string().optional().nullable(),
         dataResidency: z.string().optional().nullable(),
         retention: z.string().optional().nullable(),
+        // Structured retention-expiry date (YYYY-MM-DD or ISO) — matches the
+        // per-asset create/update schemas so the CSV importer can bulk-set it.
+        retentionUntil: z.string().optional().nullable(),
         cpe: z.string().optional().nullable(),
         vendor: z.string().optional().nullable(),
         product: z.string().optional().nullable(),

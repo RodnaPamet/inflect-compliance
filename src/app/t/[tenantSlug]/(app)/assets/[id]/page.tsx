@@ -11,7 +11,7 @@ import { useTenantMembers, UserCombobox, type Member } from '@/components/ui/use
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { toYMD } from '@/components/ui/date-picker/date-utils';
 import { Input } from '@/components/ui/input';
-import { useEnterSubmit } from '@/components/ui/hooks';
+import { useEnterSubmit, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { PenWriting } from '@/components/ui/icons/nucleo/pen-writing';
 import { ownerDisplayName } from '@/lib/owner-display';
 import dynamic from 'next/dynamic';
@@ -23,7 +23,6 @@ import { CopyText } from '@/components/ui/copy-text';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Pen2, Trash } from '@/components/ui/icons/nucleo';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Tooltip, InfoTooltip } from '@/components/ui/tooltip';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { DataTable, type ColumnDef } from '@/components/ui/table';
@@ -158,6 +157,8 @@ export default function AssetDetailPage() {
     const tenantHref = useTenantHref();
     const { permissions, tenantSlug } = useTenantContext();
     const t = useTranslations('assets');
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     const assetId = params.id as string;
 
     const assetQuery = useTenantSWR<AssetDetail>(`/assets/${assetId}`);
@@ -253,6 +254,15 @@ export default function AssetDetailPage() {
                 const data = await res.json().catch(() => ({}));
                 throw new Error(data.message || t('detail.vuln.convertFailed'));
             }
+            // Refresh both feeds so the converted row reflects its new state
+            // (a converted vuln/finding no longer shows the convert affordance).
+            vulnQuery.mutate();
+            scannerQuery.mutate();
+            toast.success(
+                kind === 'risk'
+                    ? t('detail.vuln.convertedRisk')
+                    : t('detail.vuln.convertedFinding'),
+            );
         } catch (err) {
             setError(err instanceof Error ? err.message : t('detail.vuln.convertFailed'));
         } finally {
@@ -336,18 +346,28 @@ export default function AssetDetailPage() {
     };
 
     // Single-asset soft-delete (reversible via the deleted-assets view →
-    // Restore). ConfirmDialog is enough here; the irreversible purge is
-    // gated behind a typed-confirmation modal on the deleted-assets list.
+    // Restore). The irreversible purge is gated behind a typed-confirmation
+    // modal on the deleted-assets list.
     const router = useRouter();
-    const [deleteOpen, setDeleteOpen] = useState(false);
-    const handleDelete = async () => {
-        try {
-            const res = await fetch(apiUrl(`/assets/${assetId}`), { method: 'DELETE' });
-            if (!res.ok) throw new Error(`Failed to delete (${res.status})`);
-            router.push(tenantHref('/assets'));
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to delete asset');
-        }
+    // Asset delete is a soft/restorable delete → Epic 67 undo-toast, not a
+    // blocking confirm. Optimistically navigate back to the list, fire the
+    // DELETE after the undo window, and return to the (un-deleted) asset on
+    // Undo / failure. See docs/destructive-actions.md.
+    const handleDelete = () => {
+        router.push(tenantHref('/assets'));
+        triggerUndoToast({
+            message: t('detail.deletedToast'),
+            undoMessage: t('detail.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/assets/${assetId}`), { method: 'DELETE' });
+                if (!res.ok) throw new Error('Delete failed');
+            },
+            undoAction: () => { router.push(tenantHref(`/assets/${assetId}`)); },
+            onError: () => {
+                toast.error(t('detail.deleteFailed'));
+                router.push(tenantHref(`/assets/${assetId}`));
+            },
+        });
     };
     const editInitial = asset
         ? {
@@ -494,7 +514,7 @@ export default function AssetDetailPage() {
                             <Button
                                 variant="secondary"
                                 size="icon"
-                                onClick={() => setDeleteOpen(true)}
+                                onClick={handleDelete}
                                 id="asset-delete-btn"
                                 aria-label={t('detail.deleteAsset')}
                             >
@@ -1083,16 +1103,6 @@ export default function AssetDetailPage() {
                 tenantSlug={tenantSlug}
                 open={processWhereUsedOpen}
                 onOpenChange={setProcessWhereUsedOpen}
-            />
-
-            <ConfirmDialog
-                showModal={deleteOpen}
-                setShowModal={setDeleteOpen}
-                tone="danger"
-                title={t('detail.deleteConfirmTitle')}
-                description={t('detail.deleteConfirmDesc')}
-                confirmLabel={t('detail.deleteConfirmLabel')}
-                onConfirm={handleDelete}
             />
         </EntityDetailLayout>
     );

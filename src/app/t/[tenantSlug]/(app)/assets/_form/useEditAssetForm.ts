@@ -15,6 +15,7 @@
  * `docs/implementation-notes/2026-05-24-modal-form-architecture.md`.
  */
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import type { AssetDetail } from '../[id]/page';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
@@ -90,6 +91,7 @@ export function useEditAssetForm({
     onSuccess,
 }: UseEditAssetFormOptions): EditAssetFormReturn {
     const apiUrl = useTenantApiUrl();
+    const t = useTranslations('assets');
 
     const [fields, setFields] = useState<EditAssetFormFields>(() => ({
         ...DEFAULTS,
@@ -118,7 +120,7 @@ export function useEditAssetForm({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(fields),
             });
-            if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+            if (!res.ok) throw new Error(t('form.saveFailed'));
             const payload = await res.json();
             // PATCH /assets/:id returns `{ success, asset }` while GET
             // returns the bare asset. Unwrap so the detail page's
@@ -130,7 +132,7 @@ export function useEditAssetForm({
             setIsDirty(false);
             onSuccess(updated);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to save asset');
+            setError(err instanceof Error ? err.message : t('form.saveFailed'));
         } finally {
             setSubmitting(false);
         }
