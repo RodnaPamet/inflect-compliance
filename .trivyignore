@@ -58,3 +58,19 @@ CVE-2026-11525
 #   Retire when: the node:24-alpine base image refreshes its bundled npm CLI
 #   to one carrying tar ≥ 7.5.16. Re-check with `npm ls tar` in the image.
 CVE-2026-53655
+#
+# CVE-2026-14257 (brace-expansion, HIGH) — DoS via a follow-up to the
+#   CVE-2026-13149 ReDoS. The affected brace-expansion@5.0.7 lives in the
+#   image's GLOBAL npm CLI (/usr/local/lib/node_modules/npm →
+#   brace-expansion; the Dockerfile runs `npm install -g npm@12.0.1`), NOT an
+#   app runtime dependency — our own lockfile resolves the top-level
+#   brace-expansion to 5.0.8. The server runs `next start` (node), never the
+#   npm CLI, so this copy is unreachable from request-handling code (blast
+#   radius = build-time only). Same class as the undici / tar npm-CLI-bundled
+#   exemptions above, and the earlier brace-expansion CVE-2026-33750 retired
+#   in the node:22→24 bump. Fixed in brace-expansion 5.0.8; the newest npm
+#   (12.0.1) still bundles 5.0.7.
+#   Retire when: the global `npm install -g npm@…` in the Dockerfile moves to
+#   an npm whose bundle carries brace-expansion ≥ 5.0.8. Re-check with
+#   `npm ls brace-expansion` in the image.
+CVE-2026-14257

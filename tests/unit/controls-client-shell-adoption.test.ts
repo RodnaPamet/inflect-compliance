@@ -79,7 +79,15 @@ describe('ControlsClient — EntityListPage adoption', () => {
         // slice. Both surface the same row shape to the table; what
         // matters is that the shell receives `controls`-derived data.
         expect(source).toMatch(/data:\s*(visibleControls|controls)\b/);
-        expect(source).toContain('columns: orderColumns(controlColumns)');
+        // `orderColumns` spreads its input, so it returns a fresh array on
+        // every render — passing `orderColumns(controlColumns)` inline would
+        // rebuild the table model between a row's two clicks and silently
+        // kill double-click navigation. The result is memoised; the shell
+        // receives that stable identity.
+        expect(source).toContain('columns: orderedControlColumns');
+        expect(source).toMatch(
+            /orderedControlColumns\s*=\s*useMemo\(\s*\(\)\s*=>\s*orderColumns\(controlColumns\)/,
+        );
         // `getRowId` is a stable `useCallback` (right-rail Phase 2 —
         // a referentially-stable row-id fn keeps a selection-toggle
         // re-render from rebuilding the DataTable model).
