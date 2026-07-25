@@ -49,6 +49,21 @@ function freshDb() {
             create: jest.fn().mockResolvedValue({ id: 'casset-1' }),
             delete: jest.fn().mockResolvedValue({}),
         },
+        // Tenant-membership / file / asset existence guards. The repo now
+        // verifies each body-supplied id belongs to the tenant before it
+        // inserts a join row (FK checks bypass RLS), so the fake db must
+        // carry the `findFirst` these guards call. Left bare here — each
+        // happy-path / negative test drives the return via
+        // `mockResolvedValueOnce`.
+        tenantMembership: {
+            findFirst: jest.fn(),
+        },
+        fileRecord: {
+            findFirst: jest.fn(),
+        },
+        asset: {
+            findFirst: jest.fn(),
+        },
     };
 }
 
@@ -62,14 +77,16 @@ beforeEach(() => {
 // ─── list + _buildWhere filter arms ───
 
 describe('list / _buildWhere', () => {
-    it('builds the tenant-OR-null base where with no filters and no take', async () => {
+    it('builds the tenant-OR-null base where with no filters and a bounded default take', async () => {
         // Branch: filters undefined → none of the optional arms apply;
-        // options.take absent → no `take` key on the query.
+        // options.take absent → the list still bounds itself with the
+        // 500-row default cap (an unpaginated call can never stream an
+        // unbounded result set).
         await ControlRepository.list(db as any, ctx);
         const arg = (db.control.findMany.mock.calls[0] as any[])[0];
         expect(arg.where).toEqual({ OR: [{ tenantId: 'tenant-1' }, { tenantId: null }] });
         expect(arg.orderBy).toEqual([{ code: 'asc' }, { annexId: 'asc' }]);
-        expect('take' in arg).toBe(false);
+        expect(arg.take).toBe(500);
     });
 
     it('applies take when options.take is provided', async () => {
@@ -311,14 +328,27 @@ describe('contributors', () => {
         expect(db.controlContributor.create).not.toHaveBeenCalled();
     });
 
-    it('addContributor creates when the control exists', async () => {
+    it('addContributor creates when the control exists and the user is an active member', async () => {
         db.control.findFirst.mockResolvedValueOnce({ id: 'c1' });
+        // The user must be an ACTIVE tenant member — an active membership row
+        // lets the guard through to the insert.
+        db.tenantMembership.findFirst.mockResolvedValueOnce({ id: 'm1' });
         await ControlRepository.addContributor(db as any, ctx, 'c1', 'u1');
         expect((db.controlContributor.create.mock.calls[0] as any[])[0].data).toMatchObject({
             tenantId: 'tenant-1',
             controlId: 'c1',
             userId: 'u1',
         });
+    });
+
+    it('addContributor throws notFound when the user is not an active member of the tenant', async () => {
+        // Branch: control present, but tenantMembership.findFirst → null.
+        // FK checks bypass RLS, so a cross-tenant / inactive userId must be
+        // rejected here rather than inserted as a dangling contributor.
+        db.control.findFirst.mockResolvedValueOnce({ id: 'c1' });
+        db.tenantMembership.findFirst.mockResolvedValueOnce(null);
+        await expect(ControlRepository.addContributor(db as any, ctx, 'c1', 'u1')).rejects.toThrow();
+        expect(db.controlContributor.create).not.toHaveBeenCalled();
     });
 
     it('removeContributor returns null when the control is missing', async () => {
@@ -374,6 +404,9 @@ describe('evidence links', () => {
     it('linkEvidence keeps provided optional fields', async () => {
         // Branches: fileId/url/note truthy → kept.
         db.control.findFirst.mockResolvedValueOnce({ id: 'c1' });
+        // A provided fileId is verified against the tenant's FileRecords
+        // before the insert; the matching row lets the guard through.
+        db.fileRecord.findFirst.mockResolvedValueOnce({ id: 'f1' });
         await ControlRepository.linkEvidence(db as any, ctx, 'c1', {
             kind: 'LINK',
             fileId: 'f1',
@@ -382,6 +415,18 @@ describe('evidence links', () => {
         });
         const data = (db.controlEvidenceLink.create.mock.calls[0] as any[])[0].data;
         expect(data).toMatchObject({ fileId: 'f1', url: 'http://x', note: 'n' });
+    });
+
+    it('linkEvidence throws notFound when the fileId is not in the tenant', async () => {
+        // Branch: control present, fileId supplied, but fileRecord.findFirst
+        // → null. A cross-tenant fileId must be rejected before the insert,
+        // not persisted as a link to a FileRecord the tenant cannot read.
+        db.control.findFirst.mockResolvedValueOnce({ id: 'c1' });
+        db.fileRecord.findFirst.mockResolvedValueOnce(null);
+        await expect(
+            ControlRepository.linkEvidence(db as any, ctx, 'c1', { kind: 'FILE', fileId: 'f1' }),
+        ).rejects.toThrow();
+        expect(db.controlEvidenceLink.create).not.toHaveBeenCalled();
     });
 
     it('unlinkEvidence returns null when the link is missing', async () => {
@@ -407,14 +452,27 @@ describe('asset linking', () => {
         expect(await ControlRepository.linkAsset(db as any, ctx, 'c1', 'a1')).toBeNull();
     });
 
-    it('linkAsset creates the join row when the control exists', async () => {
+    it('linkAsset creates the join row when the control exists and the asset is in the tenant', async () => {
         db.control.findFirst.mockResolvedValueOnce({ id: 'c1' });
+        // The assetId is verified against the tenant's assets before the
+        // insert; the matching row lets the guard through.
+        db.asset.findFirst.mockResolvedValueOnce({ id: 'a1' });
         await ControlRepository.linkAsset(db as any, ctx, 'c1', 'a1');
         expect((db.controlAsset.create.mock.calls[0] as any[])[0].data).toEqual({
             tenantId: 'tenant-1',
             controlId: 'c1',
             assetId: 'a1',
         });
+    });
+
+    it('linkAsset throws notFound when the asset is not in the tenant', async () => {
+        // Branch: control present, but asset.findFirst → null. A cross-tenant
+        // assetId must be rejected before the insert rather than persisted as
+        // a join to an Asset the tenant cannot read.
+        db.control.findFirst.mockResolvedValueOnce({ id: 'c1' });
+        db.asset.findFirst.mockResolvedValueOnce(null);
+        await expect(ControlRepository.linkAsset(db as any, ctx, 'c1', 'a1')).rejects.toThrow();
+        expect(db.controlAsset.create).not.toHaveBeenCalled();
     });
 
     it('unlinkAsset returns null when the control is missing', async () => {

@@ -101,13 +101,18 @@ describe('PR-7 — list-page perf anti-bloat ratchet', () => {
                 expect(src).toMatch(
                     /options\s*:\s*\{\s*take\?:\s*number\b[\s\S]*?\}\s*=\s*\{\s*\}/,
                 );
-                // The conditional spread guards against zero — only
-                // emit `take` when the caller actually asked for one.
-                // The literal we lock is the canonical
-                // `...(options.take ? { take: options.take } : {})`
-                // pattern.
+                // The list must accept `options.take` AND stay bounded.
+                // Two accepted shapes, both intent-equivalent:
+                //   • conditional spread — `...(options.take ? { take:
+                //     options.take } : {})` — omits `take` when the caller
+                //     didn't ask (the underlying findMany carries its own
+                //     cap elsewhere), OR
+                //   • defaulted cap — `take: options.take ?? <N>` — honours
+                //     an explicit take and otherwise falls back to a numeric
+                //     ceiling, so the query is bounded on every path
+                //     (strictly stronger: bounded even with no caller take).
                 expect(src).toMatch(
-                    /\.\.\.\s*\(\s*options\.take\s*\?\s*\{\s*take:\s*options\.take\s*\}\s*:\s*\{\s*\}\s*\)/,
+                    /\.\.\.\s*\(\s*options\.take\s*\?\s*\{\s*take:\s*options\.take\s*\}\s*:\s*\{\s*\}\s*\)|take:\s*options\.take\s*\?\?\s*\d+/,
                 );
                 // Unused entity-name reference suppresses the
                 // "declared but never used" warning that some linters
