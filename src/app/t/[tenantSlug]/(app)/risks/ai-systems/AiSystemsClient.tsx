@@ -5,7 +5,8 @@
  * provides/deploys, with its risk-tier classification and obligation count.
  * A subpage of Risks (reached from the AI-risk area). Built on EntityListPage.
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus } from '@/components/ui/icons/nucleo/plus';
@@ -68,6 +69,7 @@ export function AiSystemsClient(props: Props) {
 
 function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
     const router = useRouter();
+    const tenantHref = useTenantHref();
     const tx = useTranslations('risks');
     const tGroup = useTranslations('common.filterGroups');
     const filterDefs = useMemo(
@@ -148,6 +150,15 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
         [tx],
     );
 
+    // Stable table-model identities — a fresh identity here rebuilds
+    // the table model mid-double-click and kills row navigation (#1678).
+    const getAiSystemRowId = useCallback((r: AiSystemRow) => r.id, []);
+    const handleAiSystemRowClick = useCallback(
+        (row: { original: AiSystemRow }) =>
+            router.push(tenantHref(`/risks/ai-systems/${row.original.id}`)),
+        [router, tenantHref],
+    );
+
     return (
         <>
             <EntityListPage<AiSystemRow>
@@ -179,8 +190,8 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
                 table={{
                     data: rows,
                     columns,
-                    getRowId: (r) => r.id,
-                    onRowClick: (row) => router.push(`/t/${tenantSlug}/risks/ai-systems/${row.original.id}`),
+                    getRowId: getAiSystemRowId,
+                    onRowClick: handleAiSystemRowClick,
                     resourceName: (plural) =>
                         plural ? tx('aiSystems.resourcePlural') : tx('aiSystems.resourceSingular'),
                     emptyState: (

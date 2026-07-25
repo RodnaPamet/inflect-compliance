@@ -38,36 +38,93 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 /**
- * List clients whose rows navigate on double-click AND which are covered
- * by the data-table E2E. Adding a page here is cheap; the point is that
- * the two the E2E asserts can never silently regress again.
+ * Every list client that hands `DataTable` a row action.
+ *
+ * Originally this listed only the two pages the E2E asserts. That was
+ * too narrow: a survey after the PoliciesClient fix found ELEVEN more
+ * clients carrying the same shape, two of them (`TasksClient`,
+ * `VendorsClient`) byte-for-byte identical to the regression — a bare
+ * `tenantHref` arrow sitting inside the column memo's dep array. They
+ * were invisible only because no E2E exercised them.
+ *
+ * The list is now the full population rather than the E2E-covered
+ * subset, so "has a test" and "is protected" stop being different
+ * things. A new list client must be added here.
  */
 const DBLCLICK_LIST_CLIENTS = [
     'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
     'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/incidents/IncidentsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/processes/RulesTab.tsx',
+    'src/app/t/[tenantSlug]/(app)/risks/ai-systems/AiSystemsClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/audits/business-continuity/BusinessContinuityClient.tsx',
+    'src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx',
 ] as const;
+
+/**
+ * Both ways a page can hand DataTable a prop:
+ *   • JSX          — `<DataTable onRowClick={(row) => …} />`
+ *   • object form  — `table={{ onRowClick: (row) => … }}` via
+ *                    `EntityListPage`, which spreads `table` straight
+ *                    into `<DataTable {...table} />`.
+ * The original guard only checked the object form, so every JSX-form
+ * page passed while broken. Check both.
+ */
+function inlineArrowPatterns(prop: string): RegExp[] {
+    return [
+        new RegExp(`${prop}=\\{\\s*\\(`), // JSX:    onRowClick={(row) => …
+        new RegExp(`${prop}:\\s*\\(`), //   object: onRowClick: (row) => …
+        new RegExp(`${prop}=\\{\\s*async\\s*\\(`),
+        new RegExp(`${prop}:\\s*async\\s*\\(`),
+    ];
+}
 
 describe('DataTable double-click — stable row identities', () => {
     for (const rel of DBLCLICK_LIST_CLIENTS) {
         describe(path.basename(rel), () => {
             const src = read(rel);
 
-            it('does not pass an inline arrow as onRowClick', () => {
-                // `onRowClick: (row) => …` mints a new function per render.
-                expect(src).not.toMatch(/onRowClick:\s*\(/);
-            });
+            for (const prop of ['onRowClick', 'getRowId', 'onRowPrefetch'] as const) {
+                it(`does not pass an inline arrow as ${prop}`, () => {
+                    // An inline arrow mints a new function identity per
+                    // render, which rebuilds the table model.
+                    for (const re of inlineArrowPatterns(prop)) {
+                        expect({ prop, pattern: String(re), matched: re.test(src) })
+                            .toEqual({ prop, pattern: String(re), matched: false });
+                    }
+                });
+            }
 
-            it('does not pass an inline arrow as getRowId', () => {
-                expect(src).not.toMatch(/getRowId:\s*\(/);
+            it('does not call orderColumns inline where the result is a prop', () => {
+                // `orderColumns` spreads its input (`checklist-order.ts`:
+                // `const result = [...columns]`), so it returns a NEW array
+                // on every call — even when the inner column `useMemo`
+                // holds perfectly. `columns={orderColumns(cols)}` therefore
+                // rebuilds the table model every render, and no amount of
+                // memoising the columns themselves helps.
+                //
+                // This one is invisible to the dep-array check below,
+                // because the instability is introduced at the CALL SITE.
+                expect(src).not.toMatch(/columns=\{\s*orderColumns\(/);
+                expect(src).not.toMatch(/columns:\s*orderColumns\(/);
             });
 
             it('defines tenantHref as a stable callback, not a bare arrow', () => {
                 // The regression: `const tenantHref = (path: string) => …`
                 // is recreated every render, and it sits in the column
                 // memo's dep array — so the memo never holds.
-                expect(src).not.toMatch(
-                    /const\s+tenantHref\s*=\s*\((?!\s*\)\s*=>\s*useCallback)/,
-                );
+                //
+                // Not every list client needs a `tenantHref` (some open a
+                // sheet rather than navigate), so this is conditional —
+                // but if one exists it must be the stable form.
+                if (!/const\s+tenantHref\s*=/.test(src)) return;
+                expect(src).not.toMatch(/const\s+tenantHref\s*=\s*\(/);
                 expect(src).toMatch(
                     /const\s+tenantHref\s*=\s*(useCallback\(|useTenantHref\(\))/,
                 );

@@ -41,7 +41,18 @@ describe('item 32 — three-way asset interaction (title / row / double-click)',
     });
     it('double-click ROW opens the full detail page (onRowClick → navigate)', () => {
         // With selection on, onRowClick fires on DOUBLE click.
-        expect(src).toMatch(/onRowClick=\{\(row\) =>\s*router\.push\(tenantHref\(`\/assets\/\$\{row\.original\.id\}`\)\)/);
+        //
+        // This asserts the BEHAVIOUR (row action navigates to the asset
+        // detail route), not the syntax. It used to pin the inline-arrow
+        // form `onRowClick={(row) => router.push(...)}` — which made the
+        // anti-pattern a REQUIREMENT: an inline arrow is a fresh identity
+        // every render, so it rebuilds the table model between the two
+        // clicks of a double-click and the gesture never completes. See
+        // `datatable-stable-row-identity.test.ts`.
+        expect(src).toMatch(/onRowClick=\{handleAssetRowClick\}/);
+        expect(src).toMatch(
+            /const handleAssetRowClick = useCallback\([\s\S]{0,200}router\.push\(tenantHref\(`\/assets\/\$\{row\.original\.id\}`\)\)/,
+        );
         // The old single-click-opens-panel onRowClick is gone.
         expect(src).not.toContain('onRowClick={(row) => setSelectedAssetId(row.original.id)}');
     });

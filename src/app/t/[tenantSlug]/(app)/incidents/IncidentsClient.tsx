@@ -1,5 +1,6 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -125,6 +126,7 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
         [t, tGroup],
     );
     const router = useRouter();
+    const tenantHref = useTenantHref();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
 
     const query = useTenantSWR<IncidentRow[]>(CACHE_KEYS.incidents.list(), {
@@ -228,6 +230,15 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
         [t, severityLabels, phaseLabels],
     );
 
+    // Stable table-model identities — a fresh identity here rebuilds
+    // the table model mid-double-click and kills row navigation (#1678).
+    const getIncidentRowId = useCallback((row: IncidentRow) => row.id, []);
+    const handleIncidentRowClick = useCallback(
+        (row: { original: IncidentRow }) =>
+            router.push(tenantHref(`/incidents/${row.original.id}`)),
+        [router, tenantHref],
+    );
+
     return (
         <EntityListPage<IncidentRow>
             header={{
@@ -271,9 +282,8 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
                 data: filtered,
                 columns,
                 loading: query.isLoading && !query.data,
-                getRowId: (row: IncidentRow) => row.id,
-                onRowClick: (row) =>
-                    router.push(`/t/${tenantSlug}/incidents/${row.original.id}`),
+                getRowId: getIncidentRowId,
+                onRowClick: handleIncidentRowClick,
                 emptyState: (
                     <EmptyState
                         size="sm"

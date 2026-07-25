@@ -11,7 +11,7 @@
  * Row click → RuleDetailSheet and the "+ Rule" builder land in Epics 2-3;
  * Epic 1 ships the read-only inventory.
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { RuleDetailSheet } from '@/components/processes/RuleDetailSheet';
@@ -186,6 +186,14 @@ function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
         [t],
     );
 
+    // Stable table-model identities — a fresh identity here rebuilds
+    // the table model mid-double-click and kills row navigation (#1678).
+    const getRuleRowId = useCallback((r: AutomationRuleRow) => r.id, []);
+    const handleRuleRowClick = useCallback((r: { original: AutomationRuleRow }) => {
+        setSelected(r.original);
+        setSheetOpen(true);
+    }, []);
+
     return (
         <>
             <EntityListPage<AutomationRuleRow>
@@ -220,12 +228,9 @@ function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
                     columns,
                     loading: isLoading,
                     error: error ? t('rules.loadError') : undefined,
-                    getRowId: (r) => r.id,
+                    getRowId: getRuleRowId,
                     resourceName: (plural) => (plural ? t('rules.resPlural') : t('rules.resSingular')),
-                    onRowClick: (r) => {
-                        setSelected(r.original);
-                        setSheetOpen(true);
-                    },
+                    onRowClick: handleRuleRowClick,
                     emptyState: (
                         <EmptyState
                             title={t('rules.emptyTitle')}

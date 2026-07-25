@@ -3,7 +3,8 @@
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { Tooltip } from '@/components/ui/tooltip';
 import { AppIcon } from '@/components/icons/AppIcon';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { NewVendorModal } from './NewVendorModal';
@@ -106,10 +107,26 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
         { value: 'OFFBOARDING', label: t('statusOption.OFFBOARDING') },
         { value: 'OFFBOARDED', label: t('statusOption.OFFBOARDED') },
     ];
-    const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
+    // Stable across renders — it feeds `vendorColumns`' dep array, so a
+    // bare arrow here would rebuild the table model mid-double-click and
+    // kill row navigation (the PoliciesClient regression, #1678).
+    const tenantHref = useTenantHref();
     const router = useRouter();
     // Null until hydrated — keeps Overdue/Due badges stable across SSR.
     const hydratedNow = useHydratedNow();
+
+    // Stable table-model identities — see the note on `tenantHref`.
+    const getVendorRowId = useCallback((v: VendorRow) => v.id, []);
+    const handleVendorRowClick = useCallback(
+        (row: { original: VendorRow }) =>
+            router.push(tenantHref(`/vendors/${row.original.id}`)),
+        [router, tenantHref],
+    );
+    const handleVendorRowPrefetch = useCallback(
+        (row: { original: VendorRow }) =>
+            router.prefetch(tenantHref(`/vendors/${row.original.id}`)),
+        [router, tenantHref],
+    );
 
     // Modal-form P2 — create-vendor modal mounted off the list, auto-
     // opening on `?create=1` (the redirect target from `/vendors/new`).
@@ -590,11 +607,11 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                             setSortBy(nextBy);
                             setSortOrder(nextOrder);
                         }}
-                        getRowId={(v) => v.id}
+                        getRowId={getVendorRowId}
                         columnVisibility={columnVisibility}
                         onColumnVisibilityChange={setColumnVisibility}
-                        onRowClick={(row) => router.push(tenantHref(`/vendors/${row.original.id}`))}
-                        onRowPrefetch={(row) => router.prefetch(tenantHref(`/vendors/${row.original.id}`))}
+                        onRowClick={handleVendorRowClick}
+                        onRowPrefetch={handleVendorRowPrefetch}
                         selectionEnabled
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),

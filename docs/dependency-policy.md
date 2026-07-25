@@ -56,6 +56,12 @@ control. The CI `Security` job (`npm audit --omit=dev
 production deps, so an un-fixable transitive CVE would otherwise
 wedge the whole pipeline.
 
+The per-override reason, advisory id, and the version each fix landed
+in are recorded in `OVERRIDE_REGISTRY` in
+`tests/guards/overrides-effective.test.ts` — kept next to the check
+that enforces them so the two cannot drift apart. `uuid` is the
+worked example:
+
 | Override | Advisory | Why |
 |----------|----------|-----|
 | `uuid` → `^11.1.1` | GHSA-w5hq-g745-h8pq — missing buffer bounds check in uuid v3/v5/v6 when `buf` is provided (moderate) | `next-auth@4` declares `uuid@^8.3.2`; the whole `<11.1.1` line is vulnerable, so the only fix is forcing the patched major. `next-auth` uses the version-stable named `uuid` exports (`v4`, …), which are unchanged v8 → v11. Drop this entry if `next-auth` itself moves to a patched `uuid` range. |
@@ -63,6 +69,46 @@ wedge the whole pipeline.
 
 A security override is NOT a bridge to drop on convenience — keep it
 until the upstream package legitimately depends on a patched range.
+
+### Overrides decay silently — two mechanisms, two checks
+
+**Raising a floor does not move the lockfile.** `hono` was pinned
+`^4.12.23`. The range admitted the patched 4.12.31. The lockfile was
+never refreshed, so the tree sat on vulnerable 4.12.25 for weeks while
+every offline signal read "remediated". Bumping the range in
+`package.json` and running `npm update <pkg>` are two different
+actions; the second is the one that matters.
+
+**An override can rewrite nothing at all.** `tar` is pinned `^7.5.16`,
+but the only `tar` in the tree lives inside npm's *bundled*
+dependencies — and npm ships those prebuilt, so no override can reach
+them. What actually keeps that copy safe is the `npm` pin, not the
+`tar` entry. An override that reads as protection while protecting
+nothing is worse than no override.
+
+Two complementary checks cover these:
+
+| Check | Runs | Catches |
+|---|---|---|
+| `tests/guards/overrides-effective.test.ts` | every CI run, offline | unregistered override · a floor lowered below the recorded fix · an override that rewrites nothing (must be declared `currentlyInert` with a reason) · a stale inert note |
+| `.github/workflows/override-freshness.yml` | weekly + manual, hits the npm registry | the hono shape — a newer version exists *inside* the range but the lockfile is behind. Also notes when the newest release sits *outside* the range (the fix may have moved past the pinned major). |
+
+The split is deliberate: a Jest guard must not make network calls, and
+the registry is the only place the "is there a newer fix?" answer
+lives. The workflow is **non-blocking** — it warns and maintains one
+tracking issue. `npm audit` remains the gate that blocks merges,
+because it blocks on evidence of a real advisory rather than on version
+arithmetic.
+
+Note that **Dependabot does not update `overrides`** — it moves
+declared dependencies. That is exactly the gap the weekly job covers.
+
+Run it locally with:
+
+```bash
+node scripts/check-override-freshness.mjs        # warn-only
+node scripts/check-override-freshness.mjs --json # machine-readable
+```
 
 ## Deterministic installs — `npm ci`
 
@@ -105,14 +151,19 @@ it before merge.
 
 ## Node / npm
 
-Node **22** across every environment, pinned in three places that
+Node **24** across every environment, pinned in three places that
 `deterministic-install.test.ts` keeps in agreement:
 
-- **`.nvmrc`** (`22`) — `nvm` / `fnm` auto-select it.
-- **`engines`** in `package.json` (`node >=22 <23`, `npm >=10`) —
+- **`.nvmrc`** (`24`) — `nvm` / `fnm` auto-select it.
+- **`engines`** in `package.json` (`node >=24.0.0 <25.0.0`) —
   declares the supported runtime; npm warns on a mismatch.
 - **CI / container** — `NODE_VERSION` in `ci.yml`, the literal
-  `"22"` in `release.yml` / `deploy.yml` / `load-test.yml`, and the
-  `node:22-alpine` base image in the `Dockerfile`.
+  `"24"` in the other workflows, and the `node:24-alpine` base image
+  in the `Dockerfile`.
 
-npm ships with Node 22; no separate npm install step is required.
+npm ships with Node 24, so no separate npm install step is required
+for the app. The `Dockerfile`'s runner stage does pin a newer npm
+(`npm install -g npm@<version>`) — that is a *container-image* CVE fix
+for the npm CLI vendored in the base image, a surface `package-lock.json`
+cannot reach. npm itself is not removable there: the entrypoint runs
+`npx prisma migrate deploy` on container start.

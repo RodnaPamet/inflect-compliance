@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ShieldCheck, AlertTriangle, Cpu, Flame } from 'lucide-react';
@@ -98,7 +99,7 @@ function critBadge(crit: string): StatusBadgeVariant {
 
 export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
     const t = useTranslations('coverage');
-    const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
+    const tenantHref = useTenantHref();
     const router = useRouter();
     const { config: matrixConfig } = useRiskMatrixConfig();
 
@@ -135,6 +136,21 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
             ),
         },
     ]), [t, matrixConfig]);
+
+    // Stable table-model identities — a fresh identity here rebuilds
+    // the table model mid-double-click and kills row navigation (#1678).
+    const getUncoveredAssetRowId = useCallback((a: UncoveredAssetRow) => a.id, []);
+    const getUnmappedRiskRowId = useCallback((r: UnmappedRiskRow) => r.id, []);
+    const handleUncoveredAssetRowClick = useCallback(
+        (row: { original: UncoveredAssetRow }) =>
+            router.push(tenantHref(`/assets/${row.original.id}`)),
+        [router, tenantHref],
+    );
+    const handleUnmappedRiskRowClick = useCallback(
+        (row: { original: UnmappedRiskRow }) =>
+            router.push(tenantHref(`/risks/${row.original.id}`)),
+        [router, tenantHref],
+    );
 
     const uncoveredAssetCols = useMemo(() => createColumns<UncoveredAssetRow>([
         {
@@ -261,8 +277,8 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                     <DataTable
                         data={data.uncoveredCriticalAssets}
                         columns={uncoveredAssetCols}
-                        getRowId={(a) => a.id}
-                        onRowClick={(row) => router.push(tenantHref(`/assets/${row.original.id}`))}
+                        getRowId={getUncoveredAssetRowId}
+                        onRowClick={handleUncoveredAssetRowClick}
                         emptyState={t('emptyAssets')}
                         resourceName={(p) => p ? 'assets' : 'asset'}
                         data-testid="uncovered-assets-table"
@@ -285,8 +301,8 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
                     <DataTable
                         data={data.unmappedRisks}
                         columns={unmappedRiskCols}
-                        getRowId={(r) => r.id}
-                        onRowClick={(row) => router.push(tenantHref(`/risks/${row.original.id}`))}
+                        getRowId={getUnmappedRiskRowId}
+                        onRowClick={handleUnmappedRiskRowClick}
                         emptyState={t('emptyRisks')}
                         resourceName={(p) => p ? 'risks' : 'risk'}
                         data-testid="unmapped-risks-table"

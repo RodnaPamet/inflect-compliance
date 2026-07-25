@@ -1,5 +1,6 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import { useCallback, useState, useMemo, useEffect } from 'react';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -202,7 +203,9 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
+    // Stable across renders — a bare arrow here rebuilds the table model
+    // mid-double-click and kills row navigation (#1678).
+    const tenantHref = useTenantHref();
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
 
     const filterCtx = useFilters();
@@ -865,6 +868,29 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             : []),
     ]), [t, tx, sortAccessors, showDeleted]);
 
+    // `orderColumns` spreads its input, so it returns a NEW array every
+    // call. Calling it inline in JSX would hand DataTable a fresh
+    // `columns` identity every render despite the memo above.
+    const orderedAssetColumns = useMemo(
+        () => orderColumns(assetColumns),
+        [orderColumns, assetColumns],
+    );
+
+    // Stable table-model identities — see the note on `tenantHref`.
+    const getAssetRowId = useCallback((a: AssetListRow) => a.id, []);
+    const handleAssetRowClick = useCallback(
+        (row: { original: AssetListRow }) =>
+            router.push(tenantHref(`/assets/${row.original.id}`)),
+        [router, tenantHref],
+    );
+    const handleAssetRowPrefetch = useCallback(
+        (row: { original: AssetListRow }) => {
+            router.prefetch(tenantHref(`/assets/${row.original.id}`));
+            prefetchData(`/assets/${row.original.id}`);
+        },
+        [router, tenantHref, prefetchData],
+    );
+
     return (
         <ListPageShell className="animate-fadeIn gap-section">
             <ListPageShell.Header>
@@ -991,7 +1017,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     fillBody
                     onReachEnd={hasMoreAssets ? loadMoreAssets : undefined}
                     data={visibleAssets}
-                    columns={orderColumns(assetColumns)}
+                    columns={orderedAssetColumns}
                     sortableColumns={sortableColumns}
                     sortBy={sortBy}
                     sortOrder={sortOrder}
@@ -999,7 +1025,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                         setSortBy(nextBy);
                         setSortOrder(nextOrder);
                     }}
-                    getRowId={(a) => a.id}
+                    getRowId={getAssetRowId}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
                     // Three-way interaction model:
@@ -1027,10 +1053,8 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                             entityLabel={tx('entityLabelPlural')}
                         />
                     )}
-                    onRowClick={(row) =>
-                        router.push(tenantHref(`/assets/${row.original.id}`))
-                    }
-                    onRowPrefetch={(row) => { router.prefetch(tenantHref(`/assets/${row.original.id}`)); prefetchData(`/assets/${row.original.id}`); }}
+                    onRowClick={handleAssetRowClick}
+                    onRowPrefetch={handleAssetRowPrefetch}
                     emptyState={
                         showDeleted && !hasActive ? (
                             // Deleted view with nothing soft-deleted — a distinct

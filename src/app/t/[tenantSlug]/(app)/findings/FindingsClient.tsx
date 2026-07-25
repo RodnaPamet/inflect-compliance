@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -271,6 +271,15 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
     ]), [t]);
 
+    // `orderColumns` spreads its input, so it returns a NEW array every
+    // call. Calling it inline in JSX would hand DataTable a fresh
+    // `columns` identity every render despite the memo above.
+    const orderedFindingColumns = useMemo(
+        () => orderColumns(findingColumns),
+        [orderColumns, findingColumns],
+    );
+    const getFindingRowId = useCallback((f: FindingRow) => f.id, []);
+
     return (
         <ListPageShell className="gap-section">
             <ListPageShell.Header>
@@ -302,8 +311,8 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
                 <DataTable
                     fillBody
                     data={findings}
-                    columns={orderColumns(findingColumns)}
-                    getRowId={(f) => f.id}
+                    columns={orderedFindingColumns}
+                    getRowId={getFindingRowId}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
                     emptyState={
