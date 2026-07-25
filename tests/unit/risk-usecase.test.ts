@@ -36,6 +36,11 @@ const mockDb = {
     tenant: { findUnique: jest.fn() },
     user: { findMany: jest.fn() },
     risk: { findFirst: jest.fn(), findMany: jest.fn() },
+    // create/updateRisk + bulkAssignRisk verify a supplied ownerUserId is an
+    // ACTIVE member of the tenant before writing it (the FK points at the
+    // GLOBAL User table, so the DB alone can't enforce tenancy). Default the
+    // membership lookup to a hit so owner-bearing writes proceed.
+    tenantMembership: { findFirst: jest.fn().mockResolvedValue({ userId: 'u-owner' }) },
     // B7 — listRisks now folds in WorkItemRepository.countLinkedToEntities
     // (TaskLink count). Default to no links → taskTotal/taskDone = 0.
     taskLink: { findMany: jest.fn().mockResolvedValue([]) },
@@ -59,6 +64,9 @@ jest.mock('@/app-layer/repositories/RiskRepository', () => ({
         update: jest.fn(),
         delete: jest.fn(),
         linkControl: jest.fn(),
+        // Bulk-assign path (owner-tenancy validation suite).
+        listByIds: jest.fn(),
+        bulkUpdate: jest.fn(),
     },
 }));
 
@@ -124,6 +132,7 @@ import {
     purgeRisk,
     listRisksWithDeleted,
     linkControlToRisk,
+    bulkAssignRisk,
 } from '@/app-layer/usecases/risk';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -491,5 +500,65 @@ describe('linkControlToRisk', () => {
 
     it('rejects READER', async () => {
         await expect(linkControlToRisk(readerCtx, 'r-1', 'c-1')).rejects.toBeDefined();
+    });
+});
+
+
+// ─── Owner (assignee) tenancy validation ───────────────────────────
+//
+// `Risk.ownerUserId` is an FK to the GLOBAL `User` table, so the database
+// accepts ANY existing user id — including one belonging to another tenant.
+// Every path that takes an owner straight off the request body must check
+// tenant membership itself.
+
+describe('assignee validation — ownerUserId must be an ACTIVE tenant member', () => {
+    beforeEach(() => {
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ maxRiskScale: 5 });
+        (RiskRepository.create as jest.Mock).mockResolvedValue({ id: 'r-new', title: 'T' });
+        (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: null });
+        (RiskRepository.update as jest.Mock).mockResolvedValue({ id: 'r-1' });
+        (RiskRepository.listByIds as jest.Mock)?.mockResolvedValue?.([{ id: 'r-1' }]);
+    });
+
+    it('createRisk rejects an owner who is not a member of the tenant', async () => {
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValueOnce(null);
+        await expect(
+            createRisk(editorCtx, { title: 'X', ownerUserId: 'u-foreign' }),
+        ).rejects.toThrow(/active member/i);
+        expect(RiskRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('createRisk accepts an owner who IS an active member', async () => {
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValueOnce({ userId: 'u-ok' });
+        await createRisk(editorCtx, { title: 'X', ownerUserId: 'u-ok' });
+        expect(RiskRepository.create).toHaveBeenCalled();
+    });
+
+    it('createRisk skips the lookup entirely when no owner is supplied', async () => {
+        await createRisk(editorCtx, { title: 'X' });
+        expect(mockDb.tenantMembership.findFirst).not.toHaveBeenCalled();
+        expect(RiskRepository.create).toHaveBeenCalled();
+    });
+
+    it('updateRisk rejects a foreign owner', async () => {
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValueOnce(null);
+        await expect(
+            updateRisk(editorCtx, 'r-1', { ownerUserId: 'u-foreign' }),
+        ).rejects.toThrow(/active member/i);
+        expect(RiskRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('updateRisk allows CLEARING the owner without a membership lookup', async () => {
+        await updateRisk(editorCtx, 'r-1', { ownerUserId: '' });
+        expect(mockDb.tenantMembership.findFirst).not.toHaveBeenCalled();
+        expect(RiskRepository.update).toHaveBeenCalled();
+    });
+
+    it('bulkAssignRisk rejects a foreign owner before touching any row', async () => {
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValueOnce(null);
+        await expect(
+            bulkAssignRisk(editorCtx, ['r-1', 'r-2'], 'u-foreign'),
+        ).rejects.toThrow(/active member/i);
+        expect(RiskRepository.bulkUpdate).not.toHaveBeenCalled();
     });
 });

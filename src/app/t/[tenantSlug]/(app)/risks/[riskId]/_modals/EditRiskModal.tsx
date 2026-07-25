@@ -23,6 +23,8 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
@@ -106,10 +108,9 @@ export function EditRiskModal({
                     )}
                     <fieldset className="space-y-default" disabled={saving}>
                         <FormField label={t('edit.titleLabel')} required>
-                            <input
+                            <Input
                                 id="risk-edit-title"
                                 type="text"
-                                className="input w-full"
                                 value={form.title ?? ''}
                                 onChange={(e) =>
                                     setForm((f) => ({ ...f, title: e.target.value }))
@@ -119,9 +120,9 @@ export function EditRiskModal({
                             />
                         </FormField>
                         <FormField label={t('edit.descriptionLabel')}>
-                            <textarea
+                            <Textarea
                                 id="risk-edit-description"
-                                className="input min-h-[100px] w-full"
+                                className="min-h-[100px]"
                                 value={form.description ?? ''}
                                 onChange={(e) =>
                                     setForm((f) => ({
@@ -156,9 +157,8 @@ export function EditRiskModal({
                                 />
                             </div>
                             <FormField label={t('edit.treatmentOwner')}>
-                                <input
+                                <Input
                                     id="risk-edit-treatment-owner"
-                                    className="input w-full"
                                     value={form.treatmentOwner ?? ''}
                                     onChange={(e) =>
                                         setForm((f) => ({
@@ -241,9 +241,9 @@ export function EditRiskModal({
                             </div>
                         </div>
                         <FormField label={t('edit.treatmentNotes')}>
-                            <textarea
+                            <Textarea
                                 id="risk-edit-treatment-notes"
-                                className="input min-h-[80px] w-full"
+                                className="min-h-[80px]"
                                 value={form.treatmentNotes ?? ''}
                                 onChange={(e) =>
                                     setForm((f) => ({

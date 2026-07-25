@@ -839,7 +839,9 @@
       "empty": "No history yet. Daily snapshots accrue once the risk-snapshot job has run.",
       "snapshotsCount": "{count} snapshots",
       "aleTrend": "ALE trend",
-      "scoreTrend": "Score trend"
+      "scoreTrend": "Score trend",
+      "loadFailed": "Couldn't load the history for this risk.",
+      "retry": "Retry"
     },
     "bowtie": {
       "title": "Bow-Tie Analysis",
@@ -852,7 +854,11 @@
       "mitigating": "Mitigating",
       "consequences": "Consequences",
       "none": "None",
-      "scoreLabel": "Score"
+      "scoreLabel": "Score",
+      "loadFailed": "Couldn't load the bow-tie analysis.",
+      "retry": "Retry",
+      "emptyTitle": "Nothing to diagram yet",
+      "emptyDesc": "This risk has no threats or consequences mapped yet, so there is no bow-tie to draw. Switch to the list view to see the barriers on their own."
     },
     "fair": {
       "title": "FAIR Analysis",
@@ -939,7 +945,15 @@
       "recommendClosed": "Transfer/Avoid decision — mark this risk Closed when its plan completes.",
       "recommendAssessFirst": "Assess the residual risk to advance the workflow status.",
       "recommendDecideFirst": "Choose a treatment decision to advance the workflow status.",
-      "statusAutoNote": "Status finalizes automatically when the treatment plan completes."
+      "statusAutoNote": "Status finalizes automatically when the treatment plan completes.",
+      "retry": "Retry",
+      "dismiss": "Dismiss",
+      "failedLoadStatus": "Couldn't load the control derivation ({status}).",
+      "failedSaveStatus": "Couldn't save the assessment ({status}).",
+      "failedAcceptStatus": "Couldn't accept the suggestion ({status}).",
+      "failedResidualStatus": "Couldn't save the residual score ({status}).",
+      "failedTreatmentStatus": "Couldn't save the treatment decision ({status}).",
+      "failedReviewStatus": "Couldn't save the review date ({status})."
     },
     "searchPlaceholder": "Search risks…",
     "aleTitle": "Annualised loss expectancy",
@@ -955,7 +969,11 @@
       "selectStatus": "Select status...",
       "assignOwner": "Assign owner",
       "ownerBlank": "Owner (blank = unassign)",
-      "delete": "Delete"
+      "delete": "Delete",
+      "actionFailed": "Bulk action failed. Please try again.",
+      "applied": "{count, plural, one {# risk updated} other {# risks updated}}",
+      "deletedToast": "{count, plural, one {# risk deleted} other {# risks deleted}}",
+      "undo": "Undo"
     },
     "bulkStatus": {
       "open": "Open",
@@ -1556,7 +1574,9 @@
       "quantifiedNo": "Not quantified",
       "stale": "Stale / overdue",
       "staleDesc": "Show only stale or overdue risks (multi-signal detector)",
-      "staleYes": "Stale / overdue"
+      "staleYes": "Stale / overdue",
+      "cell": "Matrix cell",
+      "cellDesc": "Exact likelihood × impact cell from the heatmap."
     },
     "treatmentMitigate": "Mitigate",
     "treatmentAccept": "Accept",
@@ -7350,7 +7370,11 @@
       "optAccept": "Accept — formally accept residual risk",
       "optTransfer": "Transfer — shift to a third party",
       "optAvoid": "Avoid — eliminate the activity",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "milestoneCompleteFailed": "Couldn't complete the milestone. Please try again.",
+      "createPlanFailed": "Couldn't create the treatment plan. Please try again.",
+      "addMilestoneFailed": "Couldn't add the milestone. Please try again.",
+      "completePlanFailed": "Couldn't complete the plan. Please try again."
     },
     "exceptions": {
       "title": "Control Exceptions",

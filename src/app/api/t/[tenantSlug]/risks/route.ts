@@ -19,6 +19,8 @@ const RiskQuerySchema = z.object({
     residualScoreMin: z.coerce.number().int().min(0).optional(),
     residualScoreMax: z.coerce.number().int().min(0).optional(),
     treatment: z.string().optional(),
+    // Exact matrix cell(s): comma-joined `L{likelihood}xI{impact}` tokens.
+    cell: z.string().optional(),
     quantified: z.enum(['yes', 'no']).optional(),
     stale: z.enum(['true']).optional(),
     category: z.string().optional(),
@@ -40,6 +42,7 @@ function toRiskFilters(query: z.infer<typeof RiskQuerySchema>, idIn?: string[]) 
         residualScoreMin: query.residualScoreMin,
         residualScoreMax: query.residualScoreMax,
         treatment: query.treatment,
+        cell: query.cell,
         quantified: query.quantified,
         category: query.category,
         ownerUserId: query.ownerUserId,

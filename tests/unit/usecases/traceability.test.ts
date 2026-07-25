@@ -275,3 +275,51 @@ describe('coverageSummary — divide-by-zero guards', () => {
         expect(summary.hotControls[0]).toMatchObject({ id: 'c1', riskCount: 3 });
     });
 });
+
+
+// ─── Cross-tenant link forgery ─────────────────────────────────────
+//
+// The riskControl join row is stamped with ctx.tenantId regardless of where
+// the ids came from, so a body-supplied controlId/riskId belonging to ANOTHER
+// tenant would otherwise be linked in through an authorised call. Both
+// endpoints are verified tenant-scoped before the insert; 404 keeps the id
+// namespace non-enumerable.
+describe('mapControlToRisk — both endpoints must be in the caller tenant', () => {
+    const bothPresent = {
+        control: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) },
+        risk: { findFirst: jest.fn().mockResolvedValue({ id: 'r1' }) },
+    };
+
+    it('links when BOTH the control and the risk are in-tenant', async () => {
+        mockCtrlRisk.link.mockResolvedValueOnce({ id: 'link-ok' } as never);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(bothPresent as never));
+        await expect(
+            mapControlToRisk(makeRequestContext('EDITOR'), 'c1', 'r1'),
+        ).resolves.toEqual({ id: 'link-ok' });
+        expect(mockCtrlRisk.link).toHaveBeenCalledTimes(1);
+    });
+
+    it('404s and never inserts when the CONTROL is foreign/missing', async () => {
+        const tx = {
+            control: { findFirst: jest.fn().mockResolvedValue(null) },
+            risk: { findFirst: jest.fn().mockResolvedValue({ id: 'r1' }) },
+        };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(tx as never));
+        await expect(
+            mapControlToRisk(makeRequestContext('EDITOR'), 'c-other-tenant', 'r1'),
+        ).rejects.toThrow(/not found/i);
+        expect(mockCtrlRisk.link).not.toHaveBeenCalled();
+    });
+
+    it('404s and never inserts when the RISK is foreign/missing', async () => {
+        const tx = {
+            control: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) },
+            risk: { findFirst: jest.fn().mockResolvedValue(null) },
+        };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(tx as never));
+        await expect(
+            mapControlToRisk(makeRequestContext('EDITOR'), 'c1', 'r-other-tenant'),
+        ).rejects.toThrow(/not found/i);
+        expect(mockCtrlRisk.link).not.toHaveBeenCalled();
+    });
+});

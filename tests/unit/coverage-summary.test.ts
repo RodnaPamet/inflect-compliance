@@ -108,7 +108,7 @@ jest.mock('../../src/lib/db-context', () => ({
 let mockDbInstance: any;
 
 describe('coverageSummary', () => {
-    const ctx = { tenantId: 'tenant-1', userId: 'user-1', role: 'ADMIN', permissions: { canWrite: true } } as any;
+    const ctx = { tenantId: 'tenant-1', userId: 'user-1', role: 'ADMIN', permissions: { canRead: true, canWrite: true } } as any;
 
     it('returns the correct shape', async () => {
         mockDbInstance = mockDb({});

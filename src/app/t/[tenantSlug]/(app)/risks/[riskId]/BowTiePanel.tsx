@@ -52,15 +52,34 @@ export function BowTiePanel({ riskId }: { riskId: string }) {
     const [p, setP] = useState<Projection | null>(null);
     const [graph, setGraph] = useState<BowTieGraph | null>(null);
     const [view, setView] = useState<'canvas' | 'list'>('canvas');
+    // A failed/HTTP-error load used to be swallowed (`.catch(() => {})`),
+    // pinning the panel on its loading copy forever. Track it + offer retry.
+    const [failed, setFailed] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
 
     useEffect(() => {
         let live = true;
-        fetch(apiUrl(`/risks/${riskId}/bowtie`)).then((r) => (r.ok ? r.json() : null)).then((d) => {
-            if (live && d) { setP(d.projection); setGraph(d.graph ?? null); }
-        }).catch(() => {});
+        setFailed(false);
+        fetch(apiUrl(`/risks/${riskId}/bowtie`))
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+            .then((d) => {
+                // eslint-disable-next-line react-hooks/set-state-in-effect
+                if (live) { setP(d.projection); setGraph(d.graph ?? null); }
+            })
+            .catch(() => { if (live) setFailed(true); });
         return () => { live = false; };
-    }, [apiUrl, riskId]);
+    }, [apiUrl, riskId, reloadKey]);
 
+    if (failed) {
+        return (
+            <Card className="space-y-default p-6" data-testid="risk-bowtie-error">
+                <p className="text-sm text-content-error">{t('bowtie.loadFailed')}</p>
+                <Button size="sm" variant="secondary" onClick={() => setReloadKey((n) => n + 1)}>
+                    {t('bowtie.retry')}
+                </Button>
+            </Card>
+        );
+    }
     if (!p) return <Card className="p-6"><p className="text-sm text-content-muted">{t('bowtie.loading')}</p></Card>;
 
     return (
@@ -74,7 +93,22 @@ export function BowTiePanel({ riskId }: { riskId: string }) {
             </div>
             <p className="text-xs text-content-muted">{t('bowtie.description')}</p>
 
-            {view === 'canvas' && graph && <BowTieCanvas graph={graph} />}
+            {/* A projection can load with `graph: null` (nothing to draw yet —
+                no threats/consequences mapped). That used to render as a blank
+                area with no explanation; say so, and point at the list view. */}
+            {view === 'canvas' && (graph
+                ? <BowTieCanvas graph={graph} />
+                : (
+                    <div
+                        className="flex h-[240px] flex-col items-center justify-center gap-tight rounded-md border border-border-subtle bg-bg-muted/20 text-center"
+                        data-testid="risk-bowtie-empty"
+                    >
+                        <TriangleWarning className="size-5 text-content-subtle" />
+                        <p className="text-sm text-content-muted">{t('bowtie.emptyTitle')}</p>
+                        <p className="max-w-sm text-xs text-content-subtle">{t('bowtie.emptyDesc')}</p>
+                    </div>
+                )
+            )}
 
             {view === 'list' && (
             <div className="grid grid-cols-1 gap-section lg:grid-cols-5">

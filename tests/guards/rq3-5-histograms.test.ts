@@ -88,10 +88,18 @@ describe('RQ3-5 — cell collisions flag on BOTH views', () => {
         expect(en.risks.collisions.title).toBe('Cell collisions');
         // Clicking a callout drills into the cell's risks, matching
         // the heatmap's onCellClick contract.
+        //
+        // The drill filters by the EXACT (likelihood, impact) cell, NOT by
+        // the score product. `score` is likelihood × impact, so a
+        // `score=12` drill also matched 2×6, 3×4, 4×3 and 6×2 — every other
+        // cell sharing the product — and the register showed rows the user
+        // never clicked on. The `cell` filter (`L{l}xI{i}` tokens) is the
+        // only shape that can express one cell.
         const callout = client.slice(
             client.indexOf('risk-collision-callouts'),
             client.indexOf('view === \'heatmap\''),
         );
-        expect(callout).toMatch(/filterCtx\.set\('score'/);
+        expect(callout).toMatch(/filterCtx\.set\('cell'/);
+        expect(callout).not.toMatch(/filterCtx\.set\('score'/);
     });
 });
