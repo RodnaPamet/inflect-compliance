@@ -177,7 +177,21 @@ function satisfies(version: string, range: string): boolean {
 // ────────────────────────────────────────────────────────────────
 
 interface OverrideEntry {
-    kind: 'security' | 'peer-bridge';
+    /**
+     * `bundle-vehicle` — the pin exists to move a package's BUNDLED
+     * dependency tree, not because the pinned package itself has an
+     * advisory. `npm` is the case: overrides cannot rewrite bundled
+     * deps, so raising the `npm` pin is the only lever on the tar and
+     * brace-expansion copies inside its bundle.
+     *
+     * It gets its own kind because forcing it into `security` means
+     * inventing an advisory id and a `patchedFrom` for an advisory
+     * that does not exist — a false fact recorded to satisfy a
+     * schema, which is the failure this registry exists to prevent.
+     * (The `npm` entry carried GHSA-4v6q-8jgv-6q2j for exactly that
+     * reason; the id resolves to nothing.)
+     */
+    kind: 'security' | 'peer-bridge' | 'bundle-vehicle';
     reason: string;
     advisory?: string;
     patchedFrom?: string;
@@ -307,7 +321,11 @@ describe('package.json overrides — effective and explained', () => {
         // even in the window before its override lands — and so the
         // freshness script can trust the shape of what it reads.
         const malformed = Object.entries(OVERRIDE_REGISTRY).filter(([, e]) => {
-            if (e.kind !== 'security' && e.kind !== 'peer-bridge') return true;
+            if (!['security', 'peer-bridge', 'bundle-vehicle'].includes(e.kind)) return true;
+            // A vehicle pin must NOT carry advisory facts — that is the
+            // whole point of the kind. Recording them here would put
+            // the invented-id problem back, one indirection down.
+            if (e.kind === 'bundle-vehicle' && (e.advisory || e.patchedFrom)) return true;
             if (typeof e.reason !== 'string' || e.reason.length <= 40) return true;
             if (e.kind === 'security') {
                 if (!/^(GHSA-|CVE-)/.test(e.advisory ?? '')) return true;
@@ -347,13 +365,29 @@ describe('package.json overrides — effective and explained', () => {
             const entry = OVERRIDE_REGISTRY[o.name];
             if (entry?.kind !== 'security' || !entry.patchedFrom) continue;
             it(`${o.name}: spec ${o.spec} admits nothing below ${entry.patchedFrom}`, () => {
-                // The hono decay in reverse: if someone lowers the
-                // floor below the recorded fix, the override stops
-                // being a patch even though it still "looks" set.
-                expect(satisfies(entry.patchedFrom!, o.spec)).toBe(true);
-                const [maj, min, pat] = parseVersion(entry.patchedFrom!)!;
-                const justBelow = pat > 0 ? `${maj}.${min}.${pat - 1}` : null;
-                if (justBelow) expect(satisfies(justBelow, o.spec)).toBe(false);
+                // The invariant is about the FLOOR, not about whether
+                // the spec happens to admit `patchedFrom` itself.
+                //
+                // `patchedFrom` records the version the advisory was
+                // fixed in — a fact about upstream. The spec records
+                // what we admit, and pinning STRICTER than the fix is
+                // legitimate (`sharp` is pinned to an exact 0.35.3
+                // against a 0.35.0 fix). Asserting "spec admits
+                // patchedFrom" would fail that entry and push someone
+                // to record a false fix version to get green, which is
+                // precisely the decay this file exists to prevent.
+                //
+                // What must hold: the lowest version the spec admits
+                // is at or above the recorded fix.
+                const floor = parseVersion(o.spec.replace(/^[\^~]/, ''));
+                const fixedAt = parseVersion(entry.patchedFrom!);
+                expect(floor).not.toBeNull();
+                expect(fixedAt).not.toBeNull();
+                expect({
+                    override: o.key,
+                    floor: o.spec,
+                    admitsSomethingBelowTheFix: compare(floor!, fixedAt!) < 0,
+                }).toEqual({ override: o.key, floor: o.spec, admitsSomethingBelowTheFix: false });
             });
         }
     });

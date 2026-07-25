@@ -7,16 +7,14 @@
     },
     "tar": {
         "kind": "security",
-        "advisory": "CVE-2026-59871",
-        "patchedFrom": "7.5.18",
-        "reason": "Two advisories on the 7.5.x line: the original path-traversal on extraction (GHSA-8489-44mv-ggj8, fixed 7.5.16, added in #1252 alongside the undici pin) and the follow-up CVE-2026-59871 / GHSA-w8wr-v893-vjvp (affects <=7.5.17). Floor raised 7.5.16 → 7.5.18 on 2026-07-25 for the latter.",
+        "advisory": "GHSA-r292-9mhp-454m",
+        "patchedFrom": "7.5.21",
+        "reason": "Three advisories on the 7.5.x line, each superseding the last: path-traversal on extraction (GHSA-8489-44mv-ggj8, fixed 7.5.16, added in #1252), CVE-2026-59871 / GHSA-w8wr-v893-vjvp (<=7.5.17, fixed 7.5.18), a CRITICAL at GHSA-23hp-3jrh-7fpw (<=7.5.18, fixed 7.5.19), and GHSA-r292-9mhp-454m (<=7.5.20, fixed 7.5.21). Floor raised 7.5.18 → 7.5.21 on 2026-07-25: the previous floor was ITSELF inside the critical advisory range.",
         "currentlyInert": "The ONLY tar in the tree is npm's bundled copy (node_modules/npm/node_modules/tar), reached via libnpmdiff / node-gyp / pacote. npm ships its dependencies bundled, so an override cannot rewrite them — what actually cleared CVE-2026-59871 was bumping the `npm` pin to ^11.18.0, whose bundle carries tar 7.5.19. Kept as a floor in case tar re-enters the real tree (the guard will then require this note to be removed), but it is protecting nothing today."
     },
     "npm": {
-        "kind": "security",
-        "advisory": "GHSA-4v6q-8jgv-6q2j",
-        "patchedFrom": "11.18.0",
-        "reason": "Dev-only, via @semantic-release/npm. Forces the release tooling onto a patched npm CLI. npm bundles its own dependency tree, which overrides cannot rewrite (see the BUNDLED_TREE_PREFIX carve-out below) — so this pin is ALSO the only lever for the bundled tar and brace-expansion. Floor raised 11.17.0 → 11.18.0 on 2026-07-25: the 11.18.0 bundle ships tar 7.5.19 (CVE-2026-59871) and brace-expansion 5.0.7 (CVE-2026-13149), moving both off their vulnerable versions. npm 12.x requires Node ^24.15 (we run 24.14), so 11.18 is the ceiling until the runtime moves."
+        "kind": "bundle-vehicle",
+        "reason": "Dev-only, via @semantic-release/npm. npm ships its dependency tree BUNDLED and overrides cannot rewrite bundled deps, so raising this pin is the only lever on the copies inside it: 11.18.0 carries tar 7.5.19 (clearing CVE-2026-59871) and brace-expansion 5.0.7. Re-kinded bundle-vehicle on 2026-07-25 — it was recorded as a security override citing GHSA-4v6q-8jgv-6q2j, an id that resolves to nothing, because no npm-CLI advisory is fixed in 11.18.0. The justification is the bundle, not an advisory on npm itself. npm 12.x requires Node ^24.15 (we run 24.14), so 11.18 is the ceiling until the runtime moves."
     },
     "picomatch": {
         "kind": "security",
@@ -32,15 +30,15 @@
     },
     "@hono/node-server": {
         "kind": "security",
-        "advisory": "GHSA-frvp-7c67-39w9",
-        "patchedFrom": "2.0.5",
-        "reason": "Path traversal in serve-static on Windows via an encoded backslash (%5C), fixed 2.0.5. Paired with the `hono` override below. Was recorded as GHSA-qgpw-5v7x-8v3v until 2026-07-25 — that id does not resolve as an npm advisory."
+        "advisory": "GHSA-9mqv-5hh9-4cgg",
+        "patchedFrom": "2.0.10",
+        "reason": "Unauthenticated memory-leak DoS affecting >=2.0.0 <=2.0.9, fixed 2.0.10. Paired with the `hono` override. Floor raised 2.0.5 → 2.0.10 on 2026-07-25: the old floor cleared only the earlier serve-static path traversal (GHSA-frvp-7c67-39w9, fixed 2.0.5) and admitted versions this later advisory still affects. The lockfile already resolves 2.0.11."
     },
     "fast-uri": {
         "kind": "security",
-        "advisory": "GHSA-4c8g-83qw-93j6",
-        "patchedFrom": "3.1.3",
-        "reason": "fast-uri host confusion via failed IDN canonicalization (high), fixed 3.1.3. Reached through the Ajv/schema-validation chain; completed the npm-audit clean-up in #1693. Was recorded as GHSA-cfj4-hx58-2j6q until 2026-07-25 — that id does not resolve as an npm advisory."
+        "advisory": "GHSA-v2hh-gcrm-f6hx",
+        "patchedFrom": "3.1.4",
+        "reason": "HIGH advisory affecting >=3.0.0 <=3.1.3, fixed 3.1.4, reached through the Ajv/schema-validation chain. Floor raised 3.1.3 → 3.1.4 on 2026-07-25: the old floor cleared only the earlier IDN host-confusion (GHSA-4c8g-83qw-93j6, fixed 3.1.3) and was itself inside the newer range. The lockfile already resolves 3.1.4."
     },
     "hono": {
         "kind": "security",
@@ -68,9 +66,9 @@
     },
     "brace-expansion": {
         "kind": "security",
-        "advisory": "GHSA-3jxr-9vmj-r5cp",
-        "patchedFrom": "5.0.7",
-        "reason": "DoS via exponential-time expansion of consecutive braces (CVE-2026-13149, high), fixed 5.0.7. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window is affected — the 1.x and 2.x lines predate the regression and are deliberately left alone rather than force-marched to a breaking major. Was recorded as GHSA-v6h2-p8h4-qcjw until 2026-07-25 — a real brace-expansion ReDoS but fixed at 1.1.12 / 2.0.2 / 3.0.1 / 4.0.1, so it never justified a 5.0.7 floor."
+        "advisory": "GHSA-mh99-v99m-4gvg",
+        "patchedFrom": "5.0.8",
+        "reason": "ReDoS at CVE-2026-14257 / GHSA-mh99-v99m-4gvg affecting <=5.0.7, fixed 5.0.8 — the finding that turned the CI Trivy image gate red. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window was affected by the ORIGINAL advisory; the 1.x and 2.x lines predate it and are deliberately left alone rather than force-marched to a breaking major. Floor raised 5.0.7 → 5.0.8 on 2026-07-25. The copy inside npm CLI bundle is unreachable by overrides and is carried by the `npm` pin instead."
     },
     "js-yaml": {
         "kind": "security",
@@ -81,8 +79,8 @@
     "sharp": {
         "kind": "security",
         "advisory": "GHSA-f88m-g3jw-g9cj",
-        "patchedFrom": "0.35.3",
-        "reason": "GHSA-f88m-g3jw-g9cj — sharp <0.35.0 inherits the libvips CVEs CVE-2026-33327/33328/35590/35591 (high), pulled transitively via next@16. #1694 pins the EXACT tested build 0.35.3 (not a caret range) to clear the moderate+ npm-audit gate that had turned main red fleet-wide; the recorded floor is therefore the pin itself, well above the vulnerable <0.35.0 window."
+        "patchedFrom": "0.35.0",
+        "reason": "HIGH libvips CVEs (CVE-2026-33327/33328/35590/35591) inherited by sharp <0.35.0, pulled transitively via next@16. Pinned to an exact 0.35.3 — deliberately STRICTER than the 0.35.0 fix — in #1694 to clear the moderate+ npm-audit gate that had turned main red fleet-wide. patchedFrom records the upstream fix (0.35.0), not our floor; corrected from 0.35.3 on 2026-07-25 so the recorded fact matches the advisory."
     },
     "valibot": {
         "kind": "security",
