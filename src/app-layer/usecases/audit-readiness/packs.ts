@@ -1,7 +1,7 @@
 ﻿/**
  * Audit Readiness — Pack CRUD, Freeze, Snapshots, Export, Default Pack Preview
  */
-import { AuditPackItemEntityType, WorkItemStatus, ControlStatus, EvidenceStatus } from '@prisma/client';
+import { AuditPackItemEntityType, WorkItemStatus, ControlStatus } from '@prisma/client';
 import { type PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../../types';
 import { policyCountsWhere } from '@/lib/policy/coverage-predicate';

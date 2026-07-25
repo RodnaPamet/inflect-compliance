@@ -220,7 +220,7 @@ test.describe('Issue Management', () => {
         // it directly (TaskLinksTable shows entityId, not name).
         const uid = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
         const controlName = `E2E Control ${uid}`;
-        const controlId = await seedControl(
+        await seedControl(
             authedPage,
             isolatedTenant.tenantSlug,
             controlName,
