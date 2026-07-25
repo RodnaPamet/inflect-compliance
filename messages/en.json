@@ -277,6 +277,9 @@
     "evidenceAwaitingReview": "{count} evidence awaiting review",
     "highCriticalRisks": "{count} high/critical risks",
     "openAuditFindings": "{count} open audit findings",
+    "overdueTasksAlert": "{count} overdue tasks",
+    "policiesNeedReview": "{count} policies need review",
+    "vendorsNeedReview": "{count} vendors need review",
     "noAlerts": "No outstanding compliance alerts",
     "quickActions": "Quick Actions",
     "addAsset": "Add Asset",
@@ -307,6 +310,17 @@
     "overdueEvidenceLabel": "Overdue Evidence",
     "trendsEmpty": "Trend charts will appear here after the daily compliance snapshot runs. Snapshots are generated automatically at 05:00 UTC.",
     "openList": "Open {label} list",
+    "customKpi": {
+      "title": "Custom KPI",
+      "subtitle": "Pick a metric to chart — the tile and its pie swap with your choice.",
+      "pick": "Choose a metric",
+      "assets": "Assets",
+      "audits": "Audits",
+      "tests": "Control tests",
+      "total": "Total",
+      "noData": "No data for this metric yet",
+      "trendComing": "Trend history is still being collected for this metric."
+    },
     "exceptions": {
       "title": "Exception Inventory",
       "active": "active",

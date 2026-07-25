@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "1.836.0",
+  "version": "1.836.1",
   "private": true,
   "license": "BUSL-1.1",
   "engines": {
@@ -139,7 +139,7 @@
     "elkjs": "0.11.1",
     "html-to-image": "^1.11.13",
     "ioredis": "^5.11.1",
-    "js-yaml": "^5.2.1",
+    "js-yaml": "^5.2.2",
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "ldapts": "^9.0.0",
@@ -231,6 +231,7 @@
     "*": "bash scripts/detect-secrets.sh"
   },
   "overrides": {
+    "valibot": "^1.4.2",
     "sharp": "0.35.3",
     "undici": "^7.28.0",
     "tar": "^7.5.16",

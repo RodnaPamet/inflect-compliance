@@ -1718,6 +1718,9 @@
         "docs/implementation-notes/2026-07-21-custom-role-privilege-escalation.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-07-23-dashboard-round-2.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-07-23-rule-builder-filter-fidelity.md": {
             "class": "historical"
         },
