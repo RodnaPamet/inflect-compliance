@@ -193,40 +193,54 @@ const OVERRIDE_REGISTRY: Record<string, OverrideEntry> = {
     },
     tar: {
         kind: 'security',
-        advisory: 'GHSA-8489-44mv-ggj8',
-        patchedFrom: '7.5.16',
+        advisory: 'CVE-2026-59871',
+        patchedFrom: '7.5.18',
         reason:
-            'Path-traversal on extraction of crafted archives; the fix is only on the 7.5.x line. ' +
-            'Added in #1252 alongside the undici pin.',
+            'Two advisories on the 7.5.x line: the original path-traversal on extraction ' +
+            '(GHSA-8489-44mv-ggj8, fixed 7.5.16, added in #1252 alongside the undici pin) and the ' +
+            'follow-up CVE-2026-59871 / GHSA-w8wr-v893-vjvp (affects <=7.5.17). Floor raised ' +
+            '7.5.16 → 7.5.18 on 2026-07-25 for the latter.',
         currentlyInert:
             'The ONLY tar in the tree is npm\'s bundled copy (node_modules/npm/node_modules/tar), ' +
             'reached via libnpmdiff / node-gyp / pacote. npm ships its dependencies bundled, so an ' +
-            'override cannot rewrite them — what actually keeps that copy safe is the `npm` pin ' +
-            'above, not this entry. Kept as a floor in case tar re-enters the real tree (the guard ' +
-            'will then require this note to be removed), but it is protecting nothing today.',
+            'override cannot rewrite them — what actually cleared CVE-2026-59871 was bumping the ' +
+            '`npm` pin to ^11.18.0, whose bundle carries tar 7.5.19. Kept as a floor in case tar ' +
+            're-enters the real tree (the guard will then require this note to be removed), but it ' +
+            'is protecting nothing today.',
     },
     npm: {
         kind: 'security',
         advisory: 'GHSA-4v6q-8jgv-6q2j',
-        patchedFrom: '11.17.0',
+        patchedFrom: '11.18.0',
         reason:
             'Dev-only, via @semantic-release/npm. Forces the release tooling onto a patched npm CLI. ' +
-            'NOTE: npm bundles its own dependencies, which overrides cannot rewrite — see the ' +
-            'BUNDLED_TREE_PREFIX carve-out below.',
+            'npm bundles its own dependency tree, which overrides cannot rewrite (see the ' +
+            'BUNDLED_TREE_PREFIX carve-out below) — so this pin is ALSO the only lever for the ' +
+            'bundled tar and brace-expansion. Floor raised 11.17.0 → 11.18.0 on 2026-07-25: the ' +
+            '11.18.0 bundle ships tar 7.5.19 (CVE-2026-59871) and brace-expansion 5.0.7 ' +
+            '(CVE-2026-13149), moving both off their vulnerable versions. npm 12.x requires ' +
+            'Node ^24.15 (we run 24.14), so 11.18 is the ceiling until the runtime moves.',
     },
     picomatch: {
         kind: 'security',
-        advisory: 'GHSA-2p57-rm9w-gvfp',
+        advisory: 'GHSA-c2c7-rcm5-vvqj',
         patchedFrom: '4.0.4',
-        reason: 'ReDoS on adversarial glob input. Reached through the test/build matcher chain.',
+        reason:
+            'ReDoS via extglob quantifiers on adversarial glob input, reached through the test/build ' +
+            'matcher chain. The same 4.0.4 release fixes GHSA-3v7f-55p6-f55p (method injection in ' +
+            'POSIX character classes), so one floor clears both. Was recorded as GHSA-2p57-rm9w-gvfp ' +
+            'until 2026-07-25 — that id is an `ip` SSRF advisory and has nothing to do with picomatch.',
     },
     protobufjs: {
         kind: 'security',
-        advisory: 'GHSA-h755-8qp9-cq85',
-        patchedFrom: '8.2.0',
+        advisory: 'GHSA-j3f2-48v5-ccww',
+        patchedFrom: '8.6.6',
         reason:
-            'Prototype pollution during message decoding. Pulled by the OpenTelemetry OTLP exporter, ' +
-            'which sits in the production tree.',
+            'DoS via an infinite loop in .proto parsing, affecting >=8.0.0 <=8.6.5. Pulled by the ' +
+            'OpenTelemetry OTLP exporter, which sits in the production tree. Floor raised 8.2.0 → ' +
+            '8.6.6 on 2026-07-25: the old floor targeted GHSA-jggg-4jg4-v7c6 (fixed 8.2.0) and had ' +
+            'been superseded, so it admitted the still-vulnerable 8.6.5. The previously recorded ' +
+            'GHSA-h755-8qp9-cq85 is real but patched at 6.11.4 / 7.2.5 — it never justified an 8.x floor.',
     },
     '@hono/node-server': {
         kind: 'security',
@@ -253,17 +267,26 @@ const OVERRIDE_REGISTRY: Record<string, OverrideEntry> = {
     },
     tmp: {
         kind: 'security',
-        advisory: 'GHSA-52f5-9888-68mp',
-        patchedFrom: '0.2.6',
-        reason: 'Symlink-following on temp-directory cleanup. Reached through build/test tooling.',
+        advisory: 'GHSA-7c78-jf6q-g5cm',
+        patchedFrom: '0.2.7',
+        reason:
+            'Path traversal via a type-confusion bypass of `_assertPath`, affecting >=0.2.6 <0.2.7. ' +
+            'Reached through build/test tooling. Floor raised 0.2.6 → 0.2.7 on 2026-07-25: the old ' +
+            'floor cleared the EARLIER traversal (GHSA-ph9p-34f9-6g65, unsanitized prefix/postfix, ' +
+            'fixed 0.2.6) but admitted 0.2.6 itself, which the follow-up advisory affects. The ' +
+            'previously recorded GHSA-52f5-9888-68mp does not exist — the real low-severity ' +
+            'arbitrary-write entry is GHSA-52f5-9888-hmc6, fixed back in 0.2.4.',
     },
     '@grpc/grpc-js': {
         kind: 'security',
-        advisory: 'GHSA-7v5v-9h63-cj86',
+        advisory: 'GHSA-5375-pq7m-f5r2',
         patchedFrom: '1.14.4',
         reason:
-            'Unbounded memory growth on malformed frames. Pulled by the OpenTelemetry gRPC exporter ' +
-            'in the production tree.',
+            'A malformed request crashes the server; the 1.14.x line is fixed in 1.14.4. Pulled by ' +
+            'the OpenTelemetry gRPC exporter in the production tree. The same release fixes ' +
+            'GHSA-99f4-grh7-6pcq (malformed compressed message). Was recorded as GHSA-7v5v-9h63-cj86 ' +
+            'until 2026-07-25 — real, but patched at 1.8.22 / 1.9.15 / 1.10.9, so it never justified ' +
+            'a 1.14.4 floor.',
     },
     uuid: {
         kind: 'security',
@@ -282,6 +305,17 @@ const OVERRIDE_REGISTRY: Record<string, OverrideEntry> = {
             'ReDoS. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window is ' +
             'affected — the 1.x and 2.x lines predate the regression and are deliberately left alone ' +
             'rather than force-marched to a breaking major.',
+    },
+    'js-yaml': {
+        kind: 'security',
+        advisory: 'GHSA-52cp-r559-cp3m',
+        patchedFrom: '4.3.0',
+        reason:
+            'High-severity advisory (CVE-2026-59869) affecting js-yaml >=4.0.0 <4.3.0, reached ' +
+            'transitively through cosmiconfig in the dev tree. Range-KEYED (`js-yaml@>=4.0.0 ' +
+            '<4.3.0`) so it moves ONLY the vulnerable 4.x instance up to 4.3.0 and leaves the ' +
+            'separate @istanbuljs/load-nyc-config 3.15.0 nested pin (js-yaml 3.x API) untouched. ' +
+            'Added 2026-07-25.',
     },
     sharp: {
         kind: 'security',

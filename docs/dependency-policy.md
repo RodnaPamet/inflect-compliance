@@ -79,12 +79,13 @@ every offline signal read "remediated". Bumping the range in
 `package.json` and running `npm update <pkg>` are two different
 actions; the second is the one that matters.
 
-**An override can rewrite nothing at all.** `tar` is pinned `^7.5.16`,
+**An override can rewrite nothing at all.** `tar` is pinned `^7.5.18`,
 but the only `tar` in the tree lives inside npm's *bundled*
 dependencies — and npm ships those prebuilt, so no override can reach
-them. What actually keeps that copy safe is the `npm` pin, not the
-`tar` entry. An override that reads as protection while protecting
-nothing is worse than no override.
+them. What actually keeps that copy safe is the `npm` pin (raised to
+`^11.18.0`, whose bundle carries tar 7.5.19 and brace-expansion 5.0.7),
+not the `tar` entry. An override that reads as protection while
+protecting nothing is worse than no override.
 
 Two complementary checks cover these:
 
