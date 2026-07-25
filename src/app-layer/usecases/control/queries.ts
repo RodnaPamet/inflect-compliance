@@ -17,6 +17,16 @@ const OPEN_TASK_STATUS_FILTER = {
     notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[],
 } as const;
 
+// Safety cap on the tenant-wide control/task scans used by the admin
+// dashboard, the consistency check, and the recycle-bin view. These are
+// aggregate/admin reads that intentionally scan the whole tenant, so they
+// can't paginate — the cap is a latency/memory guard against a pathological
+// tenant rather than a page size. Mirrors the health-scan cap
+// (`HEALTH_VERDICT_SCAN_CAP` in ./health): a tenant with more controls than
+// this is beyond any real deployment, and the cap keeps an unbounded scan
+// from becoming a cliff.
+const FULL_SCAN_CAP = 5000;
+
 // ─── Queries ───
 
 /** Filters the controls list read accepts at the usecase boundary (URL-shaped:
@@ -47,7 +57,14 @@ async function resolveControlIdRestriction(
     if (filters?.health) {
         const { verdicts } = await getControlHealthVerdicts(ctx);
         const healthIds = verdicts.filter((v) => v.verdict === filters.health).map((v) => v.controlId);
-        ids = ids ? ids.filter((id) => healthIds.includes(id)) : healthIds;
+        if (ids) {
+            // O(1) membership test instead of Array.includes (O(n)) — the
+            // health-verdict id set can be large (up to HEALTH_VERDICT_SCAN_CAP).
+            const healthIdSet = new Set(healthIds);
+            ids = ids.filter((id) => healthIdSet.has(id));
+        } else {
+            ids = healthIds;
+        }
     }
     return ids;
 }
@@ -68,8 +85,6 @@ export async function listControls(
     options: { take?: number } = {},
 ) {
     assertCanReadControls(ctx);
-    const idRestriction = await resolveControlIdRestriction(ctx, filters);
-    const repoFilters = toRepoFilters(filters, idRestriction);
     return cachedListRead({
         ctx,
         entity: 'control',
@@ -81,8 +96,17 @@ export async function listControls(
         params: options.take
             ? { ...(filters ?? {}), _take: options.take }
             : (filters ?? {}),
-        loader: () =>
-            runInTenantContext(ctx, async (db) => {
+        // Resolve the id-restriction INSIDE the loader so a cache HIT never
+        // pays for the (potentially expensive, 5000-row + groupBy) health-
+        // verdict scan that `?health=` triggers. The resolution runs BEFORE —
+        // not nested inside — the tenant transaction below, so
+        // `getControlHealthVerdicts` opens its own context sequentially (no
+        // nested runInTenantContext). The cache key uses the raw filters, so
+        // moving resolution here does not change caching semantics.
+        loader: async () => {
+            const idRestriction = await resolveControlIdRestriction(ctx, filters);
+            const repoFilters = toRepoFilters(filters, idRestriction);
+            return runInTenantContext(ctx, async (db) => {
                 const controls = await ControlRepository.list(
                     db,
                     ctx,
@@ -103,7 +127,8 @@ export async function listControls(
                     taskTotal: counts.get(c.id)?.total ?? 0,
                     taskDone: counts.get(c.id)?.done ?? 0,
                 }));
-            }),
+            });
+        },
     });
 }
 
@@ -112,8 +137,6 @@ export async function listControlsPaginated(ctx: RequestContext, params: {
     filters?: ControlListInputFilters;
 }) {
     assertCanReadControls(ctx);
-    const idRestriction = await resolveControlIdRestriction(ctx, params.filters);
-    const repoParams = { ...params, filters: toRepoFilters(params.filters, idRestriction) };
     return cachedListRead({
         ctx,
         entity: 'control',
@@ -121,10 +144,15 @@ export async function listControlsPaginated(ctx: RequestContext, params: {
         // Cache key stays the RAW url-shaped filters (small); the loader uses the
         // resolved id array.
         params,
-        loader: () =>
-            runInTenantContext(ctx, (db) =>
+        // Resolve inside the loader so a cache HIT skips the health-verdict scan
+        // (see listControls). Sequential — not nested — tenant contexts.
+        loader: async () => {
+            const idRestriction = await resolveControlIdRestriction(ctx, params.filters);
+            const repoParams = { ...params, filters: toRepoFilters(params.filters, idRestriction) };
+            return runInTenantContext(ctx, (db) =>
                 ControlRepository.listPaginated(db, ctx, repoParams),
-            ),
+            );
+        },
     });
 }
 
@@ -282,6 +310,7 @@ export async function getControlDashboard(ctx: RequestContext) {
                     id: true,
                     owner: { select: { id: true, name: true } },
                 },
+                take: FULL_SCAN_CAP,
             }),
         ]);
 
@@ -369,6 +398,7 @@ export async function runConsistencyCheck(ctx: RequestContext) {
             db.control.findMany({
                 where: { tenantId: ctx.tenantId },
                 select: { id: true, code: true, name: true },
+                take: FULL_SCAN_CAP,
             }),
             db.control.count({ where: { tenantId: ctx.tenantId } }),
             // Directly query the overdue unified tasks attached to a
@@ -392,6 +422,7 @@ export async function runConsistencyCheck(ctx: RequestContext) {
                     control: { select: { code: true } },
                 },
                 orderBy: { dueAt: 'asc' },
+                take: FULL_SCAN_CAP,
             }),
         ]);
 
@@ -439,6 +470,6 @@ export async function runConsistencyCheck(ctx: RequestContext) {
 export async function listControlsWithDeleted(ctx: RequestContext) {
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, (db) =>
-        db.control.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const } }))
+        db.control.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const }, take: FULL_SCAN_CAP }))
     );
 }

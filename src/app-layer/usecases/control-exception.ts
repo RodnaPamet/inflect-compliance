@@ -35,7 +35,7 @@ import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/commo
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import {
     RequestExceptionSchema,
     ApproveExceptionSchema,
@@ -112,6 +112,21 @@ export async function requestException(
             if (!comp) throw notFound('Compensating control not found');
         }
 
+        // The body-supplied risk acceptor must be a real, ACTIVE member
+        // of this tenant — otherwise the exception attributes risk
+        // acceptance to an arbitrary (or cross-tenant) user id.
+        const riskAcceptor = await db.tenantMembership.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                userId: parsed.riskAcceptedByUserId,
+                status: 'ACTIVE',
+            },
+            select: { id: true },
+        });
+        if (!riskAcceptor) {
+            throw notFound('Risk acceptor is not an active member of this tenant');
+        }
+
         const created = await ControlExceptionRepository.create(db, ctx, {
             controlId: parsed.controlId,
             justification: sanitizePlainText(parsed.justification),
@@ -160,9 +175,17 @@ export async function approveException(
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.controlException.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, status: true, controlId: true },
+            select: { id: true, status: true, controlId: true, createdByUserId: true },
         });
         if (!existing) throw notFound('Control exception not found');
+        // Separation of duties: the requester cannot self-approve, even
+        // with admin rights. Checked after the row loads so we have the
+        // authoritative createdByUserId (never trust a body-supplied one).
+        if (existing.createdByUserId === ctx.userId) {
+            throw forbidden(
+                'You cannot approve your own exception request — separation of duties requires a different approver.',
+            );
+        }
         if (existing.status !== 'REQUESTED') {
             throw badRequest(
                 `Cannot approve an exception in status ${existing.status}; only REQUESTED rows can be approved.`,
@@ -230,9 +253,17 @@ export async function rejectException(
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.controlException.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, status: true, controlId: true },
+            select: { id: true, status: true, controlId: true, createdByUserId: true },
         });
         if (!existing) throw notFound('Control exception not found');
+        // Separation of duties: the requester cannot self-reject, even
+        // with admin rights. Checked after the row loads so we have the
+        // authoritative createdByUserId (never trust a body-supplied one).
+        if (existing.createdByUserId === ctx.userId) {
+            throw forbidden(
+                'You cannot reject your own exception request — separation of duties requires a different reviewer.',
+            );
+        }
         if (existing.status !== 'REQUESTED') {
             throw badRequest(
                 `Cannot reject an exception in status ${existing.status}; only REQUESTED rows can be rejected.`,

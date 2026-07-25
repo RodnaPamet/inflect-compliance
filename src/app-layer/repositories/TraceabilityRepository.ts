@@ -7,6 +7,7 @@ export class ControlRiskRepository {
             where: { tenantId, controlId },
             include: { risk: { select: { id: true, title: true, status: true, score: true, category: true } }, createdBy: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'desc' },
+            take: 500, // per-control risk-link panel; a control links to a bounded set of risks
         });
     }
 
@@ -45,6 +46,7 @@ export class AssetControlRepository {
             where: { tenantId, controlId },
             include: { asset: { select: { id: true, name: true, type: true, criticality: true, status: true } }, createdBy: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'desc' },
+            take: 500, // per-control asset-coverage panel; a control covers a bounded set of assets
         });
     }
 

@@ -337,7 +337,7 @@ function scanNPlusOne(): NPlusOneFinding[] {
 // stays at or below the budget. As repo methods add `take:`, the
 // budget drops in lockstep.
 
-const UNBOUNDED_FINDMANY_BUDGET = 54;
+const UNBOUNDED_FINDMANY_BUDGET = 45;
 
 /** How far the budget may sit ABOVE the live count before it is stale. */
 const UNBOUNDED_BUDGET_SLACK = 5;

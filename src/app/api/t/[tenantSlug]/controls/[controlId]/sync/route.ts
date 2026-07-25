@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { runAutomationForControl } from '@/app-layer/usecases/integrations';
+import { assertCanReadControls } from '@/app-layer/policies/control.policies';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { forbidden } from '@/lib/errors/types';
 import { jsonResponse } from '@/lib/api-response';
@@ -39,6 +40,7 @@ export const GET = withApiErrorHandling(async (
 ) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
+    assertCanReadControls(ctx);
 
     const { PrismaSyncMappingStore } = await import('@/app-layer/integrations/prisma-sync-store');
     const { runInTenantContext } = await import('@/lib/db-context');

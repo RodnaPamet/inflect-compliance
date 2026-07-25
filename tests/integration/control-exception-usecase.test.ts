@@ -48,6 +48,7 @@ const TENANT_ID = `t-${SUITE_TAG}`;
 const FOREIGN_TENANT_ID = `t-${SUITE_TAG}-other`;
 
 let admin: { userId: string };
+let approver: { userId: string };
 let editor: { userId: string };
 let reader: { userId: string };
 let foreignAdmin: { userId: string };
@@ -79,6 +80,7 @@ async function seed() {
         },
     });
     admin = await makeUser('admin');
+    approver = await makeUser('approver2');
     editor = await makeUser('editor');
     reader = await makeUser('reader');
     foreignAdmin = await makeUser('foreign');
@@ -87,6 +89,12 @@ async function seed() {
             {
                 tenantId: TENANT_ID,
                 userId: admin.userId,
+                role: Role.ADMIN,
+                status: MembershipStatus.ACTIVE,
+            },
+            {
+                tenantId: TENANT_ID,
+                userId: approver.userId,
                 role: Role.ADMIN,
                 status: MembershipStatus.ACTIVE,
             },
@@ -144,7 +152,7 @@ async function teardown() {
             tenantIds,
         );
     });
-    const userIds = [admin, editor, reader, foreignAdmin]
+    const userIds = [admin, approver, editor, reader, foreignAdmin]
         .filter(Boolean)
         .map((u) => u.userId);
     if (userIds.length > 0) {
@@ -260,7 +268,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
         );
         const expiry = futureDate(90);
         const result = await approveException(
-            ctxAs(Role.ADMIN, admin.userId),
+            ctxAs(Role.ADMIN, approver.userId),
             exceptionId,
             { expiresAt: expiry },
         );
@@ -271,7 +279,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
         );
         expect(ex.status).toBe('APPROVED');
         expect(ex.approvedAt).toBeInstanceOf(Date);
-        expect(ex.approvedBy?.id).toBe(admin.userId);
+        expect(ex.approvedBy?.id).toBe(approver.userId);
         expect(ex.expiresAt?.getTime()).toBe(expiry.getTime());
     });
 
@@ -285,7 +293,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
             },
         );
         await expect(
-            approveException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+            approveException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
                 expiresAt: new Date(Date.now() - 1000),
             }),
         ).rejects.toThrow(/in the future/i);
@@ -300,11 +308,11 @@ describeFn('Epic G-5 — control exception usecases', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await approveException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
             expiresAt: futureDate(30),
         });
         await expect(
-            approveException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+            approveException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
                 expiresAt: futureDate(60),
             }),
         ).rejects.toThrow(/only REQUESTED rows can be approved/i);
@@ -326,6 +334,40 @@ describeFn('Epic G-5 — control exception usecases', () => {
         ).rejects.toThrow(/permission/i);
     });
 
+    // ── 4b. Separation of duties — requester cannot self-approve/reject ─
+
+    it('approveException blocks self-approval by the requester (separation of duties)', async () => {
+        const { exceptionId } = await requestException(
+            ctxAs(Role.ADMIN, admin.userId),
+            {
+                controlId: CONTROL_ID,
+                justification: 'self-approve attempt',
+                riskAcceptedByUserId: admin.userId,
+            },
+        );
+        await expect(
+            approveException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+                expiresAt: futureDate(30),
+            }),
+        ).rejects.toThrow(/your own exception request/i);
+    });
+
+    it('rejectException blocks self-rejection by the requester (separation of duties)', async () => {
+        const { exceptionId } = await requestException(
+            ctxAs(Role.ADMIN, admin.userId),
+            {
+                controlId: CONTROL_ID,
+                justification: 'self-reject attempt',
+                riskAcceptedByUserId: admin.userId,
+            },
+        );
+        await expect(
+            rejectException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+                reason: 'self reject',
+            }),
+        ).rejects.toThrow(/your own exception request/i);
+    });
+
     // ── 5. rejectException ─────────────────────────────────────────
 
     it('rejectException records reason + transitions to REJECTED', async () => {
@@ -337,7 +379,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await rejectException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+        await rejectException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
             reason: 'mitigation is insufficient',
         });
         const ex = await getControlException(
@@ -346,7 +388,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
         );
         expect(ex.status).toBe('REJECTED');
         expect(ex.rejectedAt).toBeInstanceOf(Date);
-        expect(ex.rejectedBy?.id).toBe(admin.userId);
+        expect(ex.rejectedBy?.id).toBe(approver.userId);
     });
 
     // ── 6. Invalid transitions ─────────────────────────────────────
@@ -360,11 +402,11 @@ describeFn('Epic G-5 — control exception usecases', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await approveException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
             expiresAt: futureDate(30),
         });
         await expect(
-            rejectException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+            rejectException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
                 reason: 'too late',
             }),
         ).rejects.toThrow(/only REQUESTED rows can be rejected/i);
@@ -379,11 +421,11 @@ describeFn('Epic G-5 — control exception usecases', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await rejectException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+        await rejectException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
             reason: 'no',
         });
         await expect(
-            approveException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+            approveException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
                 expiresAt: futureDate(30),
             }),
         ).rejects.toThrow(/only REQUESTED rows can be approved/i);
@@ -402,7 +444,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
             },
         );
         await approveException(
-            ctxAs(Role.ADMIN, admin.userId),
+            ctxAs(Role.ADMIN, approver.userId),
             priorId,
             { expiresAt: futureDate(15) },
         );
@@ -443,7 +485,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await rejectException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+        await rejectException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
             reason: 'no',
         });
         await expect(
@@ -491,16 +533,16 @@ describeFn('Epic G-5 — control exception usecases', () => {
             riskAcceptedByUserId: admin.userId,
         });
 
-        await approveException(ctxAs(Role.ADMIN, admin.userId), inWindowEarlyId, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), inWindowEarlyId, {
             expiresAt: futureDate(5),
         });
-        await approveException(ctxAs(Role.ADMIN, admin.userId), inWindowLateId, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), inWindowLateId, {
             expiresAt: futureDate(20),
         });
-        await approveException(ctxAs(Role.ADMIN, admin.userId), outOfWindowId, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), outOfWindowId, {
             expiresAt: futureDate(60),
         });
-        await rejectException(ctxAs(Role.ADMIN, admin.userId), rejectedId, {
+        await rejectException(ctxAs(Role.ADMIN, approver.userId), rejectedId, {
             reason: 'no',
         });
 
@@ -538,7 +580,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await approveException(ctxAs(Role.ADMIN, admin.userId), priorId, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), priorId, {
             expiresAt: futureDate(30),
         });
         await renewException(ctxAs(Role.EDITOR, editor.userId), priorId, {});
@@ -576,7 +618,7 @@ describeFn('Epic G-5 — control exception usecases', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await approveException(ctxAs(Role.ADMIN, admin.userId), app, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), app, {
             expiresAt: futureDate(30),
         });
         const all = await listControlExceptions(
