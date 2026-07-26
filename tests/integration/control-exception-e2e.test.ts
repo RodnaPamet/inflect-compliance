@@ -307,7 +307,7 @@ describeFn('Epic G-5 — end-to-end lifecycle + audit integrity', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await approveException(ctxAs(Role.ADMIN, admin.userId), exceptionId, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), exceptionId, {
             expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         });
         const rows = await globalPrisma.auditLog.findMany({
@@ -333,7 +333,7 @@ describeFn('Epic G-5 — end-to-end lifecycle + audit integrity', () => {
                 riskAcceptedByUserId: admin.userId,
             },
         );
-        await approveException(ctxAs(Role.ADMIN, admin.userId), g0, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), g0, {
             expiresAt: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
         });
         // Force gen-0 expiry via the monitor.
@@ -348,7 +348,7 @@ describeFn('Epic G-5 — end-to-end lifecycle + audit integrity', () => {
             g0,
             { justification: 'gen-1' },
         );
-        await approveException(ctxAs(Role.ADMIN, admin.userId), g1, {
+        await approveException(ctxAs(Role.ADMIN, approver.userId), g1, {
             expiresAt: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
         });
         await runExceptionExpiryMonitor(globalPrisma, {

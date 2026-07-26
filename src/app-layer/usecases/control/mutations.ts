@@ -276,14 +276,17 @@ export async function setRequirementLinkApplicability(
 export async function setControlOwner(ctx: RequestContext, id: string, ownerUserId: string | null) {
     assertCanUpdateControl(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
-        // Validate the user exists before updating
+        // Validate the assignee is an ACTIVE member of THIS tenant before
+        // writing the owner FK. The prior `SELECT id FROM "User"` only proved
+        // platform-wide existence against an RLS-less table — any other
+        // tenant's user id (or a deactivated member) would have been accepted
+        // as an owner. Mirrors `asset.ts::assertActiveOwner`.
         if (ownerUserId) {
-            const userExists = await db.$queryRawUnsafe<Array<{ id: string }>>(
-                `SELECT id FROM "User" WHERE id = $1 LIMIT 1`, ownerUserId
-            );
-            if (!userExists || userExists.length === 0) {
-                throw badRequest(`User "${ownerUserId}" not found. Please enter a valid user ID.`);
-            }
+            const member = await db.tenantMembership.findFirst({
+                where: { tenantId: ctx.tenantId, userId: ownerUserId, status: 'ACTIVE' },
+                select: { id: true },
+            });
+            if (!member) throw badRequest('Owner must be an active member of this tenant');
         }
         const control = await ControlRepository.setOwner(db, ctx, id, ownerUserId);
         if (!control) throw notFound('Control not found');
@@ -345,21 +348,40 @@ export async function setControlOwner(ctx: RequestContext, id: string, ownerUser
 /** Bulk soft-delete controls selected in the table action bar. */
 export async function bulkDeleteControl(ctx: RequestContext, controlIds: string[]) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const outcome = await runInTenantContext(ctx, async (db) => {
+        // Only tenant-owned, non-global rows come back — anything the tenant
+        // doesn't own (foreign or global-library ids) is absent from `rows`.
         const rows = await ControlRepository.listByIds(db, ctx, controlIds);
-        if (rows.length === 0) return { deleted: 0 };
-        await db.control.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
-        for (const r of rows) {
-            await logEvent(db, ctx, {
-                action: 'SOFT_DELETE',
-                entityType: 'Control',
-                entityId: r.id,
-                details: 'Control soft-deleted (bulk)',
-                detailsJson: { category: 'entity_lifecycle', entityName: 'Control', operation: 'deleted', summary: 'Control soft-deleted' },
-            });
+        const ownedIds = new Set(rows.map((r) => r.id));
+        // Per-id verdict so the caller can tell which ids were dropped rather
+        // than silently reconciling a bare count against its selection.
+        const results: Array<{ id: string; status: 'ok' | 'not_found' }> = controlIds.map((id) => ({
+            id,
+            status: ownedIds.has(id) ? 'ok' : 'not_found',
+        }));
+        if (rows.length > 0) {
+            await db.control.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
+            for (const r of rows) {
+                // Sequential by design — audit rows are hash-chained per tenant
+                // (each entry hashes the previous entry's committed hash under a
+                // per-tenant advisory lock; see events/audit.ts). No batch API
+                // exists and parallelising would corrupt the chain ordering.
+                await logEvent(db, ctx, {
+                    action: 'SOFT_DELETE',
+                    entityType: 'Control',
+                    entityId: r.id,
+                    details: 'Control soft-deleted (bulk)',
+                    detailsJson: { category: 'entity_lifecycle', entityName: 'Control', operation: 'deleted', summary: 'Control soft-deleted' },
+                });
+            }
         }
-        return { deleted: rows.length };
+        // `deleted` kept for backward compatibility with existing callers.
+        return { results, deleted: rows.length };
     });
+    // Was missing — without it the cached list served the deleted rows for the
+    // full TTL. Mirrors the sibling bulk ops.
+    await bumpEntityCacheVersion(ctx, 'control');
+    return outcome;
 }
 
 export async function deleteControl(ctx: RequestContext, id: string) {
@@ -411,30 +433,38 @@ export async function bulkSetControlStatus(
         | 'NOT_APPLICABLE',
 ) {
     assertCanUpdateControl(ctx);
-    const updated = await runInTenantContext(ctx, async (db) => {
+    const outcome = await runInTenantContext(ctx, async (db) => {
         // Tenant-owned rows only — global library controls (tenantId NULL)
         // are silently excluded by the repo's tenantId filter.
         const rows = await ControlRepository.listByIds(db, ctx, controlIds);
-        if (rows.length === 0) return 0;
-        await ControlRepository.bulkUpdate(db, ctx, controlIds, { status });
-        for (const r of rows) {
-            await logEvent(db, ctx, {
-                action: 'CONTROL_STATUS_CHANGED',
-                entityType: 'Control',
-                entityId: r.id,
-                details: `Status changed: ${r.status} → ${status}`,
-                detailsJson: {
-                    category: 'status_change',
-                    entityName: 'Control',
-                    fromStatus: r.status,
-                    toStatus: status,
-                },
-            });
+        const ownedIds = new Set(rows.map((r) => r.id));
+        const results: Array<{ id: string; status: 'ok' | 'not_found' }> = controlIds.map((id) => ({
+            id,
+            status: ownedIds.has(id) ? 'ok' : 'not_found',
+        }));
+        if (rows.length > 0) {
+            await ControlRepository.bulkUpdate(db, ctx, controlIds, { status });
+            for (const r of rows) {
+                // Sequential — hash-chained audit trail (see events/audit.ts).
+                await logEvent(db, ctx, {
+                    action: 'CONTROL_STATUS_CHANGED',
+                    entityType: 'Control',
+                    entityId: r.id,
+                    details: `Status changed: ${r.status} → ${status}`,
+                    detailsJson: {
+                        category: 'status_change',
+                        entityName: 'Control',
+                        fromStatus: r.status,
+                        toStatus: status,
+                    },
+                });
+            }
         }
-        return rows.length;
+        // `updated` kept for backward compatibility with existing callers.
+        return { results, updated: rows.length };
     });
     await bumpEntityCacheVersion(ctx, 'control');
-    return { updated };
+    return outcome;
 }
 
 export async function bulkAssignControl(
@@ -443,30 +473,49 @@ export async function bulkAssignControl(
     ownerUserId: string | null,
 ) {
     assertCanUpdateControl(ctx);
-    const updated = await runInTenantContext(ctx, async (db) => {
-        const rows = await ControlRepository.listByIds(db, ctx, controlIds);
-        if (rows.length === 0) return 0;
-        await ControlRepository.bulkUpdate(db, ctx, controlIds, {
-            ownerUserId: ownerUserId || null,
-        });
-        for (const r of rows) {
-            await logEvent(db, ctx, {
-                action: 'CONTROL_OWNER_CHANGED',
-                entityType: 'Control',
-                entityId: r.id,
-                details: `Owner set to: ${ownerUserId || 'none'}`,
-                detailsJson: {
-                    category: 'entity_lifecycle',
-                    entityName: 'Control',
-                    operation: 'updated',
-                    changedFields: ['ownerUserId'],
-                    after: { ownerUserId: ownerUserId || null },
-                    summary: ownerUserId ? `owner reassigned (bulk)` : `owner cleared (bulk)`,
-                },
+    const outcome = await runInTenantContext(ctx, async (db) => {
+        // Validate the assignee is an ACTIVE member of THIS tenant — the bulk
+        // path previously wrote the owner FK with zero validation, so a
+        // foreign or deactivated user id could be stamped onto every selected
+        // control. Mirrors `setControlOwner` / `asset.ts::assertActiveOwner`.
+        if (ownerUserId) {
+            const member = await db.tenantMembership.findFirst({
+                where: { tenantId: ctx.tenantId, userId: ownerUserId, status: 'ACTIVE' },
+                select: { id: true },
             });
+            if (!member) throw badRequest('Owner must be an active member of this tenant');
         }
-        return rows.length;
+        const rows = await ControlRepository.listByIds(db, ctx, controlIds);
+        const ownedIds = new Set(rows.map((r) => r.id));
+        const results: Array<{ id: string; status: 'ok' | 'not_found' }> = controlIds.map((id) => ({
+            id,
+            status: ownedIds.has(id) ? 'ok' : 'not_found',
+        }));
+        if (rows.length > 0) {
+            await ControlRepository.bulkUpdate(db, ctx, controlIds, {
+                ownerUserId: ownerUserId || null,
+            });
+            for (const r of rows) {
+                // Sequential — hash-chained audit trail (see events/audit.ts).
+                await logEvent(db, ctx, {
+                    action: 'CONTROL_OWNER_CHANGED',
+                    entityType: 'Control',
+                    entityId: r.id,
+                    details: `Owner set to: ${ownerUserId || 'none'}`,
+                    detailsJson: {
+                        category: 'entity_lifecycle',
+                        entityName: 'Control',
+                        operation: 'updated',
+                        changedFields: ['ownerUserId'],
+                        after: { ownerUserId: ownerUserId || null },
+                        summary: ownerUserId ? `owner reassigned (bulk)` : `owner cleared (bulk)`,
+                    },
+                });
+            }
+        }
+        // `updated` kept for backward compatibility with existing callers.
+        return { results, updated: rows.length };
     });
     await bumpEntityCacheVersion(ctx, 'control');
-    return { updated };
+    return outcome;
 }

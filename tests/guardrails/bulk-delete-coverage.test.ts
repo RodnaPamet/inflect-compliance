@@ -67,7 +67,16 @@ describe('bulk-delete coverage', () => {
         for (const { usecase } of ENTITIES) {
             const start = usecaseSrc.indexOf(`export async function ${usecase}(`);
             expect(start).toBeGreaterThan(-1);
-            const body = usecaseSrc.slice(start, start + 1200);
+            // Extract the WHOLE function body — from its declaration to the
+            // next top-level `export async function` (or EOF). A fixed-size
+            // char window silently truncates once a body grows: e.g.
+            // bulkDeleteControl now builds a per-id verdict array and wraps
+            // the delete+audit in an `if (rows.length > 0) { … }`, pushing
+            // the audit past a naïve window while it stays firmly inside the
+            // function. Scanning the real body keeps the check honest.
+            const rest = usecaseSrc.slice(start + 1);
+            const nextIdx = rest.indexOf('export async function ');
+            const body = nextIdx === -1 ? usecaseSrc.slice(start) : usecaseSrc.slice(start, start + 1 + nextIdx);
             expect(body).toMatch(/\.deleteMany\(/);
             expect(body).toMatch(/action:\s*'SOFT_DELETE'/);
         }

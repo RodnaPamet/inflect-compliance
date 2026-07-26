@@ -8,6 +8,7 @@ import {
 import { logEvent } from '../../events/audit';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
+import { Prisma } from '@prisma/client';
 
 // ─── Templates ───
 
@@ -25,11 +26,27 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
         // `skipped` distinguishes a template whose control already existed
         // (idempotent no-op) from one actually installed — so the "Installed N"
         // toast counts only real installs, not skipped existing controls.
-        const results: Array<{ templateCode: string; controlId: string; tasksCreated: number; requirementsLinked: number; skipped: boolean }> = [];
+        // `unresolvedTemplateId` is set on a row when a requested id did not
+        // resolve to a template — surfaced to the caller instead of being
+        // silently dropped (the row is marked `skipped: true` so it never
+        // inflates the caller's install count).
+        const results: Array<{ templateCode: string; controlId: string; tasksCreated: number; requirementsLinked: number; skipped: boolean; unresolvedTemplateId?: string }> = [];
 
         for (const templateId of templateIds) {
             const template = await ControlTemplateRepository.getById(db, templateId);
-            if (!template) continue;
+            if (!template) {
+                // Record the unresolved id rather than continuing silently, so a
+                // stale/typo'd templateId is visible in the response.
+                results.push({
+                    templateCode: '',
+                    controlId: '',
+                    tasksCreated: 0,
+                    requirementsLinked: 0,
+                    skipped: true,
+                    unresolvedTemplateId: templateId,
+                });
+                continue;
+            }
 
             // Check if control with this code already exists for tenant
             const existing = await db.control.findFirst({
@@ -63,11 +80,15 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
 
             // Create unified Task rows (NOT legacy controlTask) so template
             // controls show real task counts in the list and roll up into
-            // readiness — matching the framework install wizard.
-            let tasksCreated = 0;
-            for (const tplTask of template.tasks) {
-                await db.task.create({
-                    data: {
+            // readiness — matching the framework install wizard. Batched into a
+            // single createMany (was a per-task create in a loop). The field-
+            // encryption extension encrypts Task.description on createMany the
+            // same as on create — `createMany` is in its WRITE_ACTIONS set and
+            // the array `data` is walked per element.
+            const tasksCreated = template.tasks.length;
+            if (tasksCreated > 0) {
+                await db.task.createMany({
+                    data: template.tasks.map((tplTask): Prisma.TaskCreateManyInput => ({
                         tenantId: ctx.tenantId,
                         controlId: control.id,
                         title: tplTask.title,
@@ -76,33 +97,29 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
                         type: 'TASK',
                         createdByUserId: ctx.userId,
                         assigneeUserId: ctx.userId,
-                    },
+                    })),
                 });
-                tasksCreated++;
             }
 
             // Create control↔requirement links in the CANONICAL table
             // (controlRequirementLink) — the one SoA, per-framework coverage,
             // readiness and every posture surface read. The framework install
             // wizard writes the same table; template-installed controls now
-            // count toward posture instead of rendering as unmapped.
-            let requirementsLinked = 0;
-            for (const rl of template.requirementLinks) {
-                await db.controlRequirementLink.upsert({
-                    where: {
-                        controlId_requirementId: {
-                            controlId: control.id,
-                            requirementId: rl.requirementId,
-                        },
-                    },
-                    create: {
+            // count toward posture instead of rendering as unmapped. Batched
+            // into a single createMany (was a per-link upsert in a loop). The
+            // control is brand-new, so the only possible unique collision is a
+            // template that lists the same requirement twice — `skipDuplicates`
+            // handles that, the role the per-link upsert used to serve.
+            const requirementsLinked = template.requirementLinks.length;
+            if (requirementsLinked > 0) {
+                await db.controlRequirementLink.createMany({
+                    data: template.requirementLinks.map((rl): Prisma.ControlRequirementLinkCreateManyInput => ({
                         tenantId: ctx.tenantId,
                         controlId: control.id,
                         requirementId: rl.requirementId,
-                    },
-                    update: {},
+                    })),
+                    skipDuplicates: true,
                 });
-                requirementsLinked++;
             }
 
             await logEvent(db, ctx, {

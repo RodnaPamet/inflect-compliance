@@ -253,11 +253,14 @@ describe('setControlApplicability', () => {
     });
 });
 
-describe('setControlOwner — user existence validation', () => {
-    it('rejects when the ownerUserId does not exist in the User table', async () => {
-        const queryRawUnsafe = jest.fn().mockResolvedValueOnce([]);
+describe('setControlOwner — active-member validation', () => {
+    it('rejects when the ownerUserId is not an ACTIVE member of the tenant', async () => {
+        // The owner check is now a TenantMembership.findFirst lookup
+        // (was a raw `SELECT id FROM "User"`). A non-member / deactivated
+        // id resolves to null → badRequest.
+        const findFirst = jest.fn().mockResolvedValueOnce(null);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ $queryRawUnsafe: queryRawUnsafe } as never),
+            fn({ tenantMembership: { findFirst } } as never),
         );
 
         await expect(
@@ -266,26 +269,25 @@ describe('setControlOwner — user existence validation', () => {
                 'c1',
                 'no-such-user',
             ),
-        ).rejects.toThrow(/not found/);
+        ).rejects.toThrow(/active member/i);
         expect(mockSetOwner).not.toHaveBeenCalled();
-        // Regression: a refactor that skipped the existence check
-        // would either dangle the FK (DB-level constraint failure
-        // surfaces deep in the call) OR persist a stale id that the
-        // UI renders as "Unknown owner".
+        // Regression: a refactor that skipped the membership check would
+        // let any other tenant's user id (or a deactivated member) be
+        // stamped onto the owner FK.
     });
 
-    it('allows clearing the owner (ownerUserId === null) without User lookup', async () => {
-        const queryRawUnsafe = jest.fn();
+    it('allows clearing the owner (ownerUserId === null) without a membership lookup', async () => {
+        const findFirst = jest.fn();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ $queryRawUnsafe: queryRawUnsafe } as never),
+            fn({ tenantMembership: { findFirst } } as never),
         );
         mockSetOwner.mockResolvedValueOnce({ id: 'c1' } as never);
 
         await setControlOwner(makeRequestContext('EDITOR'), 'c1', null);
 
-        // The User-lookup query is gated on `ownerUserId` truthiness —
-        // null clears MUST not run the query.
-        expect(queryRawUnsafe).not.toHaveBeenCalled();
+        // The membership lookup is gated on `ownerUserId` truthiness —
+        // a null clear MUST NOT run the query.
+        expect(findFirst).not.toHaveBeenCalled();
     });
 });
 

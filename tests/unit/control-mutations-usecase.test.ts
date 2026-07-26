@@ -16,7 +16,7 @@
  *     returns null → 403 forbidden).
  *   - setControlStatus — existence check, global protection, audit
  *     fromStatus/toStatus shape.
- *   - setControlOwner — user existence check ($queryRawUnsafe),
+ *   - setControlOwner — active-member check (tenantMembership.findFirst),
  *     notification creation post-commit, audit shape.
  *   - markControlTestCompleted — NOT_APPLICABLE block, cadence
  *     computation via computeNextDueAt.
@@ -27,7 +27,7 @@
 const mockDb = {
     controlKeySequence: { upsert: jest.fn() },
     control: { delete: jest.fn() },
-    $queryRawUnsafe: jest.fn(),
+    tenantMembership: { findFirst: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -253,36 +253,35 @@ describe('setControlStatus', () => {
 // ─── setControlOwner ───────────────────────────────────────────────
 
 describe('setControlOwner', () => {
-    it('validates the user via $queryRawUnsafe before updating', async () => {
-        (mockDb.$queryRawUnsafe as jest.Mock).mockResolvedValue([{ id: 'u-1' }]);
+    it('validates the owner is an active tenant member before updating', async () => {
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValue({ id: 'm1' });
         (ControlRepository.setOwner as jest.Mock).mockResolvedValue({ id: 'c-1', name: 'X', code: 'A.5' });
         (createAssignmentNotification as jest.Mock).mockResolvedValue(undefined);
 
         await setControlOwner(editorCtx, 'c-1', 'u-1');
 
-        expect(mockDb.$queryRawUnsafe).toHaveBeenCalledTimes(1);
-        const queryArgs = (mockDb.$queryRawUnsafe as jest.Mock).mock.calls[0];
-        expect(queryArgs[0]).toMatch(/FROM "User" WHERE id/);
-        expect(queryArgs[1]).toBe('u-1');
+        expect(mockDb.tenantMembership.findFirst).toHaveBeenCalledTimes(1);
+        const findArgs = (mockDb.tenantMembership.findFirst as jest.Mock).mock.calls[0][0];
+        expect(findArgs.where).toMatchObject({ tenantId: editorCtx.tenantId, userId: 'u-1', status: 'ACTIVE' });
     });
 
-    it('throws badRequest when the user does not exist', async () => {
-        (mockDb.$queryRawUnsafe as jest.Mock).mockResolvedValue([]);
-        await expect(setControlOwner(editorCtx, 'c-1', 'ghost')).rejects.toThrow(/not found/i);
+    it('throws badRequest when the owner is not an active member', async () => {
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValue(null);
+        await expect(setControlOwner(editorCtx, 'c-1', 'ghost')).rejects.toThrow(/active member of this tenant/i);
         expect(ControlRepository.setOwner).not.toHaveBeenCalled();
     });
 
-    it('skips user lookup when clearing ownership (null)', async () => {
+    it('skips membership lookup when clearing ownership (null)', async () => {
         (ControlRepository.setOwner as jest.Mock).mockResolvedValue({ id: 'c-1', name: 'X', code: 'A.5' });
 
         await setControlOwner(editorCtx, 'c-1', null);
 
-        expect(mockDb.$queryRawUnsafe).not.toHaveBeenCalled();
+        expect(mockDb.tenantMembership.findFirst).not.toHaveBeenCalled();
         expect(createAssignmentNotification).not.toHaveBeenCalled();
     });
 
     it('creates an in-app assignment notification for the new owner', async () => {
-        (mockDb.$queryRawUnsafe as jest.Mock).mockResolvedValue([{ id: 'u-1' }]);
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValue({ id: 'm1' });
         (ControlRepository.setOwner as jest.Mock).mockResolvedValue({ id: 'c-1', name: 'X', code: 'A.5' });
         (createAssignmentNotification as jest.Mock).mockResolvedValue(undefined);
 
@@ -301,7 +300,7 @@ describe('setControlOwner', () => {
     });
 
     it('does not surface notification errors to the caller (fire-and-forget)', async () => {
-        (mockDb.$queryRawUnsafe as jest.Mock).mockResolvedValue([{ id: 'u-1' }]);
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValue({ id: 'm1' });
         (ControlRepository.setOwner as jest.Mock).mockResolvedValue({ id: 'c-1', name: 'X', code: 'A.5' });
         (createAssignmentNotification as jest.Mock).mockRejectedValue(new Error('Redis down'));
 

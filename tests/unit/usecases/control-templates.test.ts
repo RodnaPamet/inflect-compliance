@@ -55,8 +55,10 @@ jest.mock('@/app-layer/repositories/FrameworkRepository', () => ({
 const mockDb: any = {
     control: { findFirst: jest.fn(), create: jest.fn() },
     // Unified Task + canonical controlRequirementLink (R2-P1 link unification).
-    task: { create: jest.fn() },
-    controlRequirementLink: { upsert: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
+    // The install path batches into task.createMany + controlRequirementLink.createMany;
+    // map/unmap still use the canonical upsert/findFirst/delete.
+    task: { create: jest.fn(), createMany: jest.fn() },
+    controlRequirementLink: { upsert: jest.fn(), findFirst: jest.fn(), delete: jest.fn(), createMany: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => {
@@ -97,8 +99,8 @@ beforeEach(() => {
     auditCalls.length = 0;
     [
         mockDb.control.findFirst, mockDb.control.create,
-        mockDb.task.create,
-        mockDb.controlRequirementLink.upsert, mockDb.controlRequirementLink.findFirst, mockDb.controlRequirementLink.delete,
+        mockDb.task.create, mockDb.task.createMany,
+        mockDb.controlRequirementLink.upsert, mockDb.controlRequirementLink.findFirst, mockDb.controlRequirementLink.delete, mockDb.controlRequirementLink.createMany,
         mockTplList, mockTplGetById,
         mockListFw, mockListReqs, mockListMappings,
         assertCanReadControls as jest.Mock,
@@ -143,12 +145,14 @@ describe('installControlsFromTemplate', () => {
         expect(auditCalls).toHaveLength(0);
     });
 
-    it('SKIPS a template that the repo cannot resolve (missing row)', async () => {
+    it('surfaces an unresolved-templateId row when the repo cannot resolve a template (does not silently drop)', async () => {
         mockTplGetById.mockResolvedValueOnce(null);
 
         const result = await installControlsFromTemplate(ctx, ['t-missing']);
 
-        expect(result).toEqual([]);
+        expect(result).toEqual([
+            { templateCode: '', controlId: '', tasksCreated: 0, requirementsLinked: 0, skipped: true, unresolvedTemplateId: 't-missing' },
+        ]);
         expect(mockDb.control.create).not.toHaveBeenCalled();
         expect(auditCalls).toHaveLength(0);
     });
@@ -198,8 +202,14 @@ describe('installControlsFromTemplate', () => {
         expect(result).toEqual([
             { templateCode: 'CC1', controlId: 'ctrl-new', tasksCreated: 2, requirementsLinked: 3, skipped: false },
         ]);
-        expect(mockDb.task.create).toHaveBeenCalledTimes(2);
-        expect(mockDb.controlRequirementLink.upsert).toHaveBeenCalledTimes(3);
+        // Batched: a single createMany per table (was a per-task create + per-link upsert loop).
+        expect(mockDb.task.create).not.toHaveBeenCalled();
+        expect(mockDb.task.createMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.task.createMany.mock.calls[0][0].data).toHaveLength(2);
+        expect(mockDb.controlRequirementLink.upsert).not.toHaveBeenCalled();
+        expect(mockDb.controlRequirementLink.createMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.controlRequirementLink.createMany.mock.calls[0][0].data).toHaveLength(3);
+        expect(mockDb.controlRequirementLink.createMany.mock.calls[0][0].skipDuplicates).toBe(true);
         expect(auditCalls).toHaveLength(1);
         expect(auditCalls[0].action).toBe('CONTROL_INSTALLED_FROM_TEMPLATE');
         expect(auditCalls[0].metadata).toMatchObject({
@@ -208,7 +218,7 @@ describe('installControlsFromTemplate', () => {
     });
 
     it('handles a MIX of skip + happy-path templates in one call (independent branch state per row)', async () => {
-        // template-1 → missing (skip + no result row)
+        // template-1 → missing (unresolved result row, no audit)
         // template-2 → already-exists (idempotent skip + result row, no audit)
         // template-3 → happy-path (full create + audit)
         mockTplGetById
@@ -231,9 +241,10 @@ describe('installControlsFromTemplate', () => {
 
         const result = await installControlsFromTemplate(ctx, ['t-1', 't-2', 't-3']);
 
-        expect(result).toHaveLength(2); // t-1 dropped, t-2 + t-3 returned
-        expect(result[0]).toMatchObject({ templateCode: 'CC2', controlId: 'ctrl-existing', tasksCreated: 0 });
-        expect(result[1]).toMatchObject({ templateCode: 'CC3', controlId: 'ctrl-new', tasksCreated: 1 });
+        expect(result).toHaveLength(3); // t-1 now surfaces an unresolved row; t-2 + t-3 as before
+        expect(result[0]).toMatchObject({ skipped: true, unresolvedTemplateId: 't-1', templateCode: '', controlId: '' });
+        expect(result[1]).toMatchObject({ templateCode: 'CC2', controlId: 'ctrl-existing', tasksCreated: 0 });
+        expect(result[2]).toMatchObject({ templateCode: 'CC3', controlId: 'ctrl-new', tasksCreated: 1 });
         expect(auditCalls).toHaveLength(1); // only t-3 fires audit
         expect(auditCalls[0].metadata.templateId).toBe('t-3');
     });

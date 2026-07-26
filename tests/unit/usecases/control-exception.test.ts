@@ -81,6 +81,11 @@ function fakeDb(overrides: Record<string, any> = {}) {
     return {
         control: { findFirst: jest.fn() },
         controlException: { findFirst: jest.fn() },
+        // requestException now validates the body-supplied
+        // riskAcceptedByUserId against an ACTIVE TenantMembership.
+        // Always present on the base shape so no requestException test
+        // hits `undefined.findFirst`.
+        tenantMembership: { findFirst: jest.fn() },
         ...overrides,
     };
 }
@@ -168,6 +173,11 @@ describe('requestException', () => {
     it('creates the exception, sanitises justification, and emits a lifecycle audit event', async () => {
         const db = fakeDb();
         db.control.findFirst.mockResolvedValueOnce({ id: 'c1', name: 'Encryption' });
+        // Risk acceptor resolves to an ACTIVE member → the new gate passes
+        // and the flow reaches ControlExceptionRepository.create, which
+        // consumes its own mockResolvedValueOnce (prevents once-queue bleed
+        // into the renewException tests).
+        db.tenantMembership.findFirst.mockResolvedValueOnce({ id: 'm1' });
         mockRepo.create.mockResolvedValueOnce({ id: 'ex-new' } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
@@ -185,6 +195,24 @@ describe('requestException', () => {
         const logArg = mockLog.mock.calls[0][2] as any;
         expect(logArg.action).toBe('CONTROL_EXCEPTION_REQUESTED');
         expect(logArg.detailsJson.category).toBe('entity_lifecycle');
+    });
+
+    it('throws notFound when the risk acceptor is not an active member of the tenant', async () => {
+        const db = fakeDb();
+        db.control.findFirst.mockResolvedValueOnce({ id: 'c1', name: 'Encryption' });
+        // No ACTIVE membership for the supplied riskAcceptedByUserId → the
+        // new gate rejects before any repository write.
+        db.tenantMembership.findFirst.mockResolvedValueOnce(null);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+
+        await expect(
+            requestException(makeRequestContext('EDITOR'), {
+                controlId: 'c1',
+                justification: 'why',
+                riskAcceptedByUserId: 'u-not-a-member',
+            }),
+        ).rejects.toThrow(/active member/i);
+        expect(mockRepo.create).not.toHaveBeenCalled();
     });
 });
 
@@ -257,6 +285,10 @@ describe('approveException — ADMIN-gated REQUESTED → APPROVED transition', (
             id: 'ex-1',
             status: 'REQUESTED',
             controlId: 'c1',
+            // Requester differs from the acting ADMIN (makeRequestContext
+            // default userId 'user-1') so the separation-of-duties
+            // self-approval guard does not fire.
+            createdByUserId: 'requester-user',
         });
         mockRepo.approve.mockResolvedValueOnce(1 as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
@@ -315,6 +347,9 @@ describe('rejectException — ADMIN-gated REQUESTED → REJECTED transition', ()
             id: 'ex-1',
             status: 'REQUESTED',
             controlId: 'c1',
+            // Requester differs from the acting ADMIN so the SoD
+            // self-rejection guard does not fire.
+            createdByUserId: 'requester-user',
         });
         mockRepo.reject.mockResolvedValueOnce(1 as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));

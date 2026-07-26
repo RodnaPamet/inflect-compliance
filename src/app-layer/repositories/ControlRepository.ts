@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
+import { notFound } from '@/lib/errors/types';
 
 export interface ControlListFilters {
     status?: string;
@@ -71,7 +72,9 @@ export class ControlRepository {
                 where,
                 orderBy: [{ code: 'asc' }, { annexId: 'asc' }],
                 select: controlListSelect,
-                ...(options.take ? { take: options.take } : {}),
+                // Bounded even on the legacy no-`take` list path — cap at 500
+                // so an unpaginated call can't stream an unbounded result set.
+                take: options.take ?? 500,
             });
         });
     }
@@ -240,6 +243,7 @@ export class ControlRepository {
     static async listControlRequirementLinks(db: PrismaTx, ctx: RequestContext, controlId: string) {
         const links = await db.controlRequirementLink.findMany({
             where: { controlId, tenantId: ctx.tenantId },
+            take: 500,
             include: {
                 requirement: {
                     include: { framework: { select: { name: true } } },
@@ -331,6 +335,7 @@ export class ControlRepository {
     static async listContributors(db: PrismaTx, ctx: RequestContext, controlId: string) {
         return db.controlContributor.findMany({
             where: { controlId, tenantId: ctx.tenantId },
+            take: 500,
             include: { user: { select: { id: true, name: true, email: true } } },
         });
     }
@@ -338,6 +343,14 @@ export class ControlRepository {
     static async addContributor(db: PrismaTx, ctx: RequestContext, controlId: string, userId: string) {
         const control = await db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId } });
         if (!control) return null;
+        // The body-supplied userId must be an ACTIVE member of this tenant —
+        // FK checks bypass RLS, so an unverified cross-tenant userId would
+        // insert cleanly and only surface as a null relation on later reads.
+        const membership = await db.tenantMembership.findFirst({
+            where: { tenantId: ctx.tenantId, userId, status: 'ACTIVE' },
+            select: { id: true },
+        });
+        if (!membership) throw notFound('User is not an active member of this tenant');
         return db.controlContributor.create({
             data: { tenantId: ctx.tenantId, controlId, userId },
             include: { user: { select: { id: true, name: true, email: true } } },
@@ -347,7 +360,7 @@ export class ControlRepository {
     static async removeContributor(db: PrismaTx, ctx: RequestContext, controlId: string, userId: string) {
         const control = await db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId } });
         if (!control) return null;
-        const link = await db.controlContributor.findFirst({ where: { controlId, userId } });
+        const link = await db.controlContributor.findFirst({ where: { controlId, userId, tenantId: ctx.tenantId } });
         if (!link) return null;
         await db.controlContributor.delete({ where: { id: link.id } });
         return true;
@@ -359,6 +372,7 @@ export class ControlRepository {
         return db.controlEvidenceLink.findMany({
             where: { controlId, tenantId: ctx.tenantId },
             orderBy: { createdAt: 'desc' },
+            take: 500,
             include: { createdBy: { select: { id: true, name: true } } },
         });
     }
@@ -366,6 +380,16 @@ export class ControlRepository {
     static async linkEvidence(db: PrismaTx, ctx: RequestContext, controlId: string, data: { kind: string; fileId?: string | null; url?: string | null; note?: string | null }) {
         const control = await db.control.findFirst({ where: { id: controlId, tenantId: ctx.tenantId } });
         if (!control) return null;
+        // Verify the body-supplied fileId belongs to this tenant before the
+        // insert — the FK check bypasses RLS, so a cross-tenant fileId would
+        // insert cleanly and later reads would surface a null FileRecord.
+        if (data.fileId) {
+            const file = await db.fileRecord.findFirst({
+                where: { id: data.fileId, tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            if (!file) throw notFound('File not found');
+        }
         return db.controlEvidenceLink.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -396,6 +420,14 @@ export class ControlRepository {
             where: { id: controlId, tenantId: ctx.tenantId },
         });
         if (!control) return null;
+        // Verify the body-supplied assetId belongs to this tenant before the
+        // insert — the FK check bypasses RLS, so a cross-tenant assetId would
+        // insert cleanly and later reads would surface a null Asset relation.
+        const asset = await db.asset.findFirst({
+            where: { id: assetId, tenantId: ctx.tenantId },
+            select: { id: true },
+        });
+        if (!asset) throw notFound('Asset not found');
         return db.controlAsset.create({
             data: { tenantId: ctx.tenantId, controlId, assetId },
         });

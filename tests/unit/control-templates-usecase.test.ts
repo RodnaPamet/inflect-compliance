@@ -26,8 +26,10 @@ const mockDb = {
     control: { findFirst: jest.fn(), create: jest.fn() },
     // Unified Task + canonical controlRequirementLink — the tables the
     // install / map / unmap paths write after the R2-P1 link unification.
-    task: { create: jest.fn() },
-    controlRequirementLink: { upsert: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
+    // Install batches into task.createMany + controlRequirementLink.createMany;
+    // map/unmap still use the canonical upsert/findFirst/delete.
+    task: { create: jest.fn(), createMany: jest.fn() },
+    controlRequirementLink: { upsert: jest.fn(), findFirst: jest.fn(), delete: jest.fn(), createMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -112,10 +114,12 @@ describe('list reads', () => {
 // ─── installControlsFromTemplate ───────────────────────────────────
 
 describe('installControlsFromTemplate', () => {
-    it('skips templates with no matching row (continue path)', async () => {
+    it('records an unresolved-templateId row for a template with no matching row', async () => {
         (ControlTemplateRepository.getById as jest.Mock).mockResolvedValue(null);
         const res = await installControlsFromTemplate(editorCtx, ['unknown']);
-        expect(res).toEqual([]);
+        expect(res).toEqual([
+            { templateCode: '', controlId: '', tasksCreated: 0, requirementsLinked: 0, skipped: true, unresolvedTemplateId: 'unknown' },
+        ]);
         expect(mockDb.control.create).not.toHaveBeenCalled();
     });
 
@@ -162,8 +166,13 @@ describe('installControlsFromTemplate', () => {
         expect(res).toEqual([{
             templateCode: 'A.5', controlId: 'c-new', tasksCreated: 2, requirementsLinked: 2, skipped: false,
         }]);
-        expect(mockDb.task.create).toHaveBeenCalledTimes(2);
-        expect(mockDb.controlRequirementLink.upsert).toHaveBeenCalledTimes(2);
+        // Batched: a single createMany per table (was a per-task create + per-link upsert loop).
+        expect(mockDb.task.create).not.toHaveBeenCalled();
+        expect(mockDb.task.createMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.task.createMany.mock.calls[0][0].data).toHaveLength(2);
+        expect(mockDb.controlRequirementLink.upsert).not.toHaveBeenCalled();
+        expect(mockDb.controlRequirementLink.createMany).toHaveBeenCalledTimes(1);
+        expect(mockDb.controlRequirementLink.createMany.mock.calls[0][0].data).toHaveLength(2);
 
         const payload = (logEvent as jest.Mock).mock.calls[0][2];
         expect(payload.action).toBe('CONTROL_INSTALLED_FROM_TEMPLATE');
