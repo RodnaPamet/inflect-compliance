@@ -74,7 +74,17 @@ describeFn('processOutbox (real DB)', () => {
     beforeEach(async () => {
         provider = new ControlledProvider();
         setEmailProvider(provider);
-        await prisma.notificationOutbox.deleteMany({ where: { tenantId: { in: [T_OK, T_OFF] } } });
+        // `processOutbox()` is a worker: it drains EVERY pending row in the
+        // database, with no tenant filter. These tests assert on its exact
+        // `sent` / `skipped` counts, so any PENDING row another suite left
+        // behind is counted here and the assertion fails — which is what made
+        // this suite order-dependent (it saw 4 in CI, 6 locally, 2 in
+        // isolation). Clearing pending rows tenant-wide, not just for this
+        // suite's two tenants, makes the counts deterministic.
+        //
+        // Scoped to PENDING deliberately: SENT/FAILED rows are never picked up
+        // by the drain, so other suites' terminal rows are left untouched.
+        await prisma.notificationOutbox.deleteMany({ where: { status: 'PENDING' } });
     });
 
     it('sends PENDING rows, marks them SENT, and reuses the settings cache', async () => {
