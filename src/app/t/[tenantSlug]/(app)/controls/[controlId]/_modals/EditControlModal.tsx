@@ -21,9 +21,11 @@ import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { NumberStepper } from '@/components/ui/number-stepper';
-import { RequiredMarker } from '@/components/ui/required-marker';
+import { Textarea } from '@/components/ui/textarea';
 import { UserCombobox } from '@/components/ui/user-combobox';
 
 export interface EditControlForm {
@@ -132,17 +134,10 @@ export function EditControlModal({
                         </div>
                     )}
                     <fieldset className="space-y-default" disabled={saving}>
-                        <div>
-                            <label
-                                htmlFor="edit-name"
-                                className="mb-1 block text-sm text-content-default"
-                            >
-                                {tx('editModal.titleLabel')} <RequiredMarker />
-                            </label>
-                            <input
+                        <FormField label={tx('editModal.titleLabel')} required>
+                            <Input
                                 id="edit-name"
                                 type="text"
-                                className="input w-full"
                                 value={form.name}
                                 onChange={(e) =>
                                     setForm((f) => ({
@@ -154,40 +149,34 @@ export function EditControlModal({
                                 minLength={3}
                                 data-testid="edit-name-input"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="edit-objective" className="mb-1 block text-sm text-content-default">{tx('editModal.objectiveLabel')}</label>
-                            <textarea
+                        </FormField>
+                        <FormField label={tx('editModal.objectiveLabel')}>
+                            <Textarea
                                 id="edit-objective"
-                                className="input w-full"
                                 rows={2}
                                 value={form.objective}
                                 onChange={(e) => setForm((f) => ({ ...f, objective: e.target.value }))}
                                 data-testid="edit-objective-input"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="edit-success-criteria" className="mb-1 block text-sm text-content-default">{tx('editModal.successCriteriaLabel')}</label>
-                            <textarea
+                        </FormField>
+                        <FormField label={tx('editModal.successCriteriaLabel')}>
+                            <Textarea
                                 id="edit-success-criteria"
-                                className="input w-full"
                                 rows={2}
                                 value={form.successCriteria}
                                 onChange={(e) => setForm((f) => ({ ...f, successCriteria: e.target.value }))}
                                 data-testid="edit-success-criteria-input"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="edit-testing-methodology" className="mb-1 block text-sm text-content-default">{tx('editModal.testingMethodologyLabel')}</label>
-                            <textarea
+                        </FormField>
+                        <FormField label={tx('editModal.testingMethodologyLabel')}>
+                            <Textarea
                                 id="edit-testing-methodology"
-                                className="input w-full"
                                 rows={3}
                                 value={form.testingMethodology}
                                 onChange={(e) => setForm((f) => ({ ...f, testingMethodology: e.target.value }))}
                                 data-testid="edit-testing-methodology-input"
                             />
-                        </div>
+                        </FormField>
                         <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <div>
                                 <label

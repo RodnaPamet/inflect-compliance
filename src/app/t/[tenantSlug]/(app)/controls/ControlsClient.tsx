@@ -27,8 +27,12 @@ import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
-import { UserCombobox } from '@/components/ui/user-combobox';
+import { UserCombobox, useTenantMembers } from '@/components/ui/user-combobox';
 import { Combobox } from '@/components/ui/combobox';
+import { Modal } from '@/components/ui/modal';
+import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
+import { formatDateTime } from '@/lib/format-date';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { Paperclip, ChevronDown, ChevronLeft } from 'lucide-react';
@@ -53,7 +57,7 @@ import {
     type FilterType,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
-import { useThresholdLoadMore, useKeyboardShortcut } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useKeyboardShortcut, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import {
     Accordion,
@@ -107,6 +111,20 @@ const CONTROL_STATUS_VALUES = [
     'NOT_APPLICABLE',
 ] as const;
 
+/** Applicability display state — the SAME three-way split the Applicability
+ *  COLUMN renders: N/A · Yes (decided applicable) · Not assessed (applicable,
+ *  never assessed → `applicabilityDecidedAt` null). Shared by the column cell
+ *  AND the client-side applicability filter (#8b) so the filter can never offer
+ *  a state a cell doesn't show. */
+type ApplicabilityState = 'NOT_APPLICABLE' | 'APPLICABLE' | 'UNASSESSED';
+function applicabilityState(c: {
+    applicability: string;
+    applicabilityDecidedAt?: string | null;
+}): ApplicabilityState {
+    if (c.applicability === 'NOT_APPLICABLE') return 'NOT_APPLICABLE';
+    return c.applicabilityDecidedAt ? 'APPLICABLE' : 'UNASSESSED';
+}
+
 
 // ─── Types ───
 
@@ -131,6 +149,10 @@ interface ControlListItem {
      */
     taskTotal?: number;
     taskDone?: number;
+    /** Soft-delete who/when — non-null only in the "Deleted controls" view
+     *  (rows fetched with `?includeDeleted=true`). */
+    deletedAt?: string | null;
+    deletedByUserId?: string | null;
 }
 
 interface ControlsClientProps {
@@ -183,6 +205,7 @@ function ControlsPageInner({
     initialControls,
     initialFilters,
     tenantSlug,
+    permissions,
     appPermissions,
 }: ControlsClientProps) {
     // Stable across renders — selection-toggle re-renders (Phase 2)
@@ -200,6 +223,12 @@ function ControlsPageInner({
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
     const t = useTranslations('controls');
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
+    // Bulk soft-delete + the Deleted-controls lifecycle view (Restore / Purge)
+    // require ADMIN server-side (bulkDeleteControl / listControlsWithDeleted
+    // both assertCanAdmin). Editors keep the status/assign bulk verbs.
+    const canAdmin = permissions.canAdmin;
     const FREQ_LABELS = useMemo<Record<string, string>>(
         () => ({
             AD_HOC: t('freq.adHoc'),
@@ -226,10 +255,17 @@ function ControlsPageInner({
     // Status labels: single localized source of truth for badges + the bulk
     // status picker (mirrors the filter-picker copy).
     const STATUS_LABELS = useMemo(() => buildControlStatusLabels(tAdapter), [tAdapter]);
-    const CONTROL_STATUS_OPTIONS = useMemo(
-        () => CONTROL_STATUS_VALUES.map((value) => ({ value, label: STATUS_LABELS[value] ?? value })),
-        [STATUS_LABELS],
-    );
+    // #9 — the bulk STATUS picker must NOT offer NOT_APPLICABLE. Writing
+    // status=NOT_APPLICABLE bypasses the applicability-justification flow and
+    // leaves Status=N/A alongside Applicability=Yes on the same row. N/A is set
+    // via the per-control applicability action; the detail-page status dropdown
+    // already omits it ([controlId]/page.tsx). The full seven-value map stays
+    // available for badge display (STATUS_LABELS) — only the picker is trimmed.
+    const CONTROL_STATUS_OPTIONS = useMemo(() => {
+        // guardrail-ignore: filtering a static enum CONSTANT (drop N/A from the bulk picker), not server-fetched rows.
+        const values = CONTROL_STATUS_VALUES.filter((value) => value !== 'NOT_APPLICABLE');
+        return values.map((value) => ({ value, label: STATUS_LABELS[value] ?? value }));
+    }, [STATUS_LABELS]);
 
     const filterCtx = useFilters();
     const { state, search, clearAll, hasActive } = filterCtx;
@@ -283,6 +319,18 @@ function ControlsPageInner({
         if (search) params.set('q', search);
         const idsParam = searchParams?.get('ids');
         if (idsParam) params.set('ids', idsParam);
+        // #8a/#8b — `category` and `applicability` are applied CLIENT-side over
+        // the already-loaded rows (see `clientFilteredControls`), so they must
+        // NOT reach the server query: the server filters the RAW stored
+        // `category` (ISO themes) and a two-value `applicability` enum, neither
+        // of which agrees with the DERIVED category column nor the three-state
+        // applicability column. Dropping them here keeps one authoritative
+        // value per facet (the client's) and the SWR key stable across picks.
+        // (On a hard-nav these params may still ride the URL into the SSR read;
+        // the controls repo ignores an out-of-enum applicability and returns an
+        // empty raw-category match, and the client re-derives correctly.)
+        params.delete('category');
+        params.delete('applicability');
         return params;
     }, [state, search, searchParams]);
 
@@ -313,18 +361,63 @@ function ControlsPageInner({
     // with `truncated: false` because the SSR cap (100) is well below
     // the backfill cap (5000), so the SSR slice never trips truncation
     // by itself.
+    // ─── Deleted-controls lifecycle view (admin) ───
+    // Admin-only toggle that swaps the list to soft-deleted rows (fetched with
+    // `?includeDeleted=true`) so an admin can Restore or permanently Purge them.
+    // Mirrors the Assets register's deleted view.
+    const [showDeleted, setShowDeleted] = useState(false);
+    // Resolve `deletedByUserId` → a display name for the Deleted view's
+    // who/when column. Fetched only while the deleted view is open.
+    const { data: deletedMembers } = useTenantMembers(tenantSlug, { enabled: showDeleted });
+    const memberById = useMemo(
+        () => new Map((deletedMembers ?? []).map((m) => [m.id, m])),
+        [deletedMembers],
+    );
+    const deletedByLabel = useCallback(
+        (id: string | null | undefined): string => {
+            if (!id) return t('deleted.byUnknown');
+            const m = memberById.get(id);
+            return (m?.name || m?.email) ?? t('deleted.byUnknown');
+        },
+        [memberById, t],
+    );
+    // Typed-confirm purge modal — Purge is irreversible, so it uses the
+    // sanctioned type-to-confirm pattern (mirrors AssetsClient), NOT the
+    // undo-toast.
+    const [purgeTarget, setPurgeTarget] = useState<ControlListItem | null>(null);
+    const [confirmText, setConfirmText] = useState('');
+    const [purging, setPurging] = useState(false);
+    const [purgeError, setPurgeError] = useState<string | null>(null);
+
     const controlsKey = useMemo(() => {
-        const qs = filtersForQuery.toString();
+        const params = new URLSearchParams(filtersForQuery);
+        // Deleted view is a distinct fetch — append the flag so the SWR key
+        // (and the backing GET) selects soft-deleted rows too.
+        if (showDeleted) params.set('includeDeleted', 'true');
+        const qs = params.toString();
         return qs ? `${CACHE_KEYS.controls.list()}?${qs}` : CACHE_KEYS.controls.list();
-    }, [filtersForQuery]);
-    const controlsQuery = useTenantSWR<CappedList<ControlListItem>>(controlsKey, {
-        fallbackData: filtersMatchInitial
+    }, [filtersForQuery, showDeleted]);
+    // The live list GET returns `{ rows, truncated }`; the `includeDeleted`
+    // branch returns a bare array (listControlsWithDeleted). Type + read both.
+    const controlsQuery = useTenantSWR<CappedList<ControlListItem> | ControlListItem[]>(controlsKey, {
+        // The SSR initial payload never contains soft-deleted rows, so the
+        // deleted view must always fetch fresh (no fallback).
+        fallbackData: filtersMatchInitial && !showDeleted
             ? { rows: initialControls, truncated: false }
             : undefined,
     });
 
-    const rawControls = controlsQuery.data?.rows ?? [];
-    const truncated = controlsQuery.data?.truncated ?? false;
+    // SWR recreates its return OBJECT every render (only the bound `mutate`
+    // is stable). Depend on `controlsMutate` — never the whole `controlsQuery`
+    // — inside any callback that feeds the column memo (e.g. handleRestore),
+    // or the DataTable model rebuilds every render and double-click-to-open
+    // dies (the row DOM is replaced between the two clicks).
+    const controlsMutate = controlsQuery.mutate;
+    const controlsData = controlsQuery.data;
+    const rawControls = Array.isArray(controlsData)
+        ? controlsData
+        : controlsData?.rows ?? [];
+    const truncated = Array.isArray(controlsData) ? false : controlsData?.truncated ?? false;
     const loading = controlsQuery.isLoading && !controlsQuery.data;
 
     // ─── Health verdicts (lazy, batched) ────────────────────────────
@@ -367,14 +460,38 @@ function ControlsPageInner({
         }),
         [],
     );
+    // #8a/#8b — `category` and `applicability` are applied HERE, over the
+    // already-loaded rows, on the DERIVED values the columns render (see the
+    // note on `filtersForQuery`, which strips them from the server query).
+    // Deriving keeps one authoritative value per facet and guarantees the
+    // picker only offers values a cell can actually show. Runs before sort +
+    // windowing so the visible slice already reflects the selection.
+    // Read the raw `state.*` refs (stable across renders when unchanged) so the
+    // memo — and the sort/window that depend on it — don't churn every render.
+    const categoryFilter = state.category;
+    const applicabilityFilter = state.applicability;
+    const clientFilteredControls = useMemo(() => {
+        let rows = rawControls;
+        if (categoryFilter && categoryFilter.length > 0) {
+            const wanted = new Set(categoryFilter);
+            // guardrail-ignore: client-side filter on the DERIVED framework category (matches the Category column) — not server-data refiltering; the server owns q/status/owner/health/ids.
+            rows = rows.filter((c) => wanted.has(categorizeControl(c)?.category ?? ''));
+        }
+        if (applicabilityFilter && applicabilityFilter.length > 0) {
+            const wanted = new Set(applicabilityFilter);
+            // guardrail-ignore: client-side filter on the DERIVED 3-state applicability (matches the Applicability column) — the stored enum can't express "Not assessed".
+            rows = rows.filter((c) => wanted.has(applicabilityState(c)));
+        }
+        return rows;
+    }, [rawControls, categoryFilter, applicabilityFilter]);
     const controls = useMemo(() => {
         // The consistency `?ids=` deep-link is now applied SERVER-SIDE (threaded
         // into the SWR query + SSR read as an `id: { in }` restriction), so
         // `rawControls` already IS the flagged set — no client-side row filter,
         // which means a flagged control beyond the loaded page is no longer
         // silently dropped. `flaggedIds` is retained only to drive the banner.
-        return sortRowsByDisplay(rawControls, sortAccessors, sortBy, sortOrder);
-    }, [rawControls, sortAccessors, sortBy, sortOrder]);
+        return sortRowsByDisplay(clientFilteredControls, sortAccessors, sortBy, sortOrder);
+    }, [clientFilteredControls, sortAccessors, sortBy, sortOrder]);
     const sortableColumns = useMemo(
         () => ['code', 'name', 'status', 'category', 'frequency', 'owner'],
         [],
@@ -393,9 +510,12 @@ function ControlsPageInner({
     } = useThresholdLoadMore(controls);
 
     // ─── Filter defs with runtime-derived owner/category options ───
+    // Options are derived from `rawControls` (the full server-returned set),
+    // NOT the client-filtered `controls` — otherwise selecting one derived
+    // category would collapse the Category picker to just that value.
     const liveFilterDefs: FilterType[] = useMemo(
-        () => buildControlFilters(controls, tAdapter, tGroupAdapter),
-        [controls, tAdapter, tGroupAdapter],
+        () => buildControlFilters(rawControls, tAdapter, tGroupAdapter),
+        [rawControls, tAdapter, tGroupAdapter],
     );
 
     // R-filter-gear (#3, 2026-06-07): the "Edit filter cards" gear now
@@ -473,9 +593,20 @@ function ControlsPageInner({
                 clear: (ctx) => ctx.removeAll('status'),
             },
             {
+                // #8c — the "In progress" KPI counts IN_PROGRESS + IMPLEMENTING
+                // (see `inProgressControls`), so the drill-down must set BOTH
+                // statuses — otherwise the filtered list showed fewer rows than
+                // the number on the card. Active when both are present (mirrors
+                // the Assets "High/Critical" two-value KPI).
                 id: 'inProgress',
-                apply: (ctx) => ctx.set('status', 'IN_PROGRESS'),
-                isActive: (s) => (s.status ?? []).includes('IN_PROGRESS'),
+                apply: (ctx) => {
+                    ctx.set('status', 'IN_PROGRESS');
+                    ctx.add('status', 'IMPLEMENTING');
+                },
+                isActive: (s) => {
+                    const v = s.status ?? [];
+                    return v.includes('IN_PROGRESS') && v.includes('IMPLEMENTING');
+                },
                 clear: (ctx) => ctx.removeAll('status'),
             },
             {
@@ -560,21 +691,61 @@ function ControlsPageInner({
     const [bulkApplying, setBulkApplying] = useState(false);
     const handleBulkApply = async (action: string, value: string, _label: string) => {
         if (!action || selectedIds.length === 0) return;
+        const ids = selectedIds;
+
+        // #3 — bulk delete is a SOFT/restorable delete → Epic 67 undo-toast
+        // (not a blocking confirm). Optimistically drop the rows from the SWR
+        // cache, fire the real bulk-delete only after the undo window elapses,
+        // restore on Undo / failure. See docs/destructive-actions.md +
+        // AssetsClient. (Admin-gated: the action isn't offered to non-admins.)
+        if (action === 'delete') {
+            const idSet = new Set(ids);
+            setRowSelection({});
+            controlsQuery.mutate(
+                (cur) => {
+                    if (!cur) return cur;
+                    // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window) — NOT display refiltering; mutate() restores on Undo/failure.
+                    if (Array.isArray(cur)) return cur.filter((c) => !idSet.has(c.id));
+                    // guardrail-ignore: optimistic-delete cache update over the CappedList rows — same undo-window drop, not server-data refiltering.
+                    return { ...cur, rows: cur.rows.filter((c) => !idSet.has(c.id)) };
+                },
+                { revalidate: false },
+            );
+            triggerUndoToast({
+                message: t('bulk.deletedToast', { count: ids.length }),
+                undoMessage: t('deleted.undo'),
+                action: async () => {
+                    const res = await fetch(apiUrl('/controls/bulk/delete'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ controlIds: ids }),
+                    });
+                    if (!res.ok) throw new Error('Bulk delete failed');
+                    await controlsQuery.mutate();
+                },
+                undoAction: () => { controlsQuery.mutate(); },
+                onError: () => {
+                    toast.error(t('bulk.actionFailed'));
+                    controlsQuery.mutate();
+                },
+            });
+            return;
+        }
+
+        // #2 — status / assign. The apply was previously a try/finally with NO
+        // catch, so a `!res.ok` threw an unhandled rejection while the bar
+        // cleared — the failure looked like success. Now: toast on both
+        // outcomes, and clear the selection ONLY on success.
         setBulkApplying(true);
         try {
-            const ids = selectedIds;
             const url =
                 action === 'status'
                     ? apiUrl('/controls/bulk/status')
-                    : action === 'delete'
-                        ? apiUrl('/controls/bulk/delete')
-                        : apiUrl('/controls/bulk/assign');
+                    : apiUrl('/controls/bulk/assign');
             const body =
                 action === 'status'
                     ? { controlIds: ids, status: value }
-                    : action === 'delete'
-                        ? { controlIds: ids }
-                        : { controlIds: ids, ownerUserId: value || null };
+                    : { controlIds: ids, ownerUserId: value || null };
             const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -583,7 +754,10 @@ function ControlsPageInner({
             if (!res.ok) throw new Error('Bulk action failed');
             // Revalidate the same key the table reads (the active filtered list).
             await controlsQuery.mutate();
+            toast.success(t('bulk.applied'));
             setRowSelection({});
+        } catch {
+            toast.error(t('bulk.actionFailed'));
         } finally {
             setBulkApplying(false);
         }
@@ -626,10 +800,74 @@ function ControlsPageInner({
                     />
                 ),
             },
-            { value: 'delete', label: t('bulk.delete'), confirm: true },
+            // #1 — DELETE is ADMIN-only: bulkDeleteControl asserts admin
+            // server-side, so offering it to an EDITOR was a guaranteed 403.
+            // Hidden for non-admins (editors keep status/assign). No `confirm`
+            // here — #3 routes it through the Epic 67 undo-toast in
+            // handleBulkApply (soft, restorable delete).
+            ...(canAdmin
+                ? [{ value: 'delete', label: t('bulk.delete') } as BulkActionDef]
+                : []),
         ],
-        [tenantSlug],
+        [tenantSlug, canAdmin, t, CONTROL_STATUS_OPTIONS],
     );
+
+    // ─── Deleted-control lifecycle actions (#3) ───
+    // Restore un-deletes a soft-deleted control; Purge permanently removes it.
+    // Both hit the existing per-control routes (restoreControl / purgeControl).
+    const handleRestore = useCallback(
+        async (id: string) => {
+            try {
+                const res = await fetch(apiUrl(`/controls/${id}/restore`), {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                });
+                if (!res.ok) throw new Error('Restore failed');
+                await controlsMutate();
+                toast.success(t('deleted.restoredToast'));
+            } catch {
+                toast.error(t('deleted.restoreFailed'));
+            }
+        },
+        [apiUrl, controlsMutate, toast, t],
+    );
+    const closePurge = useCallback(() => {
+        setPurgeTarget(null);
+        setConfirmText('');
+        setPurging(false);
+        setPurgeError(null);
+    }, []);
+    const confirmPurge = useCallback(async () => {
+        if (!purgeTarget) return;
+        setPurging(true);
+        setPurgeError(null);
+        try {
+            const res = await fetch(apiUrl(`/controls/${purgeTarget.id}/purge`), {
+                method: 'POST',
+                credentials: 'same-origin',
+            });
+            if (!res.ok) {
+                let message = t('deleted.purgeFailed');
+                try {
+                    const errBody = (await res.json()) as { error?: { message?: string } };
+                    if (errBody?.error?.message) message = errBody.error.message;
+                } catch {
+                    /* not JSON */
+                }
+                setPurgeError(message);
+                setPurging(false);
+                return;
+            }
+            closePurge();
+            await controlsQuery.mutate();
+        } catch (err) {
+            setPurgeError(err instanceof Error ? err.message : t('deleted.purgeFailed'));
+            setPurging(false);
+        }
+    }, [purgeTarget, apiUrl, controlsQuery, t, closePurge]);
+    // The confirm token is the control code/annexId when present, else its name.
+    const purgeConfirmToken =
+        purgeTarget?.code ?? purgeTarget?.annexId ?? purgeTarget?.name ?? '';
 
     // Stable DataTable callbacks — see the apiUrl/tenantHref note above.
     // `handleRowClick` is the double-click→navigate handler; keeping it
@@ -660,6 +898,9 @@ function ControlsPageInner({
     // quick-view. Both surface in the docked AsidePanel (Sheet < xl).
     const [selectedControl, setSelectedControl] = useState<ControlListItem | null>(null);
     const [selectedTask, setSelectedTask] = useState<ControlTask | null>(null);
+    // Bumped on every panel save so the inline ControlTaskRows re-fetch and
+    // drop stale task title/status/owner/evidence (its fetch keys on this).
+    const [taskRefreshToken, setTaskRefreshToken] = useState(0);
     const openControlQuickView = useCallback((c: ControlListItem) => {
         setSelectedTask(null);
         setSelectedControl(c);
@@ -669,9 +910,23 @@ function ControlsPageInner({
         setSelectedControl(null);
     }, []);
     // After an inline panel edit, refresh the controls list so the new
-    // name / owner / category show without a manual reload.
-    const handlePanelSaved = useCallback(() => {
-        controlsQuery.mutate();
+    // name / owner / category show without a manual reload…
+    const handlePanelSaved = useCallback(async () => {
+        const updated = await controlsQuery.mutate();
+        // …and re-seed the OPEN quick-view's backing row (#7a). Previously
+        // `selectedControl` was a snapshot captured on row-click, so an
+        // auto-saved edit left the panel header + the selected row showing the
+        // pre-save values. `mutate()` resolves to the revalidated payload; find
+        // the fresh row by id. The panel key is `qv-control-${id}` (unchanged),
+        // so this re-renders the panel with fresh props without remounting.
+        const rows = Array.isArray(updated) ? updated : updated?.rows;
+        if (rows) {
+            setSelectedControl((cur) =>
+                cur ? rows.find((r) => r.id === cur.id) ?? cur : cur,
+            );
+        }
+        // Revalidate any expanded inline task sub-rows too.
+        setTaskRefreshToken((n) => n + 1);
     }, [controlsQuery]);
     // PR-3 — Escape closes the quick-view on the docked rail (≥xl). On < xl the
     // Sheet owns Escape natively (the global-scope hook is skipped while an
@@ -713,9 +968,10 @@ function ControlsPageInner({
                 columnIds={columnIds}
                 renderEvidence={renderTaskEvidence}
                 onTaskClick={setSelectedTask}
+                refreshToken={taskRefreshToken}
             />
         ),
-        [tenantSlug, renderTaskEvidence],
+        [tenantSlug, renderTaskEvidence, taskRefreshToken],
     );
     const handleRowSelectionChange = useCallback(
         (rows: Row<ControlListItem>[]) =>
@@ -846,10 +1102,14 @@ function ControlsPageInner({
                 // assessed (applicabilityDecidedAt == null) is stored as
                 // APPLICABLE and must read distinctly from a deliberately
                 // decided one — else "assessed" and "unassessed" look alike.
+                // Shared 3-state derivation — the SAME `applicabilityState`
+                // the client-side Applicability filter uses (#8b), so the
+                // column and the picker can never disagree.
+                const applState = applicabilityState(c);
                 const applicabilityCell: { variant: StatusBadgeVariant; label: string } =
-                    c.applicability === 'NOT_APPLICABLE'
+                    applState === 'NOT_APPLICABLE'
                         ? { variant: 'warning', label: t('list.na') }
-                        : c.applicabilityDecidedAt
+                        : applState === 'APPLICABLE'
                           ? { variant: 'success', label: t('list.yes') }
                           : { variant: 'neutral', label: t('list.notAssessed') };
                 return (
@@ -971,7 +1231,65 @@ function ControlsPageInner({
                 );
             },
         },
-    ]), [appPermissions, tenantHref, taskStats, openControlQuickView, verdictMap]);
+        // Lifecycle actions — only present in the "Deleted controls" view.
+        // For a soft-deleted row: a neutral "Deleted" badge + Restore / Purge
+        // + the who/when audit line. (Live rows never reach this column — the
+        // whole column is absent unless showDeleted.)
+        ...(showDeleted
+            ? [
+                  {
+                      id: 'lifecycle',
+                      header: t('deleted.actions'),
+                      cell: ({ row }: { row: { original: ControlListItem } }) => {
+                          const c = row.original;
+                          if (!c.deletedAt) {
+                              return <span className="text-content-muted">—</span>;
+                          }
+                          return (
+                              <div className="flex flex-col gap-tight">
+                                  <div className="flex items-center gap-tight">
+                                      {/* Plain muted pill (deliberately not the
+                                          status-badge primitive) — the row
+                                          already lives in the Deleted view, so
+                                          this stays quiet chrome and keeps the
+                                          per-file badge budget. */}
+                                      <span className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
+                                          {t('deleted.badge')}
+                                      </span>
+                                      <Button
+                                          type="button"
+                                          variant="secondary"
+                                          size="xs"
+                                          onClick={(e) => {
+                                              e.stopPropagation();
+                                              void handleRestore(c.id);
+                                          }}
+                                          text={t('deleted.restore')}
+                                      />
+                                      <Button
+                                          type="button"
+                                          variant="destructive"
+                                          size="xs"
+                                          onClick={(e) => {
+                                              e.stopPropagation();
+                                              setPurgeTarget(c);
+                                          }}
+                                          text={t('deleted.purge')}
+                                      />
+                                  </div>
+                                  <span className="text-xs text-content-subtle">
+                                      {t('deleted.byWhen', {
+                                          who: deletedByLabel(c.deletedByUserId),
+                                          when: formatDateTime(c.deletedAt),
+                                      })}
+                                  </span>
+                              </div>
+                          );
+                      },
+                  },
+              ]
+            : []),
+    ]), [appPermissions, tenantHref, taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call — calling it inline in the `table` object would undo the memo
@@ -1272,6 +1590,14 @@ function ControlsPageInner({
             banner={
                 <>
                     <TruncationBanner truncated={truncated} />
+                    {/* #6a — the Health column falls back to '—' when the
+                        batched verdict read fails; surface the error so the
+                        dash reads as "couldn't load", not "no data". */}
+                    {verdictsQuery.error && !showDeleted && (
+                        <InlineNotice variant="warning" id="controls-health-error">
+                            {t('health.loadError')}
+                        </InlineNotice>
+                    )}
                     {flaggedIds && (
                         <InlineNotice variant="info" id="flagged-controls-banner">
                             {t('list.flaggedShowing', { count: controls.length })}
@@ -1320,7 +1646,11 @@ function ControlsPageInner({
             kpis={
                 /* R23-PR-D — KPI strip above the filter toolbar.
                    EntityListPage owns the placement; the page owns
-                   the KPI definitions + the card content. */
+                   the KPI definitions + the card content. Hidden in the
+                   Deleted view — the Total/Implemented/In-progress/Not-started
+                   counts + their click-to-filter describe the LIVE set, so
+                   surfacing them over soft-deleted rows would mislead. */
+                showDeleted ? undefined : (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                     {visibleKpiCards.map((card) => {
                         // Render config per KPI id — the gear owns which
@@ -1379,6 +1709,7 @@ function ControlsPageInner({
                         );
                     })}
                 </div>
+                )
             }
             filters={{
                 defs: liveFilterDefs,
@@ -1425,6 +1756,19 @@ function ControlsPageInner({
                                 </Link>
                             </Tooltip>
                         )}
+                        {/* #3 — Deleted-controls view toggle. Admin only: only
+                            admins can Restore / Purge (and see soft-deleted rows)
+                            server-side. */}
+                        {canAdmin && (
+                            <Button
+                                id="controls-show-deleted-toggle"
+                                variant={showDeleted ? 'primary' : 'secondary'}
+                                size="sm"
+                                aria-pressed={showDeleted}
+                                onClick={() => setShowDeleted((v) => !v)}
+                                text={t('deleted.toggle')}
+                            />
+                        )}
                         {columnsDropdown}
                         {filtersDropdown}
                     </>
@@ -1438,6 +1782,12 @@ function ControlsPageInner({
                 data: visibleControls,
                 columns: orderedControlColumns,
                 loading,
+                // #6a — surface a failed list read. Previously
+                // `controlsQuery.error` was never read, so a 500 fell through
+                // to the "No controls yet · install a framework" empty state
+                // (an error is not "no data"). DataTable renders its error
+                // chrome instead of the empty state when `error` is set.
+                error: controlsQuery.error ? t('list.loadError') : undefined,
                 getRowId: getControlRowId,
                 // PR-1 — sortable headers, matching the org-level
                 // tables (with up/down arrow indicators baked into
@@ -1464,7 +1814,16 @@ function ControlsPageInner({
                 onReachEnd: hasMoreControls ? loadMoreControls : undefined,
                 onRowClick: handleRowClick,
                 onRowPrefetch: handleRowPrefetch,
-                emptyState: hasActive ? (
+                emptyState: showDeleted && !hasActive ? (
+                    // Deleted view with nothing soft-deleted — no "install a
+                    // framework" CTA (you don't create a deleted control).
+                    <EmptyState
+                        size="sm"
+                        variant="no-records"
+                        title={t('deleted.emptyTitle')}
+                        description={t('deleted.emptyDesc')}
+                    />
+                ) : hasActive ? (
                     <EmptyState
                         size="sm"
                         variant="no-results"
@@ -1528,6 +1887,60 @@ function ControlsPageInner({
                 setOpen={setIsCreateOpen}
                 tenantSlug={tenantSlug}
             />
+
+            {/* #3 — Typed-confirmation purge modal. Purge is irreversible, so it
+                requires typing the control code/name (the sanctioned pattern for
+                permanent deletion, NOT the undo-toast). Mirrors AssetsClient. */}
+            <Modal
+                showModal={purgeTarget !== null}
+                setShowModal={(o) => (o ? null : closePurge())}
+            >
+                <Modal.Header title={t('deleted.purgeTitle')} />
+                <Modal.Body>
+                    {purgeTarget && (
+                        <div className="space-y-default">
+                            <p className="text-sm text-content-default">
+                                {t('deleted.purgeBody', { name: purgeConfirmToken })}
+                            </p>
+                            <FormField
+                                label={t('deleted.purgeTypeToConfirm', {
+                                    name: purgeConfirmToken,
+                                })}
+                                required
+                            >
+                                <Input
+                                    value={confirmText}
+                                    onChange={(e) => setConfirmText(e.target.value)}
+                                    autoComplete="off"
+                                    autoFocus
+                                    placeholder={purgeConfirmToken}
+                                />
+                            </FormField>
+                            {purgeError && (
+                                <p className="text-sm text-content-error">{purgeError}</p>
+                            )}
+                        </div>
+                    )}
+                </Modal.Body>
+                <Modal.Actions>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={closePurge}
+                        text={t('new.cancel')}
+                    />
+                    <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        loading={purging}
+                        disabled={purging || confirmText.trim() !== purgeConfirmToken}
+                        onClick={confirmPurge}
+                        text={t('deleted.purge')}
+                    />
+                </Modal.Actions>
+            </Modal>
 
         </EntityListPage>
     );

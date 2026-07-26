@@ -160,10 +160,12 @@ test.describe('Controls Center', () => {
 
         // Click applicability toggle
         await authedPage.click('#toggle-applicability-btn');
-        await authedPage.waitForSelector('input[value="NOT_APPLICABLE"]', { timeout: 5000 });
+        // The applicability choice is now a Radix RadioGroup (role="radio",
+        // no value-bearing <input>) — target the RadioGroupItem by id.
+        await authedPage.waitForSelector('#applicability-not-applicable', { timeout: 5000 });
 
         // Select Not Applicable
-        await authedPage.click('input[value="NOT_APPLICABLE"]');
+        await authedPage.click('#applicability-not-applicable');
         await authedPage.waitForSelector('#applicability-justification', { timeout: 3000 });
 
         // Try to save without justification -> button should be disabled

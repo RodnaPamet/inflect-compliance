@@ -125,10 +125,12 @@ describe('ControlsClient — EntityListPage adoption', () => {
         expect(source).toContain('<NewControlModal');
         expect(source).toContain('<ControlEditPanel');
         expect(source).toContain('<TaskEditPanel');
-        // The justification modal was hosted here pre-2026-05-19;
-        // it left when the inline-edit dropdowns were retired. The
-        // justification flow now lives on the per-control detail
-        // page (asserted independently by control-detail-* tests).
-        expect(source).not.toMatch(/<Modal[\s>]/);
+        // The justification modal was hosted here pre-2026-05-19; it left
+        // when the inline-edit dropdowns were retired, and the justification
+        // flow now lives on the per-control detail page (asserted
+        // independently by control-detail-* tests). We no longer assert the
+        // absence of <Modal>, though: the list page legitimately hosts a
+        // typed-confirmation Purge modal for the Deleted-controls lifecycle
+        // view (Restore / Purge) — that's a distinct, correct surface.
     });
 });

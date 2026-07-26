@@ -18,6 +18,7 @@ import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useToastWithUndo } from '@/components/ui/hooks';
+import { useToast } from '@/components/ui/hooks/use-toast';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -29,7 +30,6 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus } from '@/components/ui/icons/nucleo';
 import type { FrameworkDTO, RequirementDTO, FrameworkMappingDTO } from '@/lib/dto';
 
 // Per-framework applicability override, stored on the ControlRequirementLink.
@@ -62,6 +62,7 @@ export function ControlMappingsTab({
     const apiUrl = useTenantApiUrl();
     const t = useTranslations('controls');
     const triggerUndoToast = useToastWithUndo();
+    const toast = useToast();
 
     const mappingsSWR = useTenantSWR<MappingRow[]>(
         CACHE_KEYS.controls.mappings(controlId),
@@ -92,10 +93,10 @@ export function ControlMappingsTab({
         reqId: string,
         applicability: LinkApplicability | null,
         justification: string | null,
-    ) => {
+    ): Promise<boolean> => {
         setSavingReqId(reqId);
         try {
-            await fetch(
+            const res = await fetch(
                 apiUrl(`/controls/${controlId}/requirements/${reqId}/applicability`),
                 {
                     method: 'POST',
@@ -103,8 +104,15 @@ export function ControlMappingsTab({
                     body: JSON.stringify({ applicability, justification }),
                 },
             );
+            if (!res.ok) throw new Error(t('mappingsTab.applicabilityFailed'));
             await mappingsSWR.mutate();
             onMutated();
+            return true;
+        } catch {
+            // Surface the failure; the caller keeps any captured
+            // justification so the user can retry without re-typing.
+            toast.error(t('mappingsTab.applicabilityFailed'));
+            return false;
         } finally {
             setSavingReqId(null);
         }
@@ -132,9 +140,17 @@ export function ControlMappingsTab({
     const confirmNotApplicable = async () => {
         if (!justifyModal || !justifyText.trim()) return;
         const { reqId } = justifyModal;
-        await persistApplicability(reqId, 'NOT_APPLICABLE', justifyText.trim());
-        setJustifyModal(null);
-        setJustifyText('');
+        const ok = await persistApplicability(
+            reqId,
+            'NOT_APPLICABLE',
+            justifyText.trim(),
+        );
+        // Only dismiss on success — a failure keeps the modal open so the
+        // typed justification is preserved for a retry.
+        if (ok) {
+            setJustifyModal(null);
+            setJustifyText('');
+        }
     };
 
     const [showMapForm, setShowMapForm] = useState(false);
@@ -169,16 +185,26 @@ export function ControlMappingsTab({
     const mapRequirement = async () => {
         if (!selectedReq) return;
         setSavingMap(true);
-        await fetch(apiUrl(`/controls/${controlId}/requirements`), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ requirementId: selectedReq }),
-        });
-        setSelectedReq('');
-        setShowMapForm(false);
-        await mappingsSWR.mutate();
-        onMutated();
-        setSavingMap(false);
+        try {
+            const res = await fetch(apiUrl(`/controls/${controlId}/requirements`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requirementId: selectedReq }),
+            });
+            if (!res.ok) throw new Error(t('mappingsTab.mapFailed'));
+            // Only clear the picker + close the form on success; a failure
+            // leaves the selection intact so the user can retry.
+            setSelectedReq('');
+            setShowMapForm(false);
+            await mappingsSWR.mutate();
+            onMutated();
+        } catch {
+            toast.error(t('mappingsTab.mapFailed'));
+        } finally {
+            // Always re-enable the button — a throw must not strand it
+            // disabled forever.
+            setSavingMap(false);
+        }
     };
 
     // Epic 67 — delayed-commit unmap against this tab's own SWR
@@ -347,8 +373,8 @@ export function ControlMappingsTab({
         <div className="space-y-default">
             {canWrite && (
                 <div className="flex justify-end">
-                    <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowMapForm(!showMapForm)} id="map-requirement-btn">
-                        {t('mappingsTab.addMapping')}
+                    <Button variant="primary" onClick={() => setShowMapForm(!showMapForm)} id="map-requirement-btn">
+                        {t('mappingsTab.linkRequirement')}
                     </Button>
                 </div>
             )}

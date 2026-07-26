@@ -34,6 +34,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     type Dispatch,
     type SetStateAction,
 } from 'react';
@@ -49,6 +50,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { InfoTooltip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/hooks/use-toast';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
@@ -95,32 +97,36 @@ const buildCategoryOptions = (t: OptT): ComboboxOption[] =>
 // not-applicable-needs-justification rule). Cross-field validation runs
 // in `superRefine` so the error is attached to the right field.
 
-const formSchema = z
-    .object({
-        code: z.string().max(64).optional(),
-        name: z.string().min(1, 'Name is required'),
-        category: z.string().optional(),
-        frequency: z.string().optional(),
-        ownerUserId: z.string().optional(),
-        automationType: z.string().optional(),
-        mitigationType: z.string().optional(),
-        applicability: z.enum(['APPLICABLE', 'NOT_APPLICABLE']),
-        justification: z.string().optional(),
-    })
-    .superRefine((data, ctx) => {
-        if (
-            data.applicability === 'NOT_APPLICABLE' &&
-            !data.justification?.trim()
-        ) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                path: ['justification'],
-                message: 'Justification is required for non-applicable controls.',
-            });
-        }
-    });
+// The schema is a factory so its user-facing validation messages route
+// through next-intl (`t`). It's memoised per-render inside the component
+// (see `formSchema` below) and passed to `zodResolver`.
+const buildFormSchema = (t: OptT) =>
+    z
+        .object({
+            code: z.string().max(64).optional(),
+            name: z.string().min(1, t('new.nameRequired')),
+            category: z.string().optional(),
+            frequency: z.string().optional(),
+            ownerUserId: z.string().optional(),
+            automationType: z.string().optional(),
+            mitigationType: z.string().optional(),
+            applicability: z.enum(['APPLICABLE', 'NOT_APPLICABLE']),
+            justification: z.string().optional(),
+        })
+        .superRefine((data, ctx) => {
+            if (
+                data.applicability === 'NOT_APPLICABLE' &&
+                !data.justification?.trim()
+            ) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['justification'],
+                    message: t('justificationRequired'),
+                });
+            }
+        });
 
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = z.infer<ReturnType<typeof buildFormSchema>>;
 
 const DEFAULT_VALUES: FormValues = {
     code: '',
@@ -152,12 +158,21 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
     const AUTOMATION_TYPE_OPTIONS = useMemo(() => buildAutomationTypeOptions(t), [t]);
     const MITIGATION_TYPE_OPTIONS = useMemo(() => buildMitigationTypeOptions(t), [t]);
     const CATEGORY_OPTIONS = useMemo(() => buildCategoryOptions(t), [t]);
+    const formSchema = useMemo(() => buildFormSchema(t), [t]);
     const close = useCallback(() => setOpen(false), [setOpen]);
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const router = useRouter();
+    const toast = useToast();
     const { mutate: swrMutate } = useSWRConfig();
     const telemetry = useFormTelemetry('NewControlModal');
+
+    // Holds the id of a control that was created in a prior submit whose
+    // applicability follow-up then failed. Retrying re-runs ONLY the
+    // applicability step against this id — it never re-creates the
+    // control (which would leave a duplicate). Cleared on full success
+    // and whenever the modal (re)opens.
+    const createdControlIdRef = useRef<string | null>(null);
 
     const {
         register,
@@ -197,6 +212,9 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
     useEffect(() => {
         if (!open) return;
         reset(DEFAULT_VALUES);
+        // A fresh open starts a fresh control — drop any id cached by a
+        // prior partial-failure retry so the next submit creates anew.
+        createdControlIdRef.current = null;
         // Give Radix's focus manager a beat before we override.
         const t = setTimeout(() => setFocus('name'), 60);
         return () => clearTimeout(t);
@@ -209,44 +227,73 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
             hasFrequency: Boolean(values.frequency),
         });
         try {
-            const body = {
-                name: values.name.trim(),
-                code: values.code?.trim() || undefined,
-                category: values.category || undefined,
-                frequency: values.frequency || undefined,
-                ownerUserId: values.ownerUserId || undefined,
-                automationType: values.automationType || undefined,
-                mitigationType: values.mitigationType || undefined,
-                isCustom: true,
-            };
-            const res = await fetch(apiUrl('/controls'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                const msg =
-                    typeof data.error === 'string'
-                        ? data.error
-                        : data.message || t('new.createFailed');
-                throw new Error(msg);
+            // Step 1 — create the control. Guarded by the cached id so a
+            // retry after a partial failure (control created, applicability
+            // step failed) does NOT create a duplicate.
+            let createdId = createdControlIdRef.current;
+            if (!createdId) {
+                const body = {
+                    name: values.name.trim(),
+                    code: values.code?.trim() || undefined,
+                    category: values.category || undefined,
+                    frequency: values.frequency || undefined,
+                    ownerUserId: values.ownerUserId || undefined,
+                    automationType: values.automationType || undefined,
+                    mitigationType: values.mitigationType || undefined,
+                    isCustom: true,
+                };
+                const res = await fetch(apiUrl('/controls'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    // Carry the server-supplied message when present; an
+                    // empty message lets the catch apply the localized
+                    // default — the fallback string lives in ONE place
+                    // (the catch), so it is never dead code here.
+                    const serverMsg =
+                        typeof data.error === 'string'
+                            ? data.error
+                            : typeof data.message === 'string'
+                              ? data.message
+                              : '';
+                    throw new Error(serverMsg);
+                }
+                const created: { id: string } = await res.json();
+                createdId = created.id;
+                createdControlIdRef.current = createdId;
             }
-            const created = await res.json();
 
+            // Step 2 — applicability follow-up. A failure here is NOT
+            // swallowed: the control already exists as APPLICABLE and the
+            // typed justification would otherwise be lost. Surface the
+            // partial failure and let the catch keep the modal open (form
+            // state, incl. the justification, is preserved) so the user
+            // can retry just this step.
             if (
                 values.applicability === 'NOT_APPLICABLE' &&
                 values.justification?.trim()
             ) {
-                await fetch(apiUrl(`/controls/${created.id}/applicability`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        applicability: 'NOT_APPLICABLE',
-                        justification: values.justification,
-                    }),
-                });
+                const applicabilityRes = await fetch(
+                    apiUrl(`/controls/${createdId}/applicability`),
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            applicability: 'NOT_APPLICABLE',
+                            justification: values.justification,
+                        }),
+                    },
+                );
+                if (!applicabilityRes.ok) {
+                    throw new Error(t('new.applicabilityFailed'));
+                }
             }
+
+            // Both steps succeeded — clear the cached id.
+            createdControlIdRef.current = null;
 
             // Revalidate every variant of the controls list key (unfiltered +
             // each `?<filters>`) so the new control appears under any filter.
@@ -259,20 +306,19 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                 { revalidate: true },
             );
 
-            telemetry.trackSuccess({ controlId: created.id });
+            telemetry.trackSuccess({ controlId: createdId });
             close();
-            router.push(tenantHref(`/controls/${created.id}`));
+            router.push(tenantHref(`/controls/${createdId}`));
         } catch (err) {
             telemetry.trackError(err);
-            // Surface API errors via RHF's root-error slot so the same
-            // banner pattern works for client + server failures.
-            setFormError('root.api', {
-                type: 'api',
-                message:
-                    err instanceof Error
-                        ? err.message
-                        : t('new.createFailed'),
-            });
+            const message =
+                err instanceof Error && err.message
+                    ? err.message
+                    : t('new.createFailed');
+            // Surface as a transient toast AND via RHF's root-error slot so
+            // both the notification and the inline banner carry the failure.
+            toast.error(message);
+            setFormError('root.api', { type: 'api', message });
         }
     };
 

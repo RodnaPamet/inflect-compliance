@@ -5,10 +5,24 @@
  * the API query parameters accepted by `GET /api/t/:slug/controls`:
  *
  *   q             → free-text search (managed by useFilterContext's search slot)
- *   status        → ControlStatus enum
- *   applicability → APPLICABLE | NOT_APPLICABLE
+ *   status        → ControlStatus enum (server-side)
  *   ownerUserId   → entity-ref (user IDs; options derived client-side from loaded rows)
- *   category      → free-form string (options derived client-side from loaded rows)
+ *
+ * Two facets are resolved CLIENT-side (over the already-loaded rows), NOT via
+ * the server query — see the note on each and ControlsClient's
+ * `clientFilteredControls`:
+ *
+ *   category      → the DERIVED framework-native category (`categorizeControl`,
+ *                   e.g. "Access control"), the SAME value the Category COLUMN
+ *                   renders — NOT the raw stored `c.category` (an ISO 27002
+ *                   theme like "TECHNOLOGICAL"). Options + filtering both use
+ *                   the derived value so the picker only offers values a cell
+ *                   can actually show (#8a).
+ *   applicability → three states matching the column exactly (Applicable /
+ *                   Not applicable / Not assessed). The stored enum holds only
+ *                   APPLICABLE | NOT_APPLICABLE, so the "Not assessed" backlog
+ *                   (applicable, `applicabilityDecidedAt` null) is only
+ *                   expressible client-side (#8b).
  *
  * `framework` is intentionally excluded — it would require a subquery across
  * `FrameworkMapping` which the controls API does not expose today. Adding it
@@ -38,6 +52,12 @@ import {
 } from '@/components/ui/filter/filter-definitions';
 import type { FilterOption } from '@/components/ui/filter/types';
 import { CircleDot, Tag, UserCircle2, ShieldCheck, Activity } from 'lucide-react';
+// Dependency-free taxonomy helper (no `@/` React imports) — safe to require
+// from this node-env module. Drives the DERIVED Category filter options (#8a).
+import {
+    categorizeControl,
+    type CategorizableControl,
+} from '@/lib/controls/control-taxonomy';
 
 /** Surface-namespace resolver (`useTranslations('controls')`). */
 type T = (key: string, values?: Record<string, unknown>) => string;
@@ -64,6 +84,10 @@ function applicabilityLabels(t: T): Record<string, string> {
     return {
         APPLICABLE: t('filterEnums.applicability.APPLICABLE'),
         NOT_APPLICABLE: t('filterEnums.applicability.NOT_APPLICABLE'),
+        // #8b — third state, matching the Applicability COLUMN's "Not assessed"
+        // (applicable but `applicabilityDecidedAt` null). Not a stored enum
+        // member, so ControlsClient filters it CLIENT-side.
+        UNASSESSED: t('filterEnums.applicability.UNASSESSED'),
     };
 }
 
@@ -189,15 +213,22 @@ export function ownerOptionsFromControls(
 
 /**
  * Build category options from the controls currently loaded on the page.
- * `category` is free-form on the Control model, so we dedupe on the raw
- * string and surface the same string as both value and label.
+ *
+ * #8a — the options are the DERIVED framework-native category
+ * (`categorizeControl(c).category`, e.g. "Access control"), the SAME value the
+ * Category COLUMN renders — NOT the raw stored `c.category` (an ISO 27002 theme
+ * like "TECHNOLOGICAL"). Building from the raw column made the picker offer
+ * values that never appear in a cell (and the server filtered the raw column,
+ * so a pick on the derived-looking label matched nothing). Dedupe on the
+ * derived string and surface it as both value and label; ControlsClient filters
+ * the loaded rows on this same derived value.
  */
 export function categoryOptionsFromControls(
-    controls: ReadonlyArray<{ category?: string | null }>,
+    controls: ReadonlyArray<CategorizableControl>,
 ): FilterOption[] {
     const seen = new Set<string>();
     for (const c of controls) {
-        const cat = c.category?.trim();
+        const cat = categorizeControl(c)?.category?.trim();
         if (cat) seen.add(cat);
     }
     return Array.from(seen)
@@ -211,10 +242,7 @@ export function categoryOptionsFromControls(
  * the same `FilterDef[]` shape (options is the only field that changes).
  */
 export function buildControlFilters(
-    loaded: ReadonlyArray<{
-        owner?: OwnerLike | null;
-        category?: string | null;
-    }>,
+    loaded: ReadonlyArray<CategorizableControl & { owner?: OwnerLike | null }>,
     t: T,
     tGroup: TGroup,
 ): FilterDef[] {

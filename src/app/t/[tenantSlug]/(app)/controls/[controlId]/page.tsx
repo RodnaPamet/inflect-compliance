@@ -32,7 +32,7 @@ import { CONTROL_CATEGORY_THEMES } from '@/lib/controls/control-categories';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { extractMutationError } from '@/lib/mutations';
-import { useToastWithUndo } from '@/components/ui/hooks';
+import { useToastWithUndo, useToast } from '@/components/ui/hooks';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { Tooltip, InfoTooltip } from '@/components/ui/tooltip';
@@ -43,6 +43,10 @@ import { AsidePanel } from '@/components/ui/aside-panel';
 import { AutomationSuggestionsRail } from '@/components/automation/AutomationSuggestionsRail';
 import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { cardVariants } from '@/components/ui/card';
+import { FormField } from '@/components/ui/form-field';
+import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/cn';
 
 import { ControlRoiCard } from './_components/ControlRoiCard';
@@ -163,6 +167,7 @@ export default function ControlDetailPage() {
     const { permissions, tenantSlug } = useTenantContext();
     const controlId = params?.controlId as string;
     const triggerUndoToast = useToastWithUndo();
+    const toast = useToast();
 
     // ─── Page data — Epic 69 SWR-first read ──────────────────────────
     //
@@ -294,6 +299,10 @@ export default function ControlDetailPage() {
     );
     const activity = activityQuery.data ?? [];
     const activityLoading = activityQuery.isLoading;
+    // Distinguish a fetch FAILURE from a genuinely empty trail — without
+    // this the Activity tab renders "No activity" on an error, which reads
+    // as "nothing happened" when the real story is "we couldn't load it".
+    const activityError = activityQuery.error;
 
     // Sync status — drives the header conflict/synced badges (the
     // overview Automation section + manual "Sync Now" were removed).
@@ -306,7 +315,6 @@ export default function ControlDetailPage() {
     const [editForm, setEditForm] = useState({ name: '', objective: '', successCriteria: '', testingMethodology: '', category: '', frequency: '', owner: '', automationType: '', mitigationType: '', annualCost: '', effectiveness: '' });
     const [savingEdit, setSavingEdit] = useState(false);
     const [editError, setEditError] = useState('');
-    const [editSuccess, setEditSuccess] = useState(false);
 
     // (fetchControl replaced by useQuery above — use refetch() below)
 
@@ -334,7 +342,6 @@ export default function ControlDetailPage() {
                     : String(control.effectiveness),
         });
         setEditError('');
-        setEditSuccess(false);
         setShowEditModal(true);
     };
 
@@ -390,7 +397,7 @@ export default function ControlDetailPage() {
             if (!res.ok) {
                 const err = await res
                     .json()
-                    .catch(() => ({ error: 'Update failed' }));
+                    .catch(() => ({}));
                 throw new Error(extractMutationError(err, tx('detailPage.errors.updateFailed')));
             }
             // If owner changed, call the separate owner endpoint
@@ -409,7 +416,7 @@ export default function ControlDetailPage() {
                 if (!ownerRes.ok) {
                     const ownerErr = await ownerRes
                         .json()
-                        .catch(() => ({ error: 'Owner update failed' }));
+                        .catch(() => ({}));
                     throw new Error(
                         extractMutationError(ownerErr, tx('detailPage.errors.ownerUpdateFailed')),
                     );
@@ -448,8 +455,7 @@ export default function ControlDetailPage() {
         try {
             await editMutation.trigger(editForm);
             setShowEditModal(false);
-            setEditSuccess(true);
-            setTimeout(() => setEditSuccess(false), 3000);
+            toast.success(tx('detailPage.controlUpdated'));
         } catch (err) {
             setEditError(err instanceof Error ? err.message : tx('detailPage.errors.updateFailed'));
         } finally {
@@ -522,7 +528,7 @@ export default function ControlDetailPage() {
             if (!res.ok) {
                 const err = await res
                     .json()
-                    .catch(() => ({ error: 'Status update failed' }));
+                    .catch(() => ({}));
                 throw new Error(
                     extractMutationError(err, tx('detailPage.errors.statusUpdateFailed')),
                 );
@@ -558,24 +564,39 @@ export default function ControlDetailPage() {
     const saveApplicability = async () => {
         if (appChoice === 'NOT_APPLICABLE' && !appJustification.trim()) return;
         setSavingApp(true);
-        await fetch(apiUrl(`/controls/${controlId}/applicability`), {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ applicability: appChoice, justification: appChoice === 'NOT_APPLICABLE' ? appJustification : null }),
-        });
-        await refetch();
-        setSavingApp(false);
-        setShowApplicability(false);
+        try {
+            const res = await fetch(apiUrl(`/controls/${controlId}/applicability`), {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ applicability: appChoice, justification: appChoice === 'NOT_APPLICABLE' ? appJustification : null }),
+            });
+            // Applicability is an auditable Statement-of-Applicability
+            // decision — never report success (nor close the panel) unless
+            // the write actually landed.
+            if (!res.ok) {
+                toast.error(tx('detailPage.errors.applicabilityFailed'));
+                return;
+            }
+            await refetch();
+            toast.success(tx('detailPage.applicabilityUpdated'));
+            setShowApplicability(false);
+        } finally {
+            setSavingApp(false);
+        }
     };
 
     const addContributor = async () => {
         if (!addContributorId) return;
         setSavingContributor(true);
         try {
-            await fetch(apiUrl(`/controls/${controlId}/contributors`), {
+            const res = await fetch(apiUrl(`/controls/${controlId}/contributors`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: addContributorId }),
             });
+            if (!res.ok) {
+                toast.error(tx('detailPage.errors.addContributorFailed'));
+                return;
+            }
             setAddContributorId(null);
             await refetch();
         } finally {
@@ -583,16 +604,51 @@ export default function ControlDetailPage() {
         }
     };
 
-    const removeContributor = async (userId: string) => {
-        setSavingContributor(true);
-        try {
-            await fetch(apiUrl(`/controls/${controlId}/contributors/${userId}`), {
-                method: 'DELETE',
-            });
-            await refetch();
-        } finally {
-            setSavingContributor(false);
+    // Epic 67 — deferred-commit contributor removal. Optimistically drop
+    // the contributor from the page-data SWR cache so the badge disappears
+    // immediately; the DELETE only fires after the 5 s undo window. Undo (or
+    // a failed commit) restores the whole page-data snapshot.
+    const removeContributor = (userId: string) => {
+        const previous = pageDataQuery.data;
+        if (previous) {
+            pageDataQuery.mutate(
+                {
+                    ...previous,
+                    control: {
+                        ...previous.control,
+                        contributors: (previous.control.contributors ?? []).filter(
+                            (c) => c.user.id !== userId,
+                        ),
+                    },
+                },
+                { revalidate: false },
+            );
         }
+        triggerUndoToast({
+            message: tx('detailPage.contributorRemoved'),
+            undoMessage: tx('detailPage.undo'),
+            action: async () => {
+                const res = await fetch(
+                    apiUrl(`/controls/${controlId}/contributors/${userId}`),
+                    { method: 'DELETE' },
+                );
+                if (!res.ok) {
+                    throw new Error(tx('detailPage.errors.removeContributorFailed'));
+                }
+                await refetch();
+            },
+            undoAction: () => {
+                if (previous) {
+                    pageDataQuery.mutate(previous, { revalidate: false });
+                }
+            },
+            onError: () => {
+                if (previous) {
+                    pageDataQuery.mutate(previous, { revalidate: false });
+                }
+                toast.error(tx('detailPage.errors.removeContributorFailed'));
+            },
+        });
     };
 
     // B4 (2026-06-07): the legacy control-scoped task flow
@@ -690,8 +746,8 @@ export default function ControlDetailPage() {
             );
         }
         triggerUndoToast({
-            message: 'Evidence unlinked',
-            undoMessage: 'Undo',
+            message: tx('detailPage.evidenceUnlinked'),
+            undoMessage: tx('detailPage.undo'),
             action: async () => {
                 const res = await fetch(
                     apiUrl(`/controls/${controlId}/evidence/${linkId}`),
@@ -894,7 +950,7 @@ export default function ControlDetailPage() {
                         buttonProps={{ variant: 'primary', className: 'text-sm' }}
                     />
                     <Button variant="secondary" onClick={() => { setAppChoice(control.applicability); setAppJustification(control.applicabilityJustification || ''); setShowApplicability(!showApplicability); }} id="toggle-applicability-btn">
-                        Applicability
+                        {tx('detailPage.applicabilityButton')}
                     </Button>
                 </>
             )}
@@ -938,18 +994,26 @@ export default function ControlDetailPage() {
             {showApplicability && permissions.canWrite && (
                 <div className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
                     <Heading level={3}>{tx('setApplicability')}</Heading>
-                    <div className="flex gap-default">
-                        <label className="flex items-center gap-tight text-sm text-content-default">
-                            <input type="radio" value="APPLICABLE" checked={appChoice === 'APPLICABLE'} onChange={() => setAppChoice('APPLICABLE')} />
-                            {tx('applicable')}
-                        </label>
-                        <label className="flex items-center gap-tight text-sm text-content-default">
-                            <input type="radio" value="NOT_APPLICABLE" checked={appChoice === 'NOT_APPLICABLE'} onChange={() => setAppChoice('NOT_APPLICABLE')} />
-                            {tx('notApplicable')}
-                        </label>
-                    </div>
+                    <RadioGroup value={appChoice} onValueChange={setAppChoice} className="flex gap-default">
+                        <div className="flex items-center gap-tight">
+                            <RadioGroupItem value="APPLICABLE" id="applicability-applicable" size="sm" />
+                            <Label htmlFor="applicability-applicable" className="cursor-pointer">{tx('applicable')}</Label>
+                        </div>
+                        <div className="flex items-center gap-tight">
+                            <RadioGroupItem value="NOT_APPLICABLE" id="applicability-not-applicable" size="sm" />
+                            <Label htmlFor="applicability-not-applicable" className="cursor-pointer">{tx('notApplicable')}</Label>
+                        </div>
+                    </RadioGroup>
                     {appChoice === 'NOT_APPLICABLE' && (
-                        <textarea className="input w-full" rows={2} placeholder={tx('detailPage.justificationRequiredPlaceholder')} value={appJustification} onChange={e => setAppJustification(e.target.value)} id="applicability-justification" />
+                        <FormField label="">
+                            <Textarea
+                                id="applicability-justification"
+                                rows={2}
+                                placeholder={tx('detailPage.justificationRequiredPlaceholder')}
+                                value={appJustification}
+                                onChange={(e) => setAppJustification(e.target.value)}
+                            />
+                        </FormField>
                     )}
                     <Button variant="primary" onClick={saveApplicability} disabled={savingApp || (appChoice === 'NOT_APPLICABLE' && !appJustification.trim())} id="save-applicability-btn">
                         {savingApp ? tx('detailPage.saving') : tx('detailPage.save')}
@@ -973,19 +1037,20 @@ export default function ControlDetailPage() {
                     {/* Overview header with Edit button */}
                     {permissions.canWrite && (
                         <div className="flex justify-end -mt-1 -mb-2">
-                            <Button
-                                variant="secondary"
-                                size="icon"
-                                onClick={openEditModal}
-                                data-testid="control-edit-button"
-                                id="control-edit-button"
-                                aria-label={tx('detailPage.editControl')}
-                                title={tx('detailPage.editControl')}
-                            >
-                                {/* B2 — icon-only edit affordance,
-                                    canonical unified pattern. */}
-                                <PencilIcon size={16} />
-                            </Button>
+                            <Tooltip content={tx('detailPage.editControl')}>
+                                <Button
+                                    variant="secondary"
+                                    size="icon"
+                                    onClick={openEditModal}
+                                    data-testid="control-edit-button"
+                                    id="control-edit-button"
+                                    aria-label={tx('detailPage.editControl')}
+                                >
+                                    {/* B2 — icon-only edit affordance,
+                                        canonical unified pattern. */}
+                                    <PencilIcon size={16} />
+                                </Button>
+                            </Tooltip>
                         </div>
                     )}
                     <div className="grid grid-cols-2 gap-section">
@@ -1111,13 +1176,6 @@ export default function ControlDetailPage() {
                 onOpenChange={setReverseLookupOpen}
             />
 
-            {/* Success toast */}
-            {editSuccess && (
-                <div className="fixed bottom-6 right-6 z-50 bg-bg-success-emphasis text-content-emphasis px-4 py-2 rounded-lg shadow-lg animate-fadeIn text-sm" id="edit-success-toast">
-                    {tx('detailPage.controlUpdated')}
-                </div>
-            )}
-
             {tab === 'tasks' && (
                 // B4 (2026-06-07): the Control Tasks tab now matches the
                 // Asset + Risk Tasks tabs exactly — a single card-wrapped
@@ -1212,6 +1270,11 @@ export default function ControlDetailPage() {
                 <div className={cn(cardVariants({ density: 'none' }), 'overflow-hidden')}>
                     {activityLoading ? (
                         <div className="p-8 text-center text-content-subtle animate-pulse">{tx('detailPage.loadingActivity')}</div>
+                    ) : activityError ? (
+                        <InlineEmptyState
+                            title={tx('detailPage.couldntLoadActivity')}
+                            description={tx('detailPage.couldntLoadActivityDesc')}
+                        />
                     ) : activity.length === 0 ? (
                         <InlineEmptyState
                             title={tx('detailPage.noActivity')}
