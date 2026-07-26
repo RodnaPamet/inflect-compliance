@@ -149,7 +149,6 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/nav/NavigationTracker.tsx',
     'src/components/onboarding/Nis2SelfAssessmentStep.tsx',
     'src/components/processes/ManualTriggerPanel.tsx',
-    'src/components/ui/CalendarHeatmap.tsx',
     'src/components/ui/ComplianceStatusIndicator.tsx',
     'src/components/ui/EvidenceGallery.tsx',
     'src/components/ui/ExpiryCalendar.tsx',

@@ -145,8 +145,26 @@ export const CACHE_KEYS = {
     // carries the from/to window so each view caches independently.
     calendar: {
         all: () => '/calendar' as const,
-        range: (from: string, to: string) =>
-            `/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` as const,
+        // The type/category filter is server-side (the loaders skip
+        // non-matching sources), so it belongs in the key — a filtered view
+        // caches independently and refetches only its slice. The "my
+        // deadlines" toggle is NOT here: it filters the fetched events by
+        // ownerUserId client-side, so it changes no request. Appending only
+        // non-empty params keeps the unfiltered key byte-identical to before.
+        range: (
+            from: string,
+            to: string,
+            opts?: { types?: readonly string[]; categories?: readonly string[] },
+        ) => {
+            let key = `/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+            if (opts?.types && opts.types.length > 0) {
+                key += `&types=${encodeURIComponent([...opts.types].sort().join(','))}`;
+            }
+            if (opts?.categories && opts.categories.length > 0) {
+                key += `&categories=${encodeURIComponent([...opts.categories].sort().join(','))}`;
+            }
+            return key;
+        },
     },
 
     // ─── Workflow automation (Automation Epics 1–10) ─────────────

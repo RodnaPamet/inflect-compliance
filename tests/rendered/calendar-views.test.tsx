@@ -7,9 +7,16 @@
  *   - GanttTimeline — duration bars, today marker, empty state
  */
 
-import { render, screen } from '@testing-library/react';
+import { render as rtlRender, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
+import { TooltipProvider } from '@/components/ui/tooltip';
+
+// The calendar view primitives now use <Tooltip> on day cells / bars, which
+// (Radix) throws without a TooltipProvider ancestor. Wrap every render so the
+// bare-primitive tests mount the same provider the app root supplies.
+const render = (ui: React.ReactElement) =>
+    rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
 
 jest.mock('next/navigation', () => ({
     useRouter: () => ({
@@ -227,7 +234,8 @@ describe('<CalendarMonth />', () => {
         );
         // Click the event link — should navigate (we just check
         // onSelectDate is NOT fired; navigation is a Next.js Link).
-        const eventLink = screen.getByTitle(/Pay invoice/);
+        // The cell event is now a <Tooltip>-wrapped link (was a raw title=).
+        const eventLink = screen.getByRole('link', { name: /Pay invoice/ });
         await user.click(eventLink);
         expect(onSelectDate).not.toHaveBeenCalled();
     });

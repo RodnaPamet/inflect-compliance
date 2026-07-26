@@ -113,6 +113,25 @@ const DATE_LONG_FMT = new Intl.DateTimeFormat(LOCALE, {
     timeZone: 'UTC',
 });
 
+// Standalone month / weekday names — the shared, SSR-safe replacement for
+// hand-rolled `MONTH_NAMES` / `WEEKDAY_NAMES` arrays scattered across the
+// calendar views. Same en-GB/UTC pinning as every other formatter here.
+const MONTH_YEAR_FMT = new Intl.DateTimeFormat(LOCALE, {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+});
+
+const MONTH_SHORT_FMT = new Intl.DateTimeFormat(LOCALE, {
+    month: 'short',
+    timeZone: 'UTC',
+});
+
+const WEEKDAY_SHORT_FMT = new Intl.DateTimeFormat(LOCALE, {
+    weekday: 'short',
+    timeZone: 'UTC',
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function toDate(value: string | Date | null | undefined): Date | null {
@@ -264,6 +283,33 @@ export function formatDateCompact(
 ): string {
     const d = toDate(value);
     return d ? DATE_COMPACT_FMT.format(d) : fallback;
+}
+
+/** Month + year, e.g. "January 2026" — calendar month-nav headers. */
+export function formatMonthYear(
+    value: string | Date | null | undefined,
+    fallback = '—',
+): string {
+    const d = toDate(value);
+    return d ? MONTH_YEAR_FMT.format(d) : fallback;
+}
+
+/** Short month name, e.g. "Jan" — timeline axis ticks. */
+export function formatMonthShort(
+    value: string | Date | null | undefined,
+    fallback = '—',
+): string {
+    const d = toDate(value);
+    return d ? MONTH_SHORT_FMT.format(d) : fallback;
+}
+
+/** Short weekday name, e.g. "Mon" — month-grid + heatmap column headers. */
+export function formatWeekdayShort(
+    value: string | Date | null | undefined,
+    fallback = '—',
+): string {
+    const d = toDate(value);
+    return d ? WEEKDAY_SHORT_FMT.format(d) : fallback;
 }
 
 /**

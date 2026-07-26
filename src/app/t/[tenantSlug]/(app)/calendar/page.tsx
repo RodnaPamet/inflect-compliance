@@ -1,19 +1,21 @@
 /**
  * Epic 49 — Compliance Calendar page (server component shell).
  *
- * Server side resolves tenant context, fetches the initial 12-month
- * window, and hands off to the client island for view-switching +
- * range navigation. Subsequent fetches go through React Query so the
- * server payload is purely the warm-cache.
+ * Thin shell: it resolves nothing beyond the route param and hands off to the
+ * client island, which fetches its own range via SWR.
+ *
+ * Why no server-side prefetch: the previous version ran the full 17-source
+ * aggregation for a now±180d window and passed it as `initialData` — but the
+ * client's default (month) view requests a DIFFERENT window
+ * (startOfMonth−7d…endOfMonth+7d), so the keys never matched and the payload
+ * was discarded on every load (an expensive aggregation thrown away, plus a
+ * whole-payload `JSON.stringify` on every render through the SWR options).
+ * The client owns range selection, so it owns the fetch.
  */
 
-import { getTenantCtx } from '@/app-layer/context';
-import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
 import { CalendarClient } from './CalendarClient';
 
 export const dynamic = 'force-dynamic';
-
-const DAY_MS = 86_400_000;
 
 export default async function CalendarPage({
     params,
@@ -21,29 +23,5 @@ export default async function CalendarPage({
     params: Promise<{ tenantSlug: string }>;
 }) {
     const { tenantSlug } = await params;
-    const ctx = await getTenantCtx({ tenantSlug });
-
-    // Default range: 6 months back, 6 months forward — covers heatmap
-    // (12 months back), monthly (current view), and Gantt (12-month
-    // window centred on today). The client refines from here.
-    const now = new Date();
-    const from = new Date(now.getTime() - 180 * DAY_MS);
-    const to = new Date(now.getTime() + 180 * DAY_MS);
-
-    const initial = await getComplianceCalendarEvents(ctx, {
-        from,
-        to,
-        now,
-    });
-
-    return (
-        <CalendarClient
-            tenantSlug={tenantSlug}
-            initial={JSON.parse(JSON.stringify(initial))}
-            initialRange={{
-                from: from.toISOString(),
-                to: to.toISOString(),
-            }}
-        />
-    );
+    return <CalendarClient tenantSlug={tenantSlug} />;
 }

@@ -45,7 +45,10 @@ describe('1 — the Timeline shows every deadline', () => {
 describe('2 — loading is distinguishable from empty', () => {
     it('renders a pending indicator while the range has no payload', () => {
         const src = read(CLIENT);
-        expect(src).toMatch(/const pending = !calQuery\.data && !calQuery\.error/);
+        // Pending is derived from SWR's key-aware `isLoading` (the previous
+        // `!data && !error` form was permanently false under keepPreviousData,
+        // so no spinner ever showed on a range switch).
+        expect(src).toMatch(/const pending = calQuery\.isLoading/);
         expect(src).toMatch(/data-testid="calendar-loading"/);
         expect(src).toMatch(/aria-busy=\{pending/);
     });
@@ -104,6 +107,56 @@ describe('5 — deep-links land on the relevant section', () => {
         const src = read('src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx');
         expect(src).toMatch(/useSearchParams/);
         expect(src).toMatch(/VENDOR_TABS/);
+    });
+
+    it('EVERY emitted href resolves to a real route segment', () => {
+        // Three event types shipped hrefs to routes that did not exist
+        // (`/training`, `/evidence/{id}`, `/findings/{id}`) and 404'd on
+        // click — the previous guard only checked the vendor deep-link, so
+        // the gap survived. This resolves EVERY `tenantHrefFromCtx(ctx, …)`
+        // path against the actual App Router tree.
+        const APP = path.join(ROOT, 'src/app/t/[tenantSlug]/(app)');
+        const src = read(USECASE);
+        const hrefs = [
+            ...src.matchAll(/tenantHrefFromCtx\(\s*ctx,\s*`([^`]+)`/g),
+        ].map((m) => m[1]);
+        expect(hrefs.length).toBeGreaterThanOrEqual(15);
+
+        /** A route dir resolves a segment if it matches literally or is a
+         *  `[param]` dir (for a `${…}` interpolation). */
+        function resolves(segments: string[]): boolean {
+            let dir = APP;
+            for (const seg of segments) {
+                if (!fs.existsSync(dir)) return false;
+                const entries = fs
+                    .readdirSync(dir, { withFileTypes: true })
+                    .filter((e) => e.isDirectory())
+                    .map((e) => e.name);
+                if (seg.includes('${')) {
+                    // Dynamic interpolation → must match a [param] dir.
+                    const dyn = entries.find(
+                        (e) => e.startsWith('[') && e.endsWith(']'),
+                    );
+                    if (!dyn) return false;
+                    dir = path.join(dir, dyn);
+                } else {
+                    if (!entries.includes(seg)) return false;
+                    dir = path.join(dir, seg);
+                }
+            }
+            // A leaf route must be renderable.
+            return (
+                fs.existsSync(path.join(dir, 'page.tsx')) ||
+                fs.existsSync(path.join(dir, 'page.ts'))
+            );
+        }
+
+        const unresolved = hrefs.filter((href) => {
+            const clean = href.split('?')[0].replace(/^\//, '');
+            const segments = clean.split('/').filter(Boolean);
+            return !resolves(segments);
+        });
+        expect(unresolved).toEqual([]);
     });
 });
 

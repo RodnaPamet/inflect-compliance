@@ -101,11 +101,14 @@ describe('B3 — button + card unify', () => {
             // PR-C extended the CalendarMonth mount with
             // `onDoubleClickDate` between onSelectDate and
             // selectedYmd, pushing selectedYmd past the original
-            // 400-char window. The pattern still locks the prop
-            // wiring; widen the window so legitimate additions
-            // between sibling props don't trip the assertion.
+            // 400-char window. The calendar-UI PR then made
+            // `onDoubleClickDate` / `newTaskLabel` conditional on the
+            // caller's task-create permission (a multi-line ternary),
+            // pushing it past 800. The pattern still locks the prop
+            // wiring; widen the window so legitimate additions between
+            // sibling props don't trip the assertion.
             expect(client).toMatch(
-                /<CalendarMonth[\s\S]{0,800}selectedYmd=\{selectedDate\}/,
+                /<CalendarMonth[\s\S]{0,1400}selectedYmd=\{selectedDate\}/,
             );
         });
     });
