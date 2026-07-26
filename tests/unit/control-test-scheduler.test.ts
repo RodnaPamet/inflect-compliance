@@ -276,8 +276,10 @@ describe('runControlTestScheduler — invalid schedule', () => {
         expect(mockUpdateMany).toHaveBeenCalledTimes(1);
         expect(mockUpdateMany.mock.calls[0][0].where.id).toBe('ok');
 
-        // Surfaced as a warn log so on-call can fix the cron.
-        expect(mockLogger.warn).toHaveBeenCalledWith(
+        // Escalated to an error log (a genuinely invalid cron means the plan
+        // can never run until fixed — distinct from the benign "no next run"
+        // case) so on-call sees it rather than a per-tick warn.
+        expect(mockLogger.error).toHaveBeenCalledWith(
             expect.stringContaining('invalid schedule'),
             expect.objectContaining({
                 planId: 'broken',

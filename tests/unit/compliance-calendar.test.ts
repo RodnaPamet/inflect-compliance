@@ -143,14 +143,46 @@ beforeEach(() => {
             findMany: (...a: unknown[]) => mockVendorAssessmentFindMany(...a),
         },
     };
+    const invokeWithDb = async (
+        _ctx: unknown,
+        fn: (db: unknown) => Promise<unknown>,
+    ) => fn(mockDb);
     jest.mock('@/lib/db-context', () => ({
         __esModule: true,
-        runInTenantContext: jest.fn(
-            async (_ctx: unknown, fn: (db: unknown) => Promise<unknown>) =>
-                fn(mockDb),
-        ),
+        // The badge count runs on the primary; every calendar source loader
+        // now runs in its OWN read context. Both invoke the callback with the
+        // spy db immediately (single-pass, no real tx).
+        runInTenantContext: jest.fn(invokeWithDb),
+        runInTenantReadContext: jest.fn(invokeWithDb),
     }));
 });
+
+/** A full-access PermissionSet — every source's `.view` is granted so the
+ *  per-source permission gate lets all loaders run. Individual tests that
+ *  exercise the gate build their own restricted set. */
+function allPermissions(): unknown {
+    const view = (extra: Record<string, boolean> = {}) => ({ view: true, ...extra });
+    return {
+        controls: view({ create: true, edit: true }),
+        evidence: view({ upload: true, edit: true, download: true }),
+        policies: view({ create: true, edit: true, approve: true }),
+        tasks: view({ create: true, edit: true, assign: true }),
+        risks: view({ create: true, edit: true }),
+        assets: view({ create: true, edit: true }),
+        vendors: view({ create: true, edit: true }),
+        tests: view({ create: true, execute: true }),
+        incidents: view({ manage: true }),
+        personnel: view({ manage: true }),
+        frameworks: view({ install: true }),
+        audits: view({ manage: true, freeze: true, share: true }),
+        reports: view({ export: true }),
+        admin: {
+            view: true, manage: true, members: true, sso: true, scim: true,
+            tenant_lifecycle: true, owner_management: true,
+            compliance_dsar_view: true, compliance_dsar_manage: true,
+        },
+    };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -168,7 +200,7 @@ function makeCtx() {
             canAudit: false,
             canExport: false,
         },
-        appPermissions: {} as unknown,
+        appPermissions: allPermissions(),
     };
 }
 
@@ -537,7 +569,10 @@ describe('per-source truncation keeps the NEAREST deadlines', () => {
         },
     );
 
-    it('two-date sources order by both columns ascending', async () => {
+    it('multi-date sources query each date column separately, ascending', async () => {
+        // A single `orderBy: [a, b]` truncates rows matching only on `b`
+        // first (Postgres NULLS LAST), the OPPOSITE of "nearest survive".
+        // Each column is queried on its own ascending order and unioned.
         const { getComplianceCalendarEvents } = await import(
             '@/app-layer/usecases/compliance-calendar'
         );
@@ -546,18 +581,56 @@ describe('per-source truncation keeps the NEAREST deadlines', () => {
             to: TO,
             now: NOW,
         });
-        expect(mockVendorFindMany.mock.calls[0][0].orderBy).toEqual([
-            { nextReviewAt: 'asc' },
-            { contractRenewalAt: 'asc' },
-        ]);
-        expect(mockRiskFindMany.mock.calls[0][0].orderBy).toEqual([
-            { nextReviewAt: 'asc' },
-            { targetDate: 'asc' },
-        ]);
-        expect(mockAuditCycleFindMany.mock.calls[0][0].orderBy).toEqual([
-            { periodStartAt: 'asc' },
-            { periodEndAt: 'asc' },
-        ]);
+        // Vendor: review + renewal, one query each.
+        expect(mockVendorFindMany).toHaveBeenCalledTimes(2);
+        expect(mockVendorFindMany.mock.calls.map((c) => c[0].orderBy)).toEqual(
+            expect.arrayContaining([
+                { nextReviewAt: 'asc' },
+                { contractRenewalAt: 'asc' },
+            ]),
+        );
+        // Risk: review + target.
+        expect(mockRiskFindMany).toHaveBeenCalledTimes(2);
+        expect(mockRiskFindMany.mock.calls.map((c) => c[0].orderBy)).toEqual(
+            expect.arrayContaining([
+                { nextReviewAt: 'asc' },
+                { targetDate: 'asc' },
+            ]),
+        );
+        // Audit cycle: starts-in, ends-in, straddling — three intersections.
+        expect(mockAuditCycleFindMany).toHaveBeenCalledTimes(3);
+        expect(
+            mockAuditCycleFindMany.mock.calls.map((c) => c[0].orderBy),
+        ).toEqual(
+            expect.arrayContaining([
+                { periodStartAt: 'asc' },
+                { periodEndAt: 'asc' },
+            ]),
+        );
+        // Every audit-cycle sub-query still scopes tenant + soft-delete.
+        for (const call of mockAuditCycleFindMany.mock.calls) {
+            expect(call[0].where.tenantId).toBe(TENANT_ID);
+            expect(call[0].where.deletedAt).toBeNull();
+        }
+    });
+
+    it('control-test-plan reads BOTH due clocks (effective = min)', async () => {
+        // The MANUAL path advances only `nextRunAt`, so reading `nextDueAt`
+        // alone renders cron-scheduled plans permanently overdue. The loader
+        // queries each clock and emits at the earliest.
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        expect(mockTestPlanFindMany).toHaveBeenCalledTimes(2);
+        const orderBys = mockTestPlanFindMany.mock.calls.map((c) => c[0].orderBy);
+        expect(orderBys).toEqual(
+            expect.arrayContaining([{ nextDueAt: 'asc' }, { nextRunAt: 'asc' }]),
+        );
     });
 
     it('reports the capped source instead of silently under-reporting', async () => {
@@ -641,5 +714,80 @@ describe('evidence expiry uses the one shared predicate', () => {
             deletedAt: null,
             isArchived: false,
         });
+    });
+});
+
+// ─── Per-source permission gating (the cross-entity-leak fix) ─────────
+
+describe('per-source permission gating', () => {
+    /** A ctx whose appPermissions grants ONLY the listed domain `.view`s. */
+    function ctxWithViews(...domains: string[]) {
+        const base = allPermissions() as Record<string, Record<string, boolean>>;
+        const denied: Record<string, Record<string, boolean>> = {};
+        for (const [domain, actions] of Object.entries(base)) {
+            denied[domain] = Object.fromEntries(
+                Object.keys(actions).map((a) => [a, false]),
+            );
+        }
+        for (const d of domains) if (denied[d]) denied[d].view = true;
+        return { ...makeCtx(), appPermissions: denied };
+    }
+
+    it('runs ONLY the sources the caller is permitted to see', async () => {
+        mockTaskFindMany.mockResolvedValue([
+            { id: 't1', title: 'a', dueAt: new Date('2026-06-15T00:00:00Z'), status: 'OPEN', assigneeUserId: null },
+        ]);
+        // A tenant member whose custom role holds ONLY tasks.view.
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const res = await getComplianceCalendarEvents(ctxWithViews('tasks') as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        // The permitted source ran…
+        expect(mockTaskFindMany).toHaveBeenCalled();
+        // …and every denied source was NEVER queried (no cross-entity leak).
+        expect(mockTrainingFindMany).not.toHaveBeenCalled();
+        expect(mockIncidentNotificationFindMany).not.toHaveBeenCalled();
+        expect(mockVendorFindMany).not.toHaveBeenCalled();
+        expect(mockRiskFindMany).not.toHaveBeenCalled();
+        expect(mockPolicyFindMany).not.toHaveBeenCalled();
+        // The response tells the UI which sources were hidden by permission.
+        expect(res.omittedSources).toContain('training');
+        expect(res.omittedSources).toContain('incident-notification');
+        expect(res.omittedSources).toContain('vendor');
+        expect(res.omittedSources).not.toContain('task');
+        // Only task events survive.
+        expect(res.events.map((e) => e.type)).toEqual(['task-due']);
+    });
+
+    it('a caller with NO view permissions sees an empty, fully-omitted calendar', async () => {
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const res = await getComplianceCalendarEvents(ctxWithViews() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        expect(res.events).toEqual([]);
+        // Every source is reported as omitted, not silently absent.
+        expect(res.omittedSources.length).toBeGreaterThan(0);
+        expect(mockTaskFindMany).not.toHaveBeenCalled();
+        expect(mockVendorFindMany).not.toHaveBeenCalled();
+    });
+
+    it('exposes a non-empty baseline permission set for the route gate', async () => {
+        const { CALENDAR_BASELINE_PERMISSIONS } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        expect(CALENDAR_BASELINE_PERMISSIONS.length).toBeGreaterThan(0);
+        // The baseline is the distinct set of the per-source domains, so it
+        // includes the sensitive ones the leak exposed.
+        expect(CALENDAR_BASELINE_PERMISSIONS).toEqual(
+            expect.arrayContaining(['incidents.view', 'personnel.view', 'tasks.view']),
+        );
     });
 });

@@ -157,7 +157,11 @@ export async function findDueTestPlans(
             scheduleTimezone: true,
             nextRunAt: true,
         },
-        orderBy: [{ nextRunAt: 'asc' }],
+        // NULLS FIRST — bootstrap rows (`nextRunAt IS NULL`) must be picked up
+        // ahead of the backlog. Postgres sorts NULLS LAST by default, so a
+        // plain `asc` buries a brand-new plan behind one tenant's due backlog
+        // and it can starve indefinitely under the fleet-wide `take` cap.
+        orderBy: [{ nextRunAt: { sort: 'asc', nulls: 'first' } }],
         take: batchSize,
     });
 
@@ -177,19 +181,30 @@ export async function findDueTestPlans(
 }
 
 /**
- * Compute the next scheduled fire time for a cron expression.
+ * Resolve a cron's next fire time, distinguishing the two failure modes
+ * that both used to collapse to a bare `null`:
  *
- * Returns `null` when the expression is invalid — the caller logs
- * + skips. We do NOT throw because one bad schedule must not stop
- * the whole tick.
+ *   - `parseError: true`  — the expression is genuinely un-parseable. The
+ *     plan can NEVER run until an operator fixes it; the tick escalates.
+ *   - `parseError: false, next: null` — a valid cron whose iterator is
+ *     exhausted (a bounded schedule past its final occurrence). This is a
+ *     legitimate "nothing more to schedule", NOT a misconfiguration.
+ *
+ * When `rollPastInclusive` is supplied the iterator is advanced from `from`
+ * along the cadence until the candidate is strictly AFTER it — used by the
+ * claim path so a multi-tick outage advances from the plan's missed
+ * `nextRunAt` (preserving the schedule's phase) instead of recomputing a
+ * fresh "from now" instant that discards the missed cadence.
  */
-export function computeNextRunFromCron(
+function resolveNextRun(
     cron: string,
     timezone: string | null,
     from: Date,
-): Date | null {
+    rollPastInclusive?: Date,
+): { next: Date | null; parseError: boolean } {
+    let it: ReturnType<typeof CronExpressionParser.parse>;
     try {
-        const it = CronExpressionParser.parse(cron, {
+        it = CronExpressionParser.parse(cron, {
             currentDate: from,
             // Default to UTC explicitly — without a tz, cron-parser
             // uses the local process timezone, which would make a
@@ -199,10 +214,48 @@ export function computeNextRunFromCron(
             // schema level (Epic G-2 prompt 1).
             tz: timezone ?? 'UTC',
         });
-        return it.next().toDate();
     } catch {
-        return null;
+        return { next: null, parseError: true };
     }
+    // Bound the roll-forward so a pathological cadence + long outage can
+    // never spin unbounded within a single tick.
+    const ROLL_CAP = 100_000;
+    let next: Date | null = null;
+    for (let i = 0; i < ROLL_CAP; i++) {
+        let candidate: Date;
+        try {
+            candidate = it.next().toDate();
+        } catch {
+            // Valid cron, iterator exhausted — a legitimate "no next run",
+            // NOT a parse error. Return whatever we have with parseError=false.
+            break;
+        }
+        next = candidate;
+        if (
+            !rollPastInclusive ||
+            candidate.getTime() > rollPastInclusive.getTime()
+        ) {
+            break;
+        }
+    }
+    return { next, parseError: false };
+}
+
+/**
+ * Compute the next scheduled fire time for a cron expression.
+ *
+ * Returns `null` when the expression is invalid OR has no further
+ * occurrences — external callers only need the Date-or-null shape. The
+ * scheduler tick uses {@link resolveNextRun} directly so it can tell the two
+ * `null` reasons apart. We do NOT throw because one bad schedule must not
+ * stop the whole tick.
+ */
+export function computeNextRunFromCron(
+    cron: string,
+    timezone: string | null,
+    from: Date,
+): Date | null {
+    return resolveNextRun(cron, timezone, from).next;
 }
 
 // ─── Per-plan claim + enqueue ──────────────────────────────────────
@@ -296,15 +349,44 @@ export async function runControlTestScheduler(
             let enqueueFailures = 0;
 
             for (const plan of plans) {
-                const computedNext = computeNextRunFromCron(
-                    plan.schedule,
-                    plan.scheduleTimezone,
-                    now,
-                );
-                if (!computedNext) {
+                // Claim path advances from the plan's MISSED `nextRunAt`
+                // (rolling the cadence forward past `now`) so a multi-tick
+                // outage keeps the schedule's phase instead of collapsing to a
+                // fresh "from now" instant. Bootstrap has no prior instant, so
+                // it computes the first occurrence from `now`.
+                const { next: computedNext, parseError } =
+                    plan.nextRunAt === null
+                        ? resolveNextRun(plan.schedule, plan.scheduleTimezone, now)
+                        : resolveNextRun(
+                              plan.schedule,
+                              plan.scheduleTimezone,
+                              plan.nextRunAt,
+                              now,
+                          );
+
+                if (parseError) {
+                    // Genuinely un-parseable cron — the plan will never run
+                    // until fixed. Escalate to error (distinct from the benign
+                    // "no next run" case below) so it surfaces to on-call
+                    // rather than dribbling a per-tick warn forever.
                     skippedInvalidSchedule++;
-                    logger.warn(
+                    logger.error(
                         'control-test-scheduler: skipping plan with invalid schedule',
+                        {
+                            component: 'control-test-scheduler',
+                            jobRunId,
+                            planId: plan.id,
+                            tenantId: plan.tenantId,
+                            schedule: plan.schedule,
+                        },
+                    );
+                    continue;
+                }
+                if (!computedNext) {
+                    // Valid cron with no further occurrences (bounded schedule
+                    // exhausted) — nothing to schedule, not a misconfiguration.
+                    logger.info(
+                        'control-test-scheduler: plan has no further scheduled runs',
                         {
                             component: 'control-test-scheduler',
                             jobRunId,
@@ -373,13 +455,43 @@ export async function runControlTestScheduler(
                     enqueued++;
                 } catch (err) {
                     enqueueFailures++;
-                    // The DB claim already succeeded, so this plan
-                    // will not be re-claimed on the next tick — its
-                    // nextRunAt has advanced. The runner job is just
-                    // missing. Surface as an error and let on-call
-                    // re-enqueue manually if needed.
+                    // The DB claim already advanced `nextRunAt`, so without
+                    // intervention this plan would NOT be re-claimed next tick
+                    // and the run would be silently lost. Roll the claim back
+                    // to the observed `nextRunAt` (guarded on the value we just
+                    // wrote, so a concurrent re-advance is never clobbered) so
+                    // the next tick re-claims and retries the enqueue. The
+                    // retry reuses the same `ctr:{planId}:{scheduledForIso}`
+                    // jobId, so a partially-delivered enqueue cannot double-fire.
+                    try {
+                        await prisma.controlTestPlan.updateMany({
+                            where: {
+                                id: plan.id,
+                                tenantId: plan.tenantId,
+                                nextRunAt: computedNext,
+                            },
+                            data: { nextRunAt: plan.nextRunAt },
+                        });
+                    } catch (rollbackErr) {
+                        logger.error(
+                            'control-test-scheduler: claim rollback failed after enqueue failure',
+                            {
+                                component: 'control-test-scheduler',
+                                jobRunId,
+                                planId: plan.id,
+                                tenantId: plan.tenantId,
+                                scheduledForIso,
+                                err: rollbackErr instanceof Error
+                                    ? rollbackErr
+                                    : new Error(String(rollbackErr)),
+                            },
+                        );
+                    }
+                    // Surface the failure loudly — it is recorded in the result
+                    // (`enqueueFailures`) and error-logged, never swallowed into
+                    // a silent success.
                     logger.error(
-                        'control-test-scheduler: enqueue failed after claim',
+                        'control-test-scheduler: enqueue failed after claim (rolled back for retry)',
                         {
                             component: 'control-test-scheduler',
                             jobRunId,

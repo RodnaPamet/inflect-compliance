@@ -187,9 +187,46 @@ export interface CalendarEvent {
 // ─── Zod schemas ─────────────────────────────────────────────────────
 
 /**
+ * Accepted `from`/`to` forms. A bare day (`YYYY-MM-DD`) is a UTC calendar
+ * day; a full datetime MUST carry an explicit timezone (`Z` or `±HH:MM`).
+ * A no-timezone datetime like `2026-01-15T00:00:00` is REJECTED — `new
+ * Date()` parses it in the server's LOCAL zone, so the same string would
+ * mean different instants on different hosts.
+ */
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DT_RE =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Normalize a `from`/`to` string into a concrete instant. The day form is
+ * anchored in UTC: `from` at the START of the day (00:00:00.000Z) and `to`
+ * at the END of the day (23:59:59.999Z) so an INCLUSIVE `lte: to` covers the
+ * whole `to` day — a bare `to=YYYY-MM-DD` at UTC midnight would otherwise
+ * drop every event later than 00:00 on that day. Returns `null` for an
+ * unparseable / timezone-ambiguous string.
+ */
+export function normalizeCalendarBound(
+    value: string,
+    edge: 'start' | 'end',
+): Date | null {
+    if (DAY_RE.test(value)) {
+        return new Date(
+            `${value}T${edge === 'start' ? '00:00:00.000' : '23:59:59.999'}Z`,
+        );
+    }
+    if (ISO_DT_RE.test(value)) {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+}
+
+/**
  * Query string for `GET /calendar`. Range is required so the API never
  * scans unbounded date ranges. `from`/`to` are accepted as either YYYY-MM-DD
- * (day boundary, treated as UTC midnight) or full ISO datetimes.
+ * (UTC calendar day) or a timezone-qualified ISO datetime. The parsed,
+ * normalized instants are exposed as `fromDate` / `toDate` so the route
+ * never re-parses (and never re-introduces the local-timezone ambiguity).
  */
 export const CalendarQuerySchema = z
     .object({
@@ -209,27 +246,25 @@ export const CalendarQuerySchema = z
             .optional(),
     })
     .superRefine((data, ctx) => {
-        const from = new Date(data.from);
-        const to = new Date(data.to);
-        if (Number.isNaN(from.getTime())) {
+        const from = normalizeCalendarBound(data.from, 'start');
+        const to = normalizeCalendarBound(data.to, 'end');
+        if (from === null) {
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ['from'],
-                message: 'from is not a valid date',
+                message:
+                    'from must be YYYY-MM-DD or a timezone-qualified ISO datetime',
             });
         }
-        if (Number.isNaN(to.getTime())) {
+        if (to === null) {
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ['to'],
-                message: 'to is not a valid date',
+                message:
+                    'to must be YYYY-MM-DD or a timezone-qualified ISO datetime',
             });
         }
-        if (
-            !Number.isNaN(from.getTime()) &&
-            !Number.isNaN(to.getTime()) &&
-            to.getTime() < from.getTime()
-        ) {
+        if (from !== null && to !== null && to.getTime() < from.getTime()) {
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ['to'],
@@ -241,8 +276,8 @@ export const CalendarQuerySchema = z
         // asking for more is probably making a mistake.
         const MAX_RANGE_MS = 366 * 2 * 86_400_000;
         if (
-            !Number.isNaN(from.getTime()) &&
-            !Number.isNaN(to.getTime()) &&
+            from !== null &&
+            to !== null &&
             to.getTime() - from.getTime() > MAX_RANGE_MS
         ) {
             ctx.addIssue({
@@ -251,7 +286,13 @@ export const CalendarQuerySchema = z
                 message: 'date range exceeds 2-year cap',
             });
         }
-    });
+    })
+    .transform((data) => ({
+        ...data,
+        // Non-null after superRefine (it fails the parse on unparseable input).
+        fromDate: normalizeCalendarBound(data.from, 'start') as Date,
+        toDate: normalizeCalendarBound(data.to, 'end') as Date,
+    }));
 
 export type CalendarQueryInput = z.infer<typeof CalendarQuerySchema>;
 
@@ -309,7 +350,17 @@ export interface CalendarResponse {
         capped: boolean;
         sources: CalendarSourceName[];
         perSourceLimit: number;
+        /** Hard cap on the total serialized event count. */
+        totalCap: number;
+        /** True when the total cap trimmed the furthest-out events. */
+        totalCapped: boolean;
     };
+    /**
+     * Sources the caller lacks permission to see, hidden from the result.
+     * The UI shows "some sources hidden by your permissions" rather than
+     * presenting a permission-filtered result as the complete picture.
+     */
+    omittedSources: CalendarSourceName[];
     range: {
         from: string;
         to: string;

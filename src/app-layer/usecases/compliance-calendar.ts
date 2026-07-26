@@ -49,7 +49,7 @@
  * to the source (one place to look when a new entity is added).
  */
 
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
@@ -57,7 +57,10 @@ import {
     evidenceExpiryScopeWhere,
     EVIDENCE_REVIEWED_STATUS,
 } from '../domain/evidence-expiry';
-import { urgencyFromDate } from '@/lib/urgency';
+import { effectiveDueAt } from './due-planning';
+import { urgencyFromDaysUntil, DAY_MS } from '@/lib/urgency';
+import { hasPermission, type PermissionKey } from '@/lib/security/permission-middleware';
+import { env } from '@/env';
 import type { WorkItemStatus } from '@prisma/client';
 import type { RequestContext } from '../types';
 import {
@@ -87,6 +90,13 @@ export interface GetCalendarEventsInput {
      * tenant with 50k overdue tasks) from overwhelming the response.
      */
     perSourceLimit?: number;
+    /**
+     * Hard cap on the total serialized event count across all sources.
+     * Default: {@link DEFAULT_TOTAL_CAP}. Events are date-ascending, so a
+     * cap that bites drops the furthest-out deadlines, mirroring the
+     * per-source "nearest survive" contract.
+     */
+    totalCap?: number;
 }
 
 /**
@@ -114,85 +124,211 @@ function sourceResult(
     return { events, capped: rowCount >= limit };
 }
 
+/**
+ * Fetch the nearest-`limit` rows for a source with MORE THAN ONE candidate
+ * date column, keeping the soonest by effective (earliest in-range) date.
+ *
+ * A single `orderBy: [a, b]` is wrong: Postgres sorts NULLs LAST on ASC, so
+ * a row matching only on `b` (its `a` is NULL/out-of-range) sorts after every
+ * row matching on `a` and is truncated FIRST — the opposite of "nearest
+ * survive". Instead we take each column's own nearest-`limit` and union them.
+ * This is provably complete: a row whose effective date ranks in the global
+ * top-`limit` has that date equal to one of its columns, so it is in that
+ * column's top-`limit`. `capped` is conservative — true if ANY sub-query
+ * filled its page, i.e. there may be further-out rows past the cap.
+ */
+async function fetchNearest<Row extends { id: string }>(
+    queries: ReadonlyArray<() => Promise<Row[]>>,
+    limit: number,
+): Promise<{ rows: Row[]; capped: boolean }> {
+    const parts = await Promise.all(queries.map((q) => q()));
+    const byId = new Map<string, Row>();
+    for (const part of parts) for (const r of part) byId.set(r.id, r);
+    return { rows: [...byId.values()], capped: parts.some((p) => p.length >= limit) };
+}
+
+/** Hard cap on the total serialized event count (see {@link GetCalendarEventsInput.totalCap}). */
+const DEFAULT_TOTAL_CAP = 5000;
+/**
+ * How many source loaders run concurrently. Each loader now runs in its
+ * OWN read-only transaction (its own pooled connection), so this bounds
+ * peak connection pressure per calendar request while still fanning out —
+ * a single interactive transaction pins ONE connection and serialises,
+ * which is the bug this replaces.
+ */
+const SOURCE_CONCURRENCY = 6;
+/** Per-source read timeout. One slow source fails alone, not the whole calendar. */
+const PER_SOURCE_TIMEOUT_MS = 8_000;
+
+/** A calendar source loader's call signature. */
+type CalendarLoader = (
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+) => Promise<CalendarSourceResult>;
+
+/**
+ * Static metadata for every calendar source. The `permission` is the
+ * `appPermissions` key the caller must hold to see this source — it mirrors
+ * the gate the source's own PAGE enforces, so the aggregator can never leak
+ * a domain a principal is denied. `category` + `types` drive the filter
+ * push-down (a source that can contribute nothing to a filtered request is
+ * never queried).
+ *
+ * NOTE `permission` is the DOMAIN owning the data (what a custom role or an
+ * API-key scope can deny); `category` is the UI colour bucket the events
+ * render under — the two deliberately differ (training → personnel.view but
+ * category `task`; incident-notification → incidents.view but category
+ * `finding`). `finding`/`access-review` have no dedicated PermissionSet
+ * domain, so they gate on `audits.view` — the closest compliance-attestation
+ * domain every human role holds and the audits scope can grant.
+ */
+interface CalendarSourceDef {
+    name: CalendarSourceName;
+    permission: PermissionKey;
+    category: CalendarEventCategory;
+    types: readonly CalendarEventType[];
+    load: CalendarLoader;
+}
+
+const CALENDAR_SOURCES: readonly CalendarSourceDef[] = [
+    { name: 'evidence', permission: 'evidence.view', category: 'evidence', types: ['evidence-review'], load: loadEvidenceEvents },
+    { name: 'policy', permission: 'policies.view', category: 'policy', types: ['policy-review'], load: loadPolicyEvents },
+    { name: 'vendor', permission: 'vendors.view', category: 'vendor', types: ['vendor-review', 'vendor-renewal'], load: loadVendorEvents },
+    { name: 'vendor-document', permission: 'vendors.view', category: 'vendor', types: ['vendor-document-expiry'], load: loadVendorDocumentEvents },
+    { name: 'vendor-assessment', permission: 'vendors.view', category: 'vendor', types: ['vendor-assessment-review'], load: loadVendorAssessmentEvents },
+    { name: 'audit-cycle', permission: 'audits.view', category: 'audit', types: ['audit-cycle'], load: loadAuditCycleEvents },
+    { name: 'control', permission: 'controls.view', category: 'control', types: ['control-review'], load: loadControlEvents },
+    { name: 'control-test-plan', permission: 'tests.view', category: 'control', types: ['control-test-due'], load: loadTestPlanEvents },
+    { name: 'control-exception', permission: 'controls.view', category: 'control', types: ['control-exception-expiry'], load: loadControlExceptionEvents },
+    { name: 'access-review', permission: 'audits.view', category: 'audit', types: ['access-review-due'], load: loadAccessReviewEvents },
+    { name: 'training', permission: 'personnel.view', category: 'task', types: ['training-due'], load: loadTrainingEvents },
+    { name: 'incident-notification', permission: 'incidents.view', category: 'finding', types: ['incident-notification-due'], load: loadIncidentNotificationEvents },
+    { name: 'task', permission: 'tasks.view', category: 'task', types: ['task-due'], load: loadTaskEvents },
+    { name: 'risk', permission: 'risks.view', category: 'risk', types: ['risk-review', 'risk-target'], load: loadRiskEvents },
+    { name: 'finding', permission: 'audits.view', category: 'finding', types: ['finding-due'], load: loadFindingEvents },
+    // Epic G-7 — milestones contribute one event per milestone; plans one per non-completed plan target.
+    { name: 'treatment-milestone', permission: 'risks.view', category: 'risk', types: ['treatment-milestone-due'], load: loadTreatmentMilestoneEvents },
+    { name: 'treatment-plan', permission: 'risks.view', category: 'risk', types: ['treatment-plan-target'], load: loadTreatmentPlanEvents },
+] as const;
+
+/**
+ * Distinct baseline permission keys — a caller must hold AT LEAST ONE to
+ * reach the calendar at all. Wired into the route via `requireAnyPermission`
+ * so a scopeless API key (e.g. `mcp:read`, which maps to no PermissionSet
+ * flags) is denied outright with an AUTHZ_DENIED audit, instead of reading
+ * the whole tenant deadline stream.
+ */
+export const CALENDAR_BASELINE_PERMISSIONS: readonly PermissionKey[] = Array.from(
+    new Set(CALENDAR_SOURCES.map((s) => s.permission)),
+) as PermissionKey[];
+
+/** Bounded-concurrency map — preserves input order, at most `concurrency` in flight. */
+async function mapWithConcurrency<T, R>(
+    items: readonly T[],
+    concurrency: number,
+    fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let cursor = 0;
+    async function worker(): Promise<void> {
+        while (cursor < items.length) {
+            const i = cursor++;
+            results[i] = await fn(items[i], i);
+        }
+    }
+    const lanes = Math.max(1, Math.min(concurrency, items.length));
+    await Promise.all(Array.from({ length: lanes }, () => worker()));
+    return results;
+}
+
 export async function getComplianceCalendarEvents(
     ctx: RequestContext,
     input: GetCalendarEventsInput,
 ): Promise<CalendarResponse> {
-    assertCanRead(ctx);
-
+    // Authorization is per-source (below), NOT one coarse `assertCanRead`
+    // gate — `ctx.permissions.canRead` is `true` for every role, so it
+    // would let a principal denied a domain read that domain's deadlines.
     const now = input.now ?? new Date();
     const limit = input.perSourceLimit ?? 500;
+    const totalCap = input.totalCap ?? DEFAULT_TOTAL_CAP;
     const range = { from: input.from, to: input.to };
 
-    // Fan-out to every source in parallel inside one tenant-bound
-    // transaction. `runInTenantContext` binds the per-tx `app_user`
-    // role + sets `app.tenant_id` so every read goes through the
-    // RLS policies — that's belt-and-braces with the explicit
-    // `tenantId: ctx.tenantId` filter inside each loader.
-    // Every entry is `[sourceName, loader]`. The name is what the response
-    // reports as capped, so it must stay stable — the UI shows it.
-    const sources: ReadonlyArray<
-        readonly [CalendarSourceName, (db: PrismaTx) => Promise<CalendarSourceResult>]
-    > = [
-        ['evidence', (db) => loadEvidenceEvents(db, ctx, range, now, limit)],
-        ['policy', (db) => loadPolicyEvents(db, ctx, range, now, limit)],
-        ['vendor', (db) => loadVendorEvents(db, ctx, range, now, limit)],
-        ['vendor-document', (db) => loadVendorDocumentEvents(db, ctx, range, now, limit)],
-        ['vendor-assessment', (db) => loadVendorAssessmentEvents(db, ctx, range, now, limit)],
-        ['audit-cycle', (db) => loadAuditCycleEvents(db, ctx, range, now, limit)],
-        ['control', (db) => loadControlEvents(db, ctx, range, now, limit)],
-        ['control-test-plan', (db) => loadTestPlanEvents(db, ctx, range, now, limit)],
-        ['control-exception', (db) => loadControlExceptionEvents(db, ctx, range, now, limit)],
-        ['access-review', (db) => loadAccessReviewEvents(db, ctx, range, now, limit)],
-        ['training', (db) => loadTrainingEvents(db, ctx, range, now, limit)],
-        ['incident-notification', (db) => loadIncidentNotificationEvents(db, ctx, range, now, limit)],
-        ['task', (db) => loadTaskEvents(db, ctx, range, now, limit)],
-        ['risk', (db) => loadRiskEvents(db, ctx, range, now, limit)],
-        ['finding', (db) => loadFindingEvents(db, ctx, range, now, limit)],
-        // Epic G-7 — milestones contribute one event per milestone;
-        // plans contribute one per non-completed plan target.
-        ['treatment-milestone', (db) => loadTreatmentMilestoneEvents(db, ctx, range, now, limit)],
-        ['treatment-plan', (db) => loadTreatmentPlanEvents(db, ctx, range, now, limit)],
-    ] as const;
+    const typeFilter =
+        input.types && input.types.length > 0 ? new Set<string>(input.types) : null;
+    const catFilter =
+        input.categories && input.categories.length > 0
+            ? new Set<string>(input.categories)
+            : null;
 
-    const results = await runInTenantContext(ctx, (db) =>
-        Promise.all(sources.map(([, load]) => load(db))),
+    // Per-source permission gate + filter push-down. A source runs only if
+    // the caller holds its domain `.view` (custom-role denials AND API-key
+    // scopes both flow through `appPermissions`, so this one predicate
+    // closes both amplifiers) AND it can contribute to the requested filter.
+    const omittedSources: CalendarSourceName[] = [];
+    const eligible: CalendarSourceDef[] = [];
+    for (const src of CALENDAR_SOURCES) {
+        if (!hasPermission(ctx.appPermissions, src.permission)) {
+            omittedSources.push(src.name);
+            continue;
+        }
+        // Skip a source that can contribute nothing to the filtered result,
+        // so `truncation.sources` only names sources that actually ran.
+        if (catFilter && !catFilter.has(src.category)) continue;
+        if (typeFilter && !src.types.some((t) => typeFilter.has(t))) continue;
+        eligible.push(src);
+    }
+
+    // Each loader runs in its OWN read-only context so the fan-out genuinely
+    // parallelises across pooled connections and a single slow source can't
+    // 500 the whole calendar under a shared transaction timeout.
+    const results = await mapWithConcurrency(eligible, SOURCE_CONCURRENCY, (src) =>
+        runInTenantReadContext(ctx, (db) => src.load(db, ctx, range, now, limit), {
+            timeout: PER_SOURCE_TIMEOUT_MS,
+        }),
     );
 
-    // Which sources hit their cap — i.e. where the user is being shown the
-    // nearest N and NOT told about the rest unless we say so.
-    const cappedSources = sources
-        .map(([name], i) => (results[i].capped ? name : null))
+    const cappedSources = eligible
+        .map((src, i) => (results[i].capped ? src.name : null))
         .filter((n): n is CalendarSourceName => n !== null);
 
     let all: CalendarEvent[] = results.flatMap((r) => r.events);
 
-    // Apply the type / category filter post-aggregation. The per-source
-    // queries don't filter by type because most sources contribute one
-    // type only; pushing the predicate up keeps the loaders simple.
-    if (input.types && input.types.length > 0) {
-        const allowed = new Set<string>(input.types);
-        all = all.filter((e) => allowed.has(e.type));
-    }
-    if (input.categories && input.categories.length > 0) {
-        const allowed = new Set<string>(input.categories);
-        all = all.filter((e) => allowed.has(e.category));
-    }
+    // A source may emit multiple types (vendor → review + renewal); a type
+    // filter still needs a post-filter so a partially-matching source
+    // contributes only its requested types.
+    if (typeFilter) all = all.filter((e) => typeFilter.has(e.type));
+    if (catFilter) all = all.filter((e) => catFilter.has(e.category));
 
-    // Stable order: ascending by date — heatmap + month rendering
-    // consumes events in chronological order.
+    // Stable order: ascending by date — heatmap + month rendering consume
+    // events chronologically.
     all.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Hard total cap on the serialized payload. Events are date-ascending, so
+    // a cap that bites drops the furthest-out deadlines.
+    const totalCapped = all.length > totalCap;
+    if (totalCapped) all = all.slice(0, totalCap);
 
     return {
         events: all,
-        // `partial` propagates the truncation into the summary so the UI
+        // `partial` propagates any truncation into the summary so the UI
         // never presents a post-truncation undercount as authoritative.
-        counts: { ...countSummaries(all), partial: cappedSources.length > 0 },
+        counts: {
+            ...countSummaries(all),
+            partial: cappedSources.length > 0 || totalCapped,
+        },
         truncation: {
-            capped: cappedSources.length > 0,
+            capped: cappedSources.length > 0 || totalCapped,
             sources: cappedSources,
             perSourceLimit: limit,
+            totalCap,
+            totalCapped,
         },
+        // Sources the caller lacks permission to see. The UI says "some
+        // sources hidden by your permissions" rather than under-reporting.
+        omittedSources,
         range: {
             from: range.from.toISOString(),
             to: range.to.toISOString(),
@@ -208,14 +344,41 @@ interface DateRange {
 }
 
 /**
+ * The civil calendar day of an instant in `tz`, expressed as whole days
+ * since the Unix epoch. Two instants on the same wall-clock date in `tz`
+ * return the same integer regardless of time-of-day.
+ */
+function civilDayInTz(d: Date, tz: string): number {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(d);
+    const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+    return Math.floor(Date.UTC(get('year'), get('month') - 1, get('day')) / DAY_MS);
+}
+
+/** Whole calendar-day distance from `now` to `target` in `tz` (0 = same day). */
+function daysUntilInTz(target: Date, now: Date, tz: string): number {
+    return civilDayInTz(target, tz) - civilDayInTz(now, tz);
+}
+
+/**
  * Map a date+status into a calendar status. `now` is the comparison
- * anchor. `done`/`scheduled` are decided by the caller's domain logic
- * and pass through verbatim.
+ * anchor. `done` is decided by the caller's domain logic and passes
+ * through verbatim.
  *
- * The due-soon window comes from the shared `URGENCY_DAYS` scale rather
- * than a local literal — the calendar's `due_soon` IS the product-wide
- * `urgent` level, and it used to disagree with the dashboard's copy of
- * the same idea.
+ * Comparison is at DAY granularity in the notification timezone
+ * (`NOTIFICATIONS_TZ`, the same zone the reminder jobs bucket by), NOT at
+ * instant granularity: day-resolution deadlines are stored at UTC midnight,
+ * so an instant compare flips them to `overdue` at 00:00:01 UTC — the
+ * previous afternoon for a westward tenant. Same-day (`daysUntil === 0`) is
+ * `due_soon`, never `overdue`.
+ *
+ * The due-soon window comes from the shared `URGENCY_DAYS` scale rather than
+ * a local literal — the calendar's `due_soon` IS the product-wide `urgent`
+ * level.
  */
 function classifyStatus(
     eventDate: Date,
@@ -223,7 +386,9 @@ function classifyStatus(
     isDone: boolean,
 ): CalendarEventStatus {
     if (isDone) return 'done';
-    const urgency = urgencyFromDate(eventDate, now);
+    const urgency = urgencyFromDaysUntil(
+        daysUntilInTz(eventDate, now, env.NOTIFICATIONS_TZ),
+    );
     if (urgency === 'overdue') return 'overdue';
     if (urgency === 'urgent') return 'due_soon';
     return 'scheduled';
@@ -348,36 +513,42 @@ async function loadVendorEvents(
     now: Date,
     limit: number,
 ): Promise<CalendarSourceResult> {
-    const rows = await db.vendor.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            OR: [
-                { nextReviewAt: { not: null, gte: range.from, lte: range.to } },
-                {
-                    contractRenewalAt: {
-                        not: null,
-                        gte: range.from,
-                        lte: range.to,
+    const select = {
+        id: true,
+        name: true,
+        nextReviewAt: true,
+        contractRenewalAt: true,
+        status: true,
+        ownerUserId: true,
+    } as const;
+    // Two date columns → fetch each column's nearest-`limit` and union, so a
+    // vendor whose only in-range date is the renewal isn't truncated behind
+    // vendors with a review date (see `fetchNearest`).
+    const { rows, capped } = await fetchNearest(
+        [
+            () =>
+                db.vendor.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        nextReviewAt: { not: null, gte: range.from, lte: range.to },
                     },
-                },
-            ],
-        },
-        select: {
-            id: true,
-            name: true,
-            nextReviewAt: true,
-            contractRenewalAt: true,
-            status: true,
-            ownerUserId: true,
-        },
-        // Two date columns feed this source, so "nearest first" is
-        // approximate: order by review date then renewal date. Postgres
-        // sorts NULLs last on ASC, which is what we want — a row matching
-        // only on the second column sorts after the rows matching the
-        // first, and both stay ahead of anything outside the range.
-        orderBy: [{ nextReviewAt: 'asc' }, { contractRenewalAt: 'asc' }],
-        take: limit,
-    });
+                    select,
+                    orderBy: { nextReviewAt: 'asc' },
+                    take: limit,
+                }),
+            () =>
+                db.vendor.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        contractRenewalAt: { not: null, gte: range.from, lte: range.to },
+                    },
+                    select,
+                    orderBy: { contractRenewalAt: 'asc' },
+                    take: limit,
+                }),
+        ],
+        limit,
+    );
     const events: CalendarEvent[] = [];
     for (const r of rows) {
         const isOffboarded = r.status === 'OFFBOARDED';
@@ -422,7 +593,7 @@ async function loadVendorEvents(
             });
         }
     }
-    return sourceResult(events, rows.length, limit);
+    return { events, capped };
 }
 
 async function loadVendorDocumentEvents(
@@ -481,35 +652,59 @@ async function loadAuditCycleEvents(
     // AuditCycle is the only duration source today: emits an event with
     // `start` (periodStartAt) and `end` (periodEndAt). Either bound
     // intersecting the queried range surfaces the cycle.
-    const rows = await db.auditCycle.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            deletedAt: null,
-            OR: [
-                { periodStartAt: { gte: range.from, lte: range.to } },
-                { periodEndAt: { gte: range.from, lte: range.to } },
-                {
-                    AND: [
-                        { periodStartAt: { lte: range.from } },
-                        { periodEndAt: { gte: range.to } },
-                    ],
-                },
-            ],
-        },
-        select: {
-            id: true,
-            name: true,
-            frameworkKey: true,
-            periodStartAt: true,
-            periodEndAt: true,
-            status: true,
-        },
-        // Cycles are ranges; order by the start bound so a cap keeps the
-        // cycles beginning soonest. Straddling cycles (start before the
-        // window) sort first, which is correct — they are already running.
-        orderBy: [{ periodStartAt: 'asc' }, { periodEndAt: 'asc' }],
-        take: limit,
-    });
+    const select = {
+        id: true,
+        name: true,
+        frameworkKey: true,
+        periodStartAt: true,
+        periodEndAt: true,
+        status: true,
+    } as const;
+    // Cycles are ranges intersecting the window three ways: starting in it,
+    // ending in it, or straddling it entirely. Query each and union so a
+    // cap keeps the nearest of each kind — a single `orderBy [start, end]`
+    // would drop end-in-range/straddling cycles (NULL/earlier start sorts
+    // them last) even when they are the soonest to matter.
+    const { rows, capped } = await fetchNearest(
+        [
+            () =>
+                db.auditCycle.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        deletedAt: null,
+                        periodStartAt: { gte: range.from, lte: range.to },
+                    },
+                    select,
+                    orderBy: { periodStartAt: 'asc' },
+                    take: limit,
+                }),
+            () =>
+                db.auditCycle.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        deletedAt: null,
+                        periodEndAt: { gte: range.from, lte: range.to },
+                    },
+                    select,
+                    orderBy: { periodEndAt: 'asc' },
+                    take: limit,
+                }),
+            () =>
+                db.auditCycle.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        deletedAt: null,
+                        // Already running: began before the window and ends after it.
+                        periodStartAt: { lte: range.from },
+                        periodEndAt: { gte: range.to },
+                    },
+                    select,
+                    orderBy: { periodStartAt: 'asc' },
+                    take: limit,
+                }),
+        ],
+        limit,
+    );
     const events = rows
         .filter((r) => r.periodStartAt || r.periodEndAt)
         .map((r): CalendarEvent => {
@@ -533,7 +728,7 @@ async function loadAuditCycleEvents(
                 detail: r.frameworkKey,
             };
         });
-    return sourceResult(events, rows.length, limit);
+    return { events, capped };
 }
 
 async function loadControlEvents(
@@ -588,43 +783,69 @@ async function loadTestPlanEvents(
     now: Date,
     limit: number,
 ): Promise<CalendarSourceResult> {
-    const rows = await db.controlTestPlan.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            status: 'ACTIVE',
-            nextDueAt: { not: null, gte: range.from, lte: range.to },
-        },
-        select: {
-            id: true,
-            name: true,
-            nextDueAt: true,
-            controlId: true,
-            control: { select: { name: true } },
-        },
-        orderBy: { nextDueAt: 'asc' },
-        take: limit,
-    });
-    const events = rows
-        .filter((r) => r.nextDueAt)
-        .map((r): CalendarEvent => {
-            const date = r.nextDueAt as Date;
-            return {
-                id: `CONTROL_TEST_PLAN:${r.id}:control-test-due`,
-                type: 'control-test-due',
-                category: 'control',
-                title: `Test due: ${r.name}`,
-                date: date.toISOString(),
-                status: classifyStatus(date, now, false),
-                entityType: 'CONTROL_TEST_PLAN',
-                entityId: r.id,
-                href: tenantHrefFromCtx(
-                    ctx,
-                    `/controls/${r.controlId}/tests/${r.id}`,
-                ),
-                detail: r.control.name,
-            };
+    // A test plan carries TWO due clocks — `nextDueAt` (frequency-derived)
+    // and `nextRunAt` (cron-derived). The scheduling-model-unify note
+    // mandates `effectiveDueAt = min(nextDueAt, nextRunAt)` on every due
+    // surface: the live MANUAL path advances only `nextRunAt`, so reading
+    // `nextDueAt` alone renders cron-scheduled plans permanently overdue.
+    // Fetch each clock's nearest-`limit` (see `fetchNearest`), then emit at
+    // the effective (earliest) date if that date falls in the window.
+    const select = {
+        id: true,
+        name: true,
+        nextDueAt: true,
+        nextRunAt: true,
+        controlId: true,
+        control: { select: { name: true } },
+    } as const;
+    const { rows, capped } = await fetchNearest(
+        [
+            () =>
+                db.controlTestPlan.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        status: 'ACTIVE',
+                        nextDueAt: { not: null, gte: range.from, lte: range.to },
+                    },
+                    select,
+                    orderBy: { nextDueAt: 'asc' },
+                    take: limit,
+                }),
+            () =>
+                db.controlTestPlan.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        status: 'ACTIVE',
+                        nextRunAt: { not: null, gte: range.from, lte: range.to },
+                    },
+                    select,
+                    orderBy: { nextRunAt: 'asc' },
+                    take: limit,
+                }),
+        ],
+        limit,
+    );
+    const events: CalendarEvent[] = [];
+    for (const r of rows) {
+        const date = effectiveDueAt(r);
+        // The effective clock may be a column NOT in the window (e.g. a past
+        // `nextDueAt` earlier than an in-range `nextRunAt`) — that plan is
+        // overdue before the window, not due inside it, so skip it.
+        if (!date || date < range.from || date > range.to) continue;
+        events.push({
+            id: `CONTROL_TEST_PLAN:${r.id}:control-test-due`,
+            type: 'control-test-due',
+            category: 'control',
+            title: `Test due: ${r.name}`,
+            date: date.toISOString(),
+            status: classifyStatus(date, now, false),
+            entityType: 'CONTROL_TEST_PLAN',
+            entityId: r.id,
+            href: tenantHrefFromCtx(ctx, `/controls/${r.controlId}/tests/${r.id}`),
+            detail: r.control.name,
         });
-    return sourceResult(events, rows.length, limit);
+    }
+    return { events, capped };
 }
 
 async function loadTaskEvents(
@@ -680,26 +901,41 @@ async function loadRiskEvents(
     now: Date,
     limit: number,
 ): Promise<CalendarSourceResult> {
-    const rows = await db.risk.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            OR: [
-                { nextReviewAt: { not: null, gte: range.from, lte: range.to } },
-                { targetDate: { not: null, gte: range.from, lte: range.to } },
-            ],
-        },
-        select: {
-            id: true,
-            title: true,
-            nextReviewAt: true,
-            targetDate: true,
-            status: true,
-        },
-        // Two date columns (see the vendor loader for the same shape) —
-        // review date leads, target date breaks the tie.
-        orderBy: [{ nextReviewAt: 'asc' }, { targetDate: 'asc' }],
-        take: limit,
-    });
+    const select = {
+        id: true,
+        title: true,
+        nextReviewAt: true,
+        targetDate: true,
+        status: true,
+    } as const;
+    // Two date columns — fetch each column's nearest-`limit` and union so a
+    // risk whose only in-range date is the mitigation target isn't truncated
+    // behind risks with a review date (see `fetchNearest`).
+    const { rows, capped } = await fetchNearest(
+        [
+            () =>
+                db.risk.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        nextReviewAt: { not: null, gte: range.from, lte: range.to },
+                    },
+                    select,
+                    orderBy: { nextReviewAt: 'asc' },
+                    take: limit,
+                }),
+            () =>
+                db.risk.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        targetDate: { not: null, gte: range.from, lte: range.to },
+                    },
+                    select,
+                    orderBy: { targetDate: 'asc' },
+                    take: limit,
+                }),
+        ],
+        limit,
+    );
     const events: CalendarEvent[] = [];
     for (const r of rows) {
         const isClosed = r.status === 'CLOSED' || r.status === 'ACCEPTED';
@@ -738,7 +974,7 @@ async function loadRiskEvents(
             });
         }
     }
-    return sourceResult(events, rows.length, limit);
+    return { events, capped };
 }
 
 async function loadFindingEvents(
@@ -881,8 +1117,9 @@ async function loadTreatmentMilestoneEvents(
         where: {
             tenantId: ctx.tenantId,
             dueDate: { gte: range.from, lte: range.to },
-            // Skip milestones whose parent plan was soft-deleted or
-            // whose linked risk was retired.
+            // Skip milestones whose parent plan was soft-deleted. (The
+            // linked risk's own lifecycle is NOT filtered here — a milestone
+            // under a live plan surfaces regardless of the risk's status.)
             treatmentPlan: { deletedAt: null },
         },
         select: {
