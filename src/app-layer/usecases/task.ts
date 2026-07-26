@@ -65,6 +65,91 @@ async function validateTypeRelevance(
     }
 }
 
+// ─── Reference validation (tenancy + membership) ───
+//
+// Prisma FK checks run BELOW row-level security, so a foreign id inserts
+// cleanly and only surfaces later as a null relation — or, worse, as a
+// 201-vs-FK-error oracle that leaks whether an id exists in another tenant.
+// Every body-supplied id therefore gets resolved against ctx.tenantId here,
+// before the write. Mirrors `finding.ts::validateFindingRefs`.
+
+/** TaskLink.entityType → the Prisma delegate that owns that entity. */
+const LINK_TARGET_MODEL = {
+    CONTROL: 'control',
+    FRAMEWORK_REQUIREMENT: 'frameworkRequirement',
+    RISK: 'risk',
+    ASSET: 'asset',
+    POLICY: 'policy',
+    EVIDENCE: 'evidence',
+    FILE: 'fileRecord',
+    AUDIT_PACK: 'auditPack',
+    VENDOR: 'vendor',
+    INCIDENT: 'incident',
+} as const;
+
+/**
+ * Assert the parent task exists IN THIS TENANT before writing a child row
+ * (comment / watcher / link). Without it the child insert succeeds against a
+ * foreign taskId and the FK-error-vs-201 difference leaks task existence.
+ */
+async function assertTaskInTenant(db: PrismaTx, ctx: RequestContext, taskId: string) {
+    const task = await db.task.findFirst({
+        where: { id: taskId, tenantId: ctx.tenantId },
+        select: { id: true },
+    });
+    if (!task) throw notFound('Task not found');
+}
+
+/** Assert every supplied user id is an ACTIVE member of this tenant. */
+async function assertActiveMembers(
+    db: PrismaTx,
+    ctx: RequestContext,
+    userIds: Array<string | null | undefined>,
+) {
+    const ids = [...new Set(userIds.filter((x): x is string => Boolean(x)))];
+    if (ids.length === 0) return;
+    const members = await db.tenantMembership.findMany({
+        where: { userId: { in: ids }, tenantId: ctx.tenantId, status: 'ACTIVE' },
+        select: { userId: true },
+    });
+    const ok = new Set(members.map((m) => m.userId));
+    const bad = ids.find((id) => !ok.has(id));
+    if (bad) {
+        throw badRequest(
+            'INVALID_USER',
+            'User is not an active member of this tenant',
+        );
+    }
+}
+
+/**
+ * Assert a TaskLink target exists in this tenant. TaskLink.entityId carries
+ * no foreign key at all (prisma/schema/tasks.prisma), so this is the ONLY
+ * thing standing between a link row and an arbitrary cross-tenant id.
+ */
+async function assertLinkTargetInTenant(
+    db: PrismaTx,
+    ctx: RequestContext,
+    entityType: string,
+    entityId: string,
+) {
+    const model = LINK_TARGET_MODEL[entityType as keyof typeof LINK_TARGET_MODEL];
+    if (!model) throw badRequest('INVALID_LINK_TYPE', `Unsupported link entity type: ${entityType}`);
+    const delegate = (db as unknown as Record<string, {
+        findFirst: (a: unknown) => Promise<{ id: string } | null>;
+    }>)[model];
+    const found = await delegate.findFirst({
+        where: { id: entityId, tenantId: ctx.tenantId },
+        select: { id: true },
+    });
+    if (!found) {
+        throw badRequest(
+            'INVALID_LINK_TARGET',
+            'Linked entity not found or belongs to a different tenant',
+        );
+    }
+}
+
 // ─── List / Get ───
 
 export async function listTasks(
@@ -143,6 +228,10 @@ export async function createTask(ctx: RequestContext, input: {
         }
         // TP-2 (hole 2b) — segregation of duties at creation: reviewer ≠ assignee.
         assertReviewerIsNotAssignee(input.reviewerUserId, input.assigneeUserId);
+        // Both user ids come from the request body and are stamped with
+        // ctx.tenantId on write — resolve them against an ACTIVE membership
+        // first so a foreign id cannot be persisted.
+        await assertActiveMembers(db, ctx, [input.assigneeUserId, input.reviewerUserId]);
 
         const task = await WorkItemRepository.create(db, ctx, input);
 
@@ -247,6 +336,10 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
     // populated — a `let` assigned inside the callback stays narrowed to its
     // initializer at the post-commit read.
     const { task: result, beforeDueAt, beforeReviewerUserId } = await runInTenantContext(ctx, async (db) => {
+        // A reviewer id arriving on the patch is body-supplied and stamped
+        // with ctx.tenantId on write — resolve it against an ACTIVE
+        // membership first (createTask does the same for assignee+reviewer).
+        await assertActiveMembers(db, ctx, [patch.reviewerUserId]);
         // Validate metadataJson on write
         if (patch.metadataJson !== undefined) {
             patch.metadataJson = validateTaskMetadata(patch.metadataJson);
@@ -532,6 +625,9 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
 export async function assignTask(ctx: RequestContext, taskId: string, assigneeUserId: string | null) {
     assertCanAssignTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        // The assignee id is body-supplied and stamped with ctx.tenantId on
+        // write; resolve it against an ACTIVE membership first.
+        await assertActiveMembers(db, ctx, [assigneeUserId]);
         // TP-2 (hole 2b) — SoD from the assignee side: assigning the task to the
         // person who is already its reviewer would collapse four eyes into two
         // just as surely as setting reviewer = assignee does.
@@ -816,6 +912,8 @@ export async function listTaskLinks(ctx: RequestContext, taskId: string) {
 export async function addTaskLink(ctx: RequestContext, taskId: string, entityType: string, entityId: string, relation?: string) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertTaskInTenant(db, ctx, taskId);
+        await assertLinkTargetInTenant(db, ctx, entityType, entityId);
         const link = await TaskLinkRepository.link(db, ctx, taskId, entityType, entityId, relation);
         await logEvent(db, ctx, {
             action: 'TASK_LINKED',
@@ -990,6 +1088,7 @@ export async function addTaskComment(ctx: RequestContext, taskId: string, body: 
     // a stored XSS vector.
     const safeBody = sanitizePlainText(body);
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertTaskInTenant(db, ctx, taskId);
         const comment = await TaskCommentRepository.add(db, ctx, taskId, safeBody);
         await logEvent(db, ctx, {
             action: 'TASK_COMMENT_ADDED',
@@ -1017,7 +1116,11 @@ export async function listTaskWatchers(ctx: RequestContext, taskId: string) {
 
 export async function addTaskWatcher(ctx: RequestContext, taskId: string, userId: string) {
     assertCanWriteTasks(ctx);
-    const result = await runInTenantContext(ctx, (db) => TaskWatcherRepository.add(db, ctx, taskId, userId));
+    const result = await runInTenantContext(ctx, async (db) => {
+        await assertTaskInTenant(db, ctx, taskId);
+        await assertActiveMembers(db, ctx, [userId]);
+        return TaskWatcherRepository.add(db, ctx, taskId, userId);
+    });
     await bumpEntityCacheVersion(ctx, 'task');
     return result;
 }
@@ -1059,6 +1162,28 @@ export async function getTaskActivity(ctx: RequestContext, taskId: string) {
 export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], assigneeUserId: string | null) {
     assertCanAssignTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, [assigneeUserId]);
+
+        // TP-2 (hole 2b) — segregation of duties, matching the single-task
+        // path. Bulk is an admin convenience, not an escape hatch: assigning
+        // a task to the person who is already its reviewer collapses four
+        // eyes into two. Checked against the DB rows, never a body value.
+        if (assigneeUserId) {
+            const conflicting = await db.task.findFirst({
+                where: {
+                    id: { in: taskIds },
+                    tenantId: ctx.tenantId,
+                    reviewerUserId: assigneeUserId,
+                },
+                select: { key: true },
+            });
+            if (conflicting) {
+                throw badRequest(
+                    `Cannot assign ${conflicting.key ?? 'a task'} to its own reviewer — assignee and reviewer must differ.`,
+                );
+            }
+        }
+
         const result = await WorkItemRepository.bulkAssign(db, ctx, taskIds, assigneeUserId);
         for (const id of taskIds) {
             await logEvent(db, ctx, {

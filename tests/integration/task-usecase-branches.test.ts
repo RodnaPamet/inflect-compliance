@@ -56,6 +56,7 @@ const TENANT_ID = `t-${SUITE_TAG}`;
 let ownerUserId: string;
 let readerUserId: string;
 let controlId: string;
+let assetId: string;
 let ctx: ReturnType<typeof makeRequestContext>;
 let reader: ReturnType<typeof makeRequestContext>;
 
@@ -81,11 +82,18 @@ describeFn('task usecase — branch coverage (integration)', () => {
             data: { tenantId: TENANT_ID, code: 'C-T1', name: 'Task control' },
         });
         controlId = control.id;
+        // A REAL asset: task links now resolve their target against the
+        // tenant before insert, so a synthetic id no longer inserts.
+        const asset = await globalPrisma.asset.create({
+            data: { tenantId: TENANT_ID, name: 'Task asset', type: 'SYSTEM' },
+        });
+        assetId = asset.id;
         ctx = makeRequestContext('OWNER', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: ownerUserId });
         reader = makeRequestContext('READER', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: readerUserId });
     });
 
     afterAll(async () => {
+        await globalPrisma.asset.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.evidence.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.taskComment.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.taskWatcher.deleteMany({ where: { tenantId: TENANT_ID } });
@@ -218,7 +226,7 @@ describeFn('task usecase — branch coverage (integration)', () => {
         // INCIDENT with no controlId/link → rejected; ASSET link satisfies.
         const inc = await createTask(ctx, { title: 'incident', type: 'INCIDENT' });
         await expect(setTaskStatus(ctx, inc.id, 'RESOLVED', 'x')).rejects.toThrow(/controlId or a link to CONTROL or ASSET/i);
-        await addTaskLink(ctx, inc.id, 'ASSET', 'asset-123');
+        await addTaskLink(ctx, inc.id, 'ASSET', assetId);
         const incResolved = await setTaskStatus(ctx, inc.id, 'RESOLVED', 'contained');
         expect(incResolved?.status).toBe('RESOLVED');
 
