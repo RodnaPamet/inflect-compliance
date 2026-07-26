@@ -388,6 +388,7 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     AuditChecklistItem: 'updateAudit prefetches the touched checklist rows by (id IN […], tenantId) for FAIL-transition detection — a PK IN lookup + RLS-bound tenantId; @@index([tenantId, auditId]) is more than sufficient; bounded by the request payload size.',
+    AuditPackItem: 'getPackByShareToken reads a pack\'s items by (tenantId, auditPackId) for the public share-page projection — covered by @@index([tenantId, auditPackId]); bounded take ≤2000.',
     AuditPackShareComment: 'listShareComments filters by (tenantId, auditPackId), orders by createdAt desc — covered by @@index([tenantId, auditPackId]); bounded take ≤500.',
     AuditPackShare: 'listPackShares filters by (tenantId, auditPackId), orders by createdAt desc — covered by @@index([tenantId, auditPackId]); bounded take ≤200.',
     AuditorAccount: 'listAuditors filters by tenantId, orders by createdAt desc — covered by @@unique([tenantId, emailHash]) tenantId-leading composite; bounded take ≤500.',
