@@ -20,7 +20,8 @@
  *
  * Behaviours protected:
  *   1. computeFileHash: deterministic SHA-256 across identical input.
- *   2. storeExportArtifact: ADMIN-only gate, rejects DRAFT pack,
+ *   2. storeExportArtifact: ADMIN-only gate, rejects NON-DRAFT (frozen)
+ *      pack (freeze integrity — packs are immutable once frozen),
  *      computes hash, persists AuditPackItem with sha256 in
  *      snapshotJson, emits AUDIT_EXPORT_GENERATED audit.
  *   3. clonePackForRetest: ADMIN/EDITOR gate, rejects DRAFT source,
@@ -153,8 +154,8 @@ describe('storeExportArtifact', () => {
         ).rejects.toThrow(/Pack not found/);
     });
 
-    it('rejects attaching exports to a DRAFT pack', async () => {
-        setupPack({ id: 'p1', status: 'DRAFT' });
+    it('rejects attaching exports to a non-DRAFT (frozen) pack — packs are immutable once frozen', async () => {
+        setupPack({ id: 'p1', status: 'FROZEN' });
         await expect(
             storeExportArtifact(
                 makeRequestContext('ADMIN'),
@@ -163,17 +164,20 @@ describe('storeExportArtifact', () => {
                 'export.csv',
                 'text/csv',
             ),
-        ).rejects.toThrow(/DRAFT pack/);
-        // Regression: a refactor that allowed export attachment to a
-        // DRAFT pack would let an ADMIN swap an "approved" export AFTER
-        // the pack was generated — breaking the immutability contract.
+        ).rejects.toThrow(/immutable once frozen|non-DRAFT/);
+        // Freeze-integrity regression: a refactor that allowed export
+        // attachment to a FROZEN (or EXPORTED) pack would let an ADMIN
+        // inject arbitrary FILE content into an already-frozen, already-
+        // shared audit snapshot — inverting the immutability contract that
+        // makes the pack defensible to the external auditor. Exports must be
+        // attached while the pack is still DRAFT; freezing then locks them.
     });
 
     it('persists AuditPackItem with sha256 + size in snapshotJson and emits AUDIT_EXPORT_GENERATED', async () => {
         let capturedItemArgs: any;
         mockRunInTx
             .mockImplementationOnce(async () =>
-                ({ id: 'p1', status: 'FROZEN' }) as never,
+                ({ id: 'p1', status: 'DRAFT' }) as never,
             )
             .mockImplementationOnce(async (_ctx, fn) =>
                 fn({

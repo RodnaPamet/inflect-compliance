@@ -57,8 +57,9 @@ export async function listAuditCycles(ctx: RequestContext) {
     return runInTenantContext(ctx, (tdb) =>
         tdb.auditCycle.findMany({
             where: { tenantId: ctx.tenantId },
-            include: { packs: { select: { id: true, name: true, status: true } } },
+            include: { packs: { select: { id: true, name: true, status: true }, take: 500 } },
             orderBy: { createdAt: 'desc' },
+            take: 500,
         })
     );
 }
@@ -69,7 +70,7 @@ export async function getAuditCycle(ctx: RequestContext, cycleId: string) {
         tdb.auditCycle.findFirst({
             where: { id: cycleId, tenantId: ctx.tenantId },
             include: {
-                packs: true,
+                packs: { take: 500 },
                 createdBy: { select: { id: true, name: true, email: true } },
                 // feat/audit-cycle-unify — the fieldwork audits attached to
                 // this cycle, so the cycle page can show its audits (and the
@@ -78,6 +79,7 @@ export async function getAuditCycle(ctx: RequestContext, cycleId: string) {
                     where: { deletedAt: null },
                     select: { id: true, title: true, status: true, frameworkKey: true, schedule: true },
                     orderBy: { createdAt: 'desc' },
+                    take: 500,
                 },
             },
         })

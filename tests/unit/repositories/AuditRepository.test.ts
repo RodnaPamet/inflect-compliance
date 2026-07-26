@@ -25,7 +25,7 @@ function freshDb() {
         },
         auditChecklistItem: {
             create: jest.fn().mockResolvedValue({ id: 'ci1' }),
-            update: jest.fn().mockResolvedValue({ id: 'ci1' }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
     };
 }
@@ -38,15 +38,15 @@ beforeEach(() => {
 });
 
 describe('AuditRepository.list', () => {
-    it('filters by tenantId, orders by createdAt desc, uses list select — no take by default', async () => {
+    it('filters by tenantId, orders by createdAt desc, uses list select — defaults take to 500', async () => {
         await AuditRepository.list(db as any, ctx);
         const arg = db.audit.findMany.mock.calls[0][0];
         expect(arg.where).toEqual({ tenantId: 'tenant-1' });
         expect(arg.orderBy).toEqual({ createdAt: 'desc' });
         expect(arg.select.id).toBe(true);
         expect(arg.select._count.select).toEqual({ checklist: true, findings: true });
-        // Branch: options.take falsy → no `take` key spread in.
-        expect(arg).not.toHaveProperty('take');
+        // Bounded by default — an absent take falls back to `take ?? 500`.
+        expect(arg.take).toBe(500);
     });
 
     it('applies take when provided (truthy branch)', async () => {
@@ -55,10 +55,11 @@ describe('AuditRepository.list', () => {
         expect(arg.take).toBe(25);
     });
 
-    it('omits take when explicitly 0 (falsy branch)', async () => {
+    it('keeps take at 0 when explicitly 0 (nullish-coalesce leaves 0)', async () => {
+        // `0 ?? 500 === 0` — an explicit take:0 is preserved, not defaulted.
         await AuditRepository.list(db as any, ctx, { take: 0 });
         const arg = db.audit.findMany.mock.calls[0][0];
-        expect(arg).not.toHaveProperty('take');
+        expect(arg.take).toBe(0);
     });
 });
 
@@ -113,23 +114,25 @@ describe('AuditRepository.createChecklistItem', () => {
 
 describe('AuditRepository.updateChecklistItem', () => {
     it('maps a string result to the enum and passes notes (string branch)', async () => {
-        await AuditRepository.updateChecklistItem(db as any, ctx, 'ci1', { result: 'PASS', notes: 'ok' });
-        const arg = db.auditChecklistItem.update.mock.calls[0][0];
-        expect(arg.where).toEqual({ id: 'ci1' });
+        await AuditRepository.updateChecklistItem(db as any, ctx, 'ci1', 'a1', { result: 'PASS', notes: 'ok' });
+        const arg = db.auditChecklistItem.updateMany.mock.calls[0][0];
+        // Tenant + audit scoped write via updateMany (id alone is not a
+        // compound unique).
+        expect(arg.where).toEqual({ id: 'ci1', tenantId: 'tenant-1', auditId: 'a1' });
         expect(arg.data.result).toBe('PASS');
         expect(arg.data.notes).toBe('ok');
     });
 
     it('treats null result as undefined / leave-unchanged (null branch)', async () => {
-        await AuditRepository.updateChecklistItem(db as any, ctx, 'ci1', { result: null, notes: 'n' });
-        const arg = db.auditChecklistItem.update.mock.calls[0][0];
+        await AuditRepository.updateChecklistItem(db as any, ctx, 'ci1', 'a1', { result: null, notes: 'n' });
+        const arg = db.auditChecklistItem.updateMany.mock.calls[0][0];
         expect(arg.data.result).toBeUndefined();
         expect(arg.data.notes).toBe('n');
     });
 
     it('treats absent result as undefined (absent branch)', async () => {
-        await AuditRepository.updateChecklistItem(db as any, ctx, 'ci1', {});
-        const arg = db.auditChecklistItem.update.mock.calls[0][0];
+        await AuditRepository.updateChecklistItem(db as any, ctx, 'ci1', 'a1', {});
+        const arg = db.auditChecklistItem.updateMany.mock.calls[0][0];
         expect(arg.data.result).toBeUndefined();
         expect(arg.data.notes).toBeUndefined();
     });

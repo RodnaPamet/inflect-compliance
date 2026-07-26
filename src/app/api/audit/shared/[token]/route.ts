@@ -1,11 +1,31 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getPackByShareToken, addShareComment } from '@/app-layer/usecases/audit-readiness';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { API_READ_LIMIT } from '@/lib/security/rate-limit';
+import { enforceRateLimit, getClientIp, isRateLimitBypassed } from '@/lib/security/rate-limit-middleware';
 import { z } from 'zod';
+
+// PUBLIC unauthenticated GET — the token IS the auth, and it does an
+// unbounded pack+items read per request. `withApiErrorHandling` only
+// rate-limits mutation methods, so this read is unthrottled by default.
+// Throttle it explicitly, keyed on (IP, token): the token in the scope
+// namespace isolates each share while the IP bounds a single scraper.
+function applyShareReadRateLimit(req: NextRequest, token: string): NextResponse | null {
+    if (isRateLimitBypassed()) return null;
+    const enforcement = enforceRateLimit(req, {
+        scope: `audit-share-read:${token}`,
+        config: API_READ_LIMIT,
+        ip: getClientIp(req),
+    });
+    return enforcement.response ?? null;
+}
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ token: string }> }) => {
     const params = await paramsPromise;
+    const limitResponse = applyShareReadRateLimit(req, params.token);
+    if (limitResponse) return limitResponse;
+
     const data = await getPackByShareToken(params.token);
     return jsonResponse(data);
 });

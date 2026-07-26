@@ -13,8 +13,8 @@ import {
 } from '../policies/audit-readiness.policies';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
-import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
+import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { getStorageProvider, buildTenantObjectKey, assertTenantKey } from '@/lib/storage';
 import crypto from 'crypto';
 
 // ─── Evidence Integrity ───
@@ -30,8 +30,32 @@ export async function verifyFileIntegrity(
 ): Promise<{ fileName: string; computedHash: string; matches: boolean | null; fileSize: number }> {
     assertCanViewPack(ctx);
 
+    // SECURITY (cross-tenant file oracle): `fileName` is caller-supplied and
+    // names a stored object. It MUST be resolved through a tenant-scoped
+    // FileRecord lookup before ANY storage read — otherwise a member of any
+    // tenant could pass another tenant's storage key (URL-encoded slashes) and
+    // learn its existence + fileSize + sha256, or confirm a guessed digest via
+    // `expectedHash`. The `assertCanViewPack` role check alone does NOT scope by
+    // tenant. Accept either the FileRecord id or its pathKey, but always read
+    // from the RESOLVED, tenant-owned pathKey — never the raw `fileName`.
+    const record = await runInTenantContext(ctx, (tdb) =>
+        tdb.fileRecord.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                OR: [{ id: fileName }, { pathKey: fileName }],
+            },
+            select: { pathKey: true },
+        }),
+    );
+    if (!record) throw notFound('File not found');
+
+    // Defence-in-depth: a tenant-scoped row's pathKey is already tenant-owned,
+    // but re-assert the canonical `tenants/<tenantId>/` prefix before touching
+    // storage so a corrupt/legacy row can never point the reader elsewhere.
+    assertTenantKey(record.pathKey, ctx.tenantId);
+
     const storage = getStorageProvider();
-    const stream = storage.readStream(fileName);
+    const stream = storage.readStream(record.pathKey);
 
     // Hash incrementally from stream
     const hash = crypto.createHash('sha256');
@@ -68,7 +92,12 @@ export async function storeExportArtifact(
         tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId } })
     );
     if (!pack) throw notFound('Pack not found');
-    if (pack.status === 'DRAFT') throw badRequest('Cannot attach exports to a DRAFT pack');
+    // FREEZE INTEGRITY: a frozen pack is the immutable snapshot served to the
+    // (unauthenticated) external auditor via share link. Allowing arbitrary FILE
+    // items into a non-DRAFT pack would let content be injected AFTER the pack
+    // was frozen + shared — inverting the immutability guarantee. Exports must be
+    // attached while the pack is still a DRAFT; freezing then locks them.
+    if (pack.status !== 'DRAFT') throw forbidden('Cannot attach exports to a non-DRAFT pack — an audit pack is immutable once frozen');
 
     // Create buffer and compute hash
     const buffer = Buffer.from(content, 'utf-8');

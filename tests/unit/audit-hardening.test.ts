@@ -113,10 +113,10 @@ describe('Audit Hardening', () => {
             expect(snapshot.sha256).toHaveLength(64);
         });
 
-        it('only FROZEN/EXPORTED packs can attach exports', () => {
+        it('only DRAFT packs can attach exports — frozen packs are immutable', () => {
             const statuses = ['DRAFT', 'FROZEN', 'EXPORTED'];
-            const canAttach = statuses.filter(s => s !== 'DRAFT');
-            expect(canAttach).toEqual(['FROZEN', 'EXPORTED']);
+            const canAttach = statuses.filter(s => s === 'DRAFT');
+            expect(canAttach).toEqual(['DRAFT']);
         });
 
         it('snapshot does not leak storage paths', () => {

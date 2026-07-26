@@ -2,23 +2,37 @@
 -- RLS Fix for tables WITHOUT a tenantId column
 -- ═══════════════════════════════════════════════════════════════════
 -- 
--- These tables are tenant-scoped by relationship (FK chains to parent
--- tables that DO have tenantId + RLS). They use USING(true) WITH CHECK(true)
--- as a temporary measure — each should gain its own tenantId column
--- in a future migration so proper isolation can replace the allow_all policy.
+-- Some of these tables are tenant-scoped ONLY by relationship (FK chains to
+-- parent tables that have tenantId + RLS) and still use USING(true) WITH
+-- CHECK(true) — each should gain its own tenantId column in a future migration.
+--
+-- IMPORTANT: several tables here (PolicyApproval, EvidenceReview,
+-- FindingEvidence, AuditChecklistItem, AuditorPackAccess) HAVE SINCE been
+-- promoted to a NOT NULL tenantId column + canonical Class-A RLS by the
+-- denorm-tenantId migrations (20260423200000 etc.) / rls-setup.sql. For those,
+-- this file must RE-ASSERT the canonical tenant_isolation trio — NOT recreate
+-- allow_all, which (because this file is "safe to re-run") silently re-opened
+-- them to cross-tenant access. Those stanzas are corrected below.
 --
 -- This script is fully IDEMPOTENT — safe to re-run at any time.
 -- ═══════════════════════════════════════════════════════════════════
 
 -- PolicyVersion: REMOVED — now has tenantId column, handled in rls-setup.sql
 
--- PolicyApproval (no tenantId — child of Policy)
-DROP POLICY IF EXISTS tenant_isolation ON "PolicyApproval";
-DROP POLICY IF EXISTS tenant_isolation_insert ON "PolicyApproval";
-DROP POLICY IF EXISTS allow_all ON "PolicyApproval";
+-- PolicyApproval (HAS tenantId — canonical tenant_isolation, NOT allow_all).
+-- Promoted to direct-tenantId RLS (see rls-setup.sql); re-asserted idempotently.
 ALTER TABLE "PolicyApproval" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "PolicyApproval" FORCE ROW LEVEL SECURITY;
-CREATE POLICY allow_all ON "PolicyApproval" USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS tenant_isolation ON "PolicyApproval";
+CREATE POLICY tenant_isolation ON "PolicyApproval"
+    USING ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS tenant_isolation_insert ON "PolicyApproval";
+CREATE POLICY tenant_isolation_insert ON "PolicyApproval"
+    FOR INSERT WITH CHECK ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS superuser_bypass ON "PolicyApproval";
+CREATE POLICY superuser_bypass ON "PolicyApproval"
+    USING (current_setting('role') != 'app_user');
+DROP POLICY IF EXISTS allow_all ON "PolicyApproval";
 
 -- PolicyAcknowledgement (no tenantId — child of PolicyVersion)
 DROP POLICY IF EXISTS tenant_isolation ON "PolicyAcknowledgement";
@@ -70,37 +84,76 @@ CREATE POLICY tenant_isolation ON "PolicyControlLink"
         )
     );
 
--- EvidenceReview (no tenantId — child of Evidence)
-DROP POLICY IF EXISTS tenant_isolation ON "EvidenceReview";
-DROP POLICY IF EXISTS tenant_isolation_insert ON "EvidenceReview";
-DROP POLICY IF EXISTS allow_all ON "EvidenceReview";
+-- EvidenceReview (HAS tenantId — canonical tenant_isolation, NOT allow_all).
+-- Promoted to NOT NULL tenantId + composite parent FK + canonical RLS by the
+-- denorm-tenantId migration; re-asserted idempotently (was recreating allow_all).
 ALTER TABLE "EvidenceReview" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "EvidenceReview" FORCE ROW LEVEL SECURITY;
-CREATE POLICY allow_all ON "EvidenceReview" USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS tenant_isolation ON "EvidenceReview";
+CREATE POLICY tenant_isolation ON "EvidenceReview"
+    USING ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS tenant_isolation_insert ON "EvidenceReview";
+CREATE POLICY tenant_isolation_insert ON "EvidenceReview"
+    FOR INSERT WITH CHECK ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS superuser_bypass ON "EvidenceReview";
+CREATE POLICY superuser_bypass ON "EvidenceReview"
+    USING (current_setting('role') != 'app_user');
+DROP POLICY IF EXISTS allow_all ON "EvidenceReview";
 
--- FindingEvidence (no tenantId — junction of Finding × Evidence)
-DROP POLICY IF EXISTS tenant_isolation ON "FindingEvidence";
-DROP POLICY IF EXISTS tenant_isolation_insert ON "FindingEvidence";
-DROP POLICY IF EXISTS allow_all ON "FindingEvidence";
+-- FindingEvidence (HAS tenantId — canonical tenant_isolation, NOT allow_all).
+-- Promoted to NOT NULL tenantId + two composite parent FKs + canonical RLS by
+-- the denorm-tenantId migration; re-asserted idempotently (was recreating allow_all).
 ALTER TABLE "FindingEvidence" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "FindingEvidence" FORCE ROW LEVEL SECURITY;
-CREATE POLICY allow_all ON "FindingEvidence" USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS tenant_isolation ON "FindingEvidence";
+CREATE POLICY tenant_isolation ON "FindingEvidence"
+    USING ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS tenant_isolation_insert ON "FindingEvidence";
+CREATE POLICY tenant_isolation_insert ON "FindingEvidence"
+    FOR INSERT WITH CHECK ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS superuser_bypass ON "FindingEvidence";
+CREATE POLICY superuser_bypass ON "FindingEvidence"
+    USING (current_setting('role') != 'app_user');
+DROP POLICY IF EXISTS allow_all ON "FindingEvidence";
 
--- AuditChecklistItem (no tenantId — child of Audit)
-DROP POLICY IF EXISTS tenant_isolation ON "AuditChecklistItem";
-DROP POLICY IF EXISTS tenant_isolation_insert ON "AuditChecklistItem";
-DROP POLICY IF EXISTS allow_all ON "AuditChecklistItem";
+-- AuditChecklistItem (HAS tenantId — canonical tenant_isolation, NOT allow_all)
+-- Migration 20260423200000_denorm_tenantid_phase3_simplify_rls added a NOT NULL
+-- tenantId column + composite parent FK (auditId, tenantId) → Audit(id, tenantId)
+-- and swapped this table onto the canonical Class-A RLS. Re-assert that exact
+-- shape here (idempotently) and drop any stale allow_all. The previous stanza
+-- dropped tenant_isolation and recreated allow_all USING(true) — re-running this
+-- "safe to re-run" file silently re-opened the table to cross-tenant access.
 ALTER TABLE "AuditChecklistItem" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "AuditChecklistItem" FORCE ROW LEVEL SECURITY;
-CREATE POLICY allow_all ON "AuditChecklistItem" USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS tenant_isolation ON "AuditChecklistItem";
+CREATE POLICY tenant_isolation ON "AuditChecklistItem"
+    USING ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS tenant_isolation_insert ON "AuditChecklistItem";
+CREATE POLICY tenant_isolation_insert ON "AuditChecklistItem"
+    FOR INSERT WITH CHECK ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS superuser_bypass ON "AuditChecklistItem";
+CREATE POLICY superuser_bypass ON "AuditChecklistItem"
+    USING (current_setting('role') != 'app_user');
+DROP POLICY IF EXISTS allow_all ON "AuditChecklistItem";
 
--- AuditorPackAccess (no tenantId — junction of AuditorAccount × AuditPack)
-DROP POLICY IF EXISTS tenant_isolation ON "AuditorPackAccess";
-DROP POLICY IF EXISTS tenant_isolation_insert ON "AuditorPackAccess";
-DROP POLICY IF EXISTS allow_all ON "AuditorPackAccess";
+-- AuditorPackAccess (HAS tenantId — canonical tenant_isolation, NOT allow_all)
+-- Same Phase-3 migration (20260423200000): NOT NULL tenantId + two composite
+-- parent FKs (auditPackId, tenantId) → AuditPack and (auditorId, tenantId) →
+-- AuditorAccount. Canonical Class-A RLS, re-asserted idempotently here; drop any
+-- stale allow_all. The previous stanza recreated allow_all USING(true), undoing
+-- the migration on every re-run of this file.
 ALTER TABLE "AuditorPackAccess" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "AuditorPackAccess" FORCE ROW LEVEL SECURITY;
-CREATE POLICY allow_all ON "AuditorPackAccess" USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS tenant_isolation ON "AuditorPackAccess";
+CREATE POLICY tenant_isolation ON "AuditorPackAccess"
+    USING ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS tenant_isolation_insert ON "AuditorPackAccess";
+CREATE POLICY tenant_isolation_insert ON "AuditorPackAccess"
+    FOR INSERT WITH CHECK ("tenantId" = current_setting('app.tenant_id', true)::text);
+DROP POLICY IF EXISTS superuser_bypass ON "AuditorPackAccess";
+CREATE POLICY superuser_bypass ON "AuditorPackAccess"
+    USING (current_setting('role') != 'app_user');
+DROP POLICY IF EXISTS allow_all ON "AuditorPackAccess";
 
 -- ═══════════════════════════════════════════════════════════════════
 -- GLOBAL TABLES — no RLS needed

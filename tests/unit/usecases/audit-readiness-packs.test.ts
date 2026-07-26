@@ -63,7 +63,7 @@ const mockTdb: any = {
     controlRequirementLink: { findMany: jest.fn() },
     control: { findFirst: jest.fn(), findMany: jest.fn() },
     policy: { findFirst: jest.fn(), findMany: jest.fn() },
-    evidence: { findFirst: jest.fn() },
+    evidence: { findFirst: jest.fn(), findMany: jest.fn() },
     task: { findFirst: jest.fn(), findMany: jest.fn() },
 };
 
@@ -110,7 +110,7 @@ beforeEach(() => {
         mockTdb.controlRequirementLink.findMany,
         mockTdb.control.findFirst, mockTdb.control.findMany,
         mockTdb.policy.findFirst, mockTdb.policy.findMany,
-        mockTdb.evidence.findFirst,
+        mockTdb.evidence.findFirst, mockTdb.evidence.findMany,
         mockTdb.task.findFirst, mockTdb.task.findMany,
         assertCanManageAuditPacks as jest.Mock,
         assertCanFreezePack as jest.Mock,
@@ -285,6 +285,10 @@ describe('addAuditPackItems', () => {
         // so the caller sees both numbers.
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
         mockTdb.auditPackItem.createMany.mockResolvedValueOnce({ count: 2 });
+        // #4 — each entityId is validated via a batched tenant-scoped findMany
+        // before insert; the referenced ids must resolve for the add to proceed.
+        mockTdb.control.findMany.mockResolvedValueOnce([{ id: 'c-1' }, { id: 'c-2' }]);
+        mockTdb.policy.findMany.mockResolvedValueOnce([{ id: 'p-1' }]);
 
         const result = await addAuditPackItems(ctx, 'p-1', [
             { entityType: 'CONTROL', entityId: 'c-1' },
@@ -300,6 +304,7 @@ describe('addAuditPackItems', () => {
     it('defaults sortOrder to 0 and snapshotJson to "{}" when omitted', async () => {
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
         mockTdb.auditPackItem.createMany.mockResolvedValueOnce({ count: 1 });
+        mockTdb.control.findMany.mockResolvedValueOnce([{ id: 'c-1' }]);
 
         await addAuditPackItems(ctx, 'p-1', [{ entityType: 'CONTROL', entityId: 'c-1' }]);
 
@@ -335,13 +340,17 @@ describe('freezeAuditPack', () => {
         // Documented in the source comment — 500+ items × per-item
         // snapshot creation exceeds the default 5s txn timeout.
         // The opts pass-through is load-bearing.
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+        // Phase 1 (SoA guard) + Phase 2 (freeze) both read the pack, so it
+        // must persist for BOTH findFirst calls — and Phase 1 reads `_count`.
+        mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
             items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' }],
         });
-        mockTdb.control.findFirst.mockResolvedValueOnce({
-            id: 'c-1', code: 'CC1', name: 't', status: 'ACTIVE', tasks: [], evidenceControlLinks: [], requirementLinks: [],
-        });
+        // Snapshots are batch-loaded via findMany per entity type now.
+        mockTdb.control.findMany.mockResolvedValueOnce([
+            { id: 'c-1', code: 'CC1', name: 't', status: 'ACTIVE', tasks: [], evidenceControlLinks: [], requirementLinks: [] },
+        ]);
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         mockGetSoA.mockResolvedValueOnce({
             framework: 'iso', generatedAt: new Date(), summary: {}, entries: [],
@@ -356,8 +365,9 @@ describe('freezeAuditPack', () => {
         // The "don't overwrite a prior snapshot" branch — important
         // because an item that was attached with a custom snapshot
         // payload at addItems time keeps that payload through freeze.
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+        mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
             items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{"pre":"baked"}' }],
         });
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
@@ -367,23 +377,24 @@ describe('freezeAuditPack', () => {
 
         await freezeAuditPack(ctx, 'p-1');
 
-        // Pre-baked snapshot path = no entity lookup needed
-        expect(mockTdb.control.findFirst).not.toHaveBeenCalled();
+        // Pre-baked snapshot path = no entity lookup needed (batched findMany)
+        expect(mockTdb.control.findMany).not.toHaveBeenCalled();
         // ALSO: no update on the item (the existing snapshot is kept)
         expect(mockTdb.auditPackItem.update).not.toHaveBeenCalled();
     });
 
     it('builds CONTROL snapshots when item.entityType === CONTROL and snapshot was empty', async () => {
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+        mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
             items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' }],
         });
-        mockTdb.control.findFirst.mockResolvedValueOnce({
+        mockTdb.control.findMany.mockResolvedValueOnce([{
             id: 'c-1', code: 'CC1', name: 'Control Env', status: 'ACTIVE',
             tasks: [{ status: 'RESOLVED' }, { status: 'OPEN' }],
             evidenceControlLinks: [{ id: 'ecl-1' }],
             requirementLinks: [{ requirement: { code: 'A.1', title: 'X' } }],
-        });
+        }]);
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         mockGetSoA.mockResolvedValueOnce({
             framework: 'iso', generatedAt: new Date(), summary: {}, entries: [],
@@ -399,14 +410,15 @@ describe('freezeAuditPack', () => {
     });
 
     it('builds POLICY snapshots with the latest version number', async () => {
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+        mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
             items: [{ id: 'i-1', entityType: 'POLICY', entityId: 'pol-1', snapshotJson: '{}' }],
         });
-        mockTdb.policy.findFirst.mockResolvedValueOnce({
+        mockTdb.policy.findMany.mockResolvedValueOnce([{
             id: 'pol-1', title: 'AUP', status: 'APPROVED', category: 'Security',
             versions: [{ versionNumber: 7 }],
-        });
+        }]);
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         mockGetSoA.mockResolvedValueOnce({
             framework: 'iso', generatedAt: new Date(), summary: {}, entries: [],
@@ -424,11 +436,13 @@ describe('freezeAuditPack', () => {
         // gone (deleted between add + freeze) gets an explicit
         // error-shape snapshot rather than a thrown error — the
         // pack still freezes; the auditor sees the missing source.
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+        mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
             items: [{ id: 'i-1', entityType: 'EVIDENCE', entityId: 'ev-gone', snapshotJson: '{}' }],
         });
-        mockTdb.evidence.findFirst.mockResolvedValueOnce(null);
+        // Source row gone → batched findMany returns [] → map miss → error snapshot.
+        mockTdb.evidence.findMany.mockResolvedValueOnce([]);
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         mockGetSoA.mockResolvedValueOnce({
             framework: 'iso', generatedAt: new Date(), summary: {}, entries: [],
@@ -444,8 +458,9 @@ describe('freezeAuditPack', () => {
     it('falls back to generic snapshot for unknown entityType (default branch)', async () => {
         // The switch statement's default arm — keeps future
         // entityType enum additions from breaking the freeze flow.
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+        mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
             items: [{ id: 'i-1', entityType: 'EXPORT_ARTIFACT', entityId: 'x-1', snapshotJson: '{}' }],
         });
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
@@ -463,13 +478,14 @@ describe('freezeAuditPack', () => {
     it('SWALLOWS SoA attachment failure (best-effort)', async () => {
         // The SoA snapshot is documented as best-effort. A getSoA
         // failure cannot prevent the freeze that ran successfully.
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+        mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
             items: [{ id: 'i-1', entityType: 'POLICY', entityId: 'pol-1', snapshotJson: '{}' }],
         });
-        mockTdb.policy.findFirst.mockResolvedValueOnce({
+        mockTdb.policy.findMany.mockResolvedValueOnce([{
             id: 'pol-1', title: 'X', status: 'APPROVED', category: 'Security', versions: [],
-        });
+        }]);
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         mockGetSoA.mockRejectedValueOnce(new Error('soa down'));
 
@@ -482,13 +498,14 @@ describe('freezeAuditPack', () => {
     });
 
     it('attaches the SoA EXPORT_ARTIFACT row on happy-path', async () => {
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+        mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
             items: [{ id: 'i-1', entityType: 'POLICY', entityId: 'pol-1', snapshotJson: '{}' }],
         });
-        mockTdb.policy.findFirst.mockResolvedValueOnce({
+        mockTdb.policy.findMany.mockResolvedValueOnce([{
             id: 'pol-1', title: 'X', status: 'APPROVED', category: 'Security', versions: [],
-        });
+        }]);
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         mockGetSoA.mockResolvedValueOnce({
             framework: 'iso27001', generatedAt: new Date(), summary: { applicable: 5 },

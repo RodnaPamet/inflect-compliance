@@ -27,7 +27,9 @@ export class AuditRepository {
             },
             orderBy: { createdAt: 'desc' },
             select: auditListSelect,
-            ...(options.take ? { take: options.take } : {}),
+            // Bounded by default — the legacy /api/audits route calls this
+            // with no `take`, which would otherwise be an unbounded findMany.
+            take: options.take ?? 500,
         });
     }
 
@@ -72,9 +74,21 @@ export class AuditRepository {
     }
 
 
-    static async updateChecklistItem(db: PrismaTx, ctx: RequestContext, itemId: string, data: { result?: string | null; notes?: string | null }) {
-        return db.auditChecklistItem.update({
-            where: { id: itemId },
+    static async updateChecklistItem(
+        db: PrismaTx,
+        ctx: RequestContext,
+        itemId: string,
+        auditId: string,
+        data: { result?: string | null; notes?: string | null },
+    ) {
+        // Tenant + audit scoped write. AuditChecklistItem has no
+        // @@unique([id, tenantId]) compound (only `id` is unique), so we
+        // cannot narrow a `.update` where by tenant/audit — `updateMany`
+        // is the only way to bind the write to (id, tenantId, auditId).
+        // Without this, `where: { id }` alone let a caller update a
+        // checklist item belonging to another audit (or tenant).
+        const res = await db.auditChecklistItem.updateMany({
+            where: { id: itemId, tenantId: ctx.tenantId, auditId },
             data: {
                 // `result` maps to the non-null ChecklistResult enum column —
                 // a null/absent input means "leave unchanged".
@@ -82,5 +96,9 @@ export class AuditRepository {
                 notes: data.notes,
             },
         });
+        // Exactly one row matches for a legitimate (tenant-owned, correct
+        // audit) item; 0 means the id was foreign / mismatched and nothing
+        // was written.
+        return res.count === 1;
     }
 }
