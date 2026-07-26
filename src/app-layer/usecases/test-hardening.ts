@@ -12,7 +12,7 @@
  * where verifyFileIntegrity wants a storage pathKey).
  */
 import { RequestContext } from '../types';
-import { assertCanReadTests } from '../policies/test.policies';
+import { assertCanReadTests, assertCanExportTests } from '../policies/test.policies';
 import { assertCanManageAuditPacks } from '../policies/audit-readiness.policies';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
@@ -109,9 +109,15 @@ export async function verifyRunEvidence(ctx: RequestContext, runId: string) {
             }
         }
 
+        // A FILE link is only integrity-verified when its recomputed hash
+        // MATCHES the frozen hash. `null` (no hash / unverifiable) and `false`
+        // (mismatch) both fail — folding `null` into the pass was the fail-open
+        // path where a hashless FILE link scored VERIFIED. With link-time
+        // rejection of unresolvable files, a live `null` now means a file that
+        // existed but carried no upload checksum: still unverifiable, not a pass.
         const allFileLinksVerified = results
             .filter(r => r.kind === 'FILE')
-            .every(r => r.matches === true || r.matches === null);
+            .every(r => r.matches === true);
 
         return {
             runId,
@@ -257,8 +263,13 @@ interface ExportOptions {
 /**
  * Export test evidence bundle as CSV or JSON.
  */
+const EXPORT_RUN_LIMIT = 500;
+
 export async function exportTestEvidenceBundle(ctx: RequestContext, options: ExportOptions) {
-    assertCanReadTests(ctx);
+    // Exporting the bundle carries run notes / hashes / control codes out of the
+    // app — an EXPORT action (reports.export), not the vacuous read a READER
+    // always passes.
+    assertCanExportTests(ctx);
 
     return runInTenantContext(ctx, async (db: PrismaTx) => {
         const where: Record<string, unknown> = { tenantId: ctx.tenantId };
@@ -269,7 +280,9 @@ export async function exportTestEvidenceBundle(ctx: RequestContext, options: Exp
             where.createdAt = { gte: since };
         }
 
-        const runs = await db.controlTestRun.findMany({
+        // Fetch one past the cap so we can honestly report truncation — an
+        // "evidence bundle" that silently drops runs is an integrity problem.
+        const fetched = await db.controlTestRun.findMany({
             where,
             include: {
                 testPlan: { select: { name: true, method: true, frequency: true } },
@@ -283,8 +296,10 @@ export async function exportTestEvidenceBundle(ctx: RequestContext, options: Exp
                 },
             },
             orderBy: { createdAt: 'desc' },
-            take: 500,
+            take: EXPORT_RUN_LIMIT + 1,
         });
+        const truncated = fetched.length > EXPORT_RUN_LIMIT;
+        const runs = fetched.slice(0, EXPORT_RUN_LIMIT);
 
         const rows = runs.map((run) => ({
             runId: run.id,
@@ -320,9 +335,15 @@ export async function exportTestEvidenceBundle(ctx: RequestContext, options: Exp
                     }).join(',')
                 ),
             ];
+            // Never let a CSV imply completeness it doesn't have.
+            if (truncated) {
+                csvLines.push(
+                    `# NOTE: results truncated at ${EXPORT_RUN_LIMIT} runs — narrow by controlId or period to export the rest.`,
+                );
+            }
             return csvLines.join('\n') + '\n';
         }
 
-        return rows;
+        return { rows, truncated, limit: EXPORT_RUN_LIMIT };
     });
 }

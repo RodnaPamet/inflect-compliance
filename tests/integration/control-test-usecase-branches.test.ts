@@ -109,7 +109,7 @@ describeFn('control-test usecase — branch coverage (integration)', () => {
         await expect(completeTestRun(ctx, 'nope', { result: 'PASS' })).rejects.toThrow(/not found/i);
         await expect(retestFromRun(ctx, 'nope')).rejects.toThrow(/not found/i);
         await expect(linkEvidenceToRun(ctx, 'nope', { kind: 'LINK', url: 'https://x.test' })).rejects.toThrow(/not found/i);
-        await expect(unlinkEvidenceFromRun(ctx, 'nope')).rejects.toThrow(/not found/i);
+        await expect(unlinkEvidenceFromRun(ctx, 'run-nope', 'nope')).rejects.toThrow(/not found/i);
         await expect(createAutomatedTestRun(ctx, 'nope', { result: 'PASS' })).rejects.toThrow(/not found/i);
         expect(Array.isArray(await listControlTestPlans(ctx, controlId))).toBe(true);
     });
@@ -121,7 +121,7 @@ describeFn('control-test usecase — branch coverage (integration)', () => {
         await expect(completeTestRun(reader, 'x', { result: 'PASS' })).rejects.toThrow(/permission/i);
         await expect(retestFromRun(reader, 'x')).rejects.toThrow(/permission/i);
         await expect(linkEvidenceToRun(reader, 'x', { kind: 'LINK' })).rejects.toThrow(/permission/i);
-        await expect(unlinkEvidenceFromRun(reader, 'x')).rejects.toThrow(/permission/i);
+        await expect(unlinkEvidenceFromRun(reader, 'x', 'x')).rejects.toThrow(/permission/i);
         await expect(bulkSetTestPlanStatus(reader, ['x'], 'PAUSED')).rejects.toThrow(/permission/i);
         await expect(bulkDeleteTestPlan(reader, ['x'])).rejects.toThrow(/permission/i);
         await expect(bulkAssignTestPlan(reader, ['x'], null)).rejects.toThrow(/permission/i);
@@ -288,7 +288,7 @@ describeFn('control-test usecase — branch coverage (integration)', () => {
         expect(link.id).toBeTruthy();
         const evList = await listRunEvidence(ctx, retest.id);
         expect(evList).toHaveLength(1);
-        await unlinkEvidenceFromRun(ctx, link.id);
+        await unlinkEvidenceFromRun(ctx, retest.id, link.id);
         expect(await listRunEvidence(ctx, retest.id)).toHaveLength(0);
     });
 

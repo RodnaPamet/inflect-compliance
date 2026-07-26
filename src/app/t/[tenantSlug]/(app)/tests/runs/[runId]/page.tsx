@@ -567,7 +567,9 @@ export default function TestRunPage() {
             <div className={cardVariants({ density: 'compact' })}>
                 <div className="flex items-center justify-between mb-3">
                     <Heading level={3}>{t('run.evidenceHeading', { count: run.evidence?.length ?? 0 })}</Heading>
-                    {permissions.canWrite && (
+                    {/* A completed run is frozen audit evidence — its evidence
+                        set is immutable server-side, so hide the add affordance. */}
+                    {permissions.canWrite && !isCompleted && (
                         <Button
                             variant="primary"
                             icon={showEvForm ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
@@ -692,7 +694,7 @@ export default function TestRunPage() {
                                         {ev.createdBy?.name || ev.createdBy?.email} • {formatDate(ev.createdAt)}
                                     </p>
                                 </div>
-                                {permissions.canWrite && (
+                                {permissions.canWrite && !isCompleted && (
                                     <Tooltip content={t('run.unlinkTooltip')}>
                                         <Button
                                             variant="ghost"

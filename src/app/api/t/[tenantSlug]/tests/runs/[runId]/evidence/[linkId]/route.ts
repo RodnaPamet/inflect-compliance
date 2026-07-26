@@ -10,6 +10,7 @@ import { jsonResponse } from '@/lib/api-response';
 export const DELETE = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; runId: string; linkId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    await unlinkEvidenceFromRun(ctx, params.linkId);
+    // Scope the unlink to THIS run — the link must belong to the run in the URL.
+    await unlinkEvidenceFromRun(ctx, params.runId, params.linkId);
     return jsonResponse({ ok: true });
 });
