@@ -244,6 +244,16 @@ export async function createTask(ctx: RequestContext, input: {
         if (input.metadataJson !== undefined) {
             input.metadataJson = validateTaskMetadata(input.metadataJson);
         }
+        // Epic C.5 — sanitise free text at the USECASE layer, before it is
+        // persisted (and, for `description`, before the field-encryption
+        // middleware seals it). Comments and evidence notes already did this;
+        // title/description did not, even though both reach PDF export,
+        // audit-pack share links and any SDK consumer reading the row
+        // verbatim — surfaces where render-time escaping does not help.
+        input.title = sanitizePlainText(input.title);
+        if (input.description != null) {
+            input.description = sanitizePlainText(input.description);
+        }
         // TP-2 (hole 2b) — segregation of duties at creation: reviewer ≠ assignee.
         assertReviewerIsNotAssignee(input.reviewerUserId, input.assigneeUserId);
         // Both user ids come from the request body and are stamped with
@@ -358,6 +368,12 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
         // with ctx.tenantId on write — resolve it against an ACTIVE
         // membership first (createTask does the same for assignee+reviewer).
         await assertActiveMembers(db, ctx, [patch.reviewerUserId]);
+        // Epic C.5 — sanitise the same two free-text fields on edit; an
+        // update path that skipped it would reopen exactly what create closes.
+        if (patch.title !== undefined) patch.title = sanitizePlainText(patch.title);
+        if (patch.description != null) {
+            patch.description = sanitizePlainText(patch.description);
+        }
         // Validate metadataJson on write
         if (patch.metadataJson !== undefined) {
             patch.metadataJson = validateTaskMetadata(patch.metadataJson);

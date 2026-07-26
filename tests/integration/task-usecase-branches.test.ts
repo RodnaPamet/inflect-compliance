@@ -304,6 +304,33 @@ describeFn('task usecase — branch coverage (integration)', () => {
         expect(Array.isArray(await listTasksByControl(ctx, controlId))).toBe(true);
     });
 
+    it('sanitises title + description on create AND update', async () => {
+        // Epic C.5 — free text is sanitised at the usecase layer, before
+        // persistence (and before field-encryption seals `description`).
+        // Comments already did this; title/description did not, despite
+        // reaching PDF export and audit-pack share links verbatim.
+        const t = await createTask(ctx, {
+            title: 'clean<script>alert(1)</script>title',
+            description: 'body<script>alert(2)</script>text',
+        });
+        expect(t.title).not.toMatch(/<script/i);
+        expect(t.title).not.toMatch(/alert/);
+        expect(t.title).toContain('clean');
+
+        const fetched = await getTask(ctx, t.id);
+        expect(fetched.description ?? '').not.toMatch(/<script/i);
+
+        const updated = await updateTask(ctx, t.id, {
+            title: 'edited<script>alert(3)</script>',
+            description: 'newbody<script>alert(4)</script>',
+        });
+        expect(updated?.title).not.toMatch(/<script/i);
+        expect(updated?.title).not.toMatch(/alert/);
+        const refetched = await getTask(ctx, t.id);
+        expect(refetched.description ?? '').not.toMatch(/<script/i);
+        expect(refetched.description ?? '').not.toMatch(/alert/);
+    });
+
     it('bulk: assign, set-status (gates + all-or-nothing), set-due, delete', async () => {
         const a = await createTask(ctx, { title: 'bulk-a' });
         const b = await createTask(ctx, { title: 'bulk-b' });
