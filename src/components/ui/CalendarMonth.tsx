@@ -3,10 +3,11 @@
 /**
  * Epic 49 — <CalendarMonth>.
  *
- * Monthly calendar grid (7 columns × 5-6 rows). Each day cell shows
- * up to N event dots colored by category. Clicking a dot navigates
- * to the event's `href`; clicking the day header selects the day
- * (caller can show a side panel of all events for that day).
+ * Monthly calendar grid (7 columns × 6 fixed rows = 42 cells). Each
+ * day cell shows up to N event dots colored by category. Clicking a
+ * dot navigates to the event's `href`; clicking the day header
+ * selects the day (caller can show a side panel of all events for
+ * that day).
  *
  * Design choices:
  *   - Pure HTML/CSS grid — no chart library needed
@@ -14,16 +15,28 @@
  *   - Sparse-data friendly: empty days render as plain cells
  *   - Overflow handled by collapsing extra events into a "+N more"
  *     pill that, when clicked, opens the same day-selection pane
- *   - Today's cell is highlighted with a token-driven ring
+ *   - Today's cell is highlighted with a token-driven ring, matched
+ *     against the VIEWER'S LOCAL calendar day (not the UTC day) so a
+ *     UTC−8 user late in the evening still sees the correct cell ringed
+ *   - FIXED 6 rows every month so the grid height never jumps as the
+ *     user pages between months
+ *   - Full grid a11y: role=grid/row/gridcell/columnheader, a roving
+ *     tabindex, arrow/Home/End keyboard navigation, per-cell aria-label
+ *     summaries, and aria-current on today
  */
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import type {
     CalendarEvent,
+    CalendarEventCategory,
 } from '@/app-layer/schemas/calendar.schemas';
 import { getCategoryTone } from '@/lib/design/status-tone';
+import { formatDate, formatMonthYear, formatWeekdayShort } from '@/lib/format-date';
+import { categoryLabel } from '@/lib/calendar-labels';
+import { Tooltip, TooltipProvider } from '@/components/ui/tooltip';
 
 // ─── Public props ─────────────────────────────────────────────────────
 
@@ -74,33 +87,36 @@ export interface CalendarMonthProps {
 
 const DAY_MS = 86_400_000;
 
+/** Always render a fixed 6-row grid so the calendar height is stable. */
+const TOTAL_CELLS = 42;
 
 function startOfUtcMonth(d: Date): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-}
-
-function endOfUtcMonth(d: Date): Date {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
 }
 
 function toYMD(d: Date): string {
     return d.toISOString().slice(0, 10);
 }
 
-function isSameUtcDay(a: Date, b: Date): boolean {
-    return (
-        a.getUTCFullYear() === b.getUTCFullYear() &&
-        a.getUTCMonth() === b.getUTCMonth() &&
-        a.getUTCDate() === b.getUTCDate()
-    );
+/**
+ * The viewer's LOCAL calendar day as `YYYY-MM-DD`. Used only for the
+ * "is this cell today" ring — the month cells themselves are UTC-derived
+ * (the grid is a UTC month). Comparing local Y-M-D to each cell's UTC
+ * Y-M-D means a UTC−8 user late in the evening still sees today ringed,
+ * not tomorrow.
+ */
+function toLocalYMD(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
 }
 
-const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Weekday column headers, Sun→Sat, localized + SSR-safe via the shared
+// formatter. 2023-01-01 is a Sunday, so indices 0..6 land on Sun..Sat.
+const WEEKDAY_HEADERS = Array.from({ length: 7 }, (_, i) =>
+    formatWeekdayShort(new Date(Date.UTC(2023, 0, 1 + i))),
+);
 
 // ─── Component ───────────────────────────────────────────────────────
 
@@ -116,9 +132,11 @@ export function CalendarMonth({
     className,
     'data-testid': dataTestId = 'calendar-month',
 }: CalendarMonthProps) {
+    const t = useTranslations('calendar');
     const todayDate = today ?? new Date();
+    const todayLocalYmd = toLocalYMD(todayDate);
     const monthStart = startOfUtcMonth(month);
-    const monthEnd = endOfUtcMonth(month);
+    const monthLabel = formatMonthYear(monthStart);
 
     // Bucket events by YYYY-MM-DD.
     const eventsByDay = React.useMemo(() => {
@@ -141,194 +159,365 @@ export function CalendarMonth({
         return m;
     }, [events]);
 
-    // Build the 6×7 grid. Pad with leading/trailing days from adjacent
-    // months so the grid is always rectangular.
+    // Build the fixed 6×7 grid. Pad with leading days from the previous
+    // month and trailing days from the next so every month renders as a
+    // full 42-cell (6-row) rectangle — the height never jumps.
     const padStart = monthStart.getUTCDay();
-    const padEnd = 6 - monthEnd.getUTCDay();
-    const totalCells = padStart + monthEnd.getUTCDate() + padEnd;
-    const cells: { date: Date; inMonth: boolean }[] = [];
     const gridStartMs = monthStart.getTime() - padStart * DAY_MS;
-    for (let i = 0; i < totalCells; i++) {
+    const cells: { date: Date; ymd: string; inMonth: boolean }[] = [];
+    for (let i = 0; i < TOTAL_CELLS; i++) {
         const d = new Date(gridStartMs + i * DAY_MS);
-        cells.push({ date: d, inMonth: d.getUTCMonth() === monthStart.getUTCMonth() });
+        cells.push({
+            date: d,
+            ymd: toYMD(d),
+            inMonth: d.getUTCMonth() === monthStart.getUTCMonth(),
+        });
+    }
+    // Group the flat 42 cells into 6 week rows for `role="row"`.
+    const weeks: (typeof cells)[] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+        weeks.push(cells.slice(i, i + 7));
+    }
+
+    // ─── Roving tabindex + keyboard navigation (#12) ─────────────────
+    //
+    // Exactly one day cell is tabbable at a time. Default target: the
+    // selected day, else today, else the first day OF THE MONTH. Once
+    // the user arrows around, `activeIndex` takes over. Focus is moved
+    // imperatively via `cellRefs` so arrow keys move DOM focus too.
+    const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
+    const cellRefs = React.useRef<Array<HTMLDivElement | null>>([]);
+
+    // Reset the roving target when the visible month changes.
+    const monthKey = `${monthStart.getUTCFullYear()}-${monthStart.getUTCMonth()}`;
+    React.useEffect(() => {
+        setActiveIndex(null);
+    }, [monthKey]);
+
+    const defaultRovingIndex = (() => {
+        if (selectedYmd) {
+            const i = cells.findIndex((c) => c.ymd === selectedYmd);
+            if (i >= 0) return i;
+        }
+        const todayIdx = cells.findIndex((c) => c.ymd === todayLocalYmd);
+        if (todayIdx >= 0) return todayIdx;
+        const firstInMonth = cells.findIndex((c) => c.inMonth);
+        return firstInMonth >= 0 ? firstInMonth : 0;
+    })();
+    const rovingIndex = activeIndex ?? defaultRovingIndex;
+
+    function focusCell(index: number) {
+        setActiveIndex(index);
+        cellRefs.current[index]?.focus();
+    }
+
+    function handleCellKeyDown(
+        e: React.KeyboardEvent<HTMLDivElement>,
+        index: number,
+        ymd: string,
+    ) {
+        // Only act when the cell itself is focused — never hijack keys
+        // aimed at a focusable child (the add button, day-number button,
+        // or an event link).
+        if (e.target !== e.currentTarget) return;
+
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+            e.preventDefault();
+            onSelectDate?.(ymd);
+            return;
+        }
+
+        let target: number;
+        switch (e.key) {
+            case 'ArrowRight':
+                target = index + 1;
+                break;
+            case 'ArrowLeft':
+                target = index - 1;
+                break;
+            case 'ArrowDown':
+                target = index + 7;
+                break;
+            case 'ArrowUp':
+                target = index - 7;
+                break;
+            case 'Home':
+                target = index - (index % 7);
+                break;
+            case 'End':
+                target = index - (index % 7) + 6;
+                break;
+            default:
+                return;
+        }
+        e.preventDefault();
+        if (target >= 0 && target < cells.length) focusCell(target);
     }
 
     return (
+        // Self-contained tooltip scope — mirrors GanttTimeline /
+        // RiskMatrixCell so this primitive renders correctly even when
+        // mounted outside the app-root TooltipProvider (Storybook, tests,
+        // isolated islands). Nested providers are valid; the app-root one
+        // still governs delay-timer sharing everywhere else.
+        <TooltipProvider>
+        {/*
+         * ARIA grid tree: role=grid (section) → rowgroup → row →
+         * columnheader / gridcell. The header + day-grid stay as two
+         * separate visual containers (they're each a `role="rowgroup"`)
+         * so `role="row"` / `role="columnheader"` always have a valid
+         * required parent — a lone `role="row"` outside a grid would
+         * trip the a11y (axe) gate.
+         */}
         <section
+            role="grid"
             className={cn('flex flex-col gap-tight', className)}
             data-testid={dataTestId}
-            aria-label={`${MONTH_NAMES[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`}
+            aria-label={monthLabel}
         >
             {/* Weekday header */}
-            <div className="grid grid-cols-7 gap-px text-xs font-medium text-content-muted">
-                {WEEKDAY_NAMES.map((label) => (
-                    <div
-                        key={label}
-                        className="text-center py-1"
-                    >
-                        {label}
-                    </div>
-                ))}
+            <div
+                role="rowgroup"
+                className="grid grid-cols-7 gap-px text-xs font-medium text-content-muted"
+            >
+                {/* `display: contents` — the row stays in the a11y tree
+                    while its cells participate in the parent CSS grid. */}
+                <div role="row" className="contents">
+                    {WEEKDAY_HEADERS.map((label, i) => (
+                        <div
+                            key={i}
+                            role="columnheader"
+                            className="text-center py-1"
+                        >
+                            {label}
+                        </div>
+                    ))}
+                </div>
             </div>
 
             {/* Day grid */}
-            <div className="grid grid-cols-7 gap-px bg-border-subtle rounded-lg overflow-hidden">
-                {cells.map((cell) => {
-                    const ymd = toYMD(cell.date);
-                    const dayEvents = eventsByDay.get(ymd) ?? [];
-                    const isToday = isSameUtcDay(cell.date, todayDate);
-                    const visible = dayEvents.slice(0, maxDotsPerDay);
-                    const overflow = dayEvents.length - visible.length;
+            <div
+                role="rowgroup"
+                className="grid grid-cols-7 gap-px bg-border-subtle rounded-lg overflow-hidden"
+            >
+                {weeks.map((week, wi) => (
+                    // `display: contents` — the row is present in the
+                    // accessibility tree but its cells still participate
+                    // in the parent CSS grid.
+                    <div key={`week-${wi}`} role="row" className="contents">
+                        {week.map((cell, ci) => {
+                            const index = wi * 7 + ci;
+                            const ymd = cell.ymd;
+                            const dayEvents = eventsByDay.get(ymd) ?? [];
+                            const isToday = ymd === todayLocalYmd;
+                            const visible = dayEvents.slice(0, maxDotsPerDay);
+                            const overflow = dayEvents.length - visible.length;
 
-                    // v2-fu-6 — the entire cell is clickable, not
-                    // just the day number. We keep the number `<button>`
-                    // as the keyboard-accessible target (so screen
-                    // readers can tab into individual days), and add
-                    // pointer-click handling to the outer cell so
-                    // mouse users get the natural "click anywhere
-                    // in the box" affordance. Inner `<Link>` event
-                    // navigation uses `stopPropagation` so opening
-                    // an event doesn't also fire day selection.
-                    const handleCellClick = onSelectDate
-                        ? (e: React.MouseEvent<HTMLDivElement>) => {
-                              // Don't trigger when the click is on a
-                              // child link / button — the child's own
-                              // handler runs (number button still
-                              // calls onSelectDate; event Link
-                              // navigates).
-                              const target = e.target as HTMLElement;
-                              if (target.closest('a, button')) return;
-                              onSelectDate(ymd);
-                          }
-                        : undefined;
-                    const isSelected = selectedYmd === ymd;
-                    return (
-                        <div
-                            key={ymd}
-                            className={cn(
-                                'group relative min-h-[80px] p-1.5 flex flex-col gap-1',
-                                cell.inMonth
-                                    ? 'bg-bg-default'
-                                    : 'bg-bg-muted/30 opacity-60',
-                                isToday && 'ring-1 ring-[var(--brand-default)] ring-inset',
-                                // B3 — selected-day state. The brand
-                                // ring (2px-inset) + brand-subtle wash
-                                // make the click feel acknowledged. The
-                                // selected ring is intentionally 2px so
-                                // it reads over the today ring (1px)
-                                // when both apply to the same cell.
-                                isSelected &&
-                                    'ring-2 ring-[var(--brand-default)] ring-inset bg-brand-subtle/40',
-                                onSelectDate &&
-                                    'cursor-pointer hover:bg-bg-muted/50 transition-colors duration-150 ease-out',
-                            )}
-                            data-ymd={ymd}
-                            data-in-month={cell.inMonth}
-                            data-today={isToday || undefined}
-                            data-selected={isSelected || undefined}
-                            onClick={handleCellClick}
-                            // PR-C — double-click opens the
-                            // task-create modal pre-filled with
-                            // this date. The single-click select
-                            // continues to fire; React triggers
-                            // BOTH `onClick` and `onDoubleClick`
-                            // on a dblclick gesture (click fires
-                            // first), which is the right shape
-                            // here — we want the calendar to
-                            // visibly select the day and THEN
-                            // open the modal.
-                            onDoubleClick={
-                                onDoubleClickDate
-                                    ? () => onDoubleClickDate(ymd)
-                                    : undefined
+                            // #12 — a screen-reader summary of the day's
+                            // events. The visual dots are colour-only; this
+                            // restates the same information as localized text
+                            // ("3 events: 2 control, 1 risk").
+                            const categoryCounts = new Map<
+                                CalendarEventCategory,
+                                number
+                            >();
+                            for (const ev of dayEvents) {
+                                categoryCounts.set(
+                                    ev.category,
+                                    (categoryCounts.get(ev.category) ?? 0) + 1,
+                                );
                             }
-                        >
-                            <div className="flex items-center justify-between gap-1">
-                                {/* Create-on-this-day affordance. The
-                                    double-click shortcut existed but was
-                                    invisible — no cursor change, no tooltip,
-                                    nothing in the aria-label — so nobody
-                                    could discover it. Revealed on hover /
-                                    keyboard focus; the cell's own dblclick
-                                    still works for people who know it. */}
-                                {onDoubleClickDate ? (
-                                    <button
-                                        type="button"
-                                        className={cn(
-                                            'text-xs leading-none px-1 py-0.5 rounded text-content-muted',
-                                            'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-                                            'hover:bg-bg-muted hover:text-content-emphasis transition-opacity',
-                                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
-                                        )}
-                                        onClick={() => onDoubleClickDate(ymd)}
-                                        title={newTaskLabel}
-                                        aria-label={`${newTaskLabel} — ${ymd}`}
-                                        data-testid={`calendar-day-add-${ymd}`}
-                                    >
-                                        +
-                                    </button>
-                                ) : (
-                                    <span />
-                                )}
-                                <button
-                                    type="button"
+                            const summaryItems = Array.from(
+                                categoryCounts,
+                                ([cat, n]) =>
+                                    t('dayCellCategorySummaryItem', {
+                                        count: n,
+                                        category: categoryLabel(t, cat),
+                                    }),
+                            );
+                            const cellAriaLabel = t('dayCellAria', {
+                                date: formatDate(cell.date),
+                                count: dayEvents.length,
+                                summary:
+                                    summaryItems.length > 0
+                                        ? `: ${summaryItems.join(', ')}`
+                                        : '',
+                            });
+
+                            // v2-fu-6 — the entire cell is clickable, not
+                            // just the day number. Inner `<Link>` / `<button>`
+                            // handlers run instead when the click lands on
+                            // them (guarded by the `closest` check).
+                            const handleCellClick = onSelectDate
+                                ? (e: React.MouseEvent<HTMLDivElement>) => {
+                                      const target = e.target as HTMLElement;
+                                      if (target.closest('a, button')) return;
+                                      onSelectDate(ymd);
+                                  }
+                                : undefined;
+                            const isSelected = selectedYmd === ymd;
+
+                            return (
+                                <div
+                                    key={ymd}
+                                    ref={(el) => {
+                                        cellRefs.current[index] = el;
+                                    }}
+                                    role="gridcell"
+                                    tabIndex={index === rovingIndex ? 0 : -1}
+                                    aria-current={isToday ? 'date' : undefined}
+                                    aria-label={cellAriaLabel}
                                     className={cn(
-                                        'text-xs leading-none px-1 py-0.5 rounded text-content-muted hover:bg-bg-muted',
-                                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
-                                        isToday && 'text-content-emphasis font-semibold',
+                                        'group relative min-h-[80px] p-1.5 flex flex-col gap-1',
+                                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-inset',
+                                        cell.inMonth
+                                            ? 'bg-bg-default'
+                                            : 'bg-bg-muted/30 opacity-60',
+                                        isToday &&
+                                            'ring-1 ring-[var(--brand-default)] ring-inset',
+                                        // B3 — selected-day state. The brand
+                                        // ring (2px-inset) + brand-subtle wash
+                                        // make the click feel acknowledged. The
+                                        // selected ring is intentionally 2px so
+                                        // it reads over the today ring (1px)
+                                        // when both apply to the same cell.
+                                        isSelected &&
+                                            'ring-2 ring-[var(--brand-default)] ring-inset bg-brand-subtle/40',
+                                        onSelectDate &&
+                                            'cursor-pointer hover:bg-bg-muted/50 transition-colors duration-150 ease-out',
                                     )}
-                                    onClick={() => onSelectDate?.(ymd)}
-                                    aria-label={`${ymd}: ${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}`}
+                                    data-ymd={ymd}
+                                    data-in-month={cell.inMonth}
+                                    data-today={isToday || undefined}
+                                    data-selected={isSelected || undefined}
+                                    onClick={handleCellClick}
+                                    onKeyDown={(e) =>
+                                        handleCellKeyDown(e, index, ymd)
+                                    }
+                                    // PR-C — double-click opens the
+                                    // task-create modal pre-filled with
+                                    // this date. The single-click select
+                                    // continues to fire; React triggers
+                                    // BOTH `onClick` and `onDoubleClick`
+                                    // on a dblclick gesture (click fires
+                                    // first), which is the right shape
+                                    // here — we want the calendar to
+                                    // visibly select the day and THEN
+                                    // open the modal.
+                                    onDoubleClick={
+                                        onDoubleClickDate
+                                            ? () => onDoubleClickDate(ymd)
+                                            : undefined
+                                    }
                                 >
-                                    {cell.date.getUTCDate()}
-                                </button>
-                            </div>
-                            {visible.length > 0 && (
-                                <ul className="flex flex-col gap-0.5 min-h-0">
-                                    {visible.map((ev) => (
-                                        <li
-                                            key={ev.id}
-                                            data-event-id={ev.id}
-                                            data-event-category={ev.category}
-                                        >
-                                            <Link
-                                                href={ev.href}
-                                                title={`${ev.title}${ev.detail ? ` — ${ev.detail}` : ''}`}
-                                                className={cn(
-                                                    'flex items-center gap-1 px-1 py-0.5 rounded text-[10px] truncate',
-                                                    'hover:bg-bg-muted transition-colors',
-                                                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
-                                                    ev.status === 'overdue' && 'text-content-error',
-                                                    ev.status === 'done' && 'text-content-muted line-through',
-                                                )}
-                                            >
-                                                <span
+                                    <div className="flex items-center justify-between gap-1">
+                                        {/* Create-on-this-day affordance. The
+                                            double-click shortcut existed but was
+                                            invisible — no cursor change, no tooltip,
+                                            nothing in the aria-label — so nobody
+                                            could discover it. Revealed on hover /
+                                            keyboard focus; the cell's own dblclick
+                                            still works for people who know it. */}
+                                        {onDoubleClickDate ? (
+                                            <Tooltip content={newTaskLabel}>
+                                                <button
+                                                    type="button"
                                                     className={cn(
-                                                        'inline-block size-2 rounded-full shrink-0',
-                                                        getCategoryTone(ev.category).bg,
-                                                        ev.status === 'done' && 'opacity-40',
+                                                        'text-xs leading-none px-1 py-0.5 rounded text-content-muted',
+                                                        'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                                                        'hover:bg-bg-muted hover:text-content-emphasis transition-opacity',
+                                                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
                                                     )}
-                                                    aria-hidden="true"
-                                                />
-                                                <span className="truncate">{ev.title}</span>
-                                            </Link>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                            {overflow > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => onSelectDate?.(ymd)}
-                                    className="text-[10px] text-content-muted hover:text-content-emphasis text-left px-1"
-                                >
-                                    +{overflow} more
-                                </button>
-                            )}
-                        </div>
-                    );
-                })}
+                                                    onClick={() =>
+                                                        onDoubleClickDate(ymd)
+                                                    }
+                                                    aria-label={`${newTaskLabel} — ${ymd}`}
+                                                    data-testid={`calendar-day-add-${ymd}`}
+                                                >
+                                                    +
+                                                </button>
+                                            </Tooltip>
+                                        ) : (
+                                            <span />
+                                        )}
+                                        <button
+                                            type="button"
+                                            className={cn(
+                                                'text-xs leading-none px-1 py-0.5 rounded text-content-muted hover:bg-bg-muted',
+                                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
+                                                isToday &&
+                                                    'text-content-emphasis font-semibold',
+                                            )}
+                                            onClick={() => onSelectDate?.(ymd)}
+                                            aria-label={`${ymd}: ${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}`}
+                                        >
+                                            {cell.date.getUTCDate()}
+                                        </button>
+                                    </div>
+                                    {visible.length > 0 && (
+                                        <ul className="flex flex-col gap-0.5 min-h-0">
+                                            {visible.map((ev) => (
+                                                <li
+                                                    key={ev.id}
+                                                    data-event-id={ev.id}
+                                                    data-event-category={ev.category}
+                                                >
+                                                    <Tooltip
+                                                        content={
+                                                            ev.detail
+                                                                ? `${ev.title} — ${ev.detail}`
+                                                                : ev.title
+                                                        }
+                                                    >
+                                                        <Link
+                                                            href={ev.href}
+                                                            className={cn(
+                                                                'flex items-center gap-1 px-1 py-0.5 rounded text-[10px] truncate',
+                                                                'hover:bg-bg-muted transition-colors',
+                                                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
+                                                                ev.status === 'overdue' &&
+                                                                    'text-content-error',
+                                                                ev.status === 'done' &&
+                                                                    'text-content-muted line-through',
+                                                            )}
+                                                        >
+                                                            <span
+                                                                className={cn(
+                                                                    'inline-block size-2 rounded-full shrink-0',
+                                                                    getCategoryTone(
+                                                                        ev.category,
+                                                                    ).bg,
+                                                                    ev.status ===
+                                                                        'done' &&
+                                                                        'opacity-40',
+                                                                )}
+                                                                aria-hidden="true"
+                                                            />
+                                                            <span className="truncate">
+                                                                {ev.title}
+                                                            </span>
+                                                        </Link>
+                                                    </Tooltip>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                    {overflow > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onSelectDate?.(ymd)}
+                                            className="text-[10px] text-content-muted hover:text-content-emphasis text-left px-1"
+                                        >
+                                            {t('moreEvents', { count: overflow })}
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                ))}
             </div>
         </section>
+        </TooltipProvider>
     );
 }

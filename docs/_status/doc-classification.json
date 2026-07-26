@@ -1721,6 +1721,9 @@
         "docs/implementation-notes/2026-07-22-table-identity-and-override-decay.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-07-26-calendar-ui-hardening.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-07-26-calendar-backend-hardening.md": {
             "class": "historical"
         },

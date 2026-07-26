@@ -454,11 +454,15 @@ async function loadEvidenceEvents(
                 type: 'evidence-review',
                 category: 'evidence',
                 title: `Evidence review: ${r.title}`,
+                entityName: r.title,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
                 entityType: 'EVIDENCE',
                 entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/evidence/${r.id}`),
+                // Evidence has no `/evidence/[id]` route — detail opens as a
+                // sheet keyed off `?ev=`. This is the canonical deep-link
+                // (EvidenceClient / EvidenceSubTable use the same).
+                href: tenantHrefFromCtx(ctx, `/evidence?ev=${r.id}`),
                 ownerUserId: r.ownerUserId ?? undefined,
             };
         });
@@ -496,6 +500,7 @@ async function loadPolicyEvents(
                 type: 'policy-review',
                 category: 'policy',
                 title: `Policy review: ${r.title}`,
+                entityName: r.title,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
                 entityType: 'POLICY',
@@ -562,6 +567,7 @@ async function loadVendorEvents(
                 type: 'vendor-review',
                 category: 'vendor',
                 title: `Vendor review: ${r.name}`,
+                entityName: r.name,
                 date: r.nextReviewAt.toISOString(),
                 status: classifyStatus(r.nextReviewAt, now, isOffboarded),
                 entityType: 'VENDOR',
@@ -580,6 +586,7 @@ async function loadVendorEvents(
                 type: 'vendor-renewal',
                 category: 'vendor',
                 title: `Contract renewal: ${r.name}`,
+                entityName: r.name,
                 date: r.contractRenewalAt.toISOString(),
                 status: classifyStatus(
                     r.contractRenewalAt,
@@ -627,6 +634,8 @@ async function loadVendorDocumentEvents(
                 type: 'vendor-document-expiry',
                 category: 'vendor',
                 title: `${r.type} expires: ${r.vendor.name}`,
+                entityName: r.vendor.name,
+                detail: r.type,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, false),
                 entityType: 'VENDOR_DOCUMENT',
@@ -719,6 +728,7 @@ async function loadAuditCycleEvents(
                 type: 'audit-cycle',
                 category: 'audit',
                 title: `Audit cycle: ${r.name}`,
+                entityName: r.name,
                 date: start.toISOString(),
                 end: end?.toISOString(),
                 status: classifyStatus(end ?? start, now, isDone),
@@ -765,6 +775,7 @@ async function loadControlEvents(
                 type: 'control-review',
                 category: 'control',
                 title: `Control review: ${r.name}`,
+                entityName: r.name,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
                 entityType: 'CONTROL',
@@ -837,6 +848,7 @@ async function loadTestPlanEvents(
             type: 'control-test-due',
             category: 'control',
             title: `Test due: ${r.name}`,
+            entityName: r.name,
             date: date.toISOString(),
             status: classifyStatus(date, now, false),
             entityType: 'CONTROL_TEST_PLAN',
@@ -883,6 +895,7 @@ async function loadTaskEvents(
                 type: 'task-due',
                 category: 'task',
                 title: `Task due: ${r.title}`,
+                entityName: r.title,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
                 entityType: 'TASK',
@@ -949,6 +962,7 @@ async function loadRiskEvents(
                 type: 'risk-review',
                 category: 'risk',
                 title: `Risk review: ${r.title}`,
+                entityName: r.title,
                 date: r.nextReviewAt.toISOString(),
                 status: classifyStatus(r.nextReviewAt, now, isClosed),
                 entityType: 'RISK',
@@ -966,6 +980,7 @@ async function loadRiskEvents(
                 type: 'risk-target',
                 category: 'risk',
                 title: `Risk mitigation target: ${r.title}`,
+                entityName: r.title,
                 date: r.targetDate.toISOString(),
                 status: classifyStatus(r.targetDate, now, isClosed),
                 entityType: 'RISK',
@@ -1009,11 +1024,14 @@ async function loadFindingEvents(
                 type: 'finding-due',
                 category: 'finding',
                 title: `Finding due: ${r.title}`,
+                entityName: r.title,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
                 entityType: 'FINDING',
                 entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/findings/${r.id}`),
+                // Findings have no `/findings/[id]` detail route — land on the
+                // findings list rather than a 404.
+                href: tenantHrefFromCtx(ctx, `/findings`),
                 ownerUserId: r.owner ?? undefined,
             };
         });
@@ -1139,26 +1157,30 @@ async function loadTreatmentMilestoneEvents(
         orderBy: { dueDate: 'asc' },
         take: limit,
     });
-    const events = rows.map((r): CalendarEvent => {
+    const events: CalendarEvent[] = [];
+    for (const r of rows) {
+        const riskId = r.treatmentPlan?.riskId;
+        // A milestone whose plan lost its risk link would emit a bare
+        // `/risks/` href — a list-page URL masquerading as a deep link.
+        // Omit it rather than ship a misleading click target.
+        if (!riskId) continue;
         const date = r.dueDate;
         const isDone = r.completedAt !== null;
         const riskTitle = r.treatmentPlan?.risk?.title ?? 'Risk';
-        return {
+        events.push({
             id: `TREATMENT_MILESTONE:${r.id}:treatment-milestone-due`,
             type: 'treatment-milestone-due',
             category: 'risk',
             title: `Milestone: ${r.title}`,
+            entityName: r.title,
             date: date.toISOString(),
             status: classifyStatus(date, now, isDone),
             entityType: 'TREATMENT_MILESTONE',
             entityId: r.id,
-            href: tenantHrefFromCtx(
-                ctx,
-                `/risks/${r.treatmentPlan?.riskId ?? ''}`,
-            ),
+            href: tenantHrefFromCtx(ctx, `/risks/${riskId}`),
             detail: riskTitle,
-        };
-    });
+        });
+    }
     return sourceResult(events, rows.length, limit);
 }
 
@@ -1198,6 +1220,7 @@ async function loadTreatmentPlanEvents(
             type: 'treatment-plan-target',
             category: 'risk',
             title: `Plan target: ${r.risk?.title ?? 'Risk'}`,
+            entityName: r.risk?.title ?? 'Risk',
             date: date.toISOString(),
             status: classifyStatus(date, now, false),
             entityType: 'RISK_TREATMENT_PLAN',
@@ -1253,6 +1276,7 @@ async function loadAccessReviewEvents(
                 type: 'access-review-due',
                 category: 'audit',
                 title: `Access review: ${r.name}`,
+                entityName: r.name,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, r.status === 'CLOSED'),
                 entityType: 'ACCESS_REVIEW',
@@ -1302,11 +1326,14 @@ async function loadTrainingEvents(
                 type: 'training-due',
                 category: 'task',
                 title: `Training due: ${r.course.name}`,
+                entityName: r.course.name,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, isDone),
                 entityType: 'TRAINING_ASSIGNMENT',
                 entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/training`),
+                // Training lives under /admin/training — there is no top-level
+                // /training route (this href used to 404).
+                href: tenantHrefFromCtx(ctx, `/admin/training`),
                 // Employee is an HR record, not a platform User (no userId
                 // on the model), so there is no ownerUserId to route
                 // notifications by — the assignee shows as detail copy.
@@ -1354,6 +1381,7 @@ async function loadIncidentNotificationEvents(
             type: 'incident-notification-due',
             category: 'finding',
             title: `Incident notification (${r.kind}): ${r.incident.title}`,
+            entityName: r.incident.title,
             date: r.dueAt.toISOString(),
             status: classifyStatus(r.dueAt, now, isDone),
             entityType: 'INCIDENT_NOTIFICATION',
@@ -1403,6 +1431,7 @@ async function loadControlExceptionEvents(
                 type: 'control-exception-expiry',
                 category: 'control',
                 title: `Exception expires: ${r.control.name}`,
+                entityName: r.control.name,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, false),
                 entityType: 'CONTROL_EXCEPTION',
@@ -1450,6 +1479,7 @@ async function loadVendorAssessmentEvents(
                 type: 'vendor-assessment-review',
                 category: 'vendor',
                 title: `Vendor reassessment: ${r.vendor.name}`,
+                entityName: r.vendor.name,
                 date: date.toISOString(),
                 status: classifyStatus(date, now, r.status === 'CLOSED'),
                 entityType: 'VENDOR_ASSESSMENT',

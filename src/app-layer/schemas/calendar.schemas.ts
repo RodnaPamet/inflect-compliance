@@ -139,7 +139,19 @@ export interface CalendarEvent {
     id: string;
     type: CalendarEventType;
     category: CalendarEventCategory;
+    /**
+     * Server-composed English title (`"Evidence review: X"`). Retained for
+     * back-compat + as the client's fallback; the UI prefers to recompose the
+     * display title from `type` + `entityName` through next-intl so labels are
+     * translatable. See `@/lib/calendar-labels`.
+     */
     title: string;
+    /**
+     * The bare entity noun the title is built around (evidence title, vendor
+     * name, risk title, …) — the translatable-title input. Absent only on
+     * events from a cached pre-migration response.
+     */
+    entityName?: string;
     /**
      * Point-in-time date for events without a duration. ISO 8601 date
      * string (UTC midnight) for day-resolution events; ISO datetime is
