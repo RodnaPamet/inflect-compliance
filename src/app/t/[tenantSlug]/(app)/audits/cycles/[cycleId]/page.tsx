@@ -15,6 +15,12 @@ import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
+import {
+    AUDIT_CYCLE_STATUS_VARIANT,
+    AUDIT_PACK_STATUS_VARIANT,
+    AUDIT_STATUS_VARIANT,
+    DEFAULT_STATUS_VARIANT,
+} from '../../_lib/status-variants';
 
 const FW_META: Record<string, { icon: AppIconName; label: string }> = {
     ISO27001: { icon: 'shield', label: 'ISO/IEC 27001:2022' },
@@ -45,12 +51,6 @@ interface AuditCycleDetail {
 }
 
 const CYCLE_STATUSES = ['PLANNING', 'IN_PROGRESS', 'READY', 'COMPLETE'] as const;
-const CYCLE_STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'warning' | 'success'> = {
-    PLANNING: 'neutral',
-    IN_PROGRESS: 'info',
-    READY: 'warning',
-    COMPLETE: 'success',
-};
 interface DefaultPackSelectionBucket {
     count: number;
     ids: string[];
@@ -78,14 +78,27 @@ export default function CycleDetailPage() {
     const [cycle, setCycle] = useState<AuditCycleDetail | null>(null);
     const [preview, setPreview] = useState<DefaultPackPreview | null>(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [creating, setCreating] = useState(false);
 
-    useEffect(() => {
+    // fix/audits-surface — a network blip on the initial load must surface a
+    // real error+retry state, not the "cycle not found" empty state. Without a
+    // .catch the rejected promise left `cycle` null and the !cycle branch
+    // masqueraded as a 404. `load` is re-callable so the retry button can
+    // re-fetch in place.
+    const load = useCallback(() => {
+        setLoading(true);
+        setLoadError(false);
         Promise.all([
             fetch(apiUrl(`/audits/cycles/${cycleId}`)).then(r => r.ok ? r.json() : null),
             fetch(apiUrl(`/audits/cycles/${cycleId}?action=default-pack-preview`)).then(r => r.ok ? r.json() : null),
-        ]).then(([c, p]) => { setCycle(c); setPreview(p); }).finally(() => setLoading(false));
+        ])
+            .then(([c, p]) => { setCycle(c); setPreview(p); })
+            .catch(() => setLoadError(true))
+            .finally(() => setLoading(false));
     }, [apiUrl, cycleId]);
+
+    useEffect(() => { load(); }, [load]);
 
     const createDefaultPack = async () => {
         if (!cycle) return;
@@ -95,7 +108,7 @@ export default function CycleDetailPage() {
             const packRes = await fetch(apiUrl('/audits/packs'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ auditCycleId: cycleId, name: `${cycle.frameworkKey} Default Pack` }),
+                body: JSON.stringify({ auditCycleId: cycleId, name: tx('cycleDetail.defaultPackName', { framework: cycle.frameworkKey }) }),
             });
             if (!packRes.ok) {
                 const err = await packRes.json().catch(() => null);
@@ -167,6 +180,18 @@ export default function CycleDetailPage() {
             </EntityDetailLayout>
         );
     }
+    if (loadError) {
+        return (
+            <EntityDetailLayout title="" back={{ smart: true }} breadcrumbs={breadcrumbs}>
+                <div className="p-12 text-center space-y-default" role="alert" data-testid="cycle-load-error">
+                    <p className="text-content-error">{tx('cycleDetail.loadError')}</p>
+                    <Button variant="secondary" onClick={() => load()} id="cycle-load-retry-btn">
+                        {tx('cycleDetail.retry')}
+                    </Button>
+                </div>
+            </EntityDetailLayout>
+        );
+    }
     if (!cycle) {
         return (
             <EntityDetailLayout empty={{ message: tx('cycleDetail.notFound') }} title="" breadcrumbs={breadcrumbs}>
@@ -202,7 +227,7 @@ export default function CycleDetailPage() {
                     items={[
                         { label: tx('cycleDetail.framework'), value: fw.label },
                         { label: tx('cycleDetail.version'), value: `v${cycle.frameworkVersion}` },
-                        { kind: 'status' as const, label: tx('cycleDetail.status'), value: tx(`cycleStatus.${cycle.status}` as Parameters<typeof tx>[0]), variant: CYCLE_STATUS_VARIANT[cycle.status] ?? 'neutral' },
+                        { kind: 'status' as const, label: tx('cycleDetail.status'), value: tx(`cycleStatus.${cycle.status}` as Parameters<typeof tx>[0]), variant: AUDIT_CYCLE_STATUS_VARIANT[cycle.status] ?? DEFAULT_STATUS_VARIANT },
                     ]}
                 />
             }
@@ -232,7 +257,7 @@ export default function CycleDetailPage() {
             <div className={cn(cardVariants(), 'space-y-default')}>
                 <div className="flex items-center justify-between">
                     <Heading level={2}>{tx('cycleDetail.defaultPackPreview')}</Heading>
-                    <Button variant="primary" onClick={createDefaultPack} disabled={creating} id="create-default-pack-btn" icon={<AppIcon name="package" size={16} />}>
+                    <Button variant="primary" onClick={createDefaultPack} disabled={creating || preview === null} id="create-default-pack-btn" icon={<AppIcon name="package" size={16} />}>
                         {creating ? tx('cycleDetail.creating') : tx('cycleDetail.pack')}
                     </Button>
                 </div>
@@ -275,10 +300,10 @@ export default function CycleDetailPage() {
                 </div>
                 {cycle.audits?.length > 0 ? (
                     cycle.audits.map((a) => (
-                        <Link key={a.id} href={`/t/${tenantSlug}/audits/${a.id}`}
+                        <Link key={a.id} href={`/t/${tenantSlug}/audits?cycleId=${cycleId}`}
                             className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between hover:bg-bg-muted/50 transition block')} id={`cycle-audit-link-${a.id}`}>
                             <span className="font-medium text-sm">{a.title}</span>
-                            <StatusBadge variant={a.status === 'COMPLETED' ? 'success' : a.status === 'IN_PROGRESS' ? 'info' : 'neutral'} className="ml-2">{auditStatusLabel(a.status)}</StatusBadge>
+                            <StatusBadge variant={AUDIT_STATUS_VARIANT[a.status] ?? DEFAULT_STATUS_VARIANT} className="ml-2">{auditStatusLabel(a.status)}</StatusBadge>
                         </Link>
                     ))
                 ) : (
@@ -295,7 +320,7 @@ export default function CycleDetailPage() {
                             className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between hover:bg-bg-muted/50 transition block')} id={`pack-link-${p.id}`}>
                             <div>
                                 <span className="font-medium text-sm">{p.name}</span>
-                                <StatusBadge variant={p.status === 'DRAFT' ? 'neutral' : p.status === 'FROZEN' ? 'info' : 'success'} className="ml-2">{p.status}</StatusBadge>
+                                <StatusBadge variant={AUDIT_PACK_STATUS_VARIANT[p.status] ?? DEFAULT_STATUS_VARIANT} className="ml-2">{p.status}</StatusBadge>
                             </div>
                             <span className="text-xs text-content-subtle">→</span>
                         </Link>

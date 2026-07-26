@@ -10,7 +10,9 @@ import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button-variants';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
-import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { EmptyState } from '@/components/ui/empty-state';
+import { useToast } from '@/components/ui/hooks/use-toast';
 import { Heading } from '@/components/ui/typography';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { CardHeader } from '@/components/ui/card-header';
@@ -19,13 +21,14 @@ import { cn } from '@/lib/cn';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { NewAuditModal } from './NewAuditModal';
 import { NewFindingModal } from './NewFindingModal';
-
-const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
-    PLANNED: 'neutral', IN_PROGRESS: 'info', COMPLETED: 'success', CANCELLED: 'warning',
-};
-const RESULT_BADGE: Record<string, StatusBadgeVariant> = {
-    NOT_TESTED: 'neutral', PASS: 'success', FAIL: 'error',
-};
+// #6 — canonical audits status/result → badge-variant maps. The list and
+// detail views (and the cycle page) now share one authoritative reading so
+// CANCELLED can never disagree again.
+import {
+    AUDIT_STATUS_VARIANT,
+    CHECKLIST_RESULT_VARIANT,
+    DEFAULT_STATUS_VARIANT,
+} from './_lib/status-variants';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
 // (distinct from the detail AuditDetail). List map callback stays untyped.
@@ -50,7 +53,6 @@ interface AuditsClientProps {
     translations: {
         title: string;
         listDescription: string;
-        auditsCount: string;
         newAudit: string;
         auditTitle: string;
         auditors: string;
@@ -108,6 +110,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     // `tx` covers strings not threaded through the server `translations` prop
     // (nav links, list counters) — mirrors the assets/risks island pattern.
     const tx = useTranslations('audits');
+    const toast = useToast();
     const [selected, setSelected] = useState<AuditDetail | null>(null);
     const [isFindingOpen, setIsFindingOpen] = useState(false);
 
@@ -165,22 +168,58 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
         router.push(`/t/${tenantSlug}/audits${id ? `?cycleId=${id}` : ''}`, { scroll: false });
     };
 
+    // #4 — a 500 envelope is not an audit. Guard on res.ok so a failed
+    // detail fetch surfaces an error instead of blanking the pane with an
+    // undefined title + empty checklist.
     const loadAudit = async (id: string) => {
-        const res = await fetch(apiUrl(`/audits/${id}`));
-        setSelected(await res.json());
+        try {
+            const res = await fetch(apiUrl(`/audits/${id}`));
+            if (!res.ok) {
+                toast.error(tx('detail.loadError'));
+                return;
+            }
+            setSelected(await res.json());
+        } catch {
+            toast.error(tx('detail.loadError'));
+        }
     };
 
+    // #4 — a failed PUT used to silently drop the result; surface it and
+    // only refresh the pane once the write actually succeeded.
     const updateChecklist = async (itemId: string, result: string, notes: string = '') => {
         if (!selected) return;
-        await fetch(apiUrl(`/audits/${selected.id}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checklistUpdates: [{ id: itemId, result, notes }] }) });
-        loadAudit(selected.id);
+        try {
+            const res = await fetch(apiUrl(`/audits/${selected.id}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checklistUpdates: [{ id: itemId, result, notes }] }) });
+            if (!res.ok) {
+                toast.error(tx('detail.checklistError'));
+                return;
+            }
+            toast.success(tx('detail.checklistSaved'));
+            loadAudit(selected.id);
+        } catch {
+            toast.error(tx('detail.checklistError'));
+        }
     };
 
+    // #4 — flip the pill optimistically, but reconcile it back to the prior
+    // status when the PUT fails so it never sticks on the un-saved value.
     const updateAuditStatus = async (status: string) => {
         if (!selected) return;
-        await fetch(apiUrl(`/audits/${selected.id}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+        const prevStatus = selected.status;
         setSelected((s) => (s ? { ...s, status } : s));
-        auditsQuery.mutate();
+        try {
+            const res = await fetch(apiUrl(`/audits/${selected.id}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+            if (!res.ok) {
+                setSelected((s) => (s ? { ...s, status: prevStatus } : s));
+                toast.error(tx('detail.statusError'));
+                return;
+            }
+            toast.success(tx('detail.statusChanged', { status: statusLabel(status) }));
+            auditsQuery.mutate();
+        } catch {
+            setSelected((s) => (s ? { ...s, status: prevStatus } : s));
+            toast.error(tx('detail.statusError'));
+        }
     };
 
     const statusLabel = (status: string) => {
@@ -385,16 +424,28 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-default">
                 <div className="space-y-tight">
-                    {audits.map((a) => (
-                        <button key={a.id} onClick={() => loadAudit(a.id)}
-                            className={cn(cardVariants({ density: 'compact' }), 'w-full text-left hover:bg-bg-muted/50 transition', selected?.id === a.id && 'ring-2 ring-[var(--ring)]')}>
-                            <div className="flex items-center justify-between">
-                                <span className="font-medium text-sm">{a.title}</span>
-                                <StatusBadge variant={STATUS_BADGE[a.status]}>{statusLabel(a.status)}</StatusBadge>
-                            </div>
-                            <p className="text-xs text-content-subtle mt-1">{tx('list.itemsCount', { count: a._count?.checklist || 0 })} · {a._count?.findings || 0} {t.findingsTab.toLowerCase()}</p>
-                        </button>
-                    ))}
+                    {/* #11a — the master list gets a real empty state instead of a
+                        silently-blank column when the tenant (or the cycle filter)
+                        has no audits. */}
+                    {audits.length === 0 ? (
+                        <EmptyState
+                            size="sm"
+                            title={tx('hub.emptyTitle')}
+                            description={tx('hub.emptyDesc')}
+                            primaryAction={{ label: t.newAudit, onClick: () => setIsCreateOpen(true) }}
+                        />
+                    ) : (
+                        audits.map((a) => (
+                            <button key={a.id} onClick={() => loadAudit(a.id)}
+                                className={cn(cardVariants({ density: 'compact' }), 'w-full text-left hover:bg-bg-muted/50 transition', selected?.id === a.id && 'ring-2 ring-[var(--ring)]')}>
+                                <div className="flex items-center justify-between">
+                                    <span className="font-medium text-sm">{a.title}</span>
+                                    <StatusBadge variant={AUDIT_STATUS_VARIANT[a.status] ?? DEFAULT_STATUS_VARIANT}>{statusLabel(a.status)}</StatusBadge>
+                                </div>
+                                <p className="text-xs text-content-subtle mt-1">{tx('list.itemsCount', { count: a._count?.checklist || 0 })} · {a._count?.findings || 0} {t.findingsTab.toLowerCase()}</p>
+                            </button>
+                        ))
+                    )}
                 </div>
 
                 <div className="lg:col-span-2">
@@ -429,7 +480,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                                 {item.notes && <p className="text-xs text-content-subtle mt-1">{item.notes}</p>}
                                             </div>
                                             {/* R8-PR5 — checklist result restates the Combobox above it. Demote to `tone="subtle"` so the row reads as one state signal, not two competing pills. */}
-                                            <StatusBadge tone="subtle" variant={RESULT_BADGE[item.result]}>{resultLabel(item.result)}</StatusBadge>
+                                            <StatusBadge tone="subtle" variant={CHECKLIST_RESULT_VARIANT[item.result] ?? DEFAULT_STATUS_VARIANT}>{resultLabel(item.result)}</StatusBadge>
                                         </div>
                                     ))}
                                 </div>
@@ -487,7 +538,12 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                     setOpen={setIsFindingOpen}
                     auditId={selected.id}
                     apiUrl={apiUrl}
-                    onCreated={() => loadAudit(selected.id)}
+                    onCreated={() => {
+                        // #8 — reload the detail AND revalidate the list key so the
+                        // row's _count.findings stops showing a stale count.
+                        loadAudit(selected.id);
+                        auditsQuery.mutate();
+                    }}
                 />
             )}
         </>

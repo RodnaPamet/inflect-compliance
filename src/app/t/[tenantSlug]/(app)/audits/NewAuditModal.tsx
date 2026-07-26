@@ -8,6 +8,7 @@
  */
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { useSWRConfig } from 'swr';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -44,12 +45,29 @@ export function NewAuditModal({
 }: NewAuditModalProps) {
     const { mutate: swrMutate } = useSWRConfig();
     const tx = useTranslations('audits');
+    // feat/audits-surface — AuditsClient keys the list SWR on
+    // `/audits?cycleId=…` when a cycle filter is active (else the bare
+    // `/audits` key). Read the active filter here so we can (a) revalidate
+    // the ACTIVE key after create and (b) prefill the new audit's cycle.
+    const searchParams = useSearchParams();
+    const activeCycleId = searchParams?.get('cycleId') ?? undefined;
 
     const form = useNewAuditForm({
+        initialCycleId: activeCycleId,
         onSuccess: (audit) => {
-            // Revalidate the controls-style static audits list key; the
-            // list filters client-side so there are no ?qs variants to match.
-            swrMutate(`/api/t/${tenantSlug}${CACHE_KEYS.audits.list()}`);
+            // Revalidate EVERY audits-list cache entry — the unscoped
+            // `/audits` key AND any `?cycleId=…` scoped variant — so a
+            // create under an active cycle filter refreshes the filtered
+            // list, not just the whole-list key. Matched by prefix but
+            // scoped to list keys only (exact `/audits` or a `?`-query
+            // variant) so `/audits/cycles`, `/audits/{id}`,
+            // `/audits/readiness`, and `/audits/packs` are left untouched.
+            const listKey = `/api/t/${tenantSlug}${CACHE_KEYS.audits.list()}`;
+            void swrMutate(
+                (key) =>
+                    typeof key === 'string' &&
+                    (key === listKey || key.startsWith(`${listKey}?`)),
+            );
             setOpen(false);
             onCreated?.(audit);
         },
@@ -85,7 +103,7 @@ export function NewAuditModal({
             setShowModal={guardedSetOpen}
             size="lg"
             title={labels.newAudit}
-            description="Plan a new internal audit. The default checklist is generated automatically; you can edit it after creation."
+            description={tx('newModal.description')}
             preventDefaultClose={form.submitting}
         >
             <Modal.Header

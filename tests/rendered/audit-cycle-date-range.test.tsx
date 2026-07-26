@@ -63,6 +63,14 @@ jest.mock('next-auth/react', () => ({
     signIn: jest.fn(),
 }));
 
+// The create-cycle trigger is now gated behind <RequirePermission>, whose
+// usePermissions() reads a TenantProvider that this bare render doesn't
+// mount. This integration test asserts the create-form wiring, not the
+// authz gate (that has its own coverage) — render children directly.
+jest.mock('@/components/require-permission', () => ({
+    RequirePermission: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 
 import AuditCyclesPage from '@/app/t/[tenantSlug]/(app)/audits/cycles/page';
 
@@ -81,6 +89,16 @@ function installFetchStub(cycleResponse: { ok: boolean; body?: unknown } = { ok:
     (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(
         async (url: string, init?: RequestInit) => {
             fetchCalls.push({ url, init });
+            // The cycles page loads via the readiness-overview orchestrator
+            // (cycle list + per-cycle scores in one call). A null/failed body
+            // now trips the page's error+retry state, so this must resolve to
+            // the joined shape for the form to render.
+            if (url.endsWith('/audits/readiness/overview')) {
+                return {
+                    ok: true,
+                    json: async () => ({ cycles: [] as unknown[], scoresByCycleId: {} }),
+                };
+            }
             if (url.endsWith('/audits/cycles') && (!init || init.method === undefined || init.method === 'GET')) {
                 return {
                     ok: true,
@@ -124,8 +142,11 @@ async function mountAndOpenForm() {
     act(() => {
         fireEvent.click(openBtn);
     });
+    // The form now lives inside a <Modal> (Radix Dialog.Portal) → it renders at
+    // document.body, outside `container`. All form-content queries below use
+    // `document` for that reason; only the page-level trigger is in `container`.
     await waitFor(() => {
-        expect(utils.container.querySelector('#cycle-form')).not.toBeNull();
+        expect(document.querySelector('#cycle-form')).not.toBeNull();
     });
     return utils;
 }
@@ -134,20 +155,20 @@ async function mountAndOpenForm() {
 
 describe('Audit Cycles — DateRangePicker integration', () => {
     it('mounts a DateRangePicker labelled "Audit period" inside the create form', async () => {
-        const { container, getByText } = await mountAndOpenForm();
+        const { getByText } = await mountAndOpenForm();
         expect(getByText('Audit period')).toBeInTheDocument();
 
         // The picker exposes the canonical trigger marker the shared
         // primitives emit — so any future refactor of the trigger
         // visual can't silently remove the integration.
-        const triggers = container.querySelectorAll('[data-date-picker-trigger]');
+        const triggers = document.querySelectorAll('[data-date-picker-trigger]');
         expect(triggers.length).toBeGreaterThanOrEqual(1);
     });
 
     it('offers the curated audit-period preset subset', async () => {
-        const { container } = await mountAndOpenForm();
+        await mountAndOpenForm();
         // Open the picker popover.
-        const trigger = container.querySelector(
+        const trigger = document.querySelector(
             '#cycle-form [data-date-picker-trigger]',
         ) as HTMLButtonElement;
         act(() => {
@@ -181,8 +202,8 @@ describe('Audit Cycles — DateRangePicker integration', () => {
     });
 
     it('shows the preset label on the trigger after selection', async () => {
-        const { container } = await mountAndOpenForm();
-        const trigger = container.querySelector(
+        await mountAndOpenForm();
+        const trigger = document.querySelector(
             '#cycle-form [data-date-picker-trigger]',
         ) as HTMLButtonElement;
         act(() => {
@@ -194,7 +215,7 @@ describe('Audit Cycles — DateRangePicker integration', () => {
         act(() => {
             fireEvent.click(ytdRow);
         });
-        const updatedTrigger = container.querySelector(
+        const updatedTrigger = document.querySelector(
             '#cycle-form [data-date-picker-trigger]',
         ) as HTMLButtonElement;
         const valueNode = updatedTrigger.querySelector(
@@ -204,9 +225,9 @@ describe('Audit Cycles — DateRangePicker integration', () => {
     });
 
     it('includes periodStartAt + periodEndAt in the create POST once a preset is applied', async () => {
-        const { container } = await mountAndOpenForm();
+        await mountAndOpenForm();
         // Type a name (required).
-        const nameInput = container.querySelector(
+        const nameInput = document.querySelector(
             '#cycle-name-input',
         ) as HTMLInputElement;
         fireEvent.change(nameInput, {
@@ -214,7 +235,7 @@ describe('Audit Cycles — DateRangePicker integration', () => {
         });
 
         // Open the picker + pick "Last quarter".
-        const trigger = container.querySelector(
+        const trigger = document.querySelector(
             '#cycle-form [data-date-picker-trigger]',
         ) as HTMLButtonElement;
         act(() => {
@@ -228,7 +249,7 @@ describe('Audit Cycles — DateRangePicker integration', () => {
         });
 
         // Submit.
-        const form = container.querySelector('#cycle-form') as HTMLFormElement;
+        const form = document.querySelector('#cycle-form') as HTMLFormElement;
         await act(async () => {
             fireEvent.submit(form);
         });
@@ -274,14 +295,14 @@ describe('Audit Cycles — DateRangePicker integration', () => {
     });
 
     it('omits periodStartAt + periodEndAt when the user skips the picker', async () => {
-        const { container } = await mountAndOpenForm();
-        const nameInput = container.querySelector(
+        await mountAndOpenForm();
+        const nameInput = document.querySelector(
             '#cycle-name-input',
         ) as HTMLInputElement;
         fireEvent.change(nameInput, {
             target: { value: 'Cycle without a period' },
         });
-        const form = container.querySelector('#cycle-form') as HTMLFormElement;
+        const form = document.querySelector('#cycle-form') as HTMLFormElement;
         await act(async () => {
             fireEvent.submit(form);
         });

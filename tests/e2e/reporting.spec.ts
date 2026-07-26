@@ -144,11 +144,17 @@ test.describe('Reporting & Audit Narrative', () => {
             expect(packMatch).toBeTruthy();
             packId = packMatch![1];
 
-            await expect(page.locator('#pack-status')).toContainText('DRAFT');
+            // Status badge renders the localized label ("Draft"), not the enum.
+            await expect(page.locator('#pack-status')).toContainText('Draft');
 
-            // Freeze the pack.
+            // Freeze the pack. Freeze is now behind a confirmation dialog
+            // (irreversible lock) — opening it doesn't write; the confirm
+            // button does.
             const freezeBtn = page.locator('#freeze-pack-btn');
             await expect(freezeBtn).toBeVisible({ timeout: 5000 });
+            await freezeBtn.click();
+            const confirmFreeze = page.locator('[data-modal-confirm]');
+            await expect(confirmFreeze).toBeVisible({ timeout: 15000 });
             await Promise.all([
                 page.waitForResponse(
                     resp =>
@@ -156,10 +162,10 @@ test.describe('Reporting & Audit Narrative', () => {
                         resp.url().includes('action=freeze'),
                     { timeout: 90000 },
                 ),
-                freezeBtn.click(),
+                confirmFreeze.click(),
             ]);
             await page.waitForLoadState('networkidle').catch(() => {});
-            await expect(page.locator('#pack-status')).toContainText('FROZEN', {
+            await expect(page.locator('#pack-status')).toContainText('Frozen', {
                 timeout: 60000,
             });
 
@@ -168,8 +174,8 @@ test.describe('Reporting & Audit Narrative', () => {
             await expect(shareBtn).toBeVisible({ timeout: 5000 });
             await shareBtn.click();
 
-            // Share now opens an expiry modal — submit with the default
-            // (no expiry) to generate the link.
+            // Share now opens an expiry modal defaulting to a 30-day expiry —
+            // submit with that default to generate the link.
             const shareSubmit = page.locator('#share-modal-submit');
             await expect(shareSubmit).toBeVisible({ timeout: 15000 });
             await shareSubmit.click();

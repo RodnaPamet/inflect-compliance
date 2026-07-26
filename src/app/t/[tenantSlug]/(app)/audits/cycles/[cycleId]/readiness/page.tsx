@@ -13,29 +13,10 @@ import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { LineChart } from '@/components/ui/charts/line-chart';
 import { chartReady, type TimeSeriesPoint } from '@/components/ui/charts/types';
 import { cn } from '@/lib/cn';
-import { ReadinessLegend } from '../../ReadinessScoreRing';
+import { ReadinessScoreRing, ReadinessLegend } from '../../ReadinessScoreRing';
 import type { ReadinessResult } from '@/app-layer/usecases/audit-readiness-scoring';
 
 interface ReadinessSnapshot { id: string; score: number; gapCount: number; computedAt: string }
-
-function ScoreRing({ score, size = 120 }: { score: number; size?: number }) {
-    const r = (size - 8) / 2;
-    const c = 2 * Math.PI * r;
-    const offset = c - (score / 100) * c;
-    const color = score >= 80 ? '#22c55e' : score >= 50 ? '#eab308' : '#ef4444';
-    return (
-        <svg width={size} height={size} className="transform -rotate-90">
-            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" />
-            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="8"
-                strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
-                className="transition-all duration-1000" />
-            <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central"
-                className="transform rotate-90 origin-center" fill="white" fontSize={size / 3} fontWeight="bold">
-                {score}
-            </text>
-        </svg>
-    );
-}
 
 const GAP_ICON: Record<string, AppIconName> = {
     UNMAPPED_REQUIREMENT: 'overview', MISSING_EVIDENCE: 'evidence', OVERDUE_TASK: 'clock',
@@ -123,7 +104,12 @@ export default function CycleReadinessPage() {
             <div className={cardVariants()}>
                 <div className="flex items-start gap-page">
                     <div className="flex-shrink-0 text-center">
-                        <ScoreRing score={result.score} />
+                        <ReadinessScoreRing
+                            score={result.score}
+                            size={120}
+                            noScoreLabel={tx('cycles.noScore')}
+                            ariaLabel={tx('cycles.scoreAria', { score: result.score })}
+                        />
                         <p className="text-xs text-content-muted mt-2 inline-flex items-center gap-tight">
                             {/* readiness-reconcile — this score is CONTROL COVERAGE
                                 (mapping/implementation/evidence), distinct from the
@@ -219,7 +205,7 @@ export default function CycleReadinessPage() {
                                         <span className="text-xs text-content-subtle">{g.details}</span>
                                     </div>
                                 </div>
-                                <StatusBadge variant={SEV_BADGE[g.severity] || 'neutral'} className="ml-2">{g.severity}</StatusBadge>
+                                <StatusBadge variant={SEV_BADGE[g.severity] || 'neutral'} className="ml-2">{tx(`findingModal.severityOptions.${g.severity}` as Parameters<typeof tx>[0])}</StatusBadge>
                             </div>
                         ))}
                     </div>

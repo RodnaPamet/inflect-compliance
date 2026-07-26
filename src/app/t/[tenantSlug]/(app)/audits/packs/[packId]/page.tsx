@@ -27,11 +27,19 @@ import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
+import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../../_lib/status-variants';
+import { humanizeSnakeCase } from '@/lib/audit/activity-humanize';
 
 const ENTITY_ICON: Record<string, AppIconName> = {
     CONTROL: 'controls', POLICY: 'policies', EVIDENCE: 'evidence', FILE: 'overview', ISSUE: 'warning',
     READINESS_REPORT: 'dashboard', FRAMEWORK_COVERAGE: 'frameworks',
 };
+
+// #3 — a generated share link is an UNAUTHENTICATED URL to a full evidence
+// pack. Default the expiry to a bounded window so the modal never pre-selects
+// a permanent link; the user can still opt into a longer/no expiry explicitly.
+const SHARE_EXPIRY_DEFAULT_DAYS = 30;
+const defaultShareExpiry = () => new Date(Date.now() + SHARE_EXPIRY_DEFAULT_DAYS * 86_400_000);
 
 // getAuditPack (audit-readiness/packs.ts) — fields this page reads.
 interface PackItem {
@@ -80,12 +88,21 @@ export default function PackDetailPage() {
     const tx = useTranslations('audits');
     const toast = useToast();
 
+    // #10 — localize a raw enum value through the audits catalog, falling back
+    // to a humanized form for any value not (yet) in the catalog (mirrors the
+    // AutomationSuggestionsRail pattern). Keeps status / type badges readable
+    // even for enum members we haven't explicitly mapped.
+    const localizeEnum = (prefix: string, value: string): string =>
+        tx.has(`${prefix}.${value}`) ? tx(`${prefix}.${value}`) : humanizeSnakeCase(value);
+
     const [pack, setPack] = useState<PackDetail | null>(null);
     const [comments, setComments] = useState<ShareComment[]>([]);
     const [openCount, setOpenCount] = useState(0);
     const [resolvingId, setResolvingId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [freezing, setFreezing] = useState(false);
+    const [freezeConfirmOpen, setFreezeConfirmOpen] = useState(false);
     const [sharing, setSharing] = useState(false);
     const [shareLink, setShareLink] = useState<string | null>(null);
     const [cloning, setCloning] = useState(false);
@@ -94,7 +111,7 @@ export default function PackDetailPage() {
     // Part B — share lifecycle: shares list, expiry-picker modal, revoke.
     const [shares, setShares] = useState<PackShare[]>([]);
     const [shareModalOpen, setShareModalOpen] = useState(false);
-    const [shareExpiry, setShareExpiry] = useState<Date | null>(null);
+    const [shareExpiry, setShareExpiry] = useState<Date | null>(() => defaultShareExpiry());
     const [revokeShareTarget, setRevokeShareTarget] = useState<string | null>(null);
 
     // Part C — add-to-pack picker.
@@ -106,9 +123,14 @@ export default function PackDetailPage() {
     const [addBusy, setAddBusy] = useState(false);
 
     const loadPack = useCallback(() => {
+        setLoading(true);
+        setLoadError(false);
         fetch(apiUrl(`/audits/packs/${packId}`))
             .then(r => r.ok ? r.json() : null)
             .then(setPack)
+            // #5 — a network blip must surface as a retryable error, NOT the
+            // "pack not found" empty state (which reads as a genuine 404).
+            .catch(() => setLoadError(true))
             .finally(() => setLoading(false));
     }, [apiUrl, packId]);
 
@@ -190,7 +212,7 @@ export default function PackDetailPage() {
                 const link = `${window.location.origin}/audit/shared/${data.token}`;
                 setShareLink(link);
                 setShareModalOpen(false);
-                setShareExpiry(null);
+                setShareExpiry(defaultShareExpiry());
                 loadShares();
                 toast.success(tx('packs.shareCreated'));
             } else {
@@ -209,6 +231,10 @@ export default function PackDetailPage() {
             body: JSON.stringify({ shareId }),
         });
         if (res.ok) {
+            // #3 — clear the freshly-generated "Share Link Generated" card so it
+            // can't keep displaying a live token URL for a share that's now
+            // revoked (the raw token is never retrievable again anyway).
+            setShareLink(null);
             loadShares();
             toast.success(tx('packs.shareRevoked'));
         } else {
@@ -321,6 +347,23 @@ export default function PackDetailPage() {
             </EntityDetailLayout>
         );
     }
+    if (loadError) {
+        return (
+            <EntityDetailLayout title="" back={{ smart: true }} breadcrumbs={breadcrumbs}>
+                <div className={cardVariants({ density: 'none' })}>
+                    <EmptyState
+                        icon={Package}
+                        title={tx('packs.loadError')}
+                        description={tx('packs.loadErrorDesc')}
+                    >
+                        <Button variant="secondary" size="sm" onClick={loadPack} id="pack-retry-btn">
+                            {tx('packs.retry')}
+                        </Button>
+                    </EmptyState>
+                </div>
+            </EntityDetailLayout>
+        );
+    }
     if (!pack) {
         return (
             <EntityDetailLayout empty={{ message: tx('packs.notFound') }} title="" breadcrumbs={breadcrumbs}>
@@ -365,8 +408,8 @@ export default function PackDetailPage() {
                             kind: 'status',
                             id: 'pack-status',
                             label: tx('packs.status'),
-                            value: pack.status,
-                            variant: isDraft ? 'neutral' : 'info',
+                            value: localizeEnum('packStatus', pack.status),
+                            variant: AUDIT_PACK_STATUS_VARIANT[pack.status] ?? DEFAULT_STATUS_VARIANT,
                         },
                         ...(pack.frozenAt
                             ? [
@@ -388,13 +431,18 @@ export default function PackDetailPage() {
                     )}
                     {isDraft && (
                         <RequirePermission resource="audits" action="freeze">
-                            <IconAction variant="primary" onClick={freeze} loading={freezing} id="freeze-pack-btn" icon={<AppIcon name="lock" size={16} />} label={tx('packs.freezePack')} />
+                            {/* #2 — freeze is one-way (there is no server un-freeze), so
+                                gate the irreversible write behind a ConfirmDialog instead
+                                of firing on a single click. The trigger stays icon-only
+                                (locked by icon-only-action-discipline); the confirm surface
+                                below carries the visible label + irreversibility warning. */}
+                            <IconAction variant="primary" onClick={() => setFreezeConfirmOpen(true)} loading={freezing} id="freeze-pack-btn" icon={<AppIcon name="lock" size={16} />} label={tx('packs.freezePack')} />
                         </RequirePermission>
                     )}
                     {isFrozen && (
                         <RequirePermission resource="audits" action="share">
                             <UpgradeGate feature="AUDIT_PACK_SHARING">
-                                <IconAction variant="primary" onClick={() => setShareModalOpen(true)} loading={sharing} id="share-pack-btn" icon={<AppIcon name="share" size={16} />} label={tx('packs.generateShareLink')} />
+                                <IconAction variant="primary" onClick={() => { setShareExpiry(defaultShareExpiry()); setShareModalOpen(true); }} loading={sharing} id="share-pack-btn" icon={<AppIcon name="share" size={16} />} label={tx('packs.generateShareLink')} />
                             </UpgradeGate>
                         </RequirePermission>
                     )}
@@ -425,6 +473,12 @@ export default function PackDetailPage() {
                         <div className="min-w-0">
                             <p className="text-sm font-medium text-content-success">{tx('packs.shareLinkGenerated')}</p>
                             <p className="text-xs text-content-muted mt-1 break-all" id="share-link-url">{shareLink}</p>
+                            {/* #3 — the raw token is returned EXACTLY once; make the
+                                one-shot nature explicit right where the Copy button lives. */}
+                            <p className="text-xs text-content-warning mt-2 inline-flex items-start gap-tight" id="share-link-once-warning">
+                                <AppIcon name="warning" size={14} className="shrink-0 mt-px" />
+                                <span>{tx('packs.shareLinkOnceWarning')}</span>
+                            </p>
                         </div>
                         <CopyButton
                             value={shareLink}
@@ -442,7 +496,14 @@ export default function PackDetailPage() {
                     <Heading level={3} className="mb-1 inline-flex items-center gap-tight">
                         <AppIcon name="share" size={16} /> {tx('packs.sharesTitle')}
                     </Heading>
-                    <p className="text-xs text-content-subtle mb-3">{tx('packs.sharesDesc')}</p>
+                    <p className="text-xs text-content-subtle mb-1">{tx('packs.sharesDesc')}</p>
+                    {/* #3 — active links carry no copy affordance because the raw token
+                        is shown only once at creation; say so instead of leaving a
+                        silent gap. */}
+                    <p className="text-xs text-content-warning mb-3 inline-flex items-start gap-tight">
+                        <AppIcon name="warning" size={14} className="shrink-0 mt-px" />
+                        <span>{tx('packs.sharesOnceNote')}</span>
+                    </p>
                     {shares.length === 0 ? (
                         <p className="text-sm text-content-subtle">{tx('packs.sharesEmpty')}</p>
                     ) : (
@@ -500,7 +561,7 @@ export default function PackDetailPage() {
                     <div key={type} className="space-y-tight">
                         <Heading level={3} className="flex items-center gap-tight">
                             <AppIcon name={ENTITY_ICON[type] || 'overview'} size={16} />
-                            <span>{type}</span>
+                            <span>{localizeEnum('packs.entityType', type)}</span>
                             <span className="text-content-subtle">({items.length})</span>
                         </Heading>
                         <div className={cn(cardVariants({ density: 'none' }), 'divide-y divide-border-default/50')}>
@@ -516,7 +577,7 @@ export default function PackDetailPage() {
                                             {snap.description && <span className="text-xs text-content-subtle truncate block">{snap.description}</span>}
                                         </div>
                                         <div className="flex items-center gap-tight ml-4">
-                                            {status && <StatusBadge variant="neutral">{status}</StatusBadge>}
+                                            {status && <StatusBadge variant="neutral">{localizeEnum('packs.itemStatus', status)}</StatusBadge>}
                                             {snap.taskCompletion && (
                                                 <span className="text-xs text-content-subtle">
                                                     {tx('packs.tasks', { done: snap.taskCompletion.done, total: snap.taskCompletion.total })}
@@ -745,6 +806,20 @@ export default function PackDetailPage() {
                     if (revokeShareTarget) await revokeShareById(revokeShareTarget);
                     setRevokeShareTarget(null);
                 }}
+            />
+
+            {/* Freeze confirmation (#2) — freeze is a one-way, irreversible write
+                (no server un-freeze). `warning` tone (significant consequence),
+                not `danger` — freeze locks rather than destroys. */}
+            <ConfirmDialog
+                showModal={freezeConfirmOpen}
+                setShowModal={setFreezeConfirmOpen}
+                tone="warning"
+                title={tx('packs.freezeConfirm.title')}
+                description={tx('packs.freezeConfirm.desc')}
+                confirmLabel={tx('packs.freezeConfirm.confirm')}
+                cancelLabel={tx('packs.shareModal.cancel')}
+                onConfirm={async () => { await freeze(); setFreezeConfirmOpen(false); }}
             />
         </EntityDetailLayout>
     );
