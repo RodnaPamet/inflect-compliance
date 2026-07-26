@@ -18,29 +18,32 @@
  */
 
 import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requireAnyPermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
-import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
+import {
+    getComplianceCalendarEvents,
+    CALENDAR_BASELINE_PERMISSIONS,
+} from '@/app-layer/usecases/compliance-calendar';
 import { CalendarQuerySchema } from '@/app-layer/schemas/calendar.schemas';
 
+// The calendar aggregates 17 domains. Authorization is PER-SOURCE inside the
+// usecase (each loader gates on its domain `.view`); this baseline denies a
+// caller who holds NONE of those view permissions — notably a scopeless API
+// key (e.g. `mcp:read`, which maps to no PermissionSet flags) that would
+// otherwise read the whole tenant deadline stream. Denials emit AUTHZ_DENIED.
 export const GET = withApiErrorHandling(
-    async (
-        req: NextRequest,
-        { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
-    ) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+    requireAnyPermission(CALENDAR_BASELINE_PERMISSIONS, async (req: NextRequest, _routeArgs, ctx) => {
         const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
         const query = CalendarQuerySchema.parse(sp);
 
         const response = await getComplianceCalendarEvents(ctx, {
-            from: new Date(query.from),
-            to: new Date(query.to),
+            from: query.fromDate,
+            to: query.toDate,
             types: query.types,
             categories: query.categories,
         });
 
         return jsonResponse(response);
-    },
+    }),
 );

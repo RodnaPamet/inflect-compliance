@@ -95,15 +95,17 @@ describe('Epic 49 — calendar feature wiring', () => {
         // `function load…` existed. A loader that was defined but never
         // called from the aggregator would pass while contributing zero
         // events — exactly the silent-omission class this file exists to
-        // catch. Assert each one is invoked inside the `sources` table.
+        // catch. Assert each one is registered in the `CALENDAR_SOURCES`
+        // metadata table the fan-out iterates.
         const src = read('src/app-layer/usecases/compliance-calendar.ts');
         const table = src.slice(
-            src.indexOf('const sources:'),
-            src.indexOf('const results = await runInTenantContext'),
+            src.indexOf('const CALENDAR_SOURCES:'),
+            src.indexOf('] as const;', src.indexOf('const CALENDAR_SOURCES:')),
         );
         expect(table.length).toBeGreaterThan(0);
         for (const fn of CALENDAR_LOADERS) {
-            expect(table).toMatch(new RegExp(`${fn}\\(db, ctx, range, now, limit\\)`));
+            // Each source entry references its loader as `load: <fn>`.
+            expect(table).toMatch(new RegExp(`load:\\s*${fn}\\b`));
         }
     });
 
@@ -111,12 +113,15 @@ describe('Epic 49 — calendar feature wiring', () => {
         // The per-source cap without an ORDER BY truncates arbitrarily —
         // a busy tenant silently loses its soonest deadlines. Behavioural
         // coverage lives in tests/unit/compliance-calendar.test.ts; this
-        // is the structural floor: no loader may issue a capped findMany
-        // without an orderBy.
+        // is the structural floor: no capped findMany may issue without an
+        // orderBy. Multi-date sources (vendor/risk/audit-cycle/test-plan)
+        // issue MORE than one capped query, so `take` count now floors at
+        // the loader count rather than equalling it — but every `take` must
+        // still be paired with an `orderBy`.
         const src = read('src/app-layer/usecases/compliance-calendar.ts');
         const takeCount = (src.match(/take: limit,/g) ?? []).length;
         const orderByCount = (src.match(/orderBy: /g) ?? []).length;
-        expect(takeCount).toBe(CALENDAR_LOADERS.length);
+        expect(takeCount).toBeGreaterThanOrEqual(CALENDAR_LOADERS.length);
         expect(orderByCount).toBeGreaterThanOrEqual(takeCount);
     });
 

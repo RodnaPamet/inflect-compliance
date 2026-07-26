@@ -61,6 +61,14 @@ export interface CalendarDeadlineMonitorResult {
 
 // ─── Per-source scanners ─────────────────────────────────────────────
 
+/**
+ * Per-source scan cap. On the tenant-less production sweep these queries scan
+ * across every tenant, so an unbounded `findMany` could pull the entire table.
+ * Bound each scan and log loudly if the cap is hit rather than silently
+ * truncating — a hit means we need a paged sweep for that source.
+ */
+const SCAN_CAP = 5000;
+
 async function scanAuditCycles(
     now: Date,
     maxWindow: number,
@@ -85,7 +93,17 @@ async function scanAuditCycles(
             periodEndAt: true,
             createdByUserId: true,
         },
+        orderBy: { periodEndAt: 'asc' },
+        take: SCAN_CAP,
     });
+    if (rows.length === SCAN_CAP) {
+        logger.warn('calendar-deadlines: auditCycle scan hit cap — later deadlines dropped this tick', {
+            component: 'calendar-deadlines',
+            source: 'AUDIT_CYCLE',
+            cap: SCAN_CAP,
+            tenantId: tenantId ?? 'all',
+        });
+    }
 
     const items: DueItem[] = [];
     for (const r of rows) {
@@ -141,7 +159,17 @@ async function scanVendorDocuments(
                 },
             },
         },
+        orderBy: { validTo: 'asc' },
+        take: SCAN_CAP,
     });
+    if (rows.length === SCAN_CAP) {
+        logger.warn('calendar-deadlines: vendorDocument scan hit cap — later deadlines dropped this tick', {
+            component: 'calendar-deadlines',
+            source: 'VENDOR_DOCUMENT',
+            cap: SCAN_CAP,
+            tenantId: tenantId ?? 'all',
+        });
+    }
 
     const items: DueItem[] = [];
     for (const r of rows) {
@@ -187,7 +215,17 @@ async function scanFindings(
             dueDate: true,
             owner: true,
         },
+        orderBy: { dueDate: 'asc' },
+        take: SCAN_CAP,
     });
+    if (rows.length === SCAN_CAP) {
+        logger.warn('calendar-deadlines: finding scan hit cap — later deadlines dropped this tick', {
+            component: 'calendar-deadlines',
+            source: 'FINDING',
+            cap: SCAN_CAP,
+            tenantId: tenantId ?? 'all',
+        });
+    }
 
     const items: DueItem[] = [];
     for (const r of rows) {

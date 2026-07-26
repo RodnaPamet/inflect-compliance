@@ -60,7 +60,10 @@ describe('3 — one urgency threshold set', () => {
 
     it('the calendar classifier reads the shared scale, not a literal', () => {
         const src = read(USECASE);
-        expect(src).toMatch(/urgencyFromDate/);
+        // `urgencyFromDaysUntil` (day-granularity, tenant-tz) or the older
+        // `urgencyFromDate` (instant) — either is the shared `URGENCY_DAYS`
+        // scale. What matters is it is NOT a local literal window.
+        expect(src).toMatch(/urgencyFrom(Date|DaysUntil)/);
         // The old inline window.
         expect(src).not.toMatch(/diffMs <= 7 \* 86_400_000/);
     });

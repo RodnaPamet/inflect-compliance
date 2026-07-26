@@ -41,23 +41,24 @@ import useSWR from 'swr';
 
 interface UpcomingCountResponse {
     count: number;
+    windowDays: number | null;
+    scope: string;
+    includesOverdue: boolean;
 }
 
 const REFRESH_MS = 5 * 60_000; // 5 minutes
 // Read at module load — NEXT_PUBLIC_* vars are inlined at build time.
 const SUPPRESS_IN_TEST = process.env.NEXT_PUBLIC_TEST_MODE === '1';
 
-async function fetchUpcomingCount(url: string): Promise<number | null> {
-    try {
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const data: UpcomingCountResponse = await res.json();
-        return data.count;
-    } catch {
-        // Network errors / aborts — leave the badge hidden, don't
-        // disrupt the nav.
-        return null;
-    }
+async function fetchUpcomingCount(url: string): Promise<number> {
+    const res = await fetch(url);
+    // THROW on failure instead of returning a zero-looking `null`: a 403 /
+    // 500 / network error must NOT read as "nothing needs attention". SWR
+    // then keeps the last-good `data` (so a transient refresh failure leaves
+    // the prior count on the badge) rather than blanking it to a false zero.
+    if (!res.ok) throw new Error(`upcoming-count ${res.status}`);
+    const data: UpcomingCountResponse = await res.json();
+    return data.count;
 }
 
 export function useCalendarBadge(tenantSlug: string): string | number | undefined {
@@ -69,15 +70,23 @@ export function useCalendarBadge(tenantSlug: string): string | number | undefine
             ? `/api/t/${tenantSlug}/calendar/upcoming-count`
             : null;
 
-    const { data: count } = useSWR<number | null>(key, fetchUpcomingCount, {
+    const { data: count } = useSWR<number>(key, fetchUpcomingCount, {
         refreshInterval: REFRESH_MS,
         // Collapse concurrent revalidations for this key (both mounts'
         // interval timers) into one request.
         dedupingInterval: REFRESH_MS,
         revalidateOnFocus: false,
-        shouldRetryOnError: false,
+        // Keep the last-good count visible across a failed refresh (SWR
+        // retains `data` on error). One retry smooths a transient blip
+        // without hammering; the nav badge never surfaces the error itself.
+        keepPreviousData: true,
+        errorRetryCount: 1,
     });
 
+    // `undefined` = no successful fetch yet (or genuine zero) → hide the
+    // badge. A fetch ERROR does not overwrite a prior `count`, so an error
+    // after a good load keeps showing the last known number rather than
+    // silently collapsing to "nothing due".
     if (count == null || count <= 0) return undefined;
     if (count > 99) return '99+';
     return count;
