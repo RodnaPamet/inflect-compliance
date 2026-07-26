@@ -31,6 +31,53 @@ export function normalizeWorkItemSource(source: string | null | undefined): Work
     return source as WorkItemSource;
 }
 
+/**
+ * Parse a list filter that may arrive as a single value or as the
+ * comma-joined form the UI's multi-select facets produce
+ * (`?status=OPEN,BLOCKED`).
+ *
+ * Before this, the value was cast straight onto a Prisma enum scalar
+ * (`where.status = filters.status as WorkItemStatus`), so two selected
+ * values produced the literal string "OPEN,BLOCKED" — which matches no row
+ * and, on some columns, fails Prisma enum validation outright. The list
+ * page, its SSR path and any bookmarked URL all went through that cast, so
+ * a multi-select simply returned nothing.
+ *
+ * Invalid members fail LOUDLY with a 400 rather than silently matching zero
+ * rows — same philosophy as `normalizeWorkItemSource`.
+ *
+ * @returns `undefined` (no filter), the bare value (single), or `{ in: [...] }`.
+ */
+function parseListFilter<T extends string>(
+    raw: string | undefined,
+    valid: Set<string>,
+    label: string,
+): T | { in: T[] } | undefined {
+    if (raw == null || raw === '') return undefined;
+    const values = [...new Set(raw.split(',').map((v) => v.trim()).filter(Boolean))];
+    if (values.length === 0) return undefined;
+    const bad = values.find((v) => !valid.has(v));
+    if (bad) {
+        throw badRequest(
+            `Invalid ${label} "${bad}". Must be one of: ${[...valid].join(', ')}.`,
+        );
+    }
+    return values.length === 1 ? (values[0] as T) : { in: values as T[] };
+}
+
+/** Same comma-joined parse for a free-form id list (no enum to validate). */
+function parseIdListFilter(raw: string | undefined): string | { in: string[] } | undefined {
+    if (raw == null || raw === '') return undefined;
+    const values = [...new Set(raw.split(',').map((v) => v.trim()).filter(Boolean))];
+    if (values.length === 0) return undefined;
+    return values.length === 1 ? values[0] : { in: values };
+}
+
+const VALID_WORK_ITEM_STATUSES = new Set<string>(Object.values(WorkItemStatus));
+const VALID_WORK_ITEM_TYPES = new Set<string>(Object.values(WorkItemType));
+const VALID_WORK_ITEM_SEVERITIES = new Set<string>(Object.values(WorkItemSeverity));
+const VALID_WORK_ITEM_PRIORITIES = new Set<string>(Object.values(WorkItemPriority));
+
 // ─── Filters ───
 
 export interface TaskFilters {
@@ -283,12 +330,20 @@ export class WorkItemRepository {
         const where: Prisma.TaskWhereInput = { tenantId: ctx.tenantId };
         const and: Prisma.TaskWhereInput[] = [];
 
-        if (filters.status) where.status = filters.status as WorkItemStatus;
-        if (filters.type) where.type = filters.type as WorkItemType;
-        if (filters.severity) where.severity = filters.severity as WorkItemSeverity;
-        if (filters.priority) where.priority = filters.priority as WorkItemPriority;
-        if (filters.source) where.source = filters.source as WorkItemSource;
-        if (filters.assigneeUserId) where.assigneeUserId = filters.assigneeUserId;
+        // Each of these facets is declared `multiple: true` in the UI's
+        // filter-defs, so the value can arrive comma-joined.
+        const status = parseListFilter<WorkItemStatus>(filters.status, VALID_WORK_ITEM_STATUSES, 'status');
+        const type = parseListFilter<WorkItemType>(filters.type, VALID_WORK_ITEM_TYPES, 'type');
+        const severity = parseListFilter<WorkItemSeverity>(filters.severity, VALID_WORK_ITEM_SEVERITIES, 'severity');
+        const priority = parseListFilter<WorkItemPriority>(filters.priority, VALID_WORK_ITEM_PRIORITIES, 'priority');
+        const source = parseListFilter<WorkItemSource>(filters.source, VALID_WORK_ITEM_SOURCES, 'source');
+        const assignee = parseIdListFilter(filters.assigneeUserId);
+        if (status !== undefined) where.status = status;
+        if (type !== undefined) where.type = type;
+        if (severity !== undefined) where.severity = severity;
+        if (priority !== undefined) where.priority = priority;
+        if (source !== undefined) where.source = source;
+        if (assignee !== undefined) where.assigneeUserId = assignee;
         if (filters.controlId) where.controlId = filters.controlId;
         if (filters.due === 'overdue') {
             where.dueAt = { lt: new Date() };
