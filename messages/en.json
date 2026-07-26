@@ -3129,7 +3129,9 @@
       "cycleFilterActiveNamed": "Showing fieldwork audits for “{name}”.",
       "clearCycleFilter": "Clear filter",
       "cyclePickerLabel": "Cycle",
-      "cyclePickerAll": "All fieldwork audits"
+      "cyclePickerAll": "All fieldwork audits",
+      "emptyTitle": "No audits yet",
+      "emptyDesc": "Create your first audit to start tracking checklist results and findings."
     },
     "readinessLegend": {
       "aria": "How the readiness score works",
@@ -3149,7 +3151,8 @@
       "framework": "Framework",
       "noFramework": "No framework",
       "cycle": "Audit cycle",
-      "noCycle": "Standalone (no cycle)"
+      "noCycle": "Standalone (no cycle)",
+      "createFailed": "Failed to create audit"
     },
     "findingModal": {
       "trigger": "Finding",
@@ -3201,7 +3204,13 @@
       "scoreAria": "Readiness score {score} of 100",
       "noScore": "Not scored yet",
       "loadError": "Could not load audit cycles.",
-      "createError": "Could not create the audit cycle. Please try again."
+      "createError": "Could not create the audit cycle. Please try again.",
+      "loadErrorTitle": "Couldn't load audit cycles",
+      "retry": "Retry",
+      "newCycleTitle": "New audit cycle",
+      "newCycleDesc": "Start a new audit cycle for a compliance framework. Controls, evidence, and readiness are tracked against it.",
+      "createCycle": "Create cycle",
+      "creating": "Creating…"
     },
     "cycleDetail": {
       "cycleFallback": "Cycle",
@@ -3225,7 +3234,10 @@
       "viewInHub": "View in hub →",
       "noFieldwork": "No fieldwork audits yet",
       "statusError": "Failed to update cycle status.",
-      "statusChanged": "Cycle status changed to {status}."
+      "statusChanged": "Cycle status changed to {status}.",
+      "loadError": "Could not load the audit cycle.",
+      "retry": "Retry",
+      "defaultPackName": "{framework} Default Pack"
     },
     "readiness": {
       "cycleFallback": "Cycle",
@@ -3351,7 +3363,48 @@
         "title": "Revoke share link?",
         "desc": "The external auditor using this link will lose access immediately. This cannot be undone.",
         "confirm": "Revoke link"
-      }
+      },
+      "entityType": {
+        "CONTROL": "Controls",
+        "POLICY": "Policies",
+        "EVIDENCE": "Evidence",
+        "FILE": "Files",
+        "ISSUE": "Issues",
+        "READINESS_REPORT": "Readiness reports",
+        "FRAMEWORK_COVERAGE": "Framework coverage"
+      },
+      "itemStatus": {
+        "NOT_STARTED": "Not started",
+        "PLANNED": "Planned",
+        "IN_PROGRESS": "In progress",
+        "IMPLEMENTING": "Implementing",
+        "IMPLEMENTED": "Implemented",
+        "NEEDS_REVIEW": "Needs review",
+        "NOT_APPLICABLE": "Not applicable",
+        "DRAFT": "Draft",
+        "IN_REVIEW": "In review",
+        "APPROVED": "Approved",
+        "PUBLISHED": "Published",
+        "ARCHIVED": "Archived",
+        "SUBMITTED": "Submitted",
+        "REJECTED": "Rejected",
+        "OPEN": "Open",
+        "TRIAGED": "Triaged",
+        "BLOCKED": "Blocked",
+        "RESOLVED": "Resolved",
+        "CLOSED": "Closed",
+        "CANCELED": "Canceled"
+      },
+      "loadError": "Couldn't load this pack",
+      "loadErrorDesc": "Something went wrong loading this audit pack. Check your connection and try again.",
+      "retry": "Try again",
+      "freezeConfirm": {
+        "title": "Freeze this pack?",
+        "desc": "Freezing snapshots every item and permanently locks the pack — this cannot be undone. You'll still be able to share and export it, but you won't be able to add or remove items.",
+        "confirm": "Freeze pack"
+      },
+      "shareLinkOnceWarning": "This link is shown only once and can't be retrieved again. Copy it now — if you lose it, revoke the link and generate a new one.",
+      "sharesOnceNote": "Share URLs are shown only once when created and can't be copied again from here. If a link is lost, revoke it and generate a new one."
     },
     "auditor": {
       "portalCrumb": "Auditor Portal",
@@ -3369,7 +3422,8 @@
       "exportFailed": "Export failed.",
       "exportFailedNetwork": "Export failed — network error.",
       "exported": "Exported.",
-      "viewInSharePoint": "View in SharePoint ↗"
+      "viewInSharePoint": "View in SharePoint ↗",
+      "probingHint": "Checking for a connected SharePoint account…"
     },
     "bia": {
       "addBia": "BIA",
@@ -3608,7 +3662,9 @@
       "revokeAccountDesc": "{name} will lose access to every pack and can no longer sign in. Inviting them again reactivates the account.",
       "revokeAccountConfirm": "Revoke account",
       "revokeAccountSuccess": "Auditor account revoked",
-      "revokeAccountError": "Could not revoke the auditor account. Please try again."
+      "revokeAccountError": "Could not revoke the auditor account. Please try again.",
+      "grantRevokedError": "Cannot grant pack access to a revoked auditor. Re-invite them first.",
+      "grantRevokedNote": "Access is revoked. Re-invite this auditor to grant pack access again."
     },
     "cycleStatus": {
       "PLANNING": "Planning",
@@ -3635,6 +3691,18 @@
       "planCoverage": "{pct}% plan coverage",
       "runCoverage": "{pct}% run coverage",
       "passRate": "{pct}% pass rate"
+    },
+    "detail": {
+      "loadError": "Could not load the audit.",
+      "checklistError": "Could not update the checklist item.",
+      "checklistSaved": "Checklist item updated.",
+      "statusError": "Failed to update audit status.",
+      "statusChanged": "Audit status changed to {status}."
+    },
+    "packStatus": {
+      "DRAFT": "Draft",
+      "FROZEN": "Frozen",
+      "EXPORTED": "Exported"
     }
   },
   "findings": {

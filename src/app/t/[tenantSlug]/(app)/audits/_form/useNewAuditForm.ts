@@ -7,6 +7,7 @@
  * `useZodForm` driven by `NewAuditFormSchema`. Return shape stays
  * compatible with `<NewAuditModal>` + `<NewAuditFields>`.
  */
+import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useZodForm } from '@/lib/hooks/use-zod-form';
 import {
@@ -35,6 +36,14 @@ export interface NewAuditFormReturn {
 
 export interface UseNewAuditFormOptions {
     onSuccess: (audit: { id: string }) => void;
+    /**
+     * feat/audits-surface — seed `auditCycleId` from the list's active
+     * `?cycleId` filter so creating an audit while a cycle is selected
+     * defaults the new audit to that cycle. `useZodForm` captures `initial`
+     * once at mount, so this reflects the filter active when the modal
+     * first mounted.
+     */
+    initialCycleId?: string;
 }
 
 const INITIAL: NewAuditFormFields = {
@@ -51,11 +60,14 @@ const INITIAL: NewAuditFormFields = {
 
 export function useNewAuditForm({
     onSuccess,
+    initialCycleId,
 }: UseNewAuditFormOptions): NewAuditFormReturn {
     const apiUrl = useTenantApiUrl();
+    const t = useTranslations('audits');
     const zod = useZodForm({
         schema: NewAuditFormSchema,
-        initial: INITIAL,
+        // feat/audits-surface — prefill the cycle from the active list filter.
+        initial: { ...INITIAL, auditCycleId: initialCycleId ?? '' },
         onSubmit: async (payload) => {
             const res = await fetch(apiUrl('/audits'), {
                 method: 'POST',
@@ -76,7 +88,9 @@ export function useNewAuditForm({
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                throw new Error(err.error?.message || 'Failed to create audit');
+                throw new Error(
+                    err.error?.message || t('newModal.createFailed'),
+                );
             }
             const audit = await res.json();
             onSuccess(audit);

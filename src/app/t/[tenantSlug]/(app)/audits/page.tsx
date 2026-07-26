@@ -56,7 +56,6 @@ export default async function AuditsPage({
                 translations={{
                     title: t('title'),
                 listDescription: t('listDescription'),
-                    auditsCount: t('auditsCount', { count: audits.length }),
                     newAudit: t('newAudit'),
                     auditTitle: t('auditTitle'),
                     auditors: t('auditors'),

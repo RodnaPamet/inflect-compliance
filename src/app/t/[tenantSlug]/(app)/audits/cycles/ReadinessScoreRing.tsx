@@ -44,7 +44,7 @@ export function ReadinessScoreRing({
     const offset = c - (score / 100) * c;
     return (
         <svg width={size} height={size} className="transform -rotate-90" role="img" aria-label={ariaLabel}>
-            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="6" />
+            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--border-subtle)" strokeWidth="6" />
             <circle
                 cx={size / 2}
                 cy={size / 2}
@@ -63,7 +63,7 @@ export function ReadinessScoreRing({
                 textAnchor="middle"
                 dominantBaseline="central"
                 className="transform rotate-90 origin-center"
-                fill="white"
+                fill="var(--content-emphasis)"
                 fontSize={size / 3.5}
                 fontWeight="bold"
             >

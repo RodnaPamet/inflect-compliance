@@ -19,6 +19,9 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/hooks';
 import { cardVariants } from '@/components/ui/card';
 import { Plus, UserPlus, Xmark } from '@/components/ui/icons/nucleo';
+import { RequirePermission } from '@/components/require-permission';
+import { Tooltip } from '@/components/ui/tooltip';
+import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/status-variants';
 import { cn } from '@/lib/cn';
 
 interface PackAccessRef { auditPackId: string; grantedAt: string }
@@ -115,6 +118,14 @@ export default function AuditorsManagementPage() {
     const grantAccess = async (auditorId: string) => {
         const packId = selectedPack[auditorId];
         if (!packId) return;
+        // A revoked auditor has no active grants; refuse to re-open access
+        // without an explicit re-invite (which flips them back to ACTIVE).
+        // The UI hides the grant affordance for REVOKED rows; this is the
+        // defensive backstop.
+        if (auditors.find((a) => a.id === auditorId)?.status === 'REVOKED') {
+            toast.error(tx('auditorsAdmin.grantRevokedError'));
+            return;
+        }
         setBusyAuditor(auditorId);
         try {
             const res = await fetch(apiUrl('/audits/auditors/access'), {
@@ -186,14 +197,16 @@ export default function AuditorsManagementPage() {
                     <Heading level={1} id="auditors-admin-heading">{tx('auditorsAdmin.title')}</Heading>
                     <p className="text-content-muted text-sm">{tx('auditorsAdmin.subtitle')}</p>
                 </div>
-                <Button
-                    variant="primary"
-                    icon={<Plus className="-ml-0.5 -mr-2.5" />}
-                    onClick={() => setInviteOpen(true)}
-                    id="invite-auditor-btn"
-                >
-                    {tx('auditorsAdmin.inviteAuditor')}
-                </Button>
+                <RequirePermission resource="audits" action="manage">
+                    <Button
+                        variant="primary"
+                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        onClick={() => setInviteOpen(true)}
+                        id="invite-auditor-btn"
+                    >
+                        {tx('auditorsAdmin.inviteAuditor')}
+                    </Button>
+                </RequirePermission>
             </div>
 
             {auditors.length === 0 ? (
@@ -208,10 +221,15 @@ export default function AuditorsManagementPage() {
                 <div className="space-y-default">
                     {auditors.map((a) => {
                         const grantedIds = new Set(a.packAccess.map((p) => p.auditPackId));
-                        const options: ComboboxOption[] = packs
+                        // Carry the pack status as option `meta` so the picker can
+                        // badge DRAFT vs FROZEN vs EXPORTED packs distinctly (they
+                        // used to render identically). `label` stays a plain string
+                        // so search + trigger display keep working.
+                        const options: ComboboxOption<string>[] = packs
                             .filter((p) => !grantedIds.has(p.id))
-                            .map((p) => ({ value: p.id, label: p.name }));
+                            .map((p) => ({ value: p.id, label: p.name, meta: p.status }));
                         const chosen = selectedPack[a.id] ?? '';
+                        const isRevoked = a.status === 'REVOKED';
                         return (
                             <div key={a.id} className={cn(cardVariants(), 'space-y-default')} id={`auditor-${a.id}`}>
                                 <div className="flex flex-wrap items-center justify-between gap-compact">
@@ -245,43 +263,57 @@ export default function AuditorsManagementPage() {
                                                 <li key={pa.auditPackId} className="inline-flex items-center gap-tight rounded-full border border-border-subtle bg-bg-elevated px-2 py-1 text-xs">
                                                     <AppIcon name="package" size={12} />
                                                     <span className="truncate max-w-trunc-default">{packName(pa.auditPackId)}</span>
-                                                    <button
-                                                        type="button"
-                                                        className="text-content-subtle hover:text-content-error transition"
-                                                        aria-label={tx('auditorsAdmin.revokeAccessAria', { pack: packName(pa.auditPackId) })}
-                                                        onClick={() => setRevokeTarget({ auditorId: a.id, packId: pa.auditPackId })}
-                                                    >
-                                                        <Xmark className="h-3 w-3" />
-                                                    </button>
+                                                    <Tooltip content={tx('auditorsAdmin.revokeAccessAria', { pack: packName(pa.auditPackId) })}>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="xs"
+                                                            className="-mr-1 h-5 w-5 min-w-0 border-0 px-0 text-content-subtle hover:text-content-error"
+                                                            icon={<Xmark className="h-3 w-3" />}
+                                                            aria-label={tx('auditorsAdmin.revokeAccessAria', { pack: packName(pa.auditPackId) })}
+                                                            onClick={() => setRevokeTarget({ auditorId: a.id, packId: pa.auditPackId })}
+                                                            id={`revoke-access-${a.id}-${pa.auditPackId}`}
+                                                        />
+                                                    </Tooltip>
                                                 </li>
                                             ))}
                                         </ul>
                                     )}
                                 </div>
 
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-tight">
-                                    <div className="flex-1 min-w-0">
-                                        <Combobox
-                                            options={options}
-                                            selected={options.find((o) => o.value === chosen) ?? null}
-                                            setSelected={(opt) => setSelectedPack((s) => ({ ...s, [a.id]: opt?.value ?? '' }))}
-                                            placeholder={options.length === 0 ? tx('auditorsAdmin.allGranted') : tx('auditorsAdmin.grantPlaceholder')}
-                                            disabled={options.length === 0}
-                                            matchTriggerWidth
-                                            aria-label={tx('auditorsAdmin.grantPlaceholder')}
-                                        />
+                                {isRevoked ? (
+                                    <p className="text-xs text-content-subtle">{tx('auditorsAdmin.grantRevokedNote')}</p>
+                                ) : (
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-tight">
+                                        <div className="flex-1 min-w-0">
+                                            <Combobox
+                                                options={options}
+                                                selected={options.find((o) => o.value === chosen) ?? null}
+                                                setSelected={(opt) => setSelectedPack((s) => ({ ...s, [a.id]: opt?.value ?? '' }))}
+                                                placeholder={options.length === 0 ? tx('auditorsAdmin.allGranted') : tx('auditorsAdmin.grantPlaceholder')}
+                                                disabled={options.length === 0}
+                                                matchTriggerWidth
+                                                aria-label={tx('auditorsAdmin.grantPlaceholder')}
+                                                optionRight={(opt) =>
+                                                    opt.meta ? (
+                                                        <StatusBadge variant={AUDIT_PACK_STATUS_VARIANT[opt.meta] ?? DEFAULT_STATUS_VARIANT}>
+                                                            {tx(`packStatus.${opt.meta}`)}
+                                                        </StatusBadge>
+                                                    ) : null
+                                                }
+                                            />
+                                        </div>
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={() => grantAccess(a.id)}
+                                            disabled={!chosen || busyAuditor === a.id}
+                                            loading={busyAuditor === a.id}
+                                            id={`grant-access-${a.id}`}
+                                        >
+                                            {tx('auditorsAdmin.grant')}
+                                        </Button>
                                     </div>
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => grantAccess(a.id)}
-                                        disabled={!chosen || busyAuditor === a.id}
-                                        loading={busyAuditor === a.id}
-                                        id={`grant-access-${a.id}`}
-                                    >
-                                        {tx('auditorsAdmin.grant')}
-                                    </Button>
-                                </div>
+                                )}
                             </div>
                         );
                     })}

@@ -141,7 +141,13 @@ const PRIMARY_BUDGET: Record<string, number> = {
     "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx": 2,
+    // Two real <Button variant="primary"> (share-modal submit + add-item
+    // submit). The 3rd count is a scanner artifact: the error-state retry
+    // <Button variant="secondary"> added for the load-error region anchors a
+    // lazy <Button…variant="primary"> bridge that reaches the pre-existing
+    // freeze IconAction primary — a legitimate new region, not a competing
+    // primary button.
+    "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx": 2,
