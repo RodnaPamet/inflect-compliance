@@ -38,6 +38,18 @@ const CloneSchema = z.object({
     name: z.string().min(1).max(200).optional(),
 }).strip();
 
+// store-export attaches a pre-generated export artifact to a frozen pack.
+// `content` is buffered in memory (Buffer.from) and written to storage, so
+// cap it to bound memory and reject non-string bodies that would otherwise
+// 500 downstream. filename is UUID-prefixed + sanitised by
+// buildTenantObjectKey, so it only needs to be a bounded non-empty string.
+const MAX_EXPORT_CONTENT_CHARS = 10 * 1024 * 1024; // ~10 MiB of text/base64
+const StoreExportSchema = z.object({
+    content: z.string().max(MAX_EXPORT_CONTENT_CHARS),
+    filename: z.string().min(1).max(255),
+    mimeType: z.string().min(1).max(200).default('application/json'),
+}).strip();
+
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; packId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
@@ -90,15 +102,15 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
     }
     if (action === 'revoke-share') {
         const body = RevokeShareSchema.parse(raw);
-        return jsonResponse(await revokeShare(ctx, body.shareId));
+        return jsonResponse(await revokeShare(ctx, params.packId, body.shareId));
     }
     if (action === 'clone') {
         const body = CloneSchema.parse(raw);
         return jsonResponse(await clonePackForRetest(ctx, params.packId, body.name), { status: 201 });
     }
     if (action === 'store-export') {
-        const { content, filename, mimeType } = raw;
-        const result = await storeExportArtifact(ctx, params.packId, content, filename, mimeType || 'application/json');
+        const body = StoreExportSchema.parse(raw);
+        const result = await storeExportArtifact(ctx, params.packId, body.content, body.filename, body.mimeType);
         return jsonResponse(result, { status: 201 });
     }
 

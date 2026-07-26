@@ -252,13 +252,24 @@ export async function updateAudit(ctx: RequestContext, id: string, data: z.infer
             const itemIds = data.checklistUpdates.map((u) => u.id);
             const priorItems = await db.auditChecklistItem.findMany({
                 where: { id: { in: itemIds }, tenantId: ctx.tenantId },
-                select: { id: true, prompt: true, result: true },
+                // `auditId` is load-bearing here: it is the ONLY trustworthy
+                // source of the owning audit. The request's `id` (the URL
+                // audit) must never be used to stamp the write or the
+                // cascaded finding — a foreign checklist id would otherwise
+                // mis-attribute the item's Finding to the wrong audit.
+                select: { id: true, prompt: true, result: true, auditId: true },
             });
             const priorMap = new Map(priorItems.map((p) => [p.id, p]));
 
             for (const item of data.checklistUpdates) {
                 const prior = priorMap.get(item.id);
-                await AuditRepository.updateChecklistItem(db, ctx, item.id, {
+                // Reconcile every attacker-supplied id against the
+                // tenant-filtered priorMap. An id that isn't a known item
+                // for this tenant (foreign / nonexistent) is skipped — never
+                // blindly written.
+                if (!prior) continue;
+
+                await AuditRepository.updateChecklistItem(db, ctx, item.id, prior.auditId, {
                     // `result` is enum-shaped; do NOT sanitise.
                     result: item.result,
                     // `notes` is encrypted on AuditChecklistItem.notes
@@ -268,14 +279,15 @@ export async function updateAudit(ctx: RequestContext, id: string, data: z.infer
                         : item.notes,
                 });
 
-                // FAIL cascade: only on a real transition INTO FAIL.
+                // FAIL cascade: only on a real transition INTO FAIL. The
+                // finding is stamped with the item's OWN auditId (from the
+                // prior row), never the request's `id`.
                 if (
                     item.result === 'FAIL' &&
-                    prior &&
                     prior.result !== 'FAIL'
                 ) {
                     await cascadeChecklistFailure(db, ctx, {
-                        auditId: id,
+                        auditId: prior.auditId,
                         checklistItemId: item.id,
                         prompt: prior.prompt,
                         notes: typeof item.notes === 'string' ? sanitizePlainText(item.notes) : item.notes,

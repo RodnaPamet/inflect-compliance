@@ -37,7 +37,7 @@ export async function generateShareLink(ctx: RequestContext, packId: string, exp
     const hash = hashToken(token);
 
     await runInTenantContext(ctx, async (tdb) => {
-        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId } });
+        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null } });
         if (!pack) throw notFound('Audit pack not found');
         if (pack.status === 'DRAFT') throw badRequest('Cannot share a draft pack. Freeze it first.');
 
@@ -58,11 +58,18 @@ export async function generateShareLink(ctx: RequestContext, packId: string, exp
     return { token, expiresAt: expiresAt || null };
 }
 
-export async function revokeShare(ctx: RequestContext, shareId: string) {
+export async function revokeShare(ctx: RequestContext, packId: string, shareId: string) {
     assertCanSharePack(ctx);
     return runInTenantContext(ctx, async (tdb) => {
-        const share = await tdb.auditPackShare.findFirst({ where: { id: shareId, tenantId: ctx.tenantId } });
-        if (!share) throw notFound('Share not found');
+        const share = await tdb.auditPackShare.findFirst({
+            where: { id: shareId, tenantId: ctx.tenantId },
+            select: { id: true, auditPackId: true, revokedAt: true },
+        });
+        // The share must belong to BOTH the tenant AND the pack named in the
+        // URL. Without the pack cross-check the URL pack is decorative: one
+        // pack's route could revoke another pack's share (same tenant) and
+        // the AUDIT_PACK_REVOKED event would be attributed to the wrong pack.
+        if (!share || share.auditPackId !== packId) throw notFound('Share not found');
         if (share.revokedAt) throw badRequest('Share already revoked');
         await tdb.auditPackShare.update({ where: { id: shareId }, data: { revokedAt: new Date() } });
         await logEvent(tdb, ctx, { action: 'AUDIT_PACK_REVOKED', entityType: 'AuditPackShare', entityId: shareId, details: 'Share revoked', detailsJson: { category: 'access', operation: 'permission_changed', detail: 'Share link revoked' } });
@@ -74,24 +81,43 @@ export async function getPackByShareToken(token: string) {
     const hash = hashToken(token);
     return runInGlobalContext(async (db) => {
         const share = await db.auditPackShare.findFirst({
-        where: { tokenHash: hash, revokedAt: null },
-        include: {
-            pack: {
-                include: {
-                    items: { orderBy: { sortOrder: 'asc' } },
-                    cycle: { select: { frameworkKey: true, frameworkVersion: true, name: true } },
-                },
+            where: { tokenHash: hash, revokedAt: null },
+            select: { auditPackId: true, expiresAt: true },
+        });
+        if (!share) throw notFound('Invalid or expired share link');
+        if (share.expiresAt && share.expiresAt < new Date()) {
+            throw forbidden('Share link has expired');
+        }
+
+        // PUBLIC projection — the token holder is UNAUTHENTICATED, so expose
+        // ONLY the fields the external share page renders. Internal columns
+        // (tenantId, notes, frozenByUserId, spExport*, deletedAt, …) must
+        // never cross the boundary. A soft-deleted pack is a dead link.
+        const pack = await db.auditPack.findFirst({
+            where: { id: share.auditPackId, deletedAt: null },
+            select: {
+                id: true,
+                name: true,
+                status: true,
+                frozenAt: true,
+                cycle: { select: { name: true, frameworkKey: true, frameworkVersion: true } },
             },
-        },
-    });
-    if (!share) throw notFound('Invalid or expired share link');
-    if (share.expiresAt && share.expiresAt < new Date()) {
-        throw forbidden('Share link has expired');
-    }
+        });
+        // Never serve a DRAFT (sharing requires a frozen pack) or a
+        // missing/soft-deleted pack; both read as an invalid link.
+        if (!pack || pack.status === 'DRAFT') throw notFound('Invalid or expired share link');
+
+        const items = await db.auditPackItem.findMany({
+            where: { auditPackId: share.auditPackId },
+            orderBy: { sortOrder: 'asc' },
+            select: { id: true, entityType: true, entityId: true, snapshotJson: true },
+            take: 2000,
+        });
+
         return {
-            pack: share.pack,
-            cycle: share.pack.cycle,
-            items: share.pack.items,
+            pack: { id: pack.id, name: pack.name, status: pack.status, frozenAt: pack.frozenAt },
+            cycle: pack.cycle,
+            items,
         };
     });
 }
@@ -207,7 +233,7 @@ export interface ShareCommentRow {
 export async function listShareComments(ctx: RequestContext, packId: string) {
     assertCanViewPack(ctx);
     return runInTenantContext(ctx, async (tdb) => {
-        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId }, select: { id: true } });
+        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null }, select: { id: true } });
         if (!pack) throw notFound('Audit pack not found');
         const rows = await tdb.auditPackShareComment.findMany({
             where: { tenantId: ctx.tenantId, auditPackId: packId },
@@ -290,7 +316,7 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
             where: { tenantId: ctx.tenantId, sourceKind: AUDITOR_SHARE_COMMENT_SOURCE, sourceRef: commentId, deletedAt: null },
             select: { id: true },
         });
-        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId }, select: { auditCycleId: true } });
+        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null }, select: { auditCycleId: true } });
         // Deterministic attachment point: the materialised finding needs an
         // audit so readiness's `audit.auditCycleId` join folds it into the
         // cycle — any fieldwork audit in the cycle satisfies that join equally.
@@ -417,12 +443,22 @@ export async function grantAuditorAccess(ctx: RequestContext, auditorId: string,
     return runInTenantContext(ctx, async (tdb) => {
         const auditor = await tdb.auditorAccount.findFirst({ where: { id: auditorId, tenantId: ctx.tenantId } });
         if (!auditor) throw notFound('Auditor not found');
-        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId } });
+        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null } });
         if (!pack) throw notFound('Pack not found');
 
         try {
             await tdb.auditorPackAccess.create({ data: { tenantId: ctx.tenantId, auditorId, auditPackId: packId } });
-        } catch { throw badRequest('Auditor already has access to this pack'); }
+        } catch (err) {
+            // Only the known duplicate grant — a P2002 unique-constraint
+            // violation on [auditorId, auditPackId] — means "already has
+            // access". Every other failure (FK violation, RLS denial, lost
+            // connection) must propagate: masking them all as an idempotent
+            // success is a silent fail-open that hides real infra faults.
+            if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') {
+                throw badRequest('Auditor already has access to this pack');
+            }
+            throw err;
+        }
 
         await logEvent(tdb, ctx, { action: 'AUDITOR_GRANTED', entityType: 'AuditorPackAccess', entityId: `${auditorId}_${packId}`, details: JSON.stringify({ email: auditor.email }), detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditorId, detail: `Auditor granted access to pack ${packId}` } });
         return { granted: true };
@@ -432,7 +468,7 @@ export async function grantAuditorAccess(ctx: RequestContext, auditorId: string,
 export async function revokeAuditorAccess(ctx: RequestContext, auditorId: string, packId: string) {
     assertCanManageAuditors(ctx);
     return runInTenantContext(ctx, async (tdb) => {
-        await tdb.auditorPackAccess.deleteMany({ where: { auditorId, auditPackId: packId } });
+        await tdb.auditorPackAccess.deleteMany({ where: { auditorId, auditPackId: packId, tenantId: ctx.tenantId } });
         await logEvent(tdb, ctx, { action: 'AUDITOR_REVOKED', entityType: 'AuditorPackAccess', entityId: `${auditorId}_${packId}`, details: 'Auditor access revoked', detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: auditorId, detail: `Auditor access revoked from pack ${packId}` } });
         return { revoked: true };
     });
@@ -496,7 +532,7 @@ export interface PackShareRow {
 export async function listPackShares(ctx: RequestContext, packId: string): Promise<PackShareRow[]> {
     assertCanSharePack(ctx);
     return runInTenantContext(ctx, async (tdb) => {
-        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId }, select: { id: true } });
+        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null }, select: { id: true } });
         if (!pack) throw notFound('Audit pack not found');
         const rows = await tdb.auditPackShare.findMany({
             where: { tenantId: ctx.tenantId, auditPackId: packId },

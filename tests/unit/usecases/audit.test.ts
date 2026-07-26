@@ -96,7 +96,7 @@ beforeEach(() => {
 // feat/audit-cycle-unify — update-path fake db carrying the checklist
 // prefetch (transition detection) + the finding idempotency lookup.
 function fakeUpdateDb(opts: {
-    priorItems?: { id: string; prompt: string; result: string }[];
+    priorItems?: { id: string; prompt: string; result: string; auditId: string }[];
     existingFinding?: { id: string } | null;
 } = {}) {
     return {
@@ -277,8 +277,8 @@ describe('updateAudit', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn(fakeUpdateDb({
                 priorItems: [
-                    { id: 'i1', prompt: 'P1', result: 'NOT_TESTED' },
-                    { id: 'i2', prompt: 'P2', result: 'NOT_TESTED' },
+                    { id: 'i1', prompt: 'P1', result: 'NOT_TESTED', auditId: 'a1' },
+                    { id: 'i2', prompt: 'P2', result: 'NOT_TESTED', auditId: 'a1' },
                 ],
             }) as never),
         );
@@ -292,11 +292,12 @@ describe('updateAudit', () => {
         });
 
         // Each item gets sanitised individually — the per-element
-        // wrapper protects evidence trails on PDF export.
+        // wrapper protects evidence trails on PDF export. The data arg is
+        // the 5th positional (auditId was inserted at index [3]).
         expect(mockUpdateItem).toHaveBeenCalledTimes(2);
-        const firstNoteArg = (mockUpdateItem.mock.calls[0] as any[])[3];
+        const firstNoteArg = (mockUpdateItem.mock.calls[0] as any[])[4];
         expect(firstNoteArg.notes).toBe('SANITISED(<script>x</script>)');
-        const secondNoteArg = (mockUpdateItem.mock.calls[1] as any[])[3];
+        const secondNoteArg = (mockUpdateItem.mock.calls[1] as any[])[4];
         expect(secondNoteArg.notes).toBe('SANITISED(plain note)');
         // result is enum-shaped — must NOT be sanitised (would mangle the value).
         expect(firstNoteArg.result).toBe('PASS');
@@ -322,7 +323,7 @@ describe('updateAudit', () => {
         it('a NOT_TESTED → FAIL transition spawns one Finding + one remediation Task', async () => {
             mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
                 fn(fakeUpdateDb({
-                    priorItems: [{ id: 'i1', prompt: 'Verify A.5.1 access policy', result: 'NOT_TESTED' }],
+                    priorItems: [{ id: 'i1', prompt: 'Verify A.5.1 access policy', result: 'NOT_TESTED', auditId: 'a1' }],
                     existingFinding: null,
                 }) as never),
             );
@@ -350,7 +351,7 @@ describe('updateAudit', () => {
         it('is idempotent — no duplicate Finding when one already exists for the item (PASS→FAIL re-toggle)', async () => {
             mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
                 fn(fakeUpdateDb({
-                    priorItems: [{ id: 'i1', prompt: 'P', result: 'PASS' }],
+                    priorItems: [{ id: 'i1', prompt: 'P', result: 'PASS', auditId: 'a1' }],
                     existingFinding: { id: 'existing-f' },
                 }) as never),
             );
@@ -366,7 +367,7 @@ describe('updateAudit', () => {
         it('does NOT cascade when the item was already FAIL (no real transition)', async () => {
             mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
                 fn(fakeUpdateDb({
-                    priorItems: [{ id: 'i1', prompt: 'P', result: 'FAIL' }],
+                    priorItems: [{ id: 'i1', prompt: 'P', result: 'FAIL', auditId: 'a1' }],
                     existingFinding: null,
                 }) as never),
             );

@@ -79,6 +79,10 @@ jest.mock('@/app-layer/usecases/finding', () => ({ createFinding: (...a: any[]) 
 jest.mock('@/app-layer/usecases/task', () => ({ createTask: (...a: any[]) => createTaskMock(...a) }));
 const globalDb: any = {
     auditPackShare: { findFirst: jest.fn() },
+    // getPackByShareToken now resolves the share first, then projects the
+    // pack + items via separate queries (public field projection).
+    auditPack: { findFirst: jest.fn() },
+    auditPackItem: { findMany: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => {
@@ -127,7 +131,7 @@ beforeEach(() => {
         tenantDb.auditorAccount.upsert, tenantDb.auditorAccount.findUnique, tenantDb.auditorAccount.findFirst, tenantDb.auditorAccount.findMany, tenantDb.auditorAccount.update,
         tenantDb.auditPackShare.findMany,
         tenantDb.auditorPackAccess.create, tenantDb.auditorPackAccess.deleteMany,
-        globalDb.auditPackShare.findFirst,
+        globalDb.auditPackShare.findFirst, globalDb.auditPack.findFirst, globalDb.auditPackItem.findMany,
         assertCanSharePack as jest.Mock,
         assertCanManageAuditors as jest.Mock,
     ].forEach((m: any) => m.mockReset && m.mockReset());
@@ -219,24 +223,36 @@ describe('generateShareLink', () => {
 describe('revokeShare', () => {
     it('throws notFound when the share id is foreign to the tenant', async () => {
         tenantDb.auditPackShare.findFirst.mockResolvedValueOnce(null);
-        await expect(revokeShare(ctx, 's-foreign')).rejects.toThrow(/share not found/i);
+        await expect(revokeShare(ctx, 'p-1', 's-foreign')).rejects.toThrow(/share not found/i);
         expect(tenantDb.auditPackShare.update).not.toHaveBeenCalled();
+    });
+
+    it('throws notFound when the share belongs to a DIFFERENT pack (URL pack is not decorative)', async () => {
+        // The share resolves (same tenant) but is attached to another pack —
+        // revoking it via this pack's URL must 404, not silently revoke a
+        // sibling pack's share and mis-attribute AUDIT_PACK_REVOKED.
+        tenantDb.auditPackShare.findFirst.mockResolvedValueOnce({
+            id: 's-1', auditPackId: 'p-OTHER', revokedAt: null,
+        });
+        await expect(revokeShare(ctx, 'p-1', 's-1')).rejects.toThrow(/share not found/i);
+        expect(tenantDb.auditPackShare.update).not.toHaveBeenCalled();
+        expect(auditCalls).toHaveLength(0);
     });
 
     it('is IDEMPOTENT-rejecting: already-revoked share throws badRequest (no double-write)', async () => {
         tenantDb.auditPackShare.findFirst.mockResolvedValueOnce({
-            id: 's-1', revokedAt: new Date('2026-01-01'),
+            id: 's-1', auditPackId: 'p-1', revokedAt: new Date('2026-01-01'),
         });
-        await expect(revokeShare(ctx, 's-1')).rejects.toThrow(/already revoked/i);
+        await expect(revokeShare(ctx, 'p-1', 's-1')).rejects.toThrow(/already revoked/i);
         expect(tenantDb.auditPackShare.update).not.toHaveBeenCalled();
         expect(auditCalls).toHaveLength(0);
     });
 
     it('stamps revokedAt + fires AUDIT_PACK_REVOKED on the happy-path', async () => {
-        tenantDb.auditPackShare.findFirst.mockResolvedValueOnce({ id: 's-1', revokedAt: null });
+        tenantDb.auditPackShare.findFirst.mockResolvedValueOnce({ id: 's-1', auditPackId: 'p-1', revokedAt: null });
         tenantDb.auditPackShare.update.mockResolvedValueOnce({ id: 's-1', revokedAt: new Date() });
 
-        const result = await revokeShare(ctx, 's-1');
+        const result = await revokeShare(ctx, 'p-1', 's-1');
 
         expect(result).toEqual({ revoked: true });
         expect(tenantDb.auditPackShare.update).toHaveBeenCalledWith({
@@ -268,23 +284,41 @@ describe('getPackByShareToken', () => {
         await expect(getPackByShareToken('valid-but-expired')).rejects.toThrow(/expired/i);
     });
 
-    it('returns { pack, cycle, items } on the happy-path', async () => {
-        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({
-            id: 's-1',
-            expiresAt: null,
-            revokedAt: null,
-            pack: {
-                id: 'p-1',
-                items: [{ id: 'i-1', sortOrder: 1 }],
-                cycle: { frameworkKey: 'iso', frameworkVersion: '2022', name: 'Cycle 1' },
-            },
+    it('returns a PROJECTED { pack, cycle, items } on the happy-path (no internal fields leak)', async () => {
+        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null });
+        globalDb.auditPack.findFirst.mockResolvedValueOnce({
+            id: 'p-1', name: 'Q1 pack', status: 'FROZEN', frozenAt: new Date('2026-02-01'),
+            cycle: { name: 'Cycle 1', frameworkKey: 'iso', frameworkVersion: '2022' },
         });
+        globalDb.auditPackItem.findMany.mockResolvedValueOnce([
+            { id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' },
+        ]);
 
         const result = await getPackByShareToken('legit');
 
-        expect(result.pack.id).toBe('p-1');
+        // The public payload carries ONLY the projected pack fields — no
+        // tenantId, notes, frozenByUserId, spExport*, deletedAt.
+        expect(result.pack).toEqual({ id: 'p-1', name: 'Q1 pack', status: 'FROZEN', frozenAt: expect.any(Date) });
         expect(result.cycle.frameworkKey).toBe('iso');
         expect(result.items).toHaveLength(1);
+
+        const packQuery = globalDb.auditPack.findFirst.mock.calls[0][0];
+        expect(Object.keys(packQuery.select).sort()).toEqual(['cycle', 'frozenAt', 'id', 'name', 'status']);
+        expect(packQuery.where.deletedAt).toBeNull(); // soft-deleted packs filtered out
+        expect(globalDb.auditPackItem.findMany.mock.calls[0][0].take).toBe(2000); // bounded read
+    });
+
+    it('treats a soft-deleted OR DRAFT pack as a dead link (never serves it)', async () => {
+        // deletedAt filter yields no row → invalid link.
+        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null });
+        globalDb.auditPack.findFirst.mockResolvedValueOnce(null);
+        await expect(getPackByShareToken('legit')).rejects.toThrow(/invalid or expired/i);
+
+        // A pack that regressed to DRAFT must not be served publicly either.
+        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({ auditPackId: 'p-1', expiresAt: null });
+        globalDb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', name: 'x', status: 'DRAFT', frozenAt: null, cycle: {} });
+        await expect(getPackByShareToken('legit')).rejects.toThrow(/invalid or expired/i);
+        expect(globalDb.auditPackItem.findMany).not.toHaveBeenCalled();
     });
 
     it('queries by tokenHash AND revokedAt-null (no auth bypass via revoked share)', async () => {
@@ -392,6 +426,19 @@ describe('grantAuditorAccess', () => {
         expect(auditCalls).toHaveLength(0);
     });
 
+    it('does NOT mask a non-duplicate failure (FK / RLS / connection) as "already has access"', async () => {
+        // Only P2002 means "already granted". Any other error — here a
+        // dropped connection — must propagate untouched; swallowing it as an
+        // idempotent success is a fail-open that hides real infra faults.
+        tenantDb.auditorAccount.findFirst.mockResolvedValueOnce({ id: 'a-1', email: 'a@ex.com' });
+        tenantDb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1' });
+        tenantDb.auditorPackAccess.create.mockRejectedValueOnce(
+            Object.assign(new Error('connection terminated'), { code: 'P1001' }),
+        );
+        await expect(grantAuditorAccess(ctx, 'a-1', 'p-1')).rejects.toThrow(/connection terminated/i);
+        expect(auditCalls).toHaveLength(0);
+    });
+
     it('creates the access row + audit on happy-path', async () => {
         tenantDb.auditorAccount.findFirst.mockResolvedValueOnce({ id: 'a-1', email: 'a@ex.com' });
         tenantDb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1' });
@@ -415,7 +462,7 @@ describe('revokeAuditorAccess', () => {
 
         expect(result).toEqual({ revoked: true });
         expect(tenantDb.auditorPackAccess.deleteMany).toHaveBeenCalledWith({
-            where: { auditorId: 'a-1', auditPackId: 'p-1' },
+            where: { auditorId: 'a-1', auditPackId: 'p-1', tenantId: ctx.tenantId },
         });
         expect(auditCalls[0].action).toBe('AUDITOR_REVOKED');
     });

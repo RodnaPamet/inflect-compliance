@@ -2,7 +2,6 @@
  * Audit Readiness — Pack CRUD, Freeze, Snapshots, Export, Default Pack Preview
  */
 import { AuditPackItemEntityType, WorkItemStatus, ControlStatus } from '@prisma/client';
-import { type PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../../types';
 import { policyCountsWhere } from '@/lib/policy/coverage-predicate';
 import {
@@ -36,9 +35,14 @@ export async function listAuditPacks(ctx: RequestContext, cycleId?: string) {
     assertCanViewPack(ctx);
     return runInTenantContext(ctx, (tdb) =>
         tdb.auditPack.findMany({
-            where: { tenantId: ctx.tenantId, ...(cycleId ? { auditCycleId: cycleId } : {}) },
+            // Soft-deleted packs are never listed (the column + index exist
+            // on AuditPack but nothing filtered it before).
+            where: { tenantId: ctx.tenantId, deletedAt: null, ...(cycleId ? { auditCycleId: cycleId } : {}) },
             include: { _count: { select: { items: true } }, cycle: { select: { frameworkKey: true, name: true } } },
             orderBy: { createdAt: 'desc' },
+            // Bounded read — a tenant realistically has far fewer than 1000
+            // packs; this caps the query rather than returning the whole table.
+            take: 1000,
         })
     );
 }
@@ -47,9 +51,12 @@ export async function getAuditPack(ctx: RequestContext, packId: string) {
     assertCanViewPack(ctx);
     const pack = await runInTenantContext(ctx, (tdb) =>
         tdb.auditPack.findFirst({
-            where: { id: packId, tenantId: ctx.tenantId },
+            where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
             include: {
-                items: { orderBy: { sortOrder: 'asc' } },
+                // Safety ceiling far above any realistic pack (the add-items
+                // route caps 2000/call, packs are curated) — bounds the
+                // relation load without truncating a genuine export.
+                items: { orderBy: { sortOrder: 'asc' }, take: 10000 },
                 cycle: true,
                 frozenBy: { select: { id: true, name: true, email: true } },
                 _count: { select: { items: true, shares: true } },
@@ -63,7 +70,7 @@ export async function getAuditPack(ctx: RequestContext, packId: string) {
 export async function updateAuditPack(ctx: RequestContext, packId: string, data: { name?: string; notes?: string }) {
     assertCanManageAuditPacks(ctx);
     const pack = await runInTenantContext(ctx, async (tdb) => {
-        const existing = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId } });
+        const existing = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null } });
         if (!existing) throw notFound('Audit pack not found');
         if (existing.status !== 'DRAFT') throw badRequest('Cannot update a frozen or exported pack');
         return tdb.auditPack.update({
@@ -84,10 +91,45 @@ export async function addAuditPackItems(
 ) {
     assertCanManageAuditPacks(ctx);
     const outcome = await runInTenantContext(ctx, async (tdb) => {
-        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId } });
+        const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null } });
         if (!pack) throw notFound('Audit pack not found');
+        // #2 — a frozen/exported pack is immutable; never write items to it.
         if (pack.status !== 'DRAFT') throw badRequest('Cannot add items to a frozen or exported pack');
         if (!items || items.length === 0) throw badRequest('At least one item required');
+
+        // #4 — validate every body-supplied entityId belongs to THIS tenant
+        // BEFORE inserting (mirrors createAudit's cycle-ref check). Previously
+        // the id was stamped with ctx.tenantId and linked without checking the
+        // referenced row exists — a foreign/absent id created a dangling item.
+        // One batched lookup per concrete entity type (no per-item N+1). The
+        // ISSUE type maps to Task; synthetic types (READINESS_REPORT /
+        // FRAMEWORK_COVERAGE / FILE / TEST_RUN) reference computed artefacts or
+        // storage keys, not a single owned row, so they are not FK-checked.
+        const idsOf = (t: string) => items.filter((it) => it.entityType === t).map((it) => it.entityId);
+        const controlIds = idsOf('CONTROL');
+        const policyIds = idsOf('POLICY');
+        const evidenceIds = idsOf('EVIDENCE');
+        const issueIds = idsOf('ISSUE');
+        const [foundControls, foundPolicies, foundEvidence, foundTasks] = await Promise.all([
+            controlIds.length ? tdb.control.findMany({ where: { id: { in: controlIds }, tenantId: ctx.tenantId, deletedAt: null }, select: { id: true } }) : [],
+            policyIds.length ? tdb.policy.findMany({ where: { id: { in: policyIds }, tenantId: ctx.tenantId, deletedAt: null }, select: { id: true } }) : [],
+            // EVIDENCE items reference an Evidence row (the freeze snapshot reads
+            // Evidence); FILE items — validated separately — reference FileRecord.
+            evidenceIds.length ? tdb.evidence.findMany({ where: { id: { in: evidenceIds }, tenantId: ctx.tenantId, deletedAt: null }, select: { id: true } }) : [],
+            issueIds.length ? tdb.task.findMany({ where: { id: { in: issueIds }, tenantId: ctx.tenantId, deletedAt: null }, select: { id: true } }) : [],
+        ]);
+        const known: Record<string, Set<string>> = {
+            CONTROL: new Set(foundControls.map((r) => r.id)),
+            POLICY: new Set(foundPolicies.map((r) => r.id)),
+            EVIDENCE: new Set(foundEvidence.map((r) => r.id)),
+            ISSUE: new Set(foundTasks.map((r) => r.id)),
+        };
+        for (const item of items) {
+            const set = known[item.entityType];
+            if (set && !set.has(item.entityId)) {
+                throw badRequest('INVALID_PACK_ITEM_REF', `${item.entityType} ${item.entityId} not found in this tenant`);
+            }
+        }
 
         const payload = items.map(item => ({
             tenantId: ctx.tenantId,
@@ -115,114 +157,28 @@ export async function addAuditPackItems(
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Snapshot Creation РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
-async function createControlSnapshot(tdb: PrismaTx, controlId: string, tenantId: string): Promise<string> {
-    const ctrl = await tdb.control.findFirst({
-        where: { id: controlId, tenantId },
-        include: {
-            tasks: { select: { id: true, title: true, status: true, dueAt: true } },
-            // Evidence↔Control is a many-to-many join now; the snapshot only
-            // needs the linked-evidence count (one join row per distinct
-            // evidence via the unique key).
-            evidenceControlLinks: { where: { tenantId }, select: { id: true } },
-            requirementLinks: { include: { requirement: { select: { code: true, title: true, frameworkId: true } } } },
-        },
-    });
-    if (!ctrl) return JSON.stringify({ error: 'Control not found', entityId: controlId });
-    return JSON.stringify({
-        code: ctrl.code, name: ctrl.name, status: ctrl.status,
-        objective: ctrl.objective,
-        owner: ctrl.ownerUserId,
-        taskCompletion: { total: ctrl.tasks.length, done: ctrl.tasks.filter((t) => t.status === WorkItemStatus.RESOLVED || t.status === WorkItemStatus.CLOSED).length },
-        evidenceCount: ctrl.evidenceControlLinks.length,
-        mappedRequirements: (ctrl.requirementLinks || []).map((l) => ({
-            code: l.requirement.code, title: l.requirement.title,
-        })),
-        snapshotAt: new Date().toISOString(),
-    });
-}
-
-async function createPolicySnapshot(tdb: PrismaTx, policyId: string, tenantId: string): Promise<string> {
-    const pol = await tdb.policy.findFirst({
-        where: { id: policyId, tenantId },
-        include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1, select: { versionNumber: true } } },
-    });
-    if (!pol) return JSON.stringify({ error: 'Policy not found', entityId: policyId });
-    return JSON.stringify({
-        title: pol.title, status: pol.status, category: pol.category,
-        currentVersion: pol.versions[0]?.versionNumber,
-        snapshotAt: new Date().toISOString(),
-    });
-}
-
-async function createEvidenceSnapshot(tdb: PrismaTx, evidenceId: string, tenantId: string): Promise<string> {
-    const ev = await tdb.evidence.findFirst({ where: { id: evidenceId, tenantId } });
-    if (!ev) return JSON.stringify({ error: 'Evidence not found', entityId: evidenceId });
-    return JSON.stringify({
-        title: ev.title, type: ev.type, status: ev.status,
-        snapshotAt: new Date().toISOString(),
-    });
-}
-
-async function createIssueSnapshot(tdb: PrismaTx, issueId: string, tenantId: string): Promise<string> {
-    const issue = await tdb.task.findFirst({ where: { id: issueId, tenantId } });
-    if (!issue) return JSON.stringify({ error: 'Issue not found', entityId: issueId });
-    return JSON.stringify({
-        title: issue.title, type: issue.type, severity: issue.severity,
-        status: issue.status, dueAt: issue.dueAt,
-        snapshotAt: new Date().toISOString(),
-    });
-}
+// Snapshot serialisation is inlined into freezeAuditPack below. The
+// per-item source rows are BATCH-loaded there (one findMany per entity
+// type) rather than one findFirst per item, so the JSON shaping runs
+// over an in-memory map — no per-item round-trip inside the freeze
+// transaction. The shapes below are preserved verbatim from the former
+// createControl/Policy/Evidence/IssueSnapshot helpers.
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Freeze Pack РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
 export async function freezeAuditPack(ctx: RequestContext, packId: string) {
     assertCanFreezePack(ctx);
 
-    // Use an extended transaction timeout (60s) because large packs (500+ items)
-    // require snapshot creation for each item, which exceeds the default 5s timeout.
-    const frozenPack = await runInTenantContext(ctx, async (tdb) => {
-        const pack = await tdb.auditPack.findFirst({
-            where: { id: packId, tenantId: ctx.tenantId },
-            include: { items: true },
-        });
-        if (!pack) throw notFound('Audit pack not found');
-        if (pack.status !== 'DRAFT') throw badRequest('Pack is already frozen or exported');
-        if (pack.items.length === 0) throw badRequest('Cannot freeze an empty pack');
-
-        // Create snapshots for all items in chunks
-        const CHUNK_SIZE = 10;
-        for (let i = 0; i < pack.items.length; i += CHUNK_SIZE) {
-            const chunk = pack.items.slice(i, i + CHUNK_SIZE);
-            await Promise.all(chunk.map(async (item) => {
-                let snapshot = item.snapshotJson;
-                try {
-                    if (!snapshot || snapshot === '{}') {
-                        switch (item.entityType) {
-                            case 'CONTROL': snapshot = await createControlSnapshot(tdb, item.entityId, ctx.tenantId); break;
-                            case 'POLICY': snapshot = await createPolicySnapshot(tdb, item.entityId, ctx.tenantId); break;
-                            case 'EVIDENCE': snapshot = await createEvidenceSnapshot(tdb, item.entityId, ctx.tenantId); break;
-                            case 'ISSUE': snapshot = await createIssueSnapshot(tdb, item.entityId, ctx.tenantId); break;
-                            default: snapshot = JSON.stringify({ entityType: item.entityType, entityId: item.entityId, snapshotAt: new Date().toISOString() });
-                        }
-                        await tdb.auditPackItem.update({ where: { id: item.id }, data: { snapshotJson: snapshot } });
-                    }
-                } catch { /* keep existing snapshot */ }
-            }));
-        }
-
-        const result = await tdb.auditPack.update({
-            where: { id: packId },
-            data: { status: 'FROZEN', frozenAt: new Date(), frozenByUserId: ctx.userId },
-        });
-
-        await logEvent(tdb, ctx, { action: 'AUDIT_PACK_FROZEN', entityType: 'AuditPack', entityId: packId, details: JSON.stringify({ itemCount: pack.items.length }), detailsJson: { category: 'status_change', entityName: 'AuditPack', fromStatus: 'DRAFT', toStatus: 'FROZEN', reason: `Pack frozen with ${pack.items.length} items` } });
-
-        return { frozenPack: result, itemCount: pack.items.length };
-    }, { timeout: 60000, maxWait: 10000 });
-
-    // Phase 2: Attach SoA snapshot as EXPORT_ARTIFACT (best-effort, separate transaction)
-    // This runs outside the freeze transaction because getSoA opens its own
-    // runInTenantContext calls, and Prisma interactive transactions cannot be nested.
+    // ── Phase 1 (#2): attach the SoA snapshot as an EXPORT_ARTIFACT item
+    // WHILE THE PACK IS STILL DRAFT — before the status flip in Phase 2. It
+    // used to run AFTER the freeze, writing to an already-FROZEN pack.
+    // `getSoA` opens its own tenant transactions, so it cannot run inside an
+    // interactive transaction; the append therefore lands in a short,
+    // ISOLATED transaction. Best-effort by design: a SoA failure (or the
+    // not-yet-migrated EXPORT_ARTIFACT enum value, which the DB rejects) must
+    // never abort the freeze — keeping it in its own try-caught transaction
+    // is what guarantees that. The DRAFT + non-empty guards mirror Phase 2 so
+    // nothing is ever written to a frozen or empty pack.
     try {
         const { getSoA } = await import('../soa');
         const soaReport = await getSoA(ctx, {
@@ -247,8 +203,16 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
             })),
             snapshotAt: new Date().toISOString(),
         });
-        await runInTenantContext(ctx, (tdb) =>
-            tdb.auditPackItem.create({
+        await runInTenantContext(ctx, async (tdb) => {
+            const pack = await tdb.auditPack.findFirst({
+                where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
+                select: { status: true, _count: { select: { items: true } } },
+            });
+            // Only append to a still-DRAFT, non-empty pack; Phase 2 is the
+            // authority that raises the real not-found / already-frozen /
+            // empty error to the caller.
+            if (!pack || pack.status !== 'DRAFT' || pack._count.items === 0) return;
+            await tdb.auditPackItem.create({
                 data: {
                     tenantId: ctx.tenantId,
                     auditPackId: packId,
@@ -256,14 +220,159 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
                     entityType: 'EXPORT_ARTIFACT' as AuditPackItemEntityType,
                     entityId: `soa-${soaReport.framework}`,
                     snapshotJson: soaSnapshot,
-                    sortOrder: frozenPack.itemCount + 1,
+                    sortOrder: pack._count.items + 1,
                 },
-            })
-        );
+            });
+        });
     } catch { /* SoA attachment is best-effort */ }
 
+    // ── Phase 2: snapshot every item + flip status → FROZEN in one transaction.
+    // Extended 60s timeout because large packs (500+ items) need a snapshot
+    // write per item. The source rows are BATCH-loaded (one findMany per
+    // entity type) BEFORE the write loop — the previous code ran ~1 findFirst
+    // per item inside this 60s transaction (an N+1). Snapshot failures are
+    // COLLECTED and surfaced (#8) instead of being swallowed into a silent
+    // '{}' while still reporting "frozen with N items".
+    const frozen = await runInTenantContext(ctx, async (tdb) => {
+        const pack = await tdb.auditPack.findFirst({
+            where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
+            include: { items: true },
+        });
+        if (!pack) throw notFound('Audit pack not found');
+        if (pack.status !== 'DRAFT') throw badRequest('Pack is already frozen or exported');
+        if (pack.items.length === 0) throw badRequest('Cannot freeze an empty pack');
+
+        // Items still lacking a snapshot ('{}' or empty) need one built. Batch
+        // one findMany per concrete entity type, then serialise from a map.
+        const needing = pack.items.filter((it) => !it.snapshotJson || it.snapshotJson === '{}');
+        const idsFor = (t: string) => needing.filter((it) => it.entityType === t).map((it) => it.entityId);
+        const controlIds = idsFor('CONTROL');
+        const policyIds = idsFor('POLICY');
+        const evidenceIds = idsFor('EVIDENCE');
+        const issueIds = idsFor('ISSUE');
+
+        const [controls, policies, evidences, issues] = await Promise.all([
+            controlIds.length
+                ? tdb.control.findMany({
+                    where: { id: { in: controlIds }, tenantId: ctx.tenantId },
+                    include: {
+                        tasks: { select: { id: true, title: true, status: true, dueAt: true } },
+                        // Evidence↔Control is many-to-many; the snapshot only
+                        // needs the linked-evidence count.
+                        evidenceControlLinks: { where: { tenantId: ctx.tenantId }, select: { id: true } },
+                        requirementLinks: { include: { requirement: { select: { code: true, title: true, frameworkId: true } } } },
+                    },
+                })
+                : [],
+            policyIds.length
+                ? tdb.policy.findMany({
+                    where: { id: { in: policyIds }, tenantId: ctx.tenantId },
+                    include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1, select: { versionNumber: true } } },
+                })
+                : [],
+            evidenceIds.length
+                ? tdb.evidence.findMany({ where: { id: { in: evidenceIds }, tenantId: ctx.tenantId } })
+                : [],
+            issueIds.length
+                ? tdb.task.findMany({ where: { id: { in: issueIds }, tenantId: ctx.tenantId } })
+                : [],
+        ]);
+        const controlMap = new Map(controls.map((c) => [c.id, c]));
+        const policyMap = new Map(policies.map((p) => [p.id, p]));
+        const evidenceMap = new Map(evidences.map((e) => [e.id, e]));
+        const issueMap = new Map(issues.map((i) => [i.id, i]));
+
+        // A "snapshot failure" = the item's source row was gone at freeze time.
+        // The item still gets an explicit error-shape snapshot (so the pack
+        // freezes and the auditor sees the missing source), and the item is
+        // recorded here so the operator sees WHICH items degraded — the whole
+        // point of #8. Any OTHER error (a batched read / the update itself
+        // throwing) is no longer swallowed: it aborts the transaction loudly.
+        const snapshotFailures: Array<{ itemId: string; entityType: string; entityId: string; reason: string }> = [];
+
+        for (const item of needing) {
+            let snapshot: string;
+            switch (item.entityType) {
+                case 'CONTROL': {
+                    const rec = controlMap.get(item.entityId);
+                    if (!rec) {
+                        snapshot = JSON.stringify({ error: 'Control not found', entityId: item.entityId });
+                        snapshotFailures.push({ itemId: item.id, entityType: item.entityType, entityId: item.entityId, reason: 'Control not found' });
+                    } else {
+                        snapshot = JSON.stringify({
+                            code: rec.code, name: rec.name, status: rec.status,
+                            objective: rec.objective,
+                            owner: rec.ownerUserId,
+                            taskCompletion: { total: rec.tasks.length, done: rec.tasks.filter((t) => t.status === WorkItemStatus.RESOLVED || t.status === WorkItemStatus.CLOSED).length },
+                            evidenceCount: rec.evidenceControlLinks.length,
+                            mappedRequirements: (rec.requirementLinks || []).map((l) => ({ code: l.requirement.code, title: l.requirement.title })),
+                            snapshotAt: new Date().toISOString(),
+                        });
+                    }
+                    break;
+                }
+                case 'POLICY': {
+                    const rec = policyMap.get(item.entityId);
+                    if (!rec) {
+                        snapshot = JSON.stringify({ error: 'Policy not found', entityId: item.entityId });
+                        snapshotFailures.push({ itemId: item.id, entityType: item.entityType, entityId: item.entityId, reason: 'Policy not found' });
+                    } else {
+                        snapshot = JSON.stringify({
+                            title: rec.title, status: rec.status, category: rec.category,
+                            currentVersion: rec.versions[0]?.versionNumber,
+                            snapshotAt: new Date().toISOString(),
+                        });
+                    }
+                    break;
+                }
+                case 'EVIDENCE': {
+                    const rec = evidenceMap.get(item.entityId);
+                    if (!rec) {
+                        snapshot = JSON.stringify({ error: 'Evidence not found', entityId: item.entityId });
+                        snapshotFailures.push({ itemId: item.id, entityType: item.entityType, entityId: item.entityId, reason: 'Evidence not found' });
+                    } else {
+                        snapshot = JSON.stringify({
+                            title: rec.title, type: rec.type, status: rec.status,
+                            snapshotAt: new Date().toISOString(),
+                        });
+                    }
+                    break;
+                }
+                case 'ISSUE': {
+                    const rec = issueMap.get(item.entityId);
+                    if (!rec) {
+                        snapshot = JSON.stringify({ error: 'Issue not found', entityId: item.entityId });
+                        snapshotFailures.push({ itemId: item.id, entityType: item.entityType, entityId: item.entityId, reason: 'Issue not found' });
+                    } else {
+                        snapshot = JSON.stringify({
+                            title: rec.title, type: rec.type, severity: rec.severity,
+                            status: rec.status, dueAt: rec.dueAt,
+                            snapshotAt: new Date().toISOString(),
+                        });
+                    }
+                    break;
+                }
+                default:
+                    snapshot = JSON.stringify({ entityType: item.entityType, entityId: item.entityId, snapshotAt: new Date().toISOString() });
+            }
+            await tdb.auditPackItem.update({ where: { id: item.id }, data: { snapshotJson: snapshot } });
+        }
+
+        const result = await tdb.auditPack.update({
+            where: { id: packId },
+            data: { status: 'FROZEN', frozenAt: new Date(), frozenByUserId: ctx.userId },
+        });
+
+        await logEvent(tdb, ctx, { action: 'AUDIT_PACK_FROZEN', entityType: 'AuditPack', entityId: packId, details: JSON.stringify({ itemCount: pack.items.length, snapshotFailures: snapshotFailures.length }), detailsJson: { category: 'status_change', entityName: 'AuditPack', fromStatus: 'DRAFT', toStatus: 'FROZEN', reason: `Pack frozen with ${pack.items.length} items${snapshotFailures.length ? `; ${snapshotFailures.length} snapshot failure(s)` : ''}` } });
+
+        return { frozenPack: result, snapshotFailures };
+    }, { timeout: 60000, maxWait: 10000 });
+
     await bumpEntityCacheVersion(ctx, 'audit');
-    return frozenPack.frozenPack;
+    // #8 — surface snapshot failures alongside the frozen pack so the caller
+    // (and the operator) can see exactly which items did not snapshot cleanly,
+    // instead of a silent "frozen with N items".
+    return { ...frozen.frozenPack, snapshotFailures: frozen.snapshotFailures };
 }
 
 
@@ -328,6 +437,9 @@ async function buildCuratedDefaultPack(ctx: RequestContext, frameworkKey: string
             tdb.controlRequirementLink.findMany({
                 where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
                 select: { controlId: true },
+                // Bounded — feeds a deduped id set into the control.findMany
+                // below (itself take:2000); a framework never has this many links.
+                take: 5000,
             })
         );
         mappedControlIds = [...new Set(links.map((l) => l.controlId))];

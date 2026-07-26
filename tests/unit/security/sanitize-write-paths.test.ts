@@ -182,8 +182,8 @@ jest.mock('@/lib/db-context', () => ({
             // (the cascade is covered by audit.test.ts + readiness-finding-fold).
             auditChecklistItem: {
                 findMany: async () => [
-                    { id: 'ci-1', prompt: 'Item 1', result: 'PASS' },
-                    { id: 'ci-2', prompt: 'Item 2', result: 'FAIL' },
+                    { id: 'ci-1', prompt: 'Item 1', result: 'PASS', auditId: 'a1' },
+                    { id: 'ci-2', prompt: 'Item 2', result: 'FAIL', auditId: 'a1' },
                 ],
             },
             // Defensive stub for the FAIL-cascade idempotency read.
@@ -551,10 +551,12 @@ describe('audit.updateAudit sanitises top-level fields and per-checklist notes',
         });
         const top = mockAuditUpdate.mock.calls[0][3];
         expect(top.criteria).not.toMatch(/<script/);
-        const item = mockAuditChecklistUpdate.mock.calls[0][3];
+        // updateChecklistItem gained an `auditId` 4th positional arg, so the
+        // data payload is now the 5th (index [4]).
+        const item = mockAuditChecklistUpdate.mock.calls[0][4];
         expect(item.notes).not.toMatch(/<script/);
         expect(item.result).toBe('PASS');
-        const item2 = mockAuditChecklistUpdate.mock.calls[1][3];
+        const item2 = mockAuditChecklistUpdate.mock.calls[1][4];
         expect(item2.notes).toBeUndefined();
         expect(item2.result).toBe('FAIL');
     });
