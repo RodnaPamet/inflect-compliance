@@ -740,8 +740,21 @@ export class TaskLinkRepository {
         });
     }
 
-    static async unlink(db: PrismaTx, ctx: RequestContext, linkId: string) {
-        const link = await db.taskLink.findFirst({ where: { id: linkId, tenantId: ctx.tenantId } });
+    /**
+     * Remove one link, scoped to BOTH the tenant and the owning task.
+     * Without the `taskId` predicate any link in the tenant could be
+     * deleted from any task's URL, since the route's `taskId` param was
+     * accepted and then ignored.
+     */
+    static async unlink(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskId: string,
+        linkId: string,
+    ) {
+        const link = await db.taskLink.findFirst({
+            where: { id: linkId, taskId, tenantId: ctx.tenantId },
+        });
         if (!link) return null;
         await db.taskLink.delete({ where: { id: linkId } });
         return true;

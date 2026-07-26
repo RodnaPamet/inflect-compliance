@@ -525,13 +525,13 @@ describe('TaskLinkRepository', () => {
 
     it('unlink returns null when link not found', async () => {
         db.taskLink.findFirst.mockResolvedValueOnce(null);
-        expect(await TaskLinkRepository.unlink(db as any, ctx, 'l1')).toBeNull();
+        expect(await TaskLinkRepository.unlink(db as any, ctx, 't1', 'l1')).toBeNull();
         expect(db.taskLink.delete).not.toHaveBeenCalled();
     });
 
     it('unlink deletes and returns true when found', async () => {
         db.taskLink.findFirst.mockResolvedValueOnce({ id: 'l1' });
-        expect(await TaskLinkRepository.unlink(db as any, ctx, 'l1')).toBe(true);
+        expect(await TaskLinkRepository.unlink(db as any, ctx, 't1', 'l1')).toBe(true);
         expect(db.taskLink.delete).toHaveBeenCalledWith({ where: { id: 'l1' } });
     });
 });

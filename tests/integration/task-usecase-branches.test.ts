@@ -112,7 +112,7 @@ describeFn('task usecase — branch coverage (integration)', () => {
         await expect(deleteTask(ctx, 'nope')).rejects.toThrow(/not found/i);
         await expect(setTaskStatus(ctx, 'nope', 'TRIAGED')).rejects.toThrow(/not found/i);
         await expect(assignTask(ctx, 'nope', null)).rejects.toThrow(/not found/i);
-        await expect(removeTaskLink(ctx, 'nope')).rejects.toThrow(/not found/i);
+        await expect(removeTaskLink(ctx, 'nope', 'nope')).rejects.toThrow(/not found/i);
         await expect(getTaskEvidenceTab(ctx, 'nope')).rejects.toThrow(/not found/i);
         await expect(linkTaskEvidence(ctx, 'nope', { url: 'http://x' })).rejects.toThrow(/not found/i);
         await expect(unlinkTaskEvidence(ctx, 'nope', 'x')).rejects.toThrow(/not found/i);
@@ -128,7 +128,7 @@ describeFn('task usecase — branch coverage (integration)', () => {
         await expect(setTaskStatus(reader, t.id, 'TRIAGED')).rejects.toThrow(/permission/i);
         await expect(assignTask(reader, t.id, null)).rejects.toThrow(/permission/i);
         await expect(addTaskLink(reader, t.id, 'CONTROL', controlId)).rejects.toThrow(/permission/i);
-        await expect(removeTaskLink(reader, 'x')).rejects.toThrow(/permission/i);
+        await expect(removeTaskLink(reader, t.id, 'x')).rejects.toThrow(/permission/i);
         await expect(linkTaskEvidence(reader, t.id, { url: 'http://x' })).rejects.toThrow(/permission/i);
         await expect(unlinkTaskEvidence(reader, t.id, 'x')).rejects.toThrow(/permission/i);
         await expect(addTaskComment(reader, t.id, 'hi')).rejects.toThrow(/permission/i);
@@ -241,9 +241,9 @@ describeFn('task usecase — branch coverage (integration)', () => {
         const link = await addTaskLink(ctx, t.id, 'CONTROL', controlId, 'RELATES_TO');
         const links = await listTaskLinks(ctx, t.id);
         expect(links.length).toBeGreaterThan(0);
-        const removed = await removeTaskLink(ctx, link.id);
+        const removed = await removeTaskLink(ctx, t.id, link.id);
         expect(removed).toBe(true);
-        await expect(removeTaskLink(ctx, link.id)).rejects.toThrow(/not found/i);
+        await expect(removeTaskLink(ctx, t.id, link.id)).rejects.toThrow(/not found/i);
     });
 
     it('evidence: tab payload, link with + without note, unlink + not-found', async () => {

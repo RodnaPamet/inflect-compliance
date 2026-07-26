@@ -594,10 +594,23 @@ async function enqueueTaskAssignedNotification(
     assigneeUserId: string,
 ): Promise<void> {
     try {
-        const assignee = await db.user.findUnique({
-            where: { id: assigneeUserId },
-            select: { email: true, name: true },
+        // Resolve the assignee THROUGH an active membership of this tenant.
+        //
+        // `User` carries no RLS policy, so a bare `user.findUnique` is a
+        // global lookup: a foreign user id would resolve and then be emailed
+        // the task title, key and tenant slug. That is both a cross-tenant
+        // disclosure and a user-id existence oracle (mail sent vs not).
+        // Joining through TenantMembership makes the notification reachable
+        // only for someone who is genuinely in this tenant.
+        const membership = await db.tenantMembership.findFirst({
+            where: {
+                userId: assigneeUserId,
+                tenantId: ctx.tenantId,
+                status: 'ACTIVE',
+            },
+            select: { user: { select: { email: true, name: true } } },
         });
+        const assignee = membership?.user;
         if (!assignee?.email) return;
 
         const assigner = await db.user.findUnique({
@@ -818,17 +831,35 @@ export async function addTaskLink(ctx: RequestContext, taskId: string, entityTyp
     return result;
 }
 
-export async function removeTaskLink(ctx: RequestContext, linkId: string) {
+/**
+ * Remove one cross-entity link from a task.
+ *
+ * Scoped to the owning `taskId` — previously only the link id was used, so
+ * any link in the tenant could be deleted via any task's URL. The audit row
+ * is written against the TASK, not the link: the activity feed filters
+ * `entityId = taskId` (see `getTaskActivity`), so auditing the link id made
+ * unlinks invisible in the feed of the task they happened to.
+ */
+export async function removeTaskLink(
+    ctx: RequestContext,
+    taskId: string,
+    linkId: string,
+) {
     assertCanWriteTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
-        const result = await TaskLinkRepository.unlink(db, ctx, linkId);
+        const result = await TaskLinkRepository.unlink(db, ctx, taskId, linkId);
         if (!result) throw notFound('Task link not found');
         await logEvent(db, ctx, {
             action: 'TASK_UNLINKED',
             entityType: 'Task',
-            entityId: linkId,
+            entityId: taskId,
             details: 'Removed task link',
-            detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Task' },
+            detailsJson: {
+                category: 'relationship',
+                operation: 'unlinked',
+                sourceEntity: 'Task',
+                linkId,
+            },
         });
         return result;
     });

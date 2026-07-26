@@ -8,6 +8,6 @@ import { jsonResponse } from '@/lib/api-response';
 export const DELETE = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; issueId: string; linkId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    await removeTaskLink(ctx, params.linkId);
+    await removeTaskLink(ctx, params.issueId, params.linkId);
     return jsonResponse({ success: true });
 });

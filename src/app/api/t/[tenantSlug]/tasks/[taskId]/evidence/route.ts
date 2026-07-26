@@ -1,25 +1,34 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { getTaskEvidenceTab, linkTaskEvidence } from '@/app-layer/usecases/task';
-import { withValidatedBody } from '@/lib/validation/route';
 import { LinkTaskEvidenceSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
+import { parseJsonBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 
-// GET — task Evidence-tab payload `{ links, evidence }`, mirroring the
-// control evidence tab so the shared <EvidenceSubTable> renders it.
-export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const data = await getTaskEvidenceTab(ctx, params.taskId);
-    return jsonResponse(data);
-});
+type TaskEvidenceParams = { tenantSlug: string; taskId: string };
 
-// POST — attach a URL as evidence on the task. File uploads go through
-// the multipart /evidence/uploads endpoint with a taskId.
-export const POST = withApiErrorHandling(withValidatedBody(LinkTaskEvidenceSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }, body) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const evidence = await linkTaskEvidence(ctx, params.taskId, body);
-    return jsonResponse(evidence, { status: 201 });
-}));
+/**
+ * GET — task Evidence-tab payload `{ links, evidence }`, mirroring the
+ * control evidence tab so the shared <EvidenceSubTable> renders it.
+ * Read-gated on `tasks.view`.
+ */
+export const GET = withApiErrorHandling(
+    requirePermission<TaskEvidenceParams>('tasks.view', async (_req, { params }, ctx) => {
+        const { taskId } = await params;
+        const data = await getTaskEvidenceTab(ctx, taskId);
+        return jsonResponse(data);
+    }),
+);
+
+/**
+ * POST — attach a URL as evidence on the task. File uploads go through the
+ * multipart /evidence/uploads endpoint with a taskId. Gated on `tasks.edit`.
+ */
+export const POST = withApiErrorHandling(
+    requirePermission<TaskEvidenceParams>('tasks.edit', async (req, { params }, ctx) => {
+        const { taskId } = await params;
+        const body = await parseJsonBody(req, LinkTaskEvidenceSchema);
+        const evidence = await linkTaskEvidence(ctx, taskId, body);
+        return jsonResponse(evidence, { status: 201 });
+    }),
+);

@@ -1,21 +1,33 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { listTaskLinks, addTaskLink } from '@/app-layer/usecases/task';
-import { withValidatedBody } from '@/lib/validation/route';
 import { AddTaskLinkSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
+import { parseJsonBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 
-export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const links = await listTaskLinks(ctx, params.taskId);
-    return jsonResponse(links);
-});
+type TaskLinksParams = { tenantSlug: string; taskId: string };
 
-export const POST = withApiErrorHandling(withValidatedBody(AddTaskLinkSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }, body) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const link = await addTaskLink(ctx, params.taskId, body.entityType, body.entityId, body.relation);
-    return jsonResponse(link, { status: 201 });
-}));
+/** GET — list a task's cross-entity links. Read-gated on `tasks.view`. */
+export const GET = withApiErrorHandling(
+    requirePermission<TaskLinksParams>('tasks.view', async (_req, { params }, ctx) => {
+        const { taskId } = await params;
+        const links = await listTaskLinks(ctx, taskId);
+        return jsonResponse(links);
+    }),
+);
+
+/** POST — link the task to another entity. Gated on `tasks.edit`. */
+export const POST = withApiErrorHandling(
+    requirePermission<TaskLinksParams>('tasks.edit', async (req, { params }, ctx) => {
+        const { taskId } = await params;
+        const body = await parseJsonBody(req, AddTaskLinkSchema);
+        const link = await addTaskLink(
+            ctx,
+            taskId,
+            body.entityType,
+            body.entityId,
+            body.relation,
+        );
+        return jsonResponse(link, { status: 201 });
+    }),
+);

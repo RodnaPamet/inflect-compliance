@@ -1,14 +1,22 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { unlinkTaskEvidence } from '@/app-layer/usecases/task';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
-// DELETE — detach an evidence row from the task (clears Evidence.taskId;
-// the evidence survives in the library).
-export const DELETE = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string; evidenceId: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const result = await unlinkTaskEvidence(ctx, params.taskId, params.evidenceId);
-    return jsonResponse(result);
-});
+type TaskEvidenceItemParams = {
+    tenantSlug: string;
+    taskId: string;
+    evidenceId: string;
+};
+
+/**
+ * DELETE — detach an evidence row from the task (clears Evidence.taskId;
+ * the evidence survives in the library). Gated on `tasks.edit`.
+ */
+export const DELETE = withApiErrorHandling(
+    requirePermission<TaskEvidenceItemParams>('tasks.edit', async (_req, { params }, ctx) => {
+        const { taskId, evidenceId } = await params;
+        const result = await unlinkTaskEvidence(ctx, taskId, evidenceId);
+        return jsonResponse(result);
+    }),
+);

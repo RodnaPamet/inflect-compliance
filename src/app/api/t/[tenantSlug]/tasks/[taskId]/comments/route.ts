@@ -1,21 +1,27 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { listTaskComments, addTaskComment } from '@/app-layer/usecases/task';
-import { withValidatedBody } from '@/lib/validation/route';
 import { AddTaskCommentSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
+import { parseJsonBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 
-export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const comments = await listTaskComments(ctx, params.taskId);
-    return jsonResponse(comments);
-});
+type TaskCommentsParams = { tenantSlug: string; taskId: string };
 
-export const POST = withApiErrorHandling(withValidatedBody(AddTaskCommentSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }, body) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const comment = await addTaskComment(ctx, params.taskId, body.body);
-    return jsonResponse(comment, { status: 201 });
-}));
+/** GET — list a task's comments. Read-gated on `tasks.view`. */
+export const GET = withApiErrorHandling(
+    requirePermission<TaskCommentsParams>('tasks.view', async (_req, { params }, ctx) => {
+        const { taskId } = await params;
+        const comments = await listTaskComments(ctx, taskId);
+        return jsonResponse(comments);
+    }),
+);
+
+/** POST — add a comment. Gated on `tasks.edit`. */
+export const POST = withApiErrorHandling(
+    requirePermission<TaskCommentsParams>('tasks.edit', async (req, { params }, ctx) => {
+        const { taskId } = await params;
+        const body = await parseJsonBody(req, AddTaskCommentSchema);
+        const comment = await addTaskComment(ctx, taskId, body.body);
+        return jsonResponse(comment, { status: 201 });
+    }),
+);

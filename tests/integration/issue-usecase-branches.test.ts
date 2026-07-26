@@ -109,7 +109,7 @@ describeFn('issue usecase — branch coverage (integration)', () => {
         await expect(updateIssue(ctx, 'nope', { title: 'x' })).rejects.toThrow(/not found/i);
         await expect(setIssueStatus(ctx, 'nope', 'TRIAGED')).rejects.toThrow(/not found/i);
         await expect(assignIssue(ctx, 'nope', null)).rejects.toThrow(/not found/i);
-        await expect(removeIssueLink(ctx, 'nope')).rejects.toThrow(/not found/i);
+        await expect(removeIssueLink(ctx, 'nope', 'nope')).rejects.toThrow(/not found/i);
         await expect(removeIssueWatcher(ctx, 'nope', ownerUserId)).rejects.toThrow(/not found|watcher/i);
     });
 
@@ -120,7 +120,7 @@ describeFn('issue usecase — branch coverage (integration)', () => {
         await expect(setIssueStatus(reader, iss.id, 'TRIAGED')).rejects.toThrow(/permission/i);
         await expect(assignIssue(reader, iss.id, null)).rejects.toThrow(/permission/i);
         await expect(addIssueLink(reader, iss.id, 'CONTROL', controlId)).rejects.toThrow(/permission/i);
-        await expect(removeIssueLink(reader, 'x')).rejects.toThrow(/permission/i);
+        await expect(removeIssueLink(reader, iss.id, 'x')).rejects.toThrow(/permission/i);
         await expect(addIssueComment(reader, iss.id, 'hi')).rejects.toThrow(/permission/i);
         await expect(addIssueWatcher(reader, iss.id, ownerUserId)).rejects.toThrow(/permission/i);
         await expect(removeIssueWatcher(reader, iss.id, ownerUserId)).rejects.toThrow(/permission/i);
@@ -176,9 +176,9 @@ describeFn('issue usecase — branch coverage (integration)', () => {
         const iss = await createIssue(ctx, { title: 'rel', type: 'TASK' });
         const link = await addIssueLink(ctx, iss.id, 'CONTROL', controlId, 'RELATES_TO');
         expect((await listIssueLinks(ctx, iss.id)).length).toBeGreaterThan(0);
-        const removed = await removeIssueLink(ctx, link.id);
+        const removed = await removeIssueLink(ctx, iss.id, link.id);
         expect(removed).toBe(true);
-        await expect(removeIssueLink(ctx, link.id)).rejects.toThrow(/not found/i);
+        await expect(removeIssueLink(ctx, iss.id, link.id)).rejects.toThrow(/not found/i);
 
         const c = await addIssueComment(ctx, iss.id, '<b>hi</b>there');
         expect(c.id).toBeTruthy();
