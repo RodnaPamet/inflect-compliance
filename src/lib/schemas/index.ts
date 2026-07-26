@@ -529,7 +529,9 @@ export const CreateTaskSchema = z.object({
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     source: z.enum(['MANUAL', 'TEMPLATE', 'POLICY_REVIEW', 'AUDIT', 'INTEGRATION']).optional(),
-    dueAt: z.string().nullable().optional(),
+    // .datetime() so a garbage value is a 400 at the boundary rather
+    // than a Postgres cast error surfacing as a 500 from `new Date(...)`.
+    dueAt: z.string().datetime().nullable().optional(),
     assigneeUserId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     controlId: z.string().nullable().optional(),
@@ -544,7 +546,9 @@ export const UpdateTaskSchema = z.object({
     type: z.enum(['TASK', 'AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT']).optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
-    dueAt: z.string().nullable().optional(),
+    // .datetime() so a garbage value is a 400 at the boundary rather
+    // than a Postgres cast error surfacing as a 500 from `new Date(...)`.
+    dueAt: z.string().datetime().nullable().optional(),
     controlId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
@@ -615,7 +619,7 @@ export const BulkTaskStatusSchema = z.object({
 
 export const BulkTaskDueDateSchema = z.object({
     taskIds: z.array(z.string().min(1)).min(1).max(100),
-    dueAt: z.string().nullable(),
+    dueAt: z.string().datetime().nullable(),
 }).strip();
 
 // ─── Asset bulk actions (canonical BulkActionBar rollout) ───

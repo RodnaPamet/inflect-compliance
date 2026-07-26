@@ -138,6 +138,13 @@ const taskListSelect = {
     _count: { select: { evidence: true } },
 } as const;
 
+/**
+ * Cap on the child rows the task DETAIL read inlines (links / comments /
+ * watchers). The accompanying `_count` still reports the true totals, so a
+ * truncated relation is visible to the caller rather than silently short.
+ */
+const DETAIL_RELATION_TAKE = 200;
+
 // ─── Task Repository ───
 
 export class WorkItemRepository {
@@ -412,12 +419,20 @@ export class WorkItemRepository {
                         asset: { select: { id: true, name: true } },
                     },
                 },
-                links: { orderBy: { createdAt: 'desc' } },
+                // Bounded like `remediatedVulnerabilities` above. These three
+                // were unbounded, so a long-lived task with hundreds of
+                // comments loaded every row into the detail payload on every
+                // open. `_count` below still reports the TRUE totals, so the
+                // UI can show "showing N of M" rather than silently
+                // truncating.
+                links: { take: DETAIL_RELATION_TAKE, orderBy: { createdAt: 'desc' } },
                 comments: {
+                    take: DETAIL_RELATION_TAKE,
                     orderBy: { createdAt: 'asc' },
                     include: { createdBy: { select: { id: true, name: true, email: true } } },
                 },
                 watchers: {
+                    take: DETAIL_RELATION_TAKE,
                     include: { user: { select: { id: true, name: true, email: true } } },
                 },
                 _count: { select: { links: true, comments: true, watchers: true, evidence: true } },
