@@ -107,7 +107,9 @@ test.describe('Audit Readiness', () => {
         });
 
         await test.step('pack is in DRAFT status', async () => {
-            await expect(page.locator('#pack-status')).toContainText('DRAFT', {
+            // The status badge now renders the localized label ("Draft"), not
+            // the raw enum.
+            await expect(page.locator('#pack-status')).toContainText('Draft', {
                 timeout: 10000,
             });
         });
@@ -115,6 +117,12 @@ test.describe('Audit Readiness', () => {
         await test.step('freeze the pack', async () => {
             const freezeBtn = page.locator('#freeze-pack-btn');
             await expect(freezeBtn).toBeVisible({ timeout: 30_000 });
+            // Freeze is now behind a confirmation dialog (irreversible lock) —
+            // clicking the trigger opens the dialog; the write only fires when
+            // the dialog's confirm button is clicked.
+            await freezeBtn.click();
+            const confirmFreeze = page.locator('[data-modal-confirm]');
+            await expect(confirmFreeze).toBeVisible({ timeout: 15_000 });
             const [response] = await Promise.all([
                 page.waitForResponse(
                     resp =>
@@ -122,10 +130,10 @@ test.describe('Audit Readiness', () => {
                         resp.request().method() === 'POST',
                     { timeout: 60_000 },
                 ),
-                freezeBtn.click(),
+                confirmFreeze.click(),
             ]);
             expect(response.status()).toBe(200);
-            await expect(page.locator('#pack-status')).toContainText('FROZEN', {
+            await expect(page.locator('#pack-status')).toContainText('Frozen', {
                 timeout: 30_000,
             });
         });
@@ -135,8 +143,8 @@ test.describe('Audit Readiness', () => {
             await expect(shareBtn).toBeVisible({ timeout: 30_000 });
             await shareBtn.click();
 
-            // Share now opens an expiry modal — submit with the default
-            // (no expiry) to generate the link.
+            // Share now opens an expiry modal defaulting to a 30-day expiry —
+            // submit with that default to generate the link.
             const shareSubmit = page.locator('#share-modal-submit');
             await expect(shareSubmit).toBeVisible({ timeout: 15_000 });
             await shareSubmit.click();
@@ -212,7 +220,7 @@ test.describe('Audit Readiness', () => {
             await expect(page.locator('#pack-name')).toBeVisible({
                 timeout: 10000,
             });
-            await expect(page.locator('#pack-status')).toContainText('DRAFT');
+            await expect(page.locator('#pack-status')).toContainText('Draft');
         });
     });
 });
