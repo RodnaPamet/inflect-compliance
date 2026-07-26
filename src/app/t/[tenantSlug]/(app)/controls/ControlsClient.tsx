@@ -407,6 +407,12 @@ function ControlsPageInner({
             : undefined,
     });
 
+    // SWR recreates its return OBJECT every render (only the bound `mutate`
+    // is stable). Depend on `controlsMutate` — never the whole `controlsQuery`
+    // — inside any callback that feeds the column memo (e.g. handleRestore),
+    // or the DataTable model rebuilds every render and double-click-to-open
+    // dies (the row DOM is replaced between the two clicks).
+    const controlsMutate = controlsQuery.mutate;
     const controlsData = controlsQuery.data;
     const rawControls = Array.isArray(controlsData)
         ? controlsData
@@ -817,13 +823,13 @@ function ControlsPageInner({
                     credentials: 'same-origin',
                 });
                 if (!res.ok) throw new Error('Restore failed');
-                await controlsQuery.mutate();
+                await controlsMutate();
                 toast.success(t('deleted.restoredToast'));
             } catch {
                 toast.error(t('deleted.restoreFailed'));
             }
         },
-        [apiUrl, controlsQuery, toast, t],
+        [apiUrl, controlsMutate, toast, t],
     );
     const closePurge = useCallback(() => {
         setPurgeTarget(null);
