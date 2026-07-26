@@ -18,52 +18,54 @@ interface ActivityEntry {
     user?: { name?: string | null; email?: string | null } | null;
 }
 
-// Action code → natural verb phrase ("{actor} {phrase}"). Falls back to the
-// lowercased, space-separated code so an unmapped action still reads as a
-// sentence ("Dana Lee status changed") rather than "STATUS_CHANGED".
+// Action code → i18n key suffix under `controls.activity.<suffix>`. The
+// resolved phrase reads "{actor} {phrase}" (e.g. "Dana Lee changed the
+// status"). Several codes share a phrase, so they map to the same key.
+// An unmapped action falls back to the lowercased, space-separated code so
+// it still reads as a sentence ("Dana Lee status changed") rather than
+// "STATUS_CHANGED".
 const ACTION_PHRASE: Record<string, string> = {
-    CREATED: "created this",
-    UPDATED: "updated the details",
-    EDITED: "updated the details",
-    STATUS_CHANGED: "changed the status",
-    STATE_CHANGED: "changed the status",
-    ASSIGNED: "changed the assignee",
-    ASSIGNEE_CHANGED: "changed the assignee",
-    REASSIGNED: "reassigned it",
-    OWNER_CHANGED: "changed the owner",
-    DUE_DATE_CHANGED: "changed the due date",
-    PRIORITY_CHANGED: "changed the priority",
-    SEVERITY_CHANGED: "changed the severity",
-    EVIDENCE_ADDED: "added evidence",
-    EVIDENCE_UPLOADED: "uploaded evidence",
-    EVIDENCE_LINKED: "linked evidence",
-    EVIDENCE_REMOVED: "removed evidence",
-    EVIDENCE_DETACHED: "removed evidence",
-    COMMENT_ADDED: "left a comment",
-    COMMENTED: "left a comment",
-    LINKED: "linked an item",
-    UNLINKED: "removed a link",
-    ARCHIVED: "archived it",
-    DELETED: "deleted this",
-    TASK_CREATED: "added a task",
-    TASK_COMPLETED: "completed a task",
-    TEST_COMPLETED: "logged a test result",
-    TEST_LOGGED: "logged a test result",
-    TEST_PASSED: "logged a passing test",
-    TEST_FAILED: "logged a failing test",
+    CREATED: "created",
+    UPDATED: "updatedDetails",
+    EDITED: "updatedDetails",
+    STATUS_CHANGED: "statusChanged",
+    STATE_CHANGED: "statusChanged",
+    ASSIGNED: "assigneeChanged",
+    ASSIGNEE_CHANGED: "assigneeChanged",
+    REASSIGNED: "reassigned",
+    OWNER_CHANGED: "ownerChanged",
+    DUE_DATE_CHANGED: "dueDateChanged",
+    PRIORITY_CHANGED: "priorityChanged",
+    SEVERITY_CHANGED: "severityChanged",
+    EVIDENCE_ADDED: "evidenceAdded",
+    EVIDENCE_UPLOADED: "evidenceUploaded",
+    EVIDENCE_LINKED: "evidenceLinked",
+    EVIDENCE_REMOVED: "evidenceRemoved",
+    EVIDENCE_DETACHED: "evidenceRemoved",
+    COMMENT_ADDED: "commented",
+    COMMENTED: "commented",
+    LINKED: "linked",
+    UNLINKED: "unlinked",
+    ARCHIVED: "archived",
+    DELETED: "deleted",
+    TASK_CREATED: "taskCreated",
+    TASK_COMPLETED: "taskCompleted",
+    TEST_COMPLETED: "testCompleted",
+    TEST_LOGGED: "testCompleted",
+    TEST_PASSED: "testPassed",
+    TEST_FAILED: "testFailed",
 };
 
 // Audit actions are entity-prefixed (CONTROL_OWNER_CHANGED, TASK_UPDATED, …).
 // Strip the leading entity so the shared verb phrases match.
 const ENTITY_PREFIX = /^(CONTROL|TASK|RISK|ASSET|POLICY|VENDOR|AUDIT|EVIDENCE)_/;
 
-const phraseFor = (action: string): string => {
+const phraseFor = (action: string, t: (key: string) => string): string => {
     const up = action?.toUpperCase?.() ?? "";
-    return (
-        ACTION_PHRASE[up] ??
-        ACTION_PHRASE[up.replace(ENTITY_PREFIX, "")] ??
-        (action ?? "").replace(/_/g, " ").toLowerCase()
-    );
+    const keySuffix = ACTION_PHRASE[up] ?? ACTION_PHRASE[up.replace(ENTITY_PREFIX, "")];
+    return keySuffix
+        ? t(`activity.${keySuffix}`)
+        : (action ?? "").replace(/_/g, " ").toLowerCase();
 };
 
 /**
@@ -151,7 +153,7 @@ export function PanelActivityFeed({
                             <span className="font-medium text-content-emphasis">
                                 {actor}
                             </span>{" "}
-                            {phraseFor(e.action)}
+                            {phraseFor(e.action, tx)}
                             {detail ? (
                                 <span className="text-content-muted"> — {detail}</span>
                             ) : (

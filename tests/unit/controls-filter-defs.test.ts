@@ -54,7 +54,10 @@ const tGroup = (k: string) => resolve('common')(`filterGroups.${k}`);
 const controlFilterDefs = buildControlFilterDefs(tControls, tGroup);
 // Enum VALUE sets (the URL/API contract — unchanged by i18n).
 const CONTROL_STATUS_VALUES = ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IMPLEMENTING', 'IMPLEMENTED', 'NEEDS_REVIEW', 'NOT_APPLICABLE'];
-const APPLICABILITY_VALUES = ['APPLICABLE', 'NOT_APPLICABLE'];
+// The applicability filter carries a third UNASSESSED state (applicable but
+// `applicabilityDecidedAt` null — the "Not assessed" backlog). It's a derived
+// filter value, not a stored enum, but the picker exposes all three.
+const APPLICABILITY_VALUES = ['APPLICABLE', 'NOT_APPLICABLE', 'UNASSESSED'];
 
 // ─── 1. Filter config shape ──────────────────────────────────────────
 

@@ -112,14 +112,23 @@ describe('NewControlModal — business behaviour preserved', () => {
 
     it('follows up with the applicability POST when user chose NOT_APPLICABLE', () => {
         // After RHF migration, the conditional reads from `values.applicability`
-        // rather than the local useState; the resulting record id is bound to
-        // either `control` (legacy) or `created` (new).
+        // rather than the local useState. The created control's id is cached in
+        // a ref (`createdControlIdRef`) so a retry after a partial failure does
+        // NOT recreate the control; the follow-up POST addresses the created
+        // record via the local `createdId` binding.
         expect(MODAL_SRC).toMatch(
             /(applicability|values\.applicability)\s*===\s*['"]NOT_APPLICABLE['"]/,
         );
         expect(MODAL_SRC).toMatch(
-            /apiUrl\(`\/controls\/\$\{(control|created)\.id\}\/applicability`\)/,
+            /apiUrl\(`\/controls\/\$\{createdId\}\/applicability`\)/,
         );
+        // On a failed applicability follow-up the modal must stay open (form
+        // state, incl. the justification, is preserved for retry): the POST is
+        // guarded by `res.ok` and throws — the catch surfaces the error rather
+        // than closing. The created-id is cached across the failure so retry
+        // re-runs ONLY this step.
+        expect(MODAL_SRC).toMatch(/applicabilityRes\.ok/);
+        expect(MODAL_SRC).toMatch(/createdControlIdRef/);
     });
 
     it('revalidates the Controls SWR list key on success (every ?qs variant)', () => {
@@ -130,11 +139,11 @@ describe('NewControlModal — business behaviour preserved', () => {
     });
 
     it('navigates to the new control detail page after create (preserves downstream E2E chain)', () => {
-        // `control` was the legacy variable name; `created` is the RHF-era
-        // name. Either is acceptable as long as the navigation target is
-        // the new entity's detail page.
+        // The created control's id is cached in a ref and read back as the
+        // local `createdId` binding; navigation targets the new entity's
+        // detail page via that id.
         expect(MODAL_SRC).toMatch(
-            /router\.push\(tenantHref\(`\/controls\/\$\{(control|created)\.id\}`\)\)/,
+            /router\.push\(tenantHref\(`\/controls\/\$\{createdId\}`\)\)/,
         );
     });
 
@@ -151,6 +160,14 @@ describe('NewControlModal — business behaviour preserved', () => {
         // to RHF via zodResolver — not in a hand-rolled `canSubmit`.
         // Locking the schema invariants here keeps the contract intact
         // regardless of form-state plumbing.
+        // The schema is now a `buildFormSchema(t)` factory (so validation
+        // messages route through next-intl), memoised per-render in the
+        // component and passed to zodResolver.
+        expect(MODAL_SRC).toMatch(/const buildFormSchema = \(t/);
+        expect(MODAL_SRC).toMatch(
+            /const formSchema = useMemo\(\(\) => buildFormSchema\(t\)/,
+        );
+        expect(MODAL_SRC).toMatch(/zodResolver\(formSchema\)/);
         // Required name:
         expect(MODAL_SRC).toMatch(/name:\s*z\.string\(\)\.min\(1/);
         // Cross-field rule for NOT_APPLICABLE → justification required:

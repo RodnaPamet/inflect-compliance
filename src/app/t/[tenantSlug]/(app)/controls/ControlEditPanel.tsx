@@ -20,7 +20,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { UserCombobox } from "@/components/ui/user-combobox";
 import { FormField } from "@/components/ui/form-field";
-import { RequiredMarker } from "@/components/ui/required-marker";
+import { Input } from "@/components/ui/input";
 import { EvidenceUploadSection } from "@/components/evidence/EvidenceUploadSection";
 import { PanelTabs } from "./PanelTabs";
 import { PanelActivityFeed } from "./PanelActivityFeed";
@@ -117,11 +117,19 @@ export function ControlEditPanel({
                     frequency: f.frequency || null,
                 }),
             });
-            if (!res.ok) throw new Error(tx("detail.errors.saveFailed"));
+            if (!res.ok) {
+                // Server reached but rejected the save (validation / auth /
+                // conflict) — a distinct, translated outcome.
+                setError(tx("detail.errors.saveFailed"));
+                setSaveState("error");
+                return;
+            }
             setSaveState("saved");
             onSaved();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : tx("detail.errors.saveFailed"));
+        } catch {
+            // fetch() itself threw — network / offline / DNS. Route through
+            // t() (never the raw technical Error string, which is untranslated).
+            setError(tx("detail.errors.network"));
             setSaveState("error");
         }
     }, [canWrite, base, onSaved, tx]);
@@ -161,11 +169,15 @@ export function ControlEditPanel({
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ ownerUserId: userId || null }),
                 });
-                if (!res.ok) throw new Error(tx("detail.errors.ownerUpdateFailed"));
+                if (!res.ok) {
+                    setError(tx("detail.errors.ownerUpdateFailed"));
+                    setSaveState("error");
+                    return;
+                }
                 setSaveState("saved");
                 onSaved();
-            } catch (err) {
-                setError(err instanceof Error ? err.message : tx("detail.errors.ownerUpdateFailed"));
+            } catch {
+                setError(tx("detail.errors.network"));
                 setSaveState("error");
             }
         },
@@ -185,7 +197,9 @@ export function ControlEditPanel({
                 )}
             </div>
 
-            <Heading level={3} className="break-words">{control.name}</Heading>
+            {/* Reflect the edited local state (not the stale `control.name` prop)
+                so the header tracks the name field live while editing. */}
+            <Heading level={3} className="break-words">{name}</Heading>
 
             <PanelTabs<Tab>
                 tabs={[{ id: "details", label: tx("detail.tabs.details") }, { id: "activity", label: tx("detail.tabs.activity") }]}
@@ -203,22 +217,19 @@ export function ControlEditPanel({
                     {/* Auto-saved edit form (PATCH on change/blur) — no Save button. */}
                     <div className="space-y-default" data-testid="control-edit-form">
                         <fieldset className="space-y-default" disabled={!canWrite}>
-                            <div>
-                                <label className="mb-1 block text-sm text-content-default" htmlFor="panel-name-input">
-                                    {tx("detail.fields.name")} <RequiredMarker />
-                                </label>
-                                <input
+                            <FormField label={tx("detail.fields.name")} required>
+                                <Input
                                     id="panel-name-input"
                                     type="text"
-                                    className="input w-full"
+                                    size="sm"
                                     value={name}
                                     onChange={(e) => update({ name: e.target.value }, false)}
                                     onBlur={commitNow}
                                     required
                                     minLength={3}
-                                    aria-invalid={nameInvalid || undefined}
+                                    invalid={nameInvalid}
                                 />
-                            </div>
+                            </FormField>
                             <div>
                                 <label className="mb-1 block text-sm text-content-default" htmlFor="panel-category-input">
                                     {tx("detail.fields.category")}

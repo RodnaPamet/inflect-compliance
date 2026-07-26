@@ -87,6 +87,15 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Bulk asset delete (assets list)',
         handlers: ['handleBulkApply'],
     },
+    {
+        // Bulk control soft-delete on the list — the delete branch of
+        // handleBulkApply optimistically drops the selected rows from the
+        // SWR cache and fires the real /controls/bulk/delete POST only
+        // after the 5s undo window elapses (restores on Undo / failure).
+        file: 'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
+        name: 'Bulk control delete (controls list)',
+        handlers: ['handleBulkApply'],
+    },
 ];
 
 function loadFile(file: string): string {

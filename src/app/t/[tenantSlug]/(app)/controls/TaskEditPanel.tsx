@@ -19,7 +19,8 @@ import { taskStatusVariant, taskStatusLabel } from "@/lib/task-status-badge";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { UserCombobox } from "@/components/ui/user-combobox";
 import { FormField } from "@/components/ui/form-field";
-import { RequiredMarker } from "@/components/ui/required-marker";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { PanelTabs } from "./PanelTabs";
 import { DatePicker } from "@/components/ui/date-picker/date-picker";
 import { parseYMD, startOfUtcDay, toYMD } from "@/components/ui/date-picker/date-utils";
@@ -124,6 +125,12 @@ export function TaskEditPanel({
     const [resolutionDraft, setResolutionDraft] = useState("");
     const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
     const [error, setError] = useState("");
+    // The initial GET can fail. Until it succeeds, `loadedRef` stays false and
+    // `commitFields` early-returns — so edits would silently NOT persist. Track
+    // the failure explicitly, block the form, and offer a retry (bumping
+    // `reloadKey` re-runs the load effect).
+    const [loadError, setLoadError] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
     const loadedRef = useRef(false);
 
     // Latest field values so a debounced/blurred commit PATCHes the current
@@ -143,6 +150,7 @@ export function TaskEditPanel({
     useEffect(() => {
         let active = true;
         loadedRef.current = false;
+        setLoadError(false);
         fetch(base)
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error("load failed"))))
             .then((t: TaskDetail) => {
@@ -165,11 +173,14 @@ export function TaskEditPanel({
                 };
                 loadedRef.current = true;
             })
-            .catch(() => undefined);
+            .catch(() => {
+                if (!active) return;
+                setLoadError(true);
+            });
         return () => {
             active = false;
         };
-    }, [base]);
+    }, [base, reloadKey]);
 
     const commitFields = useCallback(async () => {
         if (!canWrite || !loadedRef.current) return;
@@ -194,11 +205,13 @@ export function TaskEditPanel({
                     dueAt: f.dueAt || null,
                 }),
             });
-            if (!res.ok) throw new Error(tx("detail.errors.saveFailed"));
+            if (!res.ok) throw new Error("save failed");
             setSaveState("saved");
             onSaved();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : tx("detail.errors.saveFailed"));
+        } catch {
+            // Both the server-not-ok and network-throw paths land here — always
+            // surface the translated fallback (never a raw "Failed to fetch").
+            setError(tx("detail.errors.saveFailed"));
             setSaveState("error");
         }
     }, [canWrite, base, onSaved, tx]);
@@ -241,11 +254,11 @@ export function TaskEditPanel({
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ assigneeUserId: userId || null }),
                 });
-                if (!res.ok) throw new Error(tx("detail.errors.assigneeUpdateFailed"));
+                if (!res.ok) throw new Error("assignee update failed");
                 setSaveState("saved");
                 onSaved();
-            } catch (err) {
-                setError(err instanceof Error ? err.message : tx("detail.errors.assigneeUpdateFailed"));
+            } catch {
+                setError(tx("detail.errors.assigneeUpdateFailed"));
                 setSaveState("error");
             }
         },
@@ -269,18 +282,26 @@ export function TaskEditPanel({
                     body: JSON.stringify(resolution ? { status: nextStatus, resolution } : { status: nextStatus }),
                 });
                 if (!res.ok) {
+                    // A rejected transition carries a meaningful server message
+                    // (state-machine / reconciliation error) — surface it as-is.
+                    // Fall back to the translated string when the body is empty.
                     const data = await res.json().catch(() => ({}));
-                    throw new Error(
-                        (typeof data?.error === "string" && data.error) || data?.message || tx("detail.errors.saveFailed"),
-                    );
+                    const serverMessage =
+                        (typeof data?.error === "string" && data.error) ||
+                        (typeof data?.message === "string" && data.message) ||
+                        "";
+                    setError(serverMessage || tx("detail.errors.saveFailed"));
+                    setSaveState("error");
+                    return;
                 }
                 setStatus(nextStatus);
                 setPendingTerminalStatus(null);
                 setResolutionDraft("");
                 setSaveState("saved");
                 onSaved();
-            } catch (err) {
-                setError(err instanceof Error ? err.message : tx("detail.errors.saveFailed"));
+            } catch {
+                // Network / unexpected throw — no server message to show.
+                setError(tx("detail.errors.saveFailed"));
                 setSaveState("error");
             }
         },
@@ -302,42 +323,49 @@ export function TaskEditPanel({
 
     const details = (
         <div className="space-y-default">
+            {loadError && (
+                <div
+                    className="flex flex-wrap items-center justify-between gap-tight rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error"
+                    role="alert"
+                    data-testid="task-edit-load-error"
+                >
+                    <span>{tx("detail.errors.loadFailed")}</span>
+                    <Button variant="secondary" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+                        {tx("detail.status.retry")}
+                    </Button>
+                </div>
+            )}
             {error && (
                 <div className="rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error" role="alert">
                     {error}
                 </div>
             )}
-            {/* Auto-saved edit form (PATCH on change/blur) — no Save button. */}
+            {/* Auto-saved edit form (PATCH on change/blur) — no Save button.
+                Disabled while the initial load has failed: `commitFields`
+                early-returns until `loadedRef` is set, so editing must be
+                visibly blocked (never let edits look saved when they can't be). */}
             <div className="space-y-default" data-testid="task-edit-form">
-                <fieldset className="space-y-default" disabled={!canWrite}>
-                    <div>
-                        <label className="mb-1 block text-sm text-content-default" htmlFor="task-panel-title">
-                            {tx("detail.fields.title")} <RequiredMarker />
-                        </label>
-                        <input
+                <fieldset className="space-y-default" disabled={!canWrite || loadError}>
+                    <FormField label={tx("detail.fields.title")} required>
+                        <Input
                             id="task-panel-title"
                             type="text"
-                            className="input w-full"
                             value={title}
                             onChange={(e) => update({ title: e.target.value }, false)}
                             onBlur={commitNow}
                             required
-                            aria-invalid={titleInvalid || undefined}
+                            invalid={titleInvalid}
                         />
-                    </div>
-                    <div>
-                        <label className="mb-1 block text-sm text-content-default" htmlFor="task-panel-description">
-                            {tx("detail.fields.description")}
-                        </label>
-                        <textarea
+                    </FormField>
+                    <FormField label={tx("detail.fields.description")}>
+                        <Textarea
                             id="task-panel-description"
-                            className="input w-full"
                             rows={3}
                             value={description}
                             onChange={(e) => update({ description: e.target.value }, false)}
                             onBlur={commitNow}
                         />
-                    </div>
+                    </FormField>
                     {/* Status — commits via setTaskStatus (state machine + reconciliation). */}
                     <div>
                         <label className="mb-1 block text-sm text-content-default" htmlFor="task-panel-status">{tx("detail.fields.status")}</label>
@@ -347,7 +375,7 @@ export function TaskEditPanel({
                             options={STATUS_OPTIONS}
                             selected={STATUS_OPTIONS.find((o) => o.value === (pendingTerminalStatus ?? status)) ?? null}
                             setSelected={(o) => handleStatusChange(o?.value ?? status)}
-                            disabled={!canWrite}
+                            disabled={!canWrite || loadError}
                             hideSearch
                             matchTriggerWidth
                             forceDropdown
@@ -356,17 +384,15 @@ export function TaskEditPanel({
                         />
                         {pendingTerminalStatus && (
                             <div className="mt-2 space-y-tight" data-testid="task-panel-terminal-prompt">
-                                <label className="block text-sm text-content-default" htmlFor="task-panel-resolution">
-                                    {tx("detail.fields.resolution")} <RequiredMarker />
-                                </label>
-                                <textarea
-                                    id="task-panel-resolution"
-                                    className="input w-full"
-                                    rows={2}
-                                    placeholder={tx("detail.fields.resolutionPlaceholder")}
-                                    value={resolutionDraft}
-                                    onChange={(e) => setResolutionDraft(e.target.value)}
-                                />
+                                <FormField label={tx("detail.fields.resolution")} required>
+                                    <Textarea
+                                        id="task-panel-resolution"
+                                        rows={2}
+                                        placeholder={tx("detail.fields.resolutionPlaceholder")}
+                                        value={resolutionDraft}
+                                        onChange={(e) => setResolutionDraft(e.target.value)}
+                                    />
+                                </FormField>
                                 <div className="flex gap-tight">
                                     <Button
                                         variant="primary"
@@ -460,7 +486,7 @@ export function TaskEditPanel({
                             id="task-panel-assignee"
                             name="assigneeUserId"
                             tenantSlug={tenantSlug}
-                            disabled={!canWrite}
+                            disabled={!canWrite || loadError}
                             size="sm"
                             selectedId={assigneeId || null}
                             onChange={(userId) => {
@@ -471,7 +497,7 @@ export function TaskEditPanel({
                         />
                     </FormField>
                 </fieldset>
-                {canWrite && (
+                {canWrite && !loadError && (
                     <p
                         className="text-xs text-content-muted"
                         data-testid="task-edit-autosave-status"
@@ -504,8 +530,8 @@ export function TaskEditPanel({
         <div className="space-y-default" role="region" aria-label={tx("detail.editorAria.task")} data-testid="task-edit-panel">
             <div className="flex items-center gap-tight">
                 {task.key && <span className="font-mono text-xs text-content-muted">{task.key}</span>}
-                <StatusBadge variant={taskStatusVariant(task.status)} size="sm">
-                    {taskStatusLabel(task.status, tTask)}
+                <StatusBadge variant={taskStatusVariant(status)} size="sm">
+                    {taskStatusLabel(status, tTask)}
                 </StatusBadge>
             </div>
             <Heading level={3} className="break-words">{task.title}</Heading>

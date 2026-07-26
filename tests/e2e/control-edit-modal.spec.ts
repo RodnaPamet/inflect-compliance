@@ -76,7 +76,10 @@ test.describe('Control Edit Modal', () => {
             '(edited)',
             { timeout: 5000 },
         );
-        await expect(authedPage.locator('#edit-success-toast')).toBeVisible({
+        // The hand-rolled `#edit-success-toast` was replaced by a sonner
+        // toast fired via useToast — assert on its text (i18n key
+        // `controls.detailPage.controlUpdated` → "Control updated").
+        await expect(authedPage.getByText('Control updated')).toBeVisible({
             timeout: 3000,
         });
     });

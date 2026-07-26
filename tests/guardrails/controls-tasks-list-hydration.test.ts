@@ -40,9 +40,17 @@ describe('list-page hydration shape', () => {
         // truncated: false } : undefined` — the same SSR-honouring gate the
         // already-migrated TasksClient uses (below). Pin the gate predicate
         // AND the wrapped CappedList shape.
-        expect(controlsClient).toMatch(/useTenantSWR<CappedList<ControlListItem>>/);
+        //
+        // The deleted-view (admin Restore/Purge) added a `?includeDeleted=true`
+        // fetch whose route returns a bare array, so the SWR type widened to a
+        // union and the fallback additionally excludes the deleted view
+        // (`&& !showDeleted`) — a stricter gate. Accept both, still requiring
+        // the CappedList shape and the filtersMatchInitial predicate.
         expect(controlsClient).toMatch(
-            /fallbackData:\s*filtersMatchInitial\s*\?\s*\{\s*rows:\s*initialControls,\s*truncated:\s*false\s*\}/,
+            /useTenantSWR<CappedList<ControlListItem>(\s*\|\s*ControlListItem\[\])?>/,
+        );
+        expect(controlsClient).toMatch(
+            /fallbackData:\s*filtersMatchInitial(\s*&&\s*!showDeleted)?\s*\?\s*\{\s*rows:\s*initialControls,\s*truncated:\s*false\s*\}/,
         );
     });
 

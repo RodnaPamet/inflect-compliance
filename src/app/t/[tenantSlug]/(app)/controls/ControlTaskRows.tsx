@@ -42,6 +42,7 @@ export function ControlTaskRows({
     columnIds,
     renderEvidence,
     onTaskClick,
+    refreshToken,
 }: {
     tenantSlug: string;
     controlId: string;
@@ -61,6 +62,15 @@ export function ControlTaskRows({
     renderEvidence?: (count: number) => ReactNode;
     /** Whole-row click → task quick-view in the side panel. */
     onTaskClick?: (task: ControlTask) => void;
+    /**
+     * Monotonic refresh token. The fetch keys on `[tenantSlug, controlId]`,
+     * which never change while a task is edited in the side-panel quick-view —
+     * so without this the sub-row keeps stale title/status/owner/evidence after
+     * a save. The parent bumps this (in its post-save handler) to force a
+     * refetch, mirroring the `reloadKey`-in-deps revalidation the edit panels
+     * use. Absent/unchanged ⇒ no extra fetch (backwards-compatible default).
+     */
+    refreshToken?: number;
 }) {
     const tx = useTranslations("controls");
     const tTask = useTranslations("tasks");
@@ -85,7 +95,7 @@ export function ControlTaskRows({
         return () => {
             active = false;
         };
-    }, [tenantSlug, controlId]);
+    }, [tenantSlug, controlId, refreshToken]);
 
     // First non-utility column carries the (indented) task title.
     const firstContentId = columnIds.find((id) => id !== "select" && id !== "menu");

@@ -103,7 +103,10 @@ describe('Controls list — UX polish', () => {
             // of the supporting state.
             expect(source).not.toContain('setJustificationModal');
             expect(source).not.toContain('applicabilityMutation');
-            expect(source).not.toMatch(/<Modal\b/);
+            // NB: the list page DOES legitimately host a <Modal> now — the
+            // typed-confirmation Purge modal for the Deleted-controls
+            // lifecycle view. So we no longer assert the absence of <Modal>;
+            // only the justification-specific infrastructure is gone.
         });
     });
 

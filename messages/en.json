@@ -1674,7 +1674,10 @@
       "assignOwner": "Assign owner",
       "ownerBlank": "Owner (blank = unassign)",
       "delete": "Delete",
-      "entityLabel": "controls"
+      "entityLabel": "controls",
+      "deletedToast": "{count, plural, one {# control deleted} other {# controls deleted}}",
+      "actionFailed": "Bulk action failed. Please try again.",
+      "applied": "Changes applied"
     },
     "list": {
       "closeQuickView": "Close the control quick view",
@@ -1696,7 +1699,8 @@
       "notAssessed": "Not assessed",
       "healthColumn": "Health",
       "flaggedShowing": "Showing {count} flagged controls",
-      "flaggedClear": "Clear"
+      "flaggedClear": "Clear",
+      "loadError": "Couldn't load controls. Reload the page to try again."
     },
     "empty": {
       "filterTitle": "No controls match your filters",
@@ -1738,7 +1742,9 @@
       "cancel": "Cancel",
       "creating": "Creating…",
       "submit": "Create Control",
-      "createFailed": "Failed to create control"
+      "createFailed": "Failed to create control",
+      "nameRequired": "Name is required",
+      "applicabilityFailed": "Control created, but marking it Not Applicable failed. Retry to save the justification."
     },
     "addControl": "Control",
     "detail": {
@@ -1780,7 +1786,8 @@
       },
       "status": {
         "apply": "Apply",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "retry": "Retry"
       },
       "autosave": {
         "saving": "Saving…",
@@ -1794,7 +1801,9 @@
         "saveFailed": "Save failed",
         "ownerUpdateFailed": "Owner update failed",
         "assigneeUpdateFailed": "Assignee update failed",
-        "updateFailed": "Update failed"
+        "updateFailed": "Update failed",
+        "loadFailed": "Couldn't load this task — editing is unavailable until it loads.",
+        "network": "Network error — please try again."
       },
       "tabs": {
         "details": "Details",
@@ -1875,7 +1884,10 @@
         "uploadFailed": "Upload failed",
         "chooseFile": "Choose a file to upload, or enter an evidence URL.",
         "linkEvidenceFailed": "Failed to link evidence",
-        "unlinkFailed": "Unlink failed"
+        "unlinkFailed": "Unlink failed",
+        "applicabilityFailed": "Couldn't save applicability.",
+        "addContributorFailed": "Couldn't add contributor.",
+        "removeContributorFailed": "Couldn't remove contributor."
       },
       "metaApplicability": "Applicability",
       "objectiveEmpty": "No objective.",
@@ -1888,7 +1900,14 @@
       "removeContributor": "Remove {name}",
       "policiesTitle": "Policies",
       "policiesEmptyTitle": "No linked policies yet",
-      "policiesEmptyDesc": "Policies linked to this control will appear here."
+      "policiesEmptyDesc": "Policies linked to this control will appear here.",
+      "applicabilityButton": "Applicability",
+      "applicabilityUpdated": "Applicability updated",
+      "contributorRemoved": "Contributor removed",
+      "undo": "Undo",
+      "evidenceUnlinked": "Evidence unlinked",
+      "couldntLoadActivity": "Couldn't load activity",
+      "couldntLoadActivityDesc": "Something went wrong fetching this control's activity. Reload the page to try again."
     },
     "editModal": {
       "title": "Edit Control",
@@ -1968,7 +1987,10 @@
       "applicabilityJustifyLabel": "Why is {requirement} not applicable for this control?",
       "applicabilityJustifyPlaceholder": "Explain why this control does not apply to this requirement…",
       "applicabilityJustifySave": "Save",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "linkRequirement": "Link Requirement",
+      "applicabilityFailed": "Failed to update applicability",
+      "mapFailed": "Failed to link requirement"
     },
     "evidenceTab": {
       "colType": "Type",
@@ -2115,7 +2137,8 @@
       },
       "applicability": {
         "APPLICABLE": "Applicable",
-        "NOT_APPLICABLE": "Not Applicable"
+        "NOT_APPLICABLE": "Not Applicable",
+        "UNASSESSED": "Not assessed"
       },
       "health": {
         "HEALTHY": "Healthy",
@@ -2227,6 +2250,49 @@
       "automationTypeHelp": "About automation type",
       "mitigationType": "How the control acts on risk: preventive (stops it), detective (finds it), corrective (fixes it), deterrent, or compensating.",
       "mitigationTypeHelp": "About mitigation type"
+    },
+    "activity": {
+      "created": "created this",
+      "updatedDetails": "updated the details",
+      "statusChanged": "changed the status",
+      "assigneeChanged": "changed the assignee",
+      "reassigned": "reassigned it",
+      "ownerChanged": "changed the owner",
+      "dueDateChanged": "changed the due date",
+      "priorityChanged": "changed the priority",
+      "severityChanged": "changed the severity",
+      "evidenceAdded": "added evidence",
+      "evidenceUploaded": "uploaded evidence",
+      "evidenceLinked": "linked evidence",
+      "evidenceRemoved": "removed evidence",
+      "commented": "left a comment",
+      "linked": "linked an item",
+      "unlinked": "removed a link",
+      "archived": "archived it",
+      "deleted": "deleted this",
+      "taskCreated": "added a task",
+      "taskCompleted": "completed a task",
+      "testCompleted": "logged a test result",
+      "testPassed": "logged a passing test",
+      "testFailed": "logged a failing test"
+    },
+    "deleted": {
+      "undo": "Undo",
+      "toggle": "Deleted controls",
+      "actions": "Lifecycle",
+      "badge": "Deleted",
+      "restore": "Restore",
+      "purge": "Purge",
+      "byWhen": "Deleted {when} by {who}",
+      "byUnknown": "Unknown",
+      "restoredToast": "Control restored",
+      "restoreFailed": "Couldn't restore the control. Please try again.",
+      "purgeTitle": "Permanently purge control",
+      "purgeBody": "This permanently deletes {name} and all of its data. This action cannot be undone.",
+      "purgeTypeToConfirm": "Type {name} to confirm",
+      "purgeFailed": "Failed to purge control. Please try again.",
+      "emptyTitle": "No deleted controls",
+      "emptyDesc": "Deleted controls appear here and can be restored."
     }
   },
   "evidence": {
