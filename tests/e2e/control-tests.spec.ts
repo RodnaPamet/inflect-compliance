@@ -86,22 +86,10 @@ test.describe('Control Tests (Test-of-Control)', () => {
             );
         });
 
-        await test.step('complete the run as PASS and link evidence', async () => {
-            await page.click('#result-btn-PASS');
-            await page.fill(
-                '#test-run-notes',
-                'All access levels verified correctly',
-            );
-            await page.click('#complete-test-run-btn');
-            await page.waitForLoadState('networkidle').catch(() => {});
-            await expect(page.locator('#test-run-status')).toContainText(
-                'COMPLETED',
-                { timeout: 15000 },
-            );
-            await expect(page.locator('#test-run-result')).toContainText('PASS', {
-                timeout: 10000,
-            });
-
+        await test.step('link evidence while RUNNING, then complete as PASS', async () => {
+            // A COMPLETED run is frozen audit evidence — its evidence set is
+            // immutable and the add affordance is hidden. So link evidence
+            // BEFORE completing, while the run is still RUNNING.
             // Link URL evidence — Epic 55 <Combobox> for the kind picker.
             await page.click('#link-evidence-btn');
             await page.waitForSelector('#evidence-kind-select', { timeout: 10000 });
@@ -118,6 +106,27 @@ test.describe('Control Tests (Test-of-Control)', () => {
             await expect(
                 page.locator('text=docs.example.com'),
             ).toBeVisible({ timeout: 15000 });
+
+            // Now complete the run as PASS.
+            await page.click('#result-btn-PASS');
+            await page.fill(
+                '#test-run-notes',
+                'All access levels verified correctly',
+            );
+            await page.click('#complete-test-run-btn');
+            await page.waitForLoadState('networkidle').catch(() => {});
+            await expect(page.locator('#test-run-status')).toContainText(
+                'COMPLETED',
+                { timeout: 15000 },
+            );
+            await expect(page.locator('#test-run-result')).toContainText('PASS', {
+                timeout: 10000,
+            });
+
+            // The frozen evidence remains; the add affordance is gone on a
+            // completed run (the immutability guard).
+            await expect(page.locator('text=docs.example.com')).toBeVisible();
+            await expect(page.locator('#link-evidence-btn')).toHaveCount(0);
         });
 
         await test.step('create another run, mark FAIL, verify finding', async () => {
