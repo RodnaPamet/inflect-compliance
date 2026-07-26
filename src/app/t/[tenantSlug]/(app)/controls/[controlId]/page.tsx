@@ -1362,7 +1362,7 @@ export default function ControlDetailPage() {
               * control-level metadata, not per-sub-tab, so it would
               * read as noise repeated under Tasks / Evidence / etc. */}
             {tab === 'overview' && (
-                <div className={cn(cardVariants({ density: 'compact' }), 'mt-6')}>
+                <div id="control-exceptions" className={cn(cardVariants({ density: 'compact' }), 'mt-6 scroll-mt-24')}>
                     <ControlExceptionsPanel
                         tenantSlug={tenantSlug}
                         controlId={controlId}

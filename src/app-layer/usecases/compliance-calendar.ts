@@ -595,7 +595,13 @@ async function loadVendorEvents(
                 ),
                 entityType: 'VENDOR',
                 entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/vendors/${r.id}`),
+                // Land on the contract/renewal field so this is a distinct
+                // destination from the vendor-review event (which lands on the
+                // overview root). The field carries `id="vendor-contract-renewal"`.
+                href: tenantHrefFromCtx(
+                    ctx,
+                    `/vendors/${r.id}?tab=overview#vendor-contract-renewal`,
+                ),
                 ownerUserId: r.ownerUserId ?? undefined,
             });
         }
@@ -985,7 +991,11 @@ async function loadRiskEvents(
                 status: classifyStatus(r.targetDate, now, isClosed),
                 entityType: 'RISK',
                 entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/risks/${r.id}`),
+                // The mitigation target lives on the assessment tab (where the
+                // treatment strategy + target date are shown), NOT the overview
+                // where risk-review lands — deep-link so the four risk event
+                // types don't all collapse to the same destination.
+                href: tenantHrefFromCtx(ctx, `/risks/${r.id}?tab=assessment`),
             });
         }
     }
@@ -1177,7 +1187,9 @@ async function loadTreatmentMilestoneEvents(
             status: classifyStatus(date, now, isDone),
             entityType: 'TREATMENT_MILESTONE',
             entityId: r.id,
-            href: tenantHrefFromCtx(ctx, `/risks/${riskId}`),
+            // Land on the risk's treatment-plan (assessment tab), not the
+            // overview root — a milestone is a treatment-plan artefact.
+            href: tenantHrefFromCtx(ctx, `/risks/${riskId}?tab=assessment`),
             detail: riskTitle,
         });
     }
@@ -1225,7 +1237,9 @@ async function loadTreatmentPlanEvents(
             status: classifyStatus(date, now, false),
             entityType: 'RISK_TREATMENT_PLAN',
             entityId: r.id,
-            href: tenantHrefFromCtx(ctx, `/risks/${r.riskId}`),
+            // The plan target belongs on the assessment tab (treatment plan),
+            // distinct from the risk-review destination.
+            href: tenantHrefFromCtx(ctx, `/risks/${r.riskId}?tab=assessment`),
             detail: `${r.strategy} strategy`,
         };
     });
@@ -1386,7 +1400,14 @@ async function loadIncidentNotificationEvents(
             status: classifyStatus(r.dueAt, now, isDone),
             entityType: 'INCIDENT_NOTIFICATION',
             entityId: r.id,
-            href: tenantHrefFromCtx(ctx, `/incidents/${r.incidentId}`),
+            // Deep-link to the specific Art.23 notification obligation on the
+            // incident overview (each notification carries a matching anchor id),
+            // not the incident root — the calendar is advertising the
+            // notification deadline, so the page should surface it.
+            href: tenantHrefFromCtx(
+                ctx,
+                `/incidents/${r.incidentId}#incident-notification-${r.id}`,
+            ),
         };
     });
     return sourceResult(events, rows.length, limit);
@@ -1436,7 +1457,10 @@ async function loadControlExceptionEvents(
                 status: classifyStatus(date, now, false),
                 entityType: 'CONTROL_EXCEPTION',
                 entityId: r.id,
-                href: tenantHrefFromCtx(ctx, `/controls/${r.controlId}`),
+                // Anchor to the exceptions panel on the control overview
+                // (default tab) so an expiring exception lands on the exception,
+                // not a control root that shows no sign of it.
+                href: tenantHrefFromCtx(ctx, `/controls/${r.controlId}#control-exceptions`),
             };
         });
     return sourceResult(events, rows.length, limit);

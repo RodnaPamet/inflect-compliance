@@ -152,11 +152,53 @@ describe('5 — deep-links land on the relevant section', () => {
         }
 
         const unresolved = hrefs.filter((href) => {
-            const clean = href.split('?')[0].replace(/^\//, '');
+            // Strip the query string AND the #anchor before resolving the path.
+            const clean = href.split('?')[0].split('#')[0].replace(/^\//, '');
             const segments = clean.split('/').filter(Boolean);
             return !resolves(segments);
         });
         expect(unresolved).toEqual([]);
+    });
+
+    it('distinct event types deep-link to distinct destinations', () => {
+        // Four risk event types and two vendor types used to collapse to the
+        // same entity root, and control-exception / incident-notification
+        // landed on a root that showed no sign of the thing that was due.
+        const src = read(USECASE);
+        // Risk mitigation target + both treatment types → the treatment plan
+        // (assessment tab), distinct from risk-review's overview root. Each
+        // href expression is unique to its event type (`${r.id}` = risk-target,
+        // `${riskId}` = milestone, `${r.riskId}` = plan target).
+        expect(src).toMatch(/\/risks\/\$\{r\.id\}\?tab=assessment/);
+        expect(src).toMatch(/\/risks\/\$\{riskId\}\?tab=assessment/);
+        expect(src).toMatch(/\/risks\/\$\{r\.riskId\}\?tab=assessment/);
+        // risk-review keeps the plain overview root (distinct destination) —
+        // `/risks/${r.id}` with no ?tab is unique to it.
+        expect(src).toMatch(/\/risks\/\$\{r\.id\}`\)/);
+        // Vendor renewal → the contract/renewal field anchor, distinct from
+        // vendor-review's overview root.
+        expect(src).toMatch(/\/vendors\/\$\{r\.id\}\?tab=overview#vendor-contract-renewal/);
+        // Control exception expiry → the exceptions panel anchor.
+        expect(src).toMatch(/\/controls\/\$\{r\.controlId\}#control-exceptions/);
+        // Incident notification → the specific notification anchor, not the root.
+        expect(src).toMatch(/\/incidents\/\$\{r\.incidentId\}#incident-notification-\$\{r\.id\}/);
+    });
+
+    it('the deep-link anchor targets exist on their detail pages', () => {
+        // A deep-link to an anchor the page never renders scrolls nowhere.
+        expect(
+            read('src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx'),
+        ).toMatch(/id="vendor-contract-renewal"/);
+        expect(
+            read('src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx'),
+        ).toMatch(/id="control-exceptions"/);
+        expect(
+            read('src/app/t/[tenantSlug]/(app)/incidents/[incidentId]/page.tsx'),
+        ).toMatch(/incident-notification-\$\{n\.id\}/);
+        // The risk detail page honours ?tab= (so ?tab=assessment lands right).
+        expect(
+            read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx'),
+        ).toMatch(/useSearchParams/);
     });
 });
 

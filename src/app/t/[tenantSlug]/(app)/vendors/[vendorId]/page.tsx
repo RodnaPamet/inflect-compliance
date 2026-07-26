@@ -657,7 +657,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                             <span className="ml-2">{vendor.inherentRisk ? <StatusBadge variant={CRIT_BADGE[vendor.inherentRisk]}>{tx('criticalityLabel.' + vendor.inherentRisk)}</StatusBadge> : '—'}</span>
                         </div>
                         <div><span className="text-content-muted">{tx('detail.nextReview')}:</span> <span className="ml-2">{fmtDate(vendor.nextReviewAt)}</span></div>
-                        <div><span className="text-content-muted">{tx('detail.contractRenewal')}:</span> <span className="ml-2">{fmtDate(vendor.contractRenewalAt)}</span></div>
+                        <div id="vendor-contract-renewal" className="scroll-mt-24"><span className="text-content-muted">{tx('detail.contractRenewal')}:</span> <span className="ml-2">{fmtDate(vendor.contractRenewalAt)}</span></div>
                     </div>
                     {/* Enrichment Fields */}
                     {(vendor.privacyPolicyUrl || vendor.securityPageUrl || vendor.certificationsJson) && (
