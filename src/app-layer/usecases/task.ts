@@ -1,6 +1,7 @@
 import { RequestContext } from '../types';
 import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
 import { assertCanReadTasks, assertCanWriteTasks, assertCanCreateTask, assertCanAssignTasks, assertCanCommentOnTasks } from '../policies/task.policies';
+import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { emitAutomationEvent } from '../automation';
 import { enqueueEmail } from '../notifications/enqueue';
@@ -148,6 +149,23 @@ async function assertLinkTargetInTenant(
             'Linked entity not found or belongs to a different tenant',
         );
     }
+}
+
+/**
+ * Per-id outcome for a bulk mutation. `updateMany` reports only a count, so
+ * a caller could not tell which of its ids actually changed — a payload
+ * mixing live ids with stale/foreign ones looked identical to a full
+ * success. Resolving the ids first also stops the audit loop emitting an
+ * entry for rows that were never touched.
+ */
+function bulkResults(requested: string[], applied: Set<string>) {
+    return {
+        count: applied.size,
+        results: requested.map((id) => ({
+            id,
+            status: applied.has(id) ? ('ok' as const) : ('not_found' as const),
+        })),
+    };
 }
 
 // ─── List / Get ───
@@ -438,13 +456,34 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 // TaskWatcher) all cascade via `onDelete: Cascade`, so removing the
 // task row cleans up its comments, entity links, and watchers in one
 // statement. Gated on write permission (same tier as edit) and audited.
-/** Bulk soft-delete tasks selected in the table action bar. */
+/**
+ * Bulk soft-delete tasks selected in the table action bar.
+ *
+ * ADMIN tier, matching `bulkDeleteRisk` / `bulkDeleteAsset` /
+ * `control/mutations.bulkDelete` — a bulk destructive action is an admin
+ * capability across every register, and tasks were the lone exception at the
+ * write tier. The ROUTE stays on `tasks.edit`, which is also what the assets
+ * bulk-delete route does: the coarse HTTP gate lets an editor reach the
+ * usecase, and the usecase makes the tier decision.
+ */
 export async function bulkDeleteTask(ctx: RequestContext, taskIds: string[]) {
-    assertCanWriteTasks(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    assertCanAdmin(ctx);
+    const outcome = await runInTenantContext(ctx, async (db) => {
         const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
-        if (rows.length === 0) return { deleted: 0 };
+        // A payload where NOTHING resolves is a client error, not a
+        // successful no-op — previously this returned {deleted: 0} and the
+        // caller could not tell "already gone" from "wrong tenant/ids".
+        if (rows.length === 0) throw notFound('No matching tasks found');
+
+        const found = new Set(rows.map((r) => r.id));
         await db.task.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
+
+        // Audit rows stay SEQUENTIAL by design: they are hash-chained under a
+        // per-tenant advisory lock, so emitting them concurrently would
+        // corrupt the chain (same conclusion #1705 reached for controls).
+        // What changed is that only ids that ACTUALLY resolved get an entry —
+        // previously every requested id was audited even when the delete
+        // matched fewer rows.
         for (const r of rows) {
             await logEvent(db, ctx, {
                 action: 'SOFT_DELETE',
@@ -454,8 +493,21 @@ export async function bulkDeleteTask(ctx: RequestContext, taskIds: string[]) {
                 detailsJson: { category: 'entity_lifecycle', entityName: 'Task', operation: 'deleted', summary: 'Task soft-deleted' },
             });
         }
-        return { deleted: rows.length };
+
+        // Per-id outcome so a partially-matching payload is legible to the
+        // caller instead of collapsing into a bare count.
+        return {
+            deleted: rows.length,
+            count: rows.length,
+            results: taskIds.map((id) => ({
+                id,
+                status: found.has(id) ? ('deleted' as const) : ('not_found' as const),
+            })),
+        };
     });
+    // Without this the cached list keeps serving deleted tasks for the TTL.
+    await bumpEntityCacheVersion(ctx, 'task');
+    return outcome;
 }
 
 export async function deleteTask(ctx: RequestContext, taskId: string) {
@@ -1184,8 +1236,14 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
             }
         }
 
-        const result = await WorkItemRepository.bulkAssign(db, ctx, taskIds, assigneeUserId);
-        for (const id of taskIds) {
+        const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
+        if (rows.length === 0) throw notFound('No matching tasks found');
+        const applied = new Set(rows.map((r) => r.id));
+
+        const result = await WorkItemRepository.bulkAssign(db, ctx, [...applied], assigneeUserId);
+        // Audit only ids that actually resolved. Sequential by design —
+        // audit rows are hash-chained under a per-tenant advisory lock.
+        for (const id of applied) {
             await logEvent(db, ctx, {
                 action: 'TASK_ASSIGNED',
                 entityType: 'Task',
@@ -1195,7 +1253,7 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
                 metadata: { assigneeUserId, bulk: true },
             });
         }
-        return result;
+        return { ...result, ...bulkResults(taskIds, applied) };
     });
     await bumpEntityCacheVersion(ctx, 'task');
     return outcome;
@@ -1294,8 +1352,12 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
 export async function bulkSetTaskDueDate(ctx: RequestContext, taskIds: string[], dueAt: string | null) {
     assertCanWriteTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
-        const result = await WorkItemRepository.bulkSetDueDate(db, ctx, taskIds, dueAt);
-        for (const id of taskIds) {
+        const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
+        if (rows.length === 0) throw notFound('No matching tasks found');
+        const applied = new Set(rows.map((r) => r.id));
+
+        const result = await WorkItemRepository.bulkSetDueDate(db, ctx, [...applied], dueAt);
+        for (const id of applied) {
             await logEvent(db, ctx, {
                 action: 'TASK_UPDATED',
                 entityType: 'Task',
@@ -1305,7 +1367,7 @@ export async function bulkSetTaskDueDate(ctx: RequestContext, taskIds: string[],
                 metadata: { dueAt, bulk: true },
             });
         }
-        return result;
+        return { ...result, ...bulkResults(taskIds, applied) };
     });
     await bumpEntityCacheVersion(ctx, 'task');
     return outcome;

@@ -322,10 +322,17 @@ describeFn('task usecase — branch coverage (integration)', () => {
         // bulk due date
         await bulkSetTaskDueDate(ctx, [a.id, b.id], new Date().toISOString());
         await bulkSetTaskDueDate(ctx, [a.id, b.id], null);
-        // bulk delete: empty set → deleted 0, then real delete
-        expect(await bulkDeleteTask(ctx, ['nope-1', 'nope-2'])).toEqual({ deleted: 0 });
+        // bulk delete: a wholly unmatched payload is a 404, not a silent
+        // {deleted: 0} — the caller could not previously tell "already gone"
+        // from "wrong tenant / bad ids".
+        await expect(bulkDeleteTask(ctx, ['nope-1', 'nope-2'])).rejects.toThrow(/no matching tasks/i);
         const del = await bulkDeleteTask(ctx, [a.id, b.id]);
         expect(del.deleted).toBe(2);
+        // per-id outcomes so a partial payload is legible to the caller
+        expect(del.results).toEqual([
+            { id: a.id, status: 'deleted' },
+            { id: b.id, status: 'deleted' },
+        ]);
     });
 
     it('deleteTask happy path removes the row', async () => {
