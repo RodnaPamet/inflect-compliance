@@ -1,6 +1,6 @@
 import { RequestContext } from '../types';
 import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
-import { assertCanReadTasks, assertCanWriteTasks, assertCanCommentOnTasks } from '../policies/task.policies';
+import { assertCanReadTasks, assertCanWriteTasks, assertCanCreateTask, assertCanAssignTasks, assertCanCommentOnTasks } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
 import { emitAutomationEvent } from '../automation';
 import { enqueueEmail } from '../notifications/enqueue';
@@ -135,7 +135,7 @@ export async function createTask(ctx: RequestContext, input: {
     findingId?: string | null;
     metadataJson?: unknown;
 }) {
-    assertCanWriteTasks(ctx);
+    assertCanCreateTask(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         // Validate metadataJson on write
         if (input.metadataJson !== undefined) {
@@ -530,7 +530,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
 // ─── Assign ───
 
 export async function assignTask(ctx: RequestContext, taskId: string, assigneeUserId: string | null) {
-    assertCanWriteTasks(ctx);
+    assertCanAssignTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         // TP-2 (hole 2b) — SoD from the assignee side: assigning the task to the
         // person who is already its reviewer would collapse four eyes into two
@@ -1057,7 +1057,7 @@ export async function getTaskActivity(ctx: RequestContext, taskId: string) {
 // ─── Bulk Actions ───
 
 export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], assigneeUserId: string | null) {
-    assertCanWriteTasks(ctx);
+    assertCanAssignTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
         const result = await WorkItemRepository.bulkAssign(db, ctx, taskIds, assigneeUserId);
         for (const id of taskIds) {
