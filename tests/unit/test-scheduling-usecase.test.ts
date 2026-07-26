@@ -69,7 +69,11 @@ function makeCtx(overrides: { canRead?: boolean; canWrite?: boolean } = {}) {
             canAudit: false,
             canExport: false,
         },
-        appPermissions: {} as never,
+        // The test policies now gate on appPermissions.tests.* (custom-role-
+        // aware), so mirror the canRead/canWrite flags into the granular keys.
+        appPermissions: {
+            tests: { view: canRead, create: canWrite, execute: canWrite },
+        } as never,
     };
 }
 
