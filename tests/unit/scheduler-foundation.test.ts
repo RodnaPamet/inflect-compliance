@@ -242,6 +242,25 @@ describe('cronMatchesNow', () => {
         expect(cronMatchesNow('20-30 * * * *', fixedDate)).toBe(false);
     });
 
+    test('honours the schedule timezone (agrees with the BullMQ path)', () => {
+        // 12:00 UTC is 08:00 in America/New_York (EDT, UTC-4).
+        const noonUtc = new Date('2026-04-17T12:00:00Z');
+        // "daily at 08:00" fires in NY but NOT in UTC — the tick() path must
+        // evaluate the cron in the schedule's tz, or it disagrees with BullMQ.
+        expect(cronMatchesNow('0 8 * * *', noonUtc, 'America/New_York')).toBe(true);
+        expect(cronMatchesNow('0 8 * * *', noonUtc)).toBe(false); // UTC default
+    });
+
+    test('*/N step is anchored at the field minimum (1-based day-of-month)', () => {
+        // `*/2` on day-of-month means 1,3,5,… (every 2 FROM day 1), not 2,4,6.
+        const day3 = new Date('2026-04-03T00:00:00Z');
+        const day2 = new Date('2026-04-02T00:00:00Z');
+        expect(cronMatchesNow('0 0 */2 * *', day3)).toBe(true); // (3-1)%2 === 0
+        expect(cronMatchesNow('0 0 */2 * *', day2)).toBe(false); // (2-1)%2 !== 0
+        // The 0-based minute field is unaffected: */15 still matches minute 0.
+        expect(cronMatchesNow('*/15 0 * * *', new Date('2026-04-03T00:00:00Z'))).toBe(true);
+    });
+
     test('invalid pattern does not match', () => {
         expect(cronMatchesNow('', fixedDate)).toBe(false);
         expect(cronMatchesNow('* *', fixedDate)).toBe(false);

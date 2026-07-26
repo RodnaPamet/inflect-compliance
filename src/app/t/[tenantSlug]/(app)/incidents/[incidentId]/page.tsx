@@ -378,7 +378,10 @@ export default function IncidentDetailPage() {
                                     return (
                                         <div
                                             key={kind}
-                                            className="flex flex-wrap items-center justify-between gap-default rounded-lg border border-border-subtle px-4 py-3"
+                                            // Anchor target for the compliance-calendar
+                                            // incident-notification-due deep-link.
+                                            id={`incident-notification-${n.id}`}
+                                            className="flex flex-wrap items-center justify-between gap-default rounded-lg border border-border-subtle px-4 py-3 scroll-mt-24"
                                         >
                                             <div className="space-y-tight">
                                                 <div className="font-medium text-content-emphasis">

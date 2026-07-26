@@ -63,42 +63,90 @@ import type { JobName, JobPayload, JobRunResult } from './types';
  * This is intentionally minimal — just enough for tick() evaluation
  * without pulling in a full cron library dependency.
  */
-export function cronMatchesNow(pattern: string, now: Date = new Date()): boolean {
+/**
+ * Per-field minimum value, used to anchor `*\/N` steps correctly. Cron's
+ * `*\/N` means "every N starting from the field's minimum", so day-of-month
+ * (min 1) and month (min 1) must NOT be anchored at 0 like minute/hour/dow.
+ * Order matches `fields` below: minute, hour, day, month, day-of-week.
+ */
+const FIELD_MINS = [0, 0, 1, 1, 0] as const;
+
+const WEEKDAY_INDEX: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+/**
+ * The cron fields (minute, hour, day, month, day-of-week) for `now` as seen
+ * in the given IANA timezone. The BullMQ path evaluates each schedule's cron
+ * in its configured `tz`; the tick() path must agree, or the two entry points
+ * fire a schedule at different wall-clock times.
+ */
+function cronFieldsInTz(now: Date, tz: string): number[] {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        hourCycle: 'h23',
+        minute: '2-digit',
+        hour: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        weekday: 'short',
+    }).formatToParts(now);
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+    return [
+        Number(get('minute')),
+        Number(get('hour')),
+        Number(get('day')),
+        Number(get('month')),
+        WEEKDAY_INDEX[get('weekday')] ?? 0,
+    ];
+}
+
+export function cronMatchesNow(
+    pattern: string,
+    now: Date = new Date(),
+    tz?: string,
+): boolean {
     const parts = pattern.split(' ');
     if (parts.length < 5) return false;
 
-    const fields = [
-        now.getUTCMinutes(),    // 0: minute
-        now.getUTCHours(),      // 1: hour
-        now.getUTCDate(),       // 2: day of month
-        now.getUTCMonth() + 1,  // 3: month (1-12)
-        now.getUTCDay(),        // 4: day of week (0-6, 0=Sunday)
-    ];
+    // Honour the schedule's timezone (matching the BullMQ evaluator); default
+    // to UTC when none is set.
+    const fields =
+        tz && tz !== 'UTC'
+            ? cronFieldsInTz(now, tz)
+            : [
+                  now.getUTCMinutes(), // 0: minute
+                  now.getUTCHours(), // 1: hour
+                  now.getUTCDate(), // 2: day of month
+                  now.getUTCMonth() + 1, // 3: month (1-12)
+                  now.getUTCDay(), // 4: day of week (0-6, 0=Sunday)
+              ];
 
     for (let i = 0; i < 5; i++) {
-        if (!fieldMatches(parts[i], fields[i])) return false;
+        if (!fieldMatches(parts[i], fields[i], FIELD_MINS[i])) return false;
     }
     return true;
 }
 
-function fieldMatches(expr: string, value: number): boolean {
+function fieldMatches(expr: string, value: number, min: number): boolean {
     if (expr === '*') return true;
 
     // Handle comma-separated alternatives: "1,15,30"
     if (expr.includes(',')) {
-        return expr.split(',').some(sub => fieldMatches(sub.trim(), value));
+        return expr.split(',').some(sub => fieldMatches(sub.trim(), value, min));
     }
 
-    // Handle step: "*/15"
+    // Handle step: "*/15". Anchored at the field's minimum, NOT 0 — otherwise
+    // `*/2` on day-of-month (min 1) matches 2,4,6,… instead of 1,3,5,….
     if (expr.startsWith('*/')) {
         const step = parseInt(expr.slice(2), 10);
-        return !isNaN(step) && step > 0 && value % step === 0;
+        return !isNaN(step) && step > 0 && (value - min) % step === 0;
     }
 
     // Handle range: "1-5"
     if (expr.includes('-')) {
-        const [min, max] = expr.split('-').map(s => parseInt(s, 10));
-        return !isNaN(min) && !isNaN(max) && value >= min && value <= max;
+        const [rangeMin, rangeMax] = expr.split('-').map(s => parseInt(s, 10));
+        return !isNaN(rangeMin) && !isNaN(rangeMax) && value >= rangeMin && value <= rangeMax;
     }
 
     // Exact match
@@ -236,7 +284,9 @@ export const scheduler = {
 
         for (const schedule of SCHEDULED_JOBS) {
             evaluated++;
-            if (!cronMatchesNow(schedule.pattern, currentTime)) continue;
+            // Evaluate the cron in the schedule's configured timezone so the
+            // tick() path agrees with the BullMQ path (which honours `tz`).
+            if (!cronMatchesNow(schedule.pattern, currentTime, schedule.tz)) continue;
 
             logger.info('scheduler: tick — job is due', {
                 component: 'scheduler',

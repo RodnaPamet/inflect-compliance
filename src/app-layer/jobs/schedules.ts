@@ -22,6 +22,16 @@
  * Times are UTC unless the entry sets a `tz`. BullMQ uses standard
  * cron syntax and evaluates the `pattern` in `tz` when supplied.
  *
+ * Idempotency: do NOT rely on BullMQ's deterministic-jobId dedupe as the
+ * exactly-once guarantee. `queue.ts` sets `removeOnComplete: 500`, so once a
+ * completed job is evicted from the retained set its jobId is reusable and the
+ * same logical occurrence CAN be enqueued twice — jobId dedupe holds only
+ * WITHIN the retention window. Every job whose double-fire would be visible is
+ * instead made durably idempotent at the work layer (e.g. the per-day
+ * `dedupeKey` unique index on notification outbox rows, the conditional
+ * `updateMany` claims in the schedulers). Any new scheduled job that must never
+ * double-fire MUST carry its own durable idempotency key, not lean on the jobId.
+ *
  * @module app-layer/jobs/schedules
  */
 import type { JobName } from './types';
@@ -245,7 +255,7 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'control-test-scheduler',
         pattern: '*/5 * * * *',   // every 5 minutes
         description:
-            'Epic G-2 — scan ControlTestPlan rows with automationType IN (SCRIPT, INTEGRATION) and nextRunAt <= now, enqueue per-plan control-test-runner jobs.',
+            'Epic G-2 — scan ACTIVE ControlTestPlan rows whose nextRunAt is due (or NULL, for bootstrap) — regardless of automationType — and enqueue per-plan control-test-runner jobs.',
         defaultPayload: {},
     },
     {
