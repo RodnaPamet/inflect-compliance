@@ -38,8 +38,10 @@ const CONFIG = {
 };
 const SECRETS = { bindDN: 'CN=svc,DC=corp', bindPassword: 'pw' };
 
+// `createClient` is declared synchronous — `(opts) => LdapClientLike` — so it
+// must return the client, not a promise of one.
 const provider = (client = ldapClient()) => ({
-    p: new ActiveDirectoryProvider({ createClient: async () => client as never }),
+    p: new ActiveDirectoryProvider({ createClient: () => client as never }),
     client,
 });
 
@@ -93,7 +95,10 @@ describe('formatObjectGuid', () => {
 describe('fileTimeToDate', () => {
     it('converts a real FILETIME to the corresponding date', () => {
         // 1601-01-01 + 11644473600s = 1970-01-01; add a day in 100-ns ticks.
-        const ticks = (11644473600000n + 86400000n) * 10000n;
+        // BigInt(...) rather than `n` literals — the tsconfig target is below
+        // ES2020, the same reason the source module spells them this way.
+        const ticks =
+            (BigInt('11644473600000') + BigInt('86400000')) * BigInt('10000');
         expect(fileTimeToDate(String(ticks))).toEqual(new Date('1970-01-02T00:00:00.000Z'));
     });
 
@@ -114,7 +119,10 @@ describe('fileTimeToDate', () => {
     });
 
     it('accepts the array-wrapped form', () => {
-        const ticks = (11644473600000n + 86400000n) * 10000n;
+        // BigInt(...) rather than `n` literals — the tsconfig target is below
+        // ES2020, the same reason the source module spells them this way.
+        const ticks =
+            (BigInt('11644473600000') + BigInt('86400000')) * BigInt('10000');
         expect(fileTimeToDate([String(ticks)])).toEqual(
             new Date('1970-01-02T00:00:00.000Z'),
         );
@@ -219,7 +227,7 @@ describe('ActiveDirectoryProvider.validateConnection', () => {
     });
 
     it('verifies TLS by default and skips it only when opted in', async () => {
-        const createClient = jest.fn().mockResolvedValue(ldapClient());
+        const createClient = jest.fn().mockReturnValue(ldapClient());
         const p = new ActiveDirectoryProvider({ createClient });
 
         await p.validateConnection(CONFIG, SECRETS);
@@ -379,7 +387,10 @@ describe('ActiveDirectoryProvider — entry normalization', () => {
     });
 
     it('converts lastLogonTimestamp from FILETIME', async () => {
-        const ticks = (11644473600000n + 86400000n) * 10000n;
+        // BigInt(...) rather than `n` literals — the tsconfig target is below
+        // ES2020, the same reason the source module spells them this way.
+        const ticks =
+            (BigInt('11644473600000') + BigInt('86400000')) * BigInt('10000');
         expect((await one({ lastLogonTimestamp: String(ticks) })).lastActiveAt).toEqual(
             new Date('1970-01-02T00:00:00.000Z'),
         );

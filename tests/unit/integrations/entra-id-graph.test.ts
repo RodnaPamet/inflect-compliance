@@ -62,7 +62,10 @@ const listWith = async (
     config: Record<string, unknown> = CONFIG,
 ) => {
     const fetchImpl = routedFetch(routes);
-    const p = new EntraIdProvider({ getAccessToken: async () => 'tok', fetchImpl });
+    const p = new EntraIdProvider({
+        getAccessToken: async () => 'tok',
+        fetchImpl: fetchImpl as never,
+    });
     return p.listAccounts(config);
 };
 
