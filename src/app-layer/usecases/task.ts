@@ -23,6 +23,7 @@ import {
 } from '../domain/work-item-status';
 import { getSlaStatus } from '../services/sla';
 import { reconcileTaskSource } from './task-source-reconcile';
+import { restoreEntity } from './soft-delete-operations';
 
 // ─── Type-Specific Validation ───
 
@@ -189,6 +190,29 @@ export async function listTasks(
                 WorkItemRepository.list(db, ctx, filters, options),
             ),
     });
+}
+
+/**
+ * The list's "Deleted" view — ONLY soft-deleted tasks, honouring the
+ * same toolbar filters as the live list.
+ *
+ * Admin-gated, matching `listAssetsWithDeleted` / `listRisksWithDeleted`:
+ * a deleted row is recovery surface, and restore itself is admin-only
+ * (`restoreEntity` asserts it), so listing is held to the same bar.
+ *
+ * Deliberately NOT routed through `cachedListRead`. The live list's
+ * cache is versioned per entity and a restore bumps that version, but
+ * mixing deleted reads into the same namespace would let a Deleted-view
+ * payload serve a live-list key with the same filter params.
+ */
+export async function listTasksWithDeleted(
+    ctx: RequestContext,
+    filters: TaskFilters = {},
+) {
+    assertCanAdmin(ctx);
+    return runInTenantContext(ctx, (db) =>
+        WorkItemRepository.listDeleted(db, ctx, filters),
+    );
 }
 
 export async function listTasksPaginated(ctx: RequestContext, params: TaskListParams) {
@@ -542,6 +566,21 @@ export async function deleteTask(ctx: RequestContext, taskId: string) {
         });
         return { id: taskId };
     });
+    await bumpEntityCacheVersion(ctx, 'task');
+    return result;
+}
+
+/**
+ * Reverse a soft-delete. `Task` is in `SOFT_DELETE_MODELS`, so
+ * `deleteTask`'s `db.task.delete` is rewritten to set `deletedAt` —
+ * the row survives and is restorable. Mirrors `restoreAsset` /
+ * `restoreRisk` / `restorePolicy`: `restoreEntity` does the work
+ * (including its own `assertCanAdmin` gate and the orphan
+ * preconditions), then the list cache version is bumped so the
+ * restored row reappears.
+ */
+export async function restoreTask(ctx: RequestContext, taskId: string) {
+    const result = await restoreEntity(ctx, 'Task', taskId);
     await bumpEntityCacheVersion(ctx, 'task');
     return result;
 }

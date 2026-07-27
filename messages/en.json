@@ -5762,7 +5762,15 @@
       "filterEmptyDesc": "Try widening your search or clearing one of the active filters.",
       "assignedToMe": "Assigned to me",
       "loadError": "Couldn't load tasks. Check your connection and try again.",
-      "assignedToMeUnavailable": "Sign-in details are still loading — this filter will be available in a moment."
+      "assignedToMeUnavailable": "Sign-in details are still loading — this filter will be available in a moment.",
+      "showDeleted": "Deleted",
+      "showLive": "Active",
+      "deletedEmptyTitle": "Nothing in the recycle bin",
+      "deletedEmptyDesc": "Deleted tasks appear here so you can restore them.",
+      "restore": "Restore",
+      "colDeletedAt": "Deleted",
+      "colDeletedBy": "Deleted by",
+      "deletedByUnknown": "Unknown"
     },
     "kpi": {
       "total": "Total tasks",
@@ -5800,12 +5808,16 @@
       "dueAria": "Bulk due date",
       "delete": "Delete",
       "failed": "Bulk action failed",
-      "partial": "{applied} updated, {missed} skipped — they may have been deleted or are no longer visible to you"
+      "partial": "{applied} updated, {missed} skipped — they may have been deleted or are no longer visible to you",
+      "deletedToast": "{count, plural, one {# task deleted} other {# tasks deleted}}",
+      "undo": "Undo",
+      "restoredToast": "{count, plural, one {# task restored} other {# tasks restored}}",
+      "restoreFailed": "Restore failed"
     },
     "new": {
       "modalTitle": "New task",
       "modalDesc": "Create a new task to track.",
-      "discardConfirm": "Discard task? Any details you entered will be lost.",
+      "discardConfirm": "Any details you entered will be lost.",
       "cancel": "Cancel",
       "creating": "Creating…",
       "create": "Create Task",
@@ -5841,7 +5853,10 @@
       "removeAria": "Remove link",
       "reviewer": "Reviewer",
       "reviewerHint": "A reviewer must sign the task off (via In review) before it can close.",
-      "reviewerPlaceholder": "No reviewer"
+      "reviewerPlaceholder": "No reviewer",
+      "discardTitle": "Discard task?",
+      "discardConfirmLabel": "Discard draft",
+      "discardCancelLabel": "Keep editing"
     },
     "detail": {
       "notFound": "Task not found",
@@ -5935,7 +5950,11 @@
       "watch": "Watch",
       "unwatch": "Unwatch",
       "watchFailed": "Failed to update watchers",
-      "removeWatcher": "Remove watcher"
+      "removeWatcher": "Remove watcher",
+      "watcherRemoved": "Watcher removed",
+      "deleteTask": "Delete task",
+      "taskDeleted": "Deleted \"{title}\"",
+      "deleteFailed": "Failed to delete task"
     },
     "source": {
       "heading": "Source",

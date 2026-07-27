@@ -19,7 +19,7 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
-import { useThresholdLoadMore, useToast } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DataTable, createColumns, useColumnsDropdown, sortRowsByDisplay, type SortAccessors } from '@/components/ui/table';
@@ -79,18 +79,19 @@ const buildTypeLabels = (t: (k: string) => string): Record<string, string> => ({
     AUDIT_FINDING: t('typeLabels.AUDIT_FINDING'), CONTROL_GAP: t('typeLabels.CONTROL_GAP'),
     INCIDENT: t('typeLabels.INCIDENT'), IMPROVEMENT: t('typeLabels.IMPROVEMENT'), TASK: t('typeLabels.TASK'),
 });
-// TP-6 — provenance labels for the Source column. Mirrors the filter's
-// `taskSourceLabels` (filter-defs) but keyed off the same
-// `filterEnums.source.*` copy so the column + filter never drift.
-// Source labels come from filter-defs — the same map the Source filter
-// uses. This file used to keep its own copy, which had drifted (it
+// TP-6 — provenance labels for the Source column. These come straight
+// from filter-defs' `taskSourceLabels`, the same map the Source filter
+// uses. This file used to keep its own copy which had drifted (it
 // predated RISK_MONITOR), so a risk-monitor task rendered the raw enum
 // in the table while its filter chip read the proper label.
 const buildSourceLabels = taskSourceLabels;
 // Bulk status only offers ACTIVE transitions. Terminal statuses
 // (CLOSED / CANCELED) require a per-task resolution note (S8), which
 // the bulk bar can't collect — closing is a deliberate single-task
-// action via the task detail page. RESOLVED is retired everywhere.
+// action via the task detail page. RESOLVED is omitted here because it
+// is retired from the PICKERS (CLOSED made it a redundant intermediate)
+// — it is still a live status on existing rows, which is why the status
+// FILTER continues to offer it.
 const buildBulkStatusCbOptions = (statusLabels: Record<string, string>): ComboboxOption[] => ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED'].map(sv => ({ value: sv, label: statusLabels[sv] || sv }));
 
 interface TaskListItem {
@@ -112,6 +113,14 @@ interface TaskListItem {
     // TP-6 — the directly-linked control (FK), for the filter's
     // runtime-derived options.
     control: { id: string; code: string | null; name: string } | null;
+    /**
+     * Only populated in the Deleted view — `listDeleted` selects these
+     * two extra columns, the live list does not (they would be null on
+     * every row). Optional rather than nullable so the live payload,
+     * which omits the keys entirely, still satisfies the type.
+     */
+    deletedAt?: string | null;
+    deletedByUserId?: string | null;
 }
 
 // TP-7 — server-computed task metrics (getTaskMetrics). The list KPI
@@ -181,6 +190,7 @@ function TasksPageInner({
     const tenantHref = useTenantHref();
     const { mutate: swrMutate } = useSWRConfig();
     const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
 
@@ -266,10 +276,18 @@ function TasksPageInner({
     // `dedupingInterval` — the Epic 69 hook's default is 5 s
     // already, so we bump it here to keep the previous behaviour
     // (dampens revalidation thrash during bulk-select interaction).
+    // Deleted ("recycle bin") view. Bulk delete is a SOFT delete, so
+    // without this the rows were recoverable in principle and
+    // unreachable in practice. `?includeDeleted=true` swaps the backing
+    // GET to the deleted-only set, honouring the same toolbar filters.
+    const [showDeleted, setShowDeleted] = useState(false);
+
     const tasksKey = useMemo(() => {
-        const qs = fetchParams.toString();
+        const params = new URLSearchParams(fetchParams);
+        if (showDeleted) params.set('includeDeleted', 'true');
+        const qs = params.toString();
         return qs ? `${CACHE_KEYS.tasks.list()}?${qs}` : CACHE_KEYS.tasks.list();
-    }, [fetchParams]);
+    }, [fetchParams, showDeleted]);
 
     // PR-9 — API returns `{ rows, truncated }` (mirrors the seven
     // other list-page entities). SSR initial wraps with
@@ -277,9 +295,13 @@ function TasksPageInner({
     // the backfill cap (5000) — the SSR slice never trips truncation
     // by itself.
     const tasksQuery = useTenantSWR<CappedList<TaskListItem>>(tasksKey, {
-        fallbackData: filtersMatchInitial
-            ? { rows: initialTasks, truncated: false }
-            : undefined,
+        // The SSR payload only ever contains LIVE rows, so the deleted
+        // view must always fetch — seeding it with `initialTasks` would
+        // briefly show active tasks under a "Deleted" heading.
+        fallbackData:
+            filtersMatchInitial && !showDeleted
+                ? { rows: initialTasks, truncated: false }
+                : undefined,
         dedupingInterval: 30_000,
     });
 
@@ -563,11 +585,97 @@ function TasksPageInner({
         },
     });
 
+    /**
+     * Restore a soft-deleted task from the Deleted view.
+     *
+     * No undo-toast here, deliberately: restore is the UNDO. Wrapping a
+     * recovery action in another 5-second "are you sure" window would be
+     * noise. The row is dropped from the deleted list optimistically and
+     * put back if the call fails.
+     */
+    const restoreTask = useCallback(
+        async (taskId: string) => {
+            const previous = tasksQuery.data;
+            void tasksQuery.mutate(
+                // guardrail-ignore: optimistic removal of the just-restored row from the DELETED list (it no longer belongs there), not a server-data re-filter.
+                (cur) =>
+                    cur
+                        ? { ...cur, rows: cur.rows.filter((r) => r.id !== taskId) }
+                        : cur,
+                { revalidate: false },
+            );
+            try {
+                const res = await fetch(apiUrl(`/tasks/${taskId}/restore`), {
+                    method: 'POST',
+                });
+                if (!res.ok) {
+                    const detail = await res
+                        .json()
+                        .then((b) => (typeof b?.error === 'string' ? b.error : null))
+                        .catch(() => null);
+                    throw new Error(detail || t('bulk.restoreFailed'));
+                }
+                toast.success(t('bulk.restoredToast', { count: 1 }));
+                // The restored row rejoins the LIVE list, so refresh both
+                // that and the KPI counters, not just the deleted view.
+                await invalidateAllTasks();
+            } catch (err: unknown) {
+                void tasksQuery.mutate(previous, { revalidate: false });
+                toast.error(
+                    err instanceof Error && err.message
+                        ? err.message
+                        : t('bulk.restoreFailed'),
+                );
+            }
+        },
+        [apiUrl, tasksQuery, toast, t, invalidateAllTasks],
+    );
+
     // BulkActionBar.onApply — fire the bulk mutation; the bar clears its own
     // form once `applying` settles.
     const handleBulkApply = (action: string, value: string, label: string) => {
         if (!action || selected.size === 0) return;
         const requested = Array.from(selected);
+
+        // Bulk delete is a SOFT delete — `Task` is in SOFT_DELETE_MODELS,
+        // so the rows are recoverable (and now visible in the Deleted
+        // view). That makes the Epic 67 undo-toast the right convention
+        // rather than a blocking confirm: drop the rows now, fire the
+        // real DELETE after the undo window, restore on Undo or failure.
+        // Matches RisksClient / AssetsClient. See docs/destructive-actions.md.
+        if (action === 'delete') {
+            const idSet = new Set(requested);
+            setSelected(new Set());
+            void tasksQuery.mutate(
+                // guardrail-ignore: optimistic-delete cache update (drops the just-deleted rows for the undo window), NOT display refiltering — the server still owns the list filter and mutate() restores on Undo/failure.
+                (cur) =>
+                    cur
+                        ? { ...cur, rows: cur.rows.filter((r) => !idSet.has(r.id)) }
+                        : cur,
+                { revalidate: false },
+            );
+            triggerUndoToast({
+                message: t('bulk.deletedToast', { count: requested.length }),
+                undoMessage: t('bulk.undo'),
+                action: async () => {
+                    const res = await fetch(apiUrl('/tasks/bulk/delete'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ taskIds: requested }),
+                    });
+                    if (!res.ok) throw new Error(t('bulk.failed'));
+                    await invalidateAllTasks();
+                },
+                undoAction: () => {
+                    void tasksQuery.mutate();
+                },
+                onError: () => {
+                    toast.error(t('bulk.failed'));
+                    void tasksQuery.mutate();
+                },
+            });
+            return;
+        }
         bulkMutation
             .trigger({ action, value, label, ids: requested })
             .then((result) => {
@@ -665,7 +773,10 @@ function TasksPageInner({
                     />
                 ),
             },
-            { value: 'delete', label: t('bulk.delete'), confirm: true },
+            // No `confirm: true` — bulk delete routes through the Epic 67
+            // undo-toast in handleBulkApply (soft delete, recoverable),
+            // not a blocking confirm dialog.
+            { value: 'delete', label: t('bulk.delete') },
         ],
         [tenantSlug, t],
     );
@@ -834,6 +945,51 @@ function TasksPageInner({
         [orderColumns, taskColumns],
     );
 
+    /**
+     * Columns for the Deleted view: the live set, plus when/by-whom the
+     * row was deleted and a Restore action.
+     *
+     * Kept separate rather than conditionally appended to `taskColumns`
+     * so the live table's column model — and the user's saved column
+     * visibility — is untouched by a temporary view switch.
+     */
+    const deletedTaskColumns = useMemo(
+        () => [
+            ...orderedTaskColumns,
+            {
+                id: 'deletedAt',
+                header: t('list.colDeletedAt'),
+                accessorFn: (row: TaskListItem) => row.deletedAt ?? '',
+                cell: ({ row }: { row: { original: TaskListItem } }) => (
+                    <TimestampTooltip
+                        date={row.original.deletedAt}
+                        className="text-xs text-content-muted"
+                    />
+                ),
+            },
+            {
+                id: 'restore',
+                header: '',
+                cell: ({ row }: { row: { original: TaskListItem } }) => (
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        id={`restore-task-${row.original.id}`}
+                        onClick={(e: React.MouseEvent) => {
+                            // The row click handler navigates to the task
+                            // detail page; a restore click must not.
+                            e.stopPropagation();
+                            void restoreTask(row.original.id);
+                        }}
+                    >
+                        {t('list.restore')}
+                    </Button>
+                ),
+            },
+        ],
+        [orderedTaskColumns, t, restoreTask],
+    );
+
     // Stable table-model identities — see the note on `tenantHref`.
     const getTaskRowId = useCallback((task: TaskListItem) => task.id, []);
     const handleTaskRowClick = useCallback(
@@ -991,6 +1147,25 @@ function TasksPageInner({
                                 strip above is now server-computed, and
                                 "My Tasks" is the "Assigned to me" toggle).
                                 The dashboard nav icon is gone with it. */}
+                            {/* Recycle-bin toggle. Only offered to users
+                                who can edit — restore is admin-gated
+                                server-side, so showing it to a reader
+                                would advertise an action they'd be
+                                refused. */}
+                            {appPermissions.tasks.edit && (
+                                <Button
+                                    variant={showDeleted ? 'primary' : 'secondary'}
+                                    size="sm"
+                                    onClick={() => {
+                                        setShowDeleted((v) => !v);
+                                        setSelected(new Set());
+                                    }}
+                                    aria-pressed={showDeleted}
+                                    id="show-deleted-toggle"
+                                >
+                                    {showDeleted ? t('list.showLive') : t('list.showDeleted')}
+                                </Button>
+                            )}
                             {columnsDropdown}
                             {filtersDropdown}
                         </>
@@ -1010,7 +1185,7 @@ function TasksPageInner({
                     fillBody
                     onReachEnd={hasMoreTasks ? loadMoreTasks : undefined}
                     data={visibleTasks}
-                    columns={orderedTaskColumns}
+                    columns={showDeleted ? deletedTaskColumns : orderedTaskColumns}
                     loading={loading}
                     getRowId={getTaskRowId}
                     sortableColumns={sortableColumns}
@@ -1022,7 +1197,7 @@ function TasksPageInner({
                     }}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
-                    selectionEnabled={appPermissions.tasks.edit}
+                    selectionEnabled={appPermissions.tasks.edit && !showDeleted}
                     selectedRows={Object.fromEntries(
                         Array.from(selected).map((id) => [id, true]),
                     )}
@@ -1042,7 +1217,14 @@ function TasksPageInner({
                     onRowPrefetch={handleTaskRowPrefetch}
                     error={listError}
                     emptyState={
-                        hasActive ? (
+                        showDeleted ? (
+                            <EmptyState
+                                size="sm"
+                                variant="no-records"
+                                title={t('list.deletedEmptyTitle')}
+                                description={t('list.deletedEmptyDesc')}
+                            />
+                        ) : hasActive ? (
                             <EmptyState
                                 size="sm"
                                 variant="no-results"

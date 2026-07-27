@@ -4,7 +4,7 @@ import { formatDate, formatDateTime } from '@/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -198,6 +198,7 @@ export default function TaskDetailPage() {
     const GAP_TYPE_LABELS = buildGapTypeLabels(t);
     const SEVERITY_LABELS = taskSeverityLabels(t);
     const params = useParams();
+    const router = useRouter();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, role, tenantSlug, userId } = useTenantContext();
@@ -462,18 +463,83 @@ export default function TaskDetailPage() {
             await taskQuery.mutate();
         }
     };
-    const removeWatcher = async (watcherUserId: string) => {
-        try {
-            const res = await fetch(
-                apiUrl(`/tasks/${taskId}/watchers?userId=${encodeURIComponent(watcherUserId)}`),
-                { method: 'DELETE' },
-            );
-            if (!res.ok) throw new Error(t('detail.watchFailed'));
-        } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.watchFailed'));
-        } finally {
-            await taskQuery.mutate();
-        }
+    // Epic 67 — delayed-commit watcher removal, matching `removeLink` and
+    // `removeEvidence`. This was a bare fire-and-forget DELETE: one click
+    // and the watcher was gone with no confirm and no way back, even
+    // though the undo-toast hook was already imported and used by the two
+    // sibling remove flows on this very page.
+    const removeWatcher = (watcherUserId: string) => {
+        const previous = taskQuery.data;
+        // Optimistic drop so the row disappears on click; the undo path
+        // and the failure path both restore this snapshot.
+        void taskQuery.mutate(
+            (cur: TaskDetail | undefined) =>
+                cur
+                    ? {
+                          ...cur,
+                          watchers: (cur.watchers ?? []).filter(
+                              (w) => w.userId !== watcherUserId,
+                          ),
+                      }
+                    : cur,
+            { revalidate: false },
+        );
+        triggerUndoToast({
+            message: t('detail.watcherRemoved'),
+            undoMessage: t('detail.undo'),
+            action: async () => {
+                const res = await fetch(
+                    apiUrl(
+                        `/tasks/${taskId}/watchers?userId=${encodeURIComponent(watcherUserId)}`,
+                    ),
+                    { method: 'DELETE' },
+                );
+                if (!res.ok) throw new Error(t('detail.watchFailed'));
+                await taskQuery.mutate();
+            },
+            undoAction: () => {
+                void taskQuery.mutate(previous, { revalidate: false });
+            },
+            onError: () => {
+                void taskQuery.mutate(previous, { revalidate: false });
+            },
+        });
+    };
+
+    /**
+     * Delete this task (soft — recoverable from the list's Deleted view).
+     *
+     * Navigates back to the list immediately: leaving the user on the
+     * detail page of a row that is now deleted would be a dead end. The
+     * undo window still runs from the list, and Undo simply cancels the
+     * commit — nothing to restore, because the DELETE never fired.
+     */
+    const handleDeleteTask = () => {
+        const title = taskQuery.data?.title ?? '';
+        router.push(tenantHref('/tasks'));
+        triggerUndoToast({
+            message: t('detail.taskDeleted', { title }),
+            undoMessage: t('detail.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/tasks/${taskId}`), {
+                    method: 'DELETE',
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(
+                        (typeof data?.error === 'string' && data.error) ||
+                            t('detail.deleteFailed'),
+                    );
+                }
+            },
+            onError: (err: unknown) => {
+                toast.error(
+                    err instanceof Error && err.message
+                        ? err.message
+                        : t('detail.deleteFailed'),
+                );
+            },
+        });
     };
 
     const addLink = async (e: React.FormEvent) => {
@@ -817,18 +883,34 @@ export default function TaskDetailPage() {
             }
             actions={
                 permissions.canWrite && (
-                    <Combobox
-                        hideSearch
-                        id="task-status-select"
-                        selected={TASK_STATUS_CB_OPTIONS.find(o => o.value === task.status) ?? null}
-                        setSelected={(opt) => { if (opt) requestStatusChange(opt.value); }}
-                        options={TASK_STATUS_CB_OPTIONS}
-                        disabled={changingStatus}
-                        placeholder={t('detail.statusPlaceholder')}
-                        // Item 29 — brand-color the status action (matches the
-                        // primary "+ …" create buttons).
-                        buttonProps={{ variant: 'primary', className: 'text-sm' }}
-                    />
+                    <div className="flex items-center gap-tight">
+                        <Combobox
+                            hideSearch
+                            id="task-status-select"
+                            selected={TASK_STATUS_CB_OPTIONS.find(o => o.value === task.status) ?? null}
+                            setSelected={(opt) => { if (opt) requestStatusChange(opt.value); }}
+                            options={TASK_STATUS_CB_OPTIONS}
+                            disabled={changingStatus}
+                            placeholder={t('detail.statusPlaceholder')}
+                            // Item 29 — brand-color the status action (matches the
+                            // primary "+ …" create buttons).
+                            buttonProps={{ variant: 'primary', className: 'text-sm' }}
+                        />
+                        {/* Single-task delete. `deleteTask` has existed in
+                            the usecase layer all along with no UI reaching
+                            it, so the only way to delete one task was to
+                            select it in the list and use the bulk bar.
+                            Soft delete → Epic 67 undo-toast, same as every
+                            other routine destructive action here. */}
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            id="delete-task-btn"
+                            onClick={handleDeleteTask}
+                        >
+                            {t('detail.deleteTask')}
+                        </Button>
+                    </div>
                 )
             }
             tabs={tabs}

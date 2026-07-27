@@ -1,4 +1,4 @@
-import { listTasks, listTasksPaginated, createTask } from '@/app-layer/usecases/task';
+import { listTasks, listTasksPaginated, listTasksWithDeleted, createTask } from '@/app-layer/usecases/task';
 import { CreateTaskSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
@@ -32,11 +32,35 @@ const TaskQuerySchema = z.object({
     q: z.string().optional().transform(normalizeQ),
     linkedEntityType: z.string().optional(),
     linkedEntityId: z.string().optional(),
+    includeDeleted: z.enum(['true', 'false']).optional(),
 }).strip();
 
 export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }>('tasks.view', async (req, _routeArgs, ctx) => {
     const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
     const query = TaskQuerySchema.parse(sp);
+
+    // The list's "Deleted" view. Admin-gated inside the usecase; returns
+    // ONLY soft-deleted rows, honouring the same toolbar filters as the
+    // live list. Checked before the pagination branch because the deleted
+    // set is capped rather than cursored (it is a recovery surface).
+    if (query.includeDeleted === 'true') {
+        const deleted = await listTasksWithDeleted(ctx, {
+            status: query.status,
+            type: query.type,
+            severity: query.severity,
+            priority: query.priority,
+            source: query.source,
+            assigneeUserId: query.assigneeUserId,
+            controlId: query.controlId,
+            due: query.due,
+            q: query.q,
+            linkedEntityType: query.linkedEntityType,
+            linkedEntityId: query.linkedEntityId,
+        });
+        // Same `{ rows, truncated }` envelope the live list returns, so
+        // the client can swap datasets without a second shape.
+        return jsonResponse({ rows: deleted, truncated: false });
+    }
 
     const hasPagination = query.limit || query.cursor;
     if (hasPagination) {

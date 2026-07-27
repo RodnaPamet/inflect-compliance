@@ -11,12 +11,13 @@
  * The legacy `/tasks/new` route is now a redirect → `/tasks?create=1`;
  * the list page (TasksClient) auto-opens this modal.
  */
-import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useNewTaskForm, type PendingLink } from './_form/useNewTaskForm';
 import { NewTaskFields } from './_form/NewTaskFields';
 
@@ -69,23 +70,33 @@ export function NewTaskModal({
         initialPendingLinks,
     });
 
-    // P3 — unsaved-changes guard. See NewPolicyModal for the pattern.
+    // P3 — unsaved-changes guard.
+    //
+    // The confirmation used to be a blocking `window.confirm`, which
+    // renders as a browser-chrome dialog: unstyled, untranslatable
+    // beyond its message string, and unreachable from tests. It now
+    // routes through the same <ConfirmDialog> the rest of the app uses
+    // for destructive choices. Because that dialog is async, the close
+    // request is PARKED (`pendingClose`) until the user answers, rather
+    // than resolved inline.
+    const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+    const pendingClose = useRef<SetStateAction<boolean> | null>(null);
+
     const guardedSetOpen = useCallback<Dispatch<SetStateAction<boolean>>>(
         (next) => {
             const wantClose =
                 typeof next === 'function' ? !next(true) : next === false;
             if (wantClose) {
                 if (form.submitting) return;
-                if (
-                    form.isDirty &&
-                    !window.confirm(t('new.discardConfirm'))
-                ) {
+                if (form.isDirty) {
+                    pendingClose.current = next;
+                    setConfirmDiscardOpen(true);
                     return;
                 }
             }
             setOpen(next);
         },
-        [form.submitting, form.isDirty, setOpen, t],
+        [form.submitting, form.isDirty, setOpen],
     );
     const close = () => guardedSetOpen(false);
 
@@ -146,6 +157,28 @@ export function NewTaskModal({
                     </Button>
                 </Modal.Actions>
             </Modal.Form>
+            {/* Discard-changes guard. `tone="warning"` not "danger":
+                abandoning an unsaved draft is reversible-by-retyping, not
+                a destructive write. "Discard draft" is the canonical
+                destructive verb for unsaved state. */}
+            <ConfirmDialog
+                showModal={confirmDiscardOpen}
+                setShowModal={setConfirmDiscardOpen}
+                tone="warning"
+                title={t('new.discardTitle')}
+                description={t('new.discardConfirm')}
+                confirmLabel={t('new.discardConfirmLabel')}
+                cancelLabel={t('new.discardCancelLabel')}
+                onConfirm={() => {
+                    const next = pendingClose.current ?? false;
+                    pendingClose.current = null;
+                    setOpen(next);
+                }}
+                onCancel={() => {
+                    // Keep the modal open with the draft intact.
+                    pendingClose.current = null;
+                }}
+            />
         </Modal>
     );
 }

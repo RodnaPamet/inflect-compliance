@@ -5,6 +5,14 @@ import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { TERMINAL_WORK_ITEM_STATUSES, isTerminalStatus } from '../domain/work-item-status';
 import { badRequest } from '@/lib/errors/types';
+import { withDeleted } from '@/lib/soft-delete';
+
+/**
+ * Cap on the Deleted view's flat (uncursored) read. Matches the other
+ * deleted-list surfaces — the view is a recovery tool, not a browsable
+ * archive, so the most recent page is what matters.
+ */
+const DELETED_LIST_CAP = 200;
 
 /**
  * The set of valid `WorkItemSource` enum members, materialised once from
@@ -169,6 +177,42 @@ export class WorkItemRepository {
             select: taskListSelect,
             ...(options.take ? { take: options.take } : {}),
         });
+    }
+
+    /**
+     * ONLY soft-deleted rows, for the list's "Deleted" view. `deletedAt:
+     * { not: null }` narrows to the deleted set and `withDeleted` opts out
+     * of the extension's automatic `deletedAt: null` injection — without
+     * it the two predicates would contradict and the query would always
+     * return nothing.
+     *
+     * Ordered by `deletedAt` desc (most recently deleted first — that is
+     * what someone looking for an accidental delete wants) and capped, so
+     * a long-lived tenant's deleted set can't return unbounded.
+     */
+    static async listDeleted(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters: TaskFilters = {},
+    ) {
+        const where = WorkItemRepository._buildWhere(ctx, filters);
+        where.deletedAt = { not: null };
+        return db.task.findMany(
+            withDeleted({
+                where,
+                orderBy: { deletedAt: 'desc' as const },
+                take: DELETED_LIST_CAP,
+                // The live list's shape plus the two audit columns the
+                // Deleted view renders. Kept out of `taskListSelect`
+                // itself so the live list doesn't ship two always-null
+                // columns on every row.
+                select: {
+                    ...taskListSelect,
+                    deletedAt: true,
+                    deletedByUserId: true,
+                },
+            }),
+        );
     }
 
     /**
