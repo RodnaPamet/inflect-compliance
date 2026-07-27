@@ -34,6 +34,7 @@ import { createHash } from 'crypto';
 import { Readable } from 'stream';
 import type { StorageProvider } from '@/lib/storage/types';
 import { buildTenantObjectKey, type StorageDomain } from '@/lib/storage';
+import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { logger } from '@/lib/observability/logger';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -135,6 +136,8 @@ export interface FileRecordRow {
     sha256: string;
     domain: string;
     storageProvider: string;
+    /** AV scan status — when present, gated through the shared predicate. */
+    scanStatus?: string;
 }
 
 /**
@@ -161,6 +164,15 @@ export async function exportAttachments(
     let declaredCumulativeSize = 0; // Tracks DB-declared sizes for pre-read guard
 
     for (const record of fileRecords) {
+        // R5-P1 #3 — single shared AV gate: never bundle a file the download
+        // predicate would block (INFECTED, or PENDING under strict mode).
+        if (record.scanStatus !== undefined && !isDownloadAllowed(record.scanStatus)) {
+            warnings.push(
+                `Skipped attachment ${record.id} (${record.originalName}): ` +
+                `blocked by antivirus scan gate (status ${record.scanStatus})`,
+            );
+            continue;
+        }
         // Guard: skip oversized files
         if (record.sizeBytes > MAX_ATTACHMENT_SIZE_BYTES) {
             warnings.push(

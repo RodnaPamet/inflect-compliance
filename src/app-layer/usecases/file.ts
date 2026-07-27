@@ -3,92 +3,89 @@
  * Uses the storage abstraction for all file operations.
  */
 import { RequestContext } from '../types';
-import { FileRepository } from '../repositories/FileRepository';
 import { assertCanRead } from '../policies/common';
 import { notFound, forbidden } from '@/lib/errors/types';
-import { getStorageProvider, assertTenantKey } from '@/lib/storage';
+import { assertTenantKey } from '@/lib/storage';
+import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
+import type { StorageProviderType } from '@/lib/storage/types';
 
+/**
+ * Download a file by its storage pathKey.
+ *
+ * R5-P1 #1 — this path used to trust `FileRepository.isFileOwnedByTenant`,
+ * which returned true whenever ANY Evidence row in the caller's OWN tenant had
+ * `content === fileName` — and `content` is caller-writable on create. An
+ * attacker filed an evidence row whose content was a victim tenant's pathKey,
+ * passed the check, and read the victim's bytes. It now mirrors
+ * `downloadEvidenceFile`: assert the key belongs to this tenant BEFORE any
+ * storage read, resolve ownership through the tenant-scoped `FileRecord` ONLY
+ * (never `Evidence.content`), gate on the single shared AV predicate, and read
+ * from the backend that actually stored the file (fixing the old S3-mode break).
+ */
 export async function downloadFile(ctx: RequestContext, fileName: string) {
     assertCanRead(ctx);
+    // The pathKey must live under this tenant's prefix — closes the cross-tenant
+    // chain at the door, regardless of any DB lookup below.
+    assertTenantKey(fileName, ctx.tenantId);
     logger.info('file download started', { component: 'file', fileName });
 
     return runInTenantContext(ctx, async (db) => {
-        const isOwned = await FileRepository.isFileOwnedByTenant(db, ctx, fileName);
-        if (!isOwned) {
-            throw forbidden('You do not have permission to access this file');
+        const fileRecord = await db.fileRecord.findFirst({
+            where: { tenantId: ctx.tenantId, pathKey: fileName },
+        });
+        if (!fileRecord) throw notFound('File not found');
+
+        // ─── Single shared AV gate ───
+        if (!isDownloadAllowed(fileRecord.scanStatus)) {
+            throw forbidden(getBlockedReason(fileRecord.scanStatus));
         }
 
-        const storage = getStorageProvider();
+        await logEvent(db, ctx, {
+            action: 'READ',
+            entityType: 'File',
+            entityId: fileName,
+            details: `Downloaded file: ${fileRecord.originalName}`,
+            detailsJson: {
+                category: 'access',
+                operation: 'login',
+                detail: `File downloaded: ${fileRecord.originalName}`,
+            },
+        });
 
-        if (storage.name === 's3') {
-            // For S3: try to find the FileRecord for presigned URL
+        // ─── Dual-read: dispatch by the record's own storage provider ───
+        const recordProvider = (fileRecord.storageProvider || 'local') as StorageProviderType;
+        const { getProviderByName } = await import('@/lib/storage/index');
+        const readProvider = getProviderByName(recordProvider);
 
-            const fileRecord = await db.fileRecord.findFirst({
-                where: { tenantId: ctx.tenantId, pathKey: fileName },
+        if (readProvider.name === 's3') {
+            const downloadUrl = await readProvider.createSignedDownloadUrl(fileRecord.pathKey, {
+                expiresIn: 300,
+                downloadFilename: fileRecord.originalName,
             });
-            if (fileRecord) {
-                assertTenantKey(fileRecord.pathKey, ctx.tenantId);
-                const downloadUrl = await storage.createSignedDownloadUrl(fileRecord.pathKey, {
-                    expiresIn: 300,
-                    downloadFilename: fileRecord.originalName,
-                });
-                await logEvent(db, ctx, {
-                    action: 'READ',
-                    entityType: 'File',
-                    entityId: fileName,
-                    details: `Downloaded file via presigned URL: ${fileRecord.originalName}`,
-                    detailsJson: {
-                        category: 'access',
-                        operation: 'login',
-                        detail: `File downloaded: ${fileRecord.originalName}`,
-                    },
-                });
-                return {
-                    mode: 'redirect' as const,
-                    downloadUrl,
-                    name: fileRecord.originalName,
-                    mimeType: fileRecord.mimeType,
-                };
-            }
-        }
-
-        // Local fallback: read file through provider
-        try {
-            const stream = storage.readStream(fileName);
-            // Determine mime type from extension
-            const ext = fileName.split('.').pop()?.toLowerCase() || '';
-            const mimeMap: Record<string, string> = {
-                pdf: 'application/pdf', png: 'image/png',
-                jpg: 'image/jpeg', jpeg: 'image/jpeg',
-                csv: 'text/csv', doc: 'application/msword',
-                docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            return {
+                mode: 'redirect' as const,
+                downloadUrl,
+                name: fileRecord.originalName,
+                mimeType: fileRecord.mimeType,
             };
-            const mimeType = mimeMap[ext] || 'application/octet-stream';
-            const safeName = fileName.split('/').pop() || fileName;
+        }
 
-            await logEvent(db, ctx, {
-                action: 'READ',
-                entityType: 'File',
-                entityId: fileName,
-                details: `Downloaded file: ${safeName}`,
-                detailsJson: {
-                    category: 'access',
-                    operation: 'login',
-                    detail: `File downloaded: ${safeName}`,
-                },
-            });
-
-            // Collect stream into buffer for legacy compat
+        // Local: stream through the server, collected into a buffer for the route.
+        try {
+            const stream = readProvider.readStream(fileRecord.pathKey);
             const chunks: Buffer[] = [];
             for await (const chunk of stream) {
                 chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
             }
-            const buffer = Buffer.concat(chunks);
-
-            return { mode: 'stream' as const, buffer, mimeType, name: safeName };
+            return {
+                mode: 'stream' as const,
+                buffer: Buffer.concat(chunks),
+                mimeType: fileRecord.mimeType,
+                name: fileRecord.originalName,
+            };
         } catch {
             throw notFound('File not found on disk');
         }

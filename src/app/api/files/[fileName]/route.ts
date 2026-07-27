@@ -7,6 +7,12 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const params = await paramsPromise;
     const ctx = await getLegacyCtx(req);
     const result = await downloadFile(ctx, params.fileName);
+
+    // R5-P1 — downloadFile now returns a discriminated result: S3 mode hands
+    // back a presigned URL (redirect), local mode streams a buffer.
+    if (result.mode === 'redirect') {
+        return NextResponse.redirect(result.downloadUrl, 307);
+    }
     return new NextResponse(result.buffer as unknown as BodyInit, {
         headers: {
             'Content-Type': result.mimeType,

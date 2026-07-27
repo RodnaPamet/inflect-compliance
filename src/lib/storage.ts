@@ -94,27 +94,11 @@ export async function deleteStoredFile(pathKey: string): Promise<void> {
     }
 }
 
-/** @deprecated Use getStorageProvider().write() with generatePathKey() */
-export async function uploadFile(file: File): Promise<{ fileName: string; filePath: string; originalName: string; size: number }> {
-    const originalName = path.basename(file.name);
-    const ext = path.extname(originalName);
-    const uniqueId = crypto.randomUUID();
-    const safeFileName = `${uniqueId}${ext}`;
-
-    const root = path.resolve(FILE_STORAGE_ROOT);
-    await fs.mkdir(root, { recursive: true });
-    const destination = path.join(root, safeFileName);
-
-    if (!destination.startsWith(root)) {
-        throw new Error('Path traversal detected');
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    await fs.writeFile(destination, buffer);
-
-    return { fileName: safeFileName, filePath: destination, originalName, size: buffer.length };
-}
+// R5-P1 #2 — the deprecated `uploadFile(file)` helper was removed. It wrote to
+// a FLAT, non-tenant-prefixed local path (ignoring STORAGE_PROVIDER=s3), created
+// no FileRecord and never AV-scanned, so `assertTenantKey` could never pass on
+// its keys. Its only caller (createEvidence's `data.file` branch) is gone. Use
+// `getStorageProvider().write()` with a tenant-prefixed `generatePathKey()`.
 
 /** @deprecated Use getStorageProvider().readStream() */
 export async function getFile(fileName: string): Promise<{ buffer: Buffer; mimeType: string; name: string } | null> {

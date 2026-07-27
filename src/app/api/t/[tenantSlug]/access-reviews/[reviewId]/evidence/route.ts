@@ -14,8 +14,9 @@ import { Readable } from 'node:stream';
 import { getTenantCtx } from '@/app-layer/context';
 import { runInTenantContext } from '@/lib/db-context';
 import { getStorageProvider } from '@/lib/storage';
+import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { notFound } from '@/lib/errors/types';
+import { notFound, forbidden } from '@/lib/errors/types';
 import { assertCanRead } from '@/app-layer/policies/common';
 
 export const GET = withApiErrorHandling(
@@ -49,11 +50,18 @@ export const GET = withApiErrorHandling(
                     originalName: true,
                     mimeType: true,
                     sizeBytes: true,
+                    scanStatus: true,
                 },
             });
             if (!fr) throw notFound('Evidence file not found');
             return fr;
         });
+
+        // R5-P1 #3 — single shared AV gate before serving (files are PENDING
+        // the moment they're stored; scanning is async).
+        if (!isDownloadAllowed(fileRecord.scanStatus)) {
+            throw forbidden(getBlockedReason(fileRecord.scanStatus));
+        }
 
         const storage = getStorageProvider();
         const stream = storage.readStream(fileRecord.pathKey);

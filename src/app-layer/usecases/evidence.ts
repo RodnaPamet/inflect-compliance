@@ -2,7 +2,6 @@ import { RequestContext } from '../types';
 import { EvidenceRepository, EvidenceListFilters } from '../repositories/EvidenceRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { validateFile, uploadFile } from '@/lib/storage';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -102,22 +101,25 @@ export async function createEvidence(
 ) {
     assertCanWrite(ctx);
 
-    // File upload happens outside the tenant transaction (filesystem I/O)
-    let fileName = data.fileName || null;
-    let fileSize = data.fileSize || null;
-    let content = data.content || null;
-
-    if (data.type === 'FILE' && data.file) {
-        try {
-            validateFile(data.file as File, { maxSizeMB: 20 });
-            const uploadResult = await uploadFile(data.file as File);
-            fileName = uploadResult.originalName;
-            fileSize = uploadResult.size;
-            content = uploadResult.fileName;
-        } catch (err: unknown) {
-            throw badRequest('FILE_VALIDATION_ERROR', err instanceof Error ? err.message : 'File upload failed');
-        }
+    // R5-P1 #1/#2 — FILE evidence's `content` is a storage pathKey that ONLY the
+    // multipart upload path (`uploadEvidenceFile`) may derive server-side. This
+    // JSON endpoint used to write caller-supplied `content` verbatim for FILE
+    // rows, which let an attacker point it at another tenant's object; the old
+    // content-based ownership check ([[isFileOwnedByTenant]], now removed) then
+    // trusted it. Reject FILE creation here. The deprecated in-band `uploadFile`
+    // helper + its `data.file` branch (flat, non-tenant-prefixed, never scanned)
+    // are gone.
+    if (data.type === 'FILE') {
+        throw badRequest(
+            'FILE_VIA_UPLOAD',
+            'FILE evidence must be created through the multipart upload endpoint (/evidence/uploads), not this JSON endpoint.',
+        );
     }
+
+    // TEXT (note body) / LINK (target URL) only — no file metadata, no key.
+    const fileName = null;
+    const fileSize = null;
+    const content = data.content || null;
 
     // EP-3 — normalise the control association to a set. `controlIds` is
     // the many-to-many input; a legacy singular `controlId` is wrapped in.
@@ -663,6 +665,7 @@ import {
     FILE_MAX_SIZE_BYTES,
 } from '@/lib/storage';
 import type { StorageDomain } from '@/lib/storage';
+import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
 import { Readable } from 'stream';
 import { env } from '@/env';
 
@@ -1126,32 +1129,49 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         // Tenant isolation guard
         assertTenantKey(fileRecord.pathKey, ctx.tenantId);
 
-        // ─── AV Scan Guard ───
-        const scanMode = env.AV_SCAN_MODE || 'permissive';
-        const scanStatus = fileRecord.scanStatus || 'PENDING';
-
-        if (scanStatus === 'INFECTED') {
-            throw forbidden('This file has been flagged as infected by antivirus scanning and cannot be downloaded.');
+        // ─── AV Scan Guard (single shared predicate — R5-P1 #3) ───
+        // Was an inline reimplementation of isDownloadAllowed with a
+        // `|| 'permissive'` fallback; two copies of one security check drift.
+        if (!isDownloadAllowed(fileRecord.scanStatus)) {
+            throw forbidden(getBlockedReason(fileRecord.scanStatus));
         }
 
-        if (scanMode === 'strict' && scanStatus === 'PENDING') {
-            throw forbidden('This file is pending antivirus scan and cannot be downloaded yet. Please try again later.');
+        // ─── Owning-evidence gates (deleted / archived), version-aware ───
+        // R5-P1 #4 — `fileRecordId: fileId` matches only the CURRENT head, so a
+        // superseded version (previousFileRecordId chain) resolved to null here
+        // and slipped past the deleted gate: write-tier roles could still pull
+        // v1..vN of soft-deleted evidence, and isArchived was never checked at
+        // all. Walk the chain FORWARD to the head, then resolve the owning
+        // evidence and apply both gates to every version.
+        let headFileId = fileId;
+        // Bounded forward walk of the file-version chain (previousFileRecordId);
+        // typically 1-5 hops, hard-capped at 100 iterations.
+        for (let hops = 0; hops < 100; hops++) { // guardrail-allow: n+1
+            const superseder = await db.fileRecord.findFirst({
+                where: { tenantId: ctx.tenantId, previousFileRecordId: headFileId },
+                select: { id: true },
+            });
+            if (!superseder) break;
+            headFileId = superseder.id;
         }
 
-        // ─── Strict Policy: control-aware access ───
         // EP-3 — "linked to a control" now means the Evidence has at least
         // one EvidenceControlLink (the singular controlId is gone).
         const evidence = await db.evidence.findFirst({
-            where: { tenantId: ctx.tenantId, fileRecordId: fileId },
+            where: { tenantId: ctx.tenantId, fileRecordId: headFileId },
             select: {
                 id: true,
                 deletedAt: true,
+                isArchived: true,
                 _count: { select: { evidenceControlLinks: true } },
             },
         });
 
         if (evidence?.deletedAt) {
             throw notFound('Evidence has been deleted');
+        }
+        if (evidence?.isArchived) {
+            throw notFound('Evidence has been archived and is no longer available for download');
         }
 
         if (!ctx.permissions.canWrite) {
