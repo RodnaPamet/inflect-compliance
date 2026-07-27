@@ -11,7 +11,7 @@ export const POST = withApiErrorHandling(
     withValidatedBody(DecideApprovalSchema, async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string; approvalId: string }> }, body) => {
         const params = await paramsPromise;
         const ctx = await getTenantCtx(params, req);
-        const result = await policyUsecases.decidePolicyApproval(ctx, params.approvalId, body);
+        const result = await policyUsecases.decidePolicyApproval(ctx, params.id, params.approvalId, body);
         return jsonResponse(result);
     })
 );

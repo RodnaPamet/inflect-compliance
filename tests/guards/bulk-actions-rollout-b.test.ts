@@ -67,7 +67,15 @@ describe('Bulk action rollout — Policy (assign + archive)', () => {
         expect(uc).toMatch(/export async function bulkArchivePolicy/);
         expect(uc).toMatch(/PolicyRepository\.bulkUpdate/);
         // archive is admin-gated; status has no bulk path.
-        expect(uc).toMatch(/bulkArchivePolicy[\s\S]{0,120}assertCanAdmin\(ctx\)/);
+        //
+        // `assertCanAdminPolicies` is the domain-aware gate: it still calls the
+        // coarse `assertCanAdmin` underneath and ADDITIONALLY requires the
+        // custom role's granular `policies.edit` flag, so this is a tightening,
+        // not a loosening. The bare `assertCanAdmin(ctx)` form is still
+        // accepted for surfaces that have not moved yet. (The optional group is
+        // required rather than cosmetic: `assertCanAdmin\(` does not match
+        // `assertCanAdminPolicies(` — the escaped paren follows "Admin".)
+        expect(uc).toMatch(/bulkArchivePolicy[\s\S]{0,160}assertCanAdmin(Policies)?\(ctx\)/);
         expect(uc).not.toMatch(/bulkSetPolicyStatus/);
     });
 

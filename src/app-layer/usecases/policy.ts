@@ -4,7 +4,13 @@ import { PolicyRepository, PolicyFilters, PolicyListParams } from '../repositori
 import { PolicyVersionRepository } from '../repositories/PolicyVersionRepository';
 import { PolicyApprovalRepository } from '../repositories/PolicyApprovalRepository';
 import { PolicyTemplateRepository } from '../repositories/PolicyTemplateRepository';
-import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
+import {
+    assertCanReadPolicies,
+    assertCanCreatePolicy,
+    assertCanWritePolicies,
+    assertCanApprovePolicies,
+    assertCanAdminPolicies,
+} from '../policies/policy.policies';
 import { logEvent } from '../events/audit';
 import { enqueueEmail } from '../notifications/enqueue';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
@@ -92,7 +98,7 @@ export async function listPolicies(
     filters?: PolicyFilters,
     options: { take?: number } = {},
 ) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const rows = await PolicyRepository.list(db, ctx, filters, options);
         return annotatePolicyAcknowledgements(db, ctx, rows);
@@ -100,7 +106,7 @@ export async function listPolicies(
 }
 
 export async function listPoliciesPaginated(ctx: RequestContext, params: PolicyListParams) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const page = await PolicyRepository.listPaginated(db, ctx, params);
         const items = await annotatePolicyAcknowledgements(
@@ -113,7 +119,7 @@ export async function listPoliciesPaginated(ctx: RequestContext, params: PolicyL
 }
 
 export async function getPolicy(ctx: RequestContext, policyId: string) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
@@ -122,14 +128,14 @@ export async function getPolicy(ctx: RequestContext, policyId: string) {
 }
 
 export async function listPolicyTemplates(ctx: RequestContext) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, (db) =>
         PolicyTemplateRepository.list(db)
     );
 }
 
 export async function getPolicyActivity(ctx: RequestContext, policyId: string) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, (db) =>
         db.auditLog.findMany({
             where: {
@@ -147,6 +153,40 @@ export async function getPolicyActivity(ctx: RequestContext, policyId: string) {
 }
 
 
+/**
+ * Assert a body-supplied `ownerUserId` is an ACTIVE member of this tenant.
+ *
+ * `User` is a GLOBAL table, so the FK on `Policy.ownerUserId` is satisfied by
+ * ANY user id in the system — including one belonging to another tenant. The
+ * row is then stamped with `ctx.tenantId` and looks entirely legitimate: the
+ * policy has an owner who is not a member, cannot see it, and will never act
+ * on it, while the surface reports it as owned. Ownership also feeds review
+ * reminders, so the reminder is addressed to someone outside the tenant.
+ *
+ * The correct pattern already exists in this surface — acknowledgement
+ * audiences are intersected with `status: 'ACTIVE'` membership before use
+ * (`policy-attestation.ts`). This is the same intersection for a single id.
+ *
+ * A null/undefined owner is a no-op: clearing ownership is legitimate.
+ */
+async function assertOwnerIsActiveMember(
+    db: PrismaTx,
+    ctx: RequestContext,
+    ownerUserId: string | null | undefined,
+) {
+    if (!ownerUserId) return;
+    const membership = await db.tenantMembership.findFirst({
+        where: { tenantId: ctx.tenantId, userId: ownerUserId, status: 'ACTIVE' },
+        select: { userId: true },
+    });
+    if (!membership) {
+        throw badRequest(
+            'INVALID_OWNER',
+            'The selected owner is not an active member of this tenant.',
+        );
+    }
+}
+
 // ─── Create ───
 
 export async function createPolicy(ctx: RequestContext, data: {
@@ -160,9 +200,11 @@ export async function createPolicy(ctx: RequestContext, data: {
     /** Initial-version editor mode (Prompt-3.3). Defaults to MARKDOWN. */
     contentType?: 'MARKDOWN' | 'HTML';
 }) {
-    assertCanWrite(ctx);
+    assertCanCreatePolicy(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
+
         // Generate unique slug
         let baseSlug = slugify(data.title);
         if (!baseSlug) baseSlug = 'policy';
@@ -220,9 +262,10 @@ export async function createPolicyFromTemplate(ctx: RequestContext, templateId: 
     ownerUserId?: string | null;
     language?: string | null;
 }) {
-    assertCanWrite(ctx);
+    assertCanCreatePolicy(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        await assertOwnerIsActiveMember(db, ctx, overrides?.ownerUserId);
         const template = await PolicyTemplateRepository.getById(db, templateId);
         if (!template) throw notFound('Policy template not found');
 
@@ -256,10 +299,21 @@ export async function createPolicyFromTemplate(ctx: RequestContext, templateId: 
             language: overrides?.language || template.language,
         });
 
-        // Create version from template content
+        // Create version from template content.
+        //
+        // Sanitised like every other content write path. This was the ONLY
+        // one that skipped `sanitizePolicyContent` (see `createPolicy` and
+        // `createPolicyVersion`), and it is the one carrying THIRD-PARTY
+        // content: templates ship from the ciso-toolkit, and `contentType`
+        // comes from the template too, so an HTML template's markup went
+        // into the encrypted column verbatim. Encryption protects it at
+        // rest; it does nothing for the renderers that decrypt and display
+        // it (the editor, the PDF export, the public trust-centre
+        // projection). That the very next block sanitises the template's
+        // evidence labels shows this was an omission, not a decision.
         const version = await PolicyVersionRepository.create(db, ctx, policy.id, {
             contentType: template.contentType,
-            contentText: template.contentText,
+            contentText: sanitizePolicyContent(template.contentType, template.contentText),
             changeSummary: `Created from template: ${template.title}`,
         });
         await PolicyRepository.setCurrentVersion(db, ctx, policy.id, version.id);
@@ -311,7 +365,7 @@ export async function createPolicyFromTemplate(ctx: RequestContext, templateId: 
  * review date must survive a "mark reviewed" click, not be wiped. Audited.
  */
 export async function markPolicyReviewed(ctx: RequestContext, policyId: string) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -367,7 +421,7 @@ export async function createPolicyVersion(ctx: RequestContext, policyId: string,
      */
     proposeOnly?: boolean;
 } = {}) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -460,11 +514,17 @@ export async function updatePolicyMetadata(ctx: RequestContext, policyId: string
     nextReviewAt?: string | null;
     language?: string | null;
 }) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
+
+        // Only when the patch actually carries the field — an unrelated
+        // metadata edit should not pay for a membership lookup.
+        if (data.ownerUserId !== undefined) {
+            await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
+        }
 
         const updateData: Record<string, unknown> = { ...data };
         if (data.nextReviewAt !== undefined) {
@@ -496,7 +556,7 @@ export async function updatePolicyMetadata(ctx: RequestContext, policyId: string
 // ─── Approval Workflow ───
 
 export async function requestPolicyApproval(ctx: RequestContext, policyId: string, versionId: string) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -506,6 +566,45 @@ export async function requestPolicyApproval(ctx: RequestContext, policyId: strin
         const version = await PolicyVersionRepository.getById(db, versionId);
         if (!version || version.policyId !== policyId) {
             throw badRequest('Version does not belong to this policy');
+        }
+
+        // Requesting approval MOVES the policy to IN_REVIEW, so it is a
+        // lifecycle transition, not a neutral annotation — and it had no
+        // status guard at all. On a PUBLISHED policy that silently withdrew
+        // the live document: attestPolicy requires PUBLISHED, so every
+        // acknowledgement stopped being possible, and the policy dropped out
+        // of coverage — with no version change, no content change and no
+        // administrator involved. `createPolicyVersion` already guards
+        // ARCHIVED for the same reason; this path simply never did.
+        //
+        // PUBLISHED is refused rather than silently allowed: the way to
+        // revise a live policy is to draft a new version (which carries its
+        // own explicit demotion), not to withdraw the current one as a
+        // side effect of asking for review.
+        if (policy.status === 'PUBLISHED') {
+            throw conflict(
+                'This policy is published. Create a new version to propose changes — requesting approval on the live policy would withdraw it from acknowledgement.',
+            );
+        }
+        if (policy.status === 'ARCHIVED') {
+            throw conflict('This policy is archived. Restore it before requesting approval.');
+        }
+
+        // Dedupe: one open request per policy at a time.
+        //
+        // Multiple concurrent PENDING rows are what make a stale approval
+        // dangerous — each one is independently decidable later, and a single
+        // Reject rewrites the policy's status regardless of what has happened
+        // since. Refusing the second request keeps "the policy's review
+        // state" and "the approval rows" in agreement.
+        const openApprovals = await PolicyApprovalRepository.findPending(db, ctx, policyId);
+        if (openApprovals.length > 0) {
+            const sameVersion = openApprovals.some((a) => a.policyVersionId === versionId);
+            throw conflict(
+                sameVersion
+                    ? 'This version already has an approval request awaiting a decision.'
+                    : 'This policy already has an approval request awaiting a decision. Decide or withdraw it before requesting another.',
+            );
         }
 
         // Move policy to IN_REVIEW
@@ -563,14 +662,26 @@ export async function requestPolicyApproval(ctx: RequestContext, policyId: strin
     });
 }
 
-export async function decidePolicyApproval(ctx: RequestContext, approvalId: string, decision: {
+/**
+ * @param policyId the policy the approval must belong to.
+ *
+ * Required, and deliberately positioned before `approvalId`, so the pair
+ * cannot be left unrelated. The decide route receives both — a policy id in
+ * the URL path and an approval id in the same path — but only ever forwarded
+ * the approval id, so ANY approval in the tenant could be decided through ANY
+ * policy's URL. The tenant filter made that tenant-safe but not coherent: it
+ * still let an approval be decided from a page describing a different policy,
+ * and the audit row was written against `approval.policyId`, so the trail
+ * pointed somewhere the actor never visited.
+ */
+export async function decidePolicyApproval(ctx: RequestContext, policyId: string, approvalId: string, decision: {
     decision: 'APPROVED' | 'REJECTED';
     comment?: string | null;
 }) {
-    assertCanAdmin(ctx);
+    assertCanApprovePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
-        const approval = await PolicyApprovalRepository.getById(db, ctx, approvalId);
+        const approval = await PolicyApprovalRepository.getById(db, ctx, approvalId, policyId);
         if (!approval) throw notFound('Approval request not found');
 
         // Verify tenant ownership
@@ -580,6 +691,30 @@ export async function decidePolicyApproval(ctx: RequestContext, approvalId: stri
 
         if (approval.status !== 'PENDING') {
             throw conflict('This approval request has already been decided');
+        }
+
+        // STALE-APPROVAL GUARD.
+        //
+        // Deciding used to rewrite the policy's status unconditionally
+        // (APPROVED → 'APPROVED', anything else → 'DRAFT') with no regard for
+        // where the policy actually was. Combined with the publish-bypass
+        // path — which publishes while leaving its approval PENDING forever —
+        // that meant one later Reject on a long-forgotten row dropped a LIVE,
+        // PUBLISHED policy to DRAFT: attestations stranded, coverage lost, no
+        // confirmation, no version change.
+        //
+        // A decision is only meaningful while the policy is still asking the
+        // question. `publishPolicy` now supersedes outstanding requests, so
+        // reaching this branch means the policy moved on some other way.
+        //
+        // (The audit entry below also hardcoded `fromStatus: 'IN_REVIEW'`,
+        // which was false in exactly this case — it now reports the real
+        // prior status.)
+        if (approval.policy.status !== 'IN_REVIEW') {
+            throw conflict(
+                `This approval is no longer current — the policy has since moved to ${approval.policy.status}. ` +
+                    `Deciding it now would overwrite that state.`,
+            );
         }
 
         // Segregation of duties — the requester of a policy change may not
@@ -611,7 +746,14 @@ export async function decidePolicyApproval(ctx: RequestContext, approvalId: stri
         const result = await PolicyApprovalRepository.decide(
             db, ctx, approvalId, decision.decision, decision.comment || undefined
         );
-        if (!result) throw notFound('Approval request not found');
+        // `decide` claims the row with a `status: 'PENDING'` predicate and
+        // returns null when the claim was LOST — i.e. a concurrent request
+        // decided it between our read above and this write. Reporting that as
+        // "already decided" is the truth; the old unconditional updateMany
+        // would have silently overwritten the winner's decision and approver.
+        if (!result) {
+            throw conflict('This approval request was decided by someone else just now.');
+        }
 
         // Update policy status based on decision
         if (decision.decision === 'APPROVED') {
@@ -629,7 +771,10 @@ export async function decidePolicyApproval(ctx: RequestContext, approvalId: stri
             detailsJson: {
                 category: 'status_change',
                 entityName: 'Policy',
-                fromStatus: 'IN_REVIEW',
+                // The real prior status, not a hardcoded 'IN_REVIEW'. The
+                // guard above means it IS IN_REVIEW today, but reading it
+                // from the row keeps the audit honest if that ever widens.
+                fromStatus: approval.policy.status,
                 toStatus: decision.decision === 'APPROVED' ? 'APPROVED' : 'DRAFT',
                 reason: decision.comment || undefined,
             },
@@ -752,14 +897,47 @@ async function carryForwardAckCampaign(
     const { fromVersionId, toVersionId, policyId, policyTitle, versionNumber } = args;
     if (!fromVersionId || fromVersionId === toVersionId) return [];
 
-    const priorAssignments = await db.policyAcknowledgementAssignment.findMany({
-        where: { policyVersionId: fromVersionId },
-        // `assignedById` rides along so the ORIGINAL assigner is preserved —
-        // stamping the publisher would silently rewrite "requested by" on the
-        // roster at every revision, destroying audit attribution.
-        select: { userId: true, assignedById: true },
-        take: 5000,
-    });
+    // PAGINATED, not `take: 5000`.
+    //
+    // A flat cap here loses people silently: anyone past the cap is never
+    // assigned against the new version, so they are never asked to
+    // re-acknowledge it, and the roster reports the campaign as more complete
+    // than it is. That is a compliance number being quietly wrong — the exact
+    // failure the `ackCountsByVersion` header describes, which is why its own
+    // truncating row-fetches were replaced with an aggregate. This one and the
+    // roster were missed.
+    //
+    // Cursor-paginated on the composite unique `(policyVersionId, userId)`, so
+    // the walk is index-backed and stable under concurrent inserts.
+    const priorAssignments: { userId: string; assignedById: string | null }[] = [];
+    const CARRY_PAGE = 1000;
+    let cursorUserId: string | null = null;
+    // This is cursor PAGINATION, not a per-entity read. Each iteration fetches
+    // the next PAGE (1000 rows), so the iteration count is total/1000 rather
+    // than one query per user — and the fix the guardrail normally recommends
+    // (one findMany with an `in:` filter) is exactly what we are moving away
+    // from here: it needs a `take`, and any `take` silently drops assignees
+    // from a compliance campaign. The roster in policy-attestation.ts walks
+    // the same way via `readAllByUser` (its read sits in a callback, so the
+    // scanner does not flag it — same pattern, not a different one).
+    for (;;) { // guardrail-allow: n+1 — cursor pagination; see note above
+        const page: { userId: string; assignedById: string | null }[] =
+            await db.policyAcknowledgementAssignment.findMany({
+                where: {
+                    policyVersionId: fromVersionId,
+                    ...(cursorUserId ? { userId: { gt: cursorUserId } } : {}),
+                },
+                // `assignedById` rides along so the ORIGINAL assigner is preserved —
+                // stamping the publisher would silently rewrite "requested by" on the
+                // roster at every revision, destroying audit attribution.
+                select: { userId: true, assignedById: true },
+                orderBy: { userId: 'asc' },
+                take: CARRY_PAGE,
+            });
+        priorAssignments.push(...page);
+        if (page.length < CARRY_PAGE) break;
+        cursorUserId = page[page.length - 1].userId;
+    }
     if (priorAssignments.length === 0) return [];
 
     // `@@unique([policyVersionId, userId])` guarantees one row per user, so a
@@ -796,7 +974,7 @@ export async function publishPolicy(
     versionId: string,
     options: PublishPolicyOptions = {},
 ) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
 
     const published = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -823,6 +1001,42 @@ export async function publishPolicy(
                 `Policy ${policyId} is ${policy.status}; cannot publish without going through APPROVED. ` +
                     `If this is an emergency override, supply bypassApprovalReason to record the bypass.`,
             );
+        }
+
+        // BIND THE PUBLISH TO THE VERSION THAT WAS ACTUALLY APPROVED.
+        //
+        // The checks above establish that the version belongs to the policy
+        // and that the policy is APPROVED — but never that they are the SAME
+        // version. The approval record has carried `policyVersionId` since it
+        // was written; nothing read it back. So with v1 and v2 both drafted,
+        // approval requested and granted on v1, publishing v2 shipped
+        // unreviewed content under an APPROVED status — and publishPolicy
+        // carries none of the separation-of-duties checks that guard
+        // `decidePolicyApproval`.
+        //
+        // Creating a version AFTER approval demotes the policy to DRAFT, so
+        // the exploit needed v2 to pre-exist. That narrowed the window; it did
+        // not close it.
+        //
+        // Enforced whenever the policy is APPROVED, INCLUDING when a bypass
+        // reason is supplied: the bypass exists to publish something that was
+        // never approved, not to publish a different version than the one that
+        // was. On the genuine bypass path (status DRAFT, no approval) there is
+        // nothing to bind to and this is skipped.
+        if (isApproved) {
+            const approval = await PolicyApprovalRepository.latestApproved(db, ctx, policyId);
+            if (!approval) {
+                throw badRequest(
+                    `Policy ${policyId} is APPROVED but carries no approval record to publish against. ` +
+                        `Request and obtain approval for the version you intend to publish.`,
+                );
+            }
+            if (approval.policyVersionId !== versionId) {
+                throw badRequest(
+                    'This is not the version that was approved. ' +
+                        'Publish the approved version, or request approval for this one.',
+                );
+            }
         }
 
         // ── Lifecycle history + counter (Prompt-3.1) ──
@@ -860,6 +1074,22 @@ export async function publishPolicy(
         // Set as current version and publish
         await PolicyRepository.setCurrentVersion(db, ctx, policyId, versionId);
         await PolicyRepository.updateStatus(db, ctx, policyId, 'PUBLISHED');
+
+        // Resolve anything still outstanding.
+        //
+        // Publishing settles the question the request was asking, but the
+        // bypass path in particular left its approval PENDING forever. A row
+        // that stays PENDING behind a live policy is a loaded gun: deciding it
+        // later rewrites the policy's status out from under the publish. The
+        // stale-approval guard in `decidePolicyApproval` refuses that, and
+        // this closes the rows so nobody is left staring at a decidable
+        // request that can no longer legitimately be decided.
+        const superseded = await PolicyApprovalRepository.supersedePending(
+            db,
+            ctx,
+            policyId,
+            'Superseded — the policy was published.',
+        );
         await db.policy.update({
             where: { id: policyId },
             data: {
@@ -906,6 +1136,23 @@ export async function publishPolicy(
                         versionId,
                         versionNumber: version.versionNumber,
                     },
+                },
+            });
+        }
+
+        // Record the supersession so the timeline explains why a request the
+        // reader may remember as open is now closed.
+        if (superseded.count > 0) {
+            await logEvent(db, ctx, {
+                action: 'POLICY_APPROVAL_SUPERSEDED',
+                entityType: 'Policy',
+                entityId: policyId,
+                details: `Superseded ${superseded.count} outstanding approval request(s) on publish`,
+                detailsJson: {
+                    category: 'status_change',
+                    entityName: 'Policy',
+                    summary: `${superseded.count} outstanding approval request(s) superseded by publish`,
+                    after: { supersededCount: superseded.count, versionId },
                 },
             });
         }
@@ -982,7 +1229,7 @@ export async function publishPolicy(
  * pops it off the history, and bumps `lifecycleVersion`. Admin-only.
  */
 export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
@@ -1126,7 +1373,7 @@ export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
 }
 
 export async function archivePolicy(ctx: RequestContext, policyId: string) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -1157,7 +1404,7 @@ import { restoreEntity, purgeEntity } from './soft-delete-operations';
 import { withDeleted } from '@/lib/soft-delete';
 
 export async function deletePolicy(ctx: RequestContext, id: string) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, id);
         if (!policy) throw notFound('Policy not found');
@@ -1190,7 +1437,7 @@ export async function purgePolicy(ctx: RequestContext, id: string) {
 }
 
 export async function listPoliciesWithDeleted(ctx: RequestContext) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     return runInTenantContext(ctx, (db) =>
         db.policy.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const } }))
     );
@@ -1207,8 +1454,11 @@ export async function bulkAssignPolicy(
     policyIds: string[],
     ownerUserId: string | null,
 ) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
     const updated = await runInTenantContext(ctx, async (db) => {
+        // Checked ONCE for the whole batch — the same owner is applied to
+        // every id, so a per-row check would repeat one lookup N times.
+        await assertOwnerIsActiveMember(db, ctx, ownerUserId);
         const rows = await PolicyRepository.listByIds(db, ctx, policyIds);
         if (rows.length === 0) return 0;
         await PolicyRepository.bulkUpdate(db, ctx, policyIds, {
@@ -1237,7 +1487,7 @@ export async function bulkAssignPolicy(
 
 /** Bulk soft-delete policies selected in the table action bar. */
 export async function bulkDeletePolicy(ctx: RequestContext, policyIds: string[]) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const rows = await PolicyRepository.listByIds(db, ctx, policyIds);
         if (rows.length === 0) return { deleted: 0 };
@@ -1256,7 +1506,7 @@ export async function bulkDeletePolicy(ctx: RequestContext, policyIds: string[])
 }
 
 export async function bulkArchivePolicy(ctx: RequestContext, policyIds: string[]) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     const updated = await runInTenantContext(ctx, async (db) => {
         const rows = await PolicyRepository.listByIds(db, ctx, policyIds);
         if (rows.length === 0) return 0;
