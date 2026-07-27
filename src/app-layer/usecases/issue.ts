@@ -229,17 +229,32 @@ export async function addIssueLink(ctx: RequestContext, issueId: string, entityT
     });
 }
 
-export async function removeIssueLink(ctx: RequestContext, linkId: string) {
+/**
+ * Remove one issue link. Scoped to the owning issue id (an Issue IS a Task
+ * row via WorkItemType), so a link can only be deleted through the issue it
+ * belongs to — mirroring `removeTaskLink`. The audit row is written against
+ * the issue rather than the link so it appears in that issue's feed.
+ */
+export async function removeIssueLink(
+    ctx: RequestContext,
+    issueId: string,
+    linkId: string,
+) {
     assertCanManageLinks(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const result = await TaskLinkRepository.unlink(db, ctx, linkId);
+        const result = await TaskLinkRepository.unlink(db, ctx, issueId, linkId);
         if (!result) throw notFound('Issue link not found');
         await logEvent(db, ctx, {
             action: 'ISSUE_UNLINKED',
             entityType: 'Issue',
-            entityId: linkId,
+            entityId: issueId,
             details: `Removed issue link`,
-            detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Issue' },
+            detailsJson: {
+                category: 'relationship',
+                operation: 'unlinked',
+                sourceEntity: 'Issue',
+                linkId,
+            },
         });
         return result;
     });

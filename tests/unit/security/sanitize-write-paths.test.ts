@@ -168,6 +168,10 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx, fn) =>
         fn({
             tenant: { findUnique: (...a: unknown[]) => mockTenantFindUnique(...a) },
+            // Task child-row writes (comment/watcher/link) now pre-check that
+            // the parent task belongs to the tenant before inserting, so the
+            // stub tx needs a resolvable task row.
+            task: { findFirst: async () => ({ id: 't1' }) },
             // RQ2-1 — score writes append a ledger event on the same tx.
             riskScoreEvent: { create: async () => ({ id: 'evt-1' }) },
             // R2-P2 — completeTestRun attests the control on completion.

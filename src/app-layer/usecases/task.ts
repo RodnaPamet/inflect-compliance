@@ -1,6 +1,7 @@
 import { RequestContext } from '../types';
 import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
-import { assertCanReadTasks, assertCanWriteTasks, assertCanCommentOnTasks } from '../policies/task.policies';
+import { assertCanReadTasks, assertCanWriteTasks, assertCanCreateTask, assertCanAssignTasks, assertCanCommentOnTasks } from '../policies/task.policies';
+import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { emitAutomationEvent } from '../automation';
 import { enqueueEmail } from '../notifications/enqueue';
@@ -63,6 +64,108 @@ async function validateTypeRelevance(
             );
         }
     }
+}
+
+// ─── Reference validation (tenancy + membership) ───
+//
+// Prisma FK checks run BELOW row-level security, so a foreign id inserts
+// cleanly and only surfaces later as a null relation — or, worse, as a
+// 201-vs-FK-error oracle that leaks whether an id exists in another tenant.
+// Every body-supplied id therefore gets resolved against ctx.tenantId here,
+// before the write. Mirrors `finding.ts::validateFindingRefs`.
+
+/** TaskLink.entityType → the Prisma delegate that owns that entity. */
+const LINK_TARGET_MODEL = {
+    CONTROL: 'control',
+    FRAMEWORK_REQUIREMENT: 'frameworkRequirement',
+    RISK: 'risk',
+    ASSET: 'asset',
+    POLICY: 'policy',
+    EVIDENCE: 'evidence',
+    FILE: 'fileRecord',
+    AUDIT_PACK: 'auditPack',
+    VENDOR: 'vendor',
+    INCIDENT: 'incident',
+} as const;
+
+/**
+ * Assert the parent task exists IN THIS TENANT before writing a child row
+ * (comment / watcher / link). Without it the child insert succeeds against a
+ * foreign taskId and the FK-error-vs-201 difference leaks task existence.
+ */
+async function assertTaskInTenant(db: PrismaTx, ctx: RequestContext, taskId: string) {
+    const task = await db.task.findFirst({
+        where: { id: taskId, tenantId: ctx.tenantId },
+        select: { id: true },
+    });
+    if (!task) throw notFound('Task not found');
+}
+
+/** Assert every supplied user id is an ACTIVE member of this tenant. */
+async function assertActiveMembers(
+    db: PrismaTx,
+    ctx: RequestContext,
+    userIds: Array<string | null | undefined>,
+) {
+    const ids = [...new Set(userIds.filter((x): x is string => Boolean(x)))];
+    if (ids.length === 0) return;
+    const members = await db.tenantMembership.findMany({
+        where: { userId: { in: ids }, tenantId: ctx.tenantId, status: 'ACTIVE' },
+        select: { userId: true },
+    });
+    const ok = new Set(members.map((m) => m.userId));
+    const bad = ids.find((id) => !ok.has(id));
+    if (bad) {
+        throw badRequest(
+            'INVALID_USER',
+            'User is not an active member of this tenant',
+        );
+    }
+}
+
+/**
+ * Assert a TaskLink target exists in this tenant. TaskLink.entityId carries
+ * no foreign key at all (prisma/schema/tasks.prisma), so this is the ONLY
+ * thing standing between a link row and an arbitrary cross-tenant id.
+ */
+async function assertLinkTargetInTenant(
+    db: PrismaTx,
+    ctx: RequestContext,
+    entityType: string,
+    entityId: string,
+) {
+    const model = LINK_TARGET_MODEL[entityType as keyof typeof LINK_TARGET_MODEL];
+    if (!model) throw badRequest('INVALID_LINK_TYPE', `Unsupported link entity type: ${entityType}`);
+    const delegate = (db as unknown as Record<string, {
+        findFirst: (a: unknown) => Promise<{ id: string } | null>;
+    }>)[model];
+    const found = await delegate.findFirst({
+        where: { id: entityId, tenantId: ctx.tenantId },
+        select: { id: true },
+    });
+    if (!found) {
+        throw badRequest(
+            'INVALID_LINK_TARGET',
+            'Linked entity not found or belongs to a different tenant',
+        );
+    }
+}
+
+/**
+ * Per-id outcome for a bulk mutation. `updateMany` reports only a count, so
+ * a caller could not tell which of its ids actually changed — a payload
+ * mixing live ids with stale/foreign ones looked identical to a full
+ * success. Resolving the ids first also stops the audit loop emitting an
+ * entry for rows that were never touched.
+ */
+function bulkResults(requested: string[], applied: Set<string>) {
+    return {
+        count: applied.size,
+        results: requested.map((id) => ({
+            id,
+            status: applied.has(id) ? ('ok' as const) : ('not_found' as const),
+        })),
+    };
 }
 
 // ─── List / Get ───
@@ -135,14 +238,28 @@ export async function createTask(ctx: RequestContext, input: {
     findingId?: string | null;
     metadataJson?: unknown;
 }) {
-    assertCanWriteTasks(ctx);
+    assertCanCreateTask(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         // Validate metadataJson on write
         if (input.metadataJson !== undefined) {
             input.metadataJson = validateTaskMetadata(input.metadataJson);
         }
+        // Epic C.5 — sanitise free text at the USECASE layer, before it is
+        // persisted (and, for `description`, before the field-encryption
+        // middleware seals it). Comments and evidence notes already did this;
+        // title/description did not, even though both reach PDF export,
+        // audit-pack share links and any SDK consumer reading the row
+        // verbatim — surfaces where render-time escaping does not help.
+        input.title = sanitizePlainText(input.title);
+        if (input.description != null) {
+            input.description = sanitizePlainText(input.description);
+        }
         // TP-2 (hole 2b) — segregation of duties at creation: reviewer ≠ assignee.
         assertReviewerIsNotAssignee(input.reviewerUserId, input.assigneeUserId);
+        // Both user ids come from the request body and are stamped with
+        // ctx.tenantId on write — resolve them against an ACTIVE membership
+        // first so a foreign id cannot be persisted.
+        await assertActiveMembers(db, ctx, [input.assigneeUserId, input.reviewerUserId]);
 
         const task = await WorkItemRepository.create(db, ctx, input);
 
@@ -247,6 +364,16 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
     // populated — a `let` assigned inside the callback stays narrowed to its
     // initializer at the post-commit read.
     const { task: result, beforeDueAt, beforeReviewerUserId } = await runInTenantContext(ctx, async (db) => {
+        // A reviewer id arriving on the patch is body-supplied and stamped
+        // with ctx.tenantId on write — resolve it against an ACTIVE
+        // membership first (createTask does the same for assignee+reviewer).
+        await assertActiveMembers(db, ctx, [patch.reviewerUserId]);
+        // Epic C.5 — sanitise the same two free-text fields on edit; an
+        // update path that skipped it would reopen exactly what create closes.
+        if (patch.title !== undefined) patch.title = sanitizePlainText(patch.title);
+        if (patch.description != null) {
+            patch.description = sanitizePlainText(patch.description);
+        }
         // Validate metadataJson on write
         if (patch.metadataJson !== undefined) {
             patch.metadataJson = validateTaskMetadata(patch.metadataJson);
@@ -345,13 +472,34 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 // TaskWatcher) all cascade via `onDelete: Cascade`, so removing the
 // task row cleans up its comments, entity links, and watchers in one
 // statement. Gated on write permission (same tier as edit) and audited.
-/** Bulk soft-delete tasks selected in the table action bar. */
+/**
+ * Bulk soft-delete tasks selected in the table action bar.
+ *
+ * ADMIN tier, matching `bulkDeleteRisk` / `bulkDeleteAsset` /
+ * `control/mutations.bulkDelete` — a bulk destructive action is an admin
+ * capability across every register, and tasks were the lone exception at the
+ * write tier. The ROUTE stays on `tasks.edit`, which is also what the assets
+ * bulk-delete route does: the coarse HTTP gate lets an editor reach the
+ * usecase, and the usecase makes the tier decision.
+ */
 export async function bulkDeleteTask(ctx: RequestContext, taskIds: string[]) {
-    assertCanWriteTasks(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    assertCanAdmin(ctx);
+    const outcome = await runInTenantContext(ctx, async (db) => {
         const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
-        if (rows.length === 0) return { deleted: 0 };
+        // A payload where NOTHING resolves is a client error, not a
+        // successful no-op — previously this returned {deleted: 0} and the
+        // caller could not tell "already gone" from "wrong tenant/ids".
+        if (rows.length === 0) throw notFound('No matching tasks found');
+
+        const found = new Set(rows.map((r) => r.id));
         await db.task.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
+
+        // Audit rows stay SEQUENTIAL by design: they are hash-chained under a
+        // per-tenant advisory lock, so emitting them concurrently would
+        // corrupt the chain (same conclusion #1705 reached for controls).
+        // What changed is that only ids that ACTUALLY resolved get an entry —
+        // previously every requested id was audited even when the delete
+        // matched fewer rows.
         for (const r of rows) {
             await logEvent(db, ctx, {
                 action: 'SOFT_DELETE',
@@ -361,8 +509,21 @@ export async function bulkDeleteTask(ctx: RequestContext, taskIds: string[]) {
                 detailsJson: { category: 'entity_lifecycle', entityName: 'Task', operation: 'deleted', summary: 'Task soft-deleted' },
             });
         }
-        return { deleted: rows.length };
+
+        // Per-id outcome so a partially-matching payload is legible to the
+        // caller instead of collapsing into a bare count.
+        return {
+            deleted: rows.length,
+            count: rows.length,
+            results: taskIds.map((id) => ({
+                id,
+                status: found.has(id) ? ('deleted' as const) : ('not_found' as const),
+            })),
+        };
     });
+    // Without this the cached list keeps serving deleted tasks for the TTL.
+    await bumpEntityCacheVersion(ctx, 'task');
+    return outcome;
 }
 
 export async function deleteTask(ctx: RequestContext, taskId: string) {
@@ -530,8 +691,11 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
 // ─── Assign ───
 
 export async function assignTask(ctx: RequestContext, taskId: string, assigneeUserId: string | null) {
-    assertCanWriteTasks(ctx);
+    assertCanAssignTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        // The assignee id is body-supplied and stamped with ctx.tenantId on
+        // write; resolve it against an ACTIVE membership first.
+        await assertActiveMembers(db, ctx, [assigneeUserId]);
         // TP-2 (hole 2b) — SoD from the assignee side: assigning the task to the
         // person who is already its reviewer would collapse four eyes into two
         // just as surely as setting reviewer = assignee does.
@@ -594,10 +758,23 @@ async function enqueueTaskAssignedNotification(
     assigneeUserId: string,
 ): Promise<void> {
     try {
-        const assignee = await db.user.findUnique({
-            where: { id: assigneeUserId },
-            select: { email: true, name: true },
+        // Resolve the assignee THROUGH an active membership of this tenant.
+        //
+        // `User` carries no RLS policy, so a bare `user.findUnique` is a
+        // global lookup: a foreign user id would resolve and then be emailed
+        // the task title, key and tenant slug. That is both a cross-tenant
+        // disclosure and a user-id existence oracle (mail sent vs not).
+        // Joining through TenantMembership makes the notification reachable
+        // only for someone who is genuinely in this tenant.
+        const membership = await db.tenantMembership.findFirst({
+            where: {
+                userId: assigneeUserId,
+                tenantId: ctx.tenantId,
+                status: 'ACTIVE',
+            },
+            select: { user: { select: { email: true, name: true } } },
         });
+        const assignee = membership?.user;
         if (!assignee?.email) return;
 
         const assigner = await db.user.findUnique({
@@ -803,6 +980,8 @@ export async function listTaskLinks(ctx: RequestContext, taskId: string) {
 export async function addTaskLink(ctx: RequestContext, taskId: string, entityType: string, entityId: string, relation?: string) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertTaskInTenant(db, ctx, taskId);
+        await assertLinkTargetInTenant(db, ctx, entityType, entityId);
         const link = await TaskLinkRepository.link(db, ctx, taskId, entityType, entityId, relation);
         await logEvent(db, ctx, {
             action: 'TASK_LINKED',
@@ -818,17 +997,35 @@ export async function addTaskLink(ctx: RequestContext, taskId: string, entityTyp
     return result;
 }
 
-export async function removeTaskLink(ctx: RequestContext, linkId: string) {
+/**
+ * Remove one cross-entity link from a task.
+ *
+ * Scoped to the owning `taskId` — previously only the link id was used, so
+ * any link in the tenant could be deleted via any task's URL. The audit row
+ * is written against the TASK, not the link: the activity feed filters
+ * `entityId = taskId` (see `getTaskActivity`), so auditing the link id made
+ * unlinks invisible in the feed of the task they happened to.
+ */
+export async function removeTaskLink(
+    ctx: RequestContext,
+    taskId: string,
+    linkId: string,
+) {
     assertCanWriteTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
-        const result = await TaskLinkRepository.unlink(db, ctx, linkId);
+        const result = await TaskLinkRepository.unlink(db, ctx, taskId, linkId);
         if (!result) throw notFound('Task link not found');
         await logEvent(db, ctx, {
             action: 'TASK_UNLINKED',
             entityType: 'Task',
-            entityId: linkId,
+            entityId: taskId,
             details: 'Removed task link',
-            detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Task' },
+            detailsJson: {
+                category: 'relationship',
+                operation: 'unlinked',
+                sourceEntity: 'Task',
+                linkId,
+            },
         });
         return result;
     });
@@ -959,6 +1156,7 @@ export async function addTaskComment(ctx: RequestContext, taskId: string, body: 
     // a stored XSS vector.
     const safeBody = sanitizePlainText(body);
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertTaskInTenant(db, ctx, taskId);
         const comment = await TaskCommentRepository.add(db, ctx, taskId, safeBody);
         await logEvent(db, ctx, {
             action: 'TASK_COMMENT_ADDED',
@@ -986,7 +1184,11 @@ export async function listTaskWatchers(ctx: RequestContext, taskId: string) {
 
 export async function addTaskWatcher(ctx: RequestContext, taskId: string, userId: string) {
     assertCanWriteTasks(ctx);
-    const result = await runInTenantContext(ctx, (db) => TaskWatcherRepository.add(db, ctx, taskId, userId));
+    const result = await runInTenantContext(ctx, async (db) => {
+        await assertTaskInTenant(db, ctx, taskId);
+        await assertActiveMembers(db, ctx, [userId]);
+        return TaskWatcherRepository.add(db, ctx, taskId, userId);
+    });
     await bumpEntityCacheVersion(ctx, 'task');
     return result;
 }
@@ -1026,10 +1228,38 @@ export async function getTaskActivity(ctx: RequestContext, taskId: string) {
 // ─── Bulk Actions ───
 
 export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], assigneeUserId: string | null) {
-    assertCanWriteTasks(ctx);
+    assertCanAssignTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
-        const result = await WorkItemRepository.bulkAssign(db, ctx, taskIds, assigneeUserId);
-        for (const id of taskIds) {
+        await assertActiveMembers(db, ctx, [assigneeUserId]);
+
+        // TP-2 (hole 2b) — segregation of duties, matching the single-task
+        // path. Bulk is an admin convenience, not an escape hatch: assigning
+        // a task to the person who is already its reviewer collapses four
+        // eyes into two. Checked against the DB rows, never a body value.
+        if (assigneeUserId) {
+            const conflicting = await db.task.findFirst({
+                where: {
+                    id: { in: taskIds },
+                    tenantId: ctx.tenantId,
+                    reviewerUserId: assigneeUserId,
+                },
+                select: { key: true },
+            });
+            if (conflicting) {
+                throw badRequest(
+                    `Cannot assign ${conflicting.key ?? 'a task'} to its own reviewer — assignee and reviewer must differ.`,
+                );
+            }
+        }
+
+        const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
+        if (rows.length === 0) throw notFound('No matching tasks found');
+        const applied = new Set(rows.map((r) => r.id));
+
+        const result = await WorkItemRepository.bulkAssign(db, ctx, [...applied], assigneeUserId);
+        // Audit only ids that actually resolved. Sequential by design —
+        // audit rows are hash-chained under a per-tenant advisory lock.
+        for (const id of applied) {
             await logEvent(db, ctx, {
                 action: 'TASK_ASSIGNED',
                 entityType: 'Task',
@@ -1039,7 +1269,7 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
                 metadata: { assigneeUserId, bulk: true },
             });
         }
-        return result;
+        return { ...result, ...bulkResults(taskIds, applied) };
     });
     await bumpEntityCacheVersion(ctx, 'task');
     return outcome;
@@ -1138,8 +1368,12 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
 export async function bulkSetTaskDueDate(ctx: RequestContext, taskIds: string[], dueAt: string | null) {
     assertCanWriteTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
-        const result = await WorkItemRepository.bulkSetDueDate(db, ctx, taskIds, dueAt);
-        for (const id of taskIds) {
+        const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
+        if (rows.length === 0) throw notFound('No matching tasks found');
+        const applied = new Set(rows.map((r) => r.id));
+
+        const result = await WorkItemRepository.bulkSetDueDate(db, ctx, [...applied], dueAt);
+        for (const id of applied) {
             await logEvent(db, ctx, {
                 action: 'TASK_UPDATED',
                 entityType: 'Task',
@@ -1149,7 +1383,7 @@ export async function bulkSetTaskDueDate(ctx: RequestContext, taskIds: string[],
                 metadata: { dueAt, bulk: true },
             });
         }
-        return result;
+        return { ...result, ...bulkResults(taskIds, applied) };
     });
     await bumpEntityCacheVersion(ctx, 'task');
     return outcome;

@@ -117,6 +117,44 @@ describe('WorkItemRepository.list + _buildWhere filter branches', () => {
         expect(where.controlId).toBe('ctrl9');
     });
 
+    it('comma-joined multi-select facets become { in: [...] }', async () => {
+        // The UI declares status/type/severity/source/assignee as
+        // `multiple: true`, and the shared filter helper comma-joins them.
+        // Previously the raw string was cast onto a Prisma enum scalar, so
+        // two selected values matched nothing.
+        await WorkItemRepository.list(db as any, ctx, {
+            status: 'OPEN,BLOCKED',
+            type: 'TASK,INCIDENT',
+            severity: 'HIGH,CRITICAL',
+            source: 'MANUAL,AUDIT',
+            assigneeUserId: 'u1,u2',
+        });
+        const where = db.task.findMany.mock.calls[0][0].where;
+        expect(where.status).toEqual({ in: ['OPEN', 'BLOCKED'] });
+        expect(where.type).toEqual({ in: ['TASK', 'INCIDENT'] });
+        expect(where.severity).toEqual({ in: ['HIGH', 'CRITICAL'] });
+        expect(where.source).toEqual({ in: ['MANUAL', 'AUDIT'] });
+        expect(where.assigneeUserId).toEqual({ in: ['u1', 'u2'] });
+    });
+
+    it('a single value still maps to a bare equality, not { in: [one] }', async () => {
+        await WorkItemRepository.list(db as any, ctx, { status: 'OPEN' });
+        expect(db.task.findMany.mock.calls[0][0].where.status).toBe('OPEN');
+    });
+
+    it('tolerates whitespace, blanks and duplicates in the joined value', async () => {
+        await WorkItemRepository.list(db as any, ctx, { status: ' OPEN , ,BLOCKED, OPEN ' });
+        expect(db.task.findMany.mock.calls[0][0].where.status).toEqual({
+            in: ['OPEN', 'BLOCKED'],
+        });
+    });
+
+    it('rejects an invalid enum member loudly rather than matching zero rows', async () => {
+        await expect(
+            WorkItemRepository.list(db as any, ctx, { status: 'OPEN,NOT_A_STATUS' }),
+        ).rejects.toThrow(/Invalid status/i);
+    });
+
     it('due=overdue without status: sets dueAt lt + status notIn terminal', async () => {
         await WorkItemRepository.list(db as any, ctx, { due: 'overdue' });
         const where = db.task.findMany.mock.calls[0][0].where;
@@ -525,13 +563,13 @@ describe('TaskLinkRepository', () => {
 
     it('unlink returns null when link not found', async () => {
         db.taskLink.findFirst.mockResolvedValueOnce(null);
-        expect(await TaskLinkRepository.unlink(db as any, ctx, 'l1')).toBeNull();
+        expect(await TaskLinkRepository.unlink(db as any, ctx, 't1', 'l1')).toBeNull();
         expect(db.taskLink.delete).not.toHaveBeenCalled();
     });
 
     it('unlink deletes and returns true when found', async () => {
         db.taskLink.findFirst.mockResolvedValueOnce({ id: 'l1' });
-        expect(await TaskLinkRepository.unlink(db as any, ctx, 'l1')).toBe(true);
+        expect(await TaskLinkRepository.unlink(db as any, ctx, 't1', 'l1')).toBe(true);
         expect(db.taskLink.delete).toHaveBeenCalledWith({ where: { id: 'l1' } });
     });
 });

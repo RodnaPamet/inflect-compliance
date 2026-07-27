@@ -1,13 +1,18 @@
-import { getTenantCtx } from '@/app-layer/context';
 import { setTaskStatus } from '@/app-layer/usecases/task';
-import { withValidatedBody } from '@/lib/validation/route';
 import { SetTaskStatusSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
+import { parseJsonBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 
-export const POST = withApiErrorHandling(withValidatedBody(SetTaskStatusSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }, body) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const task = await setTaskStatus(ctx, params.taskId, body.status, body.resolution);
-    return jsonResponse(task);
-}));
+type TaskStatusParams = { tenantSlug: string; taskId: string };
+
+/** POST — advance a task's status. Gated on `tasks.edit`. */
+export const POST = withApiErrorHandling(
+    requirePermission<TaskStatusParams>('tasks.edit', async (req, { params }, ctx) => {
+        const { taskId } = await params;
+        const body = await parseJsonBody(req, SetTaskStatusSchema);
+        const task = await setTaskStatus(ctx, taskId, body.status, body.resolution);
+        return jsonResponse(task);
+    }),
+);

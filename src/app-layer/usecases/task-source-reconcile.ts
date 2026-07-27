@@ -35,9 +35,20 @@ type TaskMetadata = { testPlanId?: string; testRunId?: string; findingId?: strin
 /**
  * Dispatch a terminal task close to its per-source reconciler. Safe to
  * call for any task/status — it no-ops unless the status is terminal
- * (RESOLVED/CLOSED) and the task actually points at a reconcilable
- * source. Never throws for a missing/foreign source: the task close is
- * already committed, so reconciliation is best-effort and logged.
+ * (RESOLVED/CLOSED) and the task actually points at a reconcilable source.
+ *
+ * NOT fail-open. This function has no try/catch, and that is deliberate: it
+ * runs INSIDE the caller's tenant transaction (see `setTaskStatus`), so a
+ * reconciler failure rolls the status change back with it. The alternative —
+ * swallowing the error — would leave a task closed while its source still
+ * shows the gap open, which is precisely the drift the reconciler exists to
+ * prevent. A missing or foreign source is not an error and no-ops silently;
+ * only a genuine write failure propagates.
+ *
+ * (An earlier version of this comment claimed the opposite — "never throws …
+ * best-effort and logged" — while the code has always propagated. The code
+ * matches the atomicity `setTaskStatus` documents, so the comment was the
+ * side that was wrong.)
  */
 export async function reconcileTaskSource(
     db: PrismaTx,

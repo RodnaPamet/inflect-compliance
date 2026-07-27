@@ -56,6 +56,7 @@ const TENANT_ID = `t-${SUITE_TAG}`;
 let ownerUserId: string;
 let readerUserId: string;
 let controlId: string;
+let assetId: string;
 let ctx: ReturnType<typeof makeRequestContext>;
 let reader: ReturnType<typeof makeRequestContext>;
 
@@ -81,11 +82,18 @@ describeFn('task usecase — branch coverage (integration)', () => {
             data: { tenantId: TENANT_ID, code: 'C-T1', name: 'Task control' },
         });
         controlId = control.id;
+        // A REAL asset: task links now resolve their target against the
+        // tenant before insert, so a synthetic id no longer inserts.
+        const asset = await globalPrisma.asset.create({
+            data: { tenantId: TENANT_ID, name: 'Task asset', type: 'SYSTEM' },
+        });
+        assetId = asset.id;
         ctx = makeRequestContext('OWNER', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: ownerUserId });
         reader = makeRequestContext('READER', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: readerUserId });
     });
 
     afterAll(async () => {
+        await globalPrisma.asset.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.evidence.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.taskComment.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.taskWatcher.deleteMany({ where: { tenantId: TENANT_ID } });
@@ -112,7 +120,7 @@ describeFn('task usecase — branch coverage (integration)', () => {
         await expect(deleteTask(ctx, 'nope')).rejects.toThrow(/not found/i);
         await expect(setTaskStatus(ctx, 'nope', 'TRIAGED')).rejects.toThrow(/not found/i);
         await expect(assignTask(ctx, 'nope', null)).rejects.toThrow(/not found/i);
-        await expect(removeTaskLink(ctx, 'nope')).rejects.toThrow(/not found/i);
+        await expect(removeTaskLink(ctx, 'nope', 'nope')).rejects.toThrow(/not found/i);
         await expect(getTaskEvidenceTab(ctx, 'nope')).rejects.toThrow(/not found/i);
         await expect(linkTaskEvidence(ctx, 'nope', { url: 'http://x' })).rejects.toThrow(/not found/i);
         await expect(unlinkTaskEvidence(ctx, 'nope', 'x')).rejects.toThrow(/not found/i);
@@ -128,7 +136,7 @@ describeFn('task usecase — branch coverage (integration)', () => {
         await expect(setTaskStatus(reader, t.id, 'TRIAGED')).rejects.toThrow(/permission/i);
         await expect(assignTask(reader, t.id, null)).rejects.toThrow(/permission/i);
         await expect(addTaskLink(reader, t.id, 'CONTROL', controlId)).rejects.toThrow(/permission/i);
-        await expect(removeTaskLink(reader, 'x')).rejects.toThrow(/permission/i);
+        await expect(removeTaskLink(reader, t.id, 'x')).rejects.toThrow(/permission/i);
         await expect(linkTaskEvidence(reader, t.id, { url: 'http://x' })).rejects.toThrow(/permission/i);
         await expect(unlinkTaskEvidence(reader, t.id, 'x')).rejects.toThrow(/permission/i);
         await expect(addTaskComment(reader, t.id, 'hi')).rejects.toThrow(/permission/i);
@@ -218,7 +226,7 @@ describeFn('task usecase — branch coverage (integration)', () => {
         // INCIDENT with no controlId/link → rejected; ASSET link satisfies.
         const inc = await createTask(ctx, { title: 'incident', type: 'INCIDENT' });
         await expect(setTaskStatus(ctx, inc.id, 'RESOLVED', 'x')).rejects.toThrow(/controlId or a link to CONTROL or ASSET/i);
-        await addTaskLink(ctx, inc.id, 'ASSET', 'asset-123');
+        await addTaskLink(ctx, inc.id, 'ASSET', assetId);
         const incResolved = await setTaskStatus(ctx, inc.id, 'RESOLVED', 'contained');
         expect(incResolved?.status).toBe('RESOLVED');
 
@@ -241,9 +249,9 @@ describeFn('task usecase — branch coverage (integration)', () => {
         const link = await addTaskLink(ctx, t.id, 'CONTROL', controlId, 'RELATES_TO');
         const links = await listTaskLinks(ctx, t.id);
         expect(links.length).toBeGreaterThan(0);
-        const removed = await removeTaskLink(ctx, link.id);
+        const removed = await removeTaskLink(ctx, t.id, link.id);
         expect(removed).toBe(true);
-        await expect(removeTaskLink(ctx, link.id)).rejects.toThrow(/not found/i);
+        await expect(removeTaskLink(ctx, t.id, link.id)).rejects.toThrow(/not found/i);
     });
 
     it('evidence: tab payload, link with + without note, unlink + not-found', async () => {
@@ -296,6 +304,33 @@ describeFn('task usecase — branch coverage (integration)', () => {
         expect(Array.isArray(await listTasksByControl(ctx, controlId))).toBe(true);
     });
 
+    it('sanitises title + description on create AND update', async () => {
+        // Epic C.5 — free text is sanitised at the usecase layer, before
+        // persistence (and before field-encryption seals `description`).
+        // Comments already did this; title/description did not, despite
+        // reaching PDF export and audit-pack share links verbatim.
+        const t = await createTask(ctx, {
+            title: 'clean<script>alert(1)</script>title',
+            description: 'body<script>alert(2)</script>text',
+        });
+        expect(t.title).not.toMatch(/<script/i);
+        expect(t.title).not.toMatch(/alert/);
+        expect(t.title).toContain('clean');
+
+        const fetched = await getTask(ctx, t.id);
+        expect(fetched.description ?? '').not.toMatch(/<script/i);
+
+        const updated = await updateTask(ctx, t.id, {
+            title: 'edited<script>alert(3)</script>',
+            description: 'newbody<script>alert(4)</script>',
+        });
+        expect(updated?.title).not.toMatch(/<script/i);
+        expect(updated?.title).not.toMatch(/alert/);
+        const refetched = await getTask(ctx, t.id);
+        expect(refetched.description ?? '').not.toMatch(/<script/i);
+        expect(refetched.description ?? '').not.toMatch(/alert/);
+    });
+
     it('bulk: assign, set-status (gates + all-or-nothing), set-due, delete', async () => {
         const a = await createTask(ctx, { title: 'bulk-a' });
         const b = await createTask(ctx, { title: 'bulk-b' });
@@ -314,10 +349,17 @@ describeFn('task usecase — branch coverage (integration)', () => {
         // bulk due date
         await bulkSetTaskDueDate(ctx, [a.id, b.id], new Date().toISOString());
         await bulkSetTaskDueDate(ctx, [a.id, b.id], null);
-        // bulk delete: empty set → deleted 0, then real delete
-        expect(await bulkDeleteTask(ctx, ['nope-1', 'nope-2'])).toEqual({ deleted: 0 });
+        // bulk delete: a wholly unmatched payload is a 404, not a silent
+        // {deleted: 0} — the caller could not previously tell "already gone"
+        // from "wrong tenant / bad ids".
+        await expect(bulkDeleteTask(ctx, ['nope-1', 'nope-2'])).rejects.toThrow(/no matching tasks/i);
         const del = await bulkDeleteTask(ctx, [a.id, b.id]);
         expect(del.deleted).toBe(2);
+        // per-id outcomes so a partial payload is legible to the caller
+        expect(del.results).toEqual([
+            { id: a.id, status: 'deleted' },
+            { id: b.id, status: 'deleted' },
+        ]);
     });
 
     it('deleteTask happy path removes the row', async () => {
