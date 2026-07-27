@@ -5760,7 +5760,9 @@
       "emptyDesc": "Tasks track remediation work — anything that turns a finding or open risk into a closed loop.",
       "filterEmptyTitle": "No tasks match your filters",
       "filterEmptyDesc": "Try widening your search or clearing one of the active filters.",
-      "assignedToMe": "Assigned to me"
+      "assignedToMe": "Assigned to me",
+      "loadError": "Couldn't load tasks. Check your connection and try again.",
+      "assignedToMeUnavailable": "Sign-in details are still loading — this filter will be available in a moment."
     },
     "kpi": {
       "total": "Total tasks",
@@ -5796,7 +5798,9 @@
       "setDueDate": "Set Due Date",
       "duePlaceholder": "Due date",
       "dueAria": "Bulk due date",
-      "delete": "Delete"
+      "delete": "Delete",
+      "failed": "Bulk action failed",
+      "partial": "{applied} updated, {missed} skipped — they may have been deleted or are no longer visible to you"
     },
     "new": {
       "modalTitle": "New task",

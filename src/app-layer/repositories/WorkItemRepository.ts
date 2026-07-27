@@ -135,7 +135,15 @@ const taskListSelect = {
     // Linked-evidence count — surfaced on the Controls table's inline task
     // rows (category/status/owner/evidence). One correlated subquery; the
     // three removed above (links/comments/watchers) stay removed.
-    _count: { select: { evidence: true } },
+    //
+    // `deletedAt: null` is spelled out because the soft-delete extension
+    // cannot reach here: it injects the predicate into the TOP-LEVEL
+    // `where` of the intercepted model op (this is a `task` read), never
+    // into a nested `_count`. Without it the badge counts soft-deleted
+    // evidence the Evidence tab correctly hides — the count and the list
+    // disagree. Evidence is the only soft-deletable relation counted on
+    // Task; links/comments/watchers have no `deletedAt` column.
+    _count: { select: { evidence: { where: { deletedAt: null } } } },
 } as const;
 
 /**
@@ -435,7 +443,17 @@ export class WorkItemRepository {
                     take: DETAIL_RELATION_TAKE,
                     include: { user: { select: { id: true, name: true, email: true } } },
                 },
-                _count: { select: { links: true, comments: true, watchers: true, evidence: true } },
+                // See the note on TASK_LIST_SELECT's `_count`: the nested
+                // evidence count needs an explicit `deletedAt: null` — the
+                // soft-delete extension only filters the top-level model.
+                _count: {
+                    select: {
+                        links: true,
+                        comments: true,
+                        watchers: true,
+                        evidence: { where: { deletedAt: null } },
+                    },
+                },
             },
         });
     }

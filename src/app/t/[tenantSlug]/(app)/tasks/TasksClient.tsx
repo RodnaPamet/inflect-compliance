@@ -19,8 +19,9 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
-import { useThresholdLoadMore } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useToast } from '@/components/ui/hooks';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
+import { Tooltip } from '@/components/ui/tooltip';
 import { DataTable, createColumns, useColumnsDropdown, sortRowsByDisplay, type SortAccessors } from '@/components/ui/table';
 import {
     FilterProvider,
@@ -36,7 +37,12 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
-import { buildTaskFilters, TASK_FILTER_KEYS } from './filter-defs';
+import {
+    buildTaskFilters,
+    TASK_FILTER_KEYS,
+    taskSeverityLabels,
+    taskSourceLabels,
+} from './filter-defs';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
@@ -76,11 +82,11 @@ const buildTypeLabels = (t: (k: string) => string): Record<string, string> => ({
 // TP-6 — provenance labels for the Source column. Mirrors the filter's
 // `taskSourceLabels` (filter-defs) but keyed off the same
 // `filterEnums.source.*` copy so the column + filter never drift.
-const buildSourceLabels = (t: (k: string) => string): Record<string, string> => ({
-    MANUAL: t('filterEnums.source.MANUAL'), TEMPLATE: t('filterEnums.source.TEMPLATE'),
-    POLICY_REVIEW: t('filterEnums.source.POLICY_REVIEW'), AUDIT: t('filterEnums.source.AUDIT'),
-    INTEGRATION: t('filterEnums.source.INTEGRATION'), EVIDENCE_EXPIRY: t('filterEnums.source.EVIDENCE_EXPIRY'),
-});
+// Source labels come from filter-defs — the same map the Source filter
+// uses. This file used to keep its own copy, which had drifted (it
+// predated RISK_MONITOR), so a risk-monitor task rendered the raw enum
+// in the table while its filter chip read the proper label.
+const buildSourceLabels = taskSourceLabels;
 // Bulk status only offers ACTIVE transitions. Terminal statuses
 // (CLOSED / CANCELED) require a per-task resolution note (S8), which
 // the bulk bar can't collect — closing is a deliberate single-task
@@ -157,9 +163,14 @@ function TasksPageInner({
     appPermissions,
 }: TasksClientProps) {
     const t = useTranslations('tasks');
-    const STATUS_LABELS = buildStatusLabels(t);
-    const TYPE_LABELS = buildTypeLabels(t);
-    const SOURCE_LABELS = buildSourceLabels(t);
+    // Memoised on `t` so they keep a stable identity across renders —
+    // `sortAccessors` below closes over them and needs them in its dep
+    // array (see the note there). Rebuilding a fresh object every render
+    // would make that memo recompute every render.
+    const STATUS_LABELS = useMemo(() => buildStatusLabels(t), [t]);
+    const TYPE_LABELS = useMemo(() => buildTypeLabels(t), [t]);
+    const SOURCE_LABELS = useMemo(() => buildSourceLabels(t), [t]);
+    const SEVERITY_LABELS = useMemo(() => taskSeverityLabels(t), [t]);
     const BULK_STATUS_CB_OPTIONS = buildBulkStatusCbOptions(STATUS_LABELS);
     // TP-6 — the signed-in user, for the "Assigned to me" quick filter.
     const currentUserId = useCurrentUserId();
@@ -169,6 +180,7 @@ function TasksPageInner({
     // row navigation (the PoliciesClient regression, #1678).
     const tenantHref = useTenantHref();
     const { mutate: swrMutate } = useSWRConfig();
+    const toast = useToast();
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
 
@@ -274,6 +286,14 @@ function TasksPageInner({
     const tasks = tasksQuery.data?.rows ?? [];
     const truncated = tasksQuery.data?.truncated ?? false;
     const loading = tasksQuery.isLoading && !tasksQuery.data;
+    // A failed list fetch leaves `rows` empty, which the table would
+    // otherwise render as the "no tasks yet" empty state — telling the
+    // user their register is empty when it is merely unreachable.
+    // Suppressed while stale data is still on screen: SWR keeps serving
+    // the last good page during a background refresh, and replacing a
+    // readable table with an error card would be a downgrade.
+    const listError =
+        tasksQuery.error && !tasksQuery.data ? t('list.loadError') : undefined;
 
     // ─── Sortable headers (parity with the Controls table) ───
     // Clicking a sortable header re-orders the in-memory rows; `sortBy`
@@ -290,18 +310,23 @@ function TasksPageInner({
     // STATUS_LABELS label (both cells render the label, not the raw enum);
     // assignee mirrors its column accessorFn ('—' fallback). Sort still
     // runs BEFORE the load-more window below.
+    //
+    // The dep array lists the label maps these accessors close over. It
+    // used to be empty, which froze them on the FIRST render's maps — so
+    // after a locale change the table sorted by the previous language's
+    // labels while displaying the new ones.
     const sortAccessors = useMemo<SortAccessors<TaskListItem>>(
         () => ({
             title: (t) => t.title || '',
             type: (t) => TYPE_LABELS[t.type] || t.type,
-            severity: (t) => t.severity || '',
+            severity: (t) => SEVERITY_LABELS[t.severity] || t.severity || '',
             status: (t) => STATUS_LABELS[t.status] || t.status,
             source: (t) => SOURCE_LABELS[t.source] || t.source,
             assignee: (t) => t.assignee?.name || '—',
             dueAt: (t) => t.dueAt || '',
             updatedAt: (t) => t.updatedAt || '',
         }),
-        [],
+        [TYPE_LABELS, SEVERITY_LABELS, STATUS_LABELS, SOURCE_LABELS],
     );
     const sortedTasks = useMemo(
         () => sortRowsByDisplay(tasks, sortAccessors, sortBy, sortOrder),
@@ -430,11 +455,19 @@ function TasksPageInner({
     // doesn't show stale state.
     const invalidateAllTasks = useCallback(() => {
         const tasksUrlPrefix = apiUrl(CACHE_KEYS.tasks.list());
+        // The KPI strip reads a SEPARATE key (`/tasks/metrics`), server-
+        // computed over the whole register rather than the loaded page.
+        // Matching only the list prefix left every counter stale after a
+        // bulk op or a quick-panel save — the table repainted, the
+        // numbers above it did not.
+        const metricsUrl = apiUrl(CACHE_KEYS.tasks.metrics());
         return swrMutate(
             (key) =>
                 typeof key === 'string' &&
                 (key === tasksUrlPrefix ||
-                    key.startsWith(`${tasksUrlPrefix}?`)),
+                    key.startsWith(`${tasksUrlPrefix}?`) ||
+                    key === metricsUrl ||
+                    key.startsWith(`${metricsUrl}?`)),
             undefined,
             { revalidate: true },
         );
@@ -448,10 +481,26 @@ function TasksPageInner({
         label?: string;
     }
 
+    /**
+     * What the `/tasks/bulk/*` routes return. Every route reports
+     * per-id outcomes, so a bulk op can partially succeed: ids the
+     * caller asked for that the server did not apply come back as
+     * `not_found` (filtered out by the tenant scope, or deleted
+     * between selection and apply). `count` is the applied total.
+     *
+     * Not written into the SWR cache — no `populateCache` is supplied,
+     * so the hook revalidates instead. This type describes only what
+     * `trigger()` resolves to.
+     */
+    interface BulkResult {
+        count: number;
+        results: { id: string; status: 'ok' | 'not_found' }[];
+    }
+
     // PR-9 — cache value is `CappedList<TaskListItem>`; preserve the
     // `truncated` flag and only rewrite `rows`. Same shape change as
     // the other six SWR-backed clients (PR-5 corrective).
-    const bulkMutation = useTenantMutation<CappedList<TaskListItem>, BulkVars, unknown>({
+    const bulkMutation = useTenantMutation<CappedList<TaskListItem>, BulkVars, BulkResult>({
         key: tasksKey,
         mutationFn: async ({ action, value, ids }) => {
             let url = '';
@@ -475,7 +524,17 @@ function TasksPageInner({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error('Bulk action failed');
+            if (!res.ok) {
+                // Surface the server's reason where it gave one (403
+                // four-eyes / plan-limit / validation all carry a
+                // message); fall back to the generic string so the
+                // toast is never blank.
+                const detail = await res
+                    .json()
+                    .then((b) => (typeof b?.error === 'string' ? b.error : null))
+                    .catch(() => null);
+                throw new Error(detail || t('bulk.failed'));
+            }
             return res.json();
         },
         optimisticUpdate: (current, { action, value, ids, label }) => {
@@ -508,10 +567,35 @@ function TasksPageInner({
     // form once `applying` settles.
     const handleBulkApply = (action: string, value: string, label: string) => {
         if (!action || selected.size === 0) return;
+        const requested = Array.from(selected);
         bulkMutation
-            .trigger({ action, value, label, ids: Array.from(selected) })
-            .catch(() => {
-                /* rollback already applied by the hook */
+            .trigger({ action, value, label, ids: requested })
+            .then((result) => {
+                // A bulk op can partially succeed. The optimistic update
+                // already repainted EVERY selected row, and the
+                // revalidation below silently reverts the ones the server
+                // rejected — so without this the user watches rows snap
+                // back with no explanation.
+                const missed = (result?.results ?? []).filter(
+                    (r) => r.status !== 'ok',
+                ).length;
+                if (missed > 0) {
+                    toast.warning(
+                        t('bulk.partial', {
+                            applied: result?.count ?? requested.length - missed,
+                            missed,
+                        }),
+                    );
+                }
+            })
+            .catch((err: unknown) => {
+                // Rollback is already applied by the hook — but a silent
+                // rollback is indistinguishable from "nothing happened".
+                toast.error(
+                    err instanceof Error && err.message
+                        ? err.message
+                        : t('bulk.failed'),
+                );
             })
             .finally(() => {
                 // Mirror the prior `onSettled` semantics — clear selection +
@@ -660,7 +744,7 @@ function TasksPageInner({
                 header: t('colHeaders.severity'),
                 cell: ({ row }) => (
                     <StatusBadge variant={SEVERITY_BADGE[row.original.severity] || 'neutral'} size="sm">
-                        {row.original.severity}
+                        {SEVERITY_LABELS[row.original.severity] || row.original.severity}
                     </StatusBadge>
                 ),
             },
@@ -879,16 +963,29 @@ function TasksPageInner({
                     actions={
                         <>
                             {/* TP-6 — "Assigned to me" quick filter. Toggles the
-                                assigneeUserId filter to the current user. */}
-                            <Button
-                                variant={assignedToMe ? 'primary' : 'secondary'}
-                                size="sm"
-                                onClick={toggleAssignedToMe}
-                                aria-pressed={assignedToMe}
-                                id="assigned-to-me-toggle"
+                                assigneeUserId filter to the current user.
+                                Disabled until `currentUserId` resolves:
+                                `toggleAssignedToMe` early-returns without it,
+                                so the button rendered fully enabled and did
+                                nothing when clicked. */}
+                            <Tooltip
+                                content={
+                                    currentUserId
+                                        ? t('list.assignedToMe')
+                                        : t('list.assignedToMeUnavailable')
+                                }
                             >
-                                {t('list.assignedToMe')}
-                            </Button>
+                                <Button
+                                    variant={assignedToMe ? 'primary' : 'secondary'}
+                                    size="sm"
+                                    onClick={toggleAssignedToMe}
+                                    aria-pressed={assignedToMe}
+                                    disabled={!currentUserId}
+                                    id="assigned-to-me-toggle"
+                                >
+                                    {t('list.assignedToMe')}
+                                </Button>
+                            </Tooltip>
                             {/* TP-7 — the standalone Tasks dashboard was
                                 retired (merged into this list: the KPI
                                 strip above is now server-computed, and
@@ -943,6 +1040,7 @@ function TasksPageInner({
                     )}
                     onRowClick={handleTaskRowClick}
                     onRowPrefetch={handleTaskRowPrefetch}
+                    error={listError}
                     emptyState={
                         hasActive ? (
                             <EmptyState

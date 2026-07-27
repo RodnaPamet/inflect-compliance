@@ -25,7 +25,11 @@ import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { CopyText } from '@/components/ui/copy-text';
-import { TERMINAL_WORK_ITEM_STATUSES } from '@/app-layer/domain/work-item-status';
+import {
+    TERMINAL_WORK_ITEM_STATUSES,
+    WORK_ITEM_TRANSITIONS,
+    type WorkItemStatusValue,
+} from '@/app-layer/domain/work-item-status';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { MetaStrip } from '@/components/ui/meta-strip';
@@ -42,6 +46,10 @@ import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { TaskEditPanel } from '@/app/t/[tenantSlug]/(app)/controls/TaskEditPanel';
 import { Pen2 } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
+// Shared with the list's Severity column and the Severity filter — this
+// page rendered the raw enum (`CRITICAL`) next to a filter chip reading
+// "Critical".
+import { taskSeverityLabels } from '../filter-defs';
 
 // Status tone AND label both come from the shared `TASK_STATUS_BADGE` map
 // (TP-1) — tone via `taskStatusVariant`, copy via the map's `labelKey`.
@@ -86,7 +94,34 @@ const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLO
 // value rather than a BLANK option. (Before the map derived from
 // TASK_STATUS_BADGE, IN_REVIEW hit exactly this hole and shipped an
 // unlabelled, unpickable entry in the status combobox.)
-const buildTaskStatusCbOptions = (statusLabels: Record<string, string>): ComboboxOption[] => SELECTABLE_STATUSES.map((val) => ({ value: val, label: statusLabels[val] || val }));
+/**
+ * Options the picker offers from `current`.
+ *
+ * The picker used to list every SELECTABLE_STATUSES entry regardless of
+ * where the task actually was, so it advertised moves the server rejects:
+ * a CLOSED task (terminal — no legal transitions out) still offered all
+ * seven, and picking one 400'd. Filtering against the same
+ * WORK_ITEM_TRANSITIONS graph the usecase enforces means the menu can
+ * only ever contain moves that will be accepted.
+ *
+ * `current` itself is always retained: the Combobox resolves its
+ * displayed selection by finding `task.status` in this list, so dropping
+ * it would blank the control. It is not a legal transition (`from ===
+ * to` is a no-op the gate rejects) — it is the "you are here" entry, and
+ * `requestStatusChange` ignores a re-pick of it.
+ */
+const buildTaskStatusCbOptions = (
+    statusLabels: Record<string, string>,
+    current?: string,
+): ComboboxOption[] => {
+    const reachable =
+        current && current in WORK_ITEM_TRANSITIONS
+            ? WORK_ITEM_TRANSITIONS[current as WorkItemStatusValue]
+            : null;
+    return SELECTABLE_STATUSES.filter(
+        (val) => !reachable || val === current || reachable.has(val as WorkItemStatusValue),
+    ).map((val) => ({ value: val, label: statusLabels[val] || val }));
+};
 
 type Tab = 'overview' | 'evidence' | 'links' | 'comments' | 'activity';
 
@@ -161,7 +196,7 @@ export default function TaskDetailPage() {
     const TYPE_LABELS = buildTypeLabels(t);
     const FINDING_SOURCE_LABELS = buildFindingSourceLabels(t);
     const GAP_TYPE_LABELS = buildGapTypeLabels(t);
-    const TASK_STATUS_CB_OPTIONS = buildTaskStatusCbOptions(STATUS_LABELS);
+    const SEVERITY_LABELS = taskSeverityLabels(t);
     const params = useParams();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
@@ -272,6 +307,10 @@ export default function TaskDetailPage() {
     // for the note; non-terminal changes commit immediately.
     const requestStatusChange = (status: string) => {
         setStatusError('');
+        // Re-picking the status the task already has is a no-op the
+        // server rejects (`from === to`). The option is only in the list
+        // so the Combobox can display the current selection.
+        if (status === taskQuery.data?.status) return;
         if ((TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(status)) {
             setResolutionDraft('');
             setPendingTerminalStatus(status);
@@ -308,9 +347,18 @@ export default function TaskDetailPage() {
             }
             setPendingTerminalStatus(null);
         } catch (e) {
-            setStatusError(
-                e instanceof Error ? e.message : t('detail.failedStatus'),
-            );
+            const message =
+                e instanceof Error ? e.message : t('detail.failedStatus');
+            setStatusError(message);
+            // `statusError` only renders inside the terminal-status modal.
+            // A non-terminal change (OPEN → IN_PROGRESS, a reviewer-gate
+            // 403, …) has no modal open, so the banner had nowhere to
+            // show: the optimistic patch just snapped back and the user
+            // saw nothing. Toast covers that path; the modal keeps its
+            // inline banner, which stays visible next to the note field.
+            if (pendingTerminalStatus === null) {
+                toast.error(message);
+            }
         } finally {
             setChangingStatus(false);
             // Reconcile — pick up server-derived fields (completedAt,
@@ -344,6 +392,14 @@ export default function TaskDetailPage() {
             }
         } catch (e) {
             toast.error(e instanceof Error ? e.message : t('detail.assignFailed'));
+            // Drop the rejected pick. `assigneeValue` prefers the draft
+            // over the server value, so leaving it set would keep showing
+            // the assignee the server just refused — while the reconcile
+            // below reverts `task.assigneeUserId` to the real one. The
+            // label and the picker would name two different people until
+            // the page remounts. `undefined` (not null) is the reset:
+            // null is a real value meaning "unassigned".
+            setAssigneeDraft(undefined);
         } finally {
             setAssigning(false);
             await taskQuery.mutate();
@@ -378,6 +434,8 @@ export default function TaskDetailPage() {
             }
         } catch (e) {
             toast.error(e instanceof Error ? e.message : t('detail.reviewerFailed'));
+            // Same reset as handleAssign — see the note there.
+            setReviewerDraft(undefined);
         } finally {
             setSavingReviewer(false);
             await taskQuery.mutate();
@@ -467,6 +525,11 @@ export default function TaskDetailPage() {
                     { method: 'DELETE' },
                 );
                 if (!res.ok) throw new Error(t('detail.removeLinkFailed'));
+                // The Links tab badge reads `task._count.links`, which
+                // lives on the TASK payload — not on `linksQuery`. Without
+                // this the row vanished but the badge kept the old count
+                // until a full reload. Mirrors `removeEvidence`.
+                await Promise.all([linksQuery.mutate(), taskQuery.mutate()]);
             },
             undoAction: () => {
                 void linksQuery.mutate(previous, { revalidate: false });
@@ -639,6 +702,14 @@ export default function TaskDetailPage() {
         { key: 'activity', label: t('detail.tabActivity') },
     ];
 
+    // Built here, not at the top of the component, because it depends on
+    // the CURRENT status — the reachable set differs per task, and `task`
+    // is only non-null past the guards above.
+    const TASK_STATUS_CB_OPTIONS = buildTaskStatusCbOptions(
+        STATUS_LABELS,
+        task.status,
+    );
+
     const isOverdue = task.dueAt && new Date(task.dueAt) < new Date() && !(TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(task.status);
     const metadata = task.metadataJson || {};
 
@@ -722,7 +793,7 @@ export default function TaskDetailPage() {
                             kind: 'status' as const,
                             id: 'task-severity',
                             label: t('detail.severity'),
-                            value: task.severity,
+                            value: SEVERITY_LABELS[task.severity] ?? task.severity,
                             variant:
                                 TASK_SEVERITY_VARIANT[task.severity] ??
                                 'neutral',
@@ -1050,11 +1121,18 @@ export default function TaskDetailPage() {
                             description={t('detail.evidenceLoadErrorDesc')}
                         />
                     ) : (
+                        /* No `onUnlink` prop: that handler detaches a
+                           ControlEvidenceLink join row, and tasks have no
+                           such join — `getTaskEvidenceTab` always returns
+                           `links: []` because evidence points at a task
+                           directly via `Evidence.taskId`. This used to pass
+                           `() => {}`, wiring a visible "Remove" button to a
+                           no-op. Removing a task's evidence goes through
+                           `onUnlinkEvidence`. */
                         <EvidenceSubTable
                             data={evidenceQuery.data}
                             loading={evidenceQuery.isLoading && !evidenceQuery.data}
                             canWrite={!!permissions.canWrite}
-                            onUnlink={() => {}}
                             onUnlinkEvidence={removeEvidence}
                             tenantHref={tenantHref}
                         />
