@@ -1271,8 +1271,11 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             },
             meta: { disableTruncate: true },
         },
+    // R5-P3 #4 — include hydratedNow: the retention column's rendered labels
+    // (getRetentionStatus) close over it, and sortAccessors already depends on
+    // it, so omitting it let the labels and the sort order disagree after hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    ]), [t, permissions, apiUrl, tx]);
+    ]), [t, permissions, apiUrl, tx, hydratedNow]);
 
     // Item 3 — collapse the four right-most columns (edit / archive /
     // download / actions) under ONE spanning "Actions" header. orderColumns

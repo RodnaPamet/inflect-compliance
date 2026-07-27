@@ -148,8 +148,10 @@ describe('B8 follow-up — evidence folders', () => {
         );
 
         it('reads folder from the multipart form data', () => {
+            // R5-P3 #6 — folder is now read through the Zod metadata schema
+            // (empty() coerces blank → undefined) but still sourced from formData.
             expect(upload).toMatch(
-                /folder:\s*formData\.get\(['"]folder['"]\)/,
+                /folder:\s*empty\(formData\.get\(['"]folder['"]\)\)/,
             );
         });
     });
