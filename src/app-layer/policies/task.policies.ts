@@ -48,9 +48,9 @@ function granularTasksDenied(
  * ── Read scope is TENANT-WIDE, and that is deliberate ──────────────────
  *
  * This gate answers "may you read tasks?", not "may you read THIS task?".
- * There is no assignee / reviewer / watcher / creator row-scoping: any
- * member holding `tasks.view` reads every task in the tenant. Recording
- * the reasoning so this is not mistaken for an oversight:
+ * There is no assignee / reviewer / watcher / creator row-scoping —
+ * every member holding `tasks.view` reads every task in the tenant.
+ * Recording the reasoning so this is not mistaken for an oversight:
  *
  *   - A task here is a unit of COMPLIANCE REMEDIATION, not private work.
  *     It is the evidence that a finding was closed, a control gap was

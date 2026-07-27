@@ -92,15 +92,24 @@ describe('PR-B TASK_DUE emit coverage', () => {
             const s = taskSrc();
             const start = s.indexOf(`export async function ${usecase}(`);
             expect(start).toBeGreaterThan(-1);
-            // Body spans until the next exported function OR a
-            // sibling section marker. We grab a fixed window —
-            // generous enough for the longest body, tight enough
-            // that the emit call sits within range.
-            // Widened 3000 → 4000 in PR-AA: `createTask` grew the TP-2
-            // segregation-of-duties guard (reviewer ≠ assignee), pushing its
-            // post-commit emit to offset ~3050. The emit is still present and
-            // still post-commit — only the window needed room.
-            const body = s.slice(start, start + 4000);
+            // Body spans until the NEXT top-level `export` — computed,
+            // not a fixed character window.
+            //
+            // This used to slice a fixed 4000 chars and had already been
+            // widened once (3000 → 4000 in PR-AA) when `createTask` grew
+            // the TP-2 segregation-of-duties guard and pushed its emit out
+            // of range. Any comment or validation added near the top of one
+            // of these functions moves the emit further down, so the fixed
+            // window fails again on a change that is not a regression —
+            // the emit is present and post-commit, the ruler is just too
+            // short. Bounding on the next export makes the body exact and
+            // ends the recurring false positive.
+            const rest = s.slice(start + 1);
+            const nextExport = rest.indexOf('\nexport ');
+            const body =
+                nextExport === -1
+                    ? s.slice(start)
+                    : s.slice(start, start + 1 + nextExport);
             // The call MUST be `emitTaskDueNotification(ctx, …)`
             // (no `await`-less variants, no commented-out lines).
             expect(body).toMatch(/await emitTaskDueNotification\(ctx,/);
