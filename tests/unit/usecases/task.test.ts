@@ -105,6 +105,27 @@ import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
+
+/**
+ * Minimal tx stub for the usecase's pre-write validators. Task writes now
+ * resolve body-supplied user ids against an ACTIVE TenantMembership, and
+ * child-row writes resolve the parent task — neither of which exists on a
+ * bare `{}`. Both resolve permissively here; the tenancy/membership rules
+ * themselves are covered by the integration suite against a real DB.
+ */
+const txStub = () =>
+    ({
+        task: { findFirst: jest.fn().mockResolvedValue({ id: 't1' }) },
+        tenantMembership: {
+            findMany: jest.fn().mockImplementation(async ({ where }: never) => {
+                const ids = (where as { userId?: { in?: string[] } })?.userId?.in ?? [];
+                return ids.map((userId: string) => ({ userId }));
+            }),
+            findFirst: jest.fn().mockResolvedValue({ id: 'm1' }),
+        },
+    }) as never;
+
+
 const mockGetById = WorkItemRepository.getById as jest.MockedFunction<typeof WorkItemRepository.getById>;
 const mockCreate = WorkItemRepository.create as jest.MockedFunction<typeof WorkItemRepository.create>;
 const mockSetStatus = WorkItemRepository.setStatus as jest.MockedFunction<typeof WorkItemRepository.setStatus>;
@@ -162,7 +183,7 @@ describe('createTask', () => {
     });
 
     it('emits TASK_CREATED audit AND fires emitAutomationEvent', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(txStub()));
 
         await createTask(makeRequestContext('EDITOR'), { title: 'x' });
 
@@ -183,10 +204,22 @@ describe('createTask', () => {
     it('enqueues TASK_ASSIGNED email when an assignee is set on create', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
+                // The assignee is resolved THROUGH an active membership now —
+                // a bare user.findUnique was a global, non-tenant-scoped read
+                // that could email a foreign user. The assigner lookup is
+                // still a plain user read (it is ctx.userId, already authed).
+                tenantMembership: {
+                    findMany: jest.fn().mockImplementation(async (args: never) => {
+                        const ids = (args as { where?: { userId?: { in?: string[] } } })
+                            ?.where?.userId?.in ?? [];
+                        return ids.map((userId: string) => ({ userId }));
+                    }),
+                    findFirst: jest.fn().mockResolvedValue({
+                        user: { email: 'a@b.com', name: 'A' },
+                    }),
+                },
                 user: {
-                    findUnique: jest.fn()
-                        .mockResolvedValueOnce({ email: 'a@b.com', name: 'A' }) // assignee
-                        .mockResolvedValueOnce({ name: 'CreatorName' }), // assigner
+                    findUnique: jest.fn().mockResolvedValue({ name: 'CreatorName' }),
                 },
             } as never),
         );
@@ -207,7 +240,7 @@ describe('createTask', () => {
 
 describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
     it('passes fromStatus from the pre-fetch into the automation event payload', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(txStub()));
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'TASK', controlId: null,
         } as never);
@@ -227,7 +260,7 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
     });
 
     it('throws notFound when the task does not exist', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(txStub()));
         mockGetById.mockResolvedValueOnce(null as never);
 
         await expect(
@@ -236,7 +269,7 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
     });
 
     it('blocks RESOLVED for AUDIT_FINDING without controlId AND without CONTROL/FRAMEWORK link', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(txStub()));
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'AUDIT_FINDING', controlId: null,
         } as never);
@@ -282,7 +315,7 @@ describe('assignTask', () => {
     });
 
     it('throws notFound when repo returns null (cross-tenant id)', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(txStub()));
         mockAssign.mockResolvedValueOnce(null as never);
 
         await expect(
@@ -299,7 +332,7 @@ describe('addTaskComment — Epic C.5 sanitisation', () => {
     });
 
     it('sanitises body BEFORE the repository write', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(txStub()));
 
         await addTaskComment(
             makeRequestContext('EDITOR'),

@@ -26,6 +26,19 @@ jest.mock('@/lib/db-context', () => {
             // stub it to null so reconciliation no-ops in this unit test.
             return callback({
                 task: { findFirst: jest.fn().mockResolvedValue(null) },
+                // Task writes now resolve body-supplied user ids against an
+                // ACTIVE membership before persisting; return the caller so
+                // the validation passes in this unit context.
+                tenantMembership: {
+                    // Echo back whatever ids were asked about, so membership
+                    // validation passes regardless of the fixture's user ids.
+                    findMany: jest.fn().mockImplementation(async (args: never) => {
+                        const ids = (args as { where?: { userId?: { in?: string[] } } })
+                            ?.where?.userId?.in ?? [];
+                        return ids.map((userId: string) => ({ userId }));
+                    }),
+                    findFirst: jest.fn().mockResolvedValue({ user: { email: 'a@b.com', name: 'A' } }),
+                },
             } as unknown);
         }),
     };

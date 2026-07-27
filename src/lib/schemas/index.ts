@@ -522,6 +522,26 @@ export const UpdateAuditSchema = z.object({
 
 // ─── Tasks (Unified Work Items) ───
 
+/**
+ * A due-date on the wire is EITHER a calendar date (`YYYY-MM-DD`) or a full
+ * ISO-8601 timestamp.
+ *
+ * `z.string().datetime()` alone is wrong here: the shared DatePicker
+ * serialises with `toYMD()`, whose documented wire format is `YYYY-MM-DD`,
+ * so a bare `.datetime()` would 400 every due-date the UI sets. A bare
+ * `z.string()` is the other extreme — it lets garbage reach `new Date(...)`
+ * and surface as a 500. This accepts exactly the two shapes actually sent
+ * and rejects everything else at the boundary.
+ */
+const isoDateOrDateTime = z
+    .string()
+    .refine(
+        (v) =>
+            (/^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{4}-\d{2}-\d{2}T/.test(v)) &&
+            !Number.isNaN(Date.parse(v)),
+        { message: 'Must be a YYYY-MM-DD date or an ISO-8601 date-time' },
+    );
+
 export const CreateTaskSchema = z.object({
     title: z.string().min(1).max(500),
     type: z.enum(['AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK']).optional().default('TASK'),
@@ -529,9 +549,7 @@ export const CreateTaskSchema = z.object({
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     source: z.enum(['MANUAL', 'TEMPLATE', 'POLICY_REVIEW', 'AUDIT', 'INTEGRATION']).optional(),
-    // .datetime() so a garbage value is a 400 at the boundary rather
-    // than a Postgres cast error surfacing as a 500 from `new Date(...)`.
-    dueAt: z.string().datetime().nullable().optional(),
+    dueAt: isoDateOrDateTime.nullable().optional(),
     assigneeUserId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     controlId: z.string().nullable().optional(),
@@ -546,9 +564,7 @@ export const UpdateTaskSchema = z.object({
     type: z.enum(['TASK', 'AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT']).optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
-    // .datetime() so a garbage value is a 400 at the boundary rather
-    // than a Postgres cast error surfacing as a 500 from `new Date(...)`.
-    dueAt: z.string().datetime().nullable().optional(),
+    dueAt: isoDateOrDateTime.nullable().optional(),
     controlId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
@@ -619,7 +635,7 @@ export const BulkTaskStatusSchema = z.object({
 
 export const BulkTaskDueDateSchema = z.object({
     taskIds: z.array(z.string().min(1)).min(1).max(100),
-    dueAt: z.string().datetime().nullable(),
+    dueAt: isoDateOrDateTime.nullable(),
 }).strip();
 
 // ─── Asset bulk actions (canonical BulkActionBar rollout) ───
