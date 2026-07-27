@@ -104,12 +104,30 @@ describe('TP-6 — create-form pending-link failures are not swallowed', () => {
         expect(src).not.toMatch(/\.catch\(\s*\(\)\s*=>\s*\{\s*(\/\*[^*]*\*\/\s*)?\}\s*\)/);
     });
 
-    it('collects failed links and surfaces them (toast + throw)', () => {
-        // The link loop must inspect each response and, on any failure,
-        // both toast AND throw so the form does not report clean success.
+    it('collects failed links and surfaces them without trapping the user', () => {
+        // The link loop must inspect each response and surface any failure.
         expect(src).toMatch(/failedLinks/);
         expect(src).toMatch(/if\s*\(\s*!\s*linkRes\.ok\s*\)/);
-        expect(src).toMatch(/toast\.error\(/);
+        // A toast of EITHER severity counts as surfacing. The partial case
+        // uses `warning`, not `error`: the task itself was created.
+        expect(src).toMatch(/toast\.(error|warning)\(/);
+
+        // It must NOT throw on the partial-success path. Throwing kept the
+        // modal open over an ALREADY-CREATED task with a submittable form
+        // and no route to it, so pressing the button again minted a
+        // duplicate. The flow now completes through `onSuccess`, which
+        // closes the modal and navigates to the new task — the page where
+        // the missing links can actually be added.
+        const partialBlock = src.slice(
+            src.indexOf('if (failedLinks.length > 0)'),
+        );
+        const partialEnd = partialBlock.indexOf('telemetry.trackSuccess');
+        expect(partialEnd).toBeGreaterThan(-1);
+        const partialBody = partialBlock.slice(0, partialEnd);
+        expect(partialBody).not.toMatch(/throw\s+new\s+Error/);
+        expect(partialBlock).toMatch(/onSuccess\(task\)/);
+
+        // The hard-failure path (create itself failed) still throws.
         expect(src).toMatch(/throw\s+new\s+Error/);
     });
 });

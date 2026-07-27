@@ -108,11 +108,35 @@ interface TaskListItem {
     dueAt: string | null;
     createdAt: string;
     updatedAt: string;
-    assignee: { name: string } | null;
+    /**
+     * The FULL shape the server sends (`assignee: { select: { id, name,
+     * email } }` in WorkItemRepository's list select), not just the field
+     * the table column happens to render.
+     *
+     * This was declared as `{ name: string } | null`, which was a lie in
+     * two directions: `name` is nullable, and `id`/`email` are present.
+     * `assigneeOptionsFromTasks` needs both of those, so the call site
+     * papered over the mismatch with an `as unknown as ...` cast — which
+     * silenced exactly the check that would have caught the select and
+     * the interface drifting apart. Declaring the real shape lets the
+     * cast go and restores that coupling.
+     */
+    assignee: { id: string; name: string | null; email: string | null } | null;
     assigneeUserId: string | null;
     // TP-6 — the directly-linked control (FK), for the filter's
     // runtime-derived options.
-    control: { id: string; code: string | null; name: string } | null;
+    /**
+     * Also the full server shape (`control: { select: { id, code, name,
+     * annexId } }`). `annexId` was missing from this declaration and
+     * `name` was marked non-null; the filter helper reads both, and the
+     * removed `as unknown as` cast is what let the two drift apart.
+     */
+    control: {
+        id: string;
+        code: string | null;
+        name: string | null;
+        annexId: string | null;
+    } | null;
     /**
      * Only populated in the Deleted view — `listDeleted` selects these
      * two extra columns, the live list does not (they would be null on
@@ -371,7 +395,7 @@ function TasksPageInner({
     const liveFilters = useMemo(
         () =>
             buildTaskFilters(
-                tasks as unknown as Parameters<typeof buildTaskFilters>[0],
+                tasks,
                 (k, v) => t(k as Parameters<typeof t>[0], v as Parameters<typeof t>[1]),
                 (k) => tGroup(k as Parameters<typeof tGroup>[0]),
             ),
@@ -576,7 +600,18 @@ function TasksPageInner({
                         assigneeUserId: value || null,
                         // Show the picked assignee's name (not the raw user id);
                         // server revalidation reconciles the canonical value.
-                        assignee: value ? { name: label || value } : null,
+                        //
+                        // `id` is populated, not omitted: the assignee FILTER
+                        // builds its options from `assignee.id` and skips any
+                        // row without one, so a name-only optimistic object
+                        // made the just-assigned person disappear from the
+                        // filter for the length of the revalidation. `email`
+                        // is genuinely unknown here — the picker only hands
+                        // back id + display name — so it is null until the
+                        // server answers.
+                        assignee: value
+                            ? { id: value, name: label || value, email: null }
+                            : null,
                     };
                 if (action === 'due') return { ...task, dueAt: value || null };
                 return task;
@@ -1198,7 +1233,33 @@ function TasksPageInner({
                     }}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={setColumnVisibility}
-                    selectionEnabled={appPermissions.tasks.edit && !showDeleted}
+                    /*
+                     * NOT bound to the viewer's permissions.
+                     *
+                     * The DataTable primitive gives single-click to
+                     * SELECTION when selection is on, and to the row action
+                     * when it is off (see the onClick/onDoubleClick pair in
+                     * table.tsx). Binding `selectionEnabled` to
+                     * `tasks.edit` therefore made the row's click model
+                     * change with the viewer's ROLE: an editor
+                     * single-clicked to select and double-clicked to
+                     * navigate, while a reader single-clicked to navigate —
+                     * two different interaction models for the same table,
+                     * neither discoverable, on a page whose title cell
+                     * meanwhile always opened the quick-view.
+                     *
+                     * Every other list page (risks, controls, assets,
+                     * policies, evidence, vendors) omits this prop and takes
+                     * the default `true`, so tasks was the lone outlier.
+                     * Matching them makes the interaction identical for all
+                     * roles. The bulk BAR stays permission-gated below —
+                     * selection is a viewing aid; acting on it is not.
+                     *
+                     * `!showDeleted` remains: the Deleted view has no bulk
+                     * actions, so selection there would be an affordance
+                     * with nothing behind it.
+                     */
+                    selectionEnabled={!showDeleted}
                     selectedRows={Object.fromEntries(
                         Array.from(selected).map((id) => [id, true]),
                     )}
@@ -1206,7 +1267,7 @@ function TasksPageInner({
                         setSelected(new Set(rows.map((r) => r.original.id)))
                     }
                     selectionControls={() => (
-                        <BulkActionBar
+                        !appPermissions.tasks.edit ? null : <BulkActionBar
                             actions={taskBulkActions}
                             onApply={handleBulkApply}
                             applying={bulkMutation.isMutating}

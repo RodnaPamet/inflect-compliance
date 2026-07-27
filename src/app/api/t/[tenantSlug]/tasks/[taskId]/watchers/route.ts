@@ -23,7 +23,13 @@ export const GET = withApiErrorHandling(requirePermission<TaskWatcherParams>('ta
 
 // POST — add a watcher. Body `userId` defaults to the current user so
 // the detail-page "Watch" toggle can POST an empty body.
-export const POST = withApiErrorHandling(requirePermission<TaskWatcherParams>('tasks.edit', async (req: NextRequest, { params }, ctx) => {
+//
+// Gated on `tasks.view`, not `tasks.edit`: watching yourself is a personal
+// subscription and a READER must be able to do it. Watching SOMEONE ELSE is
+// still a write, and `addTaskWatcher` escalates to the write gate when the
+// target is not the caller — the coarse HTTP gate opens the door, the
+// usecase makes the finer decision (same split as the bulk-delete route).
+export const POST = withApiErrorHandling(requirePermission<TaskWatcherParams>('tasks.view', async (req: NextRequest, { params }, ctx) => {
     const { taskId } = await params;
     const body = await parseJsonBody(req, AddWatcherSchema);
     const watcher = await addTaskWatcher(ctx, taskId, body.userId ?? ctx.userId);
@@ -31,8 +37,9 @@ export const POST = withApiErrorHandling(requirePermission<TaskWatcherParams>('t
 }));
 
 // DELETE — remove a watcher. `?userId=` selects which watcher to drop;
-// omitted = the current user unwatches themselves.
-export const DELETE = withApiErrorHandling(requirePermission<TaskWatcherParams>('tasks.edit', async (req: NextRequest, { params }, ctx) => {
+// omitted = the current user unwatches themselves. Same view-gate + usecase
+// escalation as POST above.
+export const DELETE = withApiErrorHandling(requirePermission<TaskWatcherParams>('tasks.view', async (req: NextRequest, { params }, ctx) => {
     const { taskId } = await params;
     const userId = req.nextUrl.searchParams.get('userId') ?? ctx.userId;
     await removeTaskWatcher(ctx, taskId, userId);

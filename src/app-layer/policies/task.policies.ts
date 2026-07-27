@@ -44,6 +44,37 @@ function granularTasksDenied(
  * NOTE: `ctx.permissions.canRead` is true for EVERY built-in role, so before
  * the granular check this assert could never deny. It now genuinely enforces
  * for custom roles that revoke `tasks.view`.
+ *
+ * ── Read scope is TENANT-WIDE, and that is deliberate ──────────────────
+ *
+ * This gate answers "may you read tasks?", not "may you read THIS task?".
+ * There is no assignee / reviewer / watcher / creator row-scoping: any
+ * member holding `tasks.view` reads every task in the tenant. Recording
+ * the reasoning so this is not mistaken for an oversight:
+ *
+ *   - A task here is a unit of COMPLIANCE REMEDIATION, not private work.
+ *     It is the evidence that a finding was closed, a control gap was
+ *     fixed, or an incident was handled. Auditors (the AUDITOR role
+ *     exists precisely for this) must be able to see the whole
+ *     remediation trail; a per-user view would make the register
+ *     unauditable.
+ *   - Tenant-wide reads are load-bearing for surfaces that aggregate
+ *     across all tasks regardless of who owns them: `getTaskMetrics`
+ *     (the KPI strip), control/asset/risk task rollups, coverage
+ *     reporting, and audit-pack exports. Row-scoping the read would
+ *     silently skew every one of those numbers per-viewer.
+ *   - Tenant isolation is the real confidentiality boundary and is
+ *     enforced independently, in depth: Postgres RLS plus a `tenantId`
+ *     predicate on every repository query.
+ *
+ * Narrowing this is a PRODUCT decision, not a refactor — it would need a
+ * scoping rule (assignee ∪ reviewer ∪ watcher ∪ creator, presumably with
+ * an "all tasks" permission for ADMIN/AUDITOR), matching predicates on
+ * the list, detail, metrics and rollup paths, and a decision about what
+ * the aggregate surfaces above should report to a scoped viewer. Do not
+ * bolt it onto this function alone: a gate that denies detail reads while
+ * the list, KPI counts and control rollups still expose title and status
+ * would leak the same information through a different door.
  */
 export function assertCanReadTasks(ctx: RequestContext) {
     if (!ctx.permissions.canRead || granularTasksDenied(ctx, 'view')) {

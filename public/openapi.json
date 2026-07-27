@@ -4535,7 +4535,9 @@
               "TEMPLATE",
               "POLICY_REVIEW",
               "AUDIT",
-              "INTEGRATION"
+              "INTEGRATION",
+              "EVIDENCE_EXPIRY",
+              "RISK_MONITOR"
             ]
           },
           "dueAt": {
@@ -4557,6 +4559,12 @@
             ]
           },
           "controlId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "findingId": {
             "type": [
               "string",
               "null"

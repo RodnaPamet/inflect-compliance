@@ -125,6 +125,40 @@ async function assertActiveMembers(
 }
 
 /**
+ * Assert a direct FK reference (`Task.controlId` / `Task.findingId`) points
+ * at a row in THIS tenant.
+ *
+ * Same reasoning as `assertLinkTargetInTenant`, for the scalar FKs rather
+ * than the polymorphic link row: Prisma's FK constraint is checked below
+ * RLS, so a foreign id satisfies the constraint and persists — surfacing
+ * later as a null relation, and in the meantime acting as an existence
+ * oracle for another tenant's ids.
+ *
+ * A null/undefined id is a no-op (clearing the reference is legitimate).
+ */
+async function assertRefInTenant(
+    db: PrismaTx,
+    ctx: RequestContext,
+    model: 'control' | 'finding',
+    id: string | null | undefined,
+) {
+    if (!id) return;
+    const delegate = (db as unknown as Record<string, {
+        findFirst: (a: unknown) => Promise<{ id: string } | null>;
+    }>)[model];
+    const found = await delegate.findFirst({
+        where: { id, tenantId: ctx.tenantId },
+        select: { id: true },
+    });
+    if (!found) {
+        throw badRequest(
+            'INVALID_REFERENCE',
+            `Referenced ${model} not found or belongs to a different tenant`,
+        );
+    }
+}
+
+/**
  * Assert a TaskLink target exists in this tenant. TaskLink.entityId carries
  * no foreign key at all (prisma/schema/tasks.prisma), so this is the ONLY
  * thing standing between a link row and an arbitrary cross-tenant id.
@@ -284,6 +318,15 @@ export async function createTask(ctx: RequestContext, input: {
         // ctx.tenantId on write — resolve them against an ACTIVE membership
         // first so a foreign id cannot be persisted.
         await assertActiveMembers(db, ctx, [input.assigneeUserId, input.reviewerUserId]);
+        // `controlId` / `findingId` are direct FKs written straight onto the
+        // row. Prisma's FK check runs BELOW row-level security, so a foreign
+        // id inserts cleanly and only shows up later as a null relation —
+        // the same hole `assertLinkTargetInTenant` closes for TaskLink.
+        // `controlId` has been reachable from the public create body all
+        // along; `findingId` becomes reachable now that the schema stops
+        // stripping it, so both are resolved against ctx.tenantId here.
+        await assertRefInTenant(db, ctx, 'control', input.controlId);
+        await assertRefInTenant(db, ctx, 'finding', input.findingId);
 
         const task = await WorkItemRepository.create(db, ctx, input);
 
@@ -392,6 +435,12 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
         // with ctx.tenantId on write — resolve it against an ACTIVE
         // membership first (createTask does the same for assignee+reviewer).
         await assertActiveMembers(db, ctx, [patch.reviewerUserId]);
+        // Re-point of the control FK is body-supplied too — see the note on
+        // `assertRefInTenant`. Only checked when the patch actually carries
+        // the field, so an unrelated PATCH does not pay for a lookup.
+        if (patch.controlId !== undefined) {
+            await assertRefInTenant(db, ctx, 'control', patch.controlId);
+        }
         // Epic C.5 — sanitise the same two free-text fields on edit; an
         // update path that skipped it would reopen exactly what create closes.
         if (patch.title !== undefined) patch.title = sanitizePlainText(patch.title);
@@ -431,6 +480,37 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
             // the sole sign-off. `assigneeUserId` is not part of this patch
             // shape, so the effective assignee is the stored one.
             assertReviewerIsNotAssignee(patch.reviewerUserId, existing.assigneeUserId);
+        }
+
+        // Type-relevance re-check on edit.
+        //
+        // `validateTypeRelevance` gates the RESOLVED/CLOSED transition: you
+        // cannot close an AUDIT_FINDING / CONTROL_GAP / INCIDENT task
+        // without a control or the right kind of link. But `type` and
+        // `controlId` stayed editable AFTER the close with no re-check, so
+        // a closed task could be edited into exactly the combination the
+        // close would have rejected — the control is enforced once and
+        // then editable out from under itself.
+        //
+        // Scoped to tasks that are ALREADY terminal, deliberately. Running
+        // it on every type/controlId edit would also block the ordinary
+        // staging order on an OPEN task (set the type, then attach the
+        // link) and would contradict `createTask`, which permits creating
+        // such a task unlinked precisely so the link can follow. On an
+        // open task the close gate is still ahead of you; on a closed one
+        // it is behind you, and this is the only thing left.
+        const changesTypeRelevantFields =
+            (patch.type !== undefined && patch.type !== existing.type) ||
+            (patch.controlId !== undefined && patch.controlId !== existing.controlId);
+        if (changesTypeRelevantFields && isTerminalStatus(existing.status)) {
+            // Validate the POST-patch combination, not the stored one.
+            await validateTypeRelevance(
+                db,
+                ctx,
+                taskId,
+                (patch.type ?? existing.type) as TaskType,
+                patch.controlId !== undefined ? patch.controlId : existing.controlId,
+            );
         }
 
         const task = await WorkItemRepository.update(db, ctx, taskId, patch);
@@ -1221,8 +1301,24 @@ export async function listTaskWatchers(ctx: RequestContext, taskId: string) {
     return runInTenantContext(ctx, (db) => TaskWatcherRepository.listByTask(db, ctx, taskId));
 }
 
+/**
+ * Watching is a personal SUBSCRIPTION, not a mutation of the task: it
+ * changes what lands in your notification feed, nothing about the work
+ * item itself. Gating it on write meant a READER — who can open the task
+ * and read every comment on it — could not ask to be told when it moved.
+ * The watcher card rendered for them and was permanently inert.
+ *
+ * So the gate splits by TARGET, not by action:
+ *   - watching YOURSELF needs read access only (self-service subscribe);
+ *   - watching SOMEONE ELSE stays a write, because it puts notifications
+ *     into another person's feed without their say-so.
+ */
 export async function addTaskWatcher(ctx: RequestContext, taskId: string, userId: string) {
-    assertCanWriteTasks(ctx);
+    if (userId === ctx.userId) {
+        assertCanReadTasks(ctx);
+    } else {
+        assertCanWriteTasks(ctx);
+    }
     const result = await runInTenantContext(ctx, async (db) => {
         await assertTaskInTenant(db, ctx, taskId);
         await assertActiveMembers(db, ctx, [userId]);
@@ -1232,8 +1328,13 @@ export async function addTaskWatcher(ctx: RequestContext, taskId: string, userId
     return result;
 }
 
+/** Mirror of `addTaskWatcher`: unsubscribing yourself needs read; removing someone else is a write. */
 export async function removeTaskWatcher(ctx: RequestContext, taskId: string, userId: string) {
-    assertCanWriteTasks(ctx);
+    if (userId === ctx.userId) {
+        assertCanReadTasks(ctx);
+    } else {
+        assertCanWriteTasks(ctx);
+    }
     const outcome = await runInTenantContext(ctx, async (db) => {
         const result = await TaskWatcherRepository.remove(db, ctx, taskId, userId);
         if (!result) throw notFound('Watcher not found');
