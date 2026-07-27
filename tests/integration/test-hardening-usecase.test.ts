@@ -124,16 +124,26 @@ describeFn('test-hardening usecases (real DB)', () => {
         await expect(linkEvidenceToRun(ctx, 'nope', { kind: 'LINK' })).rejects.toThrow(/not found/i);
     });
 
-    it('linkEvidenceToRun FILE with unknown fileId proceeds with null hash', async () => {
-        const runId = await makeRun();
-        const link = await linkEvidenceToRun(ctx, runId, { kind: 'FILE', fileId: 'missing-file' });
-        expect(link.kind).toBe('FILE');
-        expect(link.sha256Hash).toBeNull(); // no FileRecord → no frozen hash
-        expect(link.fileId).toBe('missing-file');
+    it('linkEvidenceToRun REJECTS a FILE link whose fileId does not resolve in the tenant', async () => {
+        // Fail-closed: an unresolvable FILE link can never be integrity-verified,
+        // so it must be rejected at link time rather than stored with a null hash
+        // that later scores VERIFIED. (Uses a non-completed run to isolate the
+        // fileId check from the completed-run guard.)
+        const runId = await makeRun({ status: 'PLANNED', result: null, executedAt: null });
+        await expect(
+            linkEvidenceToRun(ctx, runId, { kind: 'FILE', fileId: 'missing-file' }),
+        ).rejects.toThrow(/does not exist in this tenant/i);
+    });
+
+    it('linkEvidenceToRun rejects adding evidence to a COMPLETED run', async () => {
+        const runId = await makeRun(); // COMPLETED by default
+        await expect(
+            linkEvidenceToRun(ctx, runId, { kind: 'LINK', url: 'https://x' }),
+        ).rejects.toThrow(/completed/i);
     });
 
     it('linkEvidenceToRun LINK kind creates without hashing', async () => {
-        const runId = await makeRun();
+        const runId = await makeRun({ status: 'PLANNED', result: null, executedAt: null });
         const link = await linkEvidenceToRun(ctx, runId, { kind: 'LINK', url: 'https://x' });
         expect(link.kind).toBe('LINK');
         expect(link.sha256Hash).toBeNull();
@@ -141,7 +151,7 @@ describeFn('test-hardening usecases (real DB)', () => {
     });
 
     it('linkEvidenceToRun FILE with a real FileRecord freezes its sha256 on the link (PR-R)', async () => {
-        const runId = await makeRun();
+        const runId = await makeRun({ status: 'PLANNED', result: null, executedAt: null });
         const file = await prisma.fileRecord.create({
             data: {
                 tenantId: TENANT,
@@ -198,9 +208,11 @@ describeFn('test-hardening usecases (real DB)', () => {
             data: { tenant: { connect: { id: TENANT } }, testRun: { connect: { id: runId } }, kind: 'FILE', fileId: 'missing2', createdBy: { connect: { id: ctx.userId } } },
         });
         const res = await verifyRunEvidence(ctx, runId);
-        // No stored hash → nothing to compare → unverifiable (null), not a failure.
+        // No stored hash → nothing to compare → unverifiable. This no longer
+        // folds into a PASS: an unverifiable FILE link drops integrityOk to
+        // false (the fail-open path is closed).
         expect(res.unverifiable).toBe(1);
-        expect(res.integrityOk).toBe(true);
+        expect(res.integrityOk).toBe(false);
     });
 
     // ── snapshotTestRun ──────────────────────────────────────────────
@@ -256,9 +268,13 @@ describeFn('test-hardening usecases (real DB)', () => {
         await prisma.controlTestEvidenceLink.create({
             data: { tenant: { connect: { id: TENANT } }, testRun: { connect: { id: runId } }, kind: 'FILE', fileId: 'f1', sha256Hash: 'h1', createdBy: { connect: { id: ctx.userId } } },
         });
-        const out = await exportTestEvidenceBundle(ctx, {});
-        expect(Array.isArray(out)).toBe(true);
-        const rows = out as Array<Record<string, unknown>>;
+        const out = (await exportTestEvidenceBundle(ctx, {})) as {
+            rows: Array<Record<string, unknown>>;
+            truncated: boolean;
+        };
+        expect(Array.isArray(out.rows)).toBe(true);
+        expect(out.truncated).toBe(false);
+        const rows = out.rows;
         expect(rows.length).toBeGreaterThanOrEqual(1);
         expect(rows[0].evidenceHashes).toContain('f1:h1');
     });
@@ -280,10 +296,10 @@ describeFn('test-hardening usecases (real DB)', () => {
 
     it('exportTestEvidenceBundle honours controlId + periodDays filters', async () => {
         await makeRun();
-        const rows = (await exportTestEvidenceBundle(ctx, {
+        const { rows } = (await exportTestEvidenceBundle(ctx, {
             controlId,
             periodDays: 30,
-        })) as Array<unknown>;
+        })) as { rows: unknown[] };
         expect(rows.length).toBeGreaterThanOrEqual(1);
     });
 });

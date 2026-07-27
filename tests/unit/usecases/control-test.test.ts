@@ -144,7 +144,11 @@ describe('createTestPlan — Epic D.2 sanitisation', () => {
     });
 
     it('sanitises name + description + every step instruction + every step expectedOutput', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        // createTestPlan now validates the path controlId in-tenant before
+        // stamping — the mock db must resolve it.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ control: { findFirst: async () => ({ id: 'c1' }) } } as never),
+        );
 
         await createTestPlan(makeRequestContext('EDITOR'), 'c1', {
             name: '<b>Plan A</b>',
@@ -402,7 +406,7 @@ describe('unlinkEvidenceFromRun — tenant-scoped lookup', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await expect(
-            unlinkEvidenceFromRun(makeRequestContext('EDITOR'), 'tenant-B-link'),
+            unlinkEvidenceFromRun(makeRequestContext('EDITOR'), 'tenant-B-run', 'tenant-B-link'),
         ).rejects.toThrow(/Evidence link not found/);
         // Regression: a refactor that skipped the tenant check would
         // let an EDITOR in tenant A unlink an evidence row in tenant B
@@ -428,6 +432,7 @@ describe('createAutomatedTestRun', () => {
             controlId: 'c1',
             frequency: 'WEEKLY',
             ownerUserId: 'owner-1',
+            status: 'ACTIVE',
         } as never);
 
         await createAutomatedTestRun(makeRequestContext('EDITOR'), 'plan-1', {

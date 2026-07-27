@@ -168,12 +168,34 @@ export async function emitTestEvidenceLinked(db: PrismaTx, ctx: RequestContext, 
     });
 }
 
-export async function emitTestEvidenceUnlinked(db: PrismaTx, ctx: RequestContext, linkId: string, testRunId: string) {
+export async function emitTestEvidenceUnlinked(
+    db: PrismaTx,
+    ctx: RequestContext,
+    linkId: string,
+    testRunId: string,
+    // The unlink hard-deletes the row (incl. the frozen sha256Hash), so the
+    // destroyed fields are recorded here — the deletion stays reconstructible
+    // from the audit trail even though the link row is gone.
+    destroyed?: { kind: string; fileId: string | null; sha256Hash: string | null },
+) {
     await logEvent(db, ctx, {
         action: 'TEST_EVIDENCE_UNLINKED',
         entityType: 'ControlTestEvidenceLink',
         entityId: linkId,
         details: `Evidence unlinked from test run ${testRunId}`,
+        detailsJson: {
+            category: 'relationship',
+            testRunId,
+            ...(destroyed
+                ? {
+                      destroyedLink: {
+                          kind: destroyed.kind,
+                          fileId: destroyed.fileId,
+                          sha256Hash: destroyed.sha256Hash,
+                      },
+                  }
+                : {}),
+        },
     });
     await emitAutomationEvent(ctx, {
         event: 'TEST_EVIDENCE_UNLINKED',

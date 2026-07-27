@@ -10,6 +10,7 @@ import {
     assertCanManageTestPlans,
     assertCanExecuteTests,
     assertCanLinkTestEvidence,
+    assertCanBulkManageTestPlans,
 } from '../policies/test.policies';
 import {
     emitTestPlanCreated,
@@ -23,7 +24,7 @@ import {
     emitTestEvidenceUnlinked,
 } from '../events/test.events';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { computeNextDueAt } from '../utils/cadence';
@@ -279,6 +280,27 @@ export async function attestControlTested(
 //   the read sites (see `audits/readiness`-style consumers) rather
 //   than over-unify the shapes.
 
+/** Upper bound on evidence links accepted in one automated-run payload. */
+const MAX_AUTOMATION_EVIDENCE_LINKS = 50;
+
+/**
+ * Reject an ownerUserId that is not an ACTIVE member of the tenant. The plan
+ * owner is auto-assigned the CONTROL_GAP task on a FAIL, so a foreign/inactive
+ * owner would misroute (or leak) that task. No-op for a null owner.
+ */
+async function assertOwnerIsActiveMember(
+    db: PrismaTx,
+    ctx: RequestContext,
+    ownerUserId: string | null | undefined,
+): Promise<void> {
+    if (!ownerUserId) return;
+    const member = await db.tenantMembership.findFirst({
+        where: { userId: ownerUserId, tenantId: ctx.tenantId, status: 'ACTIVE' },
+        select: { id: true },
+    });
+    if (!member) throw badRequest('Owner is not an active member of this tenant');
+}
+
 export async function createTestPlan(ctx: RequestContext, controlId: string, input: {
     name: string;
     description?: string | null;
@@ -306,6 +328,16 @@ export async function createTestPlan(ctx: RequestContext, controlId: string, inp
         })),
     };
     const result = await runInTenantContext(ctx, async (db) => {
+        // The path controlId and the owner must belong to THIS tenant before we
+        // stamp the plan — the owner is auto-assigned the CONTROL_GAP task on a
+        // FAIL, so a foreign owner would leak a task cross-tenant.
+        const control = await db.control.findFirst({
+            where: { id: controlId, tenantId: ctx.tenantId },
+            select: { id: true },
+        });
+        if (!control) throw badRequest('Control not found in this tenant');
+        await assertOwnerIsActiveMember(db, ctx, input.ownerUserId);
+
         const plan = await TestPlanRepository.create(db, ctx, controlId, sanitisedInput);
 
         // Compute initial nextDueAt
@@ -370,6 +402,7 @@ export async function updateTestPlan(ctx: RequestContext, planId: string, patch:
         }
     }
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertOwnerIsActiveMember(db, ctx, patch.ownerUserId);
         const existing = await TestPlanRepository.getById(db, ctx, planId);
         if (!existing) throw notFound('Test plan not found');
 
@@ -437,6 +470,12 @@ export async function startTestRun(ctx: RequestContext, runId: string) {
         const run = await TestRunRepository.getById(db, ctx, runId);
         if (!run) throw notFound('Test run not found');
         if (run.status === 'COMPLETED') throw badRequest('Test run is already completed');
+        // A run must not proceed (and later attest the control) on a plan that
+        // is no longer ACTIVE — createTestRun already guards this at creation.
+        const plan = await TestPlanRepository.getById(db, ctx, run.testPlanId);
+        if (plan && plan.status !== 'ACTIVE') {
+            throw badRequest('Cannot run a test on a paused or archived plan');
+        }
         if (run.status === 'RUNNING') return run;
         return TestRunRepository.start(db, ctx, runId);
     });
@@ -465,6 +504,12 @@ export async function completeTestRun(ctx: RequestContext, runId: string, input:
         const run = await TestRunRepository.getById(db, ctx, runId);
         if (!run) throw notFound('Test run not found');
         if (run.status === 'COMPLETED') throw badRequest('Test run is already completed');
+        // Completing a run attests the control (Control.lastTested + cadence
+        // roll) — refuse to attest on a plan that is no longer ACTIVE.
+        const runPlan = await TestPlanRepository.getById(db, ctx, run.testPlanId);
+        if (runPlan && runPlan.status !== 'ACTIVE') {
+            throw badRequest('Cannot complete a test on a paused or archived plan');
+        }
 
         // 1. Complete the run
         const completedRun = await TestRunRepository.complete(db, ctx, runId, sanitisedInput);
@@ -622,19 +667,48 @@ export async function linkEvidenceToRun(ctx: RequestContext, runId: string, inpu
         const run = await TestRunRepository.getById(db, ctx, runId);
         if (!run) throw notFound('Test run not found');
 
+        // A COMPLETED run is frozen audit evidence — its verdict is immutable
+        // (completeTestRun rejects a second completion) and so is the evidence
+        // backing it. Reject post-completion evidence mutation; an amendment
+        // must fork a new run via retestFromRun.
+        if (run.status === 'COMPLETED') {
+            throw forbidden(
+                'This test run is completed — its evidence is frozen. Retest to attach new evidence.',
+            );
+        }
+
         // PR-R — freeze the file's integrity hash at link time for FILE-kind
         // evidence, sourced from FileRecord.sha256 (the trustworthy checksum
         // computed at upload). verifyRunEvidence later recomputes the bytes from
         // storage and compares against this frozen value, so tampering is
-        // detectable — the previously-dead linkEvidenceWithHash never populated
-        // this, so integrity checks were trivially "ok".
+        // detectable.
         let sha256Hash: string | null = null;
-        if (input.kind === 'FILE' && input.fileId) {
+        if (input.kind === 'FILE') {
+            // A FILE link whose fileId does not resolve in the tenant can NEVER
+            // be integrity-verified — storing a null hash and linking anyway is
+            // the fail-open path where a foreign/missing fileId scored VERIFIED.
+            // Reject it instead.
+            if (!input.fileId) {
+                throw badRequest('A FILE evidence link requires a fileId.');
+            }
             const file = await db.fileRecord.findFirst({
                 where: { id: input.fileId, tenantId: ctx.tenantId },
                 select: { sha256: true },
             });
-            sha256Hash = file?.sha256 ?? null;
+            if (!file) {
+                throw badRequest('The referenced file does not exist in this tenant.');
+            }
+            sha256Hash = file.sha256 ?? null;
+        }
+
+        // An EVIDENCE link must reference a real tenant Evidence row — a foreign
+        // evidenceId was previously stamped blind.
+        if (input.kind === 'EVIDENCE' && input.evidenceId) {
+            const ev = await db.evidence.findFirst({
+                where: { id: input.evidenceId, tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            if (!ev) throw badRequest('The referenced evidence does not exist in this tenant.');
         }
 
         const link = await TestEvidenceRepository.link(db, ctx, {
@@ -650,18 +724,35 @@ export async function linkEvidenceToRun(ctx: RequestContext, runId: string, inpu
     return result;
 }
 
-export async function unlinkEvidenceFromRun(ctx: RequestContext, linkId: string) {
+export async function unlinkEvidenceFromRun(ctx: RequestContext, runId: string, linkId: string) {
     assertCanLinkTestEvidence(ctx);
 
     await runInTenantContext(ctx, async (db) => {
-        // Verify the link exists and belongs to this tenant
+        // Scope the link to the run in the URL — a link must not be deletable
+        // through an unrelated run's route (and the audit must name the run the
+        // link actually belonged to).
         const existing = await db.controlTestEvidenceLink.findFirst({
-            where: { id: linkId, tenantId: ctx.tenantId },
+            where: { id: linkId, testRunId: runId, tenantId: ctx.tenantId },
         });
-        if (!existing) throw notFound('Evidence link not found');
+        if (!existing) throw notFound('Evidence link not found on this run');
+
+        // Frozen audit evidence on a completed run cannot be removed.
+        const run = await TestRunRepository.getById(db, ctx, runId);
+        if (run?.status === 'COMPLETED') {
+            throw forbidden(
+                'This test run is completed — its evidence is frozen and cannot be removed.',
+            );
+        }
 
         await TestEvidenceRepository.unlink(db, ctx, linkId);
-        await emitTestEvidenceUnlinked(db, ctx, linkId, existing.testRunId);
+        // The row (incl. its frozen sha256Hash) is hard-deleted, so record the
+        // destroyed fields in the audit detail — the deletion stays
+        // reconstructible even though the link row is gone.
+        await emitTestEvidenceUnlinked(db, ctx, linkId, existing.testRunId, {
+            kind: existing.kind,
+            fileId: existing.fileId,
+            sha256Hash: existing.sha256Hash,
+        });
     });
     await bumpEntityCacheVersion(ctx, 'test');
 }
@@ -690,9 +781,23 @@ export async function createAutomatedTestRun(
 ) {
     assertCanExecuteTests(ctx);
 
+    // Sanitise notes at the top (like completeTestRun) — they land in the run
+    // row AND verbatim in the CONTROL_GAP task description below.
+    const notes = sanitizeOptional(input.notes);
+    if ((input.evidenceLinks?.length ?? 0) > MAX_AUTOMATION_EVIDENCE_LINKS) {
+        throw badRequest(
+            `At most ${MAX_AUTOMATION_EVIDENCE_LINKS} evidence links may be attached to an automated run.`,
+        );
+    }
+
     const result = await runInTenantContext(ctx, async (db) => {
         const plan = await TestPlanRepository.getById(db, ctx, planId);
         if (!plan) throw notFound('Test plan not found');
+        // This mints a COMPLETED verdict that attests the control (lastTested +
+        // both cadences roll) — never do that for a plan that is not ACTIVE.
+        if (plan.status !== 'ACTIVE') {
+            throw badRequest('Cannot record an automated run for a paused or archived plan');
+        }
 
         // Create run (starts as PLANNED)
         const run = await TestRunRepository.create(db, ctx, {
@@ -703,8 +808,8 @@ export async function createAutomatedTestRun(
         // Complete the run with result
         const completedRun = await TestRunRepository.complete(db, ctx, run.id, {
             result: input.result,
-            notes: input.notes || `Automated run from integration`,
-            findingSummary: input.result === 'FAIL' ? (input.notes || 'Automated check failed') : undefined,
+            notes: notes || `Automated run from integration`,
+            findingSummary: input.result === 'FAIL' ? (notes || 'Automated check failed') : undefined,
         });
 
         // Attest the control was exercised by this automated check — only on a
@@ -718,9 +823,31 @@ export async function createAutomatedTestRun(
             await TestPlanRepository.updateNextDueAt(db, ctx, plan.id, nextDue);
         }
 
-        // Link evidence if provided
+        // Link evidence if provided. FILE links freeze the integrity hash and
+        // must resolve in-tenant — same fail-closed rule as linkEvidenceToRun,
+        // so an automated run can't be born with an unverifiable FILE link that
+        // later scores VERIFIED. Resolve every FILE fileId in ONE query (no
+        // N+1) and map by id.
         if (input.evidenceLinks && input.evidenceLinks.length > 0) {
+            const fileIds = input.evidenceLinks
+                .filter((e) => e.kind === 'FILE')
+                .map((e) => e.fileId)
+                .filter((x): x is string => Boolean(x));
+            const files = fileIds.length > 0
+                ? await db.fileRecord.findMany({
+                      where: { id: { in: [...new Set(fileIds)] }, tenantId: ctx.tenantId },
+                      select: { id: true, sha256: true },
+                  })
+                : [];
+            const fileById = new Map(files.map((f) => [f.id, f]));
             for (const ev of input.evidenceLinks) {
+                let sha256Hash: string | null = null;
+                if (ev.kind === 'FILE') {
+                    if (!ev.fileId) throw badRequest('A FILE evidence link requires a fileId.');
+                    const file = fileById.get(ev.fileId);
+                    if (!file) throw badRequest('The referenced file does not exist in this tenant.');
+                    sha256Hash = file.sha256 ?? null;
+                }
                 await TestEvidenceRepository.link(db, ctx, {
                     testRunId: run.id,
                     kind: ev.kind,
@@ -728,6 +855,7 @@ export async function createAutomatedTestRun(
                     url: ev.url ?? null,
                     integrationResultId: ev.integrationResultId ?? input.integrationResultId ?? null,
                     note: ev.note ?? null,
+                    sha256Hash,
                 });
             }
         }
@@ -743,7 +871,7 @@ export async function createAutomatedTestRun(
                 await createTask(ctx, {
                     title: `Automated test failed: ${plan.name || 'Unknown plan'}`,
                     type: 'CONTROL_GAP',
-                    description: input.notes || 'An automated control test run failed and requires remediation.',
+                    description: notes || 'An automated control test run failed and requires remediation.',
                     severity: 'HIGH',
                     priority: 'P1',
                     source: 'INTEGRATION',
@@ -843,8 +971,10 @@ export async function bulkSetTestPlanStatus(
 
 /** Bulk soft-delete control test plans selected in the table action bar. */
 export async function bulkDeleteTestPlan(ctx: RequestContext, planIds: string[]) {
-    assertCanManageTestPlans(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    // Deleting the tenant's test program is an ADMIN action (matching the peer
+    // bulk registers) — not a plain write an EDITOR holds.
+    assertCanBulkManageTestPlans(ctx);
+    const result = await runInTenantContext(ctx, async (db) => {
         const rows = await db.controlTestPlan.findMany({
             where: { id: { in: planIds }, tenantId: ctx.tenantId },
             select: { id: true },
@@ -862,6 +992,9 @@ export async function bulkDeleteTestPlan(ctx: RequestContext, planIds: string[])
         }
         return { deleted: rows.length };
     });
+    // Bulk delete was the only bulk mutation not bumping the list-cache version.
+    await bumpEntityCacheVersion(ctx, 'test');
+    return result;
 }
 
 export async function bulkAssignTestPlan(
@@ -871,6 +1004,7 @@ export async function bulkAssignTestPlan(
 ) {
     assertCanManageTestPlans(ctx);
     const updated = await runInTenantContext(ctx, async (db) => {
+        await assertOwnerIsActiveMember(db, ctx, ownerUserId);
         const rows = await TestPlanRepository.listByIds(db, ctx, planIds);
         if (rows.length === 0) return 0;
         await TestPlanRepository.bulkUpdate(db, ctx, planIds, {

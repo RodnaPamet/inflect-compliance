@@ -44,7 +44,7 @@ import {
 } from '@/app-layer/usecases/due-planning';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
-import { makeRequestContext } from '../../helpers/make-context';
+import { makeRequestContext, READER_APP_PERMISSIONS } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
@@ -73,6 +73,12 @@ describe('getDueQueue', () => {
                 canAdmin: false,
                 canAudit: false,
                 canExport: false,
+            },
+            // assertCanReadTests now gates on appPermissions.tests.view
+            // (custom-role-aware), so deny it there too.
+            appPermissions: {
+                ...READER_APP_PERMISSIONS,
+                tests: { view: false, create: false, execute: false },
             },
         });
         await expect(getDueQueue(ctx)).rejects.toThrow(/permission/i);
@@ -192,6 +198,12 @@ describe('getTestDashboardMetrics — rate maths', () => {
                 canAudit: false,
                 canExport: false,
             },
+            // assertCanReadTests now gates on appPermissions.tests.view
+            // (custom-role-aware), so deny it there too.
+            appPermissions: {
+                ...READER_APP_PERMISSIONS,
+                tests: { view: false, create: false, execute: false },
+            },
         });
         await expect(getTestDashboardMetrics(ctx)).rejects.toThrow(/permission/i);
     });
@@ -293,6 +305,12 @@ describe('listAllTestPlans — filter translation', () => {
                 canAdmin: false,
                 canAudit: false,
                 canExport: false,
+            },
+            // assertCanReadTests now gates on appPermissions.tests.view
+            // (custom-role-aware), so deny it there too.
+            appPermissions: {
+                ...READER_APP_PERMISSIONS,
+                tests: { view: false, create: false, execute: false },
             },
         });
         await expect(listAllTestPlans(ctx)).rejects.toThrow(/permission/i);
