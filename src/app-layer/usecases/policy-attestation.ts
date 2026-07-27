@@ -47,6 +47,30 @@ export interface AttestPolicyResult {
  * Idempotency: the schema's `@@unique([policyVersionId, userId])`
  * means a second call returns the existing row with `created: false`.
  */
+/**
+ * Read EVERY row matching a version-scoped assignment/acknowledgement query.
+ *
+ * These lists back a COMPLIANCE roster: a flat `take` silently drops people
+ * past the cap, so the roster under-reports who still owes an acknowledgement
+ * and over-reports percent-complete. Cursor-paginated on `userId` (covered by
+ * the `(policyVersionId, userId)` composite unique), so the walk is
+ * index-backed and stable while rows are being inserted underneath it.
+ */
+async function readAllByUser<T extends { userId: string }>(
+    page: (cursorUserId: string | null, take: number) => Promise<T[]>,
+): Promise<T[]> {
+    const PAGE = 1000;
+    const out: T[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+        const rows = await page(cursor, PAGE);
+        out.push(...rows);
+        if (rows.length < PAGE) break;
+        cursor = rows[rows.length - 1].userId;
+    }
+    return out;
+}
+
 export async function attestPolicy(
     ctx: RequestContext,
     policyId: string,
@@ -339,12 +363,22 @@ export async function getPolicyAcknowledgementRoster(
         const priorVersionIds = versions.map((v) => v.id).filter((id) => id !== policyVersionId);
 
         const [assignments, acknowledgements] = await Promise.all([
-            db.policyAcknowledgementAssignment.findMany({
-                where: { policyVersionId },
-                select: { userId: true, assignedById: true, assignedAt: true },
-                take: 5000,
-            }),
-            db.policyAcknowledgement.findMany({ where: { policyVersionId }, select: { userId: true, acknowledgedAt: true }, take: 5000 }),
+            readAllByUser((cursor, take) =>
+                db.policyAcknowledgementAssignment.findMany({
+                    where: { policyVersionId, ...(cursor ? { userId: { gt: cursor } } : {}) },
+                    select: { userId: true, assignedById: true, assignedAt: true },
+                    orderBy: { userId: 'asc' },
+                    take,
+                }),
+            ),
+            readAllByUser((cursor, take) =>
+                db.policyAcknowledgement.findMany({
+                    where: { policyVersionId, ...(cursor ? { userId: { gt: cursor } } : {}) },
+                    select: { userId: true, acknowledgedAt: true },
+                    orderBy: { userId: 'asc' },
+                    take,
+                }),
+            ),
         ]);
 
         const assignedUserIds = new Set(assignments.map((a) => a.userId));
@@ -356,11 +390,17 @@ export async function getPolicyAcknowledgementRoster(
         const outstandingIds = [...assignedUserIds].filter((id) => !ackByUser.has(id));
         const supersededAckByUser = new Map<string, Date>();
         if (priorVersionIds.length > 0 && outstandingIds.length > 0) {
+            // `distinct` rather than a flat cap: the loop below only ever
+            // keeps the FIRST (most recent) row per user, so asking the
+            // database for one row per user says exactly that — and makes
+            // `take` precisely bounded by the input set instead of a
+            // guessed 5000 that could silently drop users.
             const priorAcks = await db.policyAcknowledgement.findMany({
                 where: { policyVersionId: { in: priorVersionIds }, userId: { in: outstandingIds } },
                 select: { userId: true, acknowledgedAt: true },
                 orderBy: { acknowledgedAt: 'desc' },
-                take: 5000,
+                distinct: ['userId'],
+                take: outstandingIds.length,
             });
             for (const a of priorAcks) {
                 if (!supersededAckByUser.has(a.userId)) supersededAckByUser.set(a.userId, a.acknowledgedAt);

@@ -4,7 +4,13 @@ import { PolicyRepository, PolicyFilters, PolicyListParams } from '../repositori
 import { PolicyVersionRepository } from '../repositories/PolicyVersionRepository';
 import { PolicyApprovalRepository } from '../repositories/PolicyApprovalRepository';
 import { PolicyTemplateRepository } from '../repositories/PolicyTemplateRepository';
-import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
+import {
+    assertCanReadPolicies,
+    assertCanCreatePolicy,
+    assertCanWritePolicies,
+    assertCanApprovePolicies,
+    assertCanAdminPolicies,
+} from '../policies/policy.policies';
 import { logEvent } from '../events/audit';
 import { enqueueEmail } from '../notifications/enqueue';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
@@ -92,7 +98,7 @@ export async function listPolicies(
     filters?: PolicyFilters,
     options: { take?: number } = {},
 ) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const rows = await PolicyRepository.list(db, ctx, filters, options);
         return annotatePolicyAcknowledgements(db, ctx, rows);
@@ -100,7 +106,7 @@ export async function listPolicies(
 }
 
 export async function listPoliciesPaginated(ctx: RequestContext, params: PolicyListParams) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const page = await PolicyRepository.listPaginated(db, ctx, params);
         const items = await annotatePolicyAcknowledgements(
@@ -113,7 +119,7 @@ export async function listPoliciesPaginated(ctx: RequestContext, params: PolicyL
 }
 
 export async function getPolicy(ctx: RequestContext, policyId: string) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
@@ -122,14 +128,14 @@ export async function getPolicy(ctx: RequestContext, policyId: string) {
 }
 
 export async function listPolicyTemplates(ctx: RequestContext) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, (db) =>
         PolicyTemplateRepository.list(db)
     );
 }
 
 export async function getPolicyActivity(ctx: RequestContext, policyId: string) {
-    assertCanRead(ctx);
+    assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, (db) =>
         db.auditLog.findMany({
             where: {
@@ -194,7 +200,7 @@ export async function createPolicy(ctx: RequestContext, data: {
     /** Initial-version editor mode (Prompt-3.3). Defaults to MARKDOWN. */
     contentType?: 'MARKDOWN' | 'HTML';
 }) {
-    assertCanWrite(ctx);
+    assertCanCreatePolicy(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
@@ -256,7 +262,7 @@ export async function createPolicyFromTemplate(ctx: RequestContext, templateId: 
     ownerUserId?: string | null;
     language?: string | null;
 }) {
-    assertCanWrite(ctx);
+    assertCanCreatePolicy(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         await assertOwnerIsActiveMember(db, ctx, overrides?.ownerUserId);
@@ -359,7 +365,7 @@ export async function createPolicyFromTemplate(ctx: RequestContext, templateId: 
  * review date must survive a "mark reviewed" click, not be wiped. Audited.
  */
 export async function markPolicyReviewed(ctx: RequestContext, policyId: string) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -415,7 +421,7 @@ export async function createPolicyVersion(ctx: RequestContext, policyId: string,
      */
     proposeOnly?: boolean;
 } = {}) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -508,7 +514,7 @@ export async function updatePolicyMetadata(ctx: RequestContext, policyId: string
     nextReviewAt?: string | null;
     language?: string | null;
 }) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -550,7 +556,7 @@ export async function updatePolicyMetadata(ctx: RequestContext, policyId: string
 // ─── Approval Workflow ───
 
 export async function requestPolicyApproval(ctx: RequestContext, policyId: string, versionId: string) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -672,7 +678,7 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
     decision: 'APPROVED' | 'REJECTED';
     comment?: string | null;
 }) {
-    assertCanAdmin(ctx);
+    assertCanApprovePolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const approval = await PolicyApprovalRepository.getById(db, ctx, approvalId, policyId);
@@ -891,14 +897,47 @@ async function carryForwardAckCampaign(
     const { fromVersionId, toVersionId, policyId, policyTitle, versionNumber } = args;
     if (!fromVersionId || fromVersionId === toVersionId) return [];
 
-    const priorAssignments = await db.policyAcknowledgementAssignment.findMany({
-        where: { policyVersionId: fromVersionId },
-        // `assignedById` rides along so the ORIGINAL assigner is preserved —
-        // stamping the publisher would silently rewrite "requested by" on the
-        // roster at every revision, destroying audit attribution.
-        select: { userId: true, assignedById: true },
-        take: 5000,
-    });
+    // PAGINATED, not `take: 5000`.
+    //
+    // A flat cap here loses people silently: anyone past the cap is never
+    // assigned against the new version, so they are never asked to
+    // re-acknowledge it, and the roster reports the campaign as more complete
+    // than it is. That is a compliance number being quietly wrong — the exact
+    // failure the `ackCountsByVersion` header describes, which is why its own
+    // truncating row-fetches were replaced with an aggregate. This one and the
+    // roster were missed.
+    //
+    // Cursor-paginated on the composite unique `(policyVersionId, userId)`, so
+    // the walk is index-backed and stable under concurrent inserts.
+    const priorAssignments: { userId: string; assignedById: string | null }[] = [];
+    const CARRY_PAGE = 1000;
+    let cursorUserId: string | null = null;
+    // This is cursor PAGINATION, not a per-entity read. Each iteration fetches
+    // the next PAGE (1000 rows), so the iteration count is total/1000 rather
+    // than one query per user — and the fix the guardrail normally recommends
+    // (one findMany with an `in:` filter) is exactly what we are moving away
+    // from here: it needs a `take`, and any `take` silently drops assignees
+    // from a compliance campaign. The roster in policy-attestation.ts walks
+    // the same way via `readAllByUser` (its read sits in a callback, so the
+    // scanner does not flag it — same pattern, not a different one).
+    for (;;) { // guardrail-allow: n+1 — cursor pagination; see note above
+        const page: { userId: string; assignedById: string | null }[] =
+            await db.policyAcknowledgementAssignment.findMany({
+                where: {
+                    policyVersionId: fromVersionId,
+                    ...(cursorUserId ? { userId: { gt: cursorUserId } } : {}),
+                },
+                // `assignedById` rides along so the ORIGINAL assigner is preserved —
+                // stamping the publisher would silently rewrite "requested by" on the
+                // roster at every revision, destroying audit attribution.
+                select: { userId: true, assignedById: true },
+                orderBy: { userId: 'asc' },
+                take: CARRY_PAGE,
+            });
+        priorAssignments.push(...page);
+        if (page.length < CARRY_PAGE) break;
+        cursorUserId = page[page.length - 1].userId;
+    }
     if (priorAssignments.length === 0) return [];
 
     // `@@unique([policyVersionId, userId])` guarantees one row per user, so a
@@ -935,7 +974,7 @@ export async function publishPolicy(
     versionId: string,
     options: PublishPolicyOptions = {},
 ) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
 
     const published = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -1190,7 +1229,7 @@ export async function publishPolicy(
  * pops it off the history, and bumps `lifecycleVersion`. Admin-only.
  */
 export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
@@ -1334,7 +1373,7 @@ export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
 }
 
 export async function archivePolicy(ctx: RequestContext, policyId: string) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
@@ -1365,7 +1404,7 @@ import { restoreEntity, purgeEntity } from './soft-delete-operations';
 import { withDeleted } from '@/lib/soft-delete';
 
 export async function deletePolicy(ctx: RequestContext, id: string) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, id);
         if (!policy) throw notFound('Policy not found');
@@ -1398,7 +1437,7 @@ export async function purgePolicy(ctx: RequestContext, id: string) {
 }
 
 export async function listPoliciesWithDeleted(ctx: RequestContext) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     return runInTenantContext(ctx, (db) =>
         db.policy.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const } }))
     );
@@ -1415,7 +1454,7 @@ export async function bulkAssignPolicy(
     policyIds: string[],
     ownerUserId: string | null,
 ) {
-    assertCanWrite(ctx);
+    assertCanWritePolicies(ctx);
     const updated = await runInTenantContext(ctx, async (db) => {
         // Checked ONCE for the whole batch — the same owner is applied to
         // every id, so a per-row check would repeat one lookup N times.
@@ -1448,7 +1487,7 @@ export async function bulkAssignPolicy(
 
 /** Bulk soft-delete policies selected in the table action bar. */
 export async function bulkDeletePolicy(ctx: RequestContext, policyIds: string[]) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
         const rows = await PolicyRepository.listByIds(db, ctx, policyIds);
         if (rows.length === 0) return { deleted: 0 };
@@ -1467,7 +1506,7 @@ export async function bulkDeletePolicy(ctx: RequestContext, policyIds: string[])
 }
 
 export async function bulkArchivePolicy(ctx: RequestContext, policyIds: string[]) {
-    assertCanAdmin(ctx);
+    assertCanAdminPolicies(ctx);
     const updated = await runInTenantContext(ctx, async (db) => {
         const rows = await PolicyRepository.listByIds(db, ctx, policyIds);
         if (rows.length === 0) return 0;
