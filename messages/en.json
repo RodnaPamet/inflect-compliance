@@ -2111,7 +2111,9 @@
       "crumbControl": "Control",
       "continueRun": "Continue run",
       "planForbidden": "You don't have access to this test plan.",
-      "planLoadFailed": "Couldn't load this test plan. Please try again."
+      "planLoadFailed": "Couldn't load this test plan. Please try again.",
+      "runHistoryShowing": "showing {shown} of {total}",
+      "orphanStepWarning": "A test step has an expected output but no instruction — add an instruction or clear the output before saving."
     },
     "filters": {
       "status": "Status",
@@ -6441,13 +6443,14 @@
       "entityPlural": "test plans",
       "entitySingular": "test plan",
       "emptyFiltered": "No test plans match your filters.",
-      "emptyNone": "No test plans found. Create test plans from the Control detail page.",
+      "emptyNone": "No test plans yet. Use the “Test plan” button above to create one.",
       "bulkDeletedToast": "{count, plural, one {# test plan deleted} other {# test plans deleted}}",
       "bulkDeleteUndo": "Undo",
       "bulkApplied": "Changes applied",
       "loadErrorTitle": "Couldn't load test plans",
       "loadErrorBody": "Something went wrong loading this list. Check your connection and try again.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "inProgress": "In progress"
     },
     "due": {
       "planningFailed": "Failed to run due planning",
@@ -6608,7 +6611,7 @@
         "error": "Could not verify integrity. Please try again."
       },
       "export": {
-        "label": "Export evidence bundle:",
+        "label": "Control evidence bundle (all runs):",
         "csv": "CSV",
         "json": "JSON"
       },
@@ -6637,6 +6640,11 @@
         "description": "Recording a {result} result freezes the evidence set and attests the control. This can't be undone.",
         "confirm": "Complete run",
         "cancel": "Cancel"
+      },
+      "evidenceKind": {
+        "file": "File",
+        "link": "Link",
+        "evidence": "Evidence"
       }
     },
     "filters": {
@@ -6659,7 +6667,8 @@
         "PASS": "Pass",
         "FAIL": "Fail",
         "INCONCLUSIVE": "Inconclusive",
-        "NONE": "No runs"
+        "NONE": "No runs",
+        "IN_PROGRESS": "In progress"
       },
       "frequency": {
         "AD_HOC": "Ad Hoc",
@@ -6743,7 +6752,8 @@
       "moveUp": "Move step up",
       "moveDown": "Move step down",
       "remove": "Remove step",
-      "add": "Add step"
+      "add": "Add step",
+      "orphanOutputWarning": "A test step has an expected output but no instruction — add an instruction or clear the output before saving."
     },
     "subnav": {
       "tests": "Tests",

@@ -30,6 +30,13 @@ import { runInTenantContext, runInTenantReadContext, type PrismaTx } from '@/lib
 // due/overdue surface (getDueQueue, runDuePlanning, dashboard overduePlans,
 // listAllTestPlans) is driven from these two so the counts can't diverge.
 
+// R4-P3 #2 — defensive read cap for the "full population" list surfaces. The
+// /tests and /tests/due pages consume the whole set (client-side KPI counts,
+// filtering, sorting), so we can't cursor-page them without breaking those
+// counts — but the read must still be bounded. 2000 is far beyond any realistic
+// tenant's plan count; it exists only so a runaway tenant can't table-scan.
+const PLAN_LIST_CAP = 2000;
+
 export function effectiveDueAt(p: { nextDueAt: Date | null; nextRunAt: Date | null }): Date | null {
     const dates = [p.nextDueAt, p.nextRunAt].filter((d): d is Date => d != null);
     if (dates.length === 0) return null;
@@ -70,6 +77,7 @@ export async function getDueQueue(ctx: RequestContext) {
                 },
                 _count: { select: { runs: true } },
             },
+            take: PLAN_LIST_CAP,
         });
     });
 
@@ -171,14 +179,6 @@ export async function runDuePlanning(ctx: RequestContext) {
 
 // ─── Dashboard Metrics ───
 
-interface RunRecord {
-    id: string;
-    status: string;
-    result: string | null;
-    controlId: string;
-    evidence: { id: string }[];
-}
-
 export async function getTestDashboardMetrics(ctx: RequestContext, periodDays: number = 30) {
     assertCanReadTests(ctx);
 
@@ -187,30 +187,39 @@ export async function getTestDashboardMetrics(ctx: RequestContext, periodDays: n
         const periodStart = new Date(now);
         periodStart.setDate(periodStart.getDate() - periodDays);
 
-        // All runs in period
-        const runsInPeriod: RunRecord[] = await db.controlTestRun.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                createdAt: { gte: periodStart },
-            },
-            select: {
-                id: true, status: true, result: true, controlId: true,
-                evidence: { select: { id: true } },
-            },
+        // R4-P3 #2 — aggregate in the DB instead of pulling every run (and every
+        // run's evidence ids) into memory. One groupBy over status×result yields
+        // totals + pass/fail/inconclusive; a count yields evidence coverage; a
+        // per-control FAIL groupBy yields repeated failures.
+        const statusResultGroups = await db.controlTestRun.groupBy({
+            by: ['status', 'result'],
+            where: { tenantId: ctx.tenantId, createdAt: { gte: periodStart } },
+            _count: { _all: true },
+        });
+        let totalRuns = 0;
+        let completed = 0;
+        let passCount = 0;
+        let failCount = 0;
+        let inconclusiveCount = 0;
+        for (const g of statusResultGroups) {
+            totalRuns += g._count._all;
+            if (g.status === 'COMPLETED') {
+                completed += g._count._all;
+                if (g.result === 'PASS') passCount += g._count._all;
+                else if (g.result === 'FAIL') failCount += g._count._all;
+                else if (g.result === 'INCONCLUSIVE') inconclusiveCount += g._count._all;
+            }
+        }
+
+        // Completed runs carrying ≥1 evidence link.
+        const runsWithEvidenceCount = await db.controlTestRun.count({
+            where: { tenantId: ctx.tenantId, createdAt: { gte: periodStart }, status: 'COMPLETED', evidence: { some: {} } },
         });
 
-        const totalRuns = runsInPeriod.length;
-        const completedRuns = runsInPeriod.filter((r: RunRecord) => r.status === 'COMPLETED');
-        const passRuns = completedRuns.filter((r: RunRecord) => r.result === 'PASS');
-        const failRuns = completedRuns.filter((r: RunRecord) => r.result === 'FAIL');
-        const inconclusiveRuns = completedRuns.filter((r: RunRecord) => r.result === 'INCONCLUSIVE');
-        const runsWithEvidence = completedRuns.filter((r: RunRecord) => r.evidence.length > 0);
-
-        // Completion rate
-        const completionRate = totalRuns > 0 ? Math.round((completedRuns.length / totalRuns) * 100) : 0;
-        const passRate = completedRuns.length > 0 ? Math.round((passRuns.length / completedRuns.length) * 100) : 0;
-        const failRate = completedRuns.length > 0 ? Math.round((failRuns.length / completedRuns.length) * 100) : 0;
-        const evidenceRate = completedRuns.length > 0 ? Math.round((runsWithEvidence.length / completedRuns.length) * 100) : 0;
+        const completionRate = totalRuns > 0 ? Math.round((completed / totalRuns) * 100) : 0;
+        const passRate = completed > 0 ? Math.round((passCount / completed) * 100) : 0;
+        const failRate = completed > 0 ? Math.round((failCount / completed) * 100) : 0;
+        const evidenceRate = completed > 0 ? Math.round((runsWithEvidenceCount / completed) * 100) : 0;
 
         // Overdue plans — the ONE authoritative overdue count, reconciled across
         // both clocks (same signal /tests/due and /tests use). `lt: now` on either
@@ -223,14 +232,15 @@ export async function getTestDashboardMetrics(ctx: RequestContext, periodDays: n
             },
         });
 
-        // Controls with repeated failures (≥2 FAIL in period)
-        const failsByControl: Record<string, number> = {};
-        for (const r of failRuns) {
-            failsByControl[r.controlId] = (failsByControl[r.controlId] || 0) + 1;
-        }
-        const repeatedFailures = Object.entries(failsByControl)
-            .filter(([, count]) => count >= 2)
-            .map(([controlId, count]) => ({ controlId, failCount: count }));
+        // Controls with repeated failures (≥2 FAIL in period) — per-control groupBy.
+        const failGroups = await db.controlTestRun.groupBy({
+            by: ['controlId'],
+            where: { tenantId: ctx.tenantId, createdAt: { gte: periodStart }, status: 'COMPLETED', result: 'FAIL' },
+            _count: { _all: true },
+        });
+        const repeatedFailures = failGroups
+            .filter((g) => g._count._all >= 2)
+            .map((g) => ({ controlId: g.controlId as string, failCount: g._count._all }));
 
         // Get control names for repeated failures
         let repeatedFailureDetails: Array<{ controlId: string; controlName: string; controlCode: string | null; failCount: number }> = [];
@@ -258,17 +268,17 @@ export async function getTestDashboardMetrics(ctx: RequestContext, periodDays: n
             periodStart: periodStart.toISOString(),
             totalPlans,
             totalRuns,
-            completedRuns: completedRuns.length,
-            passRuns: passRuns.length,
-            failRuns: failRuns.length,
-            inconclusiveRuns: inconclusiveRuns.length,
+            completedRuns: completed,
+            passRuns: passCount,
+            failRuns: failCount,
+            inconclusiveRuns: inconclusiveCount,
             completionRate,
             passRate,
             failRate,
             evidenceRate,
             overduePlans,
             repeatedFailures: repeatedFailureDetails,
-            runsWithEvidence: runsWithEvidence.length,
+            runsWithEvidence: runsWithEvidenceCount,
         };
     });
 }
@@ -320,6 +330,7 @@ export async function listAllTestPlans(ctx: RequestContext, filters: TestPlanFil
                 _count: { select: { runs: true, steps: true } },
             },
             orderBy: { createdAt: 'desc' },
+            take: PLAN_LIST_CAP,
         });
     });
 }

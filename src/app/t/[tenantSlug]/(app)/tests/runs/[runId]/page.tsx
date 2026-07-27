@@ -26,7 +26,8 @@ import { Plus } from '@/components/ui/icons/nucleo';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { type BreadcrumbItem } from '@/components/ui/breadcrumbs';
-import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { buildRunStatusLabels, buildResultLabels, RESULT_BADGE } from '../../_components/test-plan-labels';
 import { Heading } from '@/components/ui/typography';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { Card, cardVariants } from '@/components/ui/card';
@@ -73,13 +74,21 @@ interface TestRunDetail {
     createdAt: string;
 }
 
-const RESULT_BADGE: Record<string, StatusBadgeVariant> = {
-    PASS: 'success', FAIL: 'error', INCONCLUSIVE: 'warning',
-};
-
 export default function TestRunPage() {
     const t = useTranslations('controlTests');
     const EV_KIND_OPTIONS = useMemo(() => buildEvKindOptions(t), [t]);
+    // R4-P3 #11 — render enums through the SHARED label builders so the run page
+    // speaks the same localized vocabulary ("Completed" / "Pass") as the plan
+    // detail + register, instead of the raw enum it printed before.
+    const RUN_STATUS_LABELS = useMemo(() => buildRunStatusLabels(t), [t]);
+    const RESULT_LABELS = useMemo(() => buildResultLabels(t), [t]);
+    // Localized labels for the linked-evidence KIND badge (FILE / LINK / EVIDENCE),
+    // which the list rendered as the raw enum.
+    const EVIDENCE_KIND_LABELS = useMemo<Record<string, string>>(() => ({
+        FILE: t('run.evidenceKind.file'),
+        LINK: t('run.evidenceKind.link'),
+        EVIDENCE: t('run.evidenceKind.evidence'),
+    }), [t]);
     const params = useParams();
     const router = useRouter();
     const apiUrl = useTenantApiUrl();
@@ -408,7 +417,7 @@ export default function TestRunPage() {
                             kind: 'status',
                             id: 'test-run-status',
                             label: t('run.meta.status'),
-                            value: run.status,
+                            value: RUN_STATUS_LABELS[run.status] ?? run.status,
                             variant:
                                 run.status === 'COMPLETED'
                                     ? 'success'
@@ -422,7 +431,7 @@ export default function TestRunPage() {
                                       kind: 'status' as const,
                                       id: 'test-run-result',
                                       label: t('run.meta.result'),
-                                      value: run.result,
+                                      value: RESULT_LABELS[run.result] ?? run.result,
                                       variant:
                                           RESULT_BADGE[run.result] ?? 'neutral',
                                   },
@@ -515,7 +524,7 @@ export default function TestRunPage() {
                                     onClick={() => setResult(r)}
                                     id={`result-btn-${r}`}
                                 >
-                                    {r}
+                                    {RESULT_LABELS[r] ?? r}
                                 </button>
                             ))}
                         </div>
@@ -552,7 +561,7 @@ export default function TestRunPage() {
                         disabled={completing}
                         id="complete-test-run-btn"
                     >
-                        {completing ? t('run.completing') : t('run.completeAs', { result })}
+                        {completing ? t('run.completing') : t('run.completeAs', { result: RESULT_LABELS[result] ?? result })}
                     </Button>
                 </Card>
             )}
@@ -712,7 +721,7 @@ export default function TestRunPage() {
                             <div key={ev.id} className="flex items-center justify-between py-2 group">
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-tight">
-                                        <StatusBadge variant="neutral" size="sm">{ev.kind}</StatusBadge>
+                                        <StatusBadge variant="neutral" size="sm">{EVIDENCE_KIND_LABELS[ev.kind] ?? ev.kind}</StatusBadge>
                                         {ev.evidence && (
                                             <span className="text-sm text-content-default">{ev.evidence.title}</span>
                                         )}

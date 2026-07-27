@@ -24,82 +24,111 @@ export interface FrameworkTestReadiness {
     recentPasses: number;
 }
 
+// Safety caps — realistically never hit (a tenant has dozens of frameworks
+// and hundreds of mapped controls), but they bound the worst-case read so
+// the aggregate can't degenerate into an unbounded table scan.
+const MAX_FRAMEWORKS = 500;
+const MAX_MAPPING_LINKS = 50_000;
+
 export async function computeTestReadiness(ctx: RequestContext): Promise<FrameworkTestReadiness[]> {
     assertCanReadTests(ctx);
 
-    // Get all frameworks
-    const frameworks = await runInTenantContext(ctx, (db) =>
-        db.framework.findMany({
-            select: { id: true, key: true, name: true },
-        })
-    );
-
-    const results: FrameworkTestReadiness[] = [];
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-    for (const fw of frameworks) {
-        // Get control IDs mapped to this framework via ControlRequirementLink
-        const mappedLinks = await runInTenantContext(ctx, (db) =>
-            db.controlRequirementLink.findMany({
-                where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
-                select: { controlId: true },
-            })
-        );
-
-
-        const mappedControlIds = [...new Set(mappedLinks.map((l) => l.controlId))] as string[];
-        if (mappedControlIds.length === 0) continue;
-
-        // Get test plans for those controls
-
-        const testPlans = await runInTenantContext(ctx, (db) =>
-            db.controlTestPlan.findMany({
-                where: {
-                    tenantId: ctx.tenantId,
-                    controlId: { in: mappedControlIds },
-                    status: 'ACTIVE',
-                },
-                select: { id: true, controlId: true },
-            })
-        );
-
-
-        const controlsWithPlan = new Set(testPlans.map((p) => p.controlId as string));
-
-        // Get completed runs in last 90 days for those controls
-
-        const recentRuns = await runInTenantContext(ctx, (db) =>
-            db.controlTestRun.findMany({
-                where: {
-                    tenantId: ctx.tenantId,
-                    controlId: { in: mappedControlIds },
-                    status: 'COMPLETED',
-                    executedAt: { gte: ninetyDaysAgo },
-                },
-                select: { id: true, controlId: true, result: true },
-            })
-        );
-
-
-        const controlsWithRun = new Set(recentRuns.map((r) => r.controlId as string));
-
-        const recentPasses = recentRuns.filter((r) => r.result === 'PASS').length;
-
-        const totalMapped = mappedControlIds.length;
-        results.push({
-            frameworkKey: fw.key,
-            frameworkName: fw.name,
-            totalMappedControls: totalMapped,
-            withTestPlan: controlsWithPlan.size,
-            testPlanCoverage: totalMapped > 0 ? Math.round((controlsWithPlan.size / totalMapped) * 100) : 0,
-            withRecentRun: controlsWithRun.size,
-            testRunCoverage: totalMapped > 0 ? Math.round((controlsWithRun.size / totalMapped) * 100) : 0,
-            passRate: recentRuns.length > 0 ? Math.round((recentPasses / recentRuns.length) * 100) : 0,
-            recentRuns: recentRuns.length,
-            recentPasses,
+    // R4-P3 #1 — the whole rollup runs in ONE tenant transaction with four
+    // batched queries, instead of the previous 1 + 3×N transactions (a real
+    // `$transaction` per framework per read). Frameworks are GLOBAL reference
+    // data (no tenantId column — keyed by unique `key`), so tenant scoping
+    // comes from the ControlRequirementLink / ControlTestPlan / ControlTestRun
+    // reads, all of which filter tenantId. Per-control plan/run rollups use
+    // groupBy so we never materialise every run row in JS.
+    return runInTenantContext(ctx, async (db) => {
+        const frameworks = await db.framework.findMany({
+            select: { id: true, key: true, name: true },
+            take: MAX_FRAMEWORKS,
         });
-    }
+        if (frameworks.length === 0) return [];
+        const frameworkIds = frameworks.map((f) => f.id);
 
-    return results;
+        // All framework↔control mappings across every framework, one query.
+        const links = await db.controlRequirementLink.findMany({
+            where: { tenantId: ctx.tenantId, requirement: { frameworkId: { in: frameworkIds } } },
+            select: { controlId: true, requirement: { select: { frameworkId: true } } },
+            take: MAX_MAPPING_LINKS,
+        });
+
+        const controlsByFramework = new Map<string, Set<string>>();
+        const allControlIds = new Set<string>();
+        for (const l of links) {
+            const fid = l.requirement.frameworkId;
+            let set = controlsByFramework.get(fid);
+            if (!set) { set = new Set(); controlsByFramework.set(fid, set); }
+            set.add(l.controlId);
+            allControlIds.add(l.controlId);
+        }
+        const controlIdList = [...allControlIds];
+        if (controlIdList.length === 0) return [];
+
+        // Controls with an ACTIVE plan — distinct controlIds via groupBy
+        // (bounded by the number of mapped controls, not the plan count).
+        const planGroups = await db.controlTestPlan.groupBy({
+            by: ['controlId'],
+            where: { tenantId: ctx.tenantId, controlId: { in: controlIdList }, status: 'ACTIVE' },
+        });
+        const controlsWithPlan = new Set(planGroups.map((g) => g.controlId as string));
+
+        // Recent completed runs per control+result — one groupBy, aggregated
+        // to per-control totals/passes in memory.
+        const runGroups = await db.controlTestRun.groupBy({
+            by: ['controlId', 'result'],
+            where: {
+                tenantId: ctx.tenantId,
+                controlId: { in: controlIdList },
+                status: 'COMPLETED',
+                executedAt: { gte: ninetyDaysAgo },
+            },
+            _count: { _all: true },
+        });
+        const runsByControl = new Map<string, { total: number; passes: number }>();
+        for (const g of runGroups) {
+            const cid = g.controlId as string;
+            const acc = runsByControl.get(cid) ?? { total: 0, passes: 0 };
+            acc.total += g._count._all;
+            if (g.result === 'PASS') acc.passes += g._count._all;
+            runsByControl.set(cid, acc);
+        }
+
+        const results: FrameworkTestReadiness[] = [];
+        for (const fw of frameworks) {
+            const controls = controlsByFramework.get(fw.id);
+            const totalMapped = controls?.size ?? 0;
+            if (totalMapped === 0) continue;
+
+            let withPlan = 0;
+            let withRun = 0;
+            let recentRuns = 0;
+            let recentPasses = 0;
+            for (const cid of controls!) {
+                if (controlsWithPlan.has(cid)) withPlan++;
+                const r = runsByControl.get(cid);
+                if (r) { withRun++; recentRuns += r.total; recentPasses += r.passes; }
+            }
+
+            results.push({
+                frameworkKey: fw.key,
+                frameworkName: fw.name,
+                totalMappedControls: totalMapped,
+                withTestPlan: withPlan,
+                testPlanCoverage: Math.round((withPlan / totalMapped) * 100),
+                withRecentRun: withRun,
+                testRunCoverage: Math.round((withRun / totalMapped) * 100),
+                passRate: recentRuns > 0 ? Math.round((recentPasses / recentRuns) * 100) : 0,
+                recentRuns,
+                recentPasses,
+            });
+        }
+
+        return results;
+    });
 }

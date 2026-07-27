@@ -25,10 +25,13 @@ type TGroup = (key: string) => string;
 
 // TestPlanStatus (compliance schema): ACTIVE / PAUSED / ARCHIVED.
 const TEST_STATUS_KEYS = ['ACTIVE', 'PAUSED', 'ARCHIVED'] as const;
-// Last run result. `NONE` is the synthetic "no runs yet" bucket.
-const TEST_RESULT_KEYS = ['PASS', 'FAIL', 'INCONCLUSIVE', 'NONE'] as const;
+// Last run result. `IN_PROGRESS` = a run exists but has no verdict yet
+// (PLANNED/RUNNING); `NONE` = never run. Both are synthetic buckets (R4-P3 #5).
+const TEST_RESULT_KEYS = ['PASS', 'FAIL', 'INCONCLUSIVE', 'IN_PROGRESS', 'NONE'] as const;
 const TEST_FREQUENCY_KEYS = ['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY'] as const;
-// Single computed toggle — `nextDueAt` in the past.
+// Single computed toggle. "Overdue" = an ACTIVE plan whose EARLIEST due clock
+// is in the past — min(nextDueAt, nextRunAt) <= now (the reconciled signal, not
+// nextDueAt alone). PAUSED/ARCHIVED plans are excluded by design.
 const TEST_DUE_KEYS = ['overdue'] as const;
 
 const fromKeys = (keys: readonly string[], t: T, group: string): Record<string, string> =>

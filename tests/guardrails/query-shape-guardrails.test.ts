@@ -195,18 +195,6 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
         reason:
             'sign-in SSO-enforcement check — per-membership lookup of an enforced identity provider. Loop is over the user\'s tenant memberships (typically 1-3); the per-membership query is acceptable at sign-in.',
     },
-    'src/app-layer/usecases/test-readiness.ts:findMany:controlRequirementLink': {
-        reason:
-            'test-readiness rollup — one query per framework to fetch its mapped control IDs. Loop is over the tenant\'s frameworks (a small set); a single cross-framework query would not materially change the round-trip count.',
-    },
-    'src/app-layer/usecases/test-readiness.ts:findMany:controlTestPlan': {
-        reason:
-            'test-readiness rollup — per-framework fetch of ACTIVE test plans for that framework\'s mapped controls. Same bounded per-framework loop as the controlRequirementLink read above.',
-    },
-    'src/app-layer/usecases/test-readiness.ts:findMany:controlTestRun': {
-        reason:
-            'test-readiness rollup — per-framework fetch of completed test runs in the last 90 days for that framework\'s mapped controls. Same bounded per-framework loop as the reads above.',
-    },
     'src/app-layer/usecases/vendor-audit.ts:findFirst:vendorDocument': {
         reason:
             'audit-pack freeze loop — snapshots each bundle item\'s entity metadata into the frozen item. Per-item lookup is required to read the live entity before freezing; loop is over the bundle\'s items, a bounded set.',

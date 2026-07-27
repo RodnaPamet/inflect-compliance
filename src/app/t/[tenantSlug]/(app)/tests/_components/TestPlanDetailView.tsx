@@ -37,7 +37,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { useToast } from '@/components/ui/hooks/use-toast';
-import { TestStepsEditor, type TestStepDraft, serializeSteps } from './TestStepsEditor';
+import { TestStepsEditor, type TestStepDraft, serializeSteps, hasOrphanExpectedOutput } from './TestStepsEditor';
 import {
     buildPlanStatusLabels,
     buildRunStatusLabels,
@@ -77,6 +77,9 @@ interface TestPlanDetail {
         _count?: { evidence: number };
     }>;
     _count?: { runs: number; steps: number };
+    // R4-P3 #4 — pass/fail/inconclusive counts over ALL completed runs (the
+    // `runs` array above is capped at 10), so the KPI cards can't undercount.
+    runResultCounts?: { passed: number; failed: number; inconclusive: number };
     createdAt: string;
 }
 
@@ -182,6 +185,16 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     const pendingRun = plan.runs.find((r) => r.status === 'PLANNED' || r.status === 'RUNNING') ?? null;
     const hasPendingRun = !!pendingRun;
 
+    // #6 — the due date is the EARLIEST of the two independent clocks
+    // (nextDueAt = human cadence, nextRunAt = cron), matching /tests + /tests/due.
+    // Gating on nextDueAt alone hid the due date for a cron-scheduled AD_HOC plan
+    // (nextDueAt null, nextRunAt set) that every other surface flagged overdue.
+    const effectiveDue = [plan.nextDueAt, plan.nextRunAt]
+        .filter((d): d is string => Boolean(d))
+        .map((d) => new Date(d))
+        .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+    const isOverdue = effectiveDue ? effectiveDue <= new Date() : false;
+
     // Breadcrumbs bridge the plan↔run split so the ancestor is always explicit.
     // The trail differs by entry context: control-scoped plans hang under their
     // control; tenant-wide plans hang under the /tests register.
@@ -220,11 +233,11 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                         <span className="text-xs text-content-subtle">{FREQ_LABELS[plan.frequency] || plan.frequency}</span>
                         <span className="text-xs text-content-subtle">•</span>
                         <span className="text-xs text-content-subtle">{METHOD_LABELS[plan.method] ?? plan.method}</span>
-                        {plan.nextDueAt && (
+                        {effectiveDue && (
                             <>
                                 <span className="text-xs text-content-subtle">•</span>
-                                <span className={`text-xs ${new Date(plan.nextDueAt) < new Date() ? 'text-content-error font-semibold' : 'text-content-muted'}`}>
-                                    {t('testPlan.due', { date: formatDate(plan.nextDueAt) })}
+                                <span className={`text-xs ${isOverdue ? 'text-content-error font-semibold' : 'text-content-muted'}`}>
+                                    {t('testPlan.due', { date: formatDate(effectiveDue.toISOString()) })}
                                 </span>
                             </>
                         )}
@@ -274,14 +287,14 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                 </div>
                 <div className={cardVariants({ density: 'compact' })}>
                     <KPIStat
-                        value={plan.runs?.filter(r => r.result === 'PASS').length ?? 0}
+                        value={plan.runResultCounts?.passed ?? plan.runs?.filter(r => r.result === 'PASS').length ?? 0}
                         label={t('testPlan.passed')}
                         tone="success"
                     />
                 </div>
                 <div className={cardVariants({ density: 'compact' })}>
                     <KPIStat
-                        value={plan.runs?.filter(r => r.result === 'FAIL').length ?? 0}
+                        value={plan.runResultCounts?.failed ?? plan.runs?.filter(r => r.result === 'FAIL').length ?? 0}
                         label={t('testPlan.failed')}
                         tone="critical"
                     />
@@ -324,7 +337,16 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
             {/* Runs History */}
             <div className={cardVariants({ density: 'compact' })}>
                 <div className="flex items-center justify-between mb-3">
-                    <Heading level={3}>{t('testPlan.runHistory')}</Heading>
+                    <div className="flex items-baseline gap-tight">
+                        <Heading level={3}>{t('testPlan.runHistory')}</Heading>
+                        {/* R4-P3 #4 — the list shows the most recent runs only;
+                            say so when there are more than are rendered. */}
+                        {(plan._count?.runs ?? 0) > plan.runs.length && (
+                            <span className="text-xs text-content-subtle">
+                                {t('testPlan.runHistoryShowing', { shown: plan.runs.length, total: plan._count?.runs ?? 0 })}
+                            </span>
+                        )}
+                    </div>
                     {permissions.canWrite && plan.status === 'ACTIVE' && (
                         <Button
                             variant={hasPendingRun ? 'secondary' : 'primary'}
@@ -420,6 +442,11 @@ function PlanEditForm({
     const [saving, setSaving] = useState(false);
 
     const savePlan = async () => {
+        // Don't silently drop a step with an expected output but no instruction.
+        if (hasOrphanExpectedOutput(editSteps)) {
+            toast.error(t('testPlan.orphanStepWarning'));
+            return;
+        }
         setSaving(true);
         try {
             const res = await fetch(apiUrl(`/tests/plans/${plan.id}`), {

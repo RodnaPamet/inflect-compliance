@@ -1,7 +1,7 @@
 'use client';
 
 import { formatDate } from '@/lib/format-date';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -127,9 +127,17 @@ const isOverdue = (p: { nextDueAt: string | null; nextRunAt: string | null; stat
     return d ? new Date(d) <= new Date() : false;
 };
 
-const getLastResult = (plan: TestPlanSummary) => {
-    if (!plan.runs || plan.runs.length === 0) return null;
-    return plan.runs[0]?.result;
+// R4-P3 #5 — the "last result" of a plan whose newest run is still
+// PLANNED/RUNNING has no verdict yet. Reading `runs[0].result` alone rendered
+// "No runs" next to a Runs count of 12 and dropped the plan into the NONE
+// filter. Distinguish IN_PROGRESS (a run exists, no verdict) from NONE (never
+// run). The key drives the badge, the filter bucket, AND the sort order.
+type LastResultKey = 'PASS' | 'FAIL' | 'INCONCLUSIVE' | 'IN_PROGRESS' | 'NONE';
+const getLastResultKey = (plan: TestPlanSummary): LastResultKey => {
+    const run = plan.runs?.[0];
+    if (!run) return 'NONE';
+    if (run.result) return run.result as 'PASS' | 'FAIL' | 'INCONCLUSIVE';
+    return 'IN_PROGRESS';
 };
 
 export default function TestsRollupPage() {
@@ -151,12 +159,20 @@ function TestsRollupContent() {
     // DETAIL view renders the same vocabulary (it printed raw enums before).
     const PLAN_STATUS_LABELS = useMemo(() => buildPlanStatusLabels(t), [t]);
     const RESULT_LABELS = useMemo(() => buildResultLabels(t), [t]);
+    // Displayed "last result" text — the value the column shows, so sort keys
+    // group by what the eye sees (R4-P3 #5 + #10), not the raw enum.
+    const lastResultLabel = useCallback((p: TestPlanSummary): string => {
+        const key = getLastResultKey(p);
+        if (key === 'NONE') return t('list.noRuns');
+        if (key === 'IN_PROGRESS') return t('list.inProgress');
+        return RESULT_LABELS[key] ?? key;
+    }, [t, RESULT_LABELS]);
     const tGroup = useTranslations('common.filterGroups');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { tenantSlug } = useTenantContext();
     const router = useRouter();
-    const { state, search, hasActive } = useFilters();
+    const { state, search, hasActive, clearAll } = useFilters();
 
     // PR-Q — canonical useTenantSWR reads (Epic 69). `mutate` refetches after
     // bulk mutations; the old fetch-on-mount + setState pattern is gone.
@@ -331,7 +347,7 @@ function TestsRollupContent() {
         const q = search.trim().toLowerCase();
         return plans.filter((p) => {
             if (statusSel.length && !statusSel.includes(p.status)) return false;
-            const result = getLastResult(p) ?? 'NONE';
+            const result = getLastResultKey(p);
             if (resultSel.length && !resultSel.includes(result)) return false;
             if (freqSel.length && !freqSel.includes(p.frequency)) return false;
             if (dueSel.includes('overdue') && !isOverdue(p)) {
@@ -357,14 +373,16 @@ function TestsRollupContent() {
     const sortAccessors = useMemo<SortAccessors<TestPlanSummary>>(
         () => ({
             name: (p) => p.name ?? '',
-            status: (p) => p.status ?? '',
+            // #10 — sort by the localized label the cell renders, not the raw
+            // enum, so alphabetical order matches what the user sees.
+            status: (p) => PLAN_STATUS_LABELS[p.status] ?? p.status ?? '',
             control: (p) => p.control?.code || p.control?.name || '',
             frequency: (p) => FREQ_LABELS[p.frequency] || p.frequency || '',
             nextDue: (p) => effectiveDue(p) ?? '',
-            lastResult: (p) => getLastResult(p) || '',
+            lastResult: (p) => lastResultLabel(p),
             runs: (p) => p._count?.runs ?? 0,
         }),
-        [FREQ_LABELS],
+        [FREQ_LABELS, PLAN_STATUS_LABELS, lastResultLabel],
     );
     const sortedPlans = useMemo(
         () => sortRowsByDisplay(filteredPlans, sortAccessors, sortBy, sortOrder),
@@ -494,12 +512,15 @@ function TestsRollupContent() {
                 },
                 {
                     id: 'lastResult', header: t('colHeaders.lastResult'),
-                    accessorFn: (p) => getLastResult(p) || '',
+                    accessorFn: (p) => lastResultLabel(p),
                     cell: ({ row }) => {
-                        const result = getLastResult(row.original);
-                        return result ? (
-                            <StatusBadge variant={RESULT_BADGE[result] || 'neutral'} size="sm">{RESULT_LABELS[result] ?? result}</StatusBadge>
-                        ) : <span className="text-content-subtle text-xs">{t('list.noRuns')}</span>;
+                        const key = getLastResultKey(row.original);
+                        if (key === 'NONE') return <span className="text-content-subtle text-xs">{t('list.noRuns')}</span>;
+                        // In-progress is a transient state, not a verdict — keep it
+                        // quiet inline text so the result badge stays the one loud
+                        // signal in the row (badge-density discipline).
+                        if (key === 'IN_PROGRESS') return <span className="text-content-info text-xs">{t('list.inProgress')}</span>;
+                        return <StatusBadge variant={RESULT_BADGE[key] || 'neutral'} size="sm">{RESULT_LABELS[key] ?? key}</StatusBadge>;
                     },
                 },
                 {
@@ -576,7 +597,15 @@ function TestsRollupContent() {
                             <ToggleGroup
                                 ariaLabel={t('unified.viewAria')}
                                 selected={view}
-                                selectAction={(v) => setView(v as 'plans' | 'checks')}
+                                selectAction={(v) => {
+                                    const next = v as 'plans' | 'checks';
+                                    setView(next);
+                                    // R4-P3 #9 — the plan filters aren't rendered on the
+                                    // Checks view, so leaving chips set would strand them
+                                    // invisible + inert (and silently re-applied on return).
+                                    // Clear them when leaving Plans.
+                                    if (next === 'checks') clearAll();
+                                }}
                                 options={[
                                     { value: 'plans', label: t('unified.tabPlans') },
                                     { value: 'checks', label: t('unified.tabChecks') },

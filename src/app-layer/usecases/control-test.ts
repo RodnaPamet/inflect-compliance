@@ -96,7 +96,25 @@ export async function getTestPlan(ctx: RequestContext, planId: string) {
     return runInTenantContext(ctx, async (db) => {
         const plan = await TestPlanRepository.getById(db, ctx, planId);
         if (!plan) throw notFound('Test plan not found');
-        return plan;
+        // R4-P3 #4 — the embedded `runs` array is capped at the 10 most recent,
+        // but the KPI cards want pass/fail counts over EVERY run. Deriving them
+        // from the capped array made "Total 47 / Passed 6 / Failed 3" (6+3 < 47)
+        // whenever a plan had run more than 10 times. Aggregate the full
+        // population by result so the cards and `_count.runs` agree.
+        const resultGroups = await db.controlTestRun.groupBy({
+            by: ['result'],
+            where: { testPlanId: planId, tenantId: ctx.tenantId, status: 'COMPLETED' },
+            _count: { _all: true },
+        });
+        let passed = 0;
+        let failed = 0;
+        let inconclusive = 0;
+        for (const g of resultGroups) {
+            if (g.result === 'PASS') passed = g._count._all;
+            else if (g.result === 'FAIL') failed = g._count._all;
+            else if (g.result === 'INCONCLUSIVE') inconclusive = g._count._all;
+        }
+        return { ...plan, runResultCounts: { passed, failed, inconclusive } };
     });
 }
 
@@ -570,49 +588,92 @@ export async function completeTestRun(ctx: RequestContext, runId: string, input:
             testPlanId: run.testPlanId,
         });
 
-        // 4. If FAIL, create a CONTROL_GAP task and emit failure event
+        // 4. If FAIL, emit the failure event in-tx and hand the CONTROL_GAP
+        //    task off to a POST-COMMIT step (see below). Creating it here nested
+        //    createTask's own `runInTenantContext` inside this one — two pool
+        //    connections held at once, and a gap task that could outlive an
+        //    outer rollback. The task is a downstream effect of a durably
+        //    completed run, so it belongs after this transaction commits.
+        let gapTask: GapTaskSpec | null = null;
         if (input.result === 'FAIL') {
             await emitTestRunFailed(db, ctx, { id: runId, findingSummary: sanitisedInput.findingSummary });
-
-            try {
-                // Idempotent: a repeated failing run reuses the open gap
-                // task for this (control, plan) instead of duplicating.
-                if (!(await hasOpenGapTask(db, ctx, run.controlId, run.testPlanId)))
-                await createTask(ctx, {
-                    title: `Test failed: ${plan?.name || 'Unknown plan'}`,
-                    type: 'CONTROL_GAP',
-                    description: sanitisedInput.findingSummary || sanitisedInput.notes || 'A control test run failed and requires remediation.',
-                    severity: 'HIGH',
-                    priority: 'P1',
-                    source: 'INTEGRATION',
-                    controlId: run.controlId,
-                    assigneeUserId: plan?.ownerUserId || null,
-                    metadataJson: {
-                        testRunId: runId,
-                        testPlanId: run.testPlanId,
-                        testPlanName: plan?.name,
-                    },
-                });
-            } catch (taskErr) {
-                // Log but don't fail the test completion if task creation fails
-                await logEvent(db, ctx, {
-                    action: 'TEST_RUN_TASK_CREATION_FAILED',
-                    entityType: 'ControlTestRun',
-                    entityId: runId,
-                    details: `Failed to create follow-up task: ${taskErr instanceof Error ? taskErr.message : String(taskErr)}`,
-                    detailsJson: {
-                        category: 'custom',
-                        event: 'task_creation_failed',
-                        error: taskErr instanceof Error ? taskErr.message : String(taskErr),
-                    },
-                });
-            }
+            gapTask = {
+                controlId: run.controlId,
+                testPlanId: run.testPlanId,
+                planName: plan?.name ?? null,
+                ownerUserId: plan?.ownerUserId ?? null,
+                description: sanitisedInput.findingSummary || sanitisedInput.notes || 'A control test run failed and requires remediation.',
+            };
         }
 
-        return completedRun;
+        return { completedRun, gapTask };
     });
+
+    // Post-commit: spawn the CONTROL_GAP follow-up in its OWN transaction, only
+    // after the run completion has durably landed. Idempotent + best-effort —
+    // a failure here must never undo the (already committed) completion.
+    if (result.gapTask) await spawnControlGapTask(ctx, runId, result.gapTask);
+
     await bumpEntityCacheVersion(ctx, 'test');
-    return result;
+    return result.completedRun;
+}
+
+interface GapTaskSpec {
+    controlId: string;
+    testPlanId: string;
+    planName: string | null;
+    ownerUserId: string | null;
+    description: string;
+    automated?: boolean;
+    integrationResultId?: string | null;
+}
+
+/**
+ * Post-commit CONTROL_GAP spawn for a FAILED run. Runs after completeTestRun /
+ * createAutomatedTestRun have committed, so it never nests inside their
+ * transaction. Idempotent (reuses an open gap for the control+plan) and
+ * best-effort (a failure is audited, not propagated).
+ */
+async function spawnControlGapTask(ctx: RequestContext, runId: string, spec: GapTaskSpec) {
+    try {
+        const alreadyOpen = await runInTenantContext(ctx, (db) =>
+            hasOpenGapTask(db, ctx, spec.controlId, spec.testPlanId),
+        );
+        if (alreadyOpen) return;
+        await createTask(ctx, {
+            title: `${spec.automated ? 'Automated test failed' : 'Test failed'}: ${spec.planName || 'Unknown plan'}`,
+            type: 'CONTROL_GAP',
+            description: spec.description,
+            severity: 'HIGH',
+            priority: 'P1',
+            source: 'INTEGRATION',
+            controlId: spec.controlId,
+            assigneeUserId: spec.ownerUserId,
+            metadataJson: {
+                testRunId: runId,
+                testPlanId: spec.testPlanId,
+                testPlanName: spec.planName,
+                ...(spec.automated
+                    ? { automated: true, integrationResultId: spec.integrationResultId ?? null }
+                    : {}),
+            },
+        });
+    } catch (taskErr) {
+        // Audit the miss in its own short transaction; do not fail the run.
+        await runInTenantContext(ctx, (db) =>
+            logEvent(db, ctx, {
+                action: 'TEST_RUN_TASK_CREATION_FAILED',
+                entityType: 'ControlTestRun',
+                entityId: runId,
+                details: `Failed to create follow-up task: ${taskErr instanceof Error ? taskErr.message : String(taskErr)}`,
+                detailsJson: {
+                    category: 'custom',
+                    event: 'task_creation_failed',
+                    error: taskErr instanceof Error ? taskErr.message : String(taskErr),
+                },
+            }),
+        ).catch(() => { /* the audit log is itself best-effort here */ });
+    }
 }
 
 // ─── Retest Flow ───
@@ -873,45 +934,21 @@ export async function createAutomatedTestRun(
             }
         }
 
-        // Create remediation task on FAIL (same pattern as completeTestRun)
+        // On FAIL, emit the failure event in-tx and defer the CONTROL_GAP task
+        // to a POST-COMMIT step (same reasoning as completeTestRun — createTask
+        // must not nest its transaction inside this one).
+        let gapTask: GapTaskSpec | null = null;
         if (input.result === 'FAIL') {
             await emitTestRunFailed(db, ctx, { id: run.id, findingSummary: input.notes });
-
-            try {
-                // Idempotent: reuse the open gap task for this
-                // (control, plan) instead of duplicating on every run.
-                if (!(await hasOpenGapTask(db, ctx, plan.controlId, plan.id)))
-                await createTask(ctx, {
-                    title: `Automated test failed: ${plan.name || 'Unknown plan'}`,
-                    type: 'CONTROL_GAP',
-                    description: notes || 'An automated control test run failed and requires remediation.',
-                    severity: 'HIGH',
-                    priority: 'P1',
-                    source: 'INTEGRATION',
-                    controlId: plan.controlId,
-                    assigneeUserId: plan.ownerUserId || null,
-                    metadataJson: {
-                        testRunId: run.id,
-                        testPlanId: plan.id,
-                        testPlanName: plan.name,
-                        automated: true,
-                        integrationResultId: input.integrationResultId,
-                    },
-                });
-            } catch (taskErr) {
-                await logEvent(db, ctx, {
-                    action: 'TEST_RUN_TASK_CREATION_FAILED',
-                    entityType: 'ControlTestRun',
-                    entityId: run.id,
-                    details: `Failed to create follow-up task: ${taskErr instanceof Error ? taskErr.message : String(taskErr)}`,
-                    detailsJson: {
-                        category: 'custom',
-                        event: 'task_creation_failed',
-                        error: taskErr instanceof Error ? taskErr.message : String(taskErr),
-                        automated: true,
-                    },
-                });
-            }
+            gapTask = {
+                controlId: plan.controlId,
+                testPlanId: plan.id,
+                planName: plan.name ?? null,
+                ownerUserId: plan.ownerUserId ?? null,
+                description: notes || 'An automated control test run failed and requires remediation.',
+                automated: true,
+                integrationResultId: input.integrationResultId ?? null,
+            };
         }
 
         await emitTestRunCompleted(db, ctx, {
@@ -940,10 +977,14 @@ export async function createAutomatedTestRun(
             },
         });
 
-        return completedRun;
+        return { completedRun, gapTask };
     });
+
+    // Post-commit CONTROL_GAP spawn — see completeTestRun for the rationale.
+    if (result.gapTask) await spawnControlGapTask(ctx, result.completedRun.id, result.gapTask);
+
     await bumpEntityCacheVersion(ctx, 'test');
-    return result;
+    return result.completedRun;
 }
 
 // ─── Bulk actions (canonical BulkActionBar rollout) ───

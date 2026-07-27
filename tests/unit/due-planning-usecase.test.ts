@@ -21,9 +21,22 @@
 
 const mockDb = {
     controlTestPlan: { findMany: jest.fn(), count: jest.fn() },
-    controlTestRun: { create: jest.fn(), findMany: jest.fn() },
+    controlTestRun: { create: jest.fn(), findMany: jest.fn(), groupBy: jest.fn(), count: jest.fn() },
     control: { findMany: jest.fn() },
 } as any;
+
+// R4-P3 #2 — getTestDashboardMetrics aggregates via groupBy (status×result,
+// then controlId for FAILs) + count (evidence coverage). Helper wires both.
+function wireMetricsGroupBy(
+    statusResult: Array<{ status: string; result: string | null; _count: { _all: number } }>,
+    failByControl: Array<{ controlId: string; _count: { _all: number } }>,
+    evidenceCount = 0,
+) {
+    (mockDb.controlTestRun.groupBy as jest.Mock).mockImplementation(async (args: any) =>
+        args.by.includes('status') ? statusResult : failByControl,
+    );
+    (mockDb.controlTestRun.count as jest.Mock).mockResolvedValue(evidenceCount);
+}
 
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
@@ -147,12 +160,16 @@ describe('runDuePlanning — idempotency', () => {
 
 describe('getTestDashboardMetrics', () => {
     it('computes completion / pass / fail / evidence rates with the right rounding', async () => {
-        (mockDb.controlTestRun.findMany as jest.Mock).mockResolvedValue([
-            { id: 'r-1', status: 'COMPLETED', result: 'PASS', controlId: 'c-1', evidence: [{ id: 'e-1' }] },
-            { id: 'r-2', status: 'COMPLETED', result: 'PASS', controlId: 'c-1', evidence: [] },
-            { id: 'r-3', status: 'COMPLETED', result: 'FAIL', controlId: 'c-2', evidence: [{ id: 'e-2' }] },
-            { id: 'r-4', status: 'RUNNING', result: null, controlId: 'c-3', evidence: [] },
-        ]);
+        // 4 runs: 3 COMPLETED (PASS×2, FAIL×1) + 1 RUNNING; 2 completed carry evidence.
+        wireMetricsGroupBy(
+            [
+                { status: 'COMPLETED', result: 'PASS', _count: { _all: 2 } },
+                { status: 'COMPLETED', result: 'FAIL', _count: { _all: 1 } },
+                { status: 'RUNNING', result: null, _count: { _all: 1 } },
+            ],
+            [{ controlId: 'c-2', _count: { _all: 1 } }],
+            2,
+        );
         (mockDb.controlTestPlan.count as jest.Mock)
             .mockResolvedValueOnce(2)  // overdue
             .mockResolvedValueOnce(10); // totalPlans
@@ -172,7 +189,7 @@ describe('getTestDashboardMetrics', () => {
     });
 
     it('returns zero rates when no runs exist (no division by zero)', async () => {
-        (mockDb.controlTestRun.findMany as jest.Mock).mockResolvedValue([]);
+        wireMetricsGroupBy([], [], 0);
         (mockDb.controlTestPlan.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
 
         const m = await getTestDashboardMetrics(readerCtx);
@@ -184,11 +201,14 @@ describe('getTestDashboardMetrics', () => {
     });
 
     it('flags controls with ≥2 FAIL runs as repeatedFailures', async () => {
-        (mockDb.controlTestRun.findMany as jest.Mock).mockResolvedValue([
-            { id: 'r-1', status: 'COMPLETED', result: 'FAIL', controlId: 'c-flaky', evidence: [] },
-            { id: 'r-2', status: 'COMPLETED', result: 'FAIL', controlId: 'c-flaky', evidence: [] },
-            { id: 'r-3', status: 'COMPLETED', result: 'FAIL', controlId: 'c-once', evidence: [] }, // single fail, NOT repeated
-        ]);
+        wireMetricsGroupBy(
+            [{ status: 'COMPLETED', result: 'FAIL', _count: { _all: 3 } }],
+            [
+                { controlId: 'c-flaky', _count: { _all: 2 } },
+                { controlId: 'c-once', _count: { _all: 1 } }, // single fail, NOT repeated
+            ],
+            0,
+        );
         (mockDb.controlTestPlan.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         (mockDb.control.findMany as jest.Mock).mockResolvedValue([
             { id: 'c-flaky', name: 'Backup', code: 'A.8.13' },
@@ -202,10 +222,11 @@ describe('getTestDashboardMetrics', () => {
     });
 
     it('falls back to Unknown name when control is missing from lookup', async () => {
-        (mockDb.controlTestRun.findMany as jest.Mock).mockResolvedValue([
-            { id: 'r-1', status: 'COMPLETED', result: 'FAIL', controlId: 'c-orphan', evidence: [] },
-            { id: 'r-2', status: 'COMPLETED', result: 'FAIL', controlId: 'c-orphan', evidence: [] },
-        ]);
+        wireMetricsGroupBy(
+            [{ status: 'COMPLETED', result: 'FAIL', _count: { _all: 2 } }],
+            [{ controlId: 'c-orphan', _count: { _all: 2 } }],
+            0,
+        );
         (mockDb.controlTestPlan.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         (mockDb.control.findMany as jest.Mock).mockResolvedValue([]);
 
@@ -215,15 +236,15 @@ describe('getTestDashboardMetrics', () => {
     });
 
     it('honours custom periodDays parameter', async () => {
-        (mockDb.controlTestRun.findMany as jest.Mock).mockResolvedValue([]);
+        wireMetricsGroupBy([], [], 0);
         (mockDb.controlTestPlan.count as jest.Mock).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         const before = Date.now();
 
         const m = await getTestDashboardMetrics(readerCtx, 7);
 
         expect(m.periodDays).toBe(7);
-        const findManyArgs = (mockDb.controlTestRun.findMany as jest.Mock).mock.calls[0][0];
-        const periodStart = findManyArgs.where.createdAt.gte as Date;
+        const groupByArgs = (mockDb.controlTestRun.groupBy as jest.Mock).mock.calls[0][0];
+        const periodStart = groupByArgs.where.createdAt.gte as Date;
         const delta = before - periodStart.getTime();
         const sevenDays = 7 * 86_400_000;
         expect(delta).toBeGreaterThan(sevenDays - 5_000);

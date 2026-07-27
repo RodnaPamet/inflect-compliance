@@ -339,8 +339,11 @@ describe('getTestDashboard', () => {
         const findManyCall = mockTx.controlTestPlan.findMany.mock.calls[0][0];
         expect(findManyCall.take).toBe(10);
         expect(findManyCall.orderBy).toEqual({ nextRunAt: 'asc' });
-        expect(findManyCall.where.automationType).toEqual({
-            in: ['SCRIPT', 'INTEGRATION'],
-        });
+        // R4-P3 #7 — the upcoming list matches the scheduler's scan (any ACTIVE
+        // plan with a cron schedule, incl. MANUAL); it no longer filters by
+        // automationType, which had hidden scheduled MANUAL plans that run.
+        expect(findManyCall.where.automationType).toBeUndefined();
+        expect(findManyCall.where.schedule).toEqual({ not: null });
+        expect(findManyCall.where.status).toBe('ACTIVE');
     });
 });
