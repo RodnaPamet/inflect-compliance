@@ -7557,7 +7557,8 @@
       "noteOptional": "Бележка (по избор)",
       "uploading": "Качване...",
       "linking": "Свързване...",
-      "uploadingAria": "Качване на файл с доказателство"
+      "uploadingAria": "Качване на файл с доказателство",
+      "addTrigger": "Доказателство"
     },
     "evidenceUpload": {
       "files": "Файлове",

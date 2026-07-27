@@ -44,7 +44,9 @@ import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 // TP-4 — the task edit surface is now the shared inline autosave
 // TaskEditPanel (form variant), retiring the divergent EditTaskModal.
 import { TaskEditPanel } from '@/app/t/[tenantSlug]/(app)/controls/TaskEditPanel';
-import { Pen2 } from '@/components/ui/icons/nucleo';
+import { Pen2, Xmark } from '@/components/ui/icons/nucleo';
+import { IconAction } from '@/components/ui/icon-action';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
 // Shared with the list's Severity column and the Severity filter — this
 // page rendered the raw enum (`CRITICAL`) next to a filter chip reading
@@ -1026,15 +1028,18 @@ export default function TaskDetailPage() {
                                             {w.user?.name || w.user?.email || t('detail.unknown')}
                                         </StatusBadge>
                                         {canRemove && (
-                                            <button
-                                                type="button"
-                                                aria-label={t('detail.removeWatcher')}
+                                            // IconAction, not a bare <button> with a
+                                            // "×" text glyph: it supplies the tooltip,
+                                            // the aria-label, and the focus ring the
+                                            // raw element lacked.
+                                            <IconAction
+                                                variant="ghost"
+                                                icon={<Xmark className="size-3" />}
+                                                label={t('detail.removeWatcher')}
                                                 className="text-content-subtle hover:text-content-error"
                                                 id={`remove-watcher-${w.userId}`}
                                                 onClick={() => removeWatcher(w.userId)}
-                                            >
-                                                ×
-                                            </button>
+                                            />
                                         )}
                                     </span>
                                 );
@@ -1284,8 +1289,7 @@ export default function TaskDetailPage() {
                 <div className="space-y-default">
                     {canComment && (
                         <form onSubmit={addComment} className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
-                            <textarea
-                                className="input w-full"
+                            <Textarea
                                 rows={3}
                                 placeholder={t('detail.commentPlaceholder')}
                                 value={commentBody}
@@ -1401,9 +1405,8 @@ export default function TaskDetailPage() {
                         </div>
                     )}
                     <FormField label={t('detail.resolution')} required>
-                        <textarea
+                        <Textarea
                             id="task-resolution-input"
-                            className="input w-full"
                             rows={3}
                             placeholder={t('detail.resolutionPlaceholder')}
                             value={resolutionDraft}
@@ -1565,12 +1568,20 @@ function TaskLinksTable({
                               id: 'actions',
                               header: t('detail.linkActionsHeader'),
                               cell: ({ row }) => (
-                                  <button
-                                      className="text-content-error text-xs hover:text-content-error"
+                                  // Platform Button rather than a bare
+                                  // <button>: it carries the focus ring,
+                                  // disabled semantics, and destructive
+                                  // tone the raw element had to fake with
+                                  // colour classes alone.
+                                  <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-content-error"
+                                      id={`remove-link-${row.original.id}`}
                                       onClick={() => onRemove(row.original.id)}
                                   >
                                       {t('detail.removeLink')}
-                                  </button>
+                                  </Button>
                               ),
                           } as Parameters<typeof createColumns<TaskLinkRow>>[0][number],
                       ]

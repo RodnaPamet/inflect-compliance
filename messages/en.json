@@ -7548,7 +7548,7 @@
       "couldNotCreate": "Could not create task"
     },
     "evidenceForm": {
-      "add": "Add Evidence",
+      "add": "Add evidence",
       "labelTitle": "Title",
       "placeholderTitle": "Title (defaults to filename)",
       "uploadFile": "Upload a file",
@@ -7557,7 +7557,8 @@
       "noteOptional": "Note (optional)",
       "uploading": "Uploading...",
       "linking": "Linking...",
-      "uploadingAria": "Uploading evidence file"
+      "uploadingAria": "Uploading evidence file",
+      "addTrigger": "Evidence"
     },
     "evidenceUpload": {
       "files": "Files",

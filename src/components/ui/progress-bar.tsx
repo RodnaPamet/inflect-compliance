@@ -43,6 +43,17 @@ interface ProgressBarProps {
     size?: ProgressBarSize;
     /** Render the `{percent}%` label to the right. */
     showValue?: boolean;
+    /**
+     * The operation is running but its completion fraction is UNKNOWN.
+     * Renders a looping sweep and drops `aria-valuenow`, which is how
+     * ARIA spells "indeterminate" for a progressbar.
+     *
+     * Reach for this instead of inventing a number. A bar parked at a
+     * made-up constant reads as real progress and then never moves,
+     * which is worse than no bar: the user cannot tell a slow upload
+     * from a wedged one. `value` and `showValue` are ignored here.
+     */
+    indeterminate?: boolean;
     /** Accessible label — falls back to "Progress" when omitted. */
     "aria-label"?: string;
     /** Extra classes on the outer wrapper. */
@@ -74,9 +85,42 @@ export function ProgressBar({
     variant = "brand",
     size = "md",
     showValue = false,
+    indeterminate = false,
     className,
     "aria-label": ariaLabel = "Progress",
 }: ProgressBarProps) {
+    if (indeterminate) {
+        return (
+            <div
+                role="progressbar"
+                aria-label={ariaLabel}
+                // No `aria-valuenow` — its absence is what marks a
+                // progressbar indeterminate to assistive tech.
+                aria-valuemin={0}
+                aria-valuemax={max > 0 ? max : 100}
+                data-indeterminate="true"
+                className={cn(
+                    "w-full overflow-hidden rounded-full bg-bg-subtle",
+                    SIZE_HEIGHT[size],
+                    className,
+                )}>
+                <motion.div
+                    // Sweeps a partial bar left→right forever. `x` is a
+                    // percentage of the bar's OWN width, hence -100 → 300
+                    // to travel fully off both edges.
+                    initial={{ x: "-100%" }}
+                    animate={{ x: "300%" }}
+                    transition={{
+                        duration: 1.2,
+                        ease: "easeInOut",
+                        repeat: Infinity,
+                    }}
+                    className={cn("h-full w-1/3", VARIANT_FILL[variant])}
+                />
+            </div>
+        );
+    }
+
     const safeMax = max > 0 ? max : 0;
     const clampedValue = Math.max(0, value);
     const effectiveValue = Math.min(clampedValue, safeMax);
