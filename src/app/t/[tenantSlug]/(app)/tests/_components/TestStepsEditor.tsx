@@ -91,3 +91,13 @@ export function serializeSteps(steps: TestStepDraft[]): Array<{ instruction: str
         .filter((s) => s.instruction.trim().length > 0)
         .map((s) => ({ instruction: s.instruction.trim(), expectedOutput: s.expectedOutput.trim() || null }));
 }
+
+/**
+ * R4-P3 #12 — a row with an expected output but a BLANK instruction is silently
+ * dropped by `serializeSteps` (a step is keyed on its instruction). Callers use
+ * this to warn before saving, so the user's typed expected output isn't lost
+ * without a word.
+ */
+export function hasOrphanExpectedOutput(steps: TestStepDraft[]): boolean {
+    return steps.some((s) => s.instruction.trim().length === 0 && s.expectedOutput.trim().length > 0);
+}

@@ -10,9 +10,12 @@ import { z } from 'zod';
 import { normalizeQ } from '@/lib/filters/query-helpers';
 import { jsonResponse } from '@/lib/api-response';
 
+// R4-P3 #2 — `limit`/`cursor` were accepted here but never threaded into
+// `listAllTestPlans`, so paging silently did nothing (the /tests page reads
+// the full population and does its own client-side KPI counts, filtering and
+// paging). Rather than advertise a pagination contract we don't honour, the
+// params are gone; the usecase caps the read defensively instead.
 const TestPlanQuerySchema = z.object({
-    limit: z.coerce.number().int().min(1).max(100).optional(),
-    cursor: z.string().optional(),
     status: z.string().optional(),
     controlId: z.string().optional(),
     due: z.enum(['overdue', 'next7d']).optional(),

@@ -34,11 +34,17 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const result = await exportTestEvidenceBundle(ctx, { controlId, format, periodDays });
 
     if (format === 'csv') {
+        // R4-P3 #8 — the bundle is CONTROL-scoped (every run of the control),
+        // not a single run. Name the file for the control it covers so the
+        // download is self-describing and doesn't read as a per-run export.
+        const filename = controlId
+            ? `control-${controlId}-test-evidence.csv`
+            : 'test-evidence-export.csv';
         return new NextResponse(result as string, {
             status: 200,
             headers: {
                 'Content-Type': 'text/csv; charset=utf-8',
-                'Content-Disposition': `attachment; filename="test-evidence-export.csv"`,
+                'Content-Disposition': `attachment; filename="${filename}"`,
             },
         });
     }

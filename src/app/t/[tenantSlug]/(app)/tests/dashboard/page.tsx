@@ -159,13 +159,14 @@ export default function TestDashboardPage() {
             </div>
 
             {/* PR-Q — the ONE authoritative overdue count (reconciled across both
-                due clocks in getTestDashboardMetrics). It is the same number the
-                /tests and /tests/due surfaces show; this card names it and
-                cross-links to the queue rather than restating a divergent count.
+                due clocks in getTestDashboardMetrics). R4-P3 #8 — link to the
+                /tests list PRE-FILTERED to overdue, not /tests/due (which also
+                lists everything due within 7 days). Clicking a card that says
+                "3 overdue" now lands on exactly those 3 rows, not a 12-row queue.
                 The automation section below shows `overdueScheduled` — the SUBSET
                 of these that are on an automation cadence. */}
             <Link
-                href={tenantHref('/tests/due')}
+                href={tenantHref('/tests?due=overdue')}
                 className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between hover:border-border-emphasis transition')}
                 id="dashboard-overdue-link"
             >

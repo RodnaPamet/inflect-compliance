@@ -57,7 +57,7 @@ beforeEach(() => {
 function fakeDb(overrides: Record<string, any> = {}) {
     return {
         controlTestPlan: { findMany: jest.fn(), count: jest.fn() },
-        controlTestRun: { findMany: jest.fn(), create: jest.fn() },
+        controlTestRun: { findMany: jest.fn(), create: jest.fn(), groupBy: jest.fn(), count: jest.fn() },
         control: { findMany: jest.fn() },
         ...overrides,
     };
@@ -208,9 +208,23 @@ describe('getTestDashboardMetrics — rate maths', () => {
         await expect(getTestDashboardMetrics(ctx)).rejects.toThrow(/permission/i);
     });
 
+    // R4-P3 #2 — metrics now aggregate in the DB. `groupBy` is called twice:
+    // first with `by: ['status','result']` (totals), then `by: ['controlId']`
+    // (repeated failures). `count` returns the evidence-coverage tally.
+    const wireGroupBy = (
+        db: ReturnType<typeof fakeDb>,
+        statusResult: Array<{ status: string; result: string | null; _count: { _all: number } }>,
+        failByControl: Array<{ controlId: string; _count: { _all: number } }>,
+    ) => {
+        db.controlTestRun.groupBy.mockImplementation(async (args: any) =>
+            args.by.includes('status') ? statusResult : failByControl,
+        );
+    };
+
     it('returns all-zero rates when there are no runs in the period (divide-by-zero guards)', async () => {
         const db = fakeDb();
-        db.controlTestRun.findMany.mockResolvedValue([]);
+        wireGroupBy(db, [], []);
+        db.controlTestRun.count.mockResolvedValue(0);
         db.controlTestPlan.count.mockResolvedValue(0);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
@@ -228,12 +242,18 @@ describe('getTestDashboardMetrics — rate maths', () => {
 
     it('computes completion / pass / fail / evidence rates over completed runs', async () => {
         const db = fakeDb();
-        db.controlTestRun.findMany.mockResolvedValue([
-            { id: 'r1', status: 'COMPLETED', result: 'PASS', controlId: 'c1', evidence: [{ id: 'e' }] },
-            { id: 'r2', status: 'COMPLETED', result: 'FAIL', controlId: 'c2', evidence: [] },
-            { id: 'r3', status: 'COMPLETED', result: 'INCONCLUSIVE', controlId: 'c3', evidence: [] },
-            { id: 'r4', status: 'RUNNING', result: null, controlId: 'c4', evidence: [] },
-        ]);
+        // 4 runs: 3 COMPLETED (PASS/FAIL/INCONCLUSIVE) + 1 RUNNING; 1 with evidence.
+        wireGroupBy(
+            db,
+            [
+                { status: 'COMPLETED', result: 'PASS', _count: { _all: 1 } },
+                { status: 'COMPLETED', result: 'FAIL', _count: { _all: 1 } },
+                { status: 'COMPLETED', result: 'INCONCLUSIVE', _count: { _all: 1 } },
+                { status: 'RUNNING', result: null, _count: { _all: 1 } },
+            ],
+            [{ controlId: 'c2', _count: { _all: 1 } }],
+        );
+        db.controlTestRun.count.mockResolvedValue(1); // runs-with-evidence
         db.controlTestPlan.count.mockResolvedValue(7);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
 
@@ -256,11 +276,15 @@ describe('getTestDashboardMetrics — rate maths', () => {
 
     it('rolls up controls with ≥2 FAIL runs and resolves their names', async () => {
         const db = fakeDb();
-        db.controlTestRun.findMany.mockResolvedValue([
-            { id: 'r1', status: 'COMPLETED', result: 'FAIL', controlId: 'c-bad', evidence: [] },
-            { id: 'r2', status: 'COMPLETED', result: 'FAIL', controlId: 'c-bad', evidence: [] },
-            { id: 'r3', status: 'COMPLETED', result: 'FAIL', controlId: 'c-once', evidence: [] },
-        ]);
+        wireGroupBy(
+            db,
+            [{ status: 'COMPLETED', result: 'FAIL', _count: { _all: 3 } }],
+            [
+                { controlId: 'c-bad', _count: { _all: 2 } },
+                { controlId: 'c-once', _count: { _all: 1 } },
+            ],
+        );
+        db.controlTestRun.count.mockResolvedValue(0);
         db.controlTestPlan.count.mockResolvedValue(2);
         db.control.findMany.mockResolvedValue([
             { id: 'c-bad', name: 'Access Review', code: 'AC-2' },
@@ -281,10 +305,12 @@ describe('getTestDashboardMetrics — rate maths', () => {
 
     it('falls back to "Unknown" when a repeated-failure control row is missing', async () => {
         const db = fakeDb();
-        db.controlTestRun.findMany.mockResolvedValue([
-            { id: 'r1', status: 'COMPLETED', result: 'FAIL', controlId: 'c-ghost', evidence: [] },
-            { id: 'r2', status: 'COMPLETED', result: 'FAIL', controlId: 'c-ghost', evidence: [] },
-        ]);
+        wireGroupBy(
+            db,
+            [{ status: 'COMPLETED', result: 'FAIL', _count: { _all: 2 } }],
+            [{ controlId: 'c-ghost', _count: { _all: 2 } }],
+        );
+        db.controlTestRun.count.mockResolvedValue(0);
         db.controlTestPlan.count.mockResolvedValue(1);
         db.control.findMany.mockResolvedValue([]); // control row absent
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));

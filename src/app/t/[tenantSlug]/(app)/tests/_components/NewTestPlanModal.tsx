@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { TestStepsEditor, type TestStepDraft, serializeSteps } from './TestStepsEditor';
+import { TestStepsEditor, type TestStepDraft, serializeSteps, hasOrphanExpectedOutput } from './TestStepsEditor';
 
 interface ControlOption { id: string; code: string | null; name: string }
 
@@ -72,8 +72,19 @@ export function NewTestPlanModal({
         setControlId(''); setName(''); setFrequency('AD_HOC'); setSteps([]);
     };
 
+    // R4-P3 #12 — reset on close too, not just on a successful create. Without
+    // this, cancelling a half-filled form and reopening restored the abandoned
+    // draft (stale control + name + steps), which reads as a bug.
+    const handleClose = () => { reset(); onClose(); };
+
     const submit = async () => {
         if (!controlId || !name.trim()) return;
+        // Don't silently drop a step whose expected output was typed but whose
+        // instruction was left blank — tell the user so they can fix it.
+        if (hasOrphanExpectedOutput(steps)) {
+            toast.error(t('steps.orphanOutputWarning'));
+            return;
+        }
         setSaving(true);
         try {
             const res = await fetch(apiUrl(`/controls/${controlId}/tests/plans`), {
@@ -96,8 +107,8 @@ export function NewTestPlanModal({
     return (
         <Modal
             showModal={open}
-            setShowModal={(v) => { if (!v) onClose(); }}
-            onClose={onClose}
+            setShowModal={(v) => { if (!v) handleClose(); }}
+            onClose={handleClose}
             title={t('unified.createTitle')}
             size="md"
         >
@@ -147,7 +158,7 @@ export function NewTestPlanModal({
                 </div>
             </Modal.Body>
             <Modal.Actions>
-                <Button variant="secondary" onClick={onClose}>{t('unified.createCancel')}</Button>
+                <Button variant="secondary" onClick={handleClose}>{t('unified.createCancel')}</Button>
                 <Button variant="primary" onClick={submit} disabled={!controlId || !name.trim() || saving} id="new-test-plan-submit">
                     {saving ? t('unified.creating') : t('unified.createConfirm')}
                 </Button>

@@ -247,7 +247,12 @@ describe('completeTestRun — sanitisation + FAIL fan-out', () => {
     function setupRun(status: string, planFreq = 'MONTHLY') {
         // R2-P2 — completeTestRun now attests the control (db.control
         // findFirst + update) on completion, so the fake db must carry it.
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({
+        // R4-P3 #3 — the FAIL CONTROL_GAP spawn moved POST-COMMIT, so it opens
+        // its own runInTenantContext(s) after the completion tx (idempotency
+        // read via `task.findFirst`, plus a best-effort error-log tx). Use a
+        // persistent implementation (not `...Once`) so every one of those calls
+        // sees the same fake db.
+        mockRunInTx.mockImplementation(async (_ctx, fn) => fn({
             control: {
                 findFirst: jest.fn().mockResolvedValue({ id: 'c1', frequency: 'MONTHLY', applicability: 'APPLICABLE' }),
                 update: jest.fn().mockResolvedValue({ id: 'c1' }),

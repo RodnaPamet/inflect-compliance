@@ -137,16 +137,15 @@ export async function scheduleTestPlan(
             ? computeNextRunFromCron(input.schedule, tz, new Date())
             : null;
 
-        // R3-P2 — reconcile the two overlapping models into one coherent
-        // "next":
-        //   • `method` is derived from `automationType` so the auditor-facing
-        //     flag can never disagree with how execution actually runs.
-        //   • `nextDueAt` (the soft "due-by" the /tests + /tests/due views
-        //     show) tracks the ACTUAL cadence: for a scheduled plan that's
-        //     the cron's next fire (nextRunAt); reverting to MANUAL falls
-        //     back to the frequency-driven due date.
+        // R4-P3 #6 — the two clocks are INDEPENDENT (see controls.prisma:
+        //   • `nextDueAt` — the human review cadence (frequency: "review monthly")
+        //   • `nextRunAt` — the automation cadence (cron: "the script runs daily")
+        // Overwriting nextDueAt with nextRunAt collapsed them, erasing the human
+        // cadence for every scheduled plan. Keep nextDueAt frequency-derived;
+        // the due/overdue surfaces reconcile the pair via effectiveDueAt =
+        // min(nextDueAt, nextRunAt), so whichever fires first still wins.
         const method = deriveMethodFromAutomationType(input.automationType);
-        const nextDueAt = nextRunAt ?? computeNextDueAt(plan.frequency, new Date());
+        const nextDueAt = computeNextDueAt(plan.frequency, new Date());
 
         const updated = await db.controlTestPlan.update({
             where: { id: planId },
@@ -282,12 +281,18 @@ export async function getTestDashboard(
                     automationType: 'INTEGRATION',
                 },
             }),
+            // R4-P3 #7 — align the "scheduled" KPIs with what the scheduler
+            // actually scans: findDueTestPlans executes ANY ACTIVE plan carrying
+            // a cron `schedule`, regardless of automationType (a scheduled MANUAL
+            // plan is the honest shape while no SCRIPT/INTEGRATION engine exists).
+            // The old `automationType IN (SCRIPT, INTEGRATION)` filter made every
+            // scheduled MANUAL plan — the only kind that runs today — invisible
+            // in these counts even as the scheduler ran them each tick.
             db.controlTestPlan.count({
                 where: {
                     tenantId: ctx.tenantId,
                     status: 'ACTIVE',
                     schedule: { not: null },
-                    automationType: { in: ['SCRIPT', 'INTEGRATION'] },
                 },
             }),
             db.controlTestPlan.count({
@@ -295,7 +300,6 @@ export async function getTestDashboard(
                     tenantId: ctx.tenantId,
                     status: 'ACTIVE',
                     schedule: { not: null },
-                    automationType: { in: ['SCRIPT', 'INTEGRATION'] },
                     nextRunAt: { lt: now },
                 },
             }),
@@ -308,7 +312,8 @@ export async function getTestDashboard(
                 status: 'ACTIVE',
                 schedule: { not: null },
                 nextRunAt: { not: null },
-                automationType: { in: ['SCRIPT', 'INTEGRATION'] },
+                // #7 — match the scan (any scheduled ACTIVE plan), so a scheduled
+                // MANUAL plan the scheduler runs also appears in "upcoming".
             },
             select: {
                 id: true,
@@ -348,6 +353,10 @@ export async function getTestDashboard(
         // We bucket COMPLETED runs in the period by UTC date of
         // executedAt. This deliberately aligns to UTC so dashboards
         // across tenants in different zones display the same trend.
+        // R4-P3 #2 — bounded: per-day bucketing needs the rows (Prisma can't
+        // groupBy a date-truncated column without raw SQL), but the read is
+        // capped so a high-volume tenant can't scan the whole run table. The
+        // window is already narrow (status COMPLETED within the period).
         const completedRuns = await db.controlTestRun.findMany({
             where: {
                 tenantId: ctx.tenantId,
@@ -355,6 +364,7 @@ export async function getTestDashboard(
                 executedAt: { gte: periodStart, not: null },
             },
             select: { result: true, executedAt: true },
+            take: 10_000,
         });
 
         const dayKeys: string[] = [];

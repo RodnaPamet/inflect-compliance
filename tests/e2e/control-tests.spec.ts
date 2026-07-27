@@ -73,15 +73,17 @@ test.describe('Control Tests (Test-of-Control)', () => {
             await page.click('#create-test-run-btn');
             await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('#test-run-title', { timeout: 30000 });
+            // R4-P3 #11 — run status/result now render the localized label
+            // ("Planned"/"Running"/"Completed"/"Pass"/"Fail"), not the raw enum.
             await expect(page.locator('#test-run-status')).toContainText(
-                'PLANNED',
+                'Planned',
                 { timeout: 10000 },
             );
             // R3-P2 — "Run" now creates a PLANNED run; begin the guided
             // execution (PLANNED → RUNNING) before the result form appears.
             await page.click('#start-test-run-btn');
             await expect(page.locator('#test-run-status')).toContainText(
-                'RUNNING',
+                'Running',
                 { timeout: 10000 },
             );
         });
@@ -118,10 +120,10 @@ test.describe('Control Tests (Test-of-Control)', () => {
             await page.click('[data-modal-confirm]');
             await page.waitForLoadState('networkidle').catch(() => {});
             await expect(page.locator('#test-run-status')).toContainText(
-                'COMPLETED',
+                'Completed',
                 { timeout: 15000 },
             );
-            await expect(page.locator('#test-run-result')).toContainText('PASS', {
+            await expect(page.locator('#test-run-result')).toContainText('Pass', {
                 timeout: 10000,
             });
 
@@ -151,7 +153,7 @@ test.describe('Control Tests (Test-of-Control)', () => {
             // R3-P2 — start the guided run before the result form is available.
             await page.click('#start-test-run-btn');
             await expect(page.locator('#test-run-status')).toContainText(
-                'RUNNING',
+                'Running',
                 { timeout: 10000 },
             );
 
@@ -168,10 +170,10 @@ test.describe('Control Tests (Test-of-Control)', () => {
             await page.click('[data-modal-confirm]');
             await page.waitForLoadState('networkidle').catch(() => {});
             await expect(page.locator('#test-run-status')).toContainText(
-                'COMPLETED',
+                'Completed',
                 { timeout: 15000 },
             );
-            await expect(page.locator('#test-run-result')).toContainText('FAIL', {
+            await expect(page.locator('#test-run-result')).toContainText('Fail', {
                 timeout: 10000,
             });
             // The finding is created from the test-run summary on completion and
