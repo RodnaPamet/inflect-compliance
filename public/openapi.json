@@ -3739,12 +3739,15 @@
               "string",
               "null"
             ]
+          },
+          "proposeOnly": {
+            "type": "boolean"
           }
         },
         "required": [
           "contentType"
         ],
-        "description": "Create a new draft version of a policy. contentText is required for MARKDOWN/HTML; externalUrl is required for EXTERNAL_LINK. contentText is sanitized + encrypted at rest."
+        "description": "Create a new draft version of a policy. contentText is required for MARKDOWN/HTML; externalUrl is required for EXTERNAL_LINK. contentText is sanitized + encrypted at rest. Set proposeOnly to save as a proposal without demoting a live PUBLISHED/APPROVED policy."
       },
       "Requirement": {
         "type": "object",

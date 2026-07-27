@@ -326,8 +326,20 @@ export const CreatePolicyVersionSchema = z.object({
     contentText: z.string().optional().nullable(),
     externalUrl: z.string().url('Must be a valid URL').optional().nullable(),
     changeSummary: z.string().optional().nullable(),
+    /**
+     * Save as a PROPOSAL rather than demoting the live policy.
+     *
+     * Creating a version on a PUBLISHED/APPROVED policy normally moves it back
+     * to DRAFT — which withdraws it: `attestPolicy` requires PUBLISHED, so
+     * every outstanding acknowledgement stops being possible. The usecase has
+     * always supported `proposeOnly` to avoid exactly that (the SharePoint
+     * pull uses it so an external edit never un-publishes a live policy), but
+     * it was reachable only by calling the usecase directly — the HTTP schema
+     * stripped it, so the UI could not ask for it.
+     */
+    proposeOnly: z.boolean().optional(),
 }).strip().openapi('PolicyVersionCreateRequest', {
-    description: 'Create a new draft version of a policy. contentText is required for MARKDOWN/HTML; externalUrl is required for EXTERNAL_LINK. contentText is sanitized + encrypted at rest.',
+    description: 'Create a new draft version of a policy. contentText is required for MARKDOWN/HTML; externalUrl is required for EXTERNAL_LINK. contentText is sanitized + encrypted at rest. Set proposeOnly to save as a proposal without demoting a live PUBLISHED/APPROVED policy.',
 });
 
 export const RequestApprovalSchema = z.object({

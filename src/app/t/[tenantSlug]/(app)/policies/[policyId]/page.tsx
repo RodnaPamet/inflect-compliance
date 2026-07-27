@@ -230,6 +230,16 @@ export default function PolicyDetailPage() {
 
     // ── Actions ──
 
+    /**
+     * A policy is LIVE when a new version would otherwise withdraw it.
+     *
+     * `createPolicyVersion` demotes PUBLISHED/APPROVED policies to DRAFT. On a
+     * PUBLISHED policy that is a withdrawal: `attestPolicy` requires PUBLISHED,
+     * so every outstanding acknowledgement stops being possible and the policy
+     * drops out of coverage — from the editor, with no warning.
+     */
+    const policyIsLive = policy?.status === 'PUBLISHED' || policy?.status === 'APPROVED';
+
     const createVersion = async () => {
         if (contentMode === 'MARKDOWN' && !editorContent.trim()) return;
         if (contentMode === 'EXTERNAL_LINK' && !externalUrl.trim()) return;
@@ -250,6 +260,13 @@ export default function PolicyDetailPage() {
             const body: Record<string, unknown> = {
                 contentType: wireContentType,
                 changeSummary: changeSummary || null,
+                // Save as a PROPOSAL on a live policy rather than demoting it.
+                // The flag has existed on the usecase all along for exactly
+                // this (the SharePoint pull uses it so an external edit never
+                // un-publishes a live policy); the editor simply never asked
+                // for it. The live version keeps serving acknowledgements
+                // until the proposal is approved and published.
+                proposeOnly: policyIsLive,
             };
 
             if (contentMode === 'MARKDOWN') {
@@ -282,6 +299,11 @@ export default function PolicyDetailPage() {
             }
             setEditorContent(''); setExternalUrl(''); setChangeSummary(''); setEditorContentType('MARKDOWN');
             setSelectedFile(null); setTab('versions');
+            toast.success(
+                policyIsLive
+                    ? t('detail.versionProposedToast')
+                    : t('detail.versionCreatedToast'),
+            );
             await fetchPolicy();
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : t('detail.errUnknown'));
@@ -1067,6 +1089,17 @@ export default function PolicyDetailPage() {
                         <input className="input w-full" value={changeSummary} onChange={e => setChangeSummary(e.target.value)}
                             placeholder={t('detail.changeSummaryPlaceholder')} id="change-summary-input" />
                     </div>
+
+                    {/* Say what saving will do BEFORE it happens. Editing a live
+                        policy used to withdraw it silently — the editor gave no
+                        indication that pressing Save would stop every outstanding
+                        acknowledgement. It now saves as a proposal instead, which
+                        is only reassuring if the user is told. */}
+                    {policyIsLive && (
+                        <InlineNotice variant="info" icon={null}>
+                            {t('detail.liveEditProposalNotice')}
+                        </InlineNotice>
+                    )}
 
                     <Button variant="primary" icon={saving ? undefined : <Plus className="-ml-0.5 -mr-2.5" />} onClick={createVersion} disabled={saving} id="save-version-btn">
                         {saving ? t('detail.saving') : t('detail.version')}

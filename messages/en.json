@@ -2997,7 +2997,10 @@
       "rollbackConfirmTitle": "Roll back to v{n}?",
       "rollbackConfirmBody": "This republishes v{n} as the live version. The current version stays in the history.",
       "rollbackConfirmLabel": "Roll back to v{n}",
-      "approvalNoLongerCurrent": "No longer current"
+      "approvalNoLongerCurrent": "No longer current",
+      "liveEditProposalNotice": "This policy is live. Saving creates a proposed new version — the published version stays live, and acknowledgements keep working, until the proposal is approved and published.",
+      "versionProposedToast": "Saved as a proposed version. The published version is still live.",
+      "versionCreatedToast": "New version saved."
     },
     "evidence": {
       "title": "Evidence to Retain",
