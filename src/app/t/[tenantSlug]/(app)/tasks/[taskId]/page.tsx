@@ -125,6 +125,32 @@ const buildTaskStatusCbOptions = (
     ).map((val) => ({ value: val, label: statusLabels[val] || val }));
 };
 
+/**
+ * Terminal status → the imperative verb for the confirm dialog. Kept
+ * separate from STATUS_LABELS, which holds the past-tense STATE names
+ * ("Closed") used on badges — the two are different registers and
+ * conflating them is what produced "Closed task?" as an action prompt.
+ */
+/**
+ * Message to show for a caught error, falling back to localized copy.
+ *
+ * The call sites used to spell `e instanceof Error ? e.message : t(...)`
+ * inline. Every throw site here constructs an Error, so the `t(...)` arm
+ * was unreachable — and the arm that DID run happily rendered an empty
+ * string when the Error carried no message (`new Error()`, or a server
+ * body whose `error` field was ""), producing a blank toast. Checking the
+ * message itself rather than the instance makes the fallback reachable
+ * for the case that actually occurs.
+ */
+function errorMessage(e: unknown, fallback: string): string {
+    return e instanceof Error && e.message.trim() ? e.message : fallback;
+}
+
+const TERMINAL_STATUS_VERB_KEY: Record<string, string> = {
+    CLOSED: 'detail.close',
+    CANCELED: 'detail.cancelVerb',
+};
+
 type Tab = 'overview' | 'evidence' | 'links' | 'comments' | 'activity';
 
 const buildFindingSourceLabels = (t: (k: string) => string): Record<string, string> => ({
@@ -269,9 +295,7 @@ export default function TaskDetailPage() {
     const task = taskQuery.data ?? null;
     const loading = taskQuery.isLoading;
     const error = taskQuery.error
-        ? (taskQuery.error instanceof Error
-            ? taskQuery.error.message
-            : t('detail.notFound'))
+        ? errorMessage(taskQuery.error, t('detail.notFound'))
         : '';
 
     const linksQuery = useTenantSWR<TaskLinkRow[]>(
@@ -351,7 +375,7 @@ export default function TaskDetailPage() {
             setPendingTerminalStatus(null);
         } catch (e) {
             const message =
-                e instanceof Error ? e.message : t('detail.failedStatus');
+                errorMessage(e, t('detail.failedStatus'));
             setStatusError(message);
             // `statusError` only renders inside the terminal-status modal.
             // A non-terminal change (OPEN → IN_PROGRESS, a reviewer-gate
@@ -394,7 +418,7 @@ export default function TaskDetailPage() {
                 );
             }
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.assignFailed'));
+            toast.error(errorMessage(e, t('detail.assignFailed')));
             // Drop the rejected pick. `assigneeValue` prefers the draft
             // over the server value, so leaving it set would keep showing
             // the assignee the server just refused — while the reconcile
@@ -436,7 +460,7 @@ export default function TaskDetailPage() {
                 );
             }
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.reviewerFailed'));
+            toast.error(errorMessage(e, t('detail.reviewerFailed')));
             // Same reset as handleAssign — see the note there.
             setReviewerDraft(undefined);
         } finally {
@@ -459,7 +483,7 @@ export default function TaskDetailPage() {
                   });
             if (!res.ok) throw new Error(t('detail.watchFailed'));
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.watchFailed'));
+            toast.error(errorMessage(e, t('detail.watchFailed')));
         } finally {
             setWatchPending(false);
             await taskQuery.mutate();
@@ -536,9 +560,7 @@ export default function TaskDetailPage() {
             },
             onError: (err: unknown) => {
                 toast.error(
-                    err instanceof Error && err.message
-                        ? err.message
-                        : t('detail.deleteFailed'),
+                    errorMessage(err, t('detail.deleteFailed')),
                 );
             },
         });
@@ -566,7 +588,7 @@ export default function TaskDetailPage() {
             setLinkEntityId('');
             setShowLinkForm(false);
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.addLinkFailed'));
+            toast.error(errorMessage(e, t('detail.addLinkFailed')));
         } finally {
             setSavingLink(false);
             // Refresh the links list + the task (its _count.links
@@ -645,7 +667,7 @@ export default function TaskDetailPage() {
                 resetEvidenceForm();
                 await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
             } catch (err: unknown) {
-                setEvidenceError(err instanceof Error ? err.message : t('detail.uploadFailed'));
+                setEvidenceError(errorMessage(err, t('detail.uploadFailed')));
             } finally {
                 setSavingEvidence(false);
             }
@@ -670,7 +692,7 @@ export default function TaskDetailPage() {
             resetEvidenceForm();
             await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
         } catch (err: unknown) {
-            setEvidenceError(err instanceof Error ? err.message : t('detail.linkEvidenceFailed'));
+            setEvidenceError(errorMessage(err, t('detail.linkEvidenceFailed')));
         } finally {
             setSavingEvidence(false);
         }
@@ -728,7 +750,7 @@ export default function TaskDetailPage() {
             }
             setCommentBody('');
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.addCommentFailed'));
+            toast.error(errorMessage(e, t('detail.addCommentFailed')));
         } finally {
             setSavingComment(false);
             await Promise.all([commentsQuery.mutate(), taskQuery.mutate()]);
@@ -769,6 +791,19 @@ export default function TaskDetailPage() {
         { key: 'comments', label: t('detail.tabComments'), count: task._count?.comments ?? comments.length },
         { key: 'activity', label: t('detail.tabActivity') },
     ];
+
+    // The confirm title needs the IMPERATIVE verb ("Close task"), not the
+    // status LABEL — interpolating STATUS_LABELS gave "Closed task" /
+    // "Canceled task", which reads as a description of a finished state
+    // rather than the action about to be taken. TERMINAL_STATUS_VERB_KEY
+    // maps each terminal status to its verb.
+    const terminalActionTitle = t('detail.terminalTitle', {
+        verb:
+            pendingTerminalStatus &&
+            TERMINAL_STATUS_VERB_KEY[pendingTerminalStatus]
+                ? t(TERMINAL_STATUS_VERB_KEY[pendingTerminalStatus])
+                : t('detail.close'),
+    });
 
     // Built here, not at the top of the component, because it depends on
     // the CURRENT status — the reachable set differs per task, and `task`
@@ -1386,12 +1421,12 @@ export default function TaskDetailPage() {
                     }
                 }}
                 size="sm"
-                title={t('detail.terminalTitle', { status: STATUS_LABELS[pendingTerminalStatus ?? ''] ?? t('detail.close') })}
+                title={terminalActionTitle}
                 description={t('detail.terminalDesc')}
                 preventDefaultClose={changingStatus}
             >
                 <Modal.Header
-                    title={t('detail.terminalTitle', { status: STATUS_LABELS[pendingTerminalStatus ?? ''] ?? t('detail.close') })}
+                    title={terminalActionTitle}
                     description={t('detail.terminalHeaderDesc')}
                 />
                 <Modal.Body>
@@ -1440,7 +1475,7 @@ export default function TaskDetailPage() {
                     >
                         {changingStatus
                             ? t('detail.savingEllipsis')
-                            : t('detail.terminalTitle', { status: STATUS_LABELS[pendingTerminalStatus ?? ''] ?? t('detail.close') })}
+                            : terminalActionTitle}
                     </Button>
                 </Modal.Actions>
             </Modal>
