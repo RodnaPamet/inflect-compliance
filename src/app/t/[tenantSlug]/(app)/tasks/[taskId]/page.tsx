@@ -1069,7 +1069,7 @@ export default function TaskDetailPage() {
                                             // raw element lacked.
                                             <IconAction
                                                 variant="ghost"
-                                                icon={<Xmark className="size-3" />}
+                                                icon={<Xmark className="size-3.5" />}
                                                 label={t('detail.removeWatcher')}
                                                 className="text-content-subtle hover:text-content-error"
                                                 id={`remove-watcher-${w.userId}`}
