@@ -185,22 +185,10 @@ describeFn('FileRepository (integration — real DB)', () => {
         expect((await FileRepository.getByPathKey(prisma, data.pathKey))?.id).toBe(rec.id);
     });
 
-    it('isFileOwnedByTenant: evidence-content match, filerecord match, and neither', async () => {
-        // (a) Evidence.content match branch.
-        await prisma.evidence.create({
-            data: { tenantId: TENANT_A, title: 'legacy', type: 'FILE', content: 'legacy-file.txt' },
-        });
-        expect(await FileRepository.isFileOwnedByTenant(prisma, CTX_A, 'legacy-file.txt')).toBe(true);
-
-        // (b) FileRecord pathKey/originalName match branch.
-        const data = pendingData({ originalName: 'owned.pdf' });
-        await FileRepository.createPending(prisma, CTX_A, data);
-        expect(await FileRepository.isFileOwnedByTenant(prisma, CTX_A, 'owned.pdf')).toBe(true);
-        expect(await FileRepository.isFileOwnedByTenant(prisma, CTX_A, data.pathKey)).toBe(true);
-
-        // (c) Neither → false.
-        expect(await FileRepository.isFileOwnedByTenant(prisma, CTX_A, 'nonexistent.bin')).toBe(false);
-    });
+    // R5-P1 #1 — `isFileOwnedByTenant` was removed. It treated a match on the
+    // caller-writable `Evidence.content` as proof of file ownership (the
+    // cross-tenant read chain). Ownership now resolves through the tenant-scoped
+    // FileRecord directly in `downloadFile` (+ assertTenantKey).
 
     // ── RLS isolation ────────────────────────────────────────────────
 

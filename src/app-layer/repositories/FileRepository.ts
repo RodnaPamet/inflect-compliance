@@ -140,29 +140,9 @@ export class FileRepository {
         });
     }
 
-    /**
-     * Legacy method: checks if a file (by stored filename in Evidence.content) belongs to the tenant.
-     * Used by the old download flow in file.ts.
-     */
-    static async isFileOwnedByTenant(db: PrismaTx, ctx: RequestContext, fileName: string): Promise<boolean> {
-        // Check via Evidence records (legacy: fileName stored in Evidence.content)
-        const evidence = await db.evidence.findFirst({
-            where: { tenantId: ctx.tenantId, content: fileName },
-            select: { id: true },
-        });
-        if (evidence) return true;
-
-        // Check via FileRecord (new: pathKey or originalName match)
-        const fileRecord = await db.fileRecord.findFirst({
-            where: {
-                tenantId: ctx.tenantId,
-                OR: [
-                    { pathKey: fileName },
-                    { originalName: fileName },
-                ],
-            },
-            select: { id: true },
-        });
-        return !!fileRecord;
-    }
+    // R5-P1 #1 — `isFileOwnedByTenant` was removed. It treated a match on the
+    // caller-writable `Evidence.content` as proof of file ownership, which let
+    // an attacker "own" any tenant's pathKey by filing an evidence row pointing
+    // at it. `downloadFile` now resolves ownership through the tenant-scoped
+    // FileRecord directly (+ assertTenantKey), so the method is gone entirely.
 }
