@@ -1,6 +1,7 @@
 import { RequestContext } from '../types';
 import { EvidenceRepository, EvidenceListFilters } from '../repositories/EvidenceRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
+import { assertCanReadEvidence, assertCanEditEvidence, assertCanUploadEvidence } from '../policies/evidence.policies';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -99,7 +100,7 @@ export async function createEvidence(
     ctx: RequestContext,
     data: z.infer<typeof CreateEvidenceSchema> & { file?: File },
 ) {
-    assertCanWrite(ctx);
+    assertCanEditEvidence(ctx);
 
     // R5-P1 #1/#2 — FILE evidence's `content` is a storage pathKey that ONLY the
     // multipart upload path (`uploadEvidenceFile`) may derive server-side. This
@@ -135,6 +136,7 @@ export async function createEvidence(
                 throw badRequest('INVALID_CONTROL', 'Control not found or belongs to a different tenant');
             }
         }
+        await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
 
         const evidence = await EvidenceRepository.create(db, ctx, {
             type: data.type as EvidenceType,
@@ -183,7 +185,7 @@ export async function createEvidence(
 }
 
 export async function updateEvidence(ctx: RequestContext, id: string, data: z.infer<typeof UpdateEvidenceSchema>) {
-    assertCanWrite(ctx);
+    assertCanEditEvidence(ctx);
 
     const updated = await runInTenantContext(ctx, async (db) => {
         // `content` is only user-authored for TEXT (note body) and LINK
@@ -194,16 +196,28 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
         // is the server-side half of that gate, because the API is public.
         const existing = await db.evidence.findFirst({
             where: { id, tenantId: ctx.tenantId },
-            select: { type: true },
+            select: { type: true, status: true, content: true },
         });
         if (!existing) throw notFound('Evidence not found');
         const content = isEvidenceContentEditable(existing.type)
             ? data.content
             : undefined;
 
+        // R5-P2 #4 — editing the body (TEXT note / LINK url) of an APPROVED
+        // item voids the prior approval the same way replacing a file does:
+        // the reviewer signed off on DIFFERENT content. Reset to SUBMITTED so
+        // it re-enters review, but only when the content actually changes.
+        const contentReReview =
+            existing.status === 'APPROVED' &&
+            content !== undefined &&
+            content !== existing.content;
+
+        await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
+
         const evidence = await EvidenceRepository.update(db, ctx, id, {
             title: data.title,
             content,
+            ...(contentReReview ? { status: 'SUBMITTED' } : {}),
             category: data.category,
             // B8 follow-up — folder is editable post-create. The
             // three-state contract is preserved (undefined = no
@@ -399,6 +413,29 @@ async function resolveEvidenceSubmitter(
  * the per-row `findUnique` (avoids an N+1 in the approve loop). The
  * single path omits it and does the canonical FK lookup here.
  */
+/**
+ * R5-P2 #7 — a body-supplied `ownerUserId` is stamped with `ctx.tenantId`. If it
+ * isn't an ACTIVE member of this tenant we both mis-assign the row AND, via
+ * notifyEvidenceOwner's unscoped `db.user.findUnique`, mint a notification for a
+ * foreign user — the cross-tenant email-disclosure shape. Validate it the same
+ * way control-link targets are validated. `null`/`undefined` clears the owner
+ * (always allowed).
+ */
+async function assertOwnerIsActiveMember(
+    db: import('@/lib/db-context').PrismaTx,
+    ctx: RequestContext,
+    ownerUserId: string | null | undefined,
+): Promise<void> {
+    if (!ownerUserId) return;
+    const membership = await db.tenantMembership.findFirst({
+        where: { tenantId: ctx.tenantId, userId: ownerUserId, status: 'ACTIVE' },
+        select: { id: true },
+    });
+    if (!membership) {
+        throw badRequest('INVALID_OWNER', 'The evidence owner must be an active member of this tenant.');
+    }
+}
+
 async function notifyEvidenceOwner(
     db: import('@/lib/db-context').PrismaTx,
     ctx: RequestContext,
@@ -411,13 +448,15 @@ async function notifyEvidenceOwner(
     if (knownOwnerIds) {
         if (!knownOwnerIds.has(evidence.ownerUserId)) return;
     } else {
-        // Canonical FK path — route strictly via ownerUserId (the legacy
-        // free-text name lookup is retired; rows without an owner FK
-        // don't notify).
-        const ownerUser = evidence.ownerUserId
-            ? await db.user.findUnique({ where: { id: evidence.ownerUserId } })
-            : null;
-        if (!ownerUser) return;
+        // R5-P2 #7 — resolve strictly via an ACTIVE membership in THIS tenant,
+        // not an unscoped `db.user.findUnique` (which would notify a foreign
+        // user whose id was stamped onto the row). Owners are validated at write
+        // time now; this is the read-side backstop.
+        const member = await db.tenantMembership.findFirst({
+            where: { tenantId: ctx.tenantId, userId: evidence.ownerUserId, status: 'ACTIVE' },
+            select: { id: true },
+        });
+        if (!member) return;
     }
     await db.notification.create({
         data: {
@@ -437,7 +476,7 @@ export async function reviewEvidence(ctx: RequestContext, id: string, data: { ac
     const { action, comment } = data;
 
     if (action === 'SUBMITTED') {
-        assertCanWrite(ctx); // EDITOR
+        assertCanEditEvidence(ctx); // EDITOR-tier evidence.edit grant
     } else if (action === 'APPROVED' || action === 'REJECTED') {
         assertCanAdmin(ctx); // ADMIN
     } else {
@@ -459,6 +498,14 @@ export async function reviewEvidence(ctx: RequestContext, id: string, data: { ac
         }
 
         const newStatus = action as 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+
+        // R5-P2 #5 — a rejection MUST carry a reason (checked AFTER the state
+        // machine so an illegal transition still reports the transition error).
+        // `comment` is optional in the schema and only the client RejectReasonModal
+        // enforced it, so a direct API REJECTED slipped through blank.
+        if (newStatus === 'REJECTED' && !comment?.trim()) {
+            throw badRequest('A rejection reason is required.');
+        }
 
         // Segregation of duties — a reviewer may not approve/reject
         // evidence they submitted or own. Enforced unconditionally.
@@ -698,7 +745,7 @@ export async function uploadEvidenceFile(
         domain?: StorageDomain;
     },
 ) {
-    assertCanWrite(ctx);
+    assertCanUploadEvidence(ctx);
 
     // Validate before writing
     const mimeType = file.type || 'application/octet-stream';
@@ -797,6 +844,8 @@ export async function uploadEvidenceFile(
             await FileRepository.markStored(db, ctx, fileRecord.id);
             fileRecordId = fileRecord.id;
         }
+
+        await assertOwnerIsActiveMember(db, ctx, metadata.ownerUserId);
 
         // Create Evidence linked to FileRecord
         const evidence = await EvidenceRepository.create(db, ctx, {
@@ -995,7 +1044,7 @@ export async function getEvidenceFileVersions(ctx: RequestContext, evidenceId: s
 }
 
 export async function replaceEvidenceFile(ctx: RequestContext, evidenceId: string, file: File) {
-    assertCanWrite(ctx);
+    assertCanUploadEvidence(ctx);
 
     const mimeType = file.type || 'application/octet-stream';
     if (!isAllowedMime(mimeType)) {
@@ -1009,12 +1058,18 @@ export async function replaceEvidenceFile(ctx: RequestContext, evidenceId: strin
     const target = await runInTenantContext(ctx, async (db) => {
         const ev = await db.evidence.findFirst({
             where: { id: evidenceId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, type: true, fileRecordId: true, fileVersion: true, title: true },
+            select: { id: true, type: true, fileRecordId: true, fileVersion: true, title: true, status: true },
         });
         if (!ev) throw notFound('Evidence not found');
         if (ev.type !== 'FILE') throw badRequest('NOT_FILE_EVIDENCE', 'Only FILE-type evidence can have its file replaced');
         return ev;
     });
+
+    // R5-P2 #4 — swapping the bytes under an APPROVED artifact must void the
+    // prior approval: the reviewer signed off on DIFFERENT content. Reset to
+    // SUBMITTED so it re-enters the review queue instead of silently carrying
+    // an APPROVED badge over unreviewed bytes.
+    const requiresReReview = target.status === 'APPROVED';
 
     const storage = getStorageProvider();
     const originalName = file.name || 'unnamed';
@@ -1056,6 +1111,7 @@ export async function replaceEvidenceFile(ctx: RequestContext, evidenceId: strin
                 fileSize: writeResult.sizeBytes,
                 content: pathKey,
                 fileVersion: target.fileVersion + 1,
+                ...(requiresReReview ? { status: 'SUBMITTED' } : {}),
             },
         });
 
@@ -1239,8 +1295,9 @@ export async function bulkAssignEvidence(
     evidenceIds: string[],
     ownerUserId: string | null,
 ) {
-    assertCanWrite(ctx);
+    assertCanEditEvidence(ctx);
     const updated = await runInTenantContext(ctx, async (db) => {
+        await assertOwnerIsActiveMember(db, ctx, ownerUserId);
         const rows = await EvidenceRepository.listByIds(db, ctx, evidenceIds);
         if (rows.length === 0) return 0;
         await EvidenceRepository.bulkUpdate(db, ctx, evidenceIds, {

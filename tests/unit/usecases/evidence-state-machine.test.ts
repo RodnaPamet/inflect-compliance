@@ -42,6 +42,9 @@ jest.mock('@/lib/cache/list-cache', () => ({
 
 const tenantDb: any = {
     user: { findUnique: jest.fn(), findFirst: jest.fn() },
+    // R5-P2 #7 — owner notification now resolves via an ACTIVE membership in
+    // this tenant, not an unscoped user lookup.
+    tenantMembership: { findFirst: jest.fn() },
     notification: { create: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => {
@@ -62,6 +65,7 @@ beforeEach(() => {
     repoAddReview.mockReset();
     tenantDb.user.findUnique.mockReset();
     tenantDb.user.findFirst.mockReset();
+    tenantDb.tenantMembership.findFirst.mockReset();
     tenantDb.notification.create.mockReset();
 });
 
@@ -81,7 +85,7 @@ describe('reviewEvidence — Audit S3 state machine', () => {
     it('refuses DRAFT → REJECTED', async () => {
         repoGetById.mockResolvedValueOnce({ id: 'e1', status: 'DRAFT' });
         await expect(
-            reviewEvidence(ctx, 'e1', { action: 'REJECTED' }),
+            reviewEvidence(ctx, 'e1', { action: 'REJECTED', comment: 'test rejection reason' }),
         ).rejects.toThrow(/illegal/i);
     });
 
@@ -95,7 +99,7 @@ describe('reviewEvidence — Audit S3 state machine', () => {
     it('refuses APPROVED → REJECTED (revoking an approval needs a different path)', async () => {
         repoGetById.mockResolvedValueOnce({ id: 'e1', status: 'APPROVED' });
         await expect(
-            reviewEvidence(ctx, 'e1', { action: 'REJECTED' }),
+            reviewEvidence(ctx, 'e1', { action: 'REJECTED', comment: 'test rejection reason' }),
         ).rejects.toThrow(/illegal/i);
     });
 
@@ -122,7 +126,7 @@ describe('reviewEvidence — Audit S3 state machine', () => {
     it('accepts SUBMITTED → REJECTED', async () => {
         repoGetById.mockResolvedValueOnce({ id: 'e1', status: 'SUBMITTED', ownerUserId: null, title: 't' });
         repoUpdate.mockResolvedValueOnce({});
-        const out = await reviewEvidence(ctx, 'e1', { action: 'REJECTED' });
+        const out = await reviewEvidence(ctx, 'e1', { action: 'REJECTED', comment: 'test rejection reason' });
         expect(out.status).toBe('REJECTED');
     });
 
@@ -170,7 +174,7 @@ describe('reviewEvidence — Audit S3 free-text fallback retired', () => {
         expect(tenantDb.notification.create).not.toHaveBeenCalled();
     });
 
-    it('fires notification via findUnique when ownerUserId is set', async () => {
+    it('fires notification via an ACTIVE membership check when ownerUserId is set', async () => {
         repoGetById.mockResolvedValueOnce({
             id: 'e1',
             status: 'SUBMITTED',
@@ -179,11 +183,14 @@ describe('reviewEvidence — Audit S3 free-text fallback retired', () => {
             title: 'Quarterly access report',
         });
         repoUpdate.mockResolvedValueOnce({});
-        tenantDb.user.findUnique.mockResolvedValueOnce({ id: 'u-1', name: 'Alice' });
+        tenantDb.tenantMembership.findFirst.mockResolvedValueOnce({ id: 'm-1' });
         await reviewEvidence(ctx, 'e1', { action: 'APPROVED' });
-        expect(tenantDb.user.findUnique).toHaveBeenCalledWith({
-            where: { id: 'u-1' },
+        expect(tenantDb.tenantMembership.findFirst).toHaveBeenCalled();
+        // must be scoped to an ACTIVE membership in this tenant, not a bare user lookup
+        expect(tenantDb.tenantMembership.findFirst.mock.calls[0][0].where).toMatchObject({
+            userId: 'u-1', status: 'ACTIVE',
         });
+        expect(tenantDb.user.findUnique).not.toHaveBeenCalled();
         expect(tenantDb.notification.create).toHaveBeenCalled();
     });
 });

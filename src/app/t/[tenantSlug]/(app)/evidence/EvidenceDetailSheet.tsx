@@ -37,7 +37,8 @@ import {
     resolveFileTypeIcon,
 } from '@/components/ui/file-type-icon';
 import { formatDate, formatDateTime } from '@/lib/format-date';
-import { Pen2, Download, Xmark } from '@/components/ui/icons/nucleo';
+import { Pen2, Download, Xmark, ShieldAlert, CircleHalfDottedClock } from '@/components/ui/icons/nucleo';
+import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 import Link from 'next/link';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -86,6 +87,10 @@ interface EvidenceFileRecord {
     sizeBytes: number;
     sha256: string;
     retentionUntil: string | null;
+    // R5-P2 #1 — AV verdict, so the sheet can badge the state and refuse to
+    // auto-<img>/<object> an infected/unscanned file with no user action.
+    scanStatus?: string | null;
+    scannedAt?: string | null;
 }
 
 /** One EvidenceReview row for the history timeline. */
@@ -404,21 +409,32 @@ export function EvidenceDetailSheet({
                                 t={t}
                             />
 
-                            {/* EP-2 — unconditional download affordance for
-                                file-backed evidence (not gated behind review
-                                status). */}
+                            {/* Download affordance — R5-P2 #1: gated on the AV
+                                scan verdict so an infected/pending file shows its
+                                state instead of a link that 404/403s. */}
                             {evidence.fileRecordId && (
-                                <a
-                                    href={tenantApiUrl(
-                                        `/evidence/files/${evidence.fileRecordId}/download`,
-                                    )}
-                                    download
-                                    className="inline-flex items-center gap-tight rounded-md border border-border-default bg-bg-default px-3 py-1.5 text-sm font-medium text-content-emphasis transition-colors hover:bg-bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                    id="evidence-sheet-download-btn"
-                                >
-                                    <Download className="size-4" />
-                                    {t('detail.download')}
-                                </a>
+                                isScanServable(evidence.fileRecord?.scanStatus) ? (
+                                    <a
+                                        href={tenantApiUrl(
+                                            `/evidence/files/${evidence.fileRecordId}/download`,
+                                        )}
+                                        download
+                                        className="inline-flex items-center gap-tight rounded-md border border-border-default bg-bg-default px-3 py-1.5 text-sm font-medium text-content-emphasis transition-colors hover:bg-bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        id="evidence-sheet-download-btn"
+                                    >
+                                        <Download className="size-4" />
+                                        {t('detail.download')}
+                                    </a>
+                                ) : (
+                                    <span
+                                        className={`inline-flex items-center gap-tight rounded-md border px-3 py-1.5 text-sm font-medium ${isScanInfected(evidence.fileRecord?.scanStatus) ? 'border-border-error text-content-error' : 'border-border-default text-content-subtle'}`}
+                                        id="evidence-sheet-scan-state"
+                                    >
+                                        {isScanInfected(evidence.fileRecord?.scanStatus)
+                                            ? <><ShieldAlert className="size-4" />{t('scan.infected')}</>
+                                            : <><CircleHalfDottedClock className="size-4 animate-pulse" />{t('scan.pending')}</>}
+                                    </span>
+                                )
                             )}
 
                             {metaRows.length > 0 && (
@@ -800,6 +816,26 @@ function EvidenceFilePreview({
     t: Tx;
 }) {
     if (!evidence.fileRecordId || !fileUrl) return null;
+
+    // R5-P2 #1 — do NOT auto-fetch <img src>/<object data> for a file the AV
+    // gate would block: opening the sheet requested an infected/unscanned file
+    // with zero user action. Render the scan state instead; the download is
+    // gated below the same way.
+    const scan = evidence.fileRecord?.scanStatus;
+    if (!isScanServable(scan)) {
+        const infected = isScanInfected(scan);
+        return (
+            <div
+                className={`flex flex-col items-center justify-center gap-tight rounded-lg border p-6 text-center text-sm ${infected ? 'border-border-error bg-bg-error text-content-error' : 'border-border-default bg-bg-muted text-content-muted'}`}
+                data-testid="evidence-sheet-preview-scan-blocked"
+                role={infected ? 'alert' : undefined}
+            >
+                {infected ? <ShieldAlert className="size-8" /> : <CircleHalfDottedClock className="size-8 animate-pulse" />}
+                <span>{infected ? t('scan.infectedPreview') : t('scan.pendingPreview')}</span>
+            </div>
+        );
+    }
+
     const fileName = evidence.fileRecord?.originalName ?? evidence.fileName ?? null;
     const mime = evidence.fileRecord?.mimeType ?? null;
     const match = resolveFileTypeIcon(fileName, mime, evidence.type);

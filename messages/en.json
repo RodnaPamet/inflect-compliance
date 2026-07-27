@@ -2657,6 +2657,14 @@
       "creating": "Creating…",
       "submit": "Add evidence",
       "createFailed": "Failed to create evidence"
+    },
+    "scan": {
+      "infected": "Infected",
+      "infectedTooltip": "This file was flagged as infected and cannot be downloaded.",
+      "infectedPreview": "Preview blocked — this file was flagged as infected by antivirus scanning.",
+      "pending": "Scanning",
+      "pendingTooltip": "This file is being scanned for viruses and is not available yet.",
+      "pendingPreview": "Preview available once the antivirus scan completes."
     }
   },
   "personnel": {

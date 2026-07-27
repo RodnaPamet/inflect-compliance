@@ -32,6 +32,8 @@
 
 const mockDb = {
     user: { findUnique: jest.fn() },
+    // R5-P2 #7 — owner notification resolves via ACTIVE membership, not user lookup.
+    tenantMembership: { findFirst: jest.fn() },
     notification: { create: jest.fn() },
     // `updateEvidence` first reads the row's TYPE, because `content` is
     // only user-authored for TEXT/LINK — for FILE it is the storage
@@ -264,7 +266,7 @@ describe('reviewEvidence — reviewer flow (APPROVED/REJECTED requires admin)', 
 
     it('SUBMITTED → REJECTED is legal for an ADMIN', async () => {
         (EvidenceRepository.getById as jest.Mock).mockResolvedValue({ id: 'ev-1', status: 'SUBMITTED', title: 'X', ownerUserId: null });
-        const res = await reviewEvidence(adminCtx, 'ev-1', { action: 'REJECTED' });
+        const res = await reviewEvidence(adminCtx, 'ev-1', { action: 'REJECTED', comment: 'test rejection reason' });
         expect(res.status).toBe('REJECTED');
     });
 
@@ -275,7 +277,7 @@ describe('reviewEvidence — reviewer flow (APPROVED/REJECTED requires admin)', 
 
     it('sends an EVIDENCE_APPROVED notification to the owner when set', async () => {
         (EvidenceRepository.getById as jest.Mock).mockResolvedValue({ id: 'ev-1', status: 'SUBMITTED', title: 'X', ownerUserId: 'owner-1' });
-        (mockDb.user.findUnique as jest.Mock).mockResolvedValue({ id: 'owner-1', email: 'o@e' });
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValue({ id: 'm-1' });
         await reviewEvidence(adminCtx, 'ev-1', { action: 'APPROVED', comment: 'Great' });
         expect(mockDb.notification.create).toHaveBeenCalledTimes(1);
         const notif = (mockDb.notification.create as jest.Mock).mock.calls[0][0].data;
@@ -305,7 +307,7 @@ describe('reviewEvidence — illegal transitions', () => {
 
     it('rejects APPROVED → REJECTED (terminal state)', async () => {
         (EvidenceRepository.getById as jest.Mock).mockResolvedValue({ id: 'ev-1', status: 'APPROVED', title: 'X' });
-        await expect(reviewEvidence(adminCtx, 'ev-1', { action: 'REJECTED' })).rejects.toThrow(/Illegal evidence transition/);
+        await expect(reviewEvidence(adminCtx, 'ev-1', { action: 'REJECTED', comment: 'test rejection reason' })).rejects.toThrow(/Illegal evidence transition/);
     });
 
     it('rejects unknown action with badRequest', async () => {
