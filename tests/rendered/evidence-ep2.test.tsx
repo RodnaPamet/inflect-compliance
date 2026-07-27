@@ -107,6 +107,7 @@ function imageEvidence(overrides: Record<string, unknown> = {}) {
         createdAt: '2026-06-01T00:00:00.000Z',
         updatedAt: '2026-06-02T00:00:00.000Z',
         fileRecord: {
+            scanStatus: 'CLEAN',
             id: 'fr_1',
             originalName: 'diagram.png',
             mimeType: 'image/png',
@@ -164,6 +165,7 @@ describe('EP-2 — <EvidenceDetailSheet>', () => {
                 title: 'SOC 2 report',
                 fileName: 'report.pdf',
                 fileRecord: {
+            scanStatus: 'CLEAN',
                     id: 'fr_1',
                     originalName: 'report.pdf',
                     mimeType: 'application/pdf',
@@ -249,7 +251,7 @@ describe('EP-2 — <EvidenceGallery> first-class parity', () => {
         render(
             <EvidenceGallery
                 rows={[
-                    { id: 'img', title: 'IMG', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fA' },
+                    { id: 'img', title: 'IMG', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fA', fileRecord: { scanStatus: 'CLEAN' } },
                 ]}
                 fileUrl={galleryFileUrl}
                 onRowClick={onRowClick}
@@ -264,7 +266,7 @@ describe('EP-2 — <EvidenceGallery> first-class parity', () => {
         render(
             <EvidenceGallery
                 rows={[
-                    { id: 'img', title: 'IMG', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fA' },
+                    { id: 'img', title: 'IMG', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fA', fileRecord: { scanStatus: 'CLEAN' } },
                 ]}
                 fileUrl={galleryFileUrl}
                 downloadLabel="Download file"
@@ -282,7 +284,7 @@ describe('EP-2 — <EvidenceGallery> first-class parity', () => {
         render(
             <EvidenceGallery
                 rows={[
-                    { id: 'nr', title: 'NR', fileName: 'a.png', type: 'FILE', status: 'NEEDS_REVIEW', fileRecordId: 'fA' },
+                    { id: 'nr', title: 'NR', fileName: 'a.png', type: 'FILE', status: 'NEEDS_REVIEW', fileRecordId: 'fA', fileRecord: { scanStatus: 'CLEAN' } },
                 ]}
                 fileUrl={galleryFileUrl}
                 statusLabel={(s) =>
@@ -299,7 +301,7 @@ describe('EP-2 — <EvidenceGallery> first-class parity', () => {
         render(
             <EvidenceGallery
                 rows={[
-                    { id: 'img', title: 'IMG', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fA' },
+                    { id: 'img', title: 'IMG', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fA', fileRecord: { scanStatus: 'CLEAN' } },
                 ]}
                 fileUrl={galleryFileUrl}
                 selectedIds={new Set<string>()}
