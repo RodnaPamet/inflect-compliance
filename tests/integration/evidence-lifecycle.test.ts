@@ -272,14 +272,14 @@ describeFn('reviewEvidence — state machine (integration)', () => {
     it('SUBMITTED → REJECTED with no ownerUserId skips notification (graceful degrade)', async () => {
         const ev = await newDraft({ title: 'reject me', ownerUserId: null });
         await reviewEvidence(editorCtx(), ev.id, { action: 'SUBMITTED' });
-        const res = await reviewEvidence(adminCtx(), ev.id, { action: 'REJECTED' });
+        const res = await reviewEvidence(adminCtx(), ev.id, { action: 'REJECTED', comment: 'test rejection reason' });
         expect(res.status).toBe('REJECTED');
     });
 
     it('REJECTED → SUBMITTED re-submission is allowed', async () => {
         const ev = await newDraft({ title: 'resubmit' });
         await reviewEvidence(editorCtx(), ev.id, { action: 'SUBMITTED' });
-        await reviewEvidence(adminCtx(), ev.id, { action: 'REJECTED' });
+        await reviewEvidence(adminCtx(), ev.id, { action: 'REJECTED', comment: 'test rejection reason' });
         const res = await reviewEvidence(editorCtx(), ev.id, { action: 'SUBMITTED' });
         expect(res.status).toBe('SUBMITTED');
     });

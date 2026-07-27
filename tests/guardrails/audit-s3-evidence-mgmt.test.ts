@@ -68,9 +68,16 @@ describe('Audit S3 — Evidence Management & Retention', () => {
             );
         });
 
-        it('still routes via ownerUserId (the canonical FK path)', () => {
+        it('still routes via ownerUserId — through an ACTIVE membership, not an unscoped user lookup (R5-P2 #7)', () => {
+            // The notification resolves the owner via a tenant-scoped ACTIVE
+            // membership keyed on ownerUserId (was an unscoped db.user.findUnique
+            // that could notify a foreign user). Still the canonical FK path.
             expect(src).toMatch(
-                /ownerUserId\s*\?[\s\S]{0,80}findUnique\(\{\s*where:\s*\{\s*id:\s*evidence\.ownerUserId\s*\}/,
+                /tenantMembership\.findFirst\(\{[\s\S]{0,120}userId:\s*evidence\.ownerUserId[\s\S]{0,40}status:\s*'ACTIVE'/,
+            );
+            // the unscoped user-by-id lookup is gone
+            expect(src).not.toMatch(
+                /findUnique\(\{\s*where:\s*\{\s*id:\s*evidence\.ownerUserId\s*\}/,
             );
         });
     });

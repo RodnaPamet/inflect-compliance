@@ -62,7 +62,7 @@ describe('<EvidenceGallery>', () => {
                         fileName: 'arch.png',
                         type: 'FILE',
                         status: 'APPROVED',
-                        fileRecordId: 'fr_1',
+                        fileRecordId: 'fr_1', fileRecord: { scanStatus: 'CLEAN' },
                         lastRefreshedAt: daysAgo(2),
                     },
                 ]}
@@ -90,7 +90,7 @@ describe('<EvidenceGallery>', () => {
                         fileName: 'report.pdf',
                         type: 'FILE',
                         status: 'SUBMITTED',
-                        fileRecordId: 'fr_2',
+                        fileRecordId: 'fr_2', fileRecord: { scanStatus: 'CLEAN' },
                         lastRefreshedAt: daysAgo(5),
                     },
                 ]}
@@ -116,7 +116,7 @@ describe('<EvidenceGallery>', () => {
                         fileName: 'data.csv',
                         type: 'FILE',
                         status: 'APPROVED',
-                        fileRecordId: 'fr_3',
+                        fileRecordId: 'fr_3', fileRecord: { scanStatus: 'CLEAN' },
                         lastRefreshedAt: daysAgo(1),
                     },
                     {
@@ -125,7 +125,7 @@ describe('<EvidenceGallery>', () => {
                         fileName: 'pack.zip',
                         type: 'FILE',
                         status: 'APPROVED',
-                        fileRecordId: 'fr_4',
+                        fileRecordId: 'fr_4', fileRecord: { scanStatus: 'CLEAN' },
                         lastRefreshedAt: daysAgo(40),
                     },
                 ]}
@@ -160,9 +160,9 @@ describe('<EvidenceGallery>', () => {
         render(
             <EvidenceGallery
                 rows={[
-                    { id: '1', title: 'A', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'f1' },
-                    { id: '2', title: 'B', fileName: 'b.pdf', type: 'FILE', status: 'APPROVED', fileRecordId: 'f2' },
-                    { id: '3', title: 'C', fileName: 'c.csv', type: 'FILE', status: 'APPROVED', fileRecordId: 'f3' },
+                    { id: '1', title: 'A', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'f1', fileRecord: { scanStatus: 'CLEAN' } },
+                    { id: '2', title: 'B', fileName: 'b.pdf', type: 'FILE', status: 'APPROVED', fileRecordId: 'f2', fileRecord: { scanStatus: 'CLEAN' } },
+                    { id: '3', title: 'C', fileName: 'c.csv', type: 'FILE', status: 'APPROVED', fileRecordId: 'f3', fileRecord: { scanStatus: 'CLEAN' } },
                     { id: '4', title: 'D', type: 'LINK', status: 'APPROVED' },
                 ]}
                 fileUrl={fileUrl}
@@ -187,8 +187,8 @@ describe('<EvidenceGallery>', () => {
         render(
             <EvidenceGallery
                 rows={[
-                    { id: 'img', title: 'IMG', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fA' },
-                    { id: 'pdf', title: 'PDF', fileName: 'b.pdf', type: 'FILE', status: 'APPROVED', fileRecordId: 'fB' },
+                    { id: 'img', title: 'IMG', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fA', fileRecord: { scanStatus: 'CLEAN' } },
+                    { id: 'pdf', title: 'PDF', fileName: 'b.pdf', type: 'FILE', status: 'APPROVED', fileRecordId: 'fB', fileRecord: { scanStatus: 'CLEAN' } },
                 ]}
                 fileUrl={fileUrl}
                 onRowClick={onRowClick}
@@ -207,9 +207,9 @@ describe('<EvidenceGallery>', () => {
         render(
             <EvidenceGallery
                 rows={[
-                    { id: 'r1', title: 'A', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fr1', lastRefreshedAt: daysAgo(2) },
-                    { id: 'r2', title: 'B', fileName: 'b.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fr2', lastRefreshedAt: daysAgo(40) },
-                    { id: 'r3', title: 'C', fileName: 'c.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fr3', lastRefreshedAt: null },
+                    { id: 'r1', title: 'A', fileName: 'a.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fr1', fileRecord: { scanStatus: 'CLEAN' }, lastRefreshedAt: daysAgo(2) },
+                    { id: 'r2', title: 'B', fileName: 'b.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fr2', fileRecord: { scanStatus: 'CLEAN' }, lastRefreshedAt: daysAgo(40) },
+                    { id: 'r3', title: 'C', fileName: 'c.png', type: 'FILE', status: 'APPROVED', fileRecordId: 'fr3', fileRecord: { scanStatus: 'CLEAN' }, lastRefreshedAt: null },
                 ]}
                 fileUrl={fileUrl}
             />,

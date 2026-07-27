@@ -80,7 +80,8 @@ import {
 } from '@/lib/evidence-review-currency';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
-import { Plus, Pen2, Download, BoxArchive, PaperPlane, Check, Xmark, CalendarRefresh } from '@/components/ui/icons/nucleo';
+import { Plus, Pen2, Download, BoxArchive, PaperPlane, Check, Xmark, CalendarRefresh, ShieldAlert, CircleHalfDottedClock } from '@/components/ui/icons/nucleo';
+import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 
 interface Permissions {
     canRead: boolean;
@@ -156,7 +157,7 @@ interface EvidenceRow {
             code: string | null;
         };
     }>;
-    fileRecord: { id: string; mimeType: string | null } | null;
+    fileRecord: { id: string; mimeType: string | null; scanStatus?: string | null } | null;
 }
 
 /** EP-3 — condensed label for the linked-controls table cell. */
@@ -330,25 +331,32 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             }
             await evidenceQuery.mutate();
             setSelected(new Set());
+        } catch {
+            // R5-P2 #3 — BulkActionBar calls onApply un-awaited, so a throw here
+            // became an unhandled rejection and a failed bulk showed nothing.
+            toast.error(tx('list.bulkFailed'));
         } finally {
             setBulkApplying(false);
         }
     };
     const evidenceBulkActions: BulkActionDef[] = useMemo(
         () => [
-            {
+            // R5-P2 #3 — each bulk action is offered only to the tier the server
+            // enforces: approve is reviewer-gated (ADMIN), assign/delete are
+            // write-tier. A READER/AUDITOR sees none (selection is also disabled).
+            ...(permissions.canAdmin ? [{
                 value: 'approve',
                 label: tx('list.bulkApprove'),
                 confirm: {
-                    tone: 'info',
+                    tone: 'info' as const,
                     confirmLabel: tx('list.bulkApproveConfirm'),
                     description: tx('list.bulkApproveDesc'),
                 },
-            },
-            {
+            }] : []),
+            ...(permissions.canWrite ? [{
                 value: 'assign',
                 label: tx('list.bulkAssign'),
-                renderInput: ({ value, setValue, setLabel }) => (
+                renderInput: ({ value, setValue, setLabel }: { value: string; setValue: (v: string) => void; setLabel: (l: string) => void }) => (
                     <UserCombobox
                         tenantSlug={tenantSlug}
                         selectedId={value || null}
@@ -363,10 +371,10 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         id="bulk-value-input"
                     />
                 ),
-            },
-            { value: 'delete', label: tx('list.bulkDelete'), confirm: true },
+            }] : []),
+            ...(permissions.canWrite ? [{ value: 'delete', label: tx('list.bulkDelete'), confirm: true }] : []),
         ],
-        [tenantSlug, tx],
+        [tenantSlug, tx, permissions.canAdmin, permissions.canWrite],
     );
 
     // Stabilise the array identity across renders so dependent hooks
@@ -506,7 +514,10 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
 
     const submitReview = (id: string, action: string, comment = '') => {
         reviewMutation.trigger({ id, action, comment }).catch(() => {
-            /* rollback already applied by the hook */
+            // R5-P2 #2 — surface the failure. The optimistic row already rolled
+            // back; swallowing it silently read as a UI glitch (e.g. an EDITOR
+            // shown Approve gets a 403, the row flips APPROVED then reverts).
+            toast.error(tx('list.reviewFailed'));
         }).finally(() => {
             // Fan out to sibling filter variants for completeness —
             // status flips affect the "approved-only" / "rejected-
@@ -1140,6 +1151,29 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             cell: ({ row }) => {
                 const ev = row.original;
                 if (ev.type !== 'FILE' || !ev.fileRecordId || ev.id?.startsWith('temp:')) return null;
+                // R5-P2 #1 — refuse the download affordance for a file the AV gate
+                // would block: an infected/pending link previously rendered
+                // unconditionally and navigated to a 403 the browser saved as a
+                // "file". Show the scan state instead of a broken download.
+                const scan = ev.fileRecord?.scanStatus;
+                if (isScanInfected(scan)) {
+                    return (
+                        <Tooltip content={tx('scan.infectedTooltip')}>
+                            <span className={ICON_ACTION_CLASS} aria-label={tx('scan.infected')}>
+                                <ShieldAlert className="size-3.5 text-content-error" />
+                            </span>
+                        </Tooltip>
+                    );
+                }
+                if (!isScanServable(scan)) {
+                    return (
+                        <Tooltip content={tx('scan.pendingTooltip')}>
+                            <span className={ICON_ACTION_CLASS} aria-label={tx('scan.pending')}>
+                                <CircleHalfDottedClock className="size-3.5 text-content-subtle animate-pulse" />
+                            </span>
+                        </Tooltip>
+                    );
+                }
                 return (
                     <Tooltip content={tx('list.downloadFile')}>
                         <a
@@ -1186,7 +1220,10 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 return (
                     <div className="flex gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
                         {ev.status === 'DRAFT' && submitBtn}
-                        {ev.status === 'SUBMITTED' && (
+                        {/* R5-P2 #2 — Approve/Reject require ADMIN (server:
+                            assertCanAdmin). The row previously showed them to any
+                            write-tier user, who then hit a silent 403. */}
+                        {ev.status === 'SUBMITTED' && permissions.canAdmin && (
                             <>
                                 <Tooltip content={t.approveEvidence}>
                                     <button
@@ -1735,7 +1772,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         // action button.
                         onRowClick={handleEvidenceRowClick}
                         onRowPrefetch={handleEvidenceRowPrefetch}
-                        selectionEnabled
+                        selectionEnabled={permissions.canWrite}
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),
                         )}

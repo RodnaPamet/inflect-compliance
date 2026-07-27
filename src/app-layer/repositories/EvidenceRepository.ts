@@ -78,7 +78,7 @@ const evidenceListSelect = {
     evidenceControlLinks: {
         select: { control: { select: { id: true, name: true, annexId: true, code: true } } },
     },
-    fileRecord: { select: { id: true, mimeType: true } },
+    fileRecord: { select: { id: true, mimeType: true, scanStatus: true } },
     // Tag chips on the list row + the tag filter's client-side match.
     tags: { select: { tag: true }, orderBy: { tag: 'asc' } },
 } as const;
@@ -240,6 +240,11 @@ export class EvidenceRepository {
                             sizeBytes: true,
                             sha256: true,
                             retentionUntil: true,
+                            // R5-P2 #1 — the UI must know the AV verdict so it can
+                            // refuse download/preview of an INFECTED/PENDING file
+                            // before the server has to (and never auto-<img> it).
+                            scanStatus: true,
+                            scannedAt: true,
                         },
                     },
                 },

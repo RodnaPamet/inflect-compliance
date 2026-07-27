@@ -36,6 +36,7 @@
 
 import { useMemo, type CSSProperties } from 'react';
 import { cn } from '@/lib/cn';
+import { isScanServable } from '@/lib/evidence-scan';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Download } from '@/components/ui/icons/nucleo';
@@ -56,8 +57,8 @@ export interface EvidenceGalleryRow {
     status: string;
     /** Set when the row has a stored file (FILE kind). */
     fileRecordId?: string | null;
-    /** Optional MIME — repository may include it via fileRecord. */
-    fileRecord?: { mimeType?: string | null } | null;
+    /** Optional MIME + AV verdict — repository includes them via fileRecord. */
+    fileRecord?: { mimeType?: string | null; scanStatus?: string | null } | null;
     fileMimeType?: string | null;
     /**
      * Review-currency anchor for the freshness badge — `nextReviewDate ??
@@ -242,8 +243,11 @@ function GalleryCard<T extends EvidenceGalleryRow>({
         null;
     const match = resolveFileTypeIcon(row.fileName, mime, row.type);
     const url = fileUrl(row);
-    const isImage = match.label === 'Image' && url !== null;
-    const isPdf = match.label === 'PDF' && url !== null;
+    // R5-P2 #1 — never auto-fetch a thumbnail/PDF (or offer download) for a file
+    // the AV gate would block; fall through to the file-type icon instead.
+    const scanServable = isScanServable(row.fileRecord?.scanStatus);
+    const isImage = match.label === 'Image' && url !== null && scanServable;
+    const isPdf = match.label === 'PDF' && url !== null && scanServable;
 
     const retention = retentionStatus?.(row) ?? null;
     const statusVariant: StatusBadgeVariant = statusBadgeVariant?.(row.status) ?? 'neutral';
@@ -301,7 +305,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
                 {/* Download affordance — every file-backed card, not just
                     PDFs. Non-file cards (LINK/TEXT) resolve `url === null`
                     and render nothing here. */}
-                {url && !isPending && (
+                {url && !isPending && scanServable && (
                     <a
                         href={url}
                         download
