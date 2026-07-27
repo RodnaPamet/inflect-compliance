@@ -113,7 +113,7 @@ describeFn('policy usecase — branch coverage (integration)', () => {
         await expect(createPolicyVersion(ctx, 'nope', { contentType: 'MARKDOWN', contentText: 'x' })).rejects.toThrow(/not found/i);
         await expect(updatePolicyMetadata(ctx, 'nope', { title: 'x' })).rejects.toThrow(/not found/i);
         await expect(requestPolicyApproval(ctx, 'nope', 'v')).rejects.toThrow(/not found/i);
-        await expect(decidePolicyApproval(ctx, 'nope', { decision: 'APPROVED' })).rejects.toThrow(/not found/i);
+        await expect(decidePolicyApproval(ctx, 'p1', 'nope', { decision: 'APPROVED' })).rejects.toThrow(/not found/i);
         await expect(publishPolicy(ctx, 'nope', 'v')).rejects.toThrow(/not found/i);
         await expect(archivePolicy(ctx, 'nope')).rejects.toThrow(/not found/i);
         await expect(deletePolicy(ctx, 'nope')).rejects.toThrow(/not found/i);
@@ -132,7 +132,7 @@ describeFn('policy usecase — branch coverage (integration)', () => {
         await expect(bulkAssignPolicy(reader, ['x'], null)).rejects.toThrow(/permission|denied/i);
 
         // EDITOR can write but not admin
-        await expect(decidePolicyApproval(editor, 'x', { decision: 'APPROVED' })).rejects.toThrow(/permission|denied/i);
+        await expect(decidePolicyApproval(editor, 'p1', 'x', { decision: 'APPROVED' })).rejects.toThrow(/permission|denied/i);
         await expect(publishPolicy(editor, 'x', 'v')).rejects.toThrow(/permission|denied/i);
         await expect(archivePolicy(editor, 'x')).rejects.toThrow(/permission|denied/i);
         await expect(deletePolicy(editor, 'x')).rejects.toThrow(/permission|denied/i);
@@ -234,18 +234,18 @@ describeFn('policy usecase — branch coverage (integration)', () => {
 
         // APPROVED branch → policy APPROVED
         const a1 = await seedApproval(policy.id, v.id);
-        const decided = await decidePolicyApproval(ctx, a1.id, { decision: 'APPROVED', comment: 'lgtm' });
+        const decided = await decidePolicyApproval(ctx, policy.id, a1.id, { decision: 'APPROVED', comment: 'lgtm' });
         expect(decided).toBeTruthy();
         expect((await getPolicy(ctx, policy.id)).status).toBe('APPROVED');
 
         // already-decided (seed an APPROVED row) → conflict
         const aDone = await seedApproval(policy.id, v.id, 'APPROVED');
-        await expect(decidePolicyApproval(ctx, aDone.id, { decision: 'APPROVED' })).rejects.toThrow(/already been decided/i);
+        await expect(decidePolicyApproval(ctx, policy.id, aDone.id, { decision: 'APPROVED' })).rejects.toThrow(/already been decided/i);
 
         // REJECTED branch → policy DRAFT
         await globalPrisma.policy.update({ where: { id: policy.id }, data: { status: 'IN_REVIEW' } });
         const a2 = await seedApproval(policy.id, v.id);
-        await decidePolicyApproval(ctx, a2.id, { decision: 'REJECTED', comment: 'no' });
+        await decidePolicyApproval(ctx, policy.id, a2.id, { decision: 'REJECTED', comment: 'no' });
         expect((await getPolicy(ctx, policy.id)).status).toBe('DRAFT');
     });
 
@@ -256,12 +256,12 @@ describeFn('policy usecase — branch coverage (integration)', () => {
 
         // Requested by the OWNER; the OWNER (ctx) may NOT approve it.
         const selfApproval = await seedApproval(policy.id, v.id, 'PENDING', ownerUserId);
-        await expect(decidePolicyApproval(ctx, selfApproval.id, { decision: 'APPROVED' })).rejects.toThrow(/[Ss]eparation of duties|cannot approve/);
+        await expect(decidePolicyApproval(ctx, policy.id, selfApproval.id, { decision: 'APPROVED' })).rejects.toThrow(/[Ss]eparation of duties|cannot approve/);
         // Still PENDING (the guard fires before any status change).
         expect((await globalPrisma.policyApproval.findUnique({ where: { id: selfApproval.id } }))?.status).toBe('PENDING');
 
         // A self-REJECTION is allowed (a requester may withdraw).
-        await decidePolicyApproval(ctx, selfApproval.id, { decision: 'REJECTED', comment: 'withdraw' });
+        await decidePolicyApproval(ctx, policy.id, selfApproval.id, { decision: 'REJECTED', comment: 'withdraw' });
         expect((await globalPrisma.policyApproval.findUnique({ where: { id: selfApproval.id } }))?.status).toBe('REJECTED');
     });
 
@@ -285,12 +285,88 @@ describeFn('policy usecase — branch coverage (integration)', () => {
         });
         expect(bypassRows.length).toBeGreaterThanOrEqual(1);
 
-        // APPROVED publish (no bypass needed)
+        // APPROVED publish (no bypass needed).
+        //
+        // The APPROVED approval row is seeded alongside the status, because
+        // publish now BINDS the version it publishes to the version that was
+        // actually approved. Forcing `status: 'APPROVED'` alone produces a
+        // state the product cannot reach — `decidePolicyApproval` is the only
+        // path that sets APPROVED, and it always leaves a record — so the
+        // shortcut was asserting against a shape that does not occur.
         const policy2 = await createPolicy(ctx, { title: `PubApproved ${randomUUID().slice(0, 6)}` });
         const v2 = await createPolicyVersion(ctx, policy2.id, { contentType: 'MARKDOWN', contentText: 'b' });
         await globalPrisma.policy.update({ where: { id: policy2.id }, data: { status: 'APPROVED' } });
+        await seedApproval(policy2.id, v2.id, 'APPROVED');
         const published = await publishPolicy(ctx, policy2.id, v2.id);
         expect(published!.status).toBe('PUBLISHED');
+
+        // ...and publishing a DIFFERENT version than the approved one is
+        // refused. This is the exploit the binding closes: draft v1 and v2,
+        // get v1 approved, then publish v2 — unreviewed content going live
+        // under an APPROVED status, with none of decidePolicyApproval's
+        // separation-of-duties checks in the way.
+        const policy3 = await createPolicy(ctx, { title: `PubBind ${randomUUID().slice(0, 6)}` });
+        const p3v1 = await createPolicyVersion(ctx, policy3.id, { contentType: 'MARKDOWN', contentText: 'reviewed' });
+        const p3v2 = await createPolicyVersion(ctx, policy3.id, { contentType: 'MARKDOWN', contentText: 'NOT reviewed' });
+        await globalPrisma.policy.update({ where: { id: policy3.id }, data: { status: 'APPROVED' } });
+        await seedApproval(policy3.id, p3v1.id, 'APPROVED');
+        await expect(publishPolicy(ctx, policy3.id, p3v2.id)).rejects.toThrow(/not the version that was approved/i);
+        // The approved version still publishes.
+        const ok = await publishPolicy(ctx, policy3.id, p3v1.id);
+        expect(ok!.status).toBe('PUBLISHED');
+    });
+
+    it('requestPolicyApproval refuses to withdraw a PUBLISHED policy, and dedupes open requests', async () => {
+        const policy = await createPolicy(ctx, { title: `Guard ${randomUUID().slice(0, 6)}`, content: '# body' });
+        const full = await getPolicy(ctx, policy.id);
+        const v1 = full.currentVersion!.id;
+
+        // Publish it (bypass — the point here is the PUBLISHED end state).
+        await publishPolicy(ctx, policy.id, v1, { bypassApprovalReason: 'seed' });
+        expect((await getPolicy(ctx, policy.id)).status).toBe('PUBLISHED');
+
+        // Requesting approval on a LIVE policy used to set IN_REVIEW
+        // unconditionally — silently withdrawing it: attestPolicy requires
+        // PUBLISHED, so every acknowledgement stopped being possible, with no
+        // version change and no admin involved.
+        await expect(requestPolicyApproval(ctx, policy.id, v1)).rejects.toThrow(/published/i);
+        expect((await getPolicy(ctx, policy.id)).status).toBe('PUBLISHED');
+
+        // Dedupe: a second open request is refused while one is outstanding.
+        const draft = await createPolicy(ctx, { title: `Dedupe ${randomUUID().slice(0, 6)}`, content: '# d' });
+        const dv = (await getPolicy(ctx, draft.id)).currentVersion!.id;
+        await requestPolicyApproval(ctx, draft.id, dv);
+        await expect(requestPolicyApproval(ctx, draft.id, dv)).rejects.toThrow(/awaiting a decision/i);
+    });
+
+    it('a stale approval cannot un-publish a live policy, and publish supersedes outstanding requests', async () => {
+        const policy = await createPolicy(ctx, { title: `Stale ${randomUUID().slice(0, 6)}`, content: '# body' });
+        const v1 = (await getPolicy(ctx, policy.id)).currentVersion!.id;
+
+        // An approval is requested (policy -> IN_REVIEW), then an admin
+        // publishes via the bypass path WITHOUT deciding it. That is exactly
+        // how a PENDING row ends up sitting behind a live policy.
+        await requestPolicyApproval(ctx, policy.id, v1);
+        const pendingRow = await globalPrisma.policyApproval.findFirst({
+            where: { policyId: policy.id, status: 'PENDING' },
+        });
+        expect(pendingRow).toBeTruthy();
+
+        await publishPolicy(ctx, policy.id, v1, { bypassApprovalReason: 'emergency' });
+        expect((await getPolicy(ctx, policy.id)).status).toBe('PUBLISHED');
+
+        // Publish now RESOLVES what was outstanding, so the loaded gun is gone.
+        const after = await globalPrisma.policyApproval.findUnique({ where: { id: pendingRow!.id } });
+        expect(after?.status).toBe('REJECTED');
+
+        // And even if a PENDING row survives some other way, deciding it
+        // against a policy that has moved on is refused rather than silently
+        // dropping a LIVE policy to DRAFT and stranding its acknowledgements.
+        const revived = await seedApproval(policy.id, v1, 'PENDING');
+        await expect(
+            decidePolicyApproval(ctx, policy.id, revived.id, { decision: 'REJECTED' }),
+        ).rejects.toThrow(/no longer current/i);
+        expect((await getPolicy(ctx, policy.id)).status).toBe('PUBLISHED');
     });
 
     it('lifecycle history + rollback (Prompt-3.1): publish increments lifecycleVersion, records prior snapshot, rollback restores it', async () => {
@@ -351,7 +427,7 @@ describeFn('policy usecase — branch coverage (integration)', () => {
         // Requested by a DIFFERENT user (the owner) — so requester-SoD would NOT
         // fire for the admin; only the authorship guard catches this.
         const approval = await seedApproval(policy.id, v.id, 'PENDING', ownerUserId);
-        await expect(decidePolicyApproval(admin, approval.id, { decision: 'APPROVED' })).rejects.toThrow(/[Ss]eparation of duties|authored/);
+        await expect(decidePolicyApproval(admin, policy.id, approval.id, { decision: 'APPROVED' })).rejects.toThrow(/[Ss]eparation of duties|authored/);
         expect((await globalPrisma.policyApproval.findUnique({ where: { id: approval.id } }))?.status).toBe('PENDING');
     });
 

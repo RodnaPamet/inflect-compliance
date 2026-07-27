@@ -67,6 +67,12 @@ const mockApprovalRepo = {
     decide: jest.fn(),
     getById: jest.fn(),
     listPending: jest.fn(),
+    // Lifecycle-integrity helpers: publish binds to the approved version,
+    // requestPolicyApproval dedupes open requests, and publish supersedes
+    // whatever is still outstanding.
+    latestApproved: jest.fn(),
+    findPending: jest.fn(),
+    supersedePending: jest.fn(),
 };
 
 const mockTemplateRepo = {
@@ -98,6 +104,16 @@ beforeEach(() => {
     // author off the tenant db. Default to an author who is NOT the approver
     // so approval is allowed; individual tests can override.
     mockDb.policyVersion = { findFirst: jest.fn().mockResolvedValue({ createdById: 'author-not-approver' }) };
+    // Owner validation intersects a body-supplied ownerUserId with ACTIVE
+    // membership; default to "is a member" so unrelated tests are unaffected.
+    mockDb.tenantMembership = { findFirst: jest.fn().mockResolvedValue({ userId: 'user-1' }) };
+    // No competing open request by default (the dedupe guard).
+    mockApprovalRepo.findPending.mockResolvedValue([]);
+    // Nothing outstanding to supersede on publish by default.
+    mockApprovalRepo.supersedePending.mockResolvedValue({ count: 0 });
+    // Publish binds to the approved version — default the approval to the
+    // version the publish tests actually pass ('v1').
+    mockApprovalRepo.latestApproved.mockResolvedValue({ id: 'a1', policyVersionId: 'v1' });
 });
 
 // ─── Authorization Matrix ───
@@ -169,16 +185,16 @@ describe('Policy Authorization Matrix', () => {
 
     describe('decidePolicyApproval — ADMIN only', () => {
         it('ADMIN can approve', async () => {
-            mockApprovalRepo.getById.mockResolvedValue({ id: 'a1', policy: { tenantId: 'tenant-1' }, policyId: 'p1', status: 'PENDING' });
+            mockApprovalRepo.getById.mockResolvedValue({ id: 'a1', policy: { tenantId: 'tenant-1', status: 'IN_REVIEW' }, policyId: 'p1', status: 'PENDING' });
             mockApprovalRepo.decide.mockResolvedValue({ id: 'a1', status: 'APPROVED' });
             await expect(
-                usecases.decidePolicyApproval(mockCtx('ADMIN'), 'a1', { decision: 'APPROVED' })
+                usecases.decidePolicyApproval(mockCtx('ADMIN'), 'p1', 'a1', { decision: 'APPROVED' })
             ).resolves.toBeDefined();
         });
 
         it.each(['EDITOR', 'READER', 'AUDITOR'])('%s cannot decide approval', async (role) => {
             await expect(
-                usecases.decidePolicyApproval(mockCtx(role), 'a1', { decision: 'APPROVED' })
+                usecases.decidePolicyApproval(mockCtx(role), 'p1', 'a1', { decision: 'APPROVED' })
             ).rejects.toThrow(AppError);
         });
     });
@@ -390,28 +406,28 @@ describe('Approval workflow', () => {
     });
 
     it('rejection moves policy back to DRAFT', async () => {
-        mockApprovalRepo.getById.mockResolvedValue({ id: 'a1', policy: { tenantId: 'tenant-1' }, policyId: 'p1', status: 'PENDING' });
+        mockApprovalRepo.getById.mockResolvedValue({ id: 'a1', policy: { tenantId: 'tenant-1', status: 'IN_REVIEW' }, policyId: 'p1', status: 'PENDING' });
         mockApprovalRepo.decide.mockResolvedValue({ id: 'a1', status: 'REJECTED' });
 
-        await usecases.decidePolicyApproval(mockCtx('ADMIN'), 'a1', { decision: 'REJECTED', comment: 'Needs work' });
+        await usecases.decidePolicyApproval(mockCtx('ADMIN'), 'p1', 'a1', { decision: 'REJECTED', comment: 'Needs work' });
 
         expect(mockPolicyRepo.updateStatus).toHaveBeenCalledWith(mockDb, expect.anything(), 'p1', 'DRAFT');
     });
 
     it('approval sets policy to APPROVED', async () => {
-        mockApprovalRepo.getById.mockResolvedValue({ id: 'a1', policy: { tenantId: 'tenant-1' }, policyId: 'p1', status: 'PENDING' });
+        mockApprovalRepo.getById.mockResolvedValue({ id: 'a1', policy: { tenantId: 'tenant-1', status: 'IN_REVIEW' }, policyId: 'p1', status: 'PENDING' });
         mockApprovalRepo.decide.mockResolvedValue({ id: 'a1', status: 'APPROVED' });
 
-        await usecases.decidePolicyApproval(mockCtx('ADMIN'), 'a1', { decision: 'APPROVED' });
+        await usecases.decidePolicyApproval(mockCtx('ADMIN'), 'p1', 'a1', { decision: 'APPROVED' });
 
         expect(mockPolicyRepo.updateStatus).toHaveBeenCalledWith(mockDb, expect.anything(), 'p1', 'APPROVED');
     });
 
     it('cannot decide already-decided approval', async () => {
-        mockApprovalRepo.getById.mockResolvedValue({ id: 'a1', policy: { tenantId: 'tenant-1' }, policyId: 'p1', status: 'APPROVED' });
+        mockApprovalRepo.getById.mockResolvedValue({ id: 'a1', policy: { tenantId: 'tenant-1', status: 'IN_REVIEW' }, policyId: 'p1', status: 'APPROVED' });
 
         await expect(
-            usecases.decidePolicyApproval(mockCtx('ADMIN'), 'a1', { decision: 'REJECTED' })
+            usecases.decidePolicyApproval(mockCtx('ADMIN'), 'p1', 'a1', { decision: 'REJECTED' })
         ).rejects.toThrow('already been decided');
     });
 });
