@@ -11,7 +11,11 @@
  */
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { Plus } from '@/components/ui/icons/nucleo';
 import { ProgressBar } from '@/components/ui/progress-bar';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
@@ -81,8 +85,19 @@ export function EvidenceAddForm({
         <>
             {canWrite && (
                 <div className="flex justify-end">
-                    <Button variant="primary" onClick={onToggleShow} id={ids.trigger}>
-                        {t('add')}
+                    {/* Trigger: icon + bare noun, per the action-button
+                        vocabulary — the Plus glyph carries the verb. The
+                        SUBMIT button below keeps its verbed form
+                        (`t('add')` = "Add evidence"), because a confirm
+                        surface must declare the action, not just name the
+                        subject. They used to share one key. */}
+                    <Button
+                        variant="primary"
+                        icon={<Plus className="-ml-0.5 -mr-2.5" />}
+                        onClick={onToggleShow}
+                        id={ids.trigger}
+                    >
+                        {t('addTrigger')}
                     </Button>
                 </div>
             )}
@@ -93,29 +108,22 @@ export function EvidenceAddForm({
                     id={ids.form}
                 >
                     <div className="space-y-compact">
-                        <div>
-                            <label
-                                className="mb-1 block text-xs font-medium text-content-muted"
-                                htmlFor={ids.title}
-                            >
-                                {t('labelTitle')}
-                            </label>
-                            <input
+                        <FormField label={t('labelTitle')}>
+                            <Input
                                 type="text"
-                                className="input w-full"
                                 placeholder={t('placeholderTitle')}
                                 value={title}
                                 onChange={(e) => onTitleChange(e.target.value)}
                                 id={ids.title}
                             />
-                        </div>
-                        <div>
-                            <label
-                                className="mb-1 block text-xs font-medium text-content-muted"
-                                htmlFor={ids.file}
-                            >
-                                {t('uploadFile')}
-                            </label>
+                        </FormField>
+                        <FormField label={t('uploadFile')}>
+                            {/* Still a raw <input type="file">: the Input
+                                primitive styles a text-shaped control, and the
+                                `file:*` utilities below target the browser's own
+                                file-picker button, which the primitive does not
+                                expose. Wrapped in FormField so the label,
+                                spacing, and htmlFor wiring are consistent. */}
                             <input
                                 ref={fileInputRef}
                                 type="file"
@@ -124,31 +132,25 @@ export function EvidenceAddForm({
                                 id={ids.file}
                                 accept={FILE_ACCEPT}
                             />
+                        </FormField>
                             {file && (
                                 <p className="mt-1 text-xs text-content-muted">
                                     {file.name} ({formatSize(file.size)})
                                 </p>
                             )}
-                        </div>
                     </div>
                     <div className="space-y-compact border-t border-border-subtle pt-3">
-                        <label
-                            className="block text-xs font-medium text-content-muted"
-                            htmlFor={ids.url}
-                        >
-                            {t('orLinkUrl')}
-                        </label>
-                        <input
-                            type="url"
-                            className="input w-full"
-                            placeholder={t('urlPlaceholder')}
-                            value={url}
-                            onChange={(e) => onUrlChange(e.target.value)}
-                            id={ids.url}
-                            disabled={!!file}
-                        />
-                        <textarea
-                            className="input w-full"
+                        <FormField label={t('orLinkUrl')}>
+                            <Input
+                                type="url"
+                                placeholder={t('urlPlaceholder')}
+                                value={url}
+                                onChange={(e) => onUrlChange(e.target.value)}
+                                id={ids.url}
+                                disabled={!!file}
+                            />
+                        </FormField>
+                        <Textarea
                             rows={2}
                             placeholder={t('noteOptional')}
                             value={note}
@@ -165,9 +167,17 @@ export function EvidenceAddForm({
                             {error}
                         </div>
                     )}
+                    {/* Indeterminate, NOT `value={60}`. The upload goes
+                        through `fetch`, which exposes no upload-progress
+                        events, so no real fraction is available here —
+                        the old hardcoded 60% looked like measured
+                        progress and then sat still, making a slow upload
+                        indistinguishable from a stuck one. If this ever
+                        moves to XHR (`upload.onprogress`), pass the real
+                        `value` and drop `indeterminate`. */}
                     {uploading && (
                         <ProgressBar
-                            value={60}
+                            indeterminate
                             size="md"
                             variant="brand"
                             aria-label={t('uploadingAria')}

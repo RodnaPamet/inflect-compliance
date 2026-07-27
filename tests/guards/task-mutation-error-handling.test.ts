@@ -66,7 +66,13 @@ describe('TP-6 — task detail mutation handlers surface failures', () => {
         'const addComment = async',
         'const commitStatus = async',
         'const toggleWatch = async',
-        'const removeWatcher = async',
+        // Not `= async`: Epic 67 moved the destructive removes onto the
+        // undo-toast, whose `action:` callback owns the await. The
+        // ok-check + throw contract below is unchanged — it is now
+        // satisfied inside that callback, which `bodyAfter` still
+        // captures since it brace-matches the whole handler.
+        'const removeWatcher =',
+        'const handleDeleteTask =',
     ];
 
     it.each(HANDLERS)('handler `%s` inspects res.ok', (anchor) => {

@@ -53,8 +53,13 @@ function Harness(props: Partial<React.ComponentProps<typeof EvidenceAddForm>>) {
 describe('EvidenceAddForm — canonical shape', () => {
     it('renders Title, file, URL and note fields + trigger/submit', () => {
         render(<Harness />);
-        // Trigger + submit both read "Add Evidence" (matches the Control tab).
-        expect(document.getElementById('t-trigger')?.textContent).toContain('Add Evidence');
+        // Trigger and submit read DIFFERENTLY on purpose. They used to share
+        // one i18n key, but the action-button vocabulary treats them as
+        // opposite registers: a trigger that opens a form is icon + bare
+        // noun (the Plus glyph carries the verb), while a confirm/submit
+        // button must declare the action. So the trigger is "Evidence" and
+        // the submit is "Add evidence".
+        expect(document.getElementById('t-trigger')?.textContent).toContain('Evidence');
         // The always-present Title field (the difference the Task tab lacked).
         expect(document.getElementById('t-title')).not.toBeNull();
         // Brand-tinted file button (not the muted grey the Task tab used).
@@ -62,7 +67,7 @@ describe('EvidenceAddForm — canonical shape', () => {
         expect(fileInput?.className).toContain('file:bg-[var(--brand-default)]');
         expect(document.getElementById('t-url')).not.toBeNull();
         expect(document.getElementById('t-note')).not.toBeNull();
-        expect(document.getElementById('t-submit')?.textContent).toContain('Add Evidence');
+        expect(document.getElementById('t-submit')?.textContent).toContain('Add evidence');
     });
 
     it('disables submit until a file or URL is provided', () => {

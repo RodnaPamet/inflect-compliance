@@ -114,17 +114,45 @@ describe("R32-task-63 — modal-form completeness", () => {
                 expect(src).toMatch(/form\.isDirty/);
                 expect(src).toMatch(/form\.submitting/);
                 // The "Discard … will be lost" copy is the canonical
-                // prompt. It's either an inline literal OR — on an
-                // i18n-migrated modal — sourced via `window.confirm(t('key'))`.
-                // For the i18n form, resolve the key against en.json
-                // (namespace === entity slug) so the canonical copy is still
-                // locked, just through the catalog.
+                // prompt. Three accepted shapes, in increasing order of
+                // migration:
+                //   1. an inline `window.confirm('… lost.')` literal
+                //   2. i18n'd `window.confirm(t('key'))`
+                //   3. a <ConfirmDialog description={t('key')}> — the
+                //      platform primitive. window.confirm renders
+                //      browser chrome: unstyled, untranslatable beyond its
+                //      message, and unreachable from tests, so a modal
+                //      moving off it is an UPGRADE and must not fail this
+                //      ratchet. The canonical copy is still locked; only
+                //      the delivery mechanism changed.
+                // For shapes 2 and 3 the key is resolved against en.json
+                // (namespace === entity slug) so the copy stays pinned
+                // through the catalog.
                 const inlineConfirm =
                     /window\.confirm\([\s\S]{0,200}lost\./.test(src);
                 if (!inlineConfirm) {
-                    const keyMatch = src.match(
-                        /window\.confirm\(\s*t\(['"]([\w.]+)['"]\)/,
-                    );
+                    const keyMatch =
+                        src.match(
+                            /window\.confirm\(\s*t\(['"]([\w.]+)['"]\)/,
+                        ) ??
+                        // <ConfirmDialog … description={t('key')} …>.
+                        // Scoped to the ConfirmDialog's own props: the file
+                        // also renders <Modal description={t('new.modalDesc')}>,
+                        // and an unscoped search finds that one first.
+                        (() => {
+                            // `<ConfirmDialog\s` — the trailing whitespace is
+                            // load-bearing: it requires a real JSX element with
+                            // props, so a bare "<ConfirmDialog>" mentioned in a
+                            // prose comment cannot be picked up instead (which
+                            // is exactly what happened first, and made this
+                            // resolve the Modal's description key).
+                            const tag = src.match(/<ConfirmDialog\s[\s\S]*?\/>/);
+                            return tag
+                                ? tag[0].match(
+                                      /description=\{\s*t\(['"]([\w.]+)['"]\)\s*\}/,
+                                  )
+                                : null;
+                        })();
                     expect(keyMatch).toBeTruthy();
                     const en = JSON.parse(read("messages/en.json")) as Record<
                         string,

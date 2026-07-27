@@ -77,7 +77,14 @@ export function EvidenceSubTable({
     data: EvidenceTabData | undefined;
     loading: boolean;
     canWrite: boolean;
-    onUnlink: (linkId: string) => void;
+    /**
+     * Detach a ControlEvidenceLink join row. Optional, mirroring
+     * `onUnlinkEvidence`: only the control tab has a link join table.
+     * The task tab's payload always carries `links: []` (tasks own
+     * evidence directly via `Evidence.taskId`), so it has no link to
+     * detach and passes nothing rather than a no-op handler.
+     */
+    onUnlink?: (linkId: string) => void;
     /**
      * Opt-in removal for direct-evidence rows (Evidence entities, not
      * link rows). The control evidence tab omits it — its direct
@@ -249,7 +256,7 @@ export function EvidenceSubTable({
                               header: t('evidenceTab.colActions'),
                               cell: ({ row }: { row: { original: EvidenceTableRow } }) => {
                                   const r = row.original;
-                                  if (r.linkId) {
+                                  if (r.linkId && onUnlink) {
                                       return (
                                           <button
                                               className="text-content-error text-xs hover:text-content-error"

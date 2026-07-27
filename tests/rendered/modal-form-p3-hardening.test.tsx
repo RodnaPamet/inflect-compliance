@@ -35,6 +35,15 @@ interface HardenedFlow {
      *  `t('<key>')` (dotted, relative to the page's useTranslations namespace,
      *  which matches the flow label). */
     i18nConfirmKey?: string;
+    /**
+     * Set when the flow has migrated off `window.confirm` onto the
+     * platform <ConfirmDialog>. window.confirm renders browser chrome:
+     * unstyled, untranslatable beyond its message string, and unreachable
+     * from tests — so moving off it is an upgrade, and this ratchet must
+     * assert the NEW shape rather than block the migration. The discard
+     * copy is still pinned; only its delivery changed.
+     */
+    usesConfirmDialog?: boolean;
 }
 
 const FLOWS: HardenedFlow[] = [
@@ -52,7 +61,12 @@ const FLOWS: HardenedFlow[] = [
         hookExport: 'useNewTaskForm',
         modalPath: 'tasks/NewTaskModal.tsx',
         confirmCopy: /Discard task\?/,
-        i18nConfirmKey: 'new.discardConfirm',
+        // The question moved into the dialog TITLE when this flow migrated
+        // to <ConfirmDialog>, which takes title and description as separate
+        // props; `new.discardConfirm` now holds only the consequence
+        // sentence ("Any details you entered will be lost.").
+        i18nConfirmKey: 'new.discardTitle',
+        usesConfirmDialog: true,
     },
     {
         label: 'vendors',
@@ -145,7 +159,13 @@ describe.each(FLOWS)('modal-form P3 — $label modal wires the guard', (flow) =>
     });
 
     it('guard prompts before discarding', () => {
-        expect(src).toMatch(/window\.confirm\(/);
+        if (flow.usesConfirmDialog) {
+            // `\s` after the tag name so a prose mention of the component
+            // in a comment cannot satisfy this.
+            expect(src).toMatch(/<ConfirmDialog\s/);
+        } else {
+            expect(src).toMatch(/window\.confirm\(/);
+        }
         if (flow.i18nConfirmKey) {
             // i18n'd flow: the modal calls t('<key>'); the human copy lives
             // in the catalog. Verify both the wiring AND the resolved value.

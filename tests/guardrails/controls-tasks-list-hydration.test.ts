@@ -64,8 +64,16 @@ describe('list-page hydration shape', () => {
         // fallback now constructs `{ rows: initialTasks, truncated:
         // false }`. Pin both halves: the gate predicate AND the
         // wrapped-shape construction.
+        //
+        // The tasks Deleted view then added a `?includeDeleted=true` fetch,
+        // so the fallback additionally excludes that view (`&& !showDeleted`)
+        // — the SSR payload only ever holds LIVE rows, and seeding it into
+        // the deleted view would briefly show active tasks under a "Deleted"
+        // heading. Same widening the ControlsClient assertion above already
+        // carries, for the same reason. Accept both, still requiring the
+        // CappedList shape and the filtersMatchInitial predicate.
         expect(tasksClient).toMatch(
-            /fallbackData:\s*filtersMatchInitial\s*\?\s*\{\s*rows:\s*initialTasks,\s*truncated:\s*false\s*\}/,
+            /fallbackData:\s*filtersMatchInitial(\s*&&\s*!showDeleted)?\s*\?\s*\{\s*rows:\s*initialTasks,\s*truncated:\s*false\s*\}/,
         );
         expect(tasksClient).toMatch(/dedupingInterval:\s*30_000/);
     });

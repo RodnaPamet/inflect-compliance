@@ -4,7 +4,7 @@ import { formatDate, formatDateTime } from '@/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -25,7 +25,11 @@ import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { CopyText } from '@/components/ui/copy-text';
-import { TERMINAL_WORK_ITEM_STATUSES } from '@/app-layer/domain/work-item-status';
+import {
+    TERMINAL_WORK_ITEM_STATUSES,
+    WORK_ITEM_TRANSITIONS,
+    type WorkItemStatusValue,
+} from '@/app-layer/domain/work-item-status';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { MetaStrip } from '@/components/ui/meta-strip';
@@ -40,8 +44,14 @@ import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 // TP-4 — the task edit surface is now the shared inline autosave
 // TaskEditPanel (form variant), retiring the divergent EditTaskModal.
 import { TaskEditPanel } from '@/app/t/[tenantSlug]/(app)/controls/TaskEditPanel';
-import { Pen2 } from '@/components/ui/icons/nucleo';
+import { Pen2, Xmark } from '@/components/ui/icons/nucleo';
+import { IconAction } from '@/components/ui/icon-action';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
+// Shared with the list's Severity column and the Severity filter — this
+// page rendered the raw enum (`CRITICAL`) next to a filter chip reading
+// "Critical".
+import { taskSeverityLabels } from '../filter-defs';
 
 // Status tone AND label both come from the shared `TASK_STATUS_BADGE` map
 // (TP-1) — tone via `taskStatusVariant`, copy via the map's `labelKey`.
@@ -86,7 +96,60 @@ const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLO
 // value rather than a BLANK option. (Before the map derived from
 // TASK_STATUS_BADGE, IN_REVIEW hit exactly this hole and shipped an
 // unlabelled, unpickable entry in the status combobox.)
-const buildTaskStatusCbOptions = (statusLabels: Record<string, string>): ComboboxOption[] => SELECTABLE_STATUSES.map((val) => ({ value: val, label: statusLabels[val] || val }));
+/**
+ * Options the picker offers from `current`.
+ *
+ * The picker used to list every SELECTABLE_STATUSES entry regardless of
+ * where the task actually was, so it advertised moves the server rejects:
+ * a CLOSED task (terminal — no legal transitions out) still offered all
+ * seven, and picking one 400'd. Filtering against the same
+ * WORK_ITEM_TRANSITIONS graph the usecase enforces means the menu can
+ * only ever contain moves that will be accepted.
+ *
+ * `current` itself is always retained: the Combobox resolves its
+ * displayed selection by finding `task.status` in this list, so dropping
+ * it would blank the control. It is not a legal transition (`from ===
+ * to` is a no-op the gate rejects) — it is the "you are here" entry, and
+ * `requestStatusChange` ignores a re-pick of it.
+ */
+const buildTaskStatusCbOptions = (
+    statusLabels: Record<string, string>,
+    current?: string,
+): ComboboxOption[] => {
+    const reachable =
+        current && current in WORK_ITEM_TRANSITIONS
+            ? WORK_ITEM_TRANSITIONS[current as WorkItemStatusValue]
+            : null;
+    return SELECTABLE_STATUSES.filter(
+        (val) => !reachable || val === current || reachable.has(val as WorkItemStatusValue),
+    ).map((val) => ({ value: val, label: statusLabels[val] || val }));
+};
+
+/**
+ * Terminal status → the imperative verb for the confirm dialog. Kept
+ * separate from STATUS_LABELS, which holds the past-tense STATE names
+ * ("Closed") used on badges — the two are different registers and
+ * conflating them is what produced "Closed task?" as an action prompt.
+ */
+/**
+ * Message to show for a caught error, falling back to localized copy.
+ *
+ * The call sites used to spell `e instanceof Error ? e.message : t(...)`
+ * inline. Every throw site here constructs an Error, so the `t(...)` arm
+ * was unreachable — and the arm that DID run happily rendered an empty
+ * string when the Error carried no message (`new Error()`, or a server
+ * body whose `error` field was ""), producing a blank toast. Checking the
+ * message itself rather than the instance makes the fallback reachable
+ * for the case that actually occurs.
+ */
+function errorMessage(e: unknown, fallback: string): string {
+    return e instanceof Error && e.message.trim() ? e.message : fallback;
+}
+
+const TERMINAL_STATUS_VERB_KEY: Record<string, string> = {
+    CLOSED: 'detail.close',
+    CANCELED: 'detail.cancelVerb',
+};
 
 type Tab = 'overview' | 'evidence' | 'links' | 'comments' | 'activity';
 
@@ -161,8 +224,9 @@ export default function TaskDetailPage() {
     const TYPE_LABELS = buildTypeLabels(t);
     const FINDING_SOURCE_LABELS = buildFindingSourceLabels(t);
     const GAP_TYPE_LABELS = buildGapTypeLabels(t);
-    const TASK_STATUS_CB_OPTIONS = buildTaskStatusCbOptions(STATUS_LABELS);
+    const SEVERITY_LABELS = taskSeverityLabels(t);
     const params = useParams();
+    const router = useRouter();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, role, tenantSlug, userId } = useTenantContext();
@@ -231,9 +295,7 @@ export default function TaskDetailPage() {
     const task = taskQuery.data ?? null;
     const loading = taskQuery.isLoading;
     const error = taskQuery.error
-        ? (taskQuery.error instanceof Error
-            ? taskQuery.error.message
-            : t('detail.notFound'))
+        ? errorMessage(taskQuery.error, t('detail.notFound'))
         : '';
 
     const linksQuery = useTenantSWR<TaskLinkRow[]>(
@@ -272,6 +334,10 @@ export default function TaskDetailPage() {
     // for the note; non-terminal changes commit immediately.
     const requestStatusChange = (status: string) => {
         setStatusError('');
+        // Re-picking the status the task already has is a no-op the
+        // server rejects (`from === to`). The option is only in the list
+        // so the Combobox can display the current selection.
+        if (status === taskQuery.data?.status) return;
         if ((TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(status)) {
             setResolutionDraft('');
             setPendingTerminalStatus(status);
@@ -308,9 +374,18 @@ export default function TaskDetailPage() {
             }
             setPendingTerminalStatus(null);
         } catch (e) {
-            setStatusError(
-                e instanceof Error ? e.message : t('detail.failedStatus'),
-            );
+            const message =
+                errorMessage(e, t('detail.failedStatus'));
+            setStatusError(message);
+            // `statusError` only renders inside the terminal-status modal.
+            // A non-terminal change (OPEN → IN_PROGRESS, a reviewer-gate
+            // 403, …) has no modal open, so the banner had nowhere to
+            // show: the optimistic patch just snapped back and the user
+            // saw nothing. Toast covers that path; the modal keeps its
+            // inline banner, which stays visible next to the note field.
+            if (pendingTerminalStatus === null) {
+                toast.error(message);
+            }
         } finally {
             setChangingStatus(false);
             // Reconcile — pick up server-derived fields (completedAt,
@@ -343,7 +418,15 @@ export default function TaskDetailPage() {
                 );
             }
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.assignFailed'));
+            toast.error(errorMessage(e, t('detail.assignFailed')));
+            // Drop the rejected pick. `assigneeValue` prefers the draft
+            // over the server value, so leaving it set would keep showing
+            // the assignee the server just refused — while the reconcile
+            // below reverts `task.assigneeUserId` to the real one. The
+            // label and the picker would name two different people until
+            // the page remounts. `undefined` (not null) is the reset:
+            // null is a real value meaning "unassigned".
+            setAssigneeDraft(undefined);
         } finally {
             setAssigning(false);
             await taskQuery.mutate();
@@ -377,7 +460,9 @@ export default function TaskDetailPage() {
                 );
             }
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.reviewerFailed'));
+            toast.error(errorMessage(e, t('detail.reviewerFailed')));
+            // Same reset as handleAssign — see the note there.
+            setReviewerDraft(undefined);
         } finally {
             setSavingReviewer(false);
             await taskQuery.mutate();
@@ -398,24 +483,87 @@ export default function TaskDetailPage() {
                   });
             if (!res.ok) throw new Error(t('detail.watchFailed'));
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.watchFailed'));
+            toast.error(errorMessage(e, t('detail.watchFailed')));
         } finally {
             setWatchPending(false);
             await taskQuery.mutate();
         }
     };
-    const removeWatcher = async (watcherUserId: string) => {
-        try {
-            const res = await fetch(
-                apiUrl(`/tasks/${taskId}/watchers?userId=${encodeURIComponent(watcherUserId)}`),
-                { method: 'DELETE' },
-            );
-            if (!res.ok) throw new Error(t('detail.watchFailed'));
-        } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.watchFailed'));
-        } finally {
-            await taskQuery.mutate();
-        }
+    // Epic 67 — delayed-commit watcher removal, matching `removeLink` and
+    // `removeEvidence`. This was a bare fire-and-forget DELETE: one click
+    // and the watcher was gone with no confirm and no way back, even
+    // though the undo-toast hook was already imported and used by the two
+    // sibling remove flows on this very page.
+    const removeWatcher = (watcherUserId: string) => {
+        const previous = taskQuery.data;
+        // Optimistic drop so the row disappears on click; the undo path
+        // and the failure path both restore this snapshot.
+        void taskQuery.mutate(
+            (cur: TaskDetail | undefined) =>
+                cur
+                    ? {
+                          ...cur,
+                          watchers: (cur.watchers ?? []).filter(
+                              (w) => w.userId !== watcherUserId,
+                          ),
+                      }
+                    : cur,
+            { revalidate: false },
+        );
+        triggerUndoToast({
+            message: t('detail.watcherRemoved'),
+            undoMessage: t('detail.undo'),
+            action: async () => {
+                const res = await fetch(
+                    apiUrl(
+                        `/tasks/${taskId}/watchers?userId=${encodeURIComponent(watcherUserId)}`,
+                    ),
+                    { method: 'DELETE' },
+                );
+                if (!res.ok) throw new Error(t('detail.watchFailed'));
+                await taskQuery.mutate();
+            },
+            undoAction: () => {
+                void taskQuery.mutate(previous, { revalidate: false });
+            },
+            onError: () => {
+                void taskQuery.mutate(previous, { revalidate: false });
+            },
+        });
+    };
+
+    /**
+     * Delete this task (soft — recoverable from the list's Deleted view).
+     *
+     * Navigates back to the list immediately: leaving the user on the
+     * detail page of a row that is now deleted would be a dead end. The
+     * undo window still runs from the list, and Undo simply cancels the
+     * commit — nothing to restore, because the DELETE never fired.
+     */
+    const handleDeleteTask = () => {
+        const title = taskQuery.data?.title ?? '';
+        router.push(tenantHref('/tasks'));
+        triggerUndoToast({
+            message: t('detail.taskDeleted', { title }),
+            undoMessage: t('detail.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/tasks/${taskId}`), {
+                    method: 'DELETE',
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(
+                        (typeof data?.error === 'string' && data.error) ||
+                            t('detail.deleteFailed'),
+                    );
+                }
+            },
+            onError: (err: unknown) => {
+                toast.error(
+                    errorMessage(err, t('detail.deleteFailed')),
+                );
+            },
+        });
     };
 
     const addLink = async (e: React.FormEvent) => {
@@ -440,7 +588,7 @@ export default function TaskDetailPage() {
             setLinkEntityId('');
             setShowLinkForm(false);
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.addLinkFailed'));
+            toast.error(errorMessage(e, t('detail.addLinkFailed')));
         } finally {
             setSavingLink(false);
             // Refresh the links list + the task (its _count.links
@@ -467,6 +615,11 @@ export default function TaskDetailPage() {
                     { method: 'DELETE' },
                 );
                 if (!res.ok) throw new Error(t('detail.removeLinkFailed'));
+                // The Links tab badge reads `task._count.links`, which
+                // lives on the TASK payload — not on `linksQuery`. Without
+                // this the row vanished but the badge kept the old count
+                // until a full reload. Mirrors `removeEvidence`.
+                await Promise.all([linksQuery.mutate(), taskQuery.mutate()]);
             },
             undoAction: () => {
                 void linksQuery.mutate(previous, { revalidate: false });
@@ -514,7 +667,7 @@ export default function TaskDetailPage() {
                 resetEvidenceForm();
                 await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
             } catch (err: unknown) {
-                setEvidenceError(err instanceof Error ? err.message : t('detail.uploadFailed'));
+                setEvidenceError(errorMessage(err, t('detail.uploadFailed')));
             } finally {
                 setSavingEvidence(false);
             }
@@ -539,7 +692,7 @@ export default function TaskDetailPage() {
             resetEvidenceForm();
             await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
         } catch (err: unknown) {
-            setEvidenceError(err instanceof Error ? err.message : t('detail.linkEvidenceFailed'));
+            setEvidenceError(errorMessage(err, t('detail.linkEvidenceFailed')));
         } finally {
             setSavingEvidence(false);
         }
@@ -597,7 +750,7 @@ export default function TaskDetailPage() {
             }
             setCommentBody('');
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : t('detail.addCommentFailed'));
+            toast.error(errorMessage(e, t('detail.addCommentFailed')));
         } finally {
             setSavingComment(false);
             await Promise.all([commentsQuery.mutate(), taskQuery.mutate()]);
@@ -638,6 +791,27 @@ export default function TaskDetailPage() {
         { key: 'comments', label: t('detail.tabComments'), count: task._count?.comments ?? comments.length },
         { key: 'activity', label: t('detail.tabActivity') },
     ];
+
+    // The confirm title needs the IMPERATIVE verb ("Close task"), not the
+    // status LABEL — interpolating STATUS_LABELS gave "Closed task" /
+    // "Canceled task", which reads as a description of a finished state
+    // rather than the action about to be taken. TERMINAL_STATUS_VERB_KEY
+    // maps each terminal status to its verb.
+    const terminalActionTitle = t('detail.terminalTitle', {
+        verb:
+            pendingTerminalStatus &&
+            TERMINAL_STATUS_VERB_KEY[pendingTerminalStatus]
+                ? t(TERMINAL_STATUS_VERB_KEY[pendingTerminalStatus])
+                : t('detail.close'),
+    });
+
+    // Built here, not at the top of the component, because it depends on
+    // the CURRENT status — the reachable set differs per task, and `task`
+    // is only non-null past the guards above.
+    const TASK_STATUS_CB_OPTIONS = buildTaskStatusCbOptions(
+        STATUS_LABELS,
+        task.status,
+    );
 
     const isOverdue = task.dueAt && new Date(task.dueAt) < new Date() && !(TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(task.status);
     const metadata = task.metadataJson || {};
@@ -722,7 +896,7 @@ export default function TaskDetailPage() {
                             kind: 'status' as const,
                             id: 'task-severity',
                             label: t('detail.severity'),
-                            value: task.severity,
+                            value: SEVERITY_LABELS[task.severity] ?? task.severity,
                             variant:
                                 TASK_SEVERITY_VARIANT[task.severity] ??
                                 'neutral',
@@ -746,18 +920,34 @@ export default function TaskDetailPage() {
             }
             actions={
                 permissions.canWrite && (
-                    <Combobox
-                        hideSearch
-                        id="task-status-select"
-                        selected={TASK_STATUS_CB_OPTIONS.find(o => o.value === task.status) ?? null}
-                        setSelected={(opt) => { if (opt) requestStatusChange(opt.value); }}
-                        options={TASK_STATUS_CB_OPTIONS}
-                        disabled={changingStatus}
-                        placeholder={t('detail.statusPlaceholder')}
-                        // Item 29 — brand-color the status action (matches the
-                        // primary "+ …" create buttons).
-                        buttonProps={{ variant: 'primary', className: 'text-sm' }}
-                    />
+                    <div className="flex items-center gap-tight">
+                        <Combobox
+                            hideSearch
+                            id="task-status-select"
+                            selected={TASK_STATUS_CB_OPTIONS.find(o => o.value === task.status) ?? null}
+                            setSelected={(opt) => { if (opt) requestStatusChange(opt.value); }}
+                            options={TASK_STATUS_CB_OPTIONS}
+                            disabled={changingStatus}
+                            placeholder={t('detail.statusPlaceholder')}
+                            // Item 29 — brand-color the status action (matches the
+                            // primary "+ …" create buttons).
+                            buttonProps={{ variant: 'primary', className: 'text-sm' }}
+                        />
+                        {/* Single-task delete. `deleteTask` has existed in
+                            the usecase layer all along with no UI reaching
+                            it, so the only way to delete one task was to
+                            select it in the list and use the bulk bar.
+                            Soft delete → Epic 67 undo-toast, same as every
+                            other routine destructive action here. */}
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            id="delete-task-btn"
+                            onClick={handleDeleteTask}
+                        >
+                            {t('detail.deleteTask')}
+                        </Button>
+                    </div>
                 )
             }
             tabs={tabs}
@@ -873,15 +1063,18 @@ export default function TaskDetailPage() {
                                             {w.user?.name || w.user?.email || t('detail.unknown')}
                                         </StatusBadge>
                                         {canRemove && (
-                                            <button
-                                                type="button"
-                                                aria-label={t('detail.removeWatcher')}
+                                            // IconAction, not a bare <button> with a
+                                            // "×" text glyph: it supplies the tooltip,
+                                            // the aria-label, and the focus ring the
+                                            // raw element lacked.
+                                            <IconAction
+                                                variant="ghost"
+                                                icon={<Xmark className="size-3.5" />}
+                                                label={t('detail.removeWatcher')}
                                                 className="text-content-subtle hover:text-content-error"
                                                 id={`remove-watcher-${w.userId}`}
                                                 onClick={() => removeWatcher(w.userId)}
-                                            >
-                                                ×
-                                            </button>
+                                            />
                                         )}
                                     </span>
                                 );
@@ -1050,11 +1243,18 @@ export default function TaskDetailPage() {
                             description={t('detail.evidenceLoadErrorDesc')}
                         />
                     ) : (
+                        /* No `onUnlink` prop: that handler detaches a
+                           ControlEvidenceLink join row, and tasks have no
+                           such join — `getTaskEvidenceTab` always returns
+                           `links: []` because evidence points at a task
+                           directly via `Evidence.taskId`. This used to pass
+                           `() => {}`, wiring a visible "Remove" button to a
+                           no-op. Removing a task's evidence goes through
+                           `onUnlinkEvidence`. */
                         <EvidenceSubTable
                             data={evidenceQuery.data}
                             loading={evidenceQuery.isLoading && !evidenceQuery.data}
                             canWrite={!!permissions.canWrite}
-                            onUnlink={() => {}}
                             onUnlinkEvidence={removeEvidence}
                             tenantHref={tenantHref}
                         />
@@ -1124,8 +1324,7 @@ export default function TaskDetailPage() {
                 <div className="space-y-default">
                     {canComment && (
                         <form onSubmit={addComment} className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
-                            <textarea
-                                className="input w-full"
+                            <Textarea
                                 rows={3}
                                 placeholder={t('detail.commentPlaceholder')}
                                 value={commentBody}
@@ -1222,12 +1421,12 @@ export default function TaskDetailPage() {
                     }
                 }}
                 size="sm"
-                title={t('detail.terminalTitle', { status: STATUS_LABELS[pendingTerminalStatus ?? ''] ?? t('detail.close') })}
+                title={terminalActionTitle}
                 description={t('detail.terminalDesc')}
                 preventDefaultClose={changingStatus}
             >
                 <Modal.Header
-                    title={t('detail.terminalTitle', { status: STATUS_LABELS[pendingTerminalStatus ?? ''] ?? t('detail.close') })}
+                    title={terminalActionTitle}
                     description={t('detail.terminalHeaderDesc')}
                 />
                 <Modal.Body>
@@ -1241,9 +1440,8 @@ export default function TaskDetailPage() {
                         </div>
                     )}
                     <FormField label={t('detail.resolution')} required>
-                        <textarea
+                        <Textarea
                             id="task-resolution-input"
-                            className="input w-full"
                             rows={3}
                             placeholder={t('detail.resolutionPlaceholder')}
                             value={resolutionDraft}
@@ -1277,7 +1475,7 @@ export default function TaskDetailPage() {
                     >
                         {changingStatus
                             ? t('detail.savingEllipsis')
-                            : t('detail.terminalTitle', { status: STATUS_LABELS[pendingTerminalStatus ?? ''] ?? t('detail.close') })}
+                            : terminalActionTitle}
                     </Button>
                 </Modal.Actions>
             </Modal>
@@ -1405,12 +1603,20 @@ function TaskLinksTable({
                               id: 'actions',
                               header: t('detail.linkActionsHeader'),
                               cell: ({ row }) => (
-                                  <button
-                                      className="text-content-error text-xs hover:text-content-error"
+                                  // Platform Button rather than a bare
+                                  // <button>: it carries the focus ring,
+                                  // disabled semantics, and destructive
+                                  // tone the raw element had to fake with
+                                  // colour classes alone.
+                                  <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-content-error"
+                                      id={`remove-link-${row.original.id}`}
                                       onClick={() => onRemove(row.original.id)}
                                   >
                                       {t('detail.removeLink')}
-                                  </button>
+                                  </Button>
                               ),
                           } as Parameters<typeof createColumns<TaskLinkRow>>[0][number],
                       ]

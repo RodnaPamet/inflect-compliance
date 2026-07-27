@@ -21,6 +21,7 @@
  *     canSubmit so the legacy contract holds.
  */
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useToast } from '@/components/ui/hooks';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
@@ -105,6 +106,7 @@ export function useNewTaskForm({
     initialPendingLinks,
 }: UseNewTaskFormOptions): NewTaskFormReturn {
     const apiUrl = useTenantApiUrl();
+    const t = useTranslations('tasks');
     const toast = useToast();
     const telemetry = useFormTelemetry('NewTaskPage');
 
@@ -166,7 +168,7 @@ export function useNewTaskForm({
                     const msg =
                         typeof data.error === 'string'
                             ? data.error
-                            : data.message || 'Failed to create task';
+                            : data.message || t('new.createFailed');
                     throw new Error(msg);
                 }
                 const task = await res.json();
@@ -204,12 +206,15 @@ export function useNewTaskForm({
                     // Toast so the failure is visible even though the task
                     // row itself was created.
                     toast.error(
-                        `Task created, but ${failedLinks.length} link(s) failed to attach: ${detail}. Add them from the task page.`,
+                        t('new.linksFailedDetail', {
+                            count: failedLinks.length,
+                            detail,
+                        }),
                     );
                     // Throw so useZodForm surfaces the error state and the
                     // caller does NOT treat this as a clean success.
                     throw new Error(
-                        `Task created, but ${failedLinks.length} link(s) failed to attach.`,
+                        t('new.linksFailed', { count: failedLinks.length }),
                     );
                 }
 
@@ -291,10 +296,10 @@ export function useNewTaskForm({
 
     const validationMessage = (() => {
         if (needsControlOrLink && !hasControlOrLink) {
-            return 'Audit Finding / Control Gap requires a control or framework requirement link.';
+            return t('new.requiresControlOrLink');
         }
         if (needsAssetOrControl && !hasAssetOrControl) {
-            return 'Incident requires an asset or control link.';
+            return t('new.requiresAssetOrControl');
         }
         return '';
     })();

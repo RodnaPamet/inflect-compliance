@@ -26,6 +26,15 @@ import { AlertCircle, CircleDot, Clock, Flag, Inbox, Layers, UserCircle2 } from 
 type T = (key: string, values?: Record<string, unknown>) => string;
 /** Shared filter-group resolver (`useTranslations('common.filterGroups')`). */
 type TGroup = (key: string) => string;
+/**
+ * Key-only resolver for the label maps. Deliberately looser than `T`:
+ * these builders never interpolate, and `T`'s `values?: Record<string,
+ * unknown>` parameter is wider than next-intl's own `Translator` accepts,
+ * so a raw `useTranslations(...)` result is not assignable to `T`. The
+ * label builders are exported and called with exactly that, so they take
+ * the narrower shape they actually use.
+ */
+type TLabel = (key: string) => string;
 
 // ─── Labels (resolved at render) ─────────────────────────────────────
 
@@ -39,6 +48,16 @@ function taskStatusLabels(t: T): Record<string, string> {
         IN_PROGRESS: t('filterEnums.status.IN_PROGRESS'),
         IN_REVIEW: t('filterEnums.status.IN_REVIEW'),
         BLOCKED: t('filterEnums.status.BLOCKED'),
+        // RESOLVED is retired from the two status PICKERS (the detail
+        // page's SELECTABLE_STATUSES and the bulk bar) because CLOSED
+        // made it a redundant intermediate. It is NOT retired from the
+        // model: it is still a live WorkItemStatus, WORK_ITEM_TRANSITIONS
+        // still permits moving into it, the API still accepts it, and
+        // the repository's metrics still count it as done. Rows in this
+        // state therefore exist — legacy ones, plus anything set through
+        // the API, automation, or the /issues surface. A filter's job is
+        // to find rows, not to offer transitions, so dropping this option
+        // would make a reachable state unfindable.
         RESOLVED: t('filterEnums.status.RESOLVED'),
         CLOSED: t('filterEnums.status.CLOSED'),
         CANCELED: t('filterEnums.status.CANCELED'),
@@ -59,7 +78,14 @@ function taskTypeLabels(t: T): Record<string, string> {
 // `WorkItemSource` enum members; the universal-inbox filter lets you slice
 // /tasks by where the work came from (manual entry vs the automated sweeps
 // that route audit findings, policy reviews, and expiring evidence in).
-function taskSourceLabels(t: T): Record<string, string> {
+/**
+ * The full `WorkItemSource` enum, labelled. Exported because the table
+ * renders the same enum in its Source column — it used to keep a private
+ * copy that had drifted (RISK_MONITOR missing), so a risk-monitor task's
+ * filter chip read "Risk Monitor" while its row showed the raw
+ * `RISK_MONITOR`. One definition, both consumers.
+ */
+export function taskSourceLabels(t: TLabel): Record<string, string> {
     return {
         MANUAL: t('filterEnums.source.MANUAL'),
         TEMPLATE: t('filterEnums.source.TEMPLATE'),
@@ -71,7 +97,12 @@ function taskSourceLabels(t: T): Record<string, string> {
     };
 }
 
-function taskSeverityLabels(t: T): Record<string, string> {
+/**
+ * Exported for the same reason as `taskSourceLabels` — the Severity
+ * column rendered the raw enum (`CRITICAL`) while the filter chip
+ * rendered "Critical". Sharing one map keeps the two in step.
+ */
+export function taskSeverityLabels(t: TLabel): Record<string, string> {
     return {
         // INFO is a real WorkItemSeverity (automation can raise INFO tasks);
         // offered here so those tasks are filterable, matching the create form.

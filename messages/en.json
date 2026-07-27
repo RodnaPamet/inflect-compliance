@@ -5758,8 +5758,6 @@
       "description": "Compliance work prioritised, assigned, and tracked to closure.",
       "searchPlaceholder": "Search tasks…",
       "addBtn": "Task",
-      "dashboardTooltip": "Dashboard",
-      "dashboardAria": "Dashboard",
       "quickViewTitle": "Task",
       "editAria": "Edit task",
       "entityLabel": "tasks",
@@ -5768,7 +5766,17 @@
       "emptyDesc": "Tasks track remediation work — anything that turns a finding or open risk into a closed loop.",
       "filterEmptyTitle": "No tasks match your filters",
       "filterEmptyDesc": "Try widening your search or clearing one of the active filters.",
-      "assignedToMe": "Assigned to me"
+      "assignedToMe": "Assigned to me",
+      "loadError": "Couldn't load tasks. Check your connection and try again.",
+      "assignedToMeUnavailable": "Sign-in details are still loading — this filter will be available in a moment.",
+      "showDeleted": "Deleted",
+      "showLive": "Active",
+      "deletedEmptyTitle": "Nothing in the recycle bin",
+      "deletedEmptyDesc": "Deleted tasks appear here so you can restore them.",
+      "restore": "Restore",
+      "colDeletedAt": "Deleted",
+      "colDeletedBy": "Deleted by",
+      "deletedByUnknown": "Unknown"
     },
     "kpi": {
       "total": "Total tasks",
@@ -5804,12 +5812,18 @@
       "setDueDate": "Set Due Date",
       "duePlaceholder": "Due date",
       "dueAria": "Bulk due date",
-      "delete": "Delete"
+      "delete": "Delete",
+      "failed": "Bulk action failed",
+      "partial": "{applied} updated, {missed} skipped — they may have been deleted or are no longer visible to you",
+      "deletedToast": "{count, plural, one {# task deleted} other {# tasks deleted}}",
+      "undo": "Undo",
+      "restoredToast": "{count, plural, one {# task restored} other {# tasks restored}}",
+      "restoreFailed": "Restore failed"
     },
     "new": {
       "modalTitle": "New task",
       "modalDesc": "Create a new task to track.",
-      "discardConfirm": "Discard task? Any details you entered will be lost.",
+      "discardConfirm": "Any details you entered will be lost.",
       "cancel": "Cancel",
       "creating": "Creating…",
       "create": "Create Task",
@@ -5845,14 +5859,21 @@
       "removeAria": "Remove link",
       "reviewer": "Reviewer",
       "reviewerHint": "A reviewer must sign the task off (via In review) before it can close.",
-      "reviewerPlaceholder": "No reviewer"
+      "reviewerPlaceholder": "No reviewer",
+      "discardTitle": "Discard task?",
+      "discardConfirmLabel": "Discard draft",
+      "discardCancelLabel": "Keep editing",
+      "createFailed": "Failed to create task",
+      "linksFailedDetail": "Task created, but {count, plural, one {# link} other {# links}} failed to attach: {detail}. Add them from the task page.",
+      "linksFailed": "Task created, but {count, plural, one {# link} other {# links}} failed to attach.",
+      "requiresControlOrLink": "Audit Finding / Control Gap requires a control or framework requirement link.",
+      "requiresAssetOrControl": "Incident requires an asset or control link."
     },
     "detail": {
       "notFound": "Task not found",
       "notFoundEmpty": "Task not found.",
       "crumbTaskFallback": "Task",
       "failedStatus": "Failed to change status",
-      "failedSave": "Failed to save task",
       "uploadFailed": "Upload failed",
       "chooseFileOrUrl": "Choose a file to upload, or enter an evidence URL.",
       "linkEvidenceFailed": "Failed to link evidence",
@@ -5883,7 +5904,6 @@
       "description": "Description",
       "descriptionEmpty": "No description.",
       "priority": "Priority",
-      "reporter": "Reporter",
       "dueDate": "Due Date",
       "created": "Created",
       "createdBy": "Created By",
@@ -5908,7 +5928,7 @@
       "system": "System",
       "activityEmptyTitle": "No activity yet",
       "activityEmptyDesc": "Status changes, assignments, and link updates show up here once anything moves.",
-      "terminalTitle": "{status} task",
+      "terminalTitle": "{verb} task",
       "close": "Close",
       "terminalDesc": "Add a short resolution note for the audit trail.",
       "terminalHeaderDesc": "A resolution note is recorded on the audit trail.",
@@ -5923,7 +5943,7 @@
       "linkActionsHeader": "Actions",
       "removeLink": "× Remove",
       "linksEmptyTitle": "No links yet",
-      "linksEmptyDesc": "Cross-link this task to related tasks, controls, evidence, or risks via + Link.",
+      "linksEmptyDesc": "Cross-link this task to related tasks, controls, evidence, or risks using the Link button above.",
       "linksResourcePlural": "links",
       "linksResourceSingular": "link",
       "assignee": "Assignee",
@@ -5939,7 +5959,12 @@
       "watch": "Watch",
       "unwatch": "Unwatch",
       "watchFailed": "Failed to update watchers",
-      "removeWatcher": "Remove watcher"
+      "removeWatcher": "Remove watcher",
+      "watcherRemoved": "Watcher removed",
+      "deleteTask": "Delete task",
+      "taskDeleted": "Deleted \"{title}\"",
+      "deleteFailed": "Failed to delete task",
+      "cancelVerb": "Cancel"
     },
     "source": {
       "heading": "Source",
@@ -5954,12 +5979,6 @@
     "edit": {
       "title": "Edit Task",
       "desc": "Update the task's details.",
-      "fieldTitle": "Title",
-      "fieldDescription": "Description",
-      "fieldType": "Type",
-      "fieldDueDate": "Due Date",
-      "fieldSeverity": "Severity",
-      "fieldPriority": "Priority",
       "datePlaceholder": "Select date",
       "dueAria": "Due date",
       "cancel": "Cancel",
@@ -7533,7 +7552,7 @@
       "couldNotCreate": "Could not create task"
     },
     "evidenceForm": {
-      "add": "Add Evidence",
+      "add": "Add evidence",
       "labelTitle": "Title",
       "placeholderTitle": "Title (defaults to filename)",
       "uploadFile": "Upload a file",
@@ -7542,7 +7561,8 @@
       "noteOptional": "Note (optional)",
       "uploading": "Uploading...",
       "linking": "Linking...",
-      "uploadingAria": "Uploading evidence file"
+      "uploadingAria": "Uploading evidence file",
+      "addTrigger": "Evidence"
     },
     "evidenceUpload": {
       "files": "Files",
