@@ -597,11 +597,12 @@ function TasksPageInner({
         async (taskId: string) => {
             const previous = tasksQuery.data;
             void tasksQuery.mutate(
-                // guardrail-ignore: optimistic removal of the just-restored row from the DELETED list (it no longer belongs there), not a server-data re-filter.
-                (cur) =>
-                    cur
-                        ? { ...cur, rows: cur.rows.filter((r) => r.id !== taskId) }
-                        : cur,
+                (cur) => {
+                    if (!cur) return cur;
+                    // guardrail-ignore: drops the just-restored row from the DELETED list, where it no longer belongs. Not a re-filter of server data for display — the server still owns the list query.
+                    const rows = cur.rows.filter((r) => r.id !== taskId);
+                    return { ...cur, rows };
+                },
                 { revalidate: false },
             );
             try {
@@ -647,11 +648,12 @@ function TasksPageInner({
             const idSet = new Set(requested);
             setSelected(new Set());
             void tasksQuery.mutate(
-                // guardrail-ignore: optimistic-delete cache update (drops the just-deleted rows for the undo window), NOT display refiltering — the server still owns the list filter and mutate() restores on Undo/failure.
-                (cur) =>
-                    cur
-                        ? { ...cur, rows: cur.rows.filter((r) => !idSet.has(r.id)) }
-                        : cur,
+                (cur) => {
+                    if (!cur) return cur;
+                    // guardrail-ignore: optimistic-delete cache update (drops the just-deleted rows for the undo window), NOT display refiltering — the server still owns the list filter and mutate() restores on Undo/failure.
+                    const rows = cur.rows.filter((r) => !idSet.has(r.id));
+                    return { ...cur, rows };
+                },
                 { revalidate: false },
             );
             triggerUndoToast({
@@ -684,9 +686,8 @@ function TasksPageInner({
                 // revalidation below silently reverts the ones the server
                 // rejected — so without this the user watches rows snap
                 // back with no explanation.
-                const missed = (result?.results ?? []).filter(
-                    (r) => r.status !== 'ok',
-                ).length;
+                // guardrail-ignore: counts non-ok entries in the bulk RESPONSE payload; nothing to do with filtering the rendered list.
+                const missed = (result?.results ?? []).filter((r) => r.status !== 'ok').length;
                 if (missed > 0) {
                     toast.warning(
                         t('bulk.partial', {
