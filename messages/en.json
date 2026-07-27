@@ -2996,7 +2996,8 @@
       "sodApproveBlocked": "Separation of duties — you can't approve a change you requested or authored.",
       "rollbackConfirmTitle": "Roll back to v{n}?",
       "rollbackConfirmBody": "This republishes v{n} as the live version. The current version stays in the history.",
-      "rollbackConfirmLabel": "Roll back to v{n}"
+      "rollbackConfirmLabel": "Roll back to v{n}",
+      "approvalNoLongerCurrent": "No longer current"
     },
     "evidence": {
       "title": "Evidence to Retain",
@@ -7304,7 +7305,6 @@
     "addCommentAria": "Add a comment with your decision",
     "comment": "Comment",
     "cannotApproveOwnTitle": "Reviewers cannot approve their own request",
-    "cannotRejectOwnTitle": "Reviewers cannot reject their own request",
     "approve": "Approve",
     "reject": "Reject",
     "reviewerCommentLabel": "Reviewer comment (optional)",

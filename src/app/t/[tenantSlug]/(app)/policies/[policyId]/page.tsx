@@ -487,7 +487,48 @@ export default function PolicyDetailPage() {
     const headerHasApproved = headerApprovals.some((a) => a.status === 'APPROVED');
     const headerIsPublished = !!headerVersion && policy.currentVersionId === headerVersion.id && policy.status === 'PUBLISHED';
     const canRequestApproval = canWrite && !!headerVersion && !headerHasPending && !headerHasApproved && !headerIsPublished && policy.status !== 'ARCHIVED';
-    const canPublishNow = canAdmin && !!headerVersion && headerHasApproved && !headerIsPublished;
+    /**
+     * The version the server would actually accept a publish for.
+     *
+     * `publishPolicy` requires BOTH that the policy is APPROVED and that the
+     * version matches the one the approval was granted for. `currentVersionId`
+     * is NOT that version: nothing updates it when a version is created or
+     * approved — it tracks the last PUBLISHED version — so after a new version
+     * is drafted and approved it still points at the previous, live one.
+     *
+     * Deriving the target from the approval record (most recently decided
+     * APPROVED row) is what makes the button agree with the server instead of
+     * targeting whatever happens to be displayed.
+     */
+    const approvedTargetVersionId = (() => {
+        const approved = (policy.approvals ?? [])
+            .filter((a) => a.status === 'APPROVED')
+            .sort((a, b) => {
+                const at = a.decidedAt ? new Date(a.decidedAt).getTime() : 0;
+                const bt = b.decidedAt ? new Date(b.decidedAt).getTime() : 0;
+                return bt - at;
+            });
+        return approved[0]?.policyVersionId ?? null;
+    })();
+
+    /**
+     * Publish is offered ONLY in the state the server accepts.
+     *
+     * This previously read `headerHasApproved && !headerIsPublished` with no
+     * regard for the policy's own status. Creating a new version demotes the
+     * policy to DRAFT but leaves `currentVersionId` on the OLD version — which
+     * still carries its APPROVED approval — so the button lit up on a DRAFT
+     * policy and every click threw "is DRAFT; cannot publish without going
+     * through APPROVED". The gate was written against a comment (below, now
+     * corrected) that claimed version creation sets `currentVersionId`.
+     *
+     * Requiring `status === 'APPROVED'` and targeting the approved version
+     * makes the affordance and the server's rule the same rule.
+     */
+    // No "and not already published" clause: APPROVED and PUBLISHED are
+    // mutually exclusive states, so requiring APPROVED already excludes it.
+    const canPublishNow =
+        canAdmin && policy.status === 'APPROVED' && !!approvedTargetVersionId;
     const canBypassPublish = canAdmin && !!headerVersion && !headerHasApproved && !headerIsPublished && policy.status !== 'ARCHIVED';
 
     type PolicyTab = 'current' | 'versions' | 'mappings' | 'traceability' | 'acknowledgements' | 'tasks' | 'editor' | 'activity';
@@ -597,7 +638,7 @@ export default function PolicyDetailPage() {
                         </Button>
                     )}
                     {canPublishNow && (
-                        <Button variant="secondary" size="sm" onClick={() => headerVersion && publishVersion(headerVersion.id)} disabled={!!actionLoading} id="header-publish">
+                        <Button variant="secondary" size="sm" onClick={() => approvedTargetVersionId && publishVersion(approvedTargetVersionId)} disabled={!!actionLoading} id="header-publish">
                             {t('detail.publish')}
                         </Button>
                     )}
@@ -855,9 +896,15 @@ export default function PolicyDetailPage() {
                         const vApprovals = (v.approvals || []).filter((a) => a.status === 'PENDING' || a.status === 'APPROVED' || a.status === 'REJECTED');
                         const hasPending = vApprovals.some((a) => a.status === 'PENDING');
                         const hasApproved = vApprovals.some((a) => a.status === 'APPROVED');
-                        // `currentVersionId` only marks the active/displayed version
-                        // (set at creation so the Current tab has content) — it does
-                        // NOT mean the policy is published. A version is "Published"
+                        // `currentVersionId` marks the LAST PUBLISHED version, and
+                        // it does NOT mean the policy is currently published.
+                        //
+                        // It is NOT "set at creation": `PolicyVersionRepository.create`
+                        // writes the version row and nothing else — only
+                        // `setCurrentVersion`, called from publish and rollback,
+                        // moves this pointer. The old wording here is what the
+                        // header publish gate was written against, which is how
+                        // that button ended up offered on a DRAFT policy. A version is "Published"
                         // only when it's the current version AND the policy's lifecycle
                         // status is PUBLISHED. Keying off currentVersionId alone made a
                         // fresh draft's version show "Published" and hid Request Approval.
@@ -908,7 +955,20 @@ export default function PolicyDetailPage() {
                                                         {a.decidedAt && ` · ${formatDate(a.decidedAt)}`}
                                                     </span>
                                                 </div>
-                                                {canAdmin && a.status === 'PENDING' && (() => {
+                                                {/* A PENDING row whose POLICY has moved past IN_REVIEW
+                                                    is stale: the server now refuses to decide it, because
+                                                    doing so would rewrite the policy's status out from
+                                                    under whatever moved it (publishing left rows PENDING,
+                                                    so one later Reject dropped a LIVE policy to DRAFT and
+                                                    stranded its acknowledgements). Show the row, but not
+                                                    an action that will be refused. The banner above is
+                                                    already gated on IN_REVIEW; this surface was not. */}
+                                                {canAdmin && a.status === 'PENDING' && policy.status !== 'IN_REVIEW' && (
+                                                    <span className="text-xs text-content-subtle" data-testid={`approval-stale-${a.id}`}>
+                                                        {t('detail.approvalNoLongerCurrent')}
+                                                    </span>
+                                                )}
+                                                {canAdmin && a.status === 'PENDING' && policy.status === 'IN_REVIEW' && (() => {
                                                     // Client-side SoD mirror: block Approve when the viewer
                                                     // requested this approval or authored the version. The
                                                     // requester/author ids come off the nested refs

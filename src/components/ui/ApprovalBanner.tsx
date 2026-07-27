@@ -105,7 +105,26 @@ export function ApprovalBanner({
         currentUserId != null &&
         (approval.requestedBy?.id === currentUserId ||
             approval.versionAuthor?.id === currentUserId);
-    const canActNow = canDecide && isPending && !isSelfApproval && !busy;
+    /**
+     * Approve and Reject are gated DIFFERENTLY, because the server gates them
+     * differently.
+     *
+     * `decidePolicyApproval` refuses a self-APPROVAL only — its check is
+     * literally `decision === 'APPROVED' && requestedByUserId === ctx.userId`
+     * (plus the same test for the version's author). A self-REJECTION is
+     * deliberately allowed so a requester can WITHDRAW their own request
+     * rather than stranding the policy in IN_REVIEW.
+     *
+     * The banner disabled BOTH on `!isSelfApproval`, and told the user
+     * "you cannot reject your own request" — a rule that does not exist. The
+     * effect was a trap: the one person who most wants to withdraw the
+     * request is the one person the banner refuses, and the policy sits in
+     * IN_REVIEW with no route out. Meanwhile the per-version card rendered
+     * Reject with no SoD gate at all, so the two surfaces disagreed about a
+     * rule neither of them had right.
+     */
+    const canApproveNow = canDecide && isPending && !isSelfApproval && !busy;
+    const canRejectNow = canDecide && isPending && !busy;
 
     // Visual treatment per status. Pending = brand emphasis;
     // approved = success; rejected = danger. Each surface picks
@@ -217,14 +236,17 @@ export function ApprovalBanner({
                 {/* Actions — gated three ways:
                     (1) only render when status is PENDING
                     (2) hidden when the viewer can't decide (RBAC)
-                    (3) disabled if the viewer is the requester      */}
+                    (3) Approve disabled for the requester/author (SoD);
+                        Reject stays enabled so they can withdraw     */}
                 {isPending && canDecide && (
                     <div className="flex flex-wrap items-center gap-tight">
                         {!showCommentField && (
                             <button
                                 type="button"
                                 onClick={() => setShowCommentField(true)}
-                                disabled={!canActNow}
+                                // Follows the REJECT gate: a requester who can
+                                // still withdraw must be able to say why.
+                                disabled={!canRejectNow}
                                 className="text-[11px] text-content-muted hover:text-content-emphasis disabled:opacity-50"
                                 aria-label={t('addCommentAria')}
                                 data-testid="approval-banner-add-comment"
@@ -236,7 +258,7 @@ export function ApprovalBanner({
                             variant="primary"
                             size="sm"
                             onClick={() => onDecide?.(approval.id, 'APPROVED', comment)}
-                            disabled={!canActNow}
+                            disabled={!canApproveNow}
                             id={`approval-banner-approve-${approval.id}`}
                             data-testid="approval-banner-approve"
                             title={
@@ -251,14 +273,9 @@ export function ApprovalBanner({
                             variant="destructive"
                             size="sm"
                             onClick={() => onDecide?.(approval.id, 'REJECTED', comment)}
-                            disabled={!canActNow}
+                            disabled={!canRejectNow}
                             id={`approval-banner-reject-${approval.id}`}
                             data-testid="approval-banner-reject"
-                            title={
-                                isSelfApproval
-                                    ? t('cannotRejectOwnTitle')
-                                    : undefined
-                            }
                         >
                             {busy ? '…' : t('reject')}
                         </Button>
