@@ -203,19 +203,34 @@ export function useNewTaskForm({
                     const detail = failedLinks
                         .map((l) => `${l.entityType} ${l.entityId}`)
                         .join(', ');
-                    // Toast so the failure is visible even though the task
-                    // row itself was created.
-                    toast.error(
+                    // PARTIAL SUCCESS — the task row exists; only some of
+                    // the staged links failed to attach.
+                    //
+                    // This used to `throw`, on the reasoning that the
+                    // caller must not treat a partial result as a clean
+                    // success. The visibility instinct was right but the
+                    // mechanism was wrong: throwing left the modal open
+                    // over an ALREADY-CREATED task, with a submittable
+                    // form and no route to the new task — so the natural
+                    // recovery (press the button again) minted a
+                    // DUPLICATE, and the only alternative was to close the
+                    // modal and hope the task was really there.
+                    //
+                    // The create succeeded, so the flow completes: this
+                    // resolves through `onSuccess`, which closes the modal
+                    // and navigates to the new task — the page where the
+                    // missing links can actually be added. The failure
+                    // stays loud via a warning toast naming exactly which
+                    // links did not attach.
+                    toast.warning(
                         t('new.linksFailedDetail', {
                             count: failedLinks.length,
                             detail,
                         }),
                     );
-                    // Throw so useZodForm surfaces the error state and the
-                    // caller does NOT treat this as a clean success.
-                    throw new Error(
-                        t('new.linksFailed', { count: failedLinks.length }),
-                    );
+                    telemetry.trackSuccess({ taskId: task.id, partial: true });
+                    onSuccess(task);
+                    return;
                 }
 
                 telemetry.trackSuccess({ taskId: task.id });

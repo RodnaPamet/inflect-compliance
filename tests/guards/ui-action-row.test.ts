@@ -22,7 +22,15 @@ describe('UI-22 — Tasks bulk Assign uses a people-picker', () => {
         expect(src).not.toMatch(/placeholder="User ID \(blank = unassign\)"/);
     });
     it('optimistic assignee uses the picked label, not the raw user id', () => {
-        expect(src).toMatch(/assignee: value \? \{ name: label \|\| value \}/);
+        // The `name` still comes from the picked LABEL (falling back to the
+        // id only when no label was supplied) — that is what this guard is
+        // for. The object around it widened: it now also carries `id`,
+        // because `assigneeOptionsFromTasks` keys the assignee FILTER on
+        // `assignee.id` and skips rows without one, so a name-only
+        // optimistic value made the just-assigned person disappear from
+        // the filter until revalidation. Assert the label rule AND the id.
+        expect(src).toMatch(/name: label \|\| value/);
+        expect(src).toMatch(/assignee: value\s*\?\s*\{\s*id: value/);
     });
 });
 

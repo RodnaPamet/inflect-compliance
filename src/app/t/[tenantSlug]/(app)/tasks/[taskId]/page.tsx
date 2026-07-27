@@ -1054,9 +1054,15 @@ export default function TaskDetailPage() {
                     ) : (
                         <div className="flex items-center gap-compact flex-wrap">
                             {(task.watchers ?? []).map((w) => {
+                                // Unsubscribing YOURSELF needs no write
+                                // permission — it only changes your own
+                                // notification feed. Removing someone else
+                                // still does. Mirrors the split in
+                                // `removeTaskWatcher`.
                                 const canRemove =
-                                    !!permissions.canWrite &&
-                                    (w.userId === userId || role === 'OWNER' || role === 'ADMIN');
+                                    w.userId === userId ||
+                                    (!!permissions.canWrite &&
+                                        (role === 'OWNER' || role === 'ADMIN'));
                                 return (
                                     <span key={w.id} className="inline-flex items-center gap-tight">
                                         <StatusBadge variant="neutral">
@@ -1081,7 +1087,12 @@ export default function TaskDetailPage() {
                             })}
                         </div>
                     )}
-                    {permissions.canWrite && (
+                    {/* No `canWrite` gate: this toggle only ever
+                        subscribes/unsubscribes the CURRENT user, which is a
+                        personal notification preference rather than a change
+                        to the task. Gating it on write rendered the watcher
+                        card for READERS with a permanently inert control. */}
+                    {(
                         <Button
                             variant={isWatching ? 'secondary' : 'primary'}
                             size="sm"

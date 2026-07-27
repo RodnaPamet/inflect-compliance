@@ -548,11 +548,31 @@ export const CreateTaskSchema = z.object({
     description: z.string().max(10000).nullable().optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
-    source: z.enum(['MANUAL', 'TEMPLATE', 'POLICY_REVIEW', 'AUDIT', 'INTEGRATION']).optional(),
+    // All SEVEN WorkItemSource members. EVIDENCE_EXPIRY and RISK_MONITOR
+    // were missing, so the schema rejected two sources the usecase and the
+    // repository both accept — the evidence-expiry sweep and the
+    // risk-monitor sensors could not name their own provenance through the
+    // API and their tasks landed as MANUAL.
+    source: z
+        .enum([
+            'MANUAL',
+            'TEMPLATE',
+            'POLICY_REVIEW',
+            'AUDIT',
+            'INTEGRATION',
+            'EVIDENCE_EXPIRY',
+            'RISK_MONITOR',
+        ])
+        .optional(),
     dueAt: isoDateOrDateTime.nullable().optional(),
     assigneeUserId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     controlId: z.string().nullable().optional(),
+    // Was absent, so `.strip()` silently dropped it and `findingId` was a
+    // dead parameter on the API path even though `createTask` accepts it
+    // and the repository writes it. Tenant-validated in the usecase
+    // (`assertRefInTenant`) now that a request body can set it.
+    findingId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
 }).strip().openapi('TaskCreateRequest', {
     description: 'Create a task (unified work-item type covering audit findings, control gaps, incidents, improvements, and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in.',

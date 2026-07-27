@@ -4715,7 +4715,9 @@ exports[`API contract — per-schema snapshots schema: TaskCreateRequest 1`] = `
         "TEMPLATE",
         "POLICY_REVIEW",
         "AUDIT",
-        "INTEGRATION"
+        "INTEGRATION",
+        "EVIDENCE_EXPIRY",
+        "RISK_MONITOR"
       ]
     },
     "dueAt": {
@@ -4737,6 +4739,12 @@ exports[`API contract — per-schema snapshots schema: TaskCreateRequest 1`] = `
       ]
     },
     "controlId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "findingId": {
       "type": [
         "string",
         "null"
