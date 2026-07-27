@@ -205,16 +205,16 @@ describeFn('updateEvidence (integration)', () => {
         expect(upd.content).toBe('https://example.com/moved');
     });
 
-    it('a FILE evidence REFUSES a caller-supplied content (it is the storage pathKey)', async () => {
-        // `content` holds the object-storage pathKey for FILE evidence —
-        // writing it from the generic edit form would detach the row from
-        // its file. The edit form hides the field; this is the server-side
-        // half of that gate, since the API is public.
-        const ev = await createEvidence(adminCtx(), {
-            type: 'FILE',
-            title: 'file content guard',
-            content: 'tenant-a/evidence/original-path-key',
-        } as never);
+    it('a FILE evidence REFUSES a caller-supplied content on edit (it is the storage pathKey)', async () => {
+        // R5-P1 — FILE evidence is created ONLY through the upload path
+        // (createEvidence rejects FILE-via-JSON, asserted below); `content`
+        // holds the object-storage pathKey. The generic edit form must not
+        // overwrite it — this is the server-side half of that gate.
+        const ev = await uploadEvidenceFile(
+            adminCtx(),
+            new File([`fc-${randomUUID()}`], 'guard.txt', { type: 'text/plain' }),
+            { title: 'file content guard' },
+        );
 
         const upd = await updateEvidence(
             adminCtx(),
@@ -223,8 +223,21 @@ describeFn('updateEvidence (integration)', () => {
         );
 
         expect(upd.title).toBe('renamed');
-        // The pathKey survived.
-        expect(upd.content).toBe('tenant-a/evidence/original-path-key');
+        // The upload-derived pathKey survived — the caller value was ignored.
+        expect(upd.content).not.toBe('attacker/overwritten');
+        expect(upd.content).toBe(ev.content);
+    });
+
+    it('createEvidence REJECTS FILE-via-JSON — a FILE row must come from the upload path (R5-P1 #1)', async () => {
+        // Writing caller-supplied `content` (a pathKey) for FILE was the seed of
+        // the cross-tenant read chain; the JSON create endpoint now refuses it.
+        await expect(
+            createEvidence(adminCtx(), {
+                type: 'FILE',
+                title: 'no file via json',
+                content: 'tenants/t-other/evidence/victim-key',
+            } as never),
+        ).rejects.toThrow(/FILE_VIA_UPLOAD|multipart upload/i);
     });
 });
 
