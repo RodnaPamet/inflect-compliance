@@ -25,6 +25,7 @@ import {
     createTestPlan,
     updateTestPlan,
     createTestRun,
+    startTestRun,
     completeTestRun,
     retestFromRun,
     linkEvidenceToRun,
@@ -32,6 +33,7 @@ import {
     createAutomatedTestRun,
     bulkSetTestPlanStatus,
     bulkDeleteTestPlan,
+    bulkRestoreTestPlan,
     bulkAssignTestPlan,
 } from '@/app-layer/usecases/control-test';
 import { setTaskStatus } from '@/app-layer/usecases/task';
@@ -290,6 +292,39 @@ describeFn('control-test usecase — branch coverage (integration)', () => {
         expect(evList).toHaveLength(1);
         await unlinkEvidenceFromRun(ctx, retest.id, link.id);
         expect(await listRunEvidence(ctx, retest.id)).toHaveLength(0);
+    });
+
+    it('createTestRun is idempotent — an open run is reused, never forked (R4-P2 #5)', async () => {
+        const plan = await createTestPlan(ctx, controlId, { name: 'Idempotent run plan', frequency: 'MONTHLY' });
+        const first = await createTestRun(ctx, plan.id);
+        // A second create while the first is still PLANNED must return the SAME run.
+        const second = await createTestRun(ctx, plan.id);
+        expect(second.id).toBe(first.id);
+        // And still RUNNING: start it, then a create must return the running run.
+        await startTestRun(ctx, first.id);
+        const third = await createTestRun(ctx, plan.id);
+        expect(third.id).toBe(first.id);
+        // Only after completion does a fresh create mint a new run.
+        await completeTestRun(ctx, first.id, { result: 'PASS' });
+        const fourth = await createTestRun(ctx, plan.id);
+        expect(fourth.id).not.toBe(first.id);
+    });
+
+    it('bulkRestoreTestPlan brings soft-deleted plans back (R4-P2 #4)', async () => {
+        const plan = await createTestPlan(ctx, controlId, { name: 'Restore me', frequency: 'AD_HOC' });
+        await bulkDeleteTestPlan(ctx, [plan.id]);
+        // Gone from default (soft-delete-filtered) reads.
+        await expect(getTestPlan(ctx, plan.id)).rejects.toThrow(/not found/i);
+
+        const restored = await bulkRestoreTestPlan(ctx, [plan.id]);
+        expect(restored.restored).toBe(1);
+        // Visible again.
+        const back = await getTestPlan(ctx, plan.id);
+        expect(back.id).toBe(plan.id);
+
+        // Restoring a live (non-deleted) plan is a no-op, keeping undo idempotent.
+        const noop = await bulkRestoreTestPlan(ctx, [plan.id]);
+        expect(noop.restored).toBe(0);
     });
 
     it('completeTestRun FAIL creates a CONTROL_GAP task', async () => {

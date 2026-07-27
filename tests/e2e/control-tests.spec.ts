@@ -114,6 +114,8 @@ test.describe('Control Tests (Test-of-Control)', () => {
                 'All access levels verified correctly',
             );
             await page.click('#complete-test-run-btn');
+            // R4-P2 — completing a run now confirms first (it freezes evidence).
+            await page.click('[data-modal-confirm]');
             await page.waitForLoadState('networkidle').catch(() => {});
             await expect(page.locator('#test-run-status')).toContainText(
                 'COMPLETED',
@@ -163,6 +165,7 @@ test.describe('Control Tests (Test-of-Control)', () => {
                 'Unauthorized admin access detected',
             );
             await page.click('#complete-test-run-btn');
+            await page.click('[data-modal-confirm]');
             await page.waitForLoadState('networkidle').catch(() => {});
             await expect(page.locator('#test-run-status')).toContainText(
                 'COMPLETED',

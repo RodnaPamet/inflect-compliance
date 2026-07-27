@@ -21,6 +21,7 @@ import { AppIcon } from '@/components/icons/AppIcon';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
+import { ErrorState } from '@/components/ui/error-state';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
@@ -55,7 +56,7 @@ export default function DueQueuePage() {
     const router = useRouter();
     const toast = useToast();
 
-    const { data: queueData, isLoading: loading, mutate } = useTenantSWR<DuePlan[]>(CACHE_KEYS.tests.due());
+    const { data: queueData, isLoading: loading, error: queueError, mutate } = useTenantSWR<DuePlan[]>(CACHE_KEYS.tests.due());
     const queue = queueData ?? [];
     const [planning, setPlanning] = useState(false);
     const [planningResult, setPlanningResult] = useState<{ checked: number; created: number; alreadyPending: number } | null>(null);
@@ -73,7 +74,11 @@ export default function DueQueuePage() {
                 await mutate();
             } else {
                 setError(t('due.planningFailed'));
+                toast.error(t('due.planningFailed'));
             }
+        } catch {
+            setError(t('due.planningFailed'));
+            toast.error(t('due.planningFailed'));
         } finally {
             setPlanning(false);
         }
@@ -94,8 +99,6 @@ export default function DueQueuePage() {
 
     const overdueCount = queue.filter(p => p.isOverdue).length;
     const pendingCount = queue.filter(p => p.hasPendingRun).length;
-
-    if (loading) return <div className="p-12 text-center text-content-subtle animate-pulse">{t('due.loading')}</div>;
 
     return (
         <ListPageShell className="animate-fadeIn gap-section">
@@ -158,8 +161,18 @@ export default function DueQueuePage() {
             </ListPageShell.Filters>
 
             <ListPageShell.Body>
-                {/* Queue Table */}
-                {(() => {
+                {/* Queue Table — a failed fetch shows a retry affordance, not an
+                    empty queue that reads as "nothing due". The header + sub-nav
+                    above stay mounted. */}
+                {queueError ? (
+                    <ErrorState
+                        title={t('due.loadErrorTitle')}
+                        description={t('due.loadErrorBody')}
+                        onRetry={() => { mutate(); }}
+                        retryLabel={t('due.retry')}
+                        data-testid="due-load-error"
+                    />
+                ) : (() => {
                 const dueColumns = createColumns<DuePlan>([
                     {
                         id: 'plan', header: t('due.col.plan'), accessorKey: 'name',
@@ -207,6 +220,7 @@ export default function DueQueuePage() {
                         data={queue}
                         columns={dueColumns}
                         getRowId={(p) => p.id}
+                        loading={loading}
                         emptyState={t('due.empty')}
                         resourceName={(p) => p ? t('list.entityPlural') : t('list.entitySingular')}
                         data-testid="due-queue-table"

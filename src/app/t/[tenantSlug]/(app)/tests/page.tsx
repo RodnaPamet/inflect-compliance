@@ -29,6 +29,9 @@ import {
 import { FilterProvider, useFilterContext, useFilters, useFilterCardVisibility, filtersToCards, selectVisibleFilters } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { ErrorState } from '@/components/ui/error-state';
+import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToastWithUndo } from '@/components/ui/hooks/use-toast-with-undo';
 import { Heading } from '@/components/ui/typography';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
@@ -157,9 +160,11 @@ function TestsRollupContent() {
 
     // PR-Q — canonical useTenantSWR reads (Epic 69). `mutate` refetches after
     // bulk mutations; the old fetch-on-mount + setState pattern is gone.
-    const { data: plansData, isLoading: loading, mutate } = useTenantSWR<TestPlanSummary[]>(CACHE_KEYS.tests.plans());
+    const { data: plansData, isLoading: loading, error: plansError, mutate } = useTenantSWR<TestPlanSummary[]>(CACHE_KEYS.tests.plans());
     const plans = useMemo(() => plansData ?? [], [plansData]);
     const fetchData = mutate;
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
 
     // R3-P1 — segmented view: manual/scheduled Test plans vs Automated checks.
     // "Show me all my control testing" now has ONE place.
@@ -168,7 +173,7 @@ function TestsRollupContent() {
 
     // Lazy-load automated checks the first time the Checks view is opened
     // (null SWR key until then — the conventional lazy-fetch idiom).
-    const { data: checksData, isLoading: checksLoading } = useTenantSWR<{ checks: ControlCheck[] }>(
+    const { data: checksData, isLoading: checksLoading, error: checksError, mutate: mutateChecks } = useTenantSWR<{ checks: ControlCheck[] }>(
         view === 'checks' ? CACHE_KEYS.tests.checks() : null,
     );
     const checks = useMemo(() => checksData?.checks ?? [], [checksData]);
@@ -179,19 +184,47 @@ function TestsRollupContent() {
     const handleBulkApply = async (action: string, value: string) => {
         const ids = Array.from(selected);
         if (!action || ids.length === 0) return;
+
+        // Bulk-delete is destructive — route it through the Epic 67 undo toast:
+        // optimistically drop the rows, defer the real DELETE 5s, and let Undo
+        // cancel it before it ever hits the server. (A committed delete is still
+        // recoverable via the bulk/restore endpoint.)
+        if (action === 'delete') {
+            const idSet = new Set(ids);
+            setSelected(new Set());
+            mutate(
+                (cur) =>
+                    // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window) — NOT display refiltering; mutate() restores on Undo/failure.
+                    cur ? cur.filter((p) => !idSet.has(p.id)) : cur,
+                { revalidate: false },
+            );
+            triggerUndoToast({
+                message: t('list.bulkDeletedToast', { count: ids.length }),
+                undoMessage: t('list.bulkDeleteUndo'),
+                action: async () => {
+                    const res = await fetch(apiUrl('/tests/plans/bulk/delete'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ planIds: ids }),
+                    });
+                    if (!res.ok) throw new Error('bulk delete failed');
+                    await mutate();
+                },
+                undoAction: () => { mutate(); },
+                onError: () => { toast.error(t('list.bulkFailed')); mutate(); },
+            });
+            return;
+        }
+
         setBulkApplying(true);
         try {
             const url = action === 'status'
                 ? apiUrl('/tests/plans/bulk/status')
-                : action === 'delete'
-                    ? apiUrl('/tests/plans/bulk/delete')
-                    : apiUrl('/tests/plans/bulk/assign');
+                : apiUrl('/tests/plans/bulk/assign');
             const body =
                 action === 'status'
                     ? { planIds: ids, status: value }
-                    : action === 'delete'
-                        ? { planIds: ids }
-                        : { planIds: ids, ownerUserId: value || null };
+                    : { planIds: ids, ownerUserId: value || null };
             const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -200,6 +233,9 @@ function TestsRollupContent() {
             if (!res.ok) throw new Error(t('list.bulkFailed'));
             await fetchData();
             setSelected(new Set());
+            toast.success(t('list.bulkApplied'));
+        } catch {
+            toast.error(t('list.bulkFailed'));
         } finally {
             setBulkApplying(false);
         }
@@ -625,7 +661,18 @@ function TestsRollupContent() {
             </ListPageShell.Filters>
 
             <ListPageShell.Body>
-                {view === 'checks' ? (
+                {/* Error + retry — the header/sub-nav above stay mounted so the
+                    user keeps their bearings and can jump elsewhere. A failed
+                    fetch must not read as "no data". */}
+                {((view === 'plans' && plansError) || (view === 'checks' && checksError)) ? (
+                    <ErrorState
+                        title={t('list.loadErrorTitle')}
+                        description={t('list.loadErrorBody')}
+                        onRetry={() => { if (view === 'checks') { mutateChecks(); } else { mutate(); } }}
+                        retryLabel={t('list.retry')}
+                        data-testid="tests-load-error"
+                    />
+                ) : view === 'checks' ? (
                     <DataTable
                         fillBody
                         data={checks}

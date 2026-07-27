@@ -42,14 +42,22 @@ export function NewTestPlanModal({
     const [frequency, setFrequency] = useState('AD_HOC');
     const [steps, setSteps] = useState<TestStepDraft[]>([]);
     const [saving, setSaving] = useState(false);
+    const [controlsError, setControlsError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!open) return;
+        setControlsError(null);
         fetch(apiUrl('/controls'))
-            .then((r) => (r.ok ? r.json() : { items: [] }))
-            .then((d) => setControls((d.items ?? d ?? []) as ControlOption[]))
-            .catch(() => {});
-    }, [open, apiUrl]);
+            .then(async (r) => {
+                if (!r.ok) throw new Error(`controls ${r.status}`);
+                return r.json();
+            })
+            // GET /controls returns the backfill-cap envelope `{ rows, truncated }`
+            // (NOT an array, and no `items` key) — reading anything but `.rows`
+            // stored the envelope object and crashed the page on `controls.map`.
+            .then((d) => setControls((d.rows ?? []) as ControlOption[]))
+            .catch(() => setControlsError(t('modal.controlsLoadError')));
+    }, [open, apiUrl, t]);
 
     const controlOptions: ComboboxOption[] = controls.map((c) => ({
         value: c.id,
@@ -95,6 +103,15 @@ export function NewTestPlanModal({
         >
             <Modal.Body>
                 <div className="space-y-default">
+                    {controlsError && (
+                        <div
+                            className="rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error"
+                            role="alert"
+                            id="new-test-plan-controls-error"
+                        >
+                            {controlsError}
+                        </div>
+                    )}
                     <FormField label={t('unified.createControl')}>
                         <Combobox
                             id="new-test-plan-control"

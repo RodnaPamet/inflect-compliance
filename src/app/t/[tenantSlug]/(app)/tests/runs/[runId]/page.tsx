@@ -18,6 +18,10 @@ import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { useToast } from '@/components/ui/hooks/use-toast';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { ApiClientError } from '@/lib/api-client';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
@@ -98,6 +102,7 @@ export default function TestRunPage() {
     const [notes, setNotes] = useState('');
     const [findingSummary, setFindingSummary] = useState('');
     const [completing, setCompleting] = useState(false);
+    const [confirmingComplete, setConfirmingComplete] = useState(false);
 
     // Evidence form
     const [showEvForm, setShowEvForm] = useState(false);
@@ -151,11 +156,15 @@ export default function TestRunPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ auditPackId: snapshotPackId }),
             });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) throw new Error((await res.text()) || '');
             toast.success(t('run.snapshot.success'));
             setSnapshotPackId('');
-        } catch {
-            toast.error(t('run.snapshot.failed'));
+        } catch (err) {
+            // Surface the server's actual reason (pack CLOSED, run not
+            // completed, …) instead of a blanket "failed" that reassures
+            // the user nothing went wrong.
+            const msg = err instanceof Error && err.message ? err.message : t('run.snapshot.failed');
+            toast.error(msg);
         } finally {
             setSnapshotting(false);
         }
@@ -165,10 +174,11 @@ export default function TestRunPage() {
         setRetesting(true);
         try {
             const res = await fetch(apiUrl(`/tests/runs/${runId}/retest`), { method: 'POST' });
-            if (res.ok) {
-                const newRun = await res.json();
-                router.push(tenantHref(`/tests/runs/${newRun.id}`));
-            }
+            if (!res.ok) throw new Error(await res.text());
+            const newRun = await res.json();
+            router.push(tenantHref(`/tests/runs/${newRun.id}`));
+        } catch {
+            toast.error(t('run.errors.retestFailed'));
         } finally {
             setRetesting(false);
         }
@@ -210,6 +220,7 @@ export default function TestRunPage() {
             });
             if (!res.ok) throw new Error(await res.text());
             toast.success(t('run.completedToast'));
+            setConfirmingComplete(false);
             await mutate();
         } catch {
             toast.error(t('run.errors.completeFailed'));
@@ -292,6 +303,11 @@ export default function TestRunPage() {
             setEvEvidenceId('');
             setEvFile(null);
             setEvFileTitle('');
+            // The integrity verdict was computed against the PREVIOUS evidence
+            // set — adding a link makes it stale. Clear it so the badge doesn't
+            // keep asserting "verified" over evidence it never saw.
+            setIntegrity(null);
+            toast.success(t('run.evidenceAddedToast'));
             await mutate();
         } catch (err) {
             setEvError(err instanceof Error ? err.message : t('run.errors.addFailed'));
@@ -303,8 +319,14 @@ export default function TestRunPage() {
     const unlinkEvidence = async (linkId: string) => {
         setUnlinkingId(linkId);
         try {
-            await fetch(apiUrl(`/tests/runs/${runId}/evidence/${linkId}`), { method: 'DELETE' });
+            const res = await fetch(apiUrl(`/tests/runs/${runId}/evidence/${linkId}`), { method: 'DELETE' });
+            if (!res.ok) throw new Error(await res.text());
+            // Removing a link also invalidates any prior integrity verdict.
+            setIntegrity(null);
+            toast.success(t('run.evidenceRemovedToast'));
             await mutate();
+        } catch {
+            toast.error(t('run.errors.unlinkFailed'));
         } finally {
             setUnlinkingId(null);
         }
@@ -335,8 +357,19 @@ export default function TestRunPage() {
         );
     }
     if (error) {
+        // Don't collapse every failure to "not found" — a 403 (no access to
+        // this run's tenant/plan) and a 500 (server fault) are different
+        // stories, and telling a permitted user their run "doesn't exist" is
+        // its own bug. Only a real 404 reads as not-found.
+        const status = error instanceof ApiClientError ? error.status : 0;
+        const message =
+            status === 403
+                ? t('run.errors.forbidden')
+                : status === 404
+                  ? t('run.errors.notFound')
+                  : t('run.errors.loadFailed');
         return (
-            <EntityDetailLayout error={t('run.errors.notFound')} title="" breadcrumbs={breadcrumbs}>
+            <EntityDetailLayout error={message} title="" breadcrumbs={breadcrumbs}>
                 <></>
             </EntityDetailLayout>
         );
@@ -490,8 +523,8 @@ export default function TestRunPage() {
 
                     <div>
                         <label className="text-xs text-content-muted block mb-1">{t('run.notes')}</label>
-                        <textarea
-                            className="input w-full h-20"
+                        <Textarea
+                            className="w-full h-20"
                             value={notes}
                             onChange={e => setNotes(e.target.value)}
                             placeholder={t('run.notesPlaceholder')}
@@ -502,8 +535,8 @@ export default function TestRunPage() {
                     {result === 'FAIL' && (
                         <div className="animate-fadeIn">
                             <label className="text-xs text-content-muted block mb-1">{t('run.findingLabel')}</label>
-                            <textarea
-                                className="input w-full h-16"
+                            <Textarea
+                                className="w-full h-16"
                                 value={findingSummary}
                                 onChange={e => setFindingSummary(e.target.value)}
                                 placeholder={t('run.findingPlaceholder')}
@@ -515,7 +548,7 @@ export default function TestRunPage() {
                     <Button
                         variant="primary"
                         size="sm"
-                        onClick={completeRun}
+                        onClick={() => setConfirmingComplete(true)}
                         disabled={completing}
                         id="complete-test-run-btn"
                     >
@@ -633,7 +666,7 @@ export default function TestRunPage() {
                         {evKind === 'LINK' && (
                             <div>
                                 <label className="text-xs text-content-muted block mb-1">{t('run.url')}</label>
-                                <input className="input w-full" value={evUrl} onChange={e => setEvUrl(e.target.value)} placeholder="https://..." id="evidence-url-input" />
+                                <Input className="w-full" value={evUrl} onChange={e => setEvUrl(e.target.value)} placeholder="https://..." id="evidence-url-input" />
                             </div>
                         )}
                         {evKind === 'EVIDENCE' && (
@@ -652,12 +685,12 @@ export default function TestRunPage() {
                         {(evKind === 'FILE_UPLOAD' || evKind === 'LINK') && (
                             <div>
                                 <label className="text-xs text-content-muted block mb-1">{t('run.title2')}</label>
-                                <input className="input w-full" value={evFileTitle} onChange={e => setEvFileTitle(e.target.value)} placeholder={t('run.titlePlaceholder')} id="evidence-file-title-input" />
+                                <Input className="w-full" value={evFileTitle} onChange={e => setEvFileTitle(e.target.value)} placeholder={t('run.titlePlaceholder')} id="evidence-file-title-input" />
                             </div>
                         )}
                         <div>
                             <label className="text-xs text-content-muted block mb-1">{t('run.note')}</label>
-                            <input className="input w-full" value={evNote} onChange={e => setEvNote(e.target.value)} placeholder={t('run.notePlaceholder')} id="evidence-note-input" />
+                            <Input className="w-full" value={evNote} onChange={e => setEvNote(e.target.value)} placeholder={t('run.notePlaceholder')} id="evidence-note-input" />
                         </div>
                         <Button
                             variant="primary"
@@ -793,6 +826,15 @@ export default function TestRunPage() {
                         >
                             {snapshotting ? t('run.snapshot.snapshotting') : t('run.snapshot.confirm')}
                         </Button>
+                        {/* Divergence cue — a snapshot copies this run's evidence
+                            into the pack. If integrity was never verified (or was
+                            invalidated), flag it so unverified evidence isn't
+                            snapshotted as if it were checked. */}
+                        {(run.evidence?.length ?? 0) > 0 && !integrity && (
+                            <p className="w-full text-xs text-content-warning" id="snapshot-unverified-hint">
+                                {t('run.snapshot.unverifiedHint')}
+                            </p>
+                        )}
                     </div>
                 )}
             </div>
@@ -801,6 +843,19 @@ export default function TestRunPage() {
             <div className="text-xs text-content-subtle">
                 {t('run.createdBy', { date: formatDate(run.createdAt), name: run.createdBy?.name || run.createdBy?.email || t('run.unknown') })}
             </div>
+
+            {/* Completing a run is a significant, irreversible act — it freezes
+                the evidence set and attests the control. Confirm before firing. */}
+            <ConfirmDialog
+                showModal={confirmingComplete}
+                setShowModal={setConfirmingComplete}
+                tone="warning"
+                title={t('run.confirmComplete.title')}
+                description={t('run.confirmComplete.description', { result })}
+                confirmLabel={t('run.confirmComplete.confirm')}
+                cancelLabel={t('run.confirmComplete.cancel')}
+                onConfirm={completeRun}
+            />
         </EntityDetailLayout>
     );
 }
