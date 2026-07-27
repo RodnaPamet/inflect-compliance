@@ -156,7 +156,11 @@ test.describe('Issue Management', () => {
         await expect(authedPage.locator('#task-title')).toContainText(title, {
             timeout: 15000,
         });
-        await expect(authedPage.locator('#task-severity')).toContainText('HIGH', {
+        // "High", not "HIGH": the severity chip renders the LABEL from the
+        // shared `taskSeverityLabels` map (the same one the Severity filter
+        // uses) rather than the raw enum. It used to print the enum, so the
+        // chip read "HIGH" while the matching filter chip read "High".
+        await expect(authedPage.locator('#task-severity')).toContainText('High', {
             timeout: 5000,
         });
     });
