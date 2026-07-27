@@ -26,6 +26,7 @@ import {
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { withDeleted } from '@/lib/soft-delete';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { computeNextDueAt } from '../utils/cadence';
 import { computeNextRunFromCron } from '../jobs/control-test-scheduler';
@@ -446,6 +447,18 @@ export async function createTestRun(ctx: RequestContext, planId: string) {
         const plan = await TestPlanRepository.getById(db, ctx, planId);
         if (!plan) throw notFound('Test plan not found');
         if (plan.status !== 'ACTIVE') throw badRequest('Cannot create a run for a paused test plan');
+
+        // Idempotency / duplicate-run guard (R4-P2 #5). A plan carries at most
+        // one open run at a time — the UI hides "New run" while one is pending,
+        // but a double-submit or a stale client can still race to here. Reuse
+        // the existing PLANNED/RUNNING run instead of minting a second, which
+        // would fork the plan's execution history and let two testers attest
+        // the same control in parallel.
+        const existing = await db.controlTestRun.findFirst({
+            where: { testPlanId: planId, tenantId: ctx.tenantId, status: { in: ['PLANNED', 'RUNNING'] } },
+            orderBy: { createdAt: 'asc' },
+        });
+        if (existing) return existing;
 
         const run = await TestRunRepository.create(db, ctx, {
             testPlanId: planId,
@@ -993,6 +1006,44 @@ export async function bulkDeleteTestPlan(ctx: RequestContext, planIds: string[])
         return { deleted: rows.length };
     });
     // Bulk delete was the only bulk mutation not bumping the list-cache version.
+    await bumpEntityCacheVersion(ctx, 'test');
+    return result;
+}
+
+/**
+ * Bulk-restore soft-deleted control test plans (R4-P2 #4).
+ *
+ * The undo/restore counterpart to `bulkDeleteTestPlan`. Without this the
+ * table's bulk-delete was unrecoverable from the UI — the soft-delete row
+ * survived in the DB but no surface could bring it back. Same ADMIN gate as
+ * delete; only rows that are actually soft-deleted are touched (a plan that
+ * is already live is a no-op, keeping the undo idempotent).
+ */
+export async function bulkRestoreTestPlan(ctx: RequestContext, planIds: string[]) {
+    assertCanBulkManageTestPlans(ctx);
+    const result = await runInTenantContext(ctx, async (db) => {
+        // `withDeleted` bypasses the soft-delete read filter so we can see the
+        // rows we're bringing back; we only restore ones currently deleted.
+        const rows = await db.controlTestPlan.findMany(withDeleted({
+            where: { id: { in: planIds }, tenantId: ctx.tenantId, deletedAt: { not: null } },
+            select: { id: true },
+        }));
+        if (rows.length === 0) return { restored: 0 };
+        await db.controlTestPlan.updateMany({
+            where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId },
+            data: { deletedAt: null, deletedByUserId: null },
+        });
+        for (const r of rows) {
+            await logEvent(db, ctx, {
+                action: 'ENTITY_RESTORED',
+                entityType: 'ControlTestPlan',
+                entityId: r.id,
+                details: 'Control test plan restored (bulk)',
+                detailsJson: { category: 'entity_lifecycle', entityName: 'ControlTestPlan', operation: 'restored', summary: 'Control test plan restored from soft-delete' },
+            });
+        }
+        return { restored: rows.length };
+    });
     await bumpEntityCacheVersion(ctx, 'test');
     return result;
 }

@@ -19,6 +19,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { KPIStat, type MetricTone } from '@/components/ui/metric';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SkeletonDashboard } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/ui/error-state';
 import { Heading } from '@/components/ui/typography';
 import { textLinkVariants } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
@@ -86,39 +87,64 @@ export default function TestDashboardPage() {
     const tenantHref = useTenantHref();
 
     const [period, setPeriod] = useState(30);
-    const { data: metrics } = useTenantSWR<DashboardMetrics>(CACHE_KEYS.tests.dashboard(period));
+    const { data: metrics, error: metricsError, mutate: mutateMetrics } = useTenantSWR<DashboardMetrics>(CACHE_KEYS.tests.dashboard(period));
     const { data: readinessData } = useTenantSWR<FrameworkReadiness[]>(CACHE_KEYS.tests.readiness());
     const readiness = readinessData ?? [];
 
-    if (!metrics) return <SkeletonDashboard />;
+    // Header is identical across data / loading / error so the sub-nav and
+    // period switch never disappear underneath the user.
+    const header = {
+        breadcrumbs: [
+            { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+            { label: t('crumb.tests'), href: tenantHref('/tests') },
+            { label: t('dashboard.crumb') },
+        ],
+        title: t('dashboard.title'),
+        titleId: 'dashboard-title',
+        description: t('dashboard.description'),
+        actions: (
+            <div className="flex gap-1 bg-bg-default/50 rounded-lg p-1">
+                {[30, 90].map(d => (
+                    <button
+                        key={d}
+                        onClick={() => setPeriod(d)}
+                        className={`px-3 py-1 rounded text-xs font-medium transition-colors duration-150 ease-out ${period === d ? 'bg-[var(--brand-default)] text-content-emphasis' : 'text-content-muted hover:text-content-emphasis'}`}
+                        id={`period-${d}-btn`}
+                    >
+                        {t('dashboard.periodDays', { days: d })}
+                    </button>
+                ))}
+            </div>
+        ),
+    };
+
+    // A failed metrics fetch must not masquerade as a perpetual skeleton —
+    // surface it with a retry, keeping the sub-nav + period switch mounted.
+    if (metricsError) {
+        return (
+            <DashboardLayout header={header}>
+                <TestsSubNav active="dashboard" />
+                <ErrorState
+                    title={t('dashboard.loadErrorTitle')}
+                    description={t('dashboard.loadErrorBody')}
+                    onRetry={() => { mutateMetrics(); }}
+                    retryLabel={t('dashboard.retry')}
+                    data-testid="dashboard-load-error"
+                />
+            </DashboardLayout>
+        );
+    }
+    if (!metrics) {
+        return (
+            <DashboardLayout header={header}>
+                <TestsSubNav active="dashboard" />
+                <SkeletonDashboard />
+            </DashboardLayout>
+        );
+    }
 
     return (
-        <DashboardLayout
-            header={{
-                breadcrumbs: [
-                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
-                    { label: t('crumb.tests'), href: tenantHref('/tests') },
-                    { label: t('dashboard.crumb') },
-                ],
-                title: t('dashboard.title'),
-                titleId: 'dashboard-title',
-                description: t('dashboard.description'),
-                actions: (
-                    <div className="flex gap-1 bg-bg-default/50 rounded-lg p-1">
-                        {[30, 90].map(d => (
-                            <button
-                                key={d}
-                                onClick={() => setPeriod(d)}
-                                className={`px-3 py-1 rounded text-xs font-medium transition-colors duration-150 ease-out ${period === d ? 'bg-[var(--brand-default)] text-content-emphasis' : 'text-content-muted hover:text-content-emphasis'}`}
-                                id={`period-${d}-btn`}
-                            >
-                                {t('dashboard.periodDays', { days: d })}
-                            </button>
-                        ))}
-                    </div>
-                ),
-            }}
-        >
+        <DashboardLayout header={header}>
             {/* R3-P3 — shared sub-nav spine across the three test surfaces. */}
             <TestsSubNav active="dashboard" />
 

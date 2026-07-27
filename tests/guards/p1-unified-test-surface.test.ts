@@ -56,7 +56,14 @@ describe('R3-P1 (4) global create', () => {
     it('a test plan can be created from /tests', () => {
         expect(read(TESTS_PAGE)).toMatch(/NewTestPlanModal/);
         expect(read(TESTS_PAGE)).toMatch(/tests-create-plan-btn/);
-        expect(read(CREATE_MODAL)).toMatch(/\/controls\/\$\{controlId\}\/tests\/plans/);
+        const modal = read(CREATE_MODAL);
+        expect(modal).toMatch(/\/controls\/\$\{controlId\}\/tests\/plans/);
+        // GET /controls returns the `{ rows, truncated }` backfill envelope, not
+        // an array — reading anything else stored the envelope and crashed the
+        // page on `controls.map`. Lock the `.rows` read + the surfaced error.
+        expect(modal).toMatch(/d\.rows/);
+        expect(modal).not.toMatch(/d\.items \?\? d/);
+        expect(modal).toMatch(/controlsLoadError/);
     });
 });
 

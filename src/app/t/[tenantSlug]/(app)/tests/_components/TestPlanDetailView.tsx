@@ -22,6 +22,9 @@ import Link from 'next/link';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { ApiClientError } from '@/lib/api-client';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 import { TestPlanScheduleSection } from '@/components/TestPlanScheduleSection';
@@ -136,6 +139,15 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     const toast = useToast();
 
     const createRun = async () => {
+        // A plan carries at most one open run. If one already exists, don't
+        // fork a second — continue the pending one. (The server enforces this
+        // too via createTestRun's idempotency guard; this keeps the client
+        // navigation honest and avoids a redundant POST.)
+        const pending = plan?.runs.find((r) => r.status === 'PLANNED' || r.status === 'RUNNING');
+        if (pending) {
+            router.push(tenantHref(`/tests/runs/${pending.id}`));
+            return;
+        }
         setCreatingRun(true);
         try {
             const res = await fetch(apiUrl(`/tests/plans/${planId}/runs`), { method: 'POST' });
@@ -150,8 +162,25 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     };
 
     if (isLoading) return <div className="p-12 text-center text-content-subtle animate-pulse">{t('testPlan.loading')}</div>;
-    if (error) return <div className="p-12 text-center text-content-error">{t('testPlan.planNotFound')}</div>;
+    if (error) {
+        // A 403 (no access) and a 500 (server fault) are not "not found" —
+        // telling a permitted user their plan doesn't exist hides the real
+        // failure. Only a genuine 404 reads as not-found.
+        const status = error instanceof ApiClientError ? error.status : 0;
+        const message =
+            status === 403
+                ? t('testPlan.planForbidden')
+                : status === 404
+                  ? t('testPlan.planNotFound')
+                  : t('testPlan.planLoadFailed');
+        return <div className="p-12 text-center text-content-error">{message}</div>;
+    }
     if (!plan) return <div className="p-12 text-center text-content-subtle">{t('testPlan.planNotFoundBody')}</div>;
+
+    // #5 — a plan with an open (PLANNED/RUNNING) run offers "Continue run",
+    // not "New run", so the user resumes rather than accidentally forking.
+    const pendingRun = plan.runs.find((r) => r.status === 'PLANNED' || r.status === 'RUNNING') ?? null;
+    const hasPendingRun = !!pendingRun;
 
     // Breadcrumbs bridge the plan↔run split so the ancestor is always explicit.
     // The trail differs by entry context: control-scoped plans hang under their
@@ -208,7 +237,7 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                         </Button>
                         {plan.status === 'ACTIVE' && (
                             <Button variant="primary" size="sm" onClick={createRun} disabled={creatingRun} id="create-test-run-btn">
-                                {creatingRun ? '...' : t('testPlan.runTestNow')}
+                                {creatingRun ? '...' : hasPendingRun ? t('testPlan.continueRun') : t('testPlan.runTestNow')}
                             </Button>
                         )}
                     </div>
@@ -297,8 +326,13 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                 <div className="flex items-center justify-between mb-3">
                     <Heading level={3}>{t('testPlan.runHistory')}</Heading>
                     {permissions.canWrite && plan.status === 'ACTIVE' && (
-                        <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={createRun} disabled={creatingRun}>
-                            {creatingRun ? t('testPlan.creating') : t('testPlan.newRun')}
+                        <Button
+                            variant={hasPendingRun ? 'secondary' : 'primary'}
+                            icon={hasPendingRun ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
+                            onClick={createRun}
+                            disabled={creatingRun}
+                        >
+                            {creatingRun ? t('testPlan.creating') : hasPendingRun ? t('testPlan.continueRun') : t('testPlan.newRun')}
                         </Button>
                     )}
                 </div>
@@ -412,11 +446,11 @@ function PlanEditForm({
         <div className={cn(cardVariants({ density: 'compact' }), 'space-y-compact animate-fadeIn')}>
             <div>
                 <label className="text-xs text-content-muted block mb-1">{t('testPlan.name')}</label>
-                <input className="input w-full" value={editName} onChange={e => setEditName(e.target.value)} id="edit-plan-name" />
+                <Input className="w-full" value={editName} onChange={e => setEditName(e.target.value)} id="edit-plan-name" />
             </div>
             <div>
                 <label className="text-xs text-content-muted block mb-1">{t('testPlan.description')}</label>
-                <textarea className="input w-full h-20" value={editDesc} onChange={e => setEditDesc(e.target.value)} />
+                <Textarea className="w-full h-20" value={editDesc} onChange={e => setEditDesc(e.target.value)} />
             </div>
             {/* Method is NOT editable here — it's derived from automationType
                 (set in the Schedule section). See the note on the removed
