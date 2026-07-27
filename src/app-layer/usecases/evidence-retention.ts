@@ -10,6 +10,7 @@ import { Prisma, RetentionPolicy } from '@prisma/client';
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
+import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
 import { runEvidenceRetentionSweep } from '../jobs/retention';
@@ -80,6 +81,8 @@ export async function updateEvidenceRetention(
             },
         });
 
+        // R5-P3 #7 — retention edits change the freshness/expiring KPIs; bump.
+        await bumpEntityCacheVersion(ctx, 'evidence');
         return updated;
     });
 }
@@ -165,6 +168,8 @@ export async function archiveEvidence(ctx: RequestContext, evidenceId: string) {
             },
         });
 
+        // R5-P3 #7 — archived rows leave the default list; bump the cache.
+        await bumpEntityCacheVersion(ctx, 'evidence');
         return updated;
     });
 }
@@ -199,6 +204,8 @@ export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string)
             },
         });
 
+        // R5-P3 #7 — unarchived rows return to the default list; bump the cache.
+        await bumpEntityCacheVersion(ctx, 'evidence');
         return updated;
     });
 }

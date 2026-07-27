@@ -100,7 +100,9 @@ export function PolicyEvidenceChecklist({ policyId, items, canWrite, onChanged }
                             {item.evidence && (
                                 <div className="mt-0.5 text-xs">
                                     <Link
-                                        href={tenantHref(`/evidence/${item.evidence.id}`)}
+                                        // R5-P3 #9 — /evidence/{id} is not a route (the detail is a
+                                        // sheet opened by ?ev=); the old href 404'd. Deep-link the sheet.
+                                        href={tenantHref(`/evidence?ev=${item.evidence.id}`)}
                                         className={textLinkVariants({ tone: 'link' })}
                                     >
                                         ↳ {item.evidence.title}

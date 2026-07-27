@@ -553,7 +553,7 @@ import { withDeleted } from '@/lib/soft-delete';
 /** Bulk soft-delete evidence selected in the table action bar. */
 export async function bulkDeleteEvidence(ctx: RequestContext, evidenceIds: string[]) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const rows = await EvidenceRepository.listByIds(db, ctx, evidenceIds);
         if (rows.length === 0) return { deleted: 0 };
         await db.evidence.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
@@ -568,6 +568,10 @@ export async function bulkDeleteEvidence(ctx: RequestContext, evidenceIds: strin
         }
         return { deleted: rows.length };
     });
+    // R5-P3 #7 — invalidate the list cache so the deleted rows disappear
+    // immediately instead of lingering for up to the 60s TTL.
+    await bumpEntityCacheVersion(ctx, 'evidence');
+    return result;
 }
 
 export async function deleteEvidence(ctx: RequestContext, id: string) {
