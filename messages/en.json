@@ -5432,7 +5432,8 @@
       },
       "chainDepth": "Tier {depth}",
       "subChainTitle": "Subprocessor chain (nth-party)",
-      "subChainHint": "Transitive downstream subprocessors — your vendors' vendors and beyond."
+      "subChainHint": "Transitive downstream subprocessors — your vendors' vendors and beyond.",
+      "awaitingReview": "Awaiting review"
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",

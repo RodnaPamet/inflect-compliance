@@ -146,7 +146,7 @@ export function VendorMonitoringPanel({
         return <div className={cn(cardVariants(), 'text-sm text-content-muted')}>{t('monitoring.loading')}</div>;
     }
     if (error) {
-        return <div className={cn(cardVariants(), 'text-sm text-content-danger')}>{error}</div>;
+        return <div className={cn(cardVariants(), 'text-sm text-content-error')}>{error}</div>;
     }
 
     const m = posture?.monitor;
@@ -190,7 +190,7 @@ export function VendorMonitoringPanel({
                     </div>
                     <div>
                         <div className="text-content-muted">{t('monitoring.breachLastSeen')}</div>
-                        <div className={cn('mt-1', m?.breachLastSeenAt && 'text-content-danger')}>
+                        <div className={cn('mt-1', m?.breachLastSeenAt && 'text-content-error')}>
                             {m?.breachLastSeenAt ? formatDateTime(m.breachLastSeenAt) : '—'}
                         </div>
                         {providers?.breach === 'stub' && (
@@ -201,7 +201,7 @@ export function VendorMonitoringPanel({
                     </div>
                     <div>
                         <div className="text-content-muted">{t('monitoring.attestationExpires')}</div>
-                        <div className={cn('mt-1', isExpired(m?.attestationExpiresAt ?? null) && 'text-content-danger')}>
+                        <div className={cn('mt-1', isExpired(m?.attestationExpiresAt ?? null) && 'text-content-error')}>
                             {m?.attestationExpiresAt ? formatDateTime(m.attestationExpiresAt) : '—'}
                             {isExpired(m?.attestationExpiresAt ?? null) && ` (${t('monitoring.expired')})`}
                         </div>

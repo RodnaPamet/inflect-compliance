@@ -27,10 +27,27 @@ const mockDb = {
     vendor: { findFirst: jest.fn() },
     // listVendorLinks hydrates each link's target entity name via a
     // batched findMany per entityType. Default to empty ⇒ entityName null.
-    risk: { findMany: jest.fn(async () => []) },
-    control: { findMany: jest.fn(async () => []) },
-    asset: { findMany: jest.fn(async () => []) },
+    // addVendorLink now resolves the target within the tenant before
+    // writing, so each linkable type needs a findFirst too. Default to a
+    // resolvable row — the reject path is asserted explicitly below.
+    risk: {
+        findMany: jest.fn(async () => []),
+        findFirst: jest.fn(async () => ({ id: 'target-1' })),
+    },
+    control: {
+        findMany: jest.fn(async () => []),
+        findFirst: jest.fn(async () => ({ id: 'target-1' })),
+    },
+    asset: {
+        findMany: jest.fn(async () => []),
+        findFirst: jest.fn(async () => ({ id: 'target-1' })),
+    },
+    finding: { findFirst: jest.fn(async () => ({ id: 'target-1' })) },
+    evidence: { findFirst: jest.fn(async () => ({ id: 'target-1' })) },
     task: { findMany: jest.fn(async () => []) },
+    // Owner assignment resolves an ACTIVE membership in this tenant.
+    tenantMembership: { findFirst: jest.fn(async () => ({ id: 'mem-1' })) },
+    fileRecord: { findFirst: jest.fn(async () => ({ id: 'file-1' })) },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -385,5 +402,83 @@ describe('vendor links', () => {
         (VendorLinkRepository.deleteById as jest.Mock).mockResolvedValue({ id: 'l-1' });
         const res = await removeVendorLink(editorCtx, 'l-1');
         expect(res).toEqual({ id: 'l-1' });
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Cross-tenant target validation
+// ═══════════════════════════════════════════════════════════════════
+//
+// The link row is written with ctx.tenantId, so RLS is satisfied either
+// way — but nothing checked the id it POINTS AT. A foreign entityId
+// persisted happily and then rendered as a dangling reference, because RLS
+// hides the target from every later read. That is what makes it insidious:
+// it fails silently rather than loudly.
+
+describe('cross-tenant link targets', () => {
+    beforeEach(() => {
+        mockDb.control.findFirst.mockResolvedValue({ id: 'target-1' });
+        mockDb.tenantMembership.findFirst.mockResolvedValue({ id: 'mem-1' });
+        (VendorLinkRepository.create as jest.Mock).mockResolvedValue({ id: 'link-1' });
+    });
+
+    it('rejects a link whose target does not resolve in this tenant', async () => {
+        mockDb.control.findFirst.mockResolvedValueOnce(null);
+        await expect(
+            addVendorLink(editorCtx, 'vendor-1', {
+                entityType: 'CONTROL',
+                entityId: 'control-from-another-tenant',
+            }),
+        ).rejects.toThrow();
+        expect(VendorLinkRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('scopes the target lookup to the caller tenant', async () => {
+        await addVendorLink(editorCtx, 'vendor-1', {
+            entityType: 'CONTROL',
+            entityId: 'control-1',
+        });
+        const where = mockDb.control.findFirst.mock.calls[0][0].where;
+        expect(where.tenantId).toBe(editorCtx.tenantId);
+        expect(where.id).toBe('control-1');
+    });
+
+    it('rejects an unsupported entity type rather than writing it', async () => {
+        await expect(
+            addVendorLink(editorCtx, 'vendor-1', {
+                entityType: 'NOT_A_THING',
+                entityId: 'x',
+            }),
+        ).rejects.toThrow();
+        expect(VendorLinkRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an owner who is not an active member of this tenant', async () => {
+        mockDb.tenantMembership.findFirst.mockResolvedValueOnce(null);
+        await expect(
+            createVendor(editorCtx, {
+                name: 'Acme',
+                ownerUserId: 'user-from-another-tenant',
+            } as any),
+        ).rejects.toThrow();
+        expect(VendorRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('requires the membership to be ACTIVE, not merely present', async () => {
+        (VendorRepository.create as jest.Mock).mockResolvedValue({
+            id: 'v-1', name: 'X', status: 'ACTIVE', criticality: 'HIGH',
+        });
+        await createVendor(editorCtx, { name: 'X', ownerUserId: 'user-2' } as any);
+        const where = mockDb.tenantMembership.findFirst.mock.calls[0][0].where;
+        expect(where.status).toBe('ACTIVE');
+        expect(where.tenantId).toBe(editorCtx.tenantId);
+    });
+
+    it('skips the owner lookup entirely when no owner is supplied', async () => {
+        (VendorRepository.create as jest.Mock).mockResolvedValue({
+            id: 'v-1', name: 'X', status: 'ACTIVE', criticality: 'HIGH',
+        });
+        await createVendor(editorCtx, { name: 'X' } as any);
+        expect(mockDb.tenantMembership.findFirst).not.toHaveBeenCalled();
     });
 });

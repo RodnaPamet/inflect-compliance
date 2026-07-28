@@ -3,6 +3,11 @@ import { RequestContext } from '../types';
 import { VendorRepository, VendorDocumentRepository, VendorLinkRepository, VendorFilters, VendorListParams } from '../repositories/VendorRepository';
 import { QuestionnaireRepository, VendorAssessmentRepository } from '../repositories/AssessmentRepository';
 import { assertCanReadVendors, assertCanManageVendors, assertCanManageVendorDocs } from '../policies/vendor.policies';
+import {
+    assertTargetInTenant,
+    assertOwnerInTenant,
+    assertFileInTenant,
+} from './vendor-link-targets';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
@@ -69,6 +74,11 @@ export async function createVendor(ctx: RequestContext, input: z.infer<typeof Cr
         tags: input.tags?.map((t) => sanitizePlainText(t)),
     };
     const result = await runInTenantContext(ctx, async (db) => {
+        // ownerUserId is a caller-supplied id written verbatim — verify it
+        // belongs to an ACTIVE member of THIS tenant before it lands.
+        if (sanitisedInput.ownerUserId) {
+            await assertOwnerInTenant(db, ctx, sanitisedInput.ownerUserId);
+        }
         const vendor = await VendorRepository.create(db, ctx, sanitisedInput);
         await logEvent(db, ctx, {
             action: 'VENDOR_CREATED',
@@ -101,6 +111,9 @@ export async function updateVendor(ctx: RequestContext, vendorId: string, patch:
         );
     }
     const result = await runInTenantContext(ctx, async (db) => {
+        if (typeof sanitisedPatch.ownerUserId === 'string' && sanitisedPatch.ownerUserId) {
+            await assertOwnerInTenant(db, ctx, sanitisedPatch.ownerUserId);
+        }
         let previousStatus: string | null = null;
         if (patch.status) {
             // Activation gate applies on the edit path too — a vendor must not
@@ -163,6 +176,12 @@ export async function addVendorDocument(ctx: RequestContext, vendorId: string, d
         folder: sanitizeOptional(docInput.folder) as string | null | undefined,
     };
     const result = await runInTenantContext(ctx, async (db) => {
+        // fileId feeds the document text-extraction path, which reads the
+        // object out of storage — an unchecked id here is the front half of
+        // a cross-tenant file read.
+        if (sanitisedDoc.fileId) {
+            await assertFileInTenant(db, ctx, sanitisedDoc.fileId);
+        }
         const doc = await VendorDocumentRepository.create(db, ctx, vendorId, sanitisedDoc);
         await logEvent(db, ctx, {
             action: 'VENDOR_DOCUMENT_ADDED',
@@ -330,6 +349,11 @@ export async function addVendorLink(ctx: RequestContext, vendorId: string, data:
 }) {
     assertCanManageVendors(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        // The link row is written with ctx.tenantId, so RLS is satisfied
+        // either way — but nothing checked the id it POINTS AT. A foreign
+        // entityId persisted happily and then rendered as a dangling
+        // reference, because RLS hides the target from every later read.
+        await assertTargetInTenant(db, ctx, data.entityType, data.entityId);
         const link = await VendorLinkRepository.create(db, ctx, vendorId, data);
         await logEvent(db, ctx, {
             action: 'VENDOR_LINK_ADDED',
@@ -423,7 +447,13 @@ export async function getVendorMetrics(ctx: RequestContext) {
         // flow), so the two dashboard tiles no longer show the same number.
         const reassessCutoff = new Date(now.getTime() - 365 * 86400000);
 
+        // Bounded. This pulls the tenant's vendors with their latest
+        // assessment and then loops the whole set in memory to derive the
+        // dashboard tiles, so an unbounded read is both the query cost and
+        // the heap cost. 5000 is far above any realistic vendor register
+        // while keeping the worst case finite.
         const vendors = await db.vendor.findMany({
+            take: 5000,
             where: { tenantId: ctx.tenantId },
             include: { assessments: { orderBy: { createdAt: 'desc' }, take: 1 } },
         });
@@ -627,6 +657,9 @@ export async function bulkAssignVendor(
 ) {
     assertCanManageVendors(ctx);
     const updated = await runInTenantContext(ctx, async (db) => {
+        // Clearing the owner (null) is always allowed; assigning one is not
+        // — the target must be an ACTIVE member of THIS tenant.
+        if (ownerUserId) await assertOwnerInTenant(db, ctx, ownerUserId);
         const rows = await VendorRepository.listByIds(db, ctx, vendorIds);
         if (rows.length === 0) return 0;
         await VendorRepository.bulkUpdate(db, ctx, vendorIds, {

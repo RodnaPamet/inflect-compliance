@@ -78,3 +78,25 @@ export function assertCanManageVendorAssessmentTemplates(ctx: RequestContext) {
         );
     }
 }
+
+// ─── Export ───
+
+/**
+ * Bulk export is its own authority, not a synonym for read.
+ *
+ * The vendor export endpoint gated on `assertCanReadVendors`, which is true
+ * for every role including READER and AUDITOR — so a read-only member could
+ * pull the entire vendor register, every assessment and all document
+ * metadata out of the product in one request. Reading one vendor's detail
+ * page and exfiltrating the whole register are different acts; `canExport`
+ * is the flag that already distinguishes them elsewhere.
+ *
+ * Layered on top of the read check rather than replacing it: a role that
+ * cannot see vendors at all must not be able to export them either.
+ */
+export function assertCanExportVendors(ctx: RequestContext) {
+    assertCanReadVendors(ctx);
+    if (!ctx.permissions.canExport) {
+        throw forbidden('This role cannot export vendor data');
+    }
+}

@@ -9,6 +9,18 @@ declare module 'pdf-parse/lib/pdf-parse.js' {
         metadata: unknown;
         version: string;
     }
-    function pdfParse(dataBuffer: Buffer): Promise<PdfParseResult>;
+    interface PdfParseOptions {
+        /**
+         * Maximum pages to parse; 0 (the library default) means "all".
+         * Callers bound this so a pathological PDF cannot occupy the
+         * synchronous, CPU-bound parser indefinitely.
+         */
+        max?: number;
+        version?: string;
+    }
+    function pdfParse(
+        dataBuffer: Buffer,
+        options?: PdfParseOptions,
+    ): Promise<PdfParseResult>;
     export default pdfParse;
 }

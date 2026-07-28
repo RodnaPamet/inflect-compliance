@@ -134,7 +134,7 @@ export function AgentRunsClient({
             )}
 
             {error && (
-                <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-danger')}>{error}</div>
+                <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}>{error}</div>
             )}
 
             {runs.length === 0 ? (

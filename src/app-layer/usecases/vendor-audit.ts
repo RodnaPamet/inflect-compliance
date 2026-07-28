@@ -3,7 +3,8 @@
  */
 import { RequestContext } from '../types';
 import { Prisma } from '@prisma/client';
-import { assertCanManageVendors, assertCanReadVendors, assertCanManageVendorDocs } from '../policies/vendor.policies';
+import { assertCanManageVendors, assertCanReadVendors, assertCanManageVendorDocs, assertCanExportVendors } from '../policies/vendor.policies';
+import { assertBundleTargetInTenant } from './vendor-link-targets';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
@@ -45,6 +46,13 @@ export async function addBundleItem(ctx: RequestContext, bundleId: string, item:
         const bundle = await db.vendorEvidenceBundle.findFirst({ where: { id: bundleId, tenantId: ctx.tenantId } });
         if (!bundle) throw notFound('Bundle not found');
         if (bundle.frozenAt) throw badRequest('Cannot add items to a frozen bundle');
+
+        // The item row carries ctx.tenantId, but nothing checked the id it
+        // POINTS AT. freezeBundle later tenant-scopes its snapshot lookup,
+        // so a foreign entityId produced an EMPTY snapshot with no error at
+        // all — fail-silent, which is worse than fail-closed for a frozen
+        // audit artefact that is supposed to be evidence.
+        await assertBundleTargetInTenant(db, ctx, item.entityType, item.entityId);
 
         const bundleItem = await db.vendorEvidenceBundleItem.create({
             data: { bundleId, tenantId: ctx.tenantId, entityType: item.entityType, entityId: item.entityId },
@@ -207,6 +215,15 @@ export async function addSubprocessor(ctx: RequestContext, vendorId: string, inp
         if (input.subprocessorVendorId === vendorId) throw badRequest('A vendor cannot be its own subprocessor');
         const sub = await db.vendor.findFirst({ where: { id: input.subprocessorVendorId, tenantId: ctx.tenantId } });
         if (!sub) throw notFound('Subprocessor vendor not found');
+        // The TARGET was validated above; the PRIMARY never was. vendorId
+        // comes straight off the URL path and is written as primaryVendorId,
+        // so a foreign primary would anchor a relationship row in this
+        // tenant pointing at a vendor this tenant cannot see.
+        const primary = await db.vendor.findFirst({
+            where: { id: vendorId, tenantId: ctx.tenantId },
+            select: { id: true },
+        });
+        if (!primary) throw notFound('Vendor not found');
 
         const rel = await db.vendorRelationship.create({
             data: {
@@ -252,9 +269,10 @@ export async function removeSubprocessor(ctx: RequestContext, relationId: string
 // ─── Exports ───
 
 export async function exportVendorsRegister(ctx: RequestContext) {
-    assertCanReadVendors(ctx);
+    assertCanExportVendors(ctx);
     return runInTenantContext(ctx, (db) =>
         db.vendor.findMany({
+            take: 10000,
             where: { tenantId: ctx.tenantId },
             select: {
                 id: true, name: true, legalName: true, status: true, criticality: true,
@@ -267,9 +285,10 @@ export async function exportVendorsRegister(ctx: RequestContext) {
 }
 
 export async function exportAssessments(ctx: RequestContext) {
-    assertCanReadVendors(ctx);
+    assertCanExportVendors(ctx);
     return runInTenantContext(ctx, (db) =>
         db.vendorAssessment.findMany({
+            take: 10000,
             where: { tenantId: ctx.tenantId },
             select: {
                 id: true, vendorId: true, status: true, score: true, riskRating: true,
@@ -283,9 +302,10 @@ export async function exportAssessments(ctx: RequestContext) {
 }
 
 export async function exportDocumentExpiry(ctx: RequestContext) {
-    assertCanReadVendors(ctx);
+    assertCanExportVendors(ctx);
     return runInTenantContext(ctx, (db) =>
         db.vendorDocument.findMany({
+            take: 10000,
             where: { tenantId: ctx.tenantId, validTo: { not: null } },
             select: {
                 id: true, type: true, title: true, validTo: true, externalUrl: true,

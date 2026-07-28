@@ -78,7 +78,7 @@ export function AgentProposalsClient({
             />
 
             {error && (
-                <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-danger')}>
+                <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}>
                     {error}
                 </div>
             )}
