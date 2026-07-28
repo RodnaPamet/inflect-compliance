@@ -12,6 +12,7 @@
  * `@/env` is mocked because the env snapshot is captured at import
  * time; the mock object is mutated per test.
  */
+import net from 'net';
 import { Readable } from 'stream';
 
 // Mutated per test; the factory reads the live reference.
@@ -52,13 +53,41 @@ describe('scanBuffer — ClamAV not configured', () => {
 });
 
 describe('scanBuffer — unreachable ClamAV host', () => {
-    it('resolves ERROR on socket error (default port path)', async () => {
+    it('dials the default port for a bare host, and resolves ERROR on socket error', async () => {
         // Bare host (no port) exercises the default-port branch in
-        // parseClamavHost; nothing listens → connection error.
-        mockEnv.CLAMAV_HOST = '127.0.0.1';
-        const result = await scanBuffer(Buffer.from('payload-bytes'));
-        expect(result.status).toBe('ERROR');
-        expect(result.engine).toBe('clamav');
+        // parseClamavHost.
+        //
+        // This used to assert ONLY that the scan resolved ERROR, and relied
+        // on nothing listening on 127.0.0.1:3310 to produce that error. That
+        // assumption is false on any dev machine following the repo's own
+        // setup: docker-compose.yml runs clamav/clamav:1.4 on 3310, so a real
+        // daemon answered and the scan came back CLEAN. It passed in CI only
+        // because the CI test job declares no clamav service.
+        //
+        // Stubbing `connect` fixes the dependency AND tightens the test: the
+        // dialled port is now asserted directly (3310), which is what the
+        // "default port path" in the name actually claims. The old version
+        // never checked the port at all.
+        const connectSpy = jest
+            .spyOn(net.Socket.prototype, 'connect')
+            .mockImplementation(function (this: net.Socket) {
+                process.nextTick(() => {
+                    this.emit('error', new Error('connect ECONNREFUSED (stubbed)'));
+                    this.destroy();
+                });
+                return this;
+            });
+
+        try {
+            mockEnv.CLAMAV_HOST = '127.0.0.1';
+            const result = await scanBuffer(Buffer.from('payload-bytes'));
+
+            expect(connectSpy).toHaveBeenCalledWith(3310, '127.0.0.1', expect.any(Function));
+            expect(result.status).toBe('ERROR');
+            expect(result.engine).toBe('clamav');
+        } finally {
+            connectSpy.mockRestore();
+        }
     });
 
     it('resolves ERROR on socket error (explicit port path)', async () => {
