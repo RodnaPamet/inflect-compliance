@@ -106,21 +106,6 @@ describe('Dashboard Widget Composition', () => {
         expect(content).toContain('<TrendCard');
     });
 
-    test('uses StatusBreakdown component', () => {
-        const content = readAll();
-        // PR-A — Evidence Status now hosts the breakdown + a
-        // trend mini-chart inside one Card, so the dashboard
-        // switched from the default-export auto-wrapping
-        // `@/components/ui/StatusBreakdown` to the non-wrapping
-        // primitive at `@/components/ui/status-breakdown` (case-
-        // sensitive on Linux CI). Accept either path.
-        expect(
-            content.includes("from '@/components/ui/StatusBreakdown'") ||
-                content.includes("from '@/components/ui/status-breakdown'"),
-        ).toBe(true);
-        expect(content).toContain('<StatusBreakdown');
-    });
-
     test('has the 6 fixed KPI cards plus the swappable custom-KPI tile', () => {
         const content = readAll();
         const kpiCount = (content.match(/<KpiCard/g) || []).length;
@@ -143,8 +128,6 @@ describe('Dashboard Layout Sections', () => {
         'kpi-grid',
         'control-coverage',
         'risk-distribution',
-        'evidence-status',
-        'compliance-alerts',
         'trend-section',
     ];
 
@@ -219,9 +202,11 @@ describe('Dashboard Data Contracts', () => {
 
     test('accesses evidenceExpiry fields', () => {
         const content = readAll();
+        // Only `.overdue` survives on the dashboard shell (the overdue-evidence
+        // KPI subtitle + stat). The Evidence Status card that read `.dueSoon7d`
+        // / `.current` was folded into the on-demand swappable-KPI slot, which
+        // computes those buckets in getDashboardKpi, not the page.
         expect(content).toContain('evidenceExpiry.overdue');
-        expect(content).toContain('evidenceExpiry.dueSoon7d');
-        expect(content).toContain('evidenceExpiry.current');
     });
 
     test('accesses taskSummary.overdue', () => {
@@ -256,12 +241,6 @@ describe('Dashboard Empty State Handling', () => {
             fs.readFileSync(path.join(__dirname, '..', '..', 'messages/en.json'), 'utf-8'),
         ) as { dashboard: Record<string, string> };
         expect(en.dashboard.trendsEmpty).toContain('Trend charts will appear here');
-    });
-
-    test('compliance alerts handles no-alerts state', () => {
-        const content = readAll();
-        expect(content).toContain('noAlerts');
-        expect(content).toContain('alerts.length === 0');
     });
 
     test('UI-15: dashboard no longer renders a notifications bell button', () => {

@@ -317,6 +317,9 @@
       "assets": "Assets",
       "audits": "Audits",
       "tests": "Control tests",
+      "evidence": "Evidence status",
+      "exceptions": "Exceptions",
+      "treatmentPlans": "Treatment plans",
       "total": "Total",
       "noData": "No data for this metric yet",
       "trendComing": "Trend history is still being collected for this metric."

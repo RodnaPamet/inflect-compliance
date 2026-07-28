@@ -170,19 +170,8 @@ describe('B1 — bug-fix bundle', () => {
             expect(wrapperCount).toBe(4);
         });
 
-        it('risk heatmap + expiry calendar subscribe to KPI focus', () => {
-            // The section just before TrendSection composes both with
-            // chart-focus wrappers — pre-B1 they had no binding.
-            const heatmapIdx = src.indexOf('id="risk-heatmap"');
-            const expiryIdx = src.indexOf('id="expiry-calendar"');
-            const heatmapBlock = src.slice(heatmapIdx - 400, heatmapIdx);
-            const expiryBlock = src.slice(expiryIdx - 400, expiryIdx);
-            expect(heatmapBlock).toMatch(
-                /<ChartFocusWrapper kpiKey="risks"/,
-            );
-            expect(expiryBlock).toMatch(
-                /<ChartFocusWrapper kpiKey="evidence"/,
-            );
-        });
+        // (The dashboard's Risk Matrix + Evidence Expiry widgets — and their
+        // chart-focus wrappers — were removed; that B1 binding test retired
+        // with them. The four TrendCard focus wrappers above still hold.)
     });
 });

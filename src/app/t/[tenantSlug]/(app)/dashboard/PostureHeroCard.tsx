@@ -33,7 +33,10 @@ const LABEL_COPY: Record<PostureLabel, string> = {
 const LABEL_TONE: Record<PostureLabel, string> = {
     STRONG: 'text-content-success',
     ESTABLISHED: 'text-content-info',
-    DEVELOPING: 'text-content-warning',
+    // DEVELOPING wears the SAME yellow→blue sweep as the primary "Continue
+    // Setup" button (the `--btn-gradient-primary` fill token), clipped to the
+    // glyphs — it reads as the "still building" state, echoing the setup CTA.
+    DEVELOPING: 'bg-[image:var(--btn-gradient-primary)] bg-clip-text text-transparent',
     AT_RISK: 'text-content-error',
 };
 

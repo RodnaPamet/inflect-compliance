@@ -176,28 +176,6 @@ export interface TestSummary {
 }
 
 /**
- * Risk heatmap cell — one cell in the likelihood × impact matrix.
- */
-export interface RiskHeatmapCell {
-    likelihood: number;
-    impact: number;
-    count: number;
-}
-
-/**
- * Upcoming evidence expiry item — for the expiry calendar widget.
- */
-export interface EvidenceExpiryItem {
-    id: string;
-    title: string;
-    /** ISO date string */
-    nextReviewDate: string;
-    status: string;
-    /** Days until expiry (negative = overdue) */
-    daysUntil: number;
-}
-
-/**
  * Epic G-5 — control exception inventory + expiry-soon counts for
  * the dashboard. Surfaces the same data the operator wants to act
  * on: how many exceptions are live + how many cross the 30-day line
@@ -249,12 +227,6 @@ export interface ExecutiveDashboardPayload {
     policySummary: PolicySummary;
     taskSummary: TaskSummary;
     vendorSummary: VendorSummary;
-    riskHeatmap: RiskHeatmapCell[];
-    upcomingExpirations: EvidenceExpiryItem[];
-    /** Epic G-5 — control exception health card. */
-    exceptions: ExceptionSummary;
-    /** Epic G-7 — risk treatment plan health card. */
-    treatmentPlans: TreatmentPlanSummary;
     /** ISO 8601 timestamp of when the payload was computed */
     computedAt: string;
 }
@@ -794,73 +766,6 @@ export class DashboardRepository {
                 title: log.entityId ? titleByKey.get(`${key}:${log.entityId}`) ?? null : null,
             };
         });
-    }
-
-    /**
-     * Risk heatmap — likelihood × impact cell counts.
-     *
-     * Query: 1 groupBy on [likelihood, impact]
-     * Returns sparse array: only cells with count > 0.
-     */
-    static async getRiskHeatmap(db: PrismaTx, ctx: RequestContext): Promise<RiskHeatmapCell[]> {
-        const groups = await db.risk.groupBy({
-            by: ['likelihood', 'impact'],
-            where: { tenantId: ctx.tenantId, deletedAt: null },
-            _count: true,
-        });
-
-        return groups.map(g => ({
-            likelihood: g.likelihood,
-            impact: g.impact,
-            count: g._count,
-        }));
-    }
-
-    /**
-     * Upcoming evidence expirations — next 30 days + overdue.
-     *
-     * Query: 1 findMany with date filter, ordered by nextReviewDate
-     * Returns at most 20 items (executive summary, not full list).
-     */
-    static async getUpcomingExpirations(db: PrismaTx, ctx: RequestContext): Promise<EvidenceExpiryItem[]> {
-        const now = new Date();
-        // Same shared urgency scale as the KPI buckets above.
-        const in30d = new Date(now.getTime() + URGENCY_MS.UPCOMING);
-
-        const items = await db.evidence.findMany({
-            where: {
-                // Shared expiry scope + outstanding filter — same definition
-                // as the KPI above and the compliance calendar's evidence
-                // loader. See app-layer/domain/evidence-expiry.
-                ...evidenceExpiryScopeWhere(ctx.tenantId),
-                // No lower bound: overdue reviews belong on this list.
-                nextReviewDate: { lte: in30d },
-                status: EVIDENCE_OUTSTANDING_STATUS_FILTER,
-            },
-            orderBy: { nextReviewDate: 'asc' },
-            take: 20,
-            select: {
-                id: true,
-                title: true,
-                nextReviewDate: true,
-                status: true,
-            },
-        });
-
-        return items
-            .filter(e => e.nextReviewDate !== null)
-            .map(e => {
-                const reviewDate = e.nextReviewDate!;
-                const diffMs = reviewDate.getTime() - now.getTime();
-                const daysUntil = Math.ceil(diffMs / 86400000);
-                return {
-                    id: e.id,
-                    title: e.title,
-                    nextReviewDate: reviewDate.toISOString().slice(0, 10),
-                    status: e.status,
-                    daysUntil,
-                };
-            });
     }
 
     /**

@@ -84,7 +84,6 @@ jest.mock('@/components/onboarding/OnboardingBanner', () => {
 import DashboardClient from '@/app/t/[tenantSlug]/(app)/dashboard/DashboardClient';
 import type { ExecutiveDashboardPayload } from '@/app-layer/repositories/DashboardRepository';
 import type { TrendPayload } from '@/app-layer/usecases/compliance-trends';
-import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 
 // ── fetch mock ─────────────────────────────────────────────────────────
 
@@ -146,48 +145,12 @@ function buildExec(overrides: Partial<ExecutiveDashboardPayload> = {}): Executiv
             overdue: 0,
         },
         vendorSummary: { total: 0, overdueReview: 0 },
-        riskHeatmap: [],
-        upcomingExpirations: [],
-        // Epic G-5 — exceptions card. All zeros in the baseline so
-        // the existing assertions don't have to learn this surface.
-        exceptions: {
-            activeApproved: 0,
-            pendingRequest: 0,
-            expiringWithin30: 0,
-            expiringWithin7: 0,
-            expired: 0,
-        },
-        // Epic G-7 — treatment plans card. Same zero-baseline shape.
-        treatmentPlans: {
-            activeOnTrack: 0,
-            overdue: 0,
-            dueWithin30: 0,
-            dueWithin7: 0,
-            completed: 0,
-        },
         computedAt: new Date('2026-05-04T00:00:00Z').toISOString(),
         ...overrides,
     };
 }
 
 const TRENDS_NULL: TrendPayload | null = null;
-
-const MATRIX_CONFIG: RiskMatrixConfigShape = {
-    likelihoodLevels: 5,
-    impactLevels: 5,
-    axisLikelihoodLabel: 'Likelihood',
-    axisImpactLabel: 'Impact',
-    levelLabels: {
-        likelihood: ['L1', 'L2', 'L3', 'L4', 'L5'],
-        impact: ['I1', 'I2', 'I3', 'I4', 'I5'],
-    },
-    bands: [
-        { color: '#22c55e', name: 'Low', minScore: 1, maxScore: 4 },
-        { color: '#f59e0b', name: 'Medium', minScore: 5, maxScore: 9 },
-        { color: '#f97316', name: 'High', minScore: 10, maxScore: 14 },
-        { color: '#dc2626', name: 'Critical', minScore: 15, maxScore: 25 },
-    ],
-};
 
 function makeWrapper() {
     return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -220,7 +183,6 @@ describe('DashboardClient — SWR migration acceptance', () => {
             <DashboardClient
                 initialExec={exec}
                 initialTrends={TRENDS_NULL}
-                matrixConfig={MATRIX_CONFIG}
             />,
             { wrapper: makeWrapper() },
         );
@@ -275,7 +237,6 @@ describe('DashboardClient — SWR migration acceptance', () => {
                 <DashboardClient
                     initialExec={initial}
                     initialTrends={TRENDS_NULL}
-                    matrixConfig={MATRIX_CONFIG}
                 />
             </>,
             { wrapper: makeWrapper() },
@@ -314,7 +275,6 @@ describe('DashboardClient — SWR migration acceptance', () => {
             <DashboardClient
                 initialExec={buildExec()}
                 initialTrends={TRENDS_NULL}
-                matrixConfig={MATRIX_CONFIG}
             />,
             { wrapper: makeWrapper() },
         );
@@ -330,7 +290,6 @@ describe('DashboardClient — SWR migration acceptance', () => {
             <DashboardClient
                 initialExec={buildExec()}
                 initialTrends={TRENDS_NULL}
-                matrixConfig={MATRIX_CONFIG}
             >
                 <div data-testid="recent-activity-card">recent activity</div>
             </DashboardClient>,

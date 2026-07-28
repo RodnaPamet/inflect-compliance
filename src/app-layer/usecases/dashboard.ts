@@ -25,7 +25,19 @@ import { badRequest } from '@/lib/errors/types';
 // selected) so a picked-once KPI never taxes the default dashboard.
 
 /** Catalog of KPIs selectable in the dashboard's custom slot. */
-export const SWAPPABLE_KPI_KEYS = ['assets', 'audits', 'tests'] as const;
+export const SWAPPABLE_KPI_KEYS = [
+    'assets',
+    'audits',
+    'tests',
+    // Folded in from the standalone dashboard cards that used to sit below
+    // the fixed grid — Evidence Status, Exception Inventory, Treatment
+    // Plans. Each is now an on-demand swappable KPI (loaded only when the
+    // user picks it) instead of always-computed rows in the executive
+    // payload. The compute lives here now, not in getExecutiveDashboard.
+    'evidence',
+    'exceptions',
+    'treatmentPlans',
+] as const;
 export type SwappableKpiKey = (typeof SWAPPABLE_KPI_KEYS)[number];
 
 export function isSwappableKpiKey(v: string): v is SwappableKpiKey {
@@ -108,6 +120,73 @@ export async function getDashboardKpi(
                     ],
                 };
             }
+            case 'evidence': {
+                // Review-timeliness partition. getEvidenceExpiry's dueSoon30d
+                // INCLUDES dueSoon7d, so the pie carves a disjoint 8–30d slice
+                // (max-0 guarded) rather than double-counting the urgent rows.
+                const s = await DashboardRepository.getEvidenceExpiry(db, ctx);
+                const due8to30 = Math.max(0, s.dueSoon30d - s.dueSoon7d);
+                const headline = s.overdue + s.dueSoon7d + due8to30 + s.current;
+                const currentPct =
+                    headline > 0 ? Math.round((s.current / headline) * 100) : 0;
+                return {
+                    key,
+                    headline,
+                    subtitle: `${currentPct}% current`,
+                    segments: [
+                        { label: 'Overdue', value: s.overdue, color: '#dc2626' },
+                        { label: 'Due ≤7d', value: s.dueSoon7d, color: '#f97316' },
+                        { label: 'Due 8–30d', value: due8to30, color: '#f59e0b' },
+                        { label: 'Current', value: s.current, color: '#22c55e' },
+                    ],
+                };
+            }
+            case 'exceptions': {
+                // Control-exception inventory. expiringWithin30 INCLUDES
+                // expiringWithin7, and both are subsets of activeApproved, so
+                // the pie splits Active into the healthy remainder + two
+                // disjoint expiring slices (all max-0 guarded).
+                const s = await DashboardRepository.getExceptionSummary(db, ctx);
+                const expiring8to30 = Math.max(
+                    0,
+                    s.expiringWithin30 - s.expiringWithin7,
+                );
+                const healthyActive = Math.max(
+                    0,
+                    s.activeApproved - s.expiringWithin30,
+                );
+                const headline = s.activeApproved + s.pendingRequest + s.expired;
+                return {
+                    key,
+                    headline,
+                    subtitle: `${s.activeApproved} active`,
+                    segments: [
+                        { label: 'Active', value: healthyActive, color: '#22c55e' },
+                        { label: 'Expiring ≤7d', value: s.expiringWithin7, color: '#f97316' },
+                        { label: 'Expiring 8–30d', value: expiring8to30, color: '#f59e0b' },
+                        { label: 'Pending', value: s.pendingRequest, color: '#3b82f6' },
+                        { label: 'Expired', value: s.expired, color: '#dc2626' },
+                    ],
+                };
+            }
+            case 'treatmentPlans': {
+                // Risk treatment-plan lifecycle. The three headline buckets are
+                // disjoint (future-active / elapsed-not-done / done); the 7-day
+                // urgency slice rides in the subtitle rather than as a segment
+                // (dueWithin7's status filter isn't a clean subset of active).
+                const s = await DashboardRepository.getTreatmentPlanSummary(db, ctx);
+                const headline = s.activeOnTrack + s.overdue + s.completed;
+                return {
+                    key,
+                    headline,
+                    subtitle: `${s.dueWithin7} due ≤7d`,
+                    segments: [
+                        { label: 'On track', value: s.activeOnTrack, color: '#22c55e' },
+                        { label: 'Overdue', value: s.overdue, color: '#dc2626' },
+                        { label: 'Completed', value: s.completed, color: '#3b82f6' },
+                    ],
+                };
+            }
         }
     });
 }
@@ -148,8 +227,12 @@ export async function getDashboardData(ctx: RequestContext) {
  * - policySummary:    1 groupBy + 1 count
  * - taskSummary:      1 groupBy + 1 count
  * - vendorSummary:    2 counts
- * - exceptions:       5 parallel counts
- * - treatmentPlans:   5 parallel counts
+ *
+ * The exception-inventory, treatment-plan, risk-heatmap, and
+ * evidence-expiry-list widgets moved to the on-demand swappable-KPI slot
+ * (or were removed), so those aggregates are NO LONGER computed here — the
+ * executive payload only carries what the always-on dashboard shell + the
+ * server-side posture summary read.
  * Expected latency: <100ms on a warm connection pool
  */
 export async function getExecutiveDashboard(ctx: RequestContext): Promise<ExecutiveDashboardPayload> {
@@ -174,10 +257,6 @@ export async function getExecutiveDashboard(ctx: RequestContext): Promise<Execut
             policySummary,
             taskSummary,
             vendorSummary,
-            riskHeatmap,
-            upcomingExpirations,
-            exceptions,
-            treatmentPlans,
         ] = await Promise.all([
             DashboardRepository.getStats(db, ctx),
             DashboardRepository.getControlCoverage(db, ctx),
@@ -187,10 +266,6 @@ export async function getExecutiveDashboard(ctx: RequestContext): Promise<Execut
             DashboardRepository.getPolicySummary(db, ctx),
             DashboardRepository.getTaskSummary(db, ctx),
             DashboardRepository.getVendorSummary(db, ctx),
-            DashboardRepository.getRiskHeatmap(db, ctx),
-            DashboardRepository.getUpcomingExpirations(db, ctx),
-            DashboardRepository.getExceptionSummary(db, ctx),
-            DashboardRepository.getTreatmentPlanSummary(db, ctx),
         ]);
 
         return {
@@ -202,10 +277,6 @@ export async function getExecutiveDashboard(ctx: RequestContext): Promise<Execut
             policySummary,
             taskSummary,
             vendorSummary,
-            riskHeatmap,
-            upcomingExpirations,
-            exceptions,
-            treatmentPlans,
             computedAt: new Date().toISOString(),
         };
         }),
