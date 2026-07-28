@@ -152,7 +152,15 @@ describe('createVendor — RBAC + sanitisation', () => {
 
 describe('updateVendor — loose-typed patch sanitisation + status-change audit', () => {
     it('only sanitises known free-text columns (enums + ids untouched)', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        // ownerUserId is now resolved against an ACTIVE membership before
+        // the write, so the stub db needs tenantMembership. The id itself
+        // must still reach the repo unsanitised — that is what this asserts.
+        const membershipDb = {
+            tenantMembership: {
+                findFirst: jest.fn().mockResolvedValue({ id: 'mem-1' }),
+            },
+        };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(membershipDb as never));
         mockVendorUpdate.mockResolvedValueOnce({ id: 'v1', name: 'X' } as never);
 
         await updateVendor(makeRequestContext('ADMIN'), 'v1', {
@@ -160,6 +168,16 @@ describe('updateVendor — loose-typed patch sanitisation + status-change audit'
             criticality: 'HIGH',         // enum — must NOT be sanitised
             ownerUserId: 'user-123',     // FK id — must NOT be sanitised
         });
+
+        // The owner was verified in-tenant and ACTIVE before the write.
+        expect(membershipDb.tenantMembership.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    userId: 'user-123',
+                    status: 'ACTIVE',
+                }),
+            }),
+        );
 
         const args = mockVendorUpdate.mock.calls[0][3] as any;
         expect(args.name).toBe('SANITISED(New)');

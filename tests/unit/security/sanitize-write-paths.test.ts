@@ -172,6 +172,10 @@ jest.mock('@/lib/db-context', () => ({
             // the parent task belongs to the tenant before inserting, so the
             // stub tx needs a resolvable task row.
             task: { findFirst: async () => ({ id: 't1' }) },
+            // Vendor owner assignment resolves an ACTIVE membership in this
+            // tenant before the write — ownerUserId is caller-supplied and
+            // was previously stored verbatim.
+            tenantMembership: { findFirst: async () => ({ id: 'mem-1' }) },
             // RQ2-1 — score writes append a ledger event on the same tx.
             riskScoreEvent: { create: async () => ({ id: 'evt-1' }) },
             // R2-P2 — completeTestRun attests the control on completion.
