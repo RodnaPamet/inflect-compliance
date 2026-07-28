@@ -1733,6 +1733,9 @@
         "docs/implementation-notes/2026-07-28-retire-dead-button-tokens.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-07-28-vendor-authz-custom-role-enforcement.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-07-27-calendar-deeplinks-scheduler-tz.md": {
             "class": "historical"
         },

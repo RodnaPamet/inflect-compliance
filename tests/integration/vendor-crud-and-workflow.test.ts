@@ -22,6 +22,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { NotFoundError, ValidationError, ForbiddenError } from '@/lib/errors/types';
 import {
     createVendor,
@@ -237,10 +238,16 @@ describeFn('vendor CRUD + workflow — integration', () => {
     });
 
     it('listVendors rejects a context without read access', async () => {
+        const readerPerms = getPermissionsForRole(Role.READER);
         const noRead = makeRequestContext(Role.READER, {
             userId: reader.userId,
             tenantId: TENANT_ID,
             permissions: { canRead: false, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
+            // Vendor policies read the custom-role-aware set (2026-07-28), so
+            // revoking the coarse tier alone no longer denies — `vendors.view`
+            // has to be revoked too. Overriding BOTH keeps this test honest
+            // about what it is asserting rather than passing on a stale channel.
+            appPermissions: { ...readerPerms, vendors: { ...readerPerms.vendors, view: false } },
         });
         await expect(listVendors(noRead)).rejects.toBeInstanceOf(ForbiddenError);
     });

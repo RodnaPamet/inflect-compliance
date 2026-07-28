@@ -391,6 +391,30 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'asserts canAdmin, so the route gate matches at admin.manage ' +
             '(OWNER/ADMIN), not the assets.edit an EDITOR holds.',
     },
+
+    // ── Vendor sub-processor register (4th-party graph) ─────────────
+    // Split read/write so AUDITOR and READER keep visibility of the
+    // nth-party chain — reading who a vendor sub-processes to IS a
+    // compliance-review action — while only vendors.edit can rewire it.
+    {
+        path: new RegExp(`^${T}\\/vendors\\/[^/]+\\/subprocessors(\\/chain)?$`),
+        methods: ['GET'],
+        permission: 'vendors.view',
+        note:
+            'Reading the sub-processor register and the recursive nth-party ' +
+            'chain. Matches the usecase assert; the /chain leaf discloses the ' +
+            'whole graph in one call, so it is gated identically rather than ' +
+            'left to inherit.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vendors\\/[^/]+\\/subprocessors$`),
+        methods: ['POST', 'DELETE'],
+        permission: 'vendors.edit',
+        note:
+            'Adding or removing a sub-processor relationship — edits the ' +
+            'GDPR Art.28 sub-processor record, so it sits at the vendor ' +
+            'management tier, not the read tier.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

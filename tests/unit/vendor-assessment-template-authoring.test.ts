@@ -58,10 +58,12 @@ import {
     cloneTemplate,
     publishTemplate,
 } from '@/app-layer/usecases/vendor-assessment-template';
+import { getPermissionsForRole } from '@/lib/permissions';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
 function makeCtx(overrides: { canWrite?: boolean } = {}) {
+    const __base = getPermissionsForRole('ADMIN');
     return {
         requestId: 'req-1',
         userId: 'user-1',
@@ -74,7 +76,11 @@ function makeCtx(overrides: { canWrite?: boolean } = {}) {
             canAudit: false,
             canExport: false,
         },
-        appPermissions: {} as never,
+        // Vendor policies read the CUSTOM-ROLE-AWARE set (2026-07-28), so the
+        // canWrite/canRead knobs this helper exposes must move the granular
+        // `vendors.*` keys in step. `{} as never` left `appPermissions.vendors`
+        // undefined the moment the policies stopped reading the coarse tier.
+        appPermissions: { ...__base, vendors: { ...__base.vendors, edit: overrides.canWrite ?? true, create: overrides.canWrite ?? true } },
     };
 }
 
