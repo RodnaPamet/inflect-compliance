@@ -65,7 +65,9 @@ export async function POST(
     } catch (err) {
         if (err instanceof ExternalAccessDenied) {
             const statusCode =
-                err.reason === 'expired' || err.reason === 'wrong_status'
+                err.reason === 'expired' ||
+                err.reason === 'revoked' ||
+                err.reason === 'wrong_status'
                     ? 410
                     : 401;
             return NextResponse.json(

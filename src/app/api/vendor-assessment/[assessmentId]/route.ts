@@ -29,11 +29,14 @@ export async function GET(
         return NextResponse.json(data);
     } catch (err) {
         if (err instanceof ExternalAccessDenied) {
-            // Map both "expired" and "wrong_status" to 410 Gone so
-            // the UI can show a "this link is no longer active"
-            // message without distinguishing why.
+            // Map the three "link is dead" reasons — expired, revoked,
+            // wrong_status — to 410 Gone so the UI can show a single
+            // "this link is no longer active" message without
+            // distinguishing which gate tripped. Everything else is 401.
             const statusCode =
-                err.reason === 'expired' || err.reason === 'wrong_status'
+                err.reason === 'expired' ||
+                err.reason === 'revoked' ||
+                err.reason === 'wrong_status'
                     ? 410
                     : 401;
             return NextResponse.json(

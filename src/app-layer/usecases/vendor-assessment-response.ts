@@ -19,6 +19,8 @@
  * @module usecases/vendor-assessment-response
  */
 import { prisma } from '@/lib/prisma';
+import { runInTenantContext } from '@/lib/db-context';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import {
     verifyAccessToken,
     type AccessVerificationFailure,
@@ -29,7 +31,21 @@ import type { RequestContext } from '../types';
 import { enqueueEmail } from '../notifications/enqueue';
 import { logger } from '@/lib/observability/logger';
 
-/** Synthetic audit ctx for the public response flow. */
+/**
+ * Minimal `RequestContext` for the anonymous respondent.
+ *
+ * `logEvent` reads exactly three fields off ctx — tenantId, userId,
+ * requestId (events/audit.ts) — and `runInTenantContext` reads the same
+ * three to bind RLS + audit correlation. Nothing on this path reads `role`
+ * or `permissions`.
+ *
+ * They are therefore zeroed rather than forged. The previous shape claimed
+ * `role: 'EDITOR'` with `canWrite: true`, which put a live
+ * elevated-privilege object inside the write transaction — a loaded gun for
+ * any future code that reaches for `ctx.permissions` to decide something.
+ * An external respondent holds no authority in this tenant; the context now
+ * says so. Authority on this path comes from the verified token alone.
+ */
 function makeExternalAuditCtx(
     tenantId: string,
     assessmentId: string,
@@ -38,10 +54,10 @@ function makeExternalAuditCtx(
         tenantId,
         userId: 'external-respondent',
         requestId: `vendor-assessment-submit:${assessmentId}`,
-        role: 'EDITOR' as const,
+        role: 'READER' as const,
         permissions: {
-            canRead: true,
-            canWrite: true,
+            canRead: false,
+            canWrite: false,
             canAdmin: false,
             canAudit: false,
             canExport: false,
@@ -147,55 +163,68 @@ export async function loadResponseByToken(
         throw new ExternalAccessDenied('unknown_assessment');
     }
 
-    const [vendor, template] = await Promise.all([
-        prisma.vendor.findUnique({
-            where: { id: assessment.vendorId },
-            select: { name: true },
-        }),
-        prisma.vendorAssessmentTemplate.findUnique({
-            where: { id: assessment.templateVersionId },
-            select: {
-                name: true,
-                description: true,
-                sections: {
-                    orderBy: { sortOrder: 'asc' },
-                    select: {
-                        id: true,
-                        sortOrder: true,
-                        title: true,
-                        description: true,
-                        questions: {
-                            orderBy: { sortOrder: 'asc' },
-                            select: {
-                                id: true,
-                                sortOrder: true,
-                                prompt: true,
-                                answerType: true,
-                                required: true,
-                                weight: true,
-                                optionsJson: true,
-                                scaleConfigJson: true,
+    // Everything past token verification runs under the assessment's own
+    // tenant context. `verifyAccessToken` necessarily reads with the bare
+    // client (the public flow has no tenant at request time), but from here
+    // the module header's promise holds: `SET LOCAL ROLE app_user` +
+    // `set_config('app.tenant_id')` engage RLS, so a mistake in any
+    // predicate below cannot reach another tenant's rows.
+    const templateVersionId = assessment.templateVersionId;
+    const externalCtx = makeExternalAuditCtx(assessment.tenantId, assessment.id);
+    const loaded = await runInTenantContext(externalCtx, async (tdb) => {
+        const [vendor, template] = await Promise.all([
+            tdb.vendor.findUnique({
+                where: { id: assessment.vendorId },
+                select: { name: true },
+            }),
+            tdb.vendorAssessmentTemplate.findUnique({
+                where: { id: templateVersionId },
+                select: {
+                    name: true,
+                    description: true,
+                    sections: {
+                        orderBy: { sortOrder: 'asc' },
+                        select: {
+                            id: true,
+                            sortOrder: true,
+                            title: true,
+                            description: true,
+                            questions: {
+                                orderBy: { sortOrder: 'asc' },
+                                select: {
+                                    id: true,
+                                    sortOrder: true,
+                                    prompt: true,
+                                    answerType: true,
+                                    required: true,
+                                    weight: true,
+                                    optionsJson: true,
+                                    scaleConfigJson: true,
+                                },
                             },
                         },
                     },
                 },
-            },
-        }),
-    ]);
+            }),
+        ]);
 
+        // Existing answers for THIS assessment only — defence in depth
+        // against any cross-tenant scan.
+        const existingAnswers = await tdb.vendorAssessmentAnswer.findMany({
+            where: {
+                assessmentId: assessment.id,
+                tenantId: assessment.tenantId,
+            },
+            select: { questionId: true, answerJson: true },
+        });
+
+        return { vendor, template, existingAnswers };
+    });
+
+    const { vendor, template, existingAnswers } = loaded;
     if (!vendor || !template) {
         throw new ExternalAccessDenied('unknown_assessment');
     }
-
-    // Existing answers for THIS assessment only — defence in depth
-    // against any cross-tenant scan.
-    const existingAnswers = await prisma.vendorAssessmentAnswer.findMany({
-        where: {
-            assessmentId: assessment.id,
-            tenantId: assessment.tenantId,
-        },
-        select: { questionId: true, answerJson: true },
-    });
 
     return {
         assessmentId: assessment.id,
@@ -258,21 +287,25 @@ export async function submitResponse(
     // Load the canonical question set for the pinned template
     // version. Validation runs against THIS, not whatever the
     // client claims to have answered.
-    const questions = (await prisma.vendorAssessmentTemplateQuestion.findMany({
-        where: {
-            templateId: assessment.templateVersionId,
-            tenantId: assessment.tenantId,
-        },
-        select: {
-            id: true,
-            answerType: true,
-            required: true,
-            weight: true,
-            optionsJson: true,
-            scaleConfigJson: true,
-            riskPointsJson: true,
-        },
-    })) as QuestionRow[];
+    const templateVersionId = assessment.templateVersionId;
+    const externalCtx = makeExternalAuditCtx(assessment.tenantId, assessment.id);
+    const questions = (await runInTenantContext(externalCtx, (tdb) =>
+        tdb.vendorAssessmentTemplateQuestion.findMany({
+            where: {
+                templateId: templateVersionId,
+                tenantId: assessment.tenantId,
+            },
+            select: {
+                id: true,
+                answerType: true,
+                required: true,
+                weight: true,
+                optionsJson: true,
+                scaleConfigJson: true,
+                riskPointsJson: true,
+            },
+        }),
+    )) as QuestionRow[];
 
     const questionMap = new Map(questions.map((q) => [q.id, q]));
     const errors: Array<{ questionId: string | null; message: string }> = [];
@@ -315,7 +348,12 @@ export async function submitResponse(
 
         cleanedAnswers.push({
             questionId: q.id,
-            answerJson: incoming.answerJson,
+            // Sanitised at PERSIST, not at render. The reviewer surface
+            // reads this row back verbatim, and so would a PDF export or an
+            // SDK consumer — sanitising only in the UI would leave the row
+            // itself dangerous. Same posture as sharing.ts, which sanitises
+            // the equivalent untrusted external input before it lands.
+            answerJson: sanitizeAnswerJson(q, incoming.answerJson),
             computedPoints: computeProvisionalPoints(q, incoming),
             evidenceId: incoming.evidenceId ?? null,
         });
@@ -329,6 +367,41 @@ export async function submitResponse(
                 questionId: q.id,
                 message: 'This question is required',
             });
+        }
+    }
+
+    // ── evidenceId ownership ──
+    // The FK on this column guarantees the Evidence row EXISTS; it says
+    // nothing about whose it is. Without this check a respondent could
+    // attach any Evidence id they could guess — including one belonging to
+    // another tenant — and it would be echoed straight into this tenant's
+    // reviewer surface. Same shape as sharing.ts verifying auditPackItemId
+    // belongs to the share's pack before writing.
+    const claimedEvidenceIds = [
+        ...new Set(
+            cleanedAnswers
+                .map((a) => a.evidenceId)
+                .filter((id): id is string => typeof id === 'string'),
+        ),
+    ];
+    if (claimedEvidenceIds.length > 0) {
+        const owned = await runInTenantContext(externalCtx, (tdb) =>
+            tdb.evidence.findMany({
+                where: {
+                    id: { in: claimedEvidenceIds },
+                    tenantId: assessment.tenantId,
+                },
+                select: { id: true },
+            }),
+        );
+        const ownedIds = new Set(owned.map((e) => e.id));
+        for (const a of cleanedAnswers) {
+            if (a.evidenceId && !ownedIds.has(a.evidenceId)) {
+                errors.push({
+                    questionId: a.questionId,
+                    message: 'Unknown evidence reference',
+                });
+            }
         }
     }
 
@@ -354,17 +427,27 @@ export async function submitResponse(
             requestId: `vendor-assessment-submit:${assessment.id}`,
         },
         async () => {
-            await prisma.$transaction(async (tx) => {
+            // runInTenantContext, not a bare prisma.$transaction, so the
+            // write path runs as `app_user` with `app.tenant_id` bound —
+            // RLS covers the answer upsert, the status transition and the
+            // audit insert alike. It re-binds the same audit context, so
+            // actor/requestId correlation is preserved.
+            await runInTenantContext(externalCtx, async (tx) => {
                 // Upsert each answer row; the existing
                 // (assessmentId, questionId) unique constraint makes
                 // this idempotent for re-submits.
                 for (const a of cleanedAnswers) {
                     await tx.vendorAssessmentAnswer.upsert({
+                        // Extended where — the compound unique PLUS an
+                        // explicit tenantId. RLS already fences this; the
+                        // predicate makes the tenant scope legible at the
+                        // call site rather than implied by transaction setup.
                         where: {
                             assessmentId_questionId: {
                                 assessmentId: assessment.id,
                                 questionId: a.questionId,
                             },
+                            tenantId: assessment.tenantId,
                         },
                         update: {
                             answerJson: a.answerJson as never,
@@ -384,7 +467,7 @@ export async function submitResponse(
                 }
 
                 await tx.vendorAssessment.update({
-                    where: { id: assessment.id },
+                    where: { id: assessment.id, tenantId: assessment.tenantId },
                     data: {
                         status: 'SUBMITTED',
                         submittedAt,
@@ -599,9 +682,6 @@ function validateAnswerShape(
             return null;
         }
         case 'FILE_UPLOAD': {
-            // Today the vendor flow accepts evidenceId or null.
-            // Required-field check below catches empty FILE_UPLOAD
-            // responses; here we just shape-check.
             if (
                 incoming.evidenceId !== null &&
                 incoming.evidenceId !== undefined &&
@@ -609,9 +689,65 @@ function validateAnswerShape(
             ) {
                 return 'FILE_UPLOAD evidenceId must be a string.';
             }
+            // A required FILE_UPLOAD must carry SOMETHING. The
+            // required-field sweep below only asks whether the questionId
+            // appears in the payload at all, so `{ questionId, answerJson:
+            // null }` satisfied a required upload — the question counted as
+            // answered while nothing was attached. Emptiness has to be
+            // caught here, where the answer type is known.
+            //
+            // "Something" is an evidenceId OR a non-empty note, not an
+            // evidenceId alone: the respondent surface deliberately ships a
+            // note field rather than an uploader at this stage ("File-upload
+            // responses are coordinated through your contact… describe the
+            // file you intend to share" — external.vendorAssessment
+            // .fileUploadHint). Demanding an evidenceId would make every
+            // required upload question unsubmittable. Wiring a real
+            // anonymous-upload path is its own piece of work: it needs a
+            // storage key, an AV gate and a quota before an unauthenticated
+            // party can put bytes in the tenant's bucket.
+            if (q.required) {
+                const note = extractValue(v);
+                const hasNote =
+                    typeof note === 'string' && note.trim().length > 0;
+                if (!incoming.evidenceId && !hasNote) {
+                    return 'This question requires an attachment or a note.';
+                }
+            }
             return null;
         }
     }
+}
+
+/**
+ * Sanitise respondent-supplied free text before it is persisted.
+ *
+ * Only TEXT carries arbitrary strings. SINGLE_SELECT / MULTI_SELECT values
+ * are validated against the question's own options allowlist, NUMBER and
+ * SCALE are numeric, and FILE_UPLOAD carries no text — those are already
+ * constrained and pass through untouched.
+ *
+ * The `{ value: … }` envelope is preserved when present, because
+ * `extractValue` and the reviewer surface both accept either shape.
+ */
+function sanitizeAnswerJson(q: QuestionRow, answerJson: unknown): unknown {
+    if (q.answerType !== 'TEXT') return answerJson;
+
+    if (typeof answerJson === 'string') return sanitizePlainText(answerJson);
+
+    if (
+        answerJson !== null &&
+        typeof answerJson === 'object' &&
+        !Array.isArray(answerJson) &&
+        'value' in (answerJson as object)
+    ) {
+        const envelope = answerJson as { value: unknown };
+        if (typeof envelope.value === 'string') {
+            return { ...envelope, value: sanitizePlainText(envelope.value) };
+        }
+    }
+
+    return answerJson;
 }
 
 function extractValue(v: unknown): unknown {
