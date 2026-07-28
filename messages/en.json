@@ -2817,7 +2817,11 @@
       "ownerBlank": "Owner (blank = unassign)",
       "archive": "Archive",
       "delete": "Delete",
-      "failed": "Bulk action failed"
+      "failed": "Bulk action failed",
+      "deletedToast": "{count, plural, one {# policy deleted} other {# policies deleted}}",
+      "undo": "Undo",
+      "archivedToast": "{count, plural, one {# policy archived} other {# policies archived}}",
+      "assignedToast": "{count, plural, one {# policy updated} other {# policies updated}}"
     },
     "new": {
       "modeNew": "New",
@@ -2885,7 +2889,11 @@
       "requestedByOn": "Requested by {name} on {date}",
       "attestationsTitle": "Attestation log",
       "attestedOn": "Attested {date}",
-      "noAttestations": "No attestations of the current version yet"
+      "noAttestations": "No attestations of the current version yet",
+      "rosterForVersion": "Roster for version {version}",
+      "rosterForCurrentVersion": "Roster for the current version",
+      "rosterNotLive": "not currently published",
+      "notPublishedRosterHint": "The roster below is for the last published version."
     },
     "detail": {
       "notFound": "Policy not found",
@@ -2996,7 +3004,17 @@
       "sodApproveBlocked": "Separation of duties — you can't approve a change you requested or authored.",
       "rollbackConfirmTitle": "Roll back to v{n}?",
       "rollbackConfirmBody": "This republishes v{n} as the live version. The current version stays in the history.",
-      "rollbackConfirmLabel": "Roll back to v{n}"
+      "rollbackConfirmLabel": "Roll back to v{n}",
+      "approvalNoLongerCurrent": "No longer current",
+      "liveEditProposalNotice": "This policy is live. Saving creates a proposed new version — the published version stays live, and acknowledgements keep working, until the proposal is approved and published.",
+      "versionProposedToast": "Saved as a proposed version. The published version is still live.",
+      "versionCreatedToast": "New version saved.",
+      "archiveConfirmTitle": "Archive this policy?",
+      "archiveConfirmBody": "It will be withdrawn from the library and cannot be edited, reviewed or published while archived. You can restore it afterwards.",
+      "archiveConfirmLabel": "Archive policy",
+      "restoreFromArchive": "Restore",
+      "restoring": "Restoring…",
+      "unarchivedToast": "Policy restored from archive as a draft."
     },
     "evidence": {
       "title": "Evidence to Retain",
@@ -7304,7 +7322,6 @@
     "addCommentAria": "Add a comment with your decision",
     "comment": "Comment",
     "cannotApproveOwnTitle": "Reviewers cannot approve their own request",
-    "cannotRejectOwnTitle": "Reviewers cannot reject their own request",
     "approve": "Approve",
     "reject": "Reject",
     "reviewerCommentLabel": "Reviewer comment (optional)",

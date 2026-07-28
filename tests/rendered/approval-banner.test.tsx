@@ -105,7 +105,7 @@ describe('<ApprovalBanner>', () => {
         expect(onDecide).toHaveBeenCalledWith('a_1', 'APPROVED', 'LGTM with edits');
     });
 
-    it('disables actions and surfaces a hint when reviewer is the requester', () => {
+    it('blocks self-APPROVE but leaves self-REJECT available (a requester may withdraw)', () => {
         render(
             <ApprovalBanner
                 approval={pending()}
@@ -120,7 +120,14 @@ describe('<ApprovalBanner>', () => {
             'approval-banner-reject',
         ) as HTMLButtonElement;
         expect(approve.disabled).toBe(true);
-        expect(reject.disabled).toBe(true);
+        // Reject stays ENABLED. `decidePolicyApproval` refuses a self-APPROVAL
+        // only — its guard is `decision === 'APPROVED' && requestedBy === me`
+        // — and deliberately permits a self-REJECTION so the requester can
+        // WITHDRAW instead of stranding the policy in IN_REVIEW. The banner
+        // used to disable both and claim "reviewers cannot reject their own
+        // request", a rule that does not exist anywhere in the server; the
+        // one person who most needs to withdraw was the one person refused.
+        expect(reject.disabled).toBe(false);
         // The rendered copy uses a typographic right-single-quote
         // (`&rsquo;`) — match either form so the assertion stays
         // robust under either render path.

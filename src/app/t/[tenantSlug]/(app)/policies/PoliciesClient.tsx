@@ -30,7 +30,7 @@ import {
     selectVisibleFilters,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
-import { useThresholdLoadMore } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -128,6 +128,8 @@ function PoliciesPageInner({
     translations: t,
 }: PoliciesClientProps) {
     const tx = useTranslations('policies');
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
     const tGroup = useTranslations('common.filterGroups');
     const policyStatusLabels = useMemo(
         () => buildPolicyStatusLabels((k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1])),
@@ -300,14 +302,46 @@ function PoliciesPageInner({
     const handleBulkApply = async (action: string, value: string) => {
         const ids = Array.from(selected);
         if (!action || ids.length === 0) return;
+
+        // Bulk delete is a SOFT delete, so it is reversible — the Epic 67
+        // undo-toast is the convention for that, not a blocking confirm.
+        // Drop the rows now, fire the real DELETE after the undo window,
+        // restore on Undo or on failure.
+        if (action === 'delete') {
+            const idSet = new Set(ids);
+            setSelected(new Set());
+            void policiesQuery.mutate(
+                // guardrail-ignore: optimistic-delete cache update for the undo window; the server still owns the list filter and mutate() restores on Undo/failure.
+                (cur) => (cur ? { ...cur, rows: cur.rows.filter((r) => !idSet.has(r.id)) } : cur),
+                { revalidate: false },
+            );
+            triggerUndoToast({
+                message: tx('bulk.deletedToast', { count: ids.length }),
+                undoMessage: tx('bulk.undo'),
+                action: async () => {
+                    const res = await fetch(`/api/t/${tenantSlug}/policies/bulk/delete`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ policyIds: ids }),
+                    });
+                    if (!res.ok) throw new Error(tx('bulk.failed'));
+                    await policiesQuery.mutate();
+                },
+                undoAction: () => { void policiesQuery.mutate(); },
+                onError: () => {
+                    toast.error(tx('bulk.failed'));
+                    void policiesQuery.mutate();
+                },
+            });
+            return;
+        }
+
         setBulkApplying(true);
         try {
             const url =
                 action === 'archive'
                     ? `/api/t/${tenantSlug}/policies/bulk/archive`
-                    : action === 'delete'
-                        ? `/api/t/${tenantSlug}/policies/bulk/delete`
-                        : `/api/t/${tenantSlug}/policies/bulk/assign`;
+                    : `/api/t/${tenantSlug}/policies/bulk/assign`;
             const body =
                 action === 'assign'
                     ? { policyIds: ids, ownerUserId: value || null }
@@ -317,9 +351,27 @@ function PoliciesPageInner({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error(tx('bulk.failed'));
+            if (!res.ok) {
+                const detail = await res
+                    .json()
+                    .then((b) => (typeof b?.error === 'string' ? b.error : null))
+                    .catch(() => null);
+                throw new Error(detail || tx('bulk.failed'));
+            }
             await policiesQuery.mutate();
             setSelected(new Set());
+            toast.success(
+                action === 'archive'
+                    ? tx('bulk.archivedToast', { count: ids.length })
+                    : tx('bulk.assignedToast', { count: ids.length }),
+            );
+        } catch (err: unknown) {
+            // Previously this threw inside try/finally with NO catch, into an
+            // un-awaited onApply — an unhandled rejection: no toast, no error
+            // state, and the selection left intact as though nothing had been
+            // attempted. `bulk.failed` was referenced but could never reach a
+            // user, and the success path said nothing either.
+            toast.error(err instanceof Error && err.message ? err.message : tx('bulk.failed'));
         } finally {
             setBulkApplying(false);
         }
@@ -349,8 +401,12 @@ function PoliciesPageInner({
         // Archive + Delete are admin-gated (mirror the OWNER/ADMIN guards on
         // archivePolicy / bulkDeletePolicy).
         if (permissions.canAdmin) {
-            defs.push({ value: 'archive', label: tx('bulk.archive') });
-            defs.push({ value: 'delete', label: tx('bulk.delete'), confirm: true });
+            // Archive blocks every edit path until restored, so it earns the
+            // confirm it did not have. Delete is a reversible SOFT delete and
+            // routes through the undo-toast instead — the confirm here was the
+            // inverse of the consequences.
+            defs.push({ value: 'archive', label: tx('bulk.archive'), confirm: true });
+            defs.push({ value: 'delete', label: tx('bulk.delete') });
         }
         return defs;
     }, [tenantSlug, permissions.canAdmin, tx]);

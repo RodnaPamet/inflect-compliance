@@ -96,6 +96,15 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Bulk control delete (controls list)',
         handlers: ['handleBulkApply'],
     },
+    {
+        // Bulk policy soft-delete on the list — same delete branch of
+        // handleBulkApply as the assets/controls registers. Delete carried
+        // a blocking confirm while Archive (which blocks every edit path)
+        // had none; the two swapped, so delete now takes the undo window.
+        file: 'src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
+        name: 'Bulk policy delete (policies list)',
+        handlers: ['handleBulkApply'],
+    },
 ];
 
 function loadFile(file: string): string {

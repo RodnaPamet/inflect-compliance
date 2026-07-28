@@ -61,10 +61,31 @@ export function PolicyAcknowledgementsPanel({
     policyId,
     canAdmin,
     isPublished,
+    refreshToken = 0,
+    currentVersionNumber = null,
 }: {
     policyId: string;
     canAdmin: boolean;
     isPublished: boolean;
+    /**
+     * Bumped by the parent after publish / rollback.
+     *
+     * Both of those call `carryForwardAckCampaign`, which deliberately
+     * RE-OPENS everyone's acknowledgement against the new version — the
+     * whole point being that people must re-read what changed. This panel's
+     * fetch effect depended only on stable values, so a mounted panel kept
+     * rendering "You acknowledged this policy" and a stale percent-complete
+     * bar after the campaign underneath it had been reset. The most
+     * dangerous possible staleness: it tells someone they are compliant
+     * when the system has just recorded that they are not.
+     */
+    refreshToken?: number;
+    /**
+     * Which version the roster describes. Assignments are version-scoped
+     * (keyed on `currentVersionId`), so an unlabelled roster silently
+     * changes meaning when the policy is republished.
+     */
+    currentVersionNumber?: number | null;
 }) {
     const t = useTranslations('policies');
     const apiUrl = useTenantApiUrl();
@@ -99,7 +120,9 @@ export function PolicyAcknowledgementsPanel({
     useEffect(() => {
         void loadOwn();
         void loadRoster();
-    }, [loadOwn, loadRoster]);
+        // `refreshToken` is in the deps precisely because the other
+        // dependencies are all stable — see the prop's note.
+    }, [loadOwn, loadRoster, refreshToken]);
 
     const acknowledge = async () => {
         setAttesting(true);
@@ -163,7 +186,16 @@ export function PolicyAcknowledgementsPanel({
             <div className="rounded-lg border border-border-subtle p-4 space-y-default">
                 <Heading level={3} className="text-sm font-semibold text-content-emphasis">{t('ack.yourStatusTitle')}</Heading>
                 {!isPublished ? (
-                    <p className="text-sm text-content-muted">{t('ack.notPublished')}</p>
+                    // The admin roster below may still show a campaign — it
+                    // describes the last PUBLISHED version. Saying only
+                    // "nothing to acknowledge" above live-looking numbers read
+                    // as a contradiction; name the reason instead.
+                    <p className="text-sm text-content-muted">
+                        {t('ack.notPublished')}
+                        {canAdmin && roster && roster.assignedCount > 0
+                            ? ` ${t('ack.notPublishedRosterHint')}`
+                            : ''}
+                    </p>
                 ) : ownAttested ? (
                     <p className="text-sm text-content-default">
                         {t('ack.youAcknowledged', { date: ownAt ? formatDate(ownAt) : '' })}
@@ -193,6 +225,17 @@ export function PolicyAcknowledgementsPanel({
                     {roster && roster.assignedCount > 0 ? (
                         <>
                             <div className="space-y-tight">
+                                {/* Which version this roster is FOR. Assignments are
+                                    version-scoped, so the same numbers mean something
+                                    different after a republish — and on a DRAFT policy
+                                    they describe the last published version, not the
+                                    draft being edited. */}
+                                <p className="text-xs text-content-subtle" data-testid="ack-roster-version">
+                                    {currentVersionNumber != null
+                                        ? t('ack.rosterForVersion', { version: currentVersionNumber })
+                                        : t('ack.rosterForCurrentVersion')}
+                                    {!isPublished && ` · ${t('ack.rosterNotLive')}`}
+                                </p>
                                 <div className="flex items-center justify-between text-xs text-content-muted">
                                     <span>{t('ack.percentComplete', { pct: roster.pctComplete })}</span>
                                     <span>{t('ack.completedOf', { done: roster.acknowledgedCount, total: roster.assignedCount })}</span>

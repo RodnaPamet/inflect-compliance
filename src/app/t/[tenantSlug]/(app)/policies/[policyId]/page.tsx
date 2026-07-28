@@ -172,6 +172,15 @@ export default function PolicyDetailPage() {
     // Action state
     const [actionLoading, setActionLoading] = useState('');
     // Emergency publish-bypass modal (admin-only "Publish without approval").
+    /**
+     * Bumped after publish / rollback to force the acknowledgement panel to
+     * refetch. Both operations run `carryForwardAckCampaign`, which re-opens
+     * everyone's acknowledgement against the new version — so a mounted panel
+     * that does not refetch keeps telling the viewer they are compliant when
+     * the server has just recorded that they are not.
+     */
+    const [ackRefreshToken, setAckRefreshToken] = useState(0);
+    const [archiveOpen, setArchiveOpen] = useState(false);
     const [bypassOpen, setBypassOpen] = useState(false);
     const [bypassReason, setBypassReason] = useState('');
     // A4 — rollback confirmation (names the target version before committing).
@@ -230,6 +239,16 @@ export default function PolicyDetailPage() {
 
     // ── Actions ──
 
+    /**
+     * A policy is LIVE when a new version would otherwise withdraw it.
+     *
+     * `createPolicyVersion` demotes PUBLISHED/APPROVED policies to DRAFT. On a
+     * PUBLISHED policy that is a withdrawal: `attestPolicy` requires PUBLISHED,
+     * so every outstanding acknowledgement stops being possible and the policy
+     * drops out of coverage — from the editor, with no warning.
+     */
+    const policyIsLive = policy?.status === 'PUBLISHED' || policy?.status === 'APPROVED';
+
     const createVersion = async () => {
         if (contentMode === 'MARKDOWN' && !editorContent.trim()) return;
         if (contentMode === 'EXTERNAL_LINK' && !externalUrl.trim()) return;
@@ -250,6 +269,13 @@ export default function PolicyDetailPage() {
             const body: Record<string, unknown> = {
                 contentType: wireContentType,
                 changeSummary: changeSummary || null,
+                // Save as a PROPOSAL on a live policy rather than demoting it.
+                // The flag has existed on the usecase all along for exactly
+                // this (the SharePoint pull uses it so an external edit never
+                // un-publishes a live policy); the editor simply never asked
+                // for it. The live version keeps serving acknowledgements
+                // until the proposal is approved and published.
+                proposeOnly: policyIsLive,
             };
 
             if (contentMode === 'MARKDOWN') {
@@ -282,6 +308,11 @@ export default function PolicyDetailPage() {
             }
             setEditorContent(''); setExternalUrl(''); setChangeSummary(''); setEditorContentType('MARKDOWN');
             setSelectedFile(null); setTab('versions');
+            toast.success(
+                policyIsLive
+                    ? t('detail.versionProposedToast')
+                    : t('detail.versionCreatedToast'),
+            );
             await fetchPolicy();
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : t('detail.errUnknown'));
@@ -359,6 +390,7 @@ export default function PolicyDetailPage() {
             if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
             setBypassOpen(false);
             setBypassReason('');
+            setAckRefreshToken((n) => n + 1);
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
     };
@@ -368,6 +400,7 @@ export default function PolicyDetailPage() {
         try {
             const res = await fetch(apiUrl(`/policies/${policyId}/rollback`), { method: 'POST' });
             if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            setAckRefreshToken((n) => n + 1);
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
     };
@@ -381,6 +414,22 @@ export default function PolicyDetailPage() {
             if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
+    };
+
+    /**
+     * Reverse an archive. Lands the policy in DRAFT (see `unarchivePolicy`),
+     * so the normal review path applies before it can go live again.
+     */
+    const unarchivePolicyAction = async () => {
+        setActionLoading('unarchive');
+        try {
+            const res = await fetch(apiUrl(`/policies/${policyId}/unarchive`), { method: 'POST' });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            toast.success(t('detail.unarchivedToast'));
+            await fetchPolicy();
+        } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : t('detail.errUnknown'));
+        } finally { setActionLoading(''); }
     };
 
     // ── Helpers ──
@@ -487,7 +536,48 @@ export default function PolicyDetailPage() {
     const headerHasApproved = headerApprovals.some((a) => a.status === 'APPROVED');
     const headerIsPublished = !!headerVersion && policy.currentVersionId === headerVersion.id && policy.status === 'PUBLISHED';
     const canRequestApproval = canWrite && !!headerVersion && !headerHasPending && !headerHasApproved && !headerIsPublished && policy.status !== 'ARCHIVED';
-    const canPublishNow = canAdmin && !!headerVersion && headerHasApproved && !headerIsPublished;
+    /**
+     * The version the server would actually accept a publish for.
+     *
+     * `publishPolicy` requires BOTH that the policy is APPROVED and that the
+     * version matches the one the approval was granted for. `currentVersionId`
+     * is NOT that version: nothing updates it when a version is created or
+     * approved — it tracks the last PUBLISHED version — so after a new version
+     * is drafted and approved it still points at the previous, live one.
+     *
+     * Deriving the target from the approval record (most recently decided
+     * APPROVED row) is what makes the button agree with the server instead of
+     * targeting whatever happens to be displayed.
+     */
+    const approvedTargetVersionId = (() => {
+        const approved = (policy.approvals ?? [])
+            .filter((a) => a.status === 'APPROVED')
+            .sort((a, b) => {
+                const at = a.decidedAt ? new Date(a.decidedAt).getTime() : 0;
+                const bt = b.decidedAt ? new Date(b.decidedAt).getTime() : 0;
+                return bt - at;
+            });
+        return approved[0]?.policyVersionId ?? null;
+    })();
+
+    /**
+     * Publish is offered ONLY in the state the server accepts.
+     *
+     * This previously read `headerHasApproved && !headerIsPublished` with no
+     * regard for the policy's own status. Creating a new version demotes the
+     * policy to DRAFT but leaves `currentVersionId` on the OLD version — which
+     * still carries its APPROVED approval — so the button lit up on a DRAFT
+     * policy and every click threw "is DRAFT; cannot publish without going
+     * through APPROVED". The gate was written against a comment (below, now
+     * corrected) that claimed version creation sets `currentVersionId`.
+     *
+     * Requiring `status === 'APPROVED'` and targeting the approved version
+     * makes the affordance and the server's rule the same rule.
+     */
+    // No "and not already published" clause: APPROVED and PUBLISHED are
+    // mutually exclusive states, so requiring APPROVED already excludes it.
+    const canPublishNow =
+        canAdmin && policy.status === 'APPROVED' && !!approvedTargetVersionId;
     const canBypassPublish = canAdmin && !!headerVersion && !headerHasApproved && !headerIsPublished && policy.status !== 'ARCHIVED';
 
     type PolicyTab = 'current' | 'versions' | 'mappings' | 'traceability' | 'acknowledgements' | 'tasks' | 'editor' | 'activity';
@@ -596,8 +686,18 @@ export default function PolicyDetailPage() {
                             {t('detail.requestApproval')}
                         </Button>
                     )}
+                    {/* Restore. Archiving used to be a one-way door — there was
+                        no inverse anywhere in the product, and an archived
+                        policy could not be edited, reviewed or published, so it
+                        was effectively destroyed by a single unconfirmed
+                        click. Offered on the same tier that archived it. */}
+                    {canAdmin && policy.status === 'ARCHIVED' && (
+                        <Button variant="secondary" size="sm" onClick={unarchivePolicyAction} disabled={!!actionLoading} id="unarchive-btn">
+                            {actionLoading === 'unarchive' ? t('detail.restoring') : t('detail.restoreFromArchive')}
+                        </Button>
+                    )}
                     {canPublishNow && (
-                        <Button variant="secondary" size="sm" onClick={() => headerVersion && publishVersion(headerVersion.id)} disabled={!!actionLoading} id="header-publish">
+                        <Button variant="secondary" size="sm" onClick={() => approvedTargetVersionId && publishVersion(approvedTargetVersionId)} disabled={!!actionLoading} id="header-publish">
                             {t('detail.publish')}
                         </Button>
                     )}
@@ -618,7 +718,7 @@ export default function PolicyDetailPage() {
                         }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus className="-ml-0.5 -mr-2.5" />{t('detail.version')}</button>
                     )}
                     {canAdmin && policy.status !== 'ARCHIVED' && (
-                        <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={archivePolicy} disabled={actionLoading === 'archive'} id="archive-btn">
+                        <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={() => setArchiveOpen(true)} disabled={actionLoading === 'archive'} id="archive-btn">
                             {actionLoading === 'archive' ? '...' : t('detail.archive')}
                         </Button>
                     )}
@@ -855,9 +955,15 @@ export default function PolicyDetailPage() {
                         const vApprovals = (v.approvals || []).filter((a) => a.status === 'PENDING' || a.status === 'APPROVED' || a.status === 'REJECTED');
                         const hasPending = vApprovals.some((a) => a.status === 'PENDING');
                         const hasApproved = vApprovals.some((a) => a.status === 'APPROVED');
-                        // `currentVersionId` only marks the active/displayed version
-                        // (set at creation so the Current tab has content) — it does
-                        // NOT mean the policy is published. A version is "Published"
+                        // `currentVersionId` marks the LAST PUBLISHED version, and
+                        // it does NOT mean the policy is currently published.
+                        //
+                        // It is NOT "set at creation": `PolicyVersionRepository.create`
+                        // writes the version row and nothing else — only
+                        // `setCurrentVersion`, called from publish and rollback,
+                        // moves this pointer. The old wording here is what the
+                        // header publish gate was written against, which is how
+                        // that button ended up offered on a DRAFT policy. A version is "Published"
                         // only when it's the current version AND the policy's lifecycle
                         // status is PUBLISHED. Keying off currentVersionId alone made a
                         // fresh draft's version show "Published" and hid Request Approval.
@@ -908,7 +1014,20 @@ export default function PolicyDetailPage() {
                                                         {a.decidedAt && ` · ${formatDate(a.decidedAt)}`}
                                                     </span>
                                                 </div>
-                                                {canAdmin && a.status === 'PENDING' && (() => {
+                                                {/* A PENDING row whose POLICY has moved past IN_REVIEW
+                                                    is stale: the server now refuses to decide it, because
+                                                    doing so would rewrite the policy's status out from
+                                                    under whatever moved it (publishing left rows PENDING,
+                                                    so one later Reject dropped a LIVE policy to DRAFT and
+                                                    stranded its acknowledgements). Show the row, but not
+                                                    an action that will be refused. The banner above is
+                                                    already gated on IN_REVIEW; this surface was not. */}
+                                                {canAdmin && a.status === 'PENDING' && policy.status !== 'IN_REVIEW' && (
+                                                    <span className="text-xs text-content-subtle" data-testid={`approval-stale-${a.id}`}>
+                                                        {t('detail.approvalNoLongerCurrent')}
+                                                    </span>
+                                                )}
+                                                {canAdmin && a.status === 'PENDING' && policy.status === 'IN_REVIEW' && (() => {
                                                     // Client-side SoD mirror: block Approve when the viewer
                                                     // requested this approval or authored the version. The
                                                     // requester/author ids come off the nested refs
@@ -1008,6 +1127,17 @@ export default function PolicyDetailPage() {
                             placeholder={t('detail.changeSummaryPlaceholder')} id="change-summary-input" />
                     </div>
 
+                    {/* Say what saving will do BEFORE it happens. Editing a live
+                        policy used to withdraw it silently — the editor gave no
+                        indication that pressing Save would stop every outstanding
+                        acknowledgement. It now saves as a proposal instead, which
+                        is only reassuring if the user is told. */}
+                    {policyIsLive && (
+                        <InlineNotice variant="info" icon={null}>
+                            {t('detail.liveEditProposalNotice')}
+                        </InlineNotice>
+                    )}
+
                     <Button variant="primary" icon={saving ? undefined : <Plus className="-ml-0.5 -mr-2.5" />} onClick={createVersion} disabled={saving} id="save-version-btn">
                         {saving ? t('detail.saving') : t('detail.version')}
                     </Button>
@@ -1036,6 +1166,8 @@ export default function PolicyDetailPage() {
                     policyId={policyId}
                     canAdmin={canAdmin}
                     isPublished={policy.status === 'PUBLISHED'}
+                    refreshToken={ackRefreshToken}
+                    currentVersionNumber={headerVersion?.versionNumber ?? null}
                 />
             )}
             {tab === 'tasks' && (
@@ -1117,6 +1249,23 @@ export default function PolicyDetailPage() {
                 become live (the newest recorded lifecycle-history entry) before
                 committing. tone="warning": rollback re-publishes a prior version,
                 it is not a destructive delete. */}
+            {/* Archive confirmation.
+                Archiving withdraws the policy from the library and blocks
+                every edit path — createPolicyVersion and requestPolicyApproval
+                both refuse archived policies — so it is far more consequential
+                than the rollback below, which HAD a confirm while this had
+                none. `tone="warning"` rather than "danger" because it is now
+                genuinely reversible via Restore. */}
+            <ConfirmDialog
+                showModal={archiveOpen}
+                setShowModal={setArchiveOpen}
+                tone="warning"
+                title={t('detail.archiveConfirmTitle')}
+                description={t('detail.archiveConfirmBody')}
+                confirmLabel={t('detail.archiveConfirmLabel')}
+                onConfirm={archivePolicy}
+            />
+
             <ConfirmDialog
                 showModal={rollbackOpen}
                 setShowModal={setRollbackOpen}
