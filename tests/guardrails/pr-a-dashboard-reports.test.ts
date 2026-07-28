@@ -63,11 +63,6 @@ describe('PR-A — dashboard balance + reports card', () => {
         const src = read(
             'src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx',
         );
-        // The Evidence Status heading migrated to next-intl; resolve the
-        // key against the catalog so the intent (heading text) still holds.
-        const en = JSON.parse(read('messages/en.json')) as {
-            dashboard: Record<string, string>;
-        };
 
         it('passes the coverage trend to the Control Coverage card', () => {
             // Anchor on the `<ProgressCard id="control-coverage"` so
@@ -75,40 +70,6 @@ describe('PR-A — dashboard balance + reports card', () => {
             // touch this assertion too.
             expect(src).toMatch(
                 /ProgressCard[\s\S]{0,2000}id="control-coverage"[\s\S]{0,3000}trend=\{[\s\S]{0,400}trendBundle\?\.coverage/,
-            );
-        });
-
-        it('Evidence Status renders one Card containing the breakdown', () => {
-            // The card identity is preserved (canonical
-            // `id="evidence-status"` matches the unit-test
-            // `Dashboard Layout Sections` probe).
-            expect(src).toMatch(/<Card id="evidence-status"/);
-            // Heading + non-wrapping StatusBreakdown live inside it.
-            expect(src).toMatch(
-                /<Card id="evidence-status"[\s\S]{0,2000}<Heading[\s\S]{0,400}\{t\('evidenceStatus'\)\}[\s\S]{0,2000}<StatusBreakdown/,
-            );
-            expect(en.dashboard.evidenceStatus).toBe('Evidence Status');
-        });
-
-        it('Evidence Status surfaces a percent-current readout', () => {
-            expect(src).toMatch(/data-testid="evidence-status-current-percent"/);
-        });
-
-        it('Evidence Status mounts the evidence-overdue trend mini-chart', () => {
-            expect(src).toMatch(/data-testid="evidence-status-trend"/);
-            // The trend pulls from the same trendBundle as the
-            // existing Trend section below — no parallel hand-
-            // fetched series.
-            expect(src).toMatch(/trendBundle\?\.evidence/);
-        });
-
-        it('uses the non-wrapping status-breakdown primitive', () => {
-            // The default-export `@/components/ui/StatusBreakdown`
-            // wraps itself in `cardVariants()`. The non-wrapping
-            // lowercase `status-breakdown` is the right primitive
-            // when we host the breakdown inside our own Card.
-            expect(src).toMatch(
-                /from\s*['"]@\/components\/ui\/status-breakdown['"]/,
             );
         });
     });

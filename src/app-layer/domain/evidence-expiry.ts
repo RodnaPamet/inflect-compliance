@@ -1,14 +1,15 @@
 /**
  * Evidence expiry — the single definition of "what's expiring".
  *
- * Three surfaces answer that question and they used to answer it three
+ * Multiple surfaces answer that question and they used to answer it three
  * different ways, so the same evidence row could be red on one screen,
  * absent from another, and counted on a third:
  *
  *   - the compliance calendar's evidence loader (no soft-delete or
  *     archive guard at all → showed phantom reviews for deleted rows),
- *   - `DashboardRepository.getUpcomingExpirations` (the ExpiryCalendar list),
- *   - `DashboardRepository.getEvidenceExpiry` (the KPI buckets).
+ *   - `DashboardRepository.getEvidenceExpiry` (the KPI buckets),
+ *   - the dashboard's ExpiryCalendar list (since removed — its
+ *     `getUpcomingExpirations` repo method went with it).
  *
  * Both halves of the definition live here so a future surface inherits
  * them rather than inventing a fourth variant:

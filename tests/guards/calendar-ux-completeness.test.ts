@@ -21,7 +21,6 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const CLIENT = 'src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx';
 const MONTH = 'src/components/ui/CalendarMonth.tsx';
 const USECASE = 'src/app-layer/usecases/compliance-calendar.ts';
-const EXPIRY = 'src/components/ui/ExpiryCalendar.tsx';
 const DASHBOARD_REPO = 'src/app-layer/repositories/DashboardRepository.ts';
 
 describe('1 — the Timeline shows every deadline', () => {
@@ -71,12 +70,13 @@ describe('3 — one urgency threshold set', () => {
         expect(src).not.toMatch(/diffMs <= 7 \* 86_400_000/);
     });
 
-    it('the ExpiryCalendar widget reads the shared scale', () => {
-        const src = read(EXPIRY);
-        expect(src).toMatch(/urgencyFromDaysUntil/);
-        // Its private ≤14 tier was the only place 14 appeared anywhere.
-        expect(src).not.toMatch(/daysUntil <= 14/);
-    });
+    // (The ExpiryCalendar assertion was retired when the widget was deleted —
+    //  the dashboard's Evidence Expiry card was its only consumer, so removing
+    //  the card left it with no importers. Its private ≤14 tier was the reason
+    //  this assertion existed; the tier died with the file. The remaining
+    //  assertions in this describe still hold the one-threshold-set invariant
+    //  across every surface that ships, and `tests/unit/urgency-scale.test.ts`
+    //  covers the shared classifier's behaviour directly.)
 
     it('the dashboard KPI buckets read the shared scale', () => {
         const src = read(DASHBOARD_REPO);

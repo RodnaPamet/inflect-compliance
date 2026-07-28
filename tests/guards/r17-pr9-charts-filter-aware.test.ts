@@ -101,10 +101,7 @@ describe('R17-PR9 — charts subscribe via ChartFocusWrapper', () => {
             /<ChartFocusWrapper\s+kpiKey="coverage"[\s\S]*?<ProgressCard[\s\S]*?id="control-coverage"/,
         );
     });
-
-    it('EvidenceStatusSection is wrapped with kpiKey="evidence"', () => {
-        expect(SRC).toMatch(
-            /<ChartFocusWrapper\s+kpiKey="evidence"[\s\S]*?<EvidenceStatusSection/,
-        );
-    });
+    // (The Evidence Status section was folded into the on-demand swappable-KPI
+    // slot; its `kpiKey="evidence"` focus wrapper went with it. The evidence
+    // TREND tile keeps its own `kpiKey="evidence"` wrapper in the Trend section.)
 });

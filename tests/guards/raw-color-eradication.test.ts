@@ -29,8 +29,9 @@ const SCAN_DIRS = ["src/app", "src/components"];
 // Keep this list narrow — every entry needs a written reason.
 const EXEMPT_FILES = new Set<string>([
   // (RiskHeatmap.tsx removed in PR-K — superseded by RiskMatrix.)
+  // (ExpiryCalendar.tsx removed 2026-07-27 — the dashboard's Evidence Expiry
+  //  card was its only consumer, so trimming the card left it unimported.)
   "src/components/ui/GraphExplorer.tsx",  // sky/rose/emerald/amber as 4-color category palette for node types
-  "src/components/ui/ExpiryCalendar.tsx", // 3-tier urgency gradient (red/amber/yellow) — collapsing urgent + upcoming to a single warning token would erase the at-a-glance distinction
 ]);
 
 // Directories whose contents are skipped entirely.

@@ -151,7 +151,6 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/processes/ManualTriggerPanel.tsx',
     'src/components/ui/ComplianceStatusIndicator.tsx',
     'src/components/ui/EvidenceGallery.tsx',
-    'src/components/ui/ExpiryCalendar.tsx',
     'src/components/ui/FileDropzone.tsx',
     'src/components/ui/FrameworkBuilder.tsx',
     'src/components/ui/FrameworkMinimap.tsx',

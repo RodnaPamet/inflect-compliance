@@ -66,12 +66,13 @@ describe('perf(PR3) — data-heavy page wins', () => {
     describe('3. Dashboard page — trends fetched in parallel', () => {
         const page = read('src/app/t/[tenantSlug]/(app)/dashboard/page.tsx');
 
-        it('fetches exec + matrix + trends in ONE Promise.all', () => {
+        it('fetches exec + trends in ONE Promise.all', () => {
+            // The risk-matrix config fetch left the batch when the Risk Matrix
+            // widget was removed from the dashboard.
             const batchStart = page.indexOf('await Promise.all([');
             const batchEnd = page.indexOf(']);', batchStart);
             const batch = page.slice(batchStart, batchEnd);
             expect(batch).toMatch(/getExecutiveDashboard\(ctx\)/);
-            expect(batch).toMatch(/getRiskMatrixConfig\(ctx\)/);
             expect(batch).toMatch(/getComplianceTrends\(ctx,\s*30\)\.catch/);
         });
 
@@ -87,7 +88,9 @@ describe('perf(PR3) — data-heavy page wins', () => {
 
         it('DashboardClient lazy-loads the heavy charts via next/dynamic (ssr:false)', () => {
             expect(client).toMatch(/import dynamic from 'next\/dynamic'/);
-            for (const chart of ['DonutChart', 'RiskMatrix', 'ExpiryCalendar', 'TrendCard']) {
+            // RiskMatrix + ExpiryCalendar were removed from the dashboard; the
+            // remaining heavy charts still lazy-load via next/dynamic.
+            for (const chart of ['DonutChart', 'TrendCard']) {
                 expect(client).toMatch(
                     new RegExp(`const ${chart} = dynamic\\(`),
                 );

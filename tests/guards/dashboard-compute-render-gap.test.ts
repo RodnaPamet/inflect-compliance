@@ -6,8 +6,11 @@
  *
  *   1. Unrendered compute is gone — `controlsByStatus` + the dead
  *      `DashboardStats` fields (assets / clausesReady / totalClauses
- *      / unreadNotifications) no longer computed; exceptions +
- *      treatment-plan cards ARE rendered with a drill-through.
+ *      / unreadNotifications) no longer computed. The exception /
+ *      treatment-plan / risk-heatmap / expiry-list aggregates were
+ *      dropped from the always-on executive payload; the exception +
+ *      treatment-plan KPIs moved to the on-demand swappable-KPI slot
+ *      (computed only when the user picks them).
  *   2. KPI tiles can navigate — each `<KpiCard>` carries an `href`.
  *   3. The chart interaction is honestly named "focus", not "filter".
  *   4. Mutation sites invalidate the dashboard cache; the trends key
@@ -63,13 +66,30 @@ describe('1. unrendered compute — surfaced or removed', () => {
         expect(getStats).toMatch(/control\.count/);
     });
 
-    it('renders the Exception + Treatment-Plan cards with a drill-through', () => {
-        expect(CLIENT).toMatch(/ExceptionSummaryCard/);
-        expect(CLIENT).toMatch(/TreatmentPlanCard/);
-        expect(CLIENT).toMatch(/exec\.exceptions/);
-        expect(CLIENT).toMatch(/exec\.treatmentPlans/);
-        // each card has a data-drill-link anchor
-        expect(CLIENT).toMatch(/data-drill-link/);
+    it('surfaces exception + treatment-plan compute via the swappable-KPI slot, not an unread payload', () => {
+        // The standalone Exception / Treatment-Plan cards were folded into
+        // the dashboard's custom-KPI dropdown. The executive payload no
+        // longer carries these aggregates (they would be unrendered compute)
+        // — the on-demand getDashboardKpi path computes them only when the
+        // user selects that KPI.
+        expect(REPO).not.toMatch(/^\s*exceptions:\s*ExceptionSummary;/m);
+        expect(REPO).not.toMatch(/^\s*treatmentPlans:\s*TreatmentPlanSummary;/m);
+        expect(REPO).not.toMatch(/riskHeatmap:\s*RiskHeatmapCell/);
+        expect(REPO).not.toMatch(/upcomingExpirations:\s*EvidenceExpiryItem/);
+        // getExecutiveDashboard no longer calls the folded / removed summaries.
+        const execFn = USECASE.slice(
+            USECASE.indexOf('export async function getExecutiveDashboard'),
+        );
+        expect(execFn).not.toMatch(/getExceptionSummary|getTreatmentPlanSummary/);
+        expect(execFn).not.toMatch(/getRiskHeatmap|getUpcomingExpirations/);
+        // ...they are surfaced on demand through the swappable-KPI catalog.
+        expect(USECASE).toMatch(/'exceptions'/);
+        expect(USECASE).toMatch(/'treatmentPlans'/);
+        expect(USECASE).toMatch(/getExceptionSummary/);
+        expect(USECASE).toMatch(/getTreatmentPlanSummary/);
+        // ...and the client renders that catalog (meta drill targets).
+        expect(CLIENT).toMatch(/exceptions:\s*\{[^}]*drill:\s*'\/controls'/);
+        expect(CLIENT).toMatch(/treatmentPlans:\s*\{[^}]*drill:\s*'\/risks'/);
     });
 });
 

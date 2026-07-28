@@ -70,6 +70,9 @@ import {
     Boxes,
     ClipboardCheck,
     FlaskConical,
+    FileCheck2,
+    ShieldAlert,
+    ClipboardList,
     type LucideIcon,
 } from 'lucide-react';
 
@@ -96,20 +99,6 @@ const TrendCard = dynamic(
     () => import('@/components/ui/TrendCard').then((m) => m.TrendCard),
     { ssr: false, loading: () => <Skeleton className="h-full w-full min-h-[120px] rounded-lg" /> },
 );
-// PR-A — switched from the auto-wrapping default StatusBreakdown
-// to the non-wrapping primitive so the Evidence Status card can
-// host the breakdown + a trend mini-chart inside ONE Card without
-// nested-cards (the legacy default-export wraps itself in
-// cardVariants()).
-import { StatusBreakdown } from '@/components/ui/status-breakdown';
-const RiskMatrix = dynamic(
-    () => import('@/components/ui/RiskMatrix').then((m) => m.RiskMatrix),
-    { ssr: false, loading: () => <Skeleton className="h-full w-full min-h-[280px] rounded-lg" /> },
-);
-const ExpiryCalendar = dynamic(() => import('@/components/ui/ExpiryCalendar'), {
-    ssr: false,
-    loading: () => <Skeleton className="h-full w-full min-h-[240px] rounded-lg" />,
-});
 import { cn } from '@/lib/cn';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -118,7 +107,6 @@ import { apiPost } from '@/lib/api-client';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { HeroMetric } from '@/components/ui/HeroMetric';
-import { KPIStat } from '@/components/ui/metric';
 import { NextBestActionCard } from '@/components/ui/NextBestActionCard';
 import { PostureHeroCard } from './PostureHeroCard';
 import type { PostureSummaryDto } from '@/app-layer/usecases/compliance-posture';
@@ -130,7 +118,6 @@ import {
 
 import type { ExecutiveDashboardPayload } from '@/app-layer/repositories/DashboardRepository';
 import type { TrendPayload } from '@/app-layer/usecases/compliance-trends';
-import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 
@@ -178,7 +165,6 @@ function deriveTrendBundle(
 interface DashboardClientProps {
     initialExec: ExecutiveDashboardPayload;
     initialTrends: TrendPayload | null;
-    matrixConfig: RiskMatrixConfigShape;
     /**
      * Server-fetched cached AI compliance-posture summary (or null when the
      * daily cron has not yet produced one). Feeds the masthead hero; the
@@ -199,7 +185,6 @@ interface DashboardClientProps {
 export default function DashboardClient({
     initialExec,
     initialTrends,
-    matrixConfig,
     initialPostureSummary,
     children,
 }: DashboardClientProps) {
@@ -386,17 +371,6 @@ export default function DashboardClient({
                 <RiskDistributionSection exec={exec} />
             </div>
 
-            {/* ─── Evidence Status + Compliance Alerts ─── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-default">
-                <ChartFocusWrapper kpiKey="evidence">
-                    <EvidenceStatusSection
-                        exec={exec}
-                        trendBundle={trendBundle}
-                    />
-                </ChartFocusWrapper>
-                <ComplianceAlerts exec={exec} t={t} />
-            </div>
-
             {/* ─── Task Status + Policy Status ─── */}
             {/* The Tasks + Policies KPI tiles focus these donuts (they
                 no longer navigate away). Same donut chassis as Risk
@@ -429,43 +403,6 @@ export default function DashboardClient({
                         { label: 'Archived', value: exec.policySummary.archived, color: '#64748b', href: href('/policies?status=ARCHIVED') },
                     ]}
                 />
-            </div>
-
-            {/* ─── Exception Inventory + Treatment-Plan Status (G-5/G-7) ───
-                 These two health cards surface data getExecutiveDashboard
-                 already computes (exec.exceptions / exec.treatmentPlans).
-                 Neither entity has a dedicated list page — exceptions are
-                 managed per-control and treatment plans per-risk — so each
-                 card drills through to its parent-entity list. */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-default">
-                <ExceptionSummaryCard exec={exec} href={href} />
-                <TreatmentPlanCard exec={exec} href={href} />
-            </div>
-
-            {/* ─── Risk Heatmap + Evidence Expiry ─── */}
-            {/* B1 — heatmap subscribes to risks KPI; expiry calendar
-                subscribes to evidence KPI. Pre-B1 these were not in
-                the focus graph at all, so clicking the risks card
-                only lit RiskDistribution (not the heatmap), and
-                clicking the evidence card only lit EvidenceStatus
-                (not the expiry calendar). Both compose with
-                <ChartFocusWrapper> the same way the trend cards do. */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-default">
-                <ChartFocusWrapper kpiKey="risks">
-                    <RiskMatrix
-                        id="risk-heatmap"
-                        config={matrixConfig}
-                        cells={exec.riskHeatmap}
-                        showSwapToggle={false}
-                    />
-                </ChartFocusWrapper>
-                <ChartFocusWrapper kpiKey="evidence" className="h-full">
-                    <ExpiryCalendar
-                        id="expiry-calendar"
-                        items={exec.upcomingExpirations}
-                        fill
-                    />
-                </ChartFocusWrapper>
             </div>
 
             {/* ─── Trend Section ─── */}
@@ -789,6 +726,12 @@ const SWAPPABLE_KPI_META: Record<
     assets: { icon: Boxes, gradient: 'from-cyan-500 to-blue-500', drill: '/assets' },
     audits: { icon: ClipboardCheck, gradient: 'from-violet-500 to-purple-500', drill: '/audits' },
     tests: { icon: FlaskConical, gradient: 'from-teal-500 to-emerald-500', drill: '/tests' },
+    // Folded in from the ex-standalone dashboard cards. Exceptions drill to
+    // /controls (they live on the control detail page) and treatment plans to
+    // /risks (they live on the risk detail page) — there is no dedicated list.
+    evidence: { icon: FileCheck2, gradient: 'from-amber-500 to-orange-500', drill: '/evidence' },
+    exceptions: { icon: ShieldAlert, gradient: 'from-rose-500 to-red-500', drill: '/controls' },
+    treatmentPlans: { icon: ClipboardList, gradient: 'from-sky-500 to-indigo-500', drill: '/risks' },
 };
 
 function CustomKpiPanel() {
@@ -811,6 +754,9 @@ function CustomKpiPanel() {
         { value: 'assets', label: labelFor('assets') },
         { value: 'audits', label: labelFor('audits') },
         { value: 'tests', label: labelFor('tests') },
+        { value: 'evidence', label: labelFor('evidence') },
+        { value: 'exceptions', label: labelFor('exceptions') },
+        { value: 'treatmentPlans', label: labelFor('treatmentPlans') },
     ];
     const selectedLabel = labelFor(selected);
     const meta = SWAPPABLE_KPI_META[selected];
@@ -1134,241 +1080,6 @@ function StatusDonutSection({
                 </div>
             </div>
         </Card>
-    );
-}
-
-// ─── Evidence Status ─────────────────────────────────────────────────
-
-function EvidenceStatusSection({
-    exec,
-    trendBundle,
-}: {
-    exec: ExecutiveDashboardPayload;
-    trendBundle: KpiTrendBundle | undefined;
-}) {
-    const t = useTranslations('dashboard');
-    const { evidenceExpiry } = exec;
-    const total =
-        evidenceExpiry.overdue +
-        evidenceExpiry.dueSoon7d +
-        evidenceExpiry.dueSoon30d +
-        evidenceExpiry.current;
-    const currentPercent =
-        total > 0 ? Math.round((evidenceExpiry.current / total) * 100) : 0;
-    // PR-A — Evidence Status now matches the Compliance Alerts
-    // visual weight: a Card with a Heading, the existing four-row
-    // breakdown, a percent-current readout, and (when the trend
-    // bundle is available) the same evidence-overdue sparkline
-    // that the Trend section's TrendCard uses below — so the user
-    // can see the trajectory without scrolling.
-    return (
-        <Card id="evidence-status">
-            <div className="flex items-baseline justify-between mb-3 gap-tight">
-                <Heading level={3}>{t('evidenceStatus')}</Heading>
-                <span
-                    className="text-xs text-content-muted tabular-nums"
-                    data-testid="evidence-status-current-percent"
-                >
-                    {currentPercent}% current
-                </span>
-            </div>
-            {/* PR-A — non-wrapping breakdown. The Heading + total
-                live on the Card above; each row is a `{ label,
-                value, colorClass }` triplet rendered as a single
-                line so the four rows stack into the same vertical
-                rhythm Compliance Alerts uses. */}
-            <StatusBreakdown
-                ariaLabel="Evidence status breakdown"
-                size="sm"
-                showCount
-                showPercent
-                items={[
-                    { label: 'Overdue', value: evidenceExpiry.overdue, colorClass: 'bg-bg-error-emphasis' },
-                    { label: 'Due ≤7d', value: evidenceExpiry.dueSoon7d, colorClass: 'bg-bg-warning-emphasis' },
-                    { label: 'Due ≤30d', value: evidenceExpiry.dueSoon30d, colorClass: 'bg-bg-warning-emphasis' },
-                    { label: 'Current', value: evidenceExpiry.current, colorClass: 'bg-bg-success-emphasis' },
-                ]}
-            />
-            {trendBundle?.evidence && trendBundle.evidence.length > 1 && (
-                <div
-                    className="mt-default rounded-md bg-bg-muted/30 px-default py-tight"
-                    data-testid="evidence-status-trend"
-                >
-                    <TrendCard
-                        label={t("overdueTrend")}
-                        value={
-                            trendBundle.evidence[trendBundle.evidence.length - 1]
-                                .value
-                        }
-                        points={trendBundle.evidence}
-                        colorClassName="text-content-error"
-                    />
-                </div>
-            )}
-        </Card>
-    );
-}
-
-// ─── Compliance Alerts ───────────────────────────────────────────────
-
-function ComplianceAlerts({ exec, t }: { exec: ExecutiveDashboardPayload; t: (key: string, values?: Record<string, string | number | Date>) => string }) {
-    const { stats, evidenceExpiry, taskSummary, vendorSummary, policySummary } = exec;
-    const alerts: { color: string; text: string }[] = [];
-
-    if (evidenceExpiry.overdue > 0)
-        alerts.push({ color: 'bg-bg-error-emphasis', text: t('overdueEvidence', { count: evidenceExpiry.overdue }) });
-    if (stats.pendingEvidence > 0)
-        alerts.push({ color: 'bg-bg-warning-emphasis', text: t('evidenceAwaitingReview', { count: stats.pendingEvidence }) });
-    if (stats.highRisks > 0)
-        alerts.push({ color: 'bg-orange-500', text: t('highCriticalRisks', { count: stats.highRisks }) });
-    if (taskSummary.overdue > 0)
-        alerts.push({ color: 'bg-bg-error-emphasis', text: t('overdueTasksAlert', { count: taskSummary.overdue }) });
-    if (policySummary.overdueReview > 0)
-        alerts.push({ color: 'bg-bg-warning-emphasis', text: t('policiesNeedReview', { count: policySummary.overdueReview }) });
-    if (vendorSummary.overdueReview > 0)
-        alerts.push({ color: 'bg-purple-500', text: t('vendorsNeedReview', { count: vendorSummary.overdueReview }) });
-    if (stats.openFindings > 0)
-        alerts.push({ color: 'bg-purple-500', text: t('openAuditFindings', { count: stats.openFindings }) });
-
-    return (
-        <Card id="compliance-alerts">
-            <Heading level={3} className="mb-3">
-                {t('complianceAlerts')}
-            </Heading>
-            <div className="space-y-tight">
-                {alerts.length === 0 ? (
-                    <p className="text-content-success text-sm">{t('noAlerts')}</p>
-                ) : (
-                    alerts.map((alert, i) => (
-                        <div key={i} className="flex items-center gap-tight text-sm">
-                            <span
-                                className={`w-2 h-2 rounded-full ${alert.color} shrink-0`}
-                            />
-                            <span className="text-content-muted">{alert.text}</span>
-                        </div>
-                    ))
-                )}
-            </div>
-        </Card>
-    );
-}
-
-// ─── Exception Inventory (Epic G-5) ──────────────────────────────────
-//
-// Surfaces exec.exceptions — control-exception health at a glance.
-// No dedicated exceptions list page exists (exceptions live on the
-// control detail page), so the card drills through to /controls.
-
-function DrillHealthCard({
-    id,
-    title,
-    headline,
-    headlineLabel,
-    rows,
-    drillHref,
-    drillLabel,
-}: {
-    id: string;
-    title: string;
-    headline: number;
-    headlineLabel: string;
-    rows: { label: string; value: number; color: string }[];
-    drillHref: string;
-    drillLabel: string;
-}) {
-    return (
-        <Card id={id} className="h-full flex flex-col">
-            <div className="flex items-baseline justify-between mb-3 gap-tight">
-                <Heading level={3}>{title}</Heading>
-                <Link
-                    href={drillHref}
-                    data-drill-link
-                    className="text-xs text-content-link hover:underline whitespace-nowrap"
-                >
-                    {drillLabel}
-                </Link>
-            </div>
-            <div className="mb-default">
-                <KPIStat value={headline} label={headlineLabel} size="sm" />
-            </div>
-            <div className="space-y-tight">
-                {rows.map((item) => (
-                    <div
-                        key={item.label}
-                        className="flex items-center justify-between text-xs"
-                    >
-                        <div className="flex items-center gap-1.5">
-                            <span
-                                className={`w-2 h-2 rounded-full ${item.color} shrink-0`}
-                            />
-                            <span className="text-content-muted">{item.label}</span>
-                        </div>
-                        <span className="text-content-default font-medium tabular-nums">
-                            {item.value}
-                        </span>
-                    </div>
-                ))}
-            </div>
-        </Card>
-    );
-}
-
-function ExceptionSummaryCard({
-    exec,
-    href,
-}: {
-    exec: ExecutiveDashboardPayload;
-    href: (path: string) => string;
-}) {
-    const t = useTranslations('dashboard');
-    const { exceptions } = exec;
-    return (
-        <DrillHealthCard
-            id="exception-summary"
-            title={t('exceptions.title')}
-            headline={exceptions.activeApproved}
-            headlineLabel={t('exceptions.active')}
-            drillHref={href('/controls')}
-            drillLabel={t('exceptions.viewAll')}
-            rows={[
-                { label: t('exceptions.pending'), value: exceptions.pendingRequest, color: 'bg-bg-warning-emphasis' },
-                { label: t('exceptions.expiring7'), value: exceptions.expiringWithin7, color: 'bg-orange-500' },
-                { label: t('exceptions.expiring30'), value: exceptions.expiringWithin30, color: 'bg-bg-warning-emphasis' },
-                { label: t('exceptions.expired'), value: exceptions.expired, color: 'bg-bg-error-emphasis' },
-            ]}
-        />
-    );
-}
-
-// ─── Treatment-Plan Status (Epic G-7) ────────────────────────────────
-//
-// Surfaces exec.treatmentPlans — risk treatment-plan health. Plans
-// live on the risk detail page, so the card drills through to /risks.
-
-function TreatmentPlanCard({
-    exec,
-    href,
-}: {
-    exec: ExecutiveDashboardPayload;
-    href: (path: string) => string;
-}) {
-    const t = useTranslations('dashboard');
-    const { treatmentPlans } = exec;
-    return (
-        <DrillHealthCard
-            id="treatment-plan-status"
-            title={t('treatmentPlans.title')}
-            headline={treatmentPlans.activeOnTrack}
-            headlineLabel={t('treatmentPlans.onTrack')}
-            drillHref={href('/risks')}
-            drillLabel={t('treatmentPlans.viewAll')}
-            rows={[
-                { label: t('treatmentPlans.overdue'), value: treatmentPlans.overdue, color: 'bg-bg-error-emphasis' },
-                { label: t('treatmentPlans.due7'), value: treatmentPlans.dueWithin7, color: 'bg-orange-500' },
-                { label: t('treatmentPlans.due30'), value: treatmentPlans.dueWithin30, color: 'bg-bg-warning-emphasis' },
-                { label: t('treatmentPlans.completed'), value: treatmentPlans.completed, color: 'bg-bg-success-emphasis' },
-            ]}
-        />
     );
 }
 

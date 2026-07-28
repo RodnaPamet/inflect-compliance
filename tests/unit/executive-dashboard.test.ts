@@ -373,15 +373,10 @@ describe('Dashboard — Executive Payload', () => {
         expect(result.policySummary).toBeDefined();
         expect(result.taskSummary).toBeDefined();
         expect(result.vendorSummary).toBeDefined();
-        expect(result.riskHeatmap).toBeDefined();
-        expect(result.upcomingExpirations).toBeDefined();
-        expect(result.exceptions).toBeDefined();
-        expect(result.treatmentPlans).toBeDefined();
         expect(result.computedAt).toBeDefined();
-
-        // Verify new fields
-        expect(Array.isArray(result.riskHeatmap)).toBe(true);
-        expect(Array.isArray(result.upcomingExpirations)).toBe(true);
+        // The risk-heatmap, expiry-list, exception, and treatment-plan
+        // aggregates were removed from the executive payload (the exception
+        // + treatment KPIs moved to the on-demand swappable-KPI slot).
 
         // computedAt is a valid ISO string
         expect(new Date(result.computedAt).toISOString()).toBe(result.computedAt);
