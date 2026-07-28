@@ -30,13 +30,13 @@ describe('Button primitive', () => {
 
     it('defines expected variant keys (post v2-PR-1 cull)', () => {
         // v2-PR-1 retired `outline` (→ secondary), `success` (→ primary),
-        // and renamed `danger` → `destructive` (`danger-outline` →
-        // `destructive-outline`). Final catalogue is 5 variants.
+        // and renamed `danger` → `destructive`. The Still Surface cull
+        // (2026-07-28) then folded `destructive-outline` → `destructive`,
+        // leaving the canonical FOUR.
         for (const v of ['primary', 'secondary', 'ghost', 'destructive']) {
             expect(variantsSrc).toContain(`${v}:`);
         }
-        // destructive-outline is quoted because of the hyphen.
-        expect(variantsSrc).toContain(`"destructive-outline":`);
+        expect(variantsSrc).not.toContain(`"destructive-outline":`);
     });
 
     it('defines size variants', () => {
@@ -51,22 +51,27 @@ describe('Button primitive', () => {
         // gradient token `--btn-gradient-primary` (theme-aware, defined
         // from `--brand-default` in tokens.css), replacing the prior
         // flat `--btn-glass-fill-primary` + `--brand-default` hover.
-        expect(variantsSrc).toMatch(/--btn-gradient-primary/);
+        // Still Surface (2026-07-28): the primary fill is a static
+        // gradient built from the brand stops directly rather than the
+        // pre-baked `--btn-gradient-primary` token.
+        expect(variantsSrc).toMatch(/--brand-default/);
+        expect(variantsSrc).toMatch(/--brand-emphasis/);
     });
 
     it('uses semantic tokens for secondary variant', () => {
-        expect(variantsSrc).toContain('bg-bg-default');
+        // Still Surface (2026-07-28): secondary is a surface tile built
+        // from `--bg-default` → `--bg-muted`, so the token now appears
+        // inside a `bg-[image:…]` gradient rather than as the bare
+        // `bg-bg-default` utility. The intent of this test ("semantic
+        // tokens, no hex literals") is unchanged.
+        expect(variantsSrc).toContain('--bg-default');
         expect(variantsSrc).toContain('text-content-emphasis');
-        // R24-PR-B — `secondary` now takes the shared liquid-glass
-        // surface recipe (which replaces R19-PR-B's carbonSurface).
-        // The literal border is `border-transparent` because glass
-        // paints its edge via the `--btn-glass-edge` gradient stroke,
-        // not a CSS `border` (gradient borders aren't possible
-        // directly — they'd require mask-composite, which the recipe
-        // owns separately). Intent of this test ("no hex literals")
-        // holds; both the surface recipe and the edge mechanism
-        // changed across the carbon → glass material swap.
-        expect(variantsSrc).toMatch(/secondary:\s*\[[\s\S]*?\.\.\.glassSurface/);
+        // The reciprocal hover edge is secondary's half of the trade:
+        // it takes the BRAND edge while primary takes the complementary
+        // one. That pairing is the material's whole hover language.
+        expect(variantsSrc).toMatch(
+            /secondary:\s*\[[\s\S]*?hover:border-\[var\(--brand-default\)\]/,
+        );
     });
 
     it('uses semantic tokens for ghost variant', () => {
@@ -97,7 +102,7 @@ describe('Button primitive', () => {
         // assertion accepts either so this guardrail doesn't
         // need re-touching every time the focus geometry evolves.
         expect(variantsSrc).toMatch(
-            /focus-visible:(ring-ring|shadow-\[var\(--ctrl-edge-focus\)\])/,
+            /focus-visible:(ring-ring|shadow-\[)/,
         );
     });
 

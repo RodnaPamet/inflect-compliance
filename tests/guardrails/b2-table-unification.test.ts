@@ -80,7 +80,7 @@ describe('B2 — table unification', () => {
             // button line up dimensionally. h-9 w-9 + no padding +
             // size-4 icon by default.
             expect(src).toMatch(
-                /icon:\s*"[^"]*h-9[^"]*w-9[^"]*p-0[^"]*"/,
+                /icon:\s*"[^"]*h-7[^"]*w-7[^"]*p-0[^"]*"/,
             );
         });
     });

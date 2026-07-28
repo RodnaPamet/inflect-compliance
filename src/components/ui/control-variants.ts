@@ -76,18 +76,29 @@ export const controlEdge = [
 /**
  * R20 — control sizing scale, mirrored from the button size scale.
  *
- * Same heights and horizontal padding as the button family so an
- * `<Input size="md">` and a `<Button size="md">` line up perfectly
- * when they share a row (the canonical filter-toolbar shape).
- * Kept in lockstep with `button-variants.ts::size` — if one
- * shifts, the other shifts too; the R20-PR-A ratchet asserts the
- * heights match.
+ * Same heights as the button family so an `<Input size="md">` and a
+ * `<Button size="md">` line up perfectly when they share a row (the
+ * canonical filter-toolbar shape). Kept in lockstep with
+ * `button-variants.ts::size` — if one shifts, the other shifts too.
+ *
+ * Still Surface single-rung collapse (2026-07-28). The button ladder
+ * collapsed to one 28px rung, so this scale collapses WITH it — that
+ * is the whole reason it exists. Left alone, every filter toolbar in
+ * the app would pair a 28px button with a 36px input and read as
+ * broken; the lockstep is load-bearing, not decorative.
+ *
+ * Type size tracks the button's 0.76rem rather than the old xs 11px so
+ * a search field and the Filter button beside it read as one row of
+ * the same material. Controls keep `rounded-md` — text-entry surfaces
+ * stay rectangular (B3), and only the button family took the pill.
  */
+const CONTROL_RUNG = "h-7 px-2.5 text-[0.76rem] rounded-md";
+
 export const controlSize = {
-    xs: "h-7 px-2.5 text-[11px] rounded-md",
-    sm: "h-8 px-3 text-xs",
-    md: "h-9 px-3 text-sm",
-    lg: "h-10 px-3.5 text-sm",
+    xs: CONTROL_RUNG,
+    sm: CONTROL_RUNG,
+    md: CONTROL_RUNG,
+    lg: CONTROL_RUNG,
 } as const;
 
 /**

@@ -1727,6 +1727,9 @@
         "docs/implementation-notes/2026-07-28-policy-surface-fixes.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-07-28-still-surface-buttons.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-07-27-calendar-deeplinks-scheduler-tz.md": {
             "class": "historical"
         },

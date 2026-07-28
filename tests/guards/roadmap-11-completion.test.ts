@@ -8,7 +8,11 @@
  *   - PR-1   EmptyState personality on every list page
  *   - PR-2   Skeleton shimmer-sweep + loading.tsx adoption
  *   - PR-3   ErrorState on both route-level error.tsx boundaries
- *   - PR-4   Button press-feedback microinteraction
+ *   - PR-4   Button press-feedback microinteraction — SUPERSEDED
+ *             2026-07-28 by the Still Surface material, which removed
+ *             the press scale outright. The invariant inverted (motion
+ *             is now BANNED, not required), so the ratchet moved to
+ *             `still-surface-button-material.test.ts`.
  *   - PR-5   Animation language lock (durations + easings)
  *   - PR-6   Controls detail tasks sub-table → DataTable
  *   - PR-7   Vendors detail documents sub-table → DataTable
@@ -31,7 +35,9 @@ const ROADMAP_11_RATCHETS = [
     'tests/guards/empty-state-personality.test.ts',
     'tests/guards/skeleton-shimmer-adoption.test.ts',
     'tests/guards/error-state-adoption.test.ts',
-    'tests/guards/button-press-feedback.test.ts',
+    // PR-4's ratchet was superseded by the Still Surface material; the
+    // press-feedback invariant is now the inverse and lives here.
+    'tests/guards/still-surface-button-material.test.ts',
     'tests/guards/animation-language-lock.test.ts',
     'tests/guards/mobile-readiness.test.ts',
     'tests/guards/chart-animation-lock.test.ts',
@@ -70,8 +76,13 @@ const OBSESSION_CHECKLIST: ObsessionItem[] = [
 
     // ─── Microinteraction + motion ────────────────────────────────
     {
-        name: 'every <Button> variant inherits press-down scale on :active (3% shrink)',
-        ratchet: 'tests/guards/button-press-feedback.test.ts',
+        // Was: "every <Button> variant inherits press-down scale on
+        // :active (3% shrink)". Still Surface (2026-07-28) replaced the
+        // scale with a lift→inset shadow inversion — pressed still reads
+        // as pressed, with nothing travelling. The obsession survives;
+        // its mechanism changed.
+        name: 'every <Button> variant shows a distinct pressed state without motion',
+        ratchet: 'tests/guards/still-surface-button-material.test.ts',
     },
     {
         name: 'duration values are bounded to a locked set (no `duration-[Xms]` brackets)',

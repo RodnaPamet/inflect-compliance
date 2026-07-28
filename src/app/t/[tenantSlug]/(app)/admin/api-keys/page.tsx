@@ -415,7 +415,7 @@ export default function ApiKeysPage() {
                         <div className="text-right">
                             <Tooltip content={t('apiKeys.revokeAria')}>
                                 <Button
-                                    variant="destructive-outline"
+                                    variant="destructive"
                                     size="xs"
                                     onClick={() => handleRevoke(row.original)}
                                     aria-label={t('apiKeys.revokeAria')}

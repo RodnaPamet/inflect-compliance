@@ -13,8 +13,8 @@
  *   - `danger`            → renamed `destructive`         (clearer intent)
  *   - `danger-outline`    → renamed `destructive-outline` (matched rename)
  *
- * Final Button variant catalogue (5 — primary, secondary, ghost,
- * destructive, destructive-outline) lives in
+ * Final Button variant catalogue (4 — primary, secondary, ghost,
+ * destructive) lives in
  * `src/components/ui/button-variants.ts`.
  *
  * IMPORTANT: this ratchet ONLY targets the Button variant system.
@@ -54,6 +54,12 @@ const RETIRED_VARIANTS = [
     "success",
     "danger",
     "danger-outline",
+    // Still Surface cull (2026-07-28). The canonical material ships
+    // exactly FOUR shapes; `destructive-outline` was a fifth that read
+    // as a lower-emphasis danger. It folded into `destructive` — same
+    // material, one danger vocabulary. Its 7 call sites (admin
+    // revoke/remove/disable) migrated in the same diff.
+    "destructive-outline",
 ] as const;
 
 // Match `<Button ... variant="<retired>">` (multi-line tolerant since
@@ -180,7 +186,7 @@ describe("v2-PR-1 Button variant cull ratchet", () => {
                     )
                     .join("\n");
                 throw new Error(
-                    `Found ${offenders.length} retired Button variant(s). Use the new catalogue from src/components/ui/button-variants.ts (primary | secondary | ghost | destructive | destructive-outline).\n\nMigration map:\n  outline → secondary\n  success → primary\n  danger → destructive\n  danger-outline → destructive-outline\n\nFirst ${Math.min(15, offenders.length)} offender(s):\n${sample}`,
+                    `Found ${offenders.length} retired Button variant(s). Use the new catalogue from src/components/ui/button-variants.ts (primary | secondary | ghost | destructive).\n\nMigration map:\n  outline → secondary\n  success → primary\n  danger → destructive\n  danger-outline → destructive\n  destructive-outline → destructive\n\nFirst ${Math.min(15, offenders.length)} offender(s):\n${sample}`,
                 );
             }
             expect(offenders).toHaveLength(0);
@@ -193,7 +199,7 @@ describe("v2-PR-1 Button variant cull ratchet", () => {
             "utf8",
         );
 
-        it("declares exactly the 5 final variants", () => {
+        it("declares exactly the 4 canonical variants", () => {
             // Find every `<name>: [` inside the variants block (the
             // CVA shape uses array values). The variant identifier is
             // either bare or quoted (`"destructive-outline":`).
@@ -206,13 +212,7 @@ describe("v2-PR-1 Button variant cull ratchet", () => {
                 block.matchAll(/^\s*"?([a-z][a-z-]*)"?\s*:\s*\[/gm),
             ).map((m) => m[1]);
             expect(declared.sort()).toEqual(
-                [
-                    "destructive",
-                    "destructive-outline",
-                    "ghost",
-                    "primary",
-                    "secondary",
-                ].sort(),
+                ["destructive", "ghost", "primary", "secondary"].sort(),
             );
         });
 

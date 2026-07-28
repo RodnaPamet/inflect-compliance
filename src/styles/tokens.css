@@ -386,6 +386,48 @@
   --btn-glass-fill-destructive: rgba(220, 38, 38, 0.55);
   --btn-glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 6px 14px rgba(0, 0, 0, 0.18);
 
+  /* ── Still Surface — the motionless button material ────────────────
+   *
+   * Supersedes the R19 carbon / R20 aura / R24 glass stacks. Those
+   * built depth out of MOTION (hover fades, press travel, aura bloom);
+   * Still Surface builds it out of static light and one hue trade, so
+   * every state change lands on the same frame as the pointer.
+   *
+   * The four tokens below are the whole material:
+   *   --btn-still-top    edge light along the top third ("raised")
+   *   --btn-still-bot    inset bottom line that seats the tile
+   *   --btn-still-lift   rest elevation
+   *   --btn-still-press  the inversion of that lift on :active
+   *
+   * The hover signal is NOT here — it lives in
+   * `--brand-secondary-default`, which is already documented as
+   * complementary to the brand in both themes (blue↔yellow dark,
+   * navy↔orange light). Hover trades edges between the two families;
+   * nothing moves and no new hue was invented.
+   *
+   * Danger keeps its OWN stops rather than borrowing that
+   * reciprocity — a destructive action must never read as routine. */
+  --btn-still-top:   rgba(255, 255, 255, 0.26);
+  --btn-still-bot:   rgba(0, 0, 0, 0.30);
+  --btn-still-lift:  0 1px 2px rgba(0, 10, 25, 0.45), 0 2px 8px rgba(0, 10, 25, 0.30);
+  --btn-still-press: inset 0 2px 5px rgba(0, 0, 0, 0.42);
+  /* Danger stops. The Still Surface proposal specified #F87171 / #E14A4A
+   * / #FF8B8B here — the red-400 family. Those are TEXT colours for a
+   * dark ground (that is exactly what `--content-error: #f87171` is), and
+   * used as a FILL behind a white label they fail WCAG AA outright:
+   * white on #E14A4A is 3.98:1 and on #F87171 is 2.77:1, against a 4.5:1
+   * floor.
+   *
+   * Deepened to the red-600/700 family so every state clears AA with the
+   * white label — rest 6.47:1, hover 4.83:1, active 8.31:1. The lightest
+   * stop is the floor because the label is white, so the ramp is built
+   * downward from `--bg-error-emphasis` (#DC2626), which is already the
+   * system's solid danger surface. The light theme needed no change; its
+   * reds were dark enough already (8.46:1 / 10.83:1 / 6.96:1). */
+  --btn-still-danger:      #B91C1C;   /* red-700 — rest, lightest stop (6.47:1) */
+  --btn-still-danger-deep: #991B1B;   /* red-800 — gradient tail + rest edge   */
+  --btn-still-danger-lift: #DC2626;   /* red-600 — hover brighten     (4.83:1) */
+
   /* ── Transitions ───────────────────────────────────────────────── */
   --duration-fast:    100ms;
   --duration-default: 150ms;
@@ -797,6 +839,21 @@
   --btn-glass-fill-primary: rgba(208, 74, 2, 0.65);
   --btn-glass-fill-secondary: rgba(60, 50, 40, 0.18);
   --btn-glass-fill-destructive: rgba(220, 38, 38, 0.65);
+
+  /* ── Still Surface (LIGHT) ─────────────────────────────────────────
+   * Warmer, shallower counterparts to the dark stops. The light theme
+   * sits on a warm off-white ground, so the edge light is brighter
+   * (.34 vs .26) while the seat line and lift are softer — a warm
+   * surface shows shadow far more readily than a navy one. Danger
+   * stops are the light-theme reds (red-800 family), matching
+   * `--content-error` the same way the dark stops match theirs. */
+  --btn-still-top:   rgba(255, 255, 255, 0.34);
+  --btn-still-bot:   rgba(0, 0, 0, 0.13);
+  --btn-still-lift:  0 1px 2px rgba(60, 44, 30, 0.14), 0 2px 6px rgba(60, 44, 30, 0.09);
+  --btn-still-press: inset 0 2px 4px rgba(0, 0, 0, 0.22);
+  --btn-still-danger:      #991616;   /* red-800  — matches --content-error */
+  --btn-still-danger-deep: #7C1010;   /* deeper   — gradient tail + rest edge */
+  --btn-still-danger-lift: #B01B1B;   /* lighter  — hover brighten */
 
   /* ── Sidebar band glow (R13-PR2) ───────────────────────────────── */
   /*

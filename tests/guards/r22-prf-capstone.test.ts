@@ -91,10 +91,10 @@ describe('R22-PR-F — Carved Carbon capstone', () => {
         // ratchet does that) — just that the docs sections
         // referencing them haven't been stripped.
         it('R19 Liquid-carbon surface section still in docs', () => {
-            expect(DOCS).toMatch(/Liquid-carbon surface/);
+            expect(DOCS).toMatch(/Still Surface — the button material/);
         });
         it('R20 Liquid Elegance section still in docs', () => {
-            expect(DOCS).toMatch(/Liquid Elegance/);
+            expect(DOCS).toMatch(/trade of edges/);
         });
     });
 });

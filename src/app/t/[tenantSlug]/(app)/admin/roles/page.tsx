@@ -527,7 +527,7 @@ export default function CustomRolesPage() {
                             </Tooltip>
                             <Tooltip content={t('roles.deleteRole')}>
                                 <Button
-                                    variant="destructive-outline"
+                                    variant="destructive"
                                     size="xs"
                                     onClick={() => handleDelete(role)}
                                     aria-label={t('roles.deleteRole')}
