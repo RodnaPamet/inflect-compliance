@@ -5,7 +5,9 @@
  * dark-theme fill — a low-contrast wash. Two fixes:
  *   1. label → `text-content-inverted` (deep navy "metro" blue in dark,
  *      off-white in light) instead of `text-white`.
- *   2. the dark `--btn-glass-fill-primary` deepened from the pale 0.55 yellow
+ *   2. the dark primary fill deepened from the pale 0.55-alpha yellow
+ *      (Still Surface later made the fill fully opaque, retiring the
+ *      `--btn-glass-fill-primary` token this originally named)
  *      to a richer, more saturated gold at higher alpha.
  */
 import * as fs from 'node:fs';
@@ -25,12 +27,22 @@ describe('B10 — dark create-button contrast', () => {
         expect(BV).not.toMatch(/var\(--btn-gradient-primary\)\]\s+text-white/);
     });
 
-    it('the dark primary fill is deepened (not the pale 0.55 wash)', () => {
-        expect(TOKENS).toMatch(
-            /--btn-glass-fill-primary:\s*rgba\(232,\s*185,\s*4,\s*0\.85\)/,
-        );
-        expect(TOKENS).not.toMatch(
-            /--btn-glass-fill-primary:\s*rgba\(255,\s*205,\s*17,\s*0\.55\)/,
-        );
+    it('the primary fill is fully opaque — no translucent wash', () => {
+        // B10's second fix deepened `--btn-glass-fill-primary` from a pale
+        // 0.55-alpha yellow to 0.85, because a translucent brand fill let
+        // the page tone bleed through and washed the label out.
+        //
+        // Still Surface (2026-07-28) removed the alpha problem at its
+        // source: the primary fill is now an OPAQUE gradient between the
+        // brand stops, so there is no alpha left to get wrong. The token
+        // it referenced was retired with the rest of the glass suite.
+        //
+        // What still needs guarding is the invariant B10 actually cared
+        // about — the label must sit on a solid brand surface, not a wash.
+        expect(BV).toMatch(/var\(--brand-default\)/);
+        expect(BV).toMatch(/var\(--brand-emphasis\)/);
+        expect(BV).not.toMatch(/--btn-glass-fill-primary/);
+        // And the retired translucent tokens must not come back.
+        expect(TOKENS).not.toMatch(/--btn-glass-fill-primary/);
     });
 });

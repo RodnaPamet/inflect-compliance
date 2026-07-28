@@ -156,104 +156,6 @@
   --shadow:     0 4px 12px rgba(0, 0, 0, 0.40);
   --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.50);
 
-  /* ── Liquid-carbon button surface (Roadmap-19) ─────────────────────
-   * Buttons read as LIQUID CARBON — a deep, dark, voluminous
-   * surface, wet-looking but never a hard mirror shine. Think a
-   * pool of dark liquid graphite lit softly from above, not a
-   * matte slab and not glossy plastic. Three tokens, layered:
-   *
-   *   --btn-carbon-overlay — a SEMI-TRANSPARENT depth field
-   *     painted OVER the variant's base colour. NOT a flat
-   *     top-down ramp — a soft elliptical light POOL near the
-   *     top-centre (the meniscus catch-light), fading fast to a
-   *     near-nothing mid, then deepening to a dark pool at the
-   *     bottom. The radial pool is what reads as "liquid": light
-   *     gathers on a curved wet surface rather than washing the
-   *     whole face. The catch-light peaks at only 11% — present
-   *     enough to read as wet, restrained enough to never be
-   *     "shiny." Transparent so it composes over ANY variant.
-   *
-   *   --btn-carbon-bevel — the box-shadow that gives the surface
-   *     VOLUME. An inset SOFT top highlight (a 1px-spread inset,
-   *     not a hairline — liquid edges are soft) + a faint inset
-   *     bottom glow (the liquid's base catches bounce light) +
-   *     a tight outer drop so the pool sits on the page. Low-
-   *     contrast — volume is FELT, not announced.
-   *
-   *   --btn-carbon-border — the meniscus edge. A hair darker
-   *     than the surface so the silhouette is crisp, with a
-   *     whisper of luminosity so it reads as a liquid edge, not
-   *     a drawn outline. The "subtle border" from the brief.
-   *
-   * DARK theme values below; the LIGHT theme block carries its
-   * own (a liquid pool in light mode needs a deeper bottom pool
-   * + a crisper catch-light to read at all). */
-  --btn-carbon-overlay: radial-gradient(ellipse 130% 80% at 50% -10%, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.02) 32%, rgba(0, 0, 0, 0.10) 62%, rgba(0, 0, 0, 0.20) 100%);
-  --btn-carbon-bevel: inset 0 1px 1px rgba(255, 255, 255, 0.10), inset 0 -2px 3px rgba(255, 255, 255, 0.03), 0 1px 2px rgba(0, 0, 0, 0.38);
-  /* R22-PR-B — softened from α 0.30 → 0.18. R19's 30%-black
-   * meniscus edge read as "loud" against the carbon surface in
-   * R22 review — the silhouette competed with the iridescent
-   * edge instead of supporting it. 18% is the quiet anchor the
-   * iridescent + aura layers want underneath. */
-  --btn-carbon-border: rgba(0, 0, 0, 0.18);
-
-  /* --btn-carbon-grain (Roadmap-19 PR-C) — the micro-grain that
-   * gives the liquid-carbon surface TACTILITY. A grayscale
-   * fractal-noise tile painted as the TOP layer of every carbon
-   * ::before (above the light pool, still under the label). At
-   * 5% opacity it never reads as "texture you can see" — it
-   * reads as a surface that isn't a flat printed rectangle, the
-   * difference between a slab of graphite and a slab of plastic.
-   * Theme-agnostic — grayscale noise at 5% works identically on
-   * the dark + light variant fills, so it lives once in :root
-   * (no per-theme override). `stitchTiles='stitch'` keeps the
-   * 90px tile seamless when it repeats across a wide button. */
-  --btn-carbon-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.05'/%3E%3C/svg%3E");
-
-  /* ── R20 ambient elevation (4-stop, DARK theme) ─────────────────────
-   * R19 gave buttons a CARBON SURFACE — bevel, pool, grain — but the
-   * outer drop never changed. R20 splits the drop into a four-stop
-   * scale so a button has DISTINCT depth at rest, on hover, while
-   * pressed, and while focused. Layered ON TOP of the bevel's inset
-   * highlights (those are the volume FROM the inside) — ambient is
-   * the volume FROM the outside.
-   *
-   *   rest   — a quiet two-stop drop. Close & tight + a wider soft
-   *            halo. Says "this is on the page", not "this is
-   *            floating".
-   *   hover  — the same two-stop shape, lifted. The tight drop pulls
-   *            down 1px; the soft halo widens. Elegance is restraint:
-   *            we don't add NEW shadow stops on hover, we LIFT the
-   *            ones already there.
-   *   press  — collapses to one tight stop. The surface has been
-   *            pushed INTO the page; less light leaks out behind.
-   *   focus  — adds a 4px brand-tinted ring stop OUTSIDE the rest
-   *            drop. The two are stacked (focus ON TOP of rest), so
-   *            a focused button reads as "selected AND elevated".
-   *
-   * Why per-theme: shadow alphas need a different floor on light
-   * mode (a 24%-black drop on a near-white surface barely registers,
-   * whereas the same alpha on a near-black surface is too heavy).
-   * The LIGHT block carries the warm-tinted parallel. */
-  --btn-ambient-rest:  0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.16);
-  --btn-ambient-hover: 0 2px 4px rgba(0, 0, 0, 0.28), 0 6px 16px rgba(0, 0, 0, 0.22);
-  --btn-ambient-press: 0 1px 1px rgba(0, 0, 0, 0.32);
-  /* R22-PR-B — focus ring tightened from 4px → 3px. The 4px
-   * ring read as "default Tailwind focus" — generic. 3px matches
-   * the form-control `--ctrl-edge-focus` shape, so a focused
-   * button and a focused input now wear the EXACT same halo. */
-  --btn-ambient-focus: 0 0 0 3px rgba(255, 205, 17, 0.22), 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.16);
-
-  /* ── R20 iridescent edge (DARK theme) ───────────────────────────────
-   * A linear gradient sweeping from a whisper of brand yellow in
-   * the top-left to a whisper of secondary blue in the bottom-right.
-   * Painted on the PRIMARY variant's `::after` pseudo as a
-   * `border-image` source (PR-B). The alphas are intentionally low —
-   * the edge reads as iridescent on close inspection, NEVER as a
-   * gradient outline. Static (no animation) — the iridescence is a
-   * material property, not a motion gimmick. */
-  --btn-iridescent-gradient: linear-gradient(135deg, rgba(255, 205, 17, 0.55) 0%, rgba(255, 205, 17, 0.18) 35%, rgba(59, 130, 246, 0.18) 65%, rgba(59, 130, 246, 0.55) 100%);
-
   /* ── Primary action-button FILL gradient (DARK theme) ───────────────
    * 2026-06-01. OPAQUE brand→secondary diagonal fill (135°): brand is
    * dominant through the first 60%, ramping to the cool secondary only
@@ -266,22 +168,6 @@
      cool tail (softer/lighter blue, was the darker #3b82f6) so the far corner
      isn't too dark. Transition starts at 50% ("after 1/2"), not 60%. */
   --btn-gradient-primary: linear-gradient(135deg, var(--brand-default) 0%, var(--brand-default) 50%, #6ea6ea 100%);
-
-  /* ── R20 aura wash (DARK theme) ─────────────────────────────────────
-   * The soft brand-tinted halo a primary button casts on hover, as a
-   * pre-composed multi-stop box-shadow string. THREE stops: a 1px
-   * inner ring (currently fully transparent — reserved for PR-B's
-   * iridescent edge ratchet to claim if needed), a tight inner glow
-   * (4px / 18px), and a soft outer bloom (12px / 36px). Brand-tinted
-   * for primary; cool-neutral for secondary. The OUTER bloom is what
-   * reads as "this button is warmly lit"; the inner glow gives the
-   * edge a haptic-feeling tightness.
-   *
-   * Consumed via `::after` (PR-B) so the hover lift composes with
-   * the existing carbon surface without colliding with R19's
-   * `::before` depth-overlay. */
-  --btn-aura-primary: 0 0 0 1px rgba(255, 205, 17, 0.00), 0 4px 18px rgba(255, 205, 17, 0.32), 0 12px 36px rgba(255, 205, 17, 0.14);
-  --btn-aura-neutral: 0 0 0 1px rgba(255, 255, 255, 0.00), 0 4px 18px rgba(255, 255, 255, 0.10), 0 12px 36px rgba(255, 255, 255, 0.06);
 
   /* ── R20 form-control parity edge (DARK theme) ──────────────────────
    * Form controls (Input, Combobox trigger, DatePicker trigger,
@@ -301,90 +187,6 @@
    * the same tactile-lift presence on focus that the button family
    * wears. */
   --ctrl-edge-focus: 0 0 0 3px rgba(255, 205, 17, 0.20), 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.16);
-
-  /* ── R24 liquid-glass button material (DARK theme) ──────────────────
-   *
-   * R19–R22 built the SOLID/machined "carved carbon" button. R24 swaps
-   * the MATERIAL — from carbon to glass — while reusing the existing
-   * composition seams (R19's `::before` depth + R20's `::after` finish).
-   * Architecture lives at `src/components/ui/button-variants.ts`; this
-   * block ships the underlying token surface so the cva recipes have
-   * something to layer.
-   *
-   * External reference: callstack/liquid-glass. Portable techniques:
-   *   - alpha-tinted backdrop + `backdrop-filter: blur(...)` for the
-   *     translucent base
-   *   - 1px gradient edge-sheen for the meniscus catching light
-   *   - layered inner-glow + outer-rim composition
-   * NOT portable (and deliberately rejected for IC's web stack):
-   *   - SwiftUI / iOS Material API bridges
-   *   - native vibrancy rendering hooks
-   *   - React Native LiquidGlass wrapper
-   *
-   * Five tokens, one per layer of the glass material:
-   *
-   *   --btn-glass-tint — the alpha-tinted base FILL the surface paints.
-   *     Holds the translucent material colour. Dark theme uses cool
-   *     gray-white at low alpha so the underlying page tone shows
-   *     through; light theme inverts to a warm darker tint (defined in
-   *     the `:root.light` block below). Variants COMPOSE this with
-   *     their own colour (primary brand-tinted, secondary neutral,
-   *     destructive red-tinted) by stacking gradients in the cva.
-   *
-   *   --btn-glass-blur — the backdrop-filter blur radius. Restrained
-   *     by intent — 8px gives the surface a watery softness without
-   *     the visually noisy "ground-glass" feel of larger blurs.
-   *     Performance-bounded by PR-F's hardening pass (interactive
-   *     surfaces only; not list-row buttons).
-   *
-   *   --btn-glass-edge — the 1px gradient stroke painted via `::after`
-   *     mask-composite (replaces R20's `--btn-iridescent-gradient`
-   *     when the variant is glass-mode). Cooler tint than the carbon
-   *     iridescent so it reads as "light catching a glass edge" not
-   *     "rainbow finish". Top-left bright, bottom-right shadowed —
-   *     a directional cue that the glass has volume.
-   *
-   *   --btn-glass-inner — the inner highlight that appears on the top
-   *     edge of the glass (specular highlight where the surface meets
-   *     ambient light). 1px inset rgba-white at low alpha; lives in
-   *     the same `::before` shadow channel as R19's bevel.
-   *
-   *   --btn-glass-shadow — the outer drop that anchors the glass to
-   *     the page surface (so it doesn't read as "floating off"). Two
-   *     stops: a tight inner shadow + a soft outer bloom; lower alpha
-   *     than carbon because glass shouldn't cast a heavy shadow. */
-  /* R24-PR-B alpha calibration — the R24-PR-A defaults (tint 0.07,
-   * inner 0.12) tested too subtle on the dark METRO navy surface to
-   * read as glass at all. Bumped to the alpha range native OS
-   * vibrancy materials use (tint 0.18–0.28, inner highlight 0.28,
-   * blur 12px). The translucency now clearly communicates "glass
-   * surface" rather than "navy panel with a faint highlight". */
-  --btn-glass-tint: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.08) 100%);
-  --btn-glass-blur: 12px;
-  --btn-glass-edge: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.16) 45%, rgba(0, 0, 0, 0.18) 100%);
-  --btn-glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.24);
-
-  /* R24-hotfix — per-variant translucent fills (DARK theme).
-   * The R24-PR-B variant arrays painted OPAQUE brand colours on
-   * top of the glass tint, so the backdrop-blur had no transparent
-   * base to act on — visually the surface read as opaque navy /
-   * opaque brand-yellow, NOT as glass. The fix: drop the opaque
-   * variant `bg-*` classes from the cva and use per-variant TRANS-
-   * LUCENT fills here so brand identity survives BUT the surface
-   * stays translucent enough for backdrop-blur to register.
-   *
-   * Alpha 0.55 chosen to balance brand visibility (a primary button
-   * still reads as brand-coloured) with translucency (the page tone
-   * still leaks through the backdrop-blur). Lower alphas read as
-   * "ghost variant"; higher alphas dissolve back into opacity. */
-  /* B10 (2026-06-07): deepened from rgba(255,205,17,0.55). The brighter,
-   * more translucent yellow read as a pale wash in dark theme — a deeper,
-   * more saturated gold at higher alpha gives the create button real
-   * presence and pairs with the navy `text-content-inverted` label. */
-  --btn-glass-fill-primary: rgba(232, 185, 4, 0.85);
-  --btn-glass-fill-secondary: rgba(0, 60, 122, 0.55);
-  --btn-glass-fill-destructive: rgba(220, 38, 38, 0.55);
-  --btn-glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 6px 14px rgba(0, 0, 0, 0.18);
 
   /* ── Still Surface — the motionless button material ────────────────
    *
@@ -747,38 +549,6 @@
   --shadow:     0 4px 12px rgba(60, 50, 40, 0.08);
   --shadow-lg:  0 8px 24px rgba(60, 50, 40, 0.12);
 
-  /* ── Liquid-carbon button surface — LIGHT theme ────────────────────
-   * See the dark-theme block for the rationale. The light theme
-   * needs a DEEPER bottom pool — on a light-ish variant surface a
-   * 20%-black floor barely registers, so it goes to 26%. The
-   * meniscus catch-light is warm-white and slightly crisper (13%)
-   * so the "wet" read survives on a brighter face. The bevel
-   * top-highlight lifts to 50% white — a liquid surface in light
-   * mode catches a sharper top-edge gleam. The border is warm-
-   * tinted to match the PwC palette rather than pure black. */
-  --btn-carbon-overlay: radial-gradient(ellipse 130% 80% at 50% -10%, rgba(255, 252, 248, 0.13) 0%, rgba(255, 252, 248, 0.03) 32%, rgba(40, 30, 20, 0.14) 62%, rgba(40, 30, 20, 0.26) 100%);
-  --btn-carbon-bevel: inset 0 1px 1px rgba(255, 255, 255, 0.50), inset 0 -2px 3px rgba(255, 255, 255, 0.10), 0 1px 2px rgba(60, 50, 40, 0.20);
-  /* R22-PR-B — softened α 0.24 → 0.16, warm-graphite preserved. */
-  --btn-carbon-border: rgba(60, 50, 40, 0.16);
-
-  /* ── R20 ambient elevation (4-stop, LIGHT theme) ────────────────────
-   * Warm-tinted parallel of the dark-theme block. Light-mode shadow
-   * needs to LEAN cooler-warm (a true black drop reads dirty on a
-   * cream surface) — alphas come down, the colour shifts to a soft
-   * warm graphite (60/50/40). Focus ring switches to brand orange. */
-  --btn-ambient-rest:  0 1px 2px rgba(60, 50, 40, 0.10), 0 2px 6px rgba(60, 50, 40, 0.06);
-  --btn-ambient-hover: 0 2px 4px rgba(60, 50, 40, 0.14), 0 6px 16px rgba(60, 50, 40, 0.10);
-  --btn-ambient-press: 0 1px 1px rgba(60, 50, 40, 0.14);
-  /* R22-PR-B — focus ring tightened 4px → 3px (light-theme parallel). */
-  --btn-ambient-focus: 0 0 0 3px rgba(208, 74, 2, 0.18), 0 1px 2px rgba(60, 50, 40, 0.10), 0 2px 6px rgba(60, 50, 40, 0.06);
-
-  /* ── R20 iridescent edge (LIGHT theme) ──────────────────────────────
-   * Brand orange ↔ secondary navy. Slightly higher alphas than dark
-   * — on light surfaces, a 55%-alpha gradient stop reads softer
-   * than the same on dark, so the iridescent edge holds its
-   * presence without becoming a hard outline. */
-  --btn-iridescent-gradient: linear-gradient(135deg, rgba(208, 74, 2, 0.60) 0%, rgba(208, 74, 2, 0.18) 35%, rgba(30, 58, 138, 0.18) 65%, rgba(30, 58, 138, 0.60) 100%);
-
   /* ── Primary action-button FILL gradient (LIGHT theme) ──────────────
    * Brand orange dominant through the first 60%, ramping to a SUBTLE
    * navy (#1e3a8a) corner in the final stretch (135°). See the
@@ -787,13 +557,6 @@
   /* UI-11: see dark-theme note. Light-theme cool tail lightened from the very
      dark navy #1e3a8a to a soft periwinkle, transition starting at 50%. */
   --btn-gradient-primary: linear-gradient(135deg, var(--brand-default) 0%, var(--brand-default) 50%, #5e7fc0 100%);
-
-  /* ── R20 aura wash (LIGHT theme) ───────────────────────────────────
-   * Brand orange for primary; warm-neutral for secondary. Outer
-   * bloom is tighter than dark (lift on a light surface needs less
-   * spread to read), inner glow holds the same haptic edge. */
-  --btn-aura-primary: 0 0 0 1px rgba(208, 74, 2, 0.00), 0 4px 14px rgba(208, 74, 2, 0.28), 0 10px 28px rgba(208, 74, 2, 0.12);
-  --btn-aura-neutral: 0 0 0 1px rgba(60, 50, 40, 0.00), 0 4px 14px rgba(60, 50, 40, 0.10), 0 10px 28px rgba(60, 50, 40, 0.06);
 
   /* ── R20 form-control parity edge (LIGHT theme) ─────────────────────
    * Warmer borders. Rest: 22% warm-grey (a softer outline than the
@@ -808,37 +571,6 @@
    * subtle on cream surfaces). See the dark-theme block above for
    * the rationale. */
   --ctrl-edge-focus: 0 0 0 3px rgba(208, 74, 2, 0.20), 0 1px 2px rgba(60, 50, 40, 0.10), 0 2px 6px rgba(60, 50, 40, 0.06);
-
-  /* ── R24 liquid-glass button material (LIGHT theme) ─────────────────
-   *
-   * Light-theme glass tokens — mirror of the dark-theme R24 block above
-   * with inverted alphas and warm-graphite tints. The tint base is a
-   * cool-white wash (not pure white) so the glass has a subtle blue
-   * undertone against the cream `--bg-default` (#F8F6F3); pure white
-   * would dissolve into the page. Edge sheen uses warm-graphite for
-   * the shadowed stop instead of dark-theme's near-black. Inner
-   * highlight + outer shadow drop their alphas (light surfaces need
-   * less depth contrast). Blur radius matches the dark theme — it's
-   * a perceptual constant, not a brightness-dependent value. */
-  /* R24-PR-B alpha calibration — light theme tint stays high (cream
-   * surfaces need more material density than dark to read as glass)
-   * but inner highlight + outer shadow bumped in proportion so the
-   * light + dark experiences are equally visible. Blur matches at
-   * 12px. */
-  --btn-glass-tint: linear-gradient(180deg, rgba(255, 252, 248, 0.55) 0%, rgba(255, 252, 248, 0.28) 100%);
-  --btn-glass-blur: 12px;
-  --btn-glass-edge: linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.26) 45%, rgba(60, 50, 40, 0.18) 100%);
-  --btn-glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.80), inset 0 -1px 0 rgba(60, 50, 40, 0.14);
-  --btn-glass-shadow: 0 1px 3px rgba(60, 50, 40, 0.14), 0 6px 14px rgba(60, 50, 40, 0.10);
-
-  /* R24-hotfix — per-variant translucent fills (LIGHT theme).
-   * Higher base alpha (0.65) than dark theme — light surfaces need
-   * more colour density than dark to read as the same brand
-   * identity. Brand orange + warm graphite + red, all translucent
-   * enough for the backdrop-blur to work. */
-  --btn-glass-fill-primary: rgba(208, 74, 2, 0.65);
-  --btn-glass-fill-secondary: rgba(60, 50, 40, 0.18);
-  --btn-glass-fill-destructive: rgba(220, 38, 38, 0.65);
 
   /* ── Still Surface (LIGHT) ─────────────────────────────────────────
    * Warmer, shallower counterparts to the dark stops. The light theme
