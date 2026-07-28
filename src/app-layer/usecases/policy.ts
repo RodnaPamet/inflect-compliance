@@ -1428,6 +1428,55 @@ export async function deletePolicy(ctx: RequestContext, id: string) {
     });
 }
 
+/**
+ * Reverse an archive — the missing half of `archivePolicy`.
+ *
+ * Archiving is a STATUS transition (`status: 'ARCHIVED'`) and, until now, a
+ * ONE-WAY DOOR: nothing anywhere set the status back. The two paths that write
+ * DRAFT (`createPolicyVersion` and a rejected approval) both refuse archived
+ * policies outright, so an archived policy could not be edited, reviewed,
+ * published, or recovered by any route.
+ *
+ * NOT to be confused with `restorePolicy`, which reverses a SOFT DELETE
+ * (`deletedAt`). Those are independent axes — a policy can be archived without
+ * being deleted, and `/restore` does nothing for an archived one.
+ *
+ * Lands in DRAFT, deliberately, rather than the status it held before.
+ * Restoring straight to PUBLISHED would put a live document back in front of
+ * users — and re-open acknowledgement obligations — without passing the
+ * approval gate. DRAFT means the normal review path applies, which is the
+ * conservative reading of "undo the archive".
+ */
+export async function unarchivePolicy(ctx: RequestContext, policyId: string) {
+    assertCanAdminPolicies(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const policy = await PolicyRepository.getById(db, ctx, policyId);
+        if (!policy) throw notFound('Policy not found');
+        if (policy.status !== 'ARCHIVED') {
+            throw conflict('This policy is not archived.');
+        }
+
+        await PolicyRepository.updateStatus(db, ctx, policyId, 'DRAFT');
+
+        await logEvent(db, ctx, {
+            action: 'POLICY_UNARCHIVED',
+            entityType: 'Policy',
+            entityId: policyId,
+            details: `Restored from archive: ${policy.title}`,
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'Policy',
+                fromStatus: 'ARCHIVED',
+                toStatus: 'DRAFT',
+                reason: 'Restored from archive',
+            },
+        });
+
+        return PolicyRepository.getById(db, ctx, policyId);
+    });
+}
+
 export async function restorePolicy(ctx: RequestContext, id: string) {
     return restoreEntity(ctx, 'Policy', id);
 }

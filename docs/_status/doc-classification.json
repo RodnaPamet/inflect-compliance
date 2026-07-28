@@ -1724,6 +1724,9 @@
         "docs/implementation-notes/2026-07-27-control-test-evidence-integrity.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-07-28-policy-surface-fixes.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-07-27-calendar-deeplinks-scheduler-tz.md": {
             "class": "historical"
         },

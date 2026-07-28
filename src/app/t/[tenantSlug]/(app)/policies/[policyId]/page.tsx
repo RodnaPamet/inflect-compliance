@@ -172,6 +172,15 @@ export default function PolicyDetailPage() {
     // Action state
     const [actionLoading, setActionLoading] = useState('');
     // Emergency publish-bypass modal (admin-only "Publish without approval").
+    /**
+     * Bumped after publish / rollback to force the acknowledgement panel to
+     * refetch. Both operations run `carryForwardAckCampaign`, which re-opens
+     * everyone's acknowledgement against the new version — so a mounted panel
+     * that does not refetch keeps telling the viewer they are compliant when
+     * the server has just recorded that they are not.
+     */
+    const [ackRefreshToken, setAckRefreshToken] = useState(0);
+    const [archiveOpen, setArchiveOpen] = useState(false);
     const [bypassOpen, setBypassOpen] = useState(false);
     const [bypassReason, setBypassReason] = useState('');
     // A4 — rollback confirmation (names the target version before committing).
@@ -381,6 +390,7 @@ export default function PolicyDetailPage() {
             if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
             setBypassOpen(false);
             setBypassReason('');
+            setAckRefreshToken((n) => n + 1);
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
     };
@@ -390,6 +400,7 @@ export default function PolicyDetailPage() {
         try {
             const res = await fetch(apiUrl(`/policies/${policyId}/rollback`), { method: 'POST' });
             if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            setAckRefreshToken((n) => n + 1);
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
     };
@@ -403,6 +414,22 @@ export default function PolicyDetailPage() {
             if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
+    };
+
+    /**
+     * Reverse an archive. Lands the policy in DRAFT (see `unarchivePolicy`),
+     * so the normal review path applies before it can go live again.
+     */
+    const unarchivePolicyAction = async () => {
+        setActionLoading('unarchive');
+        try {
+            const res = await fetch(apiUrl(`/policies/${policyId}/unarchive`), { method: 'POST' });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            toast.success(t('detail.unarchivedToast'));
+            await fetchPolicy();
+        } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : t('detail.errUnknown'));
+        } finally { setActionLoading(''); }
     };
 
     // ── Helpers ──
@@ -659,6 +686,16 @@ export default function PolicyDetailPage() {
                             {t('detail.requestApproval')}
                         </Button>
                     )}
+                    {/* Restore. Archiving used to be a one-way door — there was
+                        no inverse anywhere in the product, and an archived
+                        policy could not be edited, reviewed or published, so it
+                        was effectively destroyed by a single unconfirmed
+                        click. Offered on the same tier that archived it. */}
+                    {canAdmin && policy.status === 'ARCHIVED' && (
+                        <Button variant="secondary" size="sm" onClick={unarchivePolicyAction} disabled={!!actionLoading} id="unarchive-btn">
+                            {actionLoading === 'unarchive' ? t('detail.restoring') : t('detail.restoreFromArchive')}
+                        </Button>
+                    )}
                     {canPublishNow && (
                         <Button variant="secondary" size="sm" onClick={() => approvedTargetVersionId && publishVersion(approvedTargetVersionId)} disabled={!!actionLoading} id="header-publish">
                             {t('detail.publish')}
@@ -681,7 +718,7 @@ export default function PolicyDetailPage() {
                         }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus className="-ml-0.5 -mr-2.5" />{t('detail.version')}</button>
                     )}
                     {canAdmin && policy.status !== 'ARCHIVED' && (
-                        <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={archivePolicy} disabled={actionLoading === 'archive'} id="archive-btn">
+                        <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={() => setArchiveOpen(true)} disabled={actionLoading === 'archive'} id="archive-btn">
                             {actionLoading === 'archive' ? '...' : t('detail.archive')}
                         </Button>
                     )}
@@ -1129,6 +1166,8 @@ export default function PolicyDetailPage() {
                     policyId={policyId}
                     canAdmin={canAdmin}
                     isPublished={policy.status === 'PUBLISHED'}
+                    refreshToken={ackRefreshToken}
+                    currentVersionNumber={headerVersion?.versionNumber ?? null}
                 />
             )}
             {tab === 'tasks' && (
@@ -1210,6 +1249,23 @@ export default function PolicyDetailPage() {
                 become live (the newest recorded lifecycle-history entry) before
                 committing. tone="warning": rollback re-publishes a prior version,
                 it is not a destructive delete. */}
+            {/* Archive confirmation.
+                Archiving withdraws the policy from the library and blocks
+                every edit path — createPolicyVersion and requestPolicyApproval
+                both refuse archived policies — so it is far more consequential
+                than the rollback below, which HAD a confirm while this had
+                none. `tone="warning"` rather than "danger" because it is now
+                genuinely reversible via Restore. */}
+            <ConfirmDialog
+                showModal={archiveOpen}
+                setShowModal={setArchiveOpen}
+                tone="warning"
+                title={t('detail.archiveConfirmTitle')}
+                description={t('detail.archiveConfirmBody')}
+                confirmLabel={t('detail.archiveConfirmLabel')}
+                onConfirm={archivePolicy}
+            />
+
             <ConfirmDialog
                 showModal={rollbackOpen}
                 setShowModal={setRollbackOpen}

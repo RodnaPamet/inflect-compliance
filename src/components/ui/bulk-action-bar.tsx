@@ -68,7 +68,7 @@ export interface BulkActionDef {
 export interface BulkActionBarProps {
     actions: BulkActionDef[];
     /** Apply handler — `(actionId, value, optimisticLabel)`. */
-    onApply: (action: string, value: string, label: string) => void;
+    onApply: (action: string, value: string, label: string) => void | Promise<void>;
     /** True while the consumer's bulk mutation is in flight. */
     applying?: boolean;
     /** Number of selected rows — surfaced in the confirm dialog. */
@@ -112,9 +112,18 @@ export function BulkActionBar({
     const ready = !!action && (active?.canApply ? active.canApply(value) : true);
 
     // Apply — destructive actions route through a confirm dialog first.
-    const handleApply = () => {
-        if (active?.confirm) setConfirmOpen(true);
-        else onApply(action, value, label);
+    //
+    // `onApply` is AWAITED. It was called bare, so a caller whose handler
+    // rejected produced an unhandled promise rejection: no toast, no error
+    // state, and the selection left intact as though nothing had been
+    // attempted. Awaiting it lets a rejection surface as a normal error at
+    // this boundary instead of escaping the React tree.
+    const handleApply = async () => {
+        if (active?.confirm) {
+            setConfirmOpen(true);
+            return;
+        }
+        await onApply(action, value, label);
     };
 
     const noun = entityLabel ?? t('table.items');
@@ -166,7 +175,7 @@ export function BulkActionBar({
                         confirmLabel={verb}
                         onConfirm={() => {
                             setConfirmOpen(false);
-                            onApply(action, value, label);
+                            void Promise.resolve(onApply(action, value, label));
                         }}
                     />
                 );

@@ -22,6 +22,8 @@
  *   - updatePolicyMetadata — nextReviewAt three-state (undefined =
  *     no change, null = clear, string = parsed), audit, notFound.
  *   - archivePolicy — fromStatus/toStatus audit, notFound, admin gate.
+ *   - unarchivePolicy — DRAFT landing (not the prior status), the
+ *     not-archived conflict, notFound, admin gate.
  *   - deletePolicy / restorePolicy / purgePolicy / listPoliciesWithDeleted —
  *     admin gates + soft-delete delegation.
  */
@@ -105,6 +107,7 @@ import {
     createPolicyFromTemplate,
     updatePolicyMetadata,
     archivePolicy,
+    unarchivePolicy,
     deletePolicy,
     restorePolicy,
     purgePolicy,
@@ -424,6 +427,56 @@ describe('archivePolicy', () => {
 
     it('rejects EDITOR (admin gate)', async () => {
         await expect(archivePolicy(editorCtx, 'p-1')).rejects.toBeDefined();
+        expect(PolicyRepository.getById).not.toHaveBeenCalled();
+    });
+});
+
+// ─── unarchivePolicy ───────────────────────────────────────────────
+
+describe('unarchivePolicy', () => {
+    it('lands in DRAFT and emits audit with fromStatus/toStatus', async () => {
+        (PolicyRepository.getById as jest.Mock).mockResolvedValue({ id: 'p-1', title: 'X', status: 'ARCHIVED' });
+
+        await unarchivePolicy(adminCtx, 'p-1');
+
+        expect(PolicyRepository.updateStatus).toHaveBeenCalledWith(mockDb, adminCtx, 'p-1', 'DRAFT');
+        const payload = (logEvent as jest.Mock).mock.calls[0][2];
+        expect(payload.action).toBe('POLICY_UNARCHIVED');
+        expect(payload.detailsJson.fromStatus).toBe('ARCHIVED');
+        expect(payload.detailsJson.toStatus).toBe('DRAFT');
+    });
+
+    // The load-bearing half of the design: restoring straight to PUBLISHED
+    // would put a live document back in front of users — and re-open
+    // acknowledgement obligations — without passing the approval gate. A
+    // policy archived while PUBLISHED must still come back as a DRAFT.
+    it('lands in DRAFT even when the policy was PUBLISHED before archiving', async () => {
+        (PolicyRepository.getById as jest.Mock).mockResolvedValue({
+            id: 'p-1', title: 'X', status: 'ARCHIVED', currentVersionId: 'v-3',
+        });
+
+        await unarchivePolicy(adminCtx, 'p-1');
+
+        expect(PolicyRepository.updateStatus).toHaveBeenCalledWith(mockDb, adminCtx, 'p-1', 'DRAFT');
+        expect(PolicyRepository.updateStatus).not.toHaveBeenCalledWith(mockDb, adminCtx, 'p-1', 'PUBLISHED');
+    });
+
+    it('refuses a policy that is not archived', async () => {
+        (PolicyRepository.getById as jest.Mock).mockResolvedValue({ id: 'p-1', title: 'X', status: 'PUBLISHED' });
+
+        await expect(unarchivePolicy(adminCtx, 'p-1')).rejects.toThrow(/not archived/i);
+        expect(PolicyRepository.updateStatus).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('throws notFound when policy missing', async () => {
+        (PolicyRepository.getById as jest.Mock).mockResolvedValue(null);
+        await expect(unarchivePolicy(adminCtx, 'missing')).rejects.toThrow(/Policy not found/i);
+        expect(PolicyRepository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('rejects EDITOR (admin gate — mirrors archivePolicy)', async () => {
+        await expect(unarchivePolicy(editorCtx, 'p-1')).rejects.toBeDefined();
         expect(PolicyRepository.getById).not.toHaveBeenCalled();
     });
 });
