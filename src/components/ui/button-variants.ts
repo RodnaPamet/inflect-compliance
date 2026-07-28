@@ -51,14 +51,31 @@ import { cva } from "class-variance-authority";
  * object as a primary one, or "dangerous" gets confused with
  * "different kind of control".
  */
-function stillTile(from: string, to: string, lift: string) {
+function stillTile(from: string, to: string, lift: string, base: string) {
   return [
+    // SOLID background-color under the gradient. Load-bearing for
+    // accessibility, not a fallback nicety: a tile painted only with
+    // `background-image` has no colour for a contrast checker to resolve,
+    // so axe walks up to the nearest ancestor with a real
+    // `background-color` — the page — and measures the label against
+    // THAT. On primary that meant navy-on-navy (~1:1) and axe reported a
+    // serious colour-contrast violation on every page, even though the
+    // label against the actual gradient is ~9.6:1.
+    //
+    // `base` is deliberately the WORST-CASE stop for this variant's text
+    // colour, so what a checker measures is the true floor rather than a
+    // flattering midpoint: the DEEP stop where the label is dark (primary
+    // — dark ink needs a light field) and the LIGHTEST stop where the
+    // label is white (destructive — white needs a dark field).
+    `bg-[${base}]`,
     `bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,${from},${to})]`,
     `border-[${to}]`,
     "shadow-[var(--btn-still-lift),inset_0_-1px_0_var(--btn-still-bot)]",
     // Hover brightens the gradient by shifting BOTH stops one rung up
     // the ramp — the tile gets lighter without losing its fall. A flat
     // brand fill on hover would read as the gradient collapsing.
+    // The hover base tracks the hover gradient for the same reason.
+    `hover:bg-[${lift}]`,
     `hover:bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,${lift},${from})]`,
     // Press: the lift inverts to an inset and the gradient flattens to
     // the deep stop. Pressed still reads as pressed with nothing
@@ -109,6 +126,8 @@ export const buttonVariants = cva(
             "var(--brand-default)",
             "var(--brand-emphasis)",
             "var(--brand-muted)",
+            // Dark ink on a light field → the DEEP stop is the floor.
+            "var(--brand-emphasis)",
           ),
           "text-content-inverted",
           "hover:border-[var(--brand-secondary-default)]",
@@ -118,6 +137,7 @@ export const buttonVariants = cva(
         //    edge on hover. Primary borrows secondary's hue, secondary
         //    borrows primary's — that reciprocity is the hover language.
         secondary: [
+          "bg-[var(--bg-muted)]",
           "bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_52%),linear-gradient(to_bottom,var(--bg-default),var(--bg-muted))]",
           "text-content-emphasis border-[var(--border-emphasis)]",
           "shadow-[var(--btn-still-lift)]",
@@ -141,6 +161,8 @@ export const buttonVariants = cva(
             "var(--btn-still-danger)",
             "var(--btn-still-danger-deep)",
             "var(--btn-still-danger-lift)",
+            // White label on a dark field → the LIGHTEST stop is the floor.
+            "var(--btn-still-danger)",
           ),
           "text-white",
         ],

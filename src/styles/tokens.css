@@ -411,9 +411,22 @@
   --btn-still-bot:   rgba(0, 0, 0, 0.30);
   --btn-still-lift:  0 1px 2px rgba(0, 10, 25, 0.45), 0 2px 8px rgba(0, 10, 25, 0.30);
   --btn-still-press: inset 0 2px 5px rgba(0, 0, 0, 0.42);
-  --btn-still-danger:      #F87171;   /* red-400  — matches --content-error */
-  --btn-still-danger-deep: #E14A4A;   /* deeper   — gradient tail + rest edge */
-  --btn-still-danger-lift: #FF8B8B;   /* lighter  — hover brighten */
+  /* Danger stops. The Still Surface proposal specified #F87171 / #E14A4A
+   * / #FF8B8B here — the red-400 family. Those are TEXT colours for a
+   * dark ground (that is exactly what `--content-error: #f87171` is), and
+   * used as a FILL behind a white label they fail WCAG AA outright:
+   * white on #E14A4A is 3.98:1 and on #F87171 is 2.77:1, against a 4.5:1
+   * floor.
+   *
+   * Deepened to the red-600/700 family so every state clears AA with the
+   * white label — rest 6.47:1, hover 4.83:1, active 8.31:1. The lightest
+   * stop is the floor because the label is white, so the ramp is built
+   * downward from `--bg-error-emphasis` (#DC2626), which is already the
+   * system's solid danger surface. The light theme needed no change; its
+   * reds were dark enough already (8.46:1 / 10.83:1 / 6.96:1). */
+  --btn-still-danger:      #B91C1C;   /* red-700 — rest, lightest stop (6.47:1) */
+  --btn-still-danger-deep: #991B1B;   /* red-800 — gradient tail + rest edge   */
+  --btn-still-danger-lift: #DC2626;   /* red-600 — hover brighten     (4.83:1) */
 
   /* ── Transitions ───────────────────────────────────────────────── */
   --duration-fast:    100ms;
