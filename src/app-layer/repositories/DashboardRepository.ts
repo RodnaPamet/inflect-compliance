@@ -477,13 +477,12 @@ export class DashboardRepository {
         const tenantId = ctx.tenantId;
         const now = new Date();
         // Bucket boundaries come from the shared urgency scale so "due
-        // soon" means the same number of days here, on the calendar, and
-        // on the ExpiryCalendar widget.
+        // soon" means the same number of days here and on the calendar.
         const in7d = new Date(now.getTime() + URGENCY_MS.URGENT);
         const in30d = new Date(now.getTime() + URGENCY_MS.UPCOMING);
         // Shared expiry scope — the same predicate the compliance calendar
-        // and the ExpiryCalendar list use, so all three agree on which
-        // evidence rows exist at all. See app-layer/domain/evidence-expiry.
+        // uses, so both agree on which evidence rows exist at all.
+        // See app-layer/domain/evidence-expiry.
         const base = evidenceExpiryScopeWhere(tenantId);
 
         const [overdue, dueSoon7d, dueSoon30d, noReviewDate, current] = await Promise.all([

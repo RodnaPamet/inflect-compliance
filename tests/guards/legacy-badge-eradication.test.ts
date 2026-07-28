@@ -36,10 +36,8 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 // property accessor (e.g. `config.badge`, `badge.tone`) rather than as
 // the legacy `.badge` CSS class. Each exemption needs a written reason.
 const EXEMPT_FILES = new Set<string>([
-  // ExpiryCalendar uses `config.badge` / `itemConfig.badge` as property
-  // accessors — the property holds an arbitrary class string for the
-  // 3-tier urgency gradient. Exempt from PR-1 raw-color migration too.
-  "src/components/ui/ExpiryCalendar.tsx",
+  // (ExpiryCalendar.tsx removed 2026-07-27 — the dashboard's Evidence Expiry
+  //  card was its only consumer, so trimming the card left it unimported.)
   // RiskEvaluationFields (shared create/edit scoring box) uses `badge.tone`
   // (not the .badge CSS class) — `badge` is a local variable holding a
   // `{ tone, label }` shape for the risk-score preview styling. The code

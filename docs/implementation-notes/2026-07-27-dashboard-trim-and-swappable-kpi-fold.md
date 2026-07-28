@@ -54,6 +54,7 @@ fills with, tying the "still building" posture band to the setup call-to-action.
 | `src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx` | Deleted 5 card components + 2 dynamic imports + `matrixConfig` prop; +3 `SWAPPABLE_KPI_META` entries + dropdown options |
 | `src/app/t/[tenantSlug]/(app)/dashboard/page.tsx` | Dropped the `getRiskMatrixConfig` fetch + `matrixConfig` prop |
 | `src/app/t/[tenantSlug]/(app)/dashboard/PostureHeroCard.tsx` | "Developing" label → gradient-clipped text |
+| `src/components/ui/ExpiryCalendar.tsx` | Deleted — the dashboard was its only consumer |
 | `messages/{en,bg}.json` | +3 `customKpi.*` dropdown labels |
 
 ## Decisions
@@ -77,3 +78,14 @@ fills with, tying the "still building" posture band to the setup call-to-action.
   removed rendering; each was rewritten to assert the new end-state (compute
   surfaced via the swappable slot, payload trimmed) rather than deleted
   wholesale.
+- **Deleted the orphaned `<ExpiryCalendar>` rather than parking it.** The
+  dashboard's Evidence Expiry card was its only consumer, so removing the card
+  left the component with zero importers. Its test coverage was structural
+  greps over its own source — the kind that keeps passing after the last
+  render site is gone. What survives is the part that was ever load-bearing:
+  the `@/lib/urgency` threshold behaviour, moved to
+  `tests/unit/urgency-scale.test.ts` (the old `risk-heatmap-expiry.test.ts`,
+  renamed now that both widgets it named are deleted). Three stale code
+  comments in `DashboardRepository` / `compliance-calendar` /
+  `domain/evidence-expiry` that named the widget as a live surface were
+  corrected in the same pass.

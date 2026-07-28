@@ -430,7 +430,7 @@ async function loadEvidenceEvents(
         where: {
             // Shared expiry scope — soft-deleted + archived evidence is
             // gone, so a review deadline for it is a phantom. This is the
-            // same predicate the dashboard's ExpiryCalendar + KPI use.
+            // same predicate the dashboard's evidence KPI uses.
             ...evidenceExpiryScopeWhere(ctx.tenantId),
             nextReviewDate: { not: null, gte: range.from, lte: range.to },
         },

@@ -165,7 +165,7 @@ The hook has:
 You *may* keep the native HTML `title` attribute for these cases, and only these:
 
 1. **Truncation fallback** on `max-w-* truncate` spans where the full value is useful but a tooltip per element would be excessive. Example: `reports/soa/SoAClient.tsx` justification cell, `controls/[controlId]/page.tsx` syncError pre.
-2. **Density visualisations** (heatmaps, progress bars, calendar cells) — tens to hundreds of elements where portalising a Radix Tooltip per cell is the wrong cost. Example: `RiskHeatmap`, `ExpiryCalendar`, `StatusBreakdown`, `ProgressCard`, the admin/roles permission matrix, risks/dashboard matrix.
+2. **Density visualisations** (heatmaps, progress bars, calendar cells) — tens to hundreds of elements where portalising a Radix Tooltip per cell is the wrong cost. Example: `RiskMatrix`, `CalendarMonth`, `StatusBreakdown`, `ProgressCard`, the admin/roles permission matrix, risks/dashboard matrix.
 3. **Row-select checkboxes** with an existing `aria-label`. Adding a visible tooltip to every row's select checkbox is clutter.
 
 Anywhere else, reach for `<Tooltip>`. The `title=` ratchet (`tests/guards/no-ad-hoc-tooltip-title.test.ts`) caps the count and fails CI if it grows beyond the documented baseline.
