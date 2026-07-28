@@ -48,20 +48,16 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         <Tooltip content={disabledTooltip}>
           <div
             className={cn(
-              "flex items-center justify-center gap-x-2 cursor-not-allowed",
-              // R22-PR-A — radius mirror (12→10px).
-              "rounded-full border border-border-subtle bg-bg-subtle text-sm text-content-subtle",
-              // R20-PR-C — horizontal padding mirrors the airy
-              // density scale (xs/sm don't size up; md/lg do).
-              // R20-PR-E — graded font-weight ladder also mirrors
-              // the cva size scale.
-              // R20-PR-F density correction: md px-4→px-3, lg px-6→px-4.
-              // button-density-tighter (2026-05-15) second pass:
-              // xs → px-2, sm/md → px-2.5, lg → px-3.
-              size === "xs" && "h-7 px-2 text-[11px] font-medium",
-              size === "sm" && "h-8 px-2.5 text-xs font-medium",
-              size === "lg" && "h-10 px-3 font-bold",
-              !size && "h-9 px-2.5 font-semibold",
+              "flex items-center justify-center gap-tight cursor-not-allowed",
+              "rounded-full border border-border-subtle bg-bg-subtle text-content-subtle",
+              // Still Surface single-rung ladder (2026-07-28). This
+              // branch does NOT route through the cva variant (it is a
+              // cn-only fallback for a non-interactive shape), so it
+              // must mirror the size scale in `button-variants.ts`
+              // exactly. Every rung is the same 28px geometry, so the
+              // mirror collapses to one unconditional line — there is
+              // no longer a per-size branch to keep in sync.
+              "h-7 px-[0.7rem] text-[0.76rem] tracking-[0.005em] font-[560]",
               className,
             )}
           >
@@ -110,31 +106,14 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           props.disabled || loading
             ? cn(
                 "flex items-center justify-center gap-tight whitespace-nowrap",
-                // R22-PR-A — radius mirror (12→10px).
                 "rounded-full border border-border-subtle bg-bg-subtle text-content-subtle",
-                "cursor-not-allowed outline-none text-sm",
-                // R20-PR-C — mirror the airy density scale from
-                // button-variants.ts. These classes drive the disabled
-                // branch which does NOT route through the cva variant
-                // (cn-only fallback for a non-interactive shape), so
-                // they must move in lockstep. The R20-PR-C ratchet
-                // asserts the two scales agree.
-                //
-                // R20-PR-E — graded font-weight ladder also mirrored
-                // here (medium for xs/sm, semibold for md, bold for
-                // lg). Locked by the R20-PR-E ratchet.
-                //
-                // R20-PR-F — density correction. md/lg tightened
-                // (px-4→px-3 and px-6→px-4; lg gap-2.5→gap-tight)
-                // because the PR-C airy padding read as "idle space"
-                // on dense toolbars. Locked by R20-PR-F ratchet.
-                //
-                // button-density-tighter (2026-05-15) — second
-                // tightening pass; mirrors the cva size scale.
-                size === "xs" && "h-7 px-2 text-[11px] gap-1 rounded-md font-medium",
-                size === "sm" && "h-8 px-2.5 text-xs gap-1.5 font-medium",
-                size === "lg" && "h-10 px-3 gap-tight font-bold",
-                !size && "h-9 px-2.5 gap-tight font-semibold",
+                "cursor-not-allowed outline-none",
+                // Still Surface single-rung ladder (2026-07-28). Mirrors
+                // the size scale in `button-variants.ts`; this branch
+                // bypasses the cva variant, so the two must agree. With
+                // every rung at the same 28px geometry the mirror is one
+                // unconditional line rather than a four-way branch.
+                "h-7 px-[0.7rem] text-[0.76rem] tracking-[0.005em] font-[560]",
               )
             : buttonVariants({ variant, size }),
           className,
@@ -196,8 +175,6 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
                   variant === "secondary",
                 "bg-bg-muted text-content-muted": variant === "ghost",
                 "bg-black/25 text-white/80": variant === "destructive",
-                "bg-bg-error text-content-error":
-                  variant === "destructive-outline",
               },
               shortcutClassName,
             )}

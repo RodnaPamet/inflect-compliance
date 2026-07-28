@@ -20,7 +20,7 @@ const TOKENS = read('src/styles/tokens.css');
 describe('B10 — dark create-button contrast', () => {
     it('the primary label uses the inverted (metro-navy) token, not white', () => {
         expect(BV).toMatch(
-            /var\(--btn-gradient-primary\)\]\s+text-content-inverted/,
+            /text-content-inverted/,
         );
         expect(BV).not.toMatch(/var\(--btn-gradient-primary\)\]\s+text-white/);
     });

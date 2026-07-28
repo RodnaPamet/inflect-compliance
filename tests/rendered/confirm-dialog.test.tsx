@@ -137,11 +137,16 @@ describe('ConfirmDialog', () => {
         // semantic bg-bg-error-emphasis token.
         // R24-hotfix replaced the opaque `bg-bg-error-emphasis` with the
         // translucent `--btn-glass-fill-destructive` token so the glass
-        // backdrop-blur has a transparent base to act on. The assertion
-        // tracks the destructive fill token regardless of which opaque/
-        // translucent encoding it currently uses.
+        // backdrop-blur had a transparent base to act on.
+        // Still Surface (2026-07-28) replaced the glass fill with a static
+        // gradient between the danger stops — the destructive tile is the
+        // same material as primary, differing only in hue.
+        //
+        // The assertion tracks the destructive FILL regardless of which
+        // encoding it currently uses; what matters to this test is that
+        // tone="danger" reaches the destructive variant at all.
         expect(confirm.className).toMatch(
-            /bg-(?:bg-error-emphasis|\[var\(--btn-glass-fill-destructive\)\])/,
+            /bg-(?:bg-error-emphasis|\[var\(--btn-glass-fill-destructive\)\]|\[image:[^\]]*--btn-still-danger)/,
         );
     });
 

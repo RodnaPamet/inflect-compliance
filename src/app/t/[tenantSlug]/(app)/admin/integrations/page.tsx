@@ -515,7 +515,7 @@ export default function AdminIntegrationsPage() {
                                                 </Button>
                                             </Tooltip>
                                             <Tooltip content={t('integrations.disableIntegration')}>
-                                                <Button variant="destructive-outline" size="xs" onClick={() => handleDisable(row.original.id)} aria-label={t('integrations.disableIntegration')}>
+                                                <Button variant="destructive" size="xs" onClick={() => handleDisable(row.original.id)} aria-label={t('integrations.disableIntegration')}>
                                                     <Trash2 className="w-3.5 h-3.5" />
                                                 </Button>
                                             </Tooltip>

@@ -288,7 +288,7 @@ export default function ScimAdminPage() {
                                     </div>
                                 </div>
                                 <Button
-                                    variant="destructive-outline"
+                                    variant="destructive"
                                     size="sm"
                                     onClick={() => revokeToken(token.id)}
                                 >

@@ -80,27 +80,35 @@ describe('Button label centering', () => {
             expect(src).toMatch(/shortcut\s*&&\s*"flex-1 text-left"/);
         });
 
-        it('the ::before AND ::after pseudo-overlays are positioned absolute in the cva base', () => {
+        it('the primitive declares NO ::before/::after pseudo layers at all', () => {
             // 2026-05-31 root cause of the persistent "text not centred"
             // report: Tailwind auto-adds `content:""` to a pseudo as soon
             // as ANY `before:`/`after:` utility is used. Without explicit
             // positioning that pseudo is `position:static` → an in-flow
             // 0-width FLEX ITEM. Combined with the button's `gap`, a
-            // static ::before pushes the label right (+~4px), a static
-            // ::after pushes it left — on solid/glass variants where the
-            // surface recipe didn't position its own pseudo. The cva base
-            // (`carbonStates`) MUST anchor both pseudos absolute so they
-            // never join the flex line. This is the load-bearing centring
-            // invariant — do not remove without re-proving centring in a
-            // real build (jsdom can't catch it; it only shows under the
-            // compiled Tailwind cascade).
+            // static ::before pushed the label right (+~4px) and a static
+            // ::after pushed it left.
+            //
+            // Still Surface (2026-07-28) removes the failure mode instead
+            // of managing it. The old material needed pseudo layers to
+            // carry the carbon grain, light pool, iridescent rim and aura
+            // — so the fix then was to anchor every pseudo `absolute`.
+            // The motionless material paints its depth entirely in
+            // `background-image` + `box-shadow` on the element itself, so
+            // there is no pseudo to fall out of position in the first
+            // place.
+            //
+            // Asserting ABSENCE is strictly stronger than asserting
+            // correct positioning: a future PR that reintroduces a
+            // decorative pseudo has to come through this ratchet and
+            // re-prove centring in a real build (jsdom cannot catch it;
+            // it only shows under the compiled Tailwind cascade).
             const variants = read('src/components/ui/button-variants.ts');
-            const base = variants.slice(
-                variants.indexOf('const carbonStates'),
-                variants.indexOf('];', variants.indexOf('const carbonStates')),
-            );
-            expect(base).toMatch(/before:content-\[''\][\s\S]*before:absolute[\s\S]*before:inset-0/);
-            expect(base).toMatch(/after:content-\[''\][\s\S]*after:absolute[\s\S]*after:inset-0/);
+            const withoutComments = variants
+                .replace(/\/\*[\s\S]*?\*\//g, '')
+                .replace(/\/\/[^\n]*/g, '');
+            expect(withoutComments).not.toMatch(/\bbefore:/);
+            expect(withoutComments).not.toMatch(/\bafter:/);
         });
     });
 

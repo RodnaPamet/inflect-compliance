@@ -532,7 +532,7 @@ export default function SsoAdminPage() {
 
                     {existingProvider && (
                         <Button
-                            variant="destructive-outline"
+                            variant="destructive"
                             onClick={handleDelete}
                             className="ml-auto"
                             id="sso-delete-btn"

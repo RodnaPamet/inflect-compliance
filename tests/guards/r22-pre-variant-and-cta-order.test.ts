@@ -110,7 +110,7 @@ describe('R22-PR-E — Variant inventory + CTA-order standard', () => {
             }
         });
 
-        it('button-variants.ts declares exactly 5 variants (no silent additions)', () => {
+        it('button-variants.ts declares exactly 4 variants (no silent additions)', () => {
             // The same regex `button-variant-cull.test.ts` uses —
             // a future PR that adds a 6th variant has to engage
             // with both ratchets and document the addition.
@@ -121,13 +121,7 @@ describe('R22-PR-E — Variant inventory + CTA-order standard', () => {
                 variantBlock.matchAll(/^\s*"?([a-z][a-z-]*)"?\s*:\s*\[/gm),
             ).map((m) => m[1]);
             expect(declared.sort()).toEqual(
-                [
-                    'destructive',
-                    'destructive-outline',
-                    'ghost',
-                    'primary',
-                    'secondary',
-                ].sort(),
+                ['destructive', 'ghost', 'primary', 'secondary'].sort(),
             );
         });
     });

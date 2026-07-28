@@ -34,9 +34,10 @@
  *     primitive.
  *   - `<PageHeader actions>` (v2-PR-5) — list-page primary action
  *     can also use this cluster.
- *   - `<Button>` variants from v2-PR-1 (primary | secondary |
- *     ghost | destructive | destructive-outline) — overflow items
- *     map to typed action shapes the menu renders correctly.
+ *   - `<Button>` variants — the canonical four (primary | secondary |
+ *     ghost | destructive). Overflow items map to typed action shapes
+ *     the menu renders correctly. `destructive-outline` was folded
+ *     into `destructive` by the Still Surface cull (2026-07-28).
  */
 
 import * as React from "react";

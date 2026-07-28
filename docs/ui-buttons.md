@@ -45,26 +45,51 @@ Never use raw Tailwind color scales in migrated pages:
 
 `src/components/ui/button.tsx` — the primary button primitive.
 
-### Variants
+### Variants — the canonical four
 
-| Variant | Usage | Key Tokens |
+There are exactly four. A fifth shape is drift, and two ratchets say so:
+`still-surface-button-material.test.ts` locks the catalogue at the source,
+`button-variant-cull.test.ts` bans the retired names at call sites.
+
+| Variant | Usage | Material |
 |---|---|---|
-| `primary` | Main action (Save, Create) | `bg-brand-600`, `text-white` |
-| `secondary` | Secondary action (Cancel, Back) | `bg-bg-default`, `border-border-subtle` |
-| `outline` | Tertiary action | `border-border-subtle`, `bg-transparent` |
-| `ghost` | Borderless (toolbar toggles) | `hover:bg-bg-muted` |
-| `danger` | Destructive (Delete, Revoke) | `bg-red-600` |
-| `danger-outline` | Soft destructive | `border-red-500/50`, `text-content-error` |
-| `success` | Positive confirmation | `bg-emerald-600` |
+| `primary` | Main action (Save, Create) | Brand tile; hover trades its edge for `--brand-secondary-default` |
+| `secondary` | Secondary action (Cancel, Back) | Surface tile; hover takes the **brand** edge — the mirror of primary |
+| `ghost` | Borderless (toolbar toggles) | No tile at rest; gains one on hover |
+| `destructive` | Destructive (Delete, Revoke) | Danger hue, own stops, **no** reciprocal edge |
 
-### Sizes
+Previously retired and permanently banned: `outline` → `secondary`,
+`success` → `primary`, `danger` → `destructive`, `danger-outline` and
+`destructive-outline` → `destructive`.
 
-| Size | Class | Height |
+`destructive-outline` was the most recent cull (2026-07-28). It read as a
+lower-emphasis danger, which is precisely the ambiguity a destructive
+action should not have — there is now one danger vocabulary.
+
+### Sizes — one rung
+
+Every size key resolves to the same **28px** geometry
+(`h-7 px-[0.7rem] text-[0.76rem]`, `+0.005em` tracking, 15px icons).
+
+| Size | Renders | Note |
 |---|---|---|
-| `xs` | `h-7 text-xs` | 28px |
-| `sm` | `h-8 text-xs` | 32px |
-| `md` | `h-9 text-sm` | 36px |
-| `lg` | `h-10 text-sm` | 40px |
+| `xs` / `sm` / `md` / `lg` | 28px | All identical today |
+| `icon` | 28×28px | Square; requires `aria-label` |
+
+The `size` prop is deliberately **kept** rather than deleted from its 646
+call sites. Reversal is then a one-file edit — restoring the old
+28/32/36/40 ladder means giving these keys their own values again, with no
+call-site archaeology — and `size="lg"` still records that a button was
+meant to be prominent even while it renders at 28px.
+
+**Form controls move in lockstep.** `control-variants.ts::controlSize` is
+collapsed to the same 28px rung. This is load-bearing, not cosmetic: a
+28px button beside a 36px `<Input>` is a visibly broken filter toolbar.
+Change one, change both.
+
+On coarse pointers every button still gets a 44px minimum target
+(`pointer-coarse:min-h-11`) — `min-h` only raises, so the dense desktop
+geometry is untouched and the tap target never shrinks with the visual.
 
 ### Usage
 
@@ -96,61 +121,55 @@ import { cn } from '@dub/utils';
 | Server component with navigation | `buttonVariants()` (no hooks needed) |
 | Button with loading/disabled state | `<Button>` component |
 
-### Liquid-carbon surface (Roadmap-19) <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
+### Still Surface — the button material (2026-07-28)
 
-Buttons are not flat painted rectangles — every variant reads as a
-deep, voluminous pool of **liquid carbon**: wet-looking, dark,
-restrained (never a hard mirror shine). The system lives entirely in
-`src/components/ui/button-variants.ts` + four `--btn-carbon-*` tokens
-in `tokens.css`, and is built from three composable recipes.
+The motionless material. It supersedes the entire Roadmap-19 → Roadmap-24 <!-- docs-accuracy-allow: shipped-epic codenames being superseded, not future tense -->
+stack: carbon grain, light pool, iridescent meniscus, aura bloom, liquid
+glass. Those built depth out of MOTION — a hover fade on `::before`, an
+aura bloom on `::after`, a press that shrank 3% and travelled 1px down.
 
-**Tokens** (`tokens.css`, both themes):
+Still Surface builds the same depth out of static light, and moves the
+hover signal out of motion and into **hue**.
 
-| Token | Role |
+**The thesis: hover is a trade of edges.** The brand tile takes the
+complementary edge; the surface tile takes the brand edge. Each variant
+borrows the other's colour, and neither one moves to do it. The
+complementary hue was already in the system — `--brand-secondary-default`
+is documented in `tokens.css` as complementary to the brand in both themes
+(electric blue ↔ METRO yellow in dark, deep navy ↔ PwC orange in light).
+Nothing was invented; it is the existing palette, held still.
+
+**Four static layers carry the depth, none of them a keyframe:**
+
+| Layer | Mechanism |
 |---|---|
-| `--btn-carbon-overlay` | the soft elliptical light **pool** — a `radial-gradient`, theme-tuned, that reads as light gathering on a wet curved surface |
-| `--btn-carbon-bevel` | the inset-led box-shadow that gives the surface **volume** (a soft top-edge highlight + faint bottom bounce + tight outer drop) |
-| `--btn-carbon-border` | the **meniscus edge** — a hair darker than the surface so the silhouette stays crisp |
-| `--btn-carbon-grain` | a grayscale fractal-noise data-URI — the micro-**grain** that gives the surface tactility (felt, not seen) |
+| Edge light | `linear-gradient(top, var(--btn-still-top), transparent 46%)` |
+| Body gradient | `--brand-default` → `--brand-emphasis` vertical fall |
+| Seat line | `inset 0 -1px 0 var(--btn-still-bot)` |
+| Lift → inset | `--btn-still-lift` inverts to `--btn-still-press` on `:active` |
 
-**Recipes** (module-level `const` arrays, spread into the cva config):
+**Permanently banned** (each has a named ratchet in
+`still-surface-button-material.test.ts`, which reports *what* you are
+undoing, not just that a regex failed):
 
-| Recipe | What it does | Used by |
-|---|---|---|
-| `carbonSurface` | the full carbon field at rest — border + bevel + a `::before` depth-overlay stacking grain over the light pool | the solid-fill variants: `primary`, `secondary`, `destructive` |
-| `carbonOnHover` | the same carbon field parked at `opacity-0` and faded in on hover — a transparent button has no rest-state surface to pool light on | the transparent variants: `ghost`, `destructive-outline` (the border is untouched — `ghost` stays borderless, `destructive-outline` keeps its red danger edge) |
-| `carbonStates` | the three interaction states, all driven through one channel — the `::before` overlay's opacity — spread into the cva **base** so every variant inherits it | every variant |
+```
+transition-all          the base transition
+active:scale-*          the 3% press shrink
+active:translate-y-*    the 1px press travel
+before:* / after:*      every pseudo layer
+hover:after:shadow-*    the aura bloom
+backdrop-blur-*         unnecessary once the fill is graded
+motion-reduce:*         nothing moves, so nothing to strip
+```
 
-**The interaction-state channel** (`carbonStates`): pressed / focus /
-disabled all read as the liquid-carbon *material* responding, not as
-generic CSS state changes:
+That last one is the tell: a motionless system has no reduced-motion
+fallback to write, because there was never anything moving. It also gets a
+documentation dividend — with nothing to animate, every state can be shown
+side by side as a static swatch instead of hiding behind a cursor.
 
-- **pressed** (`active:before:opacity-70`) — the light pool dims; the
-  surface depresses. Composes with the base `active:scale-[0.97]`
-  press geometry.
-- **focus** (`focus-visible:before:opacity-100`) — the carbon is
-  revealed for keyboard users (parity with the hover lift). The a11y
-  focus ring is untouched and stays the primary focus signal — carbon
-  is depth, never a replacement for the ring.
-- **disabled** (`disabled:before:opacity-0`) — the carbon goes inert:
-  the depth-overlay drops out so a disabled button reads as flat,
-  dead material.
+Feedback and animation are not the same thing. Pressed still reads as
+pressed; the shadow inversion does the work the transform used to.
 
-All three ride `before:transition-opacity` (dropped under
-`motion-reduce`). The bevel never rides `hover:shadow-*` — a
-hover-driven box-shadow reads as a decorative depth-lift and is
-banned by the motion-language ratchet; the carbon field's shadow is
-gated on the `::before` instead.
-
-**Invariants** are locked by four ratchets — extend the matching one
-when you touch the carbon system:
-
-| Ratchet | Locks |
-|---|---|
-| `tests/guards/r19-pra-carbon-surface.test.ts` | tokens + the `carbonSurface` recipe shape |
-| `tests/guards/r19-prb-carbon-rollout.test.ts` | `carbonSurface` rollout to the solid variants |
-| `tests/guards/r19-prc-carbon-hover-grain.test.ts` | the grain layer + `carbonOnHover` for the transparent variants |
-| `tests/guards/r19-prd-carbon-states.test.ts` | `carbonStates` interaction channel + the R19 capstone (whole-system coherence) |
 
 ### CTA Order — modal/dialog footers (Roadmap-22 PR-E) <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
 
@@ -184,82 +203,32 @@ The rule is locked by `tests/guards/r22-pre-variant-and-cta-order.test.ts`:
 the `Modal.Confirm` source must render the Cancel button BEFORE
 the Confirm button in JSX.
 
-### Variant inventory (Roadmap-22 PR-E) <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
+### Variant inventory
 
-Five variants today:
+Four variants. See the table under **Variants** above for the full
+material description.
 
 | Variant | When to use |
 |---|---|
 | `primary` | The page's primary action. One per surface. |
 | `secondary` | The page's secondary action(s). Multiple allowed. |
 | `ghost` | Low-chrome action (toolbar, inline edit). |
-| `destructive` | Destructive action with full confidence (Delete, Archive). |
-| `destructive-outline` | Destructive action with LOWER confidence — the consequence is reversible OR the action is "remove this association", not "destroy this entity". Examples: Revoke API key, Disconnect integration, Remove MFA. |
+| `destructive` | Any destructive action — Delete, Archive, Revoke, Remove. |
 
-The `destructive-outline` variant exists in 7 places. PR-E
-reviewed but kept it — the visual distinction between
-`destructive` (full red fill) and `destructive-outline` (red text
-+ red border) IS the affordance difference between
-"delete-and-it's-gone" vs "remove-this-link". A future PR may
-fold them if the distinction stops earning its keep.
+**What the `destructive-outline` fold cost.** Roadmap-22 PR-E reviewed <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
+that variant and kept it, arguing the visual gap between `destructive`
+(full red fill) and `destructive-outline` (red text + red border) WAS the
+affordance difference between "delete-and-it's-gone" and
+"remove-this-link" — and it closed by saying a future PR may fold them if
+the distinction stops earning its keep.
 
-### Liquid Elegance (Roadmap-20) <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
+The 2026-07-28 cull is that PR. The canonical material ships four shapes,
+so the fifth went. The cost is real and worth stating plainly: *Revoke API
+key* and *Delete framework* now render identically. Where that difference
+still matters, carry it in the **label and the confirm copy** — which is
+where the destructive-action vocabulary in `CLAUDE.md` already puts it
+(`Revoke {Credential}` vs `Delete {Entity}`) — not in a fifth button shape.
 
-R19 made buttons look like liquid carbon. R20 is the polish round
-on top — four characteristics that take the carbon language from
-"distinct" to "felt." Form controls (`<Input>`, combobox trigger,
-date-picker trigger) get parity treatment so a focused input reads
-like a cousin of a focused button.
-
-**The four R20 characteristics:**
-
-| | What lands | Where it lives |
-|---|---|---|
-| Iridescent edge | A 1px brand→secondary gradient stroke on `primary`'s `::after`, clipped via the mask-composite recipe. Always visible — iridescence is a material property, not a state. **2026-05-31:** the recipe was rewritten from the `mask` SHORTHAND to LONGHANDS (`mask-image` + `mask-clip`) — the shorthand silently reset `mask-composite` to `add`, so the gradient was filling the whole button (orange→navy wash + washed-out label) instead of a 1px ring. | `iridescentEdge` recipe in `button-variants.ts` |
-| Aura wash | A brand-tinted (primary) / cool-neutral (secondary) halo on hover, painted via `::after`'s box-shadow. Routed through `hover:after:shadow-*` so the motion-language ratchet's `\bhover:shadow-` regex stays satisfied by design. | `auraPrimary` + `auraNeutral` recipes |
-| Carbon glass | Ghost variant's hover fill drops to 75% + `backdrop-blur-sm` softens what shows through. Frosted-glass on hover. | `ghostGlass` recipe |
-| Airy density | md/lg gain horizontal padding + (lg) gap; per-size letter-spacing replaces R19's flat `tracking-[-0.01em]` baseline (xs/sm open up positive, md/lg tighten — classical small→large typography rule). | `size: { … }` block in the cva config |
-| Tactile press | `active:translate-y-px` composes with R11-PR4's `active:scale-[0.97]`: press = shrink + descend, reads as physical depression. Press-state ambient shadow collapses to one tight stop; focus-state ambient expands with a brand ring. | cva base + state-conditional overrides in `carbonSurface` |
-| Form-control parity | `<Input>`, the date-picker trigger, and (transitively, via `<Button variant="secondary">`) the combobox trigger all wear `--ctrl-edge-{rest,hover,focus}`. The focus halo is a 3-stop shadow: brand ring + ambient drop, so focused controls read "warm AND raised" the way focused buttons do. | `control-variants.ts` + tokens.css `--ctrl-edge-*` |
-
-**Tokens** added in PR-A (`tokens.css`, both themes):
-
-| Token | Role |
-|---|---|
-| `--btn-ambient-{rest,hover,press,focus}` | 4-stop elevation scale: rest = two-stop drop, hover = same shape lifted, press = one tight stop, focus = brand-tinted ring stacked outside the rest drop |
-| `--btn-iridescent-gradient` | 135° linear sweep brand → secondary, low-alpha — consumed via `border-image`-equivalent mask-composite recipe on `::after` |
-| `--btn-aura-{primary,neutral}` | Pre-composed 3-stop box-shadow halos — painted via `hover:after:shadow-[...]` |
-| `--ctrl-edge-{rest,hover,focus}` | Form-control parity edge tokens — controls don't carbon-fill, they carbon-edge |
-
-**Why two pseudo-elements** (`::before` and `::after`):
-
-R19's `::before` carries the depth overlay (grain + light pool +
-bevel insets). R20's `::after` carries the outermost finish — the
-iridescent edge (background + mask-composite) and the aura
-(box-shadow). Two pseudos, two layers, no property conflict (edge
-rides background + mask; aura rides box-shadow). CSS layers
-`::after` above `::before` by default.
-
-**Why aura uses `hover:after:shadow-*` not `hover:shadow-*`:**
-
-The v2-PR-4 motion-language ratchet bans `hover:shadow-*` because
-generic "drop shadow on hover" reads cheap on layout surfaces. The
-R20 aura is NOT generic — it's a specific carbon-language halo
-with restrained alpha + a specific 3-stop shape. Riding it through
-`::after`'s box-shadow keeps the element's own shadow alone (so
-R19's `--btn-carbon-bevel` survives) and skirts the regex BY
-DESIGN (`\bhover:shadow-` requires `hover:` directly followed by
-`shadow-`; `hover:after:shadow-` has `after:` between, so doesn't
-match).
-
-**R20 invariants** are locked by four ratchets:
-
-| Ratchet | Locks |
-|---|---|
-| `tests/guards/r20-pra-foundation.test.ts` | Every token in both themes, the gradient shape, the aura stop count, `controlEdge` wiring, button↔control size lockstep, R19 carbon recipes still present |
-| `tests/guards/r20-prb-liquid-edges.test.ts` | `iridescentEdge` / `auraPrimary` / `auraNeutral` / `ghostGlass` recipe shapes, per-variant wiring, the no-`hover:shadow-*`-on-element guarantee, Input + date-picker trigger control-edge wiring |
-| `tests/guards/r20-prc-airy-density.test.ts` | Per-size padding scale, per-size tracking values, gap rhythm, disabled-fallback mirror in `button.tsx`, Label parity |
-| `tests/guards/r20-prd-tactile-and-capstone.test.ts` | Tactile press translate, state-conditional ambient shadows, disabled iridescent dust-out, enriched `--ctrl-edge-focus`, the R20 capstone (all four PRs land coherent) |
 
 ## StatusBadge Component
 
