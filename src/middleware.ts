@@ -106,6 +106,34 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         return NextResponse.next();
     }
 
+    // ── 0d. External vendor-assessment respondent surface — rate-limit
+    // (per-IP + per-assessment), THEN allow. The page
+    // (`/vendor-assessment/<id>?t=…`) and its API
+    // (`/api/vendor-assessment/<id>`, `…/<id>/submit`) are anonymous and
+    // token-gated in-handler, exactly like the Trust Center pair above.
+    // Without a limit here the token brute-force, assessment-id enumeration
+    // and repeated bulk-answer submit surfaces are all unthrottled — the
+    // token check is constant-time but not free, and one submit carries up
+    // to 500 answers. Keyed by assessment id so a noisy respondent cannot
+    // starve another tenant's.
+    if (
+        pathname.startsWith('/vendor-assessment/') ||
+        pathname.startsWith('/api/vendor-assessment/')
+    ) {
+        const isApi = pathname.startsWith('/api/');
+        // /vendor-assessment/<id> → id at [2]; /api/vendor-assessment/<id> → [3].
+        const assessmentId = pathname.split('/')[isApi ? 3 : 2] ?? '';
+        const rl = await checkApiReadRateLimit(
+            req,
+            null,
+            `vendorassess:${assessmentId}`,
+        );
+        if (!rl.ok && rl.response) {
+            return rl.response;
+        }
+        return NextResponse.next();
+    }
+
     // ── 1. Allow public paths (login, auth callbacks, static, etc.) ──
     if (isPublicPath(pathname)) {
         return NextResponse.next();

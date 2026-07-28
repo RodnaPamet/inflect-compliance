@@ -38,6 +38,7 @@ export type AccessVerificationFailure =
     | 'unknown_assessment'
     | 'wrong_assessment'
     | 'expired'
+    | 'revoked'
     | 'wrong_status';
 
 export interface AccessVerificationOk {
@@ -115,6 +116,14 @@ export async function verifyAccessToken(
         assessment.externalAccessTokenExpiresAt.getTime() < Date.now()
     ) {
         return { ok: false, reason: 'expired' };
+    }
+
+    // Operator-initiated kill switch. Checked alongside expiry rather than
+    // folded into it, because the two are different events: expiry is the
+    // link reaching its planned end, revocation is someone deciding the
+    // link is compromised. Both deny; only this one is a deliberate act.
+    if (assessment.revokedAt) {
+        return { ok: false, reason: 'revoked' };
     }
 
     if (!ALLOWED_STATUSES.has(assessment.status)) {

@@ -318,6 +318,15 @@ model VendorAssessment {
   /// computes the same hash and looks up the assessment.
   externalAccessTokenHash      String?
   externalAccessTokenExpiresAt DateTime?
+  /// Set when an operator kills the external link ahead of its expiry —
+  /// a leaked or mis-sent invite. Enforced in `verifyAccessToken`, so a
+  /// revoked link stops working immediately without rotating the token
+  /// (which a resend does, invalidating anything already shared) and
+  /// without dragging the assessment status out of SENT / IN_PROGRESS.
+  /// Mirrors `AuditPackShare.revokedAt` — the same lifecycle on the
+  /// audit-readiness share link, which likewise records only the
+  /// timestamp; the acting user is captured by the audit event.
+  revokedAt                    DateTime?
   /// Set when the questionnaire transitions SUBMITTED → REVIEWED.
   reviewedAt                   DateTime?
   reviewedByUserId             String?

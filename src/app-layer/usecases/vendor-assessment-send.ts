@@ -357,3 +357,74 @@ export async function resendAssessmentInvite(
         };
     });
 }
+
+/**
+ * Revoke the external respondent link without rotating the token.
+ *
+ * Before this existed, a leaked or mis-sent invite had no kill switch. The
+ * only recourses were waiting for the expiry, a resend (which MINTS a fresh
+ * token and therefore invalidates any link already circulating — useless
+ * when the goal is simply to stop the leaked one), or dragging the
+ * assessment status out of SENT / IN_PROGRESS, which corrupts the lifecycle
+ * to achieve a security outcome.
+ *
+ * `verifyAccessToken` denies on `revokedAt`, so the effect is immediate and
+ * does not depend on the assessment's status. Idempotent: revoking an
+ * already-revoked link is a no-op rather than an error, because the
+ * operator's intent (this link must not work) is already satisfied.
+ *
+ * Mirrors `revokeShare` in audit-readiness/sharing.ts. canRunAssessment
+ * gate — the same tier that can send the link can kill it.
+ */
+export async function revokeAssessmentLink(
+    ctx: RequestContext,
+    assessmentId: string,
+): Promise<{ assessmentId: string; revokedAt: Date }> {
+    assertCanRunAssessment(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const assessment = await db.vendorAssessment.findFirst({
+            where: { id: assessmentId, tenantId: ctx.tenantId },
+            select: {
+                id: true,
+                status: true,
+                revokedAt: true,
+                externalAccessTokenHash: true,
+                vendor: { select: { name: true } },
+            },
+        });
+        if (!assessment) throw notFound('Assessment not found');
+        if (!assessment.externalAccessTokenHash) {
+            throw badRequest('This assessment has no external link to revoke.');
+        }
+        if (assessment.revokedAt) {
+            return {
+                assessmentId: assessment.id,
+                revokedAt: assessment.revokedAt,
+            };
+        }
+
+        const revokedAt = new Date();
+        await db.vendorAssessment.update({
+            where: { id: assessment.id, tenantId: ctx.tenantId },
+            data: { revokedAt },
+        });
+
+        await logEvent(db, ctx, {
+            action: 'VENDOR_ASSESSMENT_LINK_REVOKED',
+            entityType: 'VendorAssessment',
+            entityId: assessment.id,
+            details:
+                `Revoked the external response link for assessment ` +
+                `(vendor=${assessment.vendor?.name ?? 'unknown'})`,
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'VendorAssessment',
+                operation: 'link_revoked',
+                after: { revokedAt: revokedAt.toISOString() },
+            },
+        });
+
+        return { assessmentId: assessment.id, revokedAt };
+    });
+}

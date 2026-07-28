@@ -1,0 +1,13 @@
+-- Vendor external-assessment link revocation.
+--
+-- The external respondent link previously had exactly two lifecycle exits:
+-- its expiry timestamp, or a resend that ROTATES the token (invalidating
+-- anything already shared). Neither kills a leaked link in place, so the
+-- only other recourse was dragging the assessment status out of
+-- SENT / IN_PROGRESS.
+--
+-- Mirrors "AuditPackShare"."revokedAt" — the same lifecycle on the
+-- audit-readiness share link, which likewise stores only the timestamp
+-- (the acting user is captured by the audit event). Enforced in
+-- verifyAccessToken.
+ALTER TABLE "VendorAssessment" ADD COLUMN "revokedAt" TIMESTAMP(3);
