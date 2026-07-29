@@ -5,6 +5,7 @@
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
 import { useTranslations } from 'next-intl';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { formatDate } from '@/lib/format-date';
 import { SkeletonCard, SkeletonDetailPage } from '@/components/ui/skeleton';
 import { useMemo, useState } from 'react';
@@ -118,15 +119,28 @@ const CATEGORY_OPTIONS: ComboboxOption[] = CATEGORIES.map(c => ({ value: c, labe
 // `RISK_STATUS_VARIANT` so risks list / dashboard / detail all read
 // the same vocabulary.
 
-function isOverdue(nextReviewAt: string | null): boolean {
-    if (!nextReviewAt) return false;
-    return new Date(nextReviewAt) < new Date();
+/**
+ * Is the review date past?
+ *
+ * `now` is threaded in rather than read from the clock here. `new Date()`
+ * during render means the server pass and the hydration pass compare against
+ * DIFFERENT instants, so a risk sitting either side of its review date
+ * renders a different overdue treatment on each — React error #418.
+ *
+ * `useHydratedNow()` is null until the client has painted once; a null `now`
+ * reports not-overdue so the SSR HTML matches the first client render.
+ */
+function isOverdue(nextReviewAt: string | null, now: Date | null): boolean {
+    if (!now || !nextReviewAt) return false;
+    return new Date(nextReviewAt) < now;
 }
 
 // Risk-score band + tone resolve from the tenant RiskMatrixConfig via
 // resolveBandForScore / resolveBandTone (@/lib/risk-matrix/scoring).
 
 export default function RiskDetailPage() {
+    // Hydration-safe clock — see the note on isOverdue above.
+    const hydratedNow = useHydratedNow();
     const { riskId } = useParams<{ riskId: string }>();
     const t = useTranslations('risks');
     const TREATMENT_OPTIONS = useMemo(
@@ -341,7 +355,7 @@ export default function RiskDetailPage() {
         money: formatCompactCurrency,
         compact: true,
     });
-    const overdue = isOverdue(risk.nextReviewAt);
+    const overdue = isOverdue(risk.nextReviewAt, hydratedNow);
 
     return (
         <EntityDetailLayout

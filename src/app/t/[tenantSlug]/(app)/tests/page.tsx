@@ -1,6 +1,7 @@
 'use client';
 
 import { formatDate } from '@/lib/format-date';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -121,10 +122,27 @@ const effectiveDue = (p: { nextDueAt: string | null; nextRunAt: string | null })
  * scope (pausing a plan is a deliberate "stop expecting this"), and `<=`
  * matches the `lte` the authoritative DB queries use.
  */
-const isOverdue = (p: { nextDueAt: string | null; nextRunAt: string | null; status: string }) => {
+/**
+ * Is this plan past its effective due date?
+ *
+ * `now` is threaded in rather than read from the clock here. Calling
+ * `new Date()` during render means the server pass and the hydration pass
+ * compare against DIFFERENT instants, so a plan sitting either side of its
+ * due time renders `text-content-error` on one and `text-content-muted` on
+ * the other — a hydration mismatch, React error #418.
+ *
+ * Callers pass `useHydratedNow()`, which is null until the client has
+ * painted once; a null `now` reports not-overdue so the SSR HTML and the
+ * first client render agree exactly, and the real verdict paints next frame.
+ */
+const isOverdue = (
+    p: { nextDueAt: string | null; nextRunAt: string | null; status: string },
+    now: Date | null,
+) => {
+    if (!now) return false;
     if (p.status !== 'ACTIVE') return false;
     const d = effectiveDue(p);
-    return d ? new Date(d) <= new Date() : false;
+    return d ? new Date(d) <= now : false;
 };
 
 // R4-P3 #5 — the "last result" of a plan whose newest run is still
@@ -152,6 +170,8 @@ export default function TestsRollupPage() {
 }
 
 function TestsRollupContent() {
+    // Hydration-safe clock — see the note on isOverdue above.
+    const hydratedNow = useHydratedNow();
     const t = useTranslations('controlTests');
     const FREQ_LABELS = useMemo(() => freqLabels(t), [t]);
     // PR-R — localized enum→label maps for the plan-status + last-result badges.
@@ -350,7 +370,7 @@ function TestsRollupContent() {
             const result = getLastResultKey(p);
             if (resultSel.length && !resultSel.includes(result)) return false;
             if (freqSel.length && !freqSel.includes(p.frequency)) return false;
-            if (dueSel.includes('overdue') && !isOverdue(p)) {
+            if (dueSel.includes('overdue') && !isOverdue(p, hydratedNow)) {
                 return false;
             }
             if (q && !p.name.toLowerCase().includes(q)) return false;
@@ -504,7 +524,7 @@ function TestsRollupContent() {
                     cell: ({ row }) => {
                         const due = effectiveDue(row.original);
                         return due ? (
-                            <span className={isOverdue(row.original) ? 'text-content-error font-semibold' : 'text-content-muted'}>
+                            <span className={isOverdue(row.original, hydratedNow) ? 'text-content-error font-semibold' : 'text-content-muted'}>
                                 {formatDate(due)}
                             </span>
                         ) : <span className="text-content-subtle">—</span>;
