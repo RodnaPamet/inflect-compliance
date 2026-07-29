@@ -34,7 +34,8 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { formatDateTime } from '@/lib/format-date';
 import { AppIcon } from '@/components/icons/AppIcon';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus, Trash } from '@/components/ui/icons/nucleo';
+import { IconAction } from '@/components/ui/icon-action';
 import { Paperclip, ChevronDown, ChevronLeft } from 'lucide-react';
 import {
     createColumns,
@@ -1760,13 +1761,13 @@ function ControlsPageInner({
                             admins can Restore / Purge (and see soft-deleted rows)
                             server-side. */}
                         {canAdmin && (
-                            <Button
+                            <IconAction
                                 id="controls-show-deleted-toggle"
                                 variant={showDeleted ? 'primary' : 'secondary'}
-                                size="sm"
                                 aria-pressed={showDeleted}
                                 onClick={() => setShowDeleted((v) => !v)}
-                                text={t('deleted.toggle')}
+                                icon={<Trash className="size-4" />}
+                                label={t('deleted.toggle')}
                             />
                         )}
                         {columnsDropdown}

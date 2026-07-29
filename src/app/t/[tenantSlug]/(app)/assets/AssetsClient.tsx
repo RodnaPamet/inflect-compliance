@@ -39,7 +39,8 @@ import { formatDateTime } from '@/lib/format-date';
 import { Combobox } from '@/components/ui/combobox';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus, Trash } from '@/components/ui/icons/nucleo';
+import { IconAction } from '@/components/ui/icon-action';
 import { NewAssetModal } from './NewAssetModal';
 import { AssetDetailPanel } from './AssetDetailPanel';
 import { AsidePanel } from '@/components/ui/aside-panel';
@@ -996,13 +997,13 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                             {/* Deleted-assets view toggle — admin only (only
                                 admins can Restore / Purge server-side). */}
                             {permissions.canAdmin && (
-                                <Button
+                                <IconAction
                                     id="assets-show-deleted-toggle"
                                     variant={showDeleted ? 'primary' : 'secondary'}
-                                    size="sm"
                                     aria-pressed={showDeleted}
                                     onClick={() => setShowDeleted((v) => !v)}
-                                    text={tx('deleted.toggle')}
+                                    icon={<Trash className="size-4" />}
+                                    label={tx('deleted.toggle')}
                                 />
                             )}
                             {columnsDropdown}
