@@ -101,6 +101,10 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/assets/[id]/purge',
         why: 'Irreversible asset hard-delete — admin.manage, matching the usecase assertCanAdmin. Narrow leaf root so only the purge handler is in scope (its assets/[id] siblings are not).',
     },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/vendors/[vendorId]/subprocessors',
+        why: 'The GDPR Art.28 sub-processor register + its recursive nth-party chain. Reads gate on vendors.view, mutations on vendors.edit — matching the usecase asserts. In scope so denials audit at the C.1 layer and a future refactor cannot drop the usecase assert without failing here. Narrow leaf root: the other vendors/[vendorId] siblings are NOT privileged and stay on usecase-layer authorization.',
+    },
 ];
 
 /**

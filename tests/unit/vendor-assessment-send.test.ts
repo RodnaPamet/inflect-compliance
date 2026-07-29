@@ -44,10 +44,13 @@ jest.mock('@/app-layer/notifications/enqueue', () => ({
 }));
 
 import { sendAssessment } from '@/app-layer/usecases/vendor-assessment-send';
+import { getPermissionsForRole } from '@/lib/permissions';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
 function makeCtx(overrides: { canWrite?: boolean } = {}) {
+    const canWrite = overrides.canWrite ?? true;
+    const base = getPermissionsForRole('ADMIN');
     return {
         requestId: 'req-1',
         userId: 'user-1',
@@ -55,12 +58,19 @@ function makeCtx(overrides: { canWrite?: boolean } = {}) {
         role: 'ADMIN' as const,
         permissions: {
             canRead: true,
-            canWrite: overrides.canWrite ?? true,
+            canWrite,
             canAdmin: false,
             canAudit: false,
             canExport: false,
         },
-        appPermissions: {} as never,
+        // Vendor policies read the CUSTOM-ROLE-AWARE set (2026-07-28), so the
+        // `canWrite` knob this helper exposes has to move `vendors.edit` in
+        // step. It was `{} as never`, which made `appPermissions.vendors`
+        // undefined the moment the policies stopped reading the coarse tier.
+        appPermissions: {
+            ...base,
+            vendors: { ...base.vendors, edit: canWrite, create: canWrite },
+        },
     };
 }
 

@@ -9,16 +9,42 @@
 import {
     assertCanReadVendors, assertCanManageVendors, assertCanManageVendorDocs,
     assertCanRunAssessment, assertCanApproveAssessment,
+    assertCanManageVendorAssessmentTemplates,
 } from '../../src/app-layer/policies/vendor.policies';
+import { getPermissionsForRole } from '../../src/lib/permissions';
+import { computePermissions } from '../../src/lib/tenant-context';
+import type { Role } from '@prisma/client';
+
+/**
+ * Contexts are DERIVED from the real permission sources rather than
+ * hand-written, so these fixtures cannot drift from production:
+ *   - `appPermissions` ← `getPermissionsForRole(role)` (custom-role-aware set)
+ *   - `permissions`    ← `computePermissions(role)`    (coarse role tiers)
+ *
+ * The previous version hand-rolled `{ permissions: {...} }` only, which is why
+ * it passed while the granular `vendors.*` keys were unenforceable — the mock
+ * asserted the same coarse flags the implementation read.
+ */
+function ctxFor(role: Role): any {
+    return {
+        role,
+        permissions: computePermissions(role),
+        appPermissions: getPermissionsForRole(role),
+    };
+}
+
+const adminCtx = ctxFor('ADMIN');
+const editorCtx = ctxFor('EDITOR');
+const readerCtx = ctxFor('READER');
+const auditorCtx = ctxFor('AUDITOR');
+const ownerCtx = ctxFor('OWNER');
 
 describe('Vendor Policies', () => {
-    const adminCtx: any = { permissions: { canRead: true, canWrite: true, canAdmin: true }, role: 'ADMIN' };
-    const editorCtx: any = { permissions: { canRead: true, canWrite: true, canAdmin: false }, role: 'EDITOR' };
-    const readerCtx: any = { permissions: { canRead: true, canWrite: false, canAdmin: false }, role: 'READER' };
-    const auditorCtx: any = { permissions: { canRead: true, canWrite: false, canAdmin: false }, role: 'AUDITOR' };
-
     describe('assertCanReadVendors', () => {
-        it.each([adminCtx, editorCtx, readerCtx, auditorCtx])('allows all roles', (ctx) => {
+        it.each([
+            ['OWNER', ownerCtx], ['ADMIN', adminCtx], ['EDITOR', editorCtx],
+            ['READER', readerCtx], ['AUDITOR', auditorCtx],
+        ])('allows %s', (_role, ctx) => {
             expect(() => assertCanReadVendors(ctx)).not.toThrow();
         });
     });
@@ -49,5 +75,58 @@ describe('Vendor Policies', () => {
         it('denies EDITOR', () => expect(() => assertCanApproveAssessment(editorCtx)).toThrow());
         it('denies READER', () => expect(() => assertCanApproveAssessment(readerCtx)).toThrow());
         it('denies AUDITOR', () => expect(() => assertCanApproveAssessment(auditorCtx)).toThrow());
+    });
+
+    // ─── Custom-role enforcement (the actual gap this closes) ───────────
+    //
+    // `computePermissions(role)` takes ONLY the Role enum, so it is
+    // structurally blind to a custom role's permissionsJson. While the
+    // helpers read it, a custom role that revoked `vendors.edit` was
+    // silently ignored and the holder could still rewire the GDPR Art.28
+    // sub-processor register.
+    //
+    // Each case below keeps the COARSE tier intact (canWrite/canRead still
+    // true, exactly as an EDITOR-based custom role resolves) and flips only
+    // the granular key — so a regression to `ctx.permissions.*` makes these
+    // fail, and nothing else does.
+    describe('custom-role overrides are enforced', () => {
+        function customCtx(base: Role, vendors: Partial<{ view: boolean; create: boolean; edit: boolean }>): any {
+            const resolved = getPermissionsForRole(base);
+            return {
+                role: base,
+                permissions: computePermissions(base),
+                appPermissions: { ...resolved, vendors: { ...resolved.vendors, ...vendors } },
+            };
+        }
+
+        it('denies manage when a custom role revokes vendors.edit on an EDITOR base', () => {
+            const ctx = customCtx('EDITOR', { edit: false });
+            expect(ctx.permissions.canWrite).toBe(true); // coarse tier unchanged
+            expect(() => assertCanManageVendors(ctx)).toThrow();
+        });
+
+        it('denies vendor-doc management when vendors.edit is revoked', () => {
+            expect(() => assertCanManageVendorDocs(customCtx('EDITOR', { edit: false }))).toThrow();
+        });
+
+        it('denies running an assessment when vendors.edit is revoked', () => {
+            expect(() => assertCanRunAssessment(customCtx('EDITOR', { edit: false }))).toThrow();
+        });
+
+        it('denies template authoring when vendors.edit is revoked', () => {
+            expect(() => assertCanManageVendorAssessmentTemplates(customCtx('EDITOR', { edit: false }))).toThrow();
+        });
+
+        it('denies reads when a custom role revokes vendors.view', () => {
+            const ctx = customCtx('READER', { view: false });
+            expect(ctx.permissions.canRead).toBe(true); // coarse tier unchanged
+            expect(() => assertCanReadVendors(ctx)).toThrow();
+        });
+
+        it('still allows manage when a custom role GRANTS vendors.edit on a READER base', () => {
+            const ctx = customCtx('READER', { edit: true });
+            expect(ctx.permissions.canWrite).toBe(false); // coarse tier would have denied
+            expect(() => assertCanManageVendors(ctx)).not.toThrow();
+        });
     });
 });
