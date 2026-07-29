@@ -39,13 +39,18 @@ interface Rule {
 /** Surface-namespace resolver (`useTranslations('automation.autoInspector')`). */
 type AutoTranslate = ReturnType<typeof useTranslations>;
 
-function buildActionOptions(t: AutoTranslate): ComboboxOption[] {
-    return [
-        { value: 'NOTIFY_USER', label: t('actionNotify') },
-        { value: 'CREATE_TASK', label: t('actionCreateTask') },
-        { value: 'UPDATE_STATUS', label: t('actionUpdateStatus') },
-        { value: 'WEBHOOK', label: t('actionWebhook') },
-    ];
+/**
+ * Every `AutomationActionType`, so a sub-flow rule renders its name rather than
+ * an empty control. Keep in lockstep with the Prisma enum.
+ */
+function buildActionLabels(t: AutoTranslate): Record<string, string> {
+    return {
+        NOTIFY_USER: t('actionNotify'),
+        CREATE_TASK: t('actionCreateTask'),
+        UPDATE_STATUS: t('actionUpdateStatus'),
+        WEBHOOK: t('actionWebhook'),
+        INVOKE_SUBFLOW: t('actionInvokeSubflow'),
+    };
 }
 
 const TRIGGER_OPTIONS: ComboboxOption[] = eventOptionsByDomain().flatMap((g) =>
@@ -60,7 +65,7 @@ export function AutomationInspectorPanel({
     ruleId: string | null;
 }) {
     const t = useTranslations('automation.autoInspector');
-    const actionOptions = useMemo(() => buildActionOptions(t), [t]);
+    const actionLabels = useMemo(() => buildActionLabels(t), [t]);
     const apiUrl = useTenantApiUrl();
     const { data: rule, mutate } = useTenantSWR<Rule>(
         ruleId ? CACHE_KEYS.automation.rules.detail(ruleId) : null,
@@ -90,10 +95,9 @@ export function AutomationInspectorPanel({
         () => TRIGGER_OPTIONS.find((o) => o.value === rule?.triggerEvent) ?? null,
         [rule?.triggerEvent],
     );
-    const actionSelected = useMemo(
-        () => actionOptions.find((o) => o.value === rule?.actionType) ?? null,
-        [actionOptions, rule?.actionType],
-    );
+    const actionLabel = rule?.actionType
+        ? (actionLabels[rule.actionType] ?? rule.actionType)
+        : null;
 
     if (!ruleId) {
         return (
@@ -140,16 +144,23 @@ export function AutomationInspectorPanel({
                 </FormField>
             )}
 
+            {/* Read-only by design, not by omission.
+                Every action config carries at least one REQUIRED field
+                (`title`, `url`, a non-empty `userIds`, `targetGroupId`), so
+                there is no valid default this panel could substitute when the
+                type changes — and the server validates the incoming type
+                against the STORED config, so a bare type flip is rejected.
+                Offering a picker that can only ever fail is worse than naming
+                where the edit belongs, which is what the condition branch
+                below already does for filters. */}
             {kind === 'action' && (
-                <FormField label={t('actionType')}>
-                    <Combobox
-                        options={actionOptions}
-                        selected={actionSelected}
-                        setSelected={(o) => o && patchRule({ actionType: o.value })}
-                        placeholder={t('selectAction')}
-                        forceDropdown
-                        matchTriggerWidth
-                    />
+                <FormField label={t('actionType')} description={t('actionTypeHint')}>
+                    <p
+                        className="text-sm text-content-emphasis"
+                        data-testid="automation-inspector-action-type"
+                    >
+                        {actionLabel ?? t('actionUnknown')}
+                    </p>
                 </FormField>
             )}
 

@@ -21,6 +21,7 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         name: 'NOTIFY_USER + OR filter + sla + breach + chain + else',
         detail: {
             name: 'Notify owner',
+            description: null,
             triggerEvent: 'RISK_CREATED',
             actionType: 'NOTIFY_USER',
             triggerFilterJson: {
@@ -44,6 +45,7 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         name: 'CREATE_TASK with severity/priority/assignee',
         detail: {
             name: 'Open follow-up',
+            description: null,
             triggerEvent: 'CONTROL_FAILED',
             actionType: 'CREATE_TASK',
             triggerFilterJson: null,
@@ -61,6 +63,7 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         name: 'UPDATE_STATUS',
         detail: {
             name: 'Auto-close',
+            description: null,
             triggerEvent: 'RISK_MITIGATED',
             actionType: 'UPDATE_STATUS',
             triggerFilterJson: { logic: 'AND', conditions: [{ field: 'status', operator: 'eq', value: 'MITIGATED' }] },
@@ -78,6 +81,7 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         name: 'WEBHOOK',
         detail: {
             name: 'Ping SIEM',
+            description: null,
             triggerEvent: 'INCIDENT_CREATED',
             actionType: 'WEBHOOK',
             triggerFilterJson: null,
@@ -95,6 +99,7 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         name: 'WEBHOOK with headers + HMAC secretRef (PR2 superset)',
         detail: {
             name: 'Signed webhook',
+            description: null,
             triggerEvent: 'INCIDENT_CREATED',
             actionType: 'WEBHOOK',
             triggerFilterJson: null,
@@ -117,6 +122,7 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         name: 'CREATE_TASK with link-to-entity (PR2 superset)',
         detail: {
             name: 'Linked follow-up',
+            description: null,
             triggerEvent: 'RISK_CREATED',
             actionType: 'CREATE_TASK',
             triggerFilterJson: null,
@@ -134,6 +140,7 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         name: 'INVOKE_SUBFLOW (PR2 superset)',
         detail: {
             name: 'Escalation sub-flow',
+            description: null,
             triggerEvent: 'RISK_CREATED',
             actionType: 'INVOKE_SUBFLOW',
             triggerFilterJson: null,
@@ -151,6 +158,7 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         name: 'SCHEDULE trigger with schedule config',
         detail: {
             name: 'Evidence reminder',
+            description: null,
             triggerEvent: 'SCHEDULE',
             actionType: 'NOTIFY_USER',
             triggerFilterJson: null,
@@ -190,6 +198,7 @@ describe('rule-builder edit round-trip (save with no changes is a no-op)', () =>
 function ruleWithFilter(triggerFilterJson: RuleDetail['triggerFilterJson']): RuleDetail {
     return {
         name: 'Filtered rule',
+        description: null,
         triggerEvent: 'RISK_CREATED',
         actionType: 'NOTIFY_USER',
         triggerFilterJson,
@@ -258,5 +267,86 @@ describe('edit preserves filters regardless of authoring source', () => {
         expect(payload.triggerFilter).not.toBeNull();
         expect(matchesFilter(eventWithData({ score: 5 }), payload.triggerFilter)).toBe(true);
         expect(matchesFilter(eventWithData({ score: 6 }), payload.triggerFilter)).toBe(false);
+    });
+});
+
+describe('description round-trips and can be cleared', () => {
+    function ruleWithDescription(description: string | null): RuleDetail {
+        return {
+            name: 'r',
+            description,
+            triggerEvent: 'RISK_CREATED',
+            actionType: 'NOTIFY_USER',
+            triggerFilterJson: null,
+            actionConfigJson: { userIds: ['u1'], message: 'm' },
+            slaWindowMinutes: null,
+            slaBreachActionType: null,
+            slaBreachConfigJson: null,
+            scheduleConfigJson: null,
+            nextRuleId: null,
+            nextRuleDelay: null,
+            elseRuleId: null,
+        };
+    }
+
+    it('a template-set description survives a no-op edit', () => {
+        // Templates (src/data/automation-templates) always set one, so this is
+        // the common case — a no-op save must not wipe it.
+        const payload = buildRulePayload(
+            detailToBuilderState(ruleWithDescription('Fires on RISK_STATUS_CHANGED to HIGH.')),
+        );
+        expect(payload.description).toBe('Fires on RISK_STATUS_CHANGED to HIGH.');
+    });
+
+    it('emptying the field sends null — the payload is what CLEARS it', () => {
+        // The bug: `description` was absent from the payload entirely, and the
+        // repository skips undefined, so a description could never be removed.
+        const state = detailToBuilderState(ruleWithDescription('set by a template'));
+        const payload = buildRulePayload({ ...state, description: '   ' });
+        expect(payload).toHaveProperty('description');
+        expect(payload.description).toBeNull();
+    });
+
+    it('a rule with no description round-trips as null, not the string "null"', () => {
+        const payload = buildRulePayload(detailToBuilderState(ruleWithDescription(null)));
+        expect(payload.description).toBeNull();
+    });
+});
+
+describe('SLA breach recipients are discarded with the window — visibly', () => {
+    const withBreach: RuleDetail = {
+        name: 'r',
+        description: null,
+        triggerEvent: 'RISK_CREATED',
+        actionType: 'NOTIFY_USER',
+        triggerFilterJson: null,
+        actionConfigJson: { userIds: ['u1'], message: 'm' },
+        slaWindowMinutes: 30,
+        slaBreachActionType: 'NOTIFY_USER',
+        slaBreachConfigJson: { userIds: ['u3', 'u4'], message: 'Escalate' },
+        scheduleConfigJson: null,
+        nextRuleId: null,
+        nextRuleDelay: null,
+        elseRuleId: null,
+    };
+
+    it('clearing the window nulls the breach config in the payload', () => {
+        const state = detailToBuilderState(withBreach);
+        const payload = buildRulePayload({ ...state, slaWindowMinutes: '' });
+        expect(payload.slaWindowMinutes).toBeNull();
+        expect(payload.slaBreachConfig).toBeNull();
+        expect(payload.slaBreachActionType).toBeNull();
+    });
+
+    it('the recipients stay in builder state, so the warning can be shown and the loss undone', () => {
+        // This is what makes the modal's InlineNotice both accurate and
+        // actionable: the list is not gone until save, so re-entering a window
+        // restores it verbatim.
+        const state = detailToBuilderState(withBreach);
+        const cleared = { ...state, slaWindowMinutes: '' };
+        expect(cleared.slaBreach.userIds).toEqual(['u3', 'u4']);
+
+        const restored = buildRulePayload({ ...cleared, slaWindowMinutes: '30' });
+        expect(restored.slaBreachConfig).toEqual({ userIds: ['u3', 'u4'], message: 'Escalate' });
     });
 });

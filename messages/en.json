@@ -6267,7 +6267,8 @@
       "NOTIFY_USER": "Notify user",
       "CREATE_TASK": "Create task",
       "UPDATE_STATUS": "Update status",
-      "WEBHOOK": "Webhook"
+      "WEBHOOK": "Webhook",
+      "INVOKE_SUBFLOW": "Invoke sub-flow"
     },
     "filters": {
       "status": "Status",
@@ -8619,7 +8620,11 @@
       "webhookSecretRefPlaceholder": "e.g. WEBHOOK_HMAC",
       "subflowTargetLabel": "Target sub-flow group",
       "subflowTargetHint": "The node key of the sub-flow group to invoke.",
-      "subflowTargetPlaceholder": "Sub-flow group id"
+      "subflowTargetPlaceholder": "Sub-flow group id",
+      "ruleDescription": "Description",
+      "ruleDescriptionHint": "Optional. Shown on the rule detail sheet. Clear it to remove a description a template set.",
+      "ruleDescriptionPlaceholder": "What this rule is for…",
+      "slaBreachDiscardWarning": "Clearing the watchdog window also discards the breach notification ({count, plural, one {# recipient} other {# recipients}}). Re-enter a window to keep them."
     },
     "autoInspector": {
       "actionNotify": "Notify user",
@@ -8645,7 +8650,10 @@
       "configured": "configured",
       "matchesAll": "matches all",
       "slaLabel": "Execution watchdog (max minutes)",
-      "slaPlaceholder": "e.g. 15"
+      "slaPlaceholder": "e.g. 15",
+      "actionInvokeSubflow": "Invoke sub-flow",
+      "actionUnknown": "Unknown action",
+      "actionTypeHint": "Change the action in the rule builder — a new action needs a new configuration."
     },
     "diff": {
       "title": "Diff v{x} vs v{y}",
