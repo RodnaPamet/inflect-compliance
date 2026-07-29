@@ -6219,7 +6219,11 @@
       "archive": "Archive rule",
       "archived": "Rule archived",
       "undo": "Undo",
-      "archiveFailed": "Could not archive this rule."
+      "archiveFailed": "Could not archive this rule.",
+      "toggleEnabledAria": "Toggle rule enabled",
+      "priorityAria": "Rule priority",
+      "close": "Close",
+      "edit": "Edit"
     },
     "analytics": {
       "emptyTitle": "No automation rules yet",
@@ -8733,7 +8737,12 @@
       "statusSkipped": "SKIPPED",
       "loadError": "Could not load this rule’s execution history.",
       "retriggerFailed": "Could not re-run this rule.",
-      "retriggerQueued": "Re-run queued."
+      "retriggerQueued": "Re-run queued.",
+      "triggeredByEvent": "Event",
+      "triggeredByManual": "Manual",
+      "triggeredBySchedule": "Schedule",
+      "triggeredByChain": "Chained",
+      "triggeredBySubflow": "Sub-flow"
     },
     "palette": {
       "paletteAria": "Process palette",
@@ -8891,7 +8900,8 @@
       "failCreate": "Could not create the map",
       "failTemplateCreate": "Could not create a map from that template",
       "failModeSwitch": "Could not switch canvas mode",
-      "failStatusChange": "Could not change this map’s status"
+      "failStatusChange": "Could not change this map’s status",
+      "duplicatePartial": "the copy was created but its contents could not be saved — delete the empty copy or try again"
     },
     "canvasPalette": {
       "dialogAria": "Canvas command palette",
@@ -8941,6 +8951,19 @@
       "deleteConfirm": "Delete process map",
       "deleteFailed": "Delete failed. Please try again.",
       "cancel": "Cancel"
+    },
+    "manualTrigger": {
+      "heading": "Test a rule",
+      "selectRulePlaceholder": "Select an enabled rule…",
+      "dryRun": "Dry run",
+      "fire": "Fire",
+      "dryRunMatches": "Dry run: the filter matches — this rule would fire.",
+      "dryRunNoMatch": "Dry run: the filter does not match — this rule would skip.",
+      "dryRunFailed": "The dry run could not be completed.",
+      "fired": "Fired — a manual execution was enqueued.",
+      "nothingToReplay": "Nothing to replay — this rule has no prior execution to re-fire.",
+      "notReplayable": "Not replayable — an update-status rule targets a specific entity, and a replay cannot re-target the original one, so nothing would change.",
+      "fireFailed": "The rule could not be fired."
     }
   },
   "commandPalette": {

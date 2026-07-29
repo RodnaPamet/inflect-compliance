@@ -9,10 +9,11 @@
  *   1. The edge load includes `controls` in the response shape and
  *      projects them onto `edge.data.controls` so the inspector's
  *      picker mounts with the persisted selection.
- *   2. The three save serialisers (handleSave + the two
- *      duplicate/snapshot-save sites) read the controls back via
- *      the canonical `edgeControls(e)` helper instead of sending
- *      `[]` unconditionally.
+ *   2. The save serialiser reads the controls back via the canonical
+ *      `edgeControlsForSave(e)` helper instead of sending `[]`
+ *      unconditionally. (There were THREE copies of that serialiser;
+ *      P3.1 collapsed them into one shared module, so this now checks
+ *      one site instead of three.)
  *   3. `handleEdgeUpdate` accepts a `controls` patch field so the
  *      inspector's Combobox commit lands on the edge's `data`.
  *   4. `ProcessInspector` mounts a `Combobox` in edge mode, fed by
@@ -124,6 +125,12 @@ describe("Epic P2-PR-A — control picker on edge", () => {
         const src = read(
             "src/components/processes/PersistedProcessCanvas.tsx",
         );
+        // P3.1 — the graph→PUT projection moved out of the canvas into
+        // src/lib/processes/serialize-graph.ts. It existed in FOUR
+        // hand-written copies (save / rename / duplicate / diff-snapshot)
+        // which had drifted apart; one function is the fix. The invariant
+        // this guard protects is unchanged — it has one home now.
+        const serializer = read("src/lib/processes/serialize-graph.ts");
         const helperSrc = read("src/lib/processes/edge-controls.ts");
 
         it("declares the canonical edgeControlsForSave save helper", () => {
@@ -142,16 +149,17 @@ describe("Epic P2-PR-A — control picker on edge", () => {
             );
         });
 
-        it("all three save serialisers route through the helper, not the pre-P2 empty array", () => {
-            // The pre-P2 shape was `controls: []` at three call
-            // sites (handleSave + duplicate + autosave-snapshot).
-            // None of them may remain.
+        it("the save serialiser routes through the helper, not the pre-P2 empty array", () => {
+            // The pre-P2 shape was `controls: []` at three call sites
+            // (handleSave + duplicate + autosave-snapshot). P3.1 collapsed
+            // those three copies into ONE shared projection, so the assertion
+            // moved with it — but `controls: []` must not reappear in either
+            // file.
             expect(src).not.toMatch(/controls:\s*\[\],/);
-            const matches = src.match(
-                /controls:\s*edgeControlsForSave\(e\),?/g,
-            );
-            expect(matches).not.toBeNull();
-            expect(matches!.length).toBeGreaterThanOrEqual(3);
+            expect(serializer).not.toMatch(/controls:\s*\[\],/);
+            expect(serializer).toMatch(/controls:\s*edgeControlsForSave\(e\),?/);
+            // …and the canvas must still USE it rather than growing a fourth copy.
+            expect(src).toMatch(/serializeGraphForSave\(nodes, edges\)/);
         });
 
         it("load response shape includes the controls array", () => {

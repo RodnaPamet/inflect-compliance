@@ -28,7 +28,10 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ExecutionsPanel } from '@/components/processes/ExecutionsPanel';
 import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
 import type { RuleDetail } from '@/components/processes/RuleBuilderModal';
-import { buildRuleActionLabels } from '@/app/t/[tenantSlug]/(app)/processes/automation-filter-defs';
+import {
+    buildRuleActionLabels,
+    buildRuleStatusLabels,
+} from '@/app/t/[tenantSlug]/(app)/processes/automation-filter-defs';
 import { useTranslations } from 'next-intl';
 
 function humanizeEvent(name: string): string {
@@ -64,6 +67,9 @@ export interface RuleDetailSheetProps {
 export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetailSheetProps) {
     const t = useTranslations('processes');
     const RULE_ACTION_LABELS = buildRuleActionLabels((k) => t(k as Parameters<typeof t>[0]));
+    // The list row renders "Enabled" via these labels while this sheet printed
+    // the raw `ENABLED` — one click apart, two vocabularies.
+    const RULE_STATUS_LABELS = buildRuleStatusLabels((k) => t(k as Parameters<typeof t>[0]));
     const apiUrl = useTenantApiUrl();
     const triggerUndoToast = useToastWithUndo();
     const toast = useToast();
@@ -206,7 +212,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                     <StatusBadge
                                         variant={isEnabled ? 'success' : 'neutral'}
                                     >
-                                        {rule.status}
+                                        {RULE_STATUS_LABELS[rule.status] ?? rule.status}
                                     </StatusBadge>
                                 </div>
                                 <label className="flex items-center gap-compact text-sm text-content-muted">
@@ -220,7 +226,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                                 status: checked ? 'ENABLED' : 'DISABLED',
                                             })
                                         }
-                                        aria-label="Toggle rule enabled"
+                                        aria-label={t('rules.toggleEnabledAria')}
                                     />
                                 </label>
                             </div>
@@ -508,7 +514,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                     onChange={(value) =>
                                         patchMutation.trigger({ id: rule.id, priority: value })
                                     }
-                                    aria-label="Rule priority"
+                                    aria-label={t('rules.priorityAria')}
                                 />
                             </div>
 
@@ -520,7 +526,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                     </Sheet.Body>
                     <Sheet.Actions align="between">
                         <Sheet.Close asChild>
-                            <Button variant="ghost">Close</Button>
+                            <Button variant="ghost">{t('rules.close')}</Button>
                         </Sheet.Close>
                         <div className="flex items-center gap-tight">
                             {/* `AutomationRuleStatus.ARCHIVED` and
@@ -543,7 +549,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                             )}
                             {onEdit && !isArchived && (
                                 <Button variant="secondary" onClick={() => onEdit(rule)}>
-                                    Edit
+                                    {t('rules.edit')}
                                 </Button>
                             )}
                         </div>

@@ -18,6 +18,10 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { formatDateTime } from '@/lib/format-date';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { useToast } from '@/components/ui/hooks';
+import {
+    buildExecutionStatusLabels,
+    buildTriggerSourceLabels,
+} from '@/lib/automation/execution-status-labels';
 
 interface ExecutionRow {
     id: string;
@@ -46,13 +50,10 @@ export function ExecutionsPanel({
     const t = useTranslations('automation.executions');
     const toast = useToast();
     const apiUrl = useTenantApiUrl();
-    const statusLabels: Record<string, string> = {
-        SUCCEEDED: t('statusSucceeded'),
-        FAILED: t('statusFailed'),
-        RUNNING: t('statusRunning'),
-        PENDING: t('statusPending'),
-        SKIPPED: t('statusSkipped'),
-    };
+    // Shared with MonitorTab — see execution-status-labels.ts for why these
+    // stopped being a local record.
+    const statusLabels = buildExecutionStatusLabels((k) => t(k as Parameters<typeof t>[0]));
+    const triggerLabels = buildTriggerSourceLabels((k) => t(k as Parameters<typeof t>[0]));
     const key = apiUrl(CACHE_KEYS.automation.rules.executions(ruleId));
     const { data, isLoading, error, mutate } = useSWR<{
         items: ExecutionRow[];
@@ -132,7 +133,9 @@ export function ExecutionsPanel({
                                     <StatusBadge variant={STATUS_VARIANT[e.status] ?? 'neutral'}>
                                         {statusLabels[e.status] ?? e.status}
                                     </StatusBadge>
-                                    <span className="text-xs text-content-muted">{e.triggeredBy}</span>
+                                    <span className="text-xs text-content-muted">
+                                        {triggerLabels[e.triggeredBy] ?? e.triggeredBy}
+                                    </span>
                                 </span>
                                 <span className="text-xs text-content-subtle tabular-nums">
                                     {formatDateTime(e.createdAt)}

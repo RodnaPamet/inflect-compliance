@@ -788,8 +788,16 @@ function Inner({
                     body: JSON.stringify(serializeGraphForSave(nodes, edges)),
                 },
             );
-            if (!saveRes.ok)
-                throw new Error(`Duplicate save failed (${saveRes.status})`);
+            if (!saveRes.ok) {
+                // The duplicate is two round trips with no transactional
+                // guarantee, so a second-step failure leaves an EMPTY map
+                // behind. That was already true and already commented; what was
+                // missing is telling the user. A generic "Could not duplicate
+                // this map" while a new empty map sits in the selector reads as
+                // "nothing happened" — so they go looking for their nodes
+                // instead of deleting the shell or retrying.
+                throw new Error(t("duplicatePartial"));
+            }
             const filled = await saveRes.json();
 
             const summary: ProcessMapSummary = {

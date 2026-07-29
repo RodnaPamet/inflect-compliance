@@ -20,6 +20,7 @@ import { formatDateTime } from '@/lib/format-date';
 import { ManualTriggerPanel } from '@/components/processes/ManualTriggerPanel';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/hooks';
+import { buildExecutionStatusLabels } from '@/lib/automation/execution-status-labels';
 
 interface ExecRow {
     id: string;
@@ -40,6 +41,13 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
 
 export function MonitorTab() {
     const t = useTranslations('processes');
+    // The execution-status vocabulary lives in `automation.executions` because
+    // ExecutionsPanel owns it; this feed renders the SAME rows one click away
+    // and used to print the raw enum beside the panel's readable labels.
+    const tExec = useTranslations('automation.executions');
+    const statusLabels = buildExecutionStatusLabels(
+        (k) => tExec(k as Parameters<typeof tExec>[0]),
+    );
     const toast = useToast();
     const apiUrl = useTenantApiUrl();
     const key = apiUrl(CACHE_KEYS.automation.executions.live());
@@ -88,7 +96,7 @@ export function MonitorTab() {
                                 <li key={e.id} className="flex items-center justify-between gap-default text-sm">
                                     <span className="flex items-center gap-compact">
                                         <StatusBadge variant={STATUS_VARIANT[e.status] ?? 'neutral'}>
-                                            {e.status}
+                                            {statusLabels[e.status] ?? e.status}
                                         </StatusBadge>
                                         <span className="truncate text-content-default">{e.ruleName}</span>
                                     </span>

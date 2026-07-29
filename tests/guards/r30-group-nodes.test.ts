@@ -124,7 +124,17 @@ describe("R30 — group nodes", () => {
         });
 
         it("save path serialises parentNodeKey via nodeParent(n)", () => {
-            expect(canvas).toMatch(/parentNodeKey:\s*nodeParent\(n\)/);
+            // P3.1 — this projection moved into the shared serialize-graph
+            // module. Group containment is exactly what its absence destroyed:
+            // handleRenameCommit's copy omitted `parentNodeKey`, so a rename
+            // re-parented every node to root. Assert it where it now lives, and
+            // assert the canvas still routes through it.
+            const serializer = fs.readFileSync(
+                path.join(__dirname, "../../src/lib/processes/serialize-graph.ts"),
+                "utf8",
+            );
+            expect(serializer).toMatch(/parentNodeKey:\s*nodeParent\(n\)/);
+            expect(canvas).toMatch(/serializeGraphForSave\(nodes, edges\)/);
         });
 
         it("rehydration reorders parents before children", () => {

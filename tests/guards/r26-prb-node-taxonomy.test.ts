@@ -206,10 +206,20 @@ describe("R26-PR-B — canvas consumer", () => {
     });
 
     it("persists the kind back on save", () => {
-        // The save mapper must thread the node's kind into
-        // `nodeType` — otherwise round-tripping through the
-        // server would collapse every node back to processStep.
-        expect(canvasSrc).toMatch(/nodeType:\s*kind/);
+        // The save mapper must thread the node's kind into `nodeType` —
+        // otherwise round-tripping through the server would collapse every
+        // node back to processStep.
+        //
+        // P3.1 moved that mapper out of the canvas into the shared
+        // serialize-graph module (it had drifted into four copies), so the
+        // assertion follows it — plus a check that the canvas still routes
+        // through the shared projection instead of growing a new copy.
+        const serializer = fs.readFileSync(
+            path.join(__dirname, "../../src/lib/processes/serialize-graph.ts"),
+            "utf8",
+        );
+        expect(serializer).toMatch(/nodeType:\s*kind/);
+        expect(canvasSrc).toMatch(/serializeGraphForSave\(nodes, edges\)/);
     });
 });
 
