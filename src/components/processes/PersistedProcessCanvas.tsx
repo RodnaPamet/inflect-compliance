@@ -298,6 +298,30 @@ function Inner({
         null,
     );
     const toast = useToast();
+
+    // ─── Failure reporting ────────────────────────────────────────
+    //
+    // EIGHT distinct failure modes (load, save, rename, duplicate, create,
+    // template-create, mode switch, status change) each called `setError` with
+    // a hardcoded English fallback, and all eight rendered into ONE
+    // `text-xs` span wedged into the document bar between the snap toggle and
+    // the version pill. The user could not tell WHICH operation failed, the
+    // message was untranslated, and there was no retry or dismiss — the span
+    // simply sat there until the next action cleared it.
+    //
+    // `reportFailure` keeps the inline span as the persistent trace and adds a
+    // toast, which is the house convention for a failed mutation and the only
+    // surface the user cannot miss. The label names the operation, so eight
+    // failures are eight distinguishable messages.
+    const reportFailure = useCallback(
+        (err: unknown, operationKey: string) => {
+            const detail = err instanceof Error ? err.message : String(err);
+            const label = t(operationKey as Parameters<typeof t>[0]);
+            setError(`${label}: ${detail}`);
+            toast.error(label, { description: detail });
+        },
+        [t, toast],
+    );
     // Epic P3-PR-A — ref to the [data-process-canvas] wrapper so
     // the export menu can walk down to xyflow's viewport child.
     const canvasWrapperRef = useRef<HTMLDivElement>(null);
@@ -521,7 +545,7 @@ function Inner({
                 });
             } catch (err) {
                 if (!cancelled) {
-                    setError(err instanceof Error ? err.message : "Load failed");
+                    reportFailure(err, "failLoad");
                 }
             } finally {
                 if (!cancelled) setLoading(false);
@@ -590,7 +614,7 @@ function Inner({
                 version: data.version,
             });
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Save failed");
+            reportFailure(err, "failSave");
         } finally {
             setSaving(false);
         }
@@ -716,7 +740,7 @@ function Inner({
                 ),
             );
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Rename failed");
+            reportFailure(err, "failRename");
         } finally {
             setSaving(false);
         }
@@ -782,7 +806,7 @@ function Inner({
             onProcessesChange([summary, ...processes]);
             onActiveIdChange(filled.id);
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Duplicate failed");
+            reportFailure(err, "failDuplicate");
         } finally {
             setDuplicating(false);
         }
@@ -837,7 +861,7 @@ function Inner({
                 onProcessesChange([summary, ...processes]);
                 onActiveIdChange(data.id);
             } catch (err) {
-                setError(err instanceof Error ? err.message : "Create failed");
+                reportFailure(err, "failCreate");
             } finally {
                 setCreating(false);
             }
@@ -859,9 +883,7 @@ function Inner({
                 onProcessesChange([summary, ...processes]);
                 onActiveIdChange(summary.id);
             } catch (err) {
-                setError(
-                    err instanceof Error ? err.message : "Template create failed",
-                );
+                reportFailure(err, "failTemplateCreate");
             } finally {
                 setCreating(false);
             }
@@ -883,7 +905,7 @@ function Inner({
                 ),
             );
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Mode switch failed");
+            reportFailure(err, "failModeSwitch");
         }
     }, [activeId, activeProcess, tenantSlug, processes, onProcessesChange]);
 
@@ -902,9 +924,7 @@ function Inner({
                     ),
                 );
             } catch (err) {
-                setError(
-                    err instanceof Error ? err.message : "Status change failed",
-                );
+                reportFailure(err, "failStatusChange");
             }
         },
         [activeId, activeProcess, tenantSlug, processes, onProcessesChange],

@@ -105,6 +105,18 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Bulk policy delete (policies list)',
         handlers: ['handleBulkApply'],
     },
+    {
+        // The processes/automation surface had ZERO Epic 67 sites, while
+        // AutomationRuleStatus.ARCHIVED and DELETE /automation/rules/[id] both
+        // shipped with no UI ever calling the route — so a rule could never be
+        // archived at all. Adding the affordance and wiring it to the undo
+        // window closed both gaps at once: an archive is a soft delete with
+        // history preserved, which is the reversible-destructive case the undo
+        // toast exists for.
+        file: 'src/components/processes/RuleDetailSheet.tsx',
+        name: 'Automation rule archive (rule detail sheet)',
+        handlers: ['archiveRule'],
+    },
 ];
 
 function loadFile(file: string): string {

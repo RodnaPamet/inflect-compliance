@@ -6215,7 +6215,11 @@
       "emptyTitle": "No automation rules yet",
       "emptyDesc": "Automation rules fire actions when domain events occur. The rule builder arrives in a later release.",
       "resPlural": "rules",
-      "resSingular": "rule"
+      "resSingular": "rule",
+      "archive": "Archive rule",
+      "archived": "Rule archived",
+      "undo": "Undo",
+      "archiveFailed": "Could not archive this rule."
     },
     "analytics": {
       "emptyTitle": "No automation rules yet",
@@ -6262,7 +6266,10 @@
       "topologyDescription": "A system-of-record map of your automation flows — rule counts, 30-day success rates, and sub-flow calls between maps. This is not compliance coverage.",
       "canvasMode": {
         "AUTOMATION": "Automation"
-      }
+      },
+      "errorTitle": "Topology unavailable",
+      "errorDesc": "The governance graph could not be loaded, so no map is shown — an empty topology here would read as a clean bill of health.",
+      "retry": "Try again"
     },
     "ruleStatusLabels": {
       "DRAFT": "Draft",
@@ -8660,7 +8667,8 @@
       "slaPlaceholder": "e.g. 15",
       "actionInvokeSubflow": "Invoke sub-flow",
       "actionUnknown": "Unknown action",
-      "actionTypeHint": "Change the action in the rule builder — a new action needs a new configuration."
+      "actionTypeHint": "Change the action in the rule builder — a new action needs a new configuration.",
+      "saveFailed": "That change was not saved."
     },
     "diff": {
       "title": "Diff v{x} vs v{y}",
@@ -8722,7 +8730,10 @@
       "statusFailed": "FAILED",
       "statusRunning": "RUNNING",
       "statusPending": "PENDING",
-      "statusSkipped": "SKIPPED"
+      "statusSkipped": "SKIPPED",
+      "loadError": "Could not load this rule’s execution history.",
+      "retriggerFailed": "Could not re-run this rule.",
+      "retriggerQueued": "Re-run queued."
     },
     "palette": {
       "paletteAria": "Process palette",
@@ -8755,7 +8766,9 @@
       "tagIssue": "Issue",
       "tagNotify": "Notify",
       "tagWebhook": "Webhook",
-      "description": "Start a DRAFT automation rule from a template. This does not create a process-map canvas."
+      "description": "Start a DRAFT automation rule from a template. This does not create a process-map canvas.",
+      "importFailed": "Could not create a rule from this template.",
+      "importDone": "Rule created as a draft from the template."
     },
     "suggestions": {
       "intro": "Automations that would close gaps in your current posture — each scored, with a rationale. Create one as a draft, then refine it.",
@@ -8870,7 +8883,15 @@
       "createFirstProcess": "Create your first process",
       "startFromTemplate": "Start from a template",
       "ariaProcessCanvas": "Process canvas",
-      "ariaZoomControls": "Zoom controls"
+      "ariaZoomControls": "Zoom controls",
+      "failLoad": "Could not load this map",
+      "failSave": "Could not save the canvas",
+      "failRename": "Could not rename this map",
+      "failDuplicate": "Could not duplicate this map",
+      "failCreate": "Could not create the map",
+      "failTemplateCreate": "Could not create a map from that template",
+      "failModeSwitch": "Could not switch canvas mode",
+      "failStatusChange": "Could not change this map’s status"
     },
     "canvasPalette": {
       "dialogAria": "Canvas command palette",

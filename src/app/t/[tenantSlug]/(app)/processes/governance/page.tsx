@@ -13,6 +13,7 @@
  */
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { ErrorState } from '@/components/ui/error-state';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Heading } from '@/components/ui/typography';
@@ -47,7 +48,7 @@ const HEALTH_RING: Record<Health, string> = {
 
 export default function GovernanceGraphPage() {
     const t = useTranslations('processes');
-    const { data, isLoading } = useTenantSWR<{
+    const { data, isLoading, error, mutate } = useTenantSWR<{
         nodes: GovernanceNode[];
         edges: GovernanceEdge[];
     }>(CACHE_KEYS.processes.governanceGraph());
@@ -76,7 +77,22 @@ export default function GovernanceGraphPage() {
 
             {isLoading && <p className="text-sm text-content-subtle">{t('governance.building')}</p>}
 
-            {!isLoading && nodes.length === 0 && (
+            {/* `error` was never destructured, so a failed fetch left `data`
+                undefined, `nodes` fell back to [], and the page rendered
+                "no automation maps yet" — telling the user their topology is
+                empty when in fact it could not be read. On a governance
+                overview that is the worst possible failure mode: a confident
+                statement of no findings. */}
+            {error && (
+                <ErrorState
+                    title={t('governance.errorTitle')}
+                    description={t('governance.errorDesc')}
+                    onRetry={() => mutate()}
+                    retryLabel={t('governance.retry')}
+                />
+            )}
+
+            {!isLoading && !error && nodes.length === 0 && (
                 <p className="text-sm text-content-subtle">
                     {t('governance.empty')}
                 </p>
