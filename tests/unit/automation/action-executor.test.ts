@@ -426,6 +426,60 @@ describe('WEBHOOK', () => {
         safeFetch.mockResolvedValue({ ok: true, status: 200 });
     });
 
+    // P1.9 — caller headers used to be spread AFTER the defaults, so a rule
+    // could override the platform's own headers. The sharp case is
+    // X-Inflect-Signature: a rule author is not necessarily the person who owns
+    // the destination, so forging the authenticity header let one rule make its
+    // payload look signed by the platform.
+    it('does not let rule config override Content-Type or User-Agent', async () => {
+        await fire({
+            url: 'https://hooks.example.com/x',
+            headers: { 'Content-Type': 'text/plain', 'User-Agent': 'evil/1' },
+        });
+        const init = safeFetch.mock.calls[0][1];
+        expect(init.headers['Content-Type']).toBe('application/json');
+        expect(init.headers['User-Agent']).toBe('Inflect-Automation/1');
+    });
+
+    it('strips an injected X-Inflect-Signature when no secretRef is configured', async () => {
+        await fire({
+            url: 'https://hooks.example.com/x',
+            headers: { 'X-Inflect-Signature': 'sha256=forged' },
+        });
+        const init = safeFetch.mock.calls[0][1];
+        expect(init.headers['X-Inflect-Signature']).toBeUndefined();
+    });
+
+    it('strips an injected Authorization header', async () => {
+        await fire({
+            url: 'https://hooks.example.com/x',
+            headers: { Authorization: 'Bearer stolen' },
+        });
+        const init = safeFetch.mock.calls[0][1];
+        expect(init.headers.Authorization).toBeUndefined();
+    });
+
+    it('still forwards a non-reserved custom header', async () => {
+        // The fix must not turn into "no custom headers at all" — that would be
+        // a functional regression for legitimate integrations.
+        await fire({
+            url: 'https://hooks.example.com/x',
+            headers: { 'X-Custom-Route': 'team-a' },
+        });
+        const init = safeFetch.mock.calls[0][1];
+        expect(init.headers['X-Custom-Route']).toBe('team-a');
+    });
+
+    it('case-insensitively rejects a reserved header', async () => {
+        await fire({
+            url: 'https://hooks.example.com/x',
+            headers: { 'x-inflect-signature': 'sha256=forged', 'content-type': 'text/plain' },
+        });
+        const init = safeFetch.mock.calls[0][1];
+        expect(init.headers['x-inflect-signature']).toBeUndefined();
+        expect(init.headers['Content-Type']).toBe('application/json');
+    });
+
     it('fails when no URL is configured', async () => {
         expect(await fire({})).toEqual({
             ok: false,

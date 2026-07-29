@@ -147,11 +147,34 @@ export async function dryRunRule(
             emittedAt: new Date(),
             data,
         };
+        // Match on the RAW data, deliberately. `filters.ts` indexes
+        // `data[cond.field]` directly and fails closed on undefined, so
+        // scrubbing BEFORE this call would flip a `contains` verdict from true
+        // to false for any rule filtering on a blocklisted field — silently
+        // changing which rules the operator is told would fire.
         const matches = matchesFilter(
             event as never,
             (rule.triggerFilterJson as never) ?? null,
         );
-        return { matches, sampleData: data, triggerEvent: rule.triggerEvent };
+
+        // Scrub only what LEAVES. The history endpoint already routes the same
+        // `triggerPayloadJson` through `scrubPayload`; dry-run returned it raw,
+        // so POSTing `{}` here was a one-request bypass of that scrubber.
+        //
+        // Caller-supplied `sampleData` is passed back untouched — it is the
+        // caller's own input, not a stored payload, and redacting it would make
+        // the response useless for the thing dry-run exists to do.
+        const returned = sampleData ?? scrubPayload(data);
+        const redactedFields = Object.keys(returned).filter(
+            (k) => returned[k] === '[redacted]',
+        );
+
+        return {
+            matches,
+            sampleData: returned,
+            redactedFields,
+            triggerEvent: rule.triggerEvent,
+        };
     });
 }
 

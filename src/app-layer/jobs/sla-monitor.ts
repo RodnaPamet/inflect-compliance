@@ -50,7 +50,12 @@ export async function runSlaMonitorJob(options?: {
 
         const tenants = options?.tenantId
             ? [{ id: options.tenantId }]
-            : await prisma.tenant.findMany({ select: { id: true } });
+            // Soft-deleted tenants were swept too — pure waste every 5 minutes,
+            // and it kept dead tenants' rules alive in the breach path.
+            : await prisma.tenant.findMany({
+                  where: { deletedAt: null },
+                  select: { id: true },
+              });
 
         let breached = 0;
         let errored = 0;
@@ -125,10 +130,46 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
                 },
             });
 
+            // Any breach action OTHER than NOTIFY_USER — including WEBHOOK —
+            // was silently ignored: the row was marked breached and nothing
+            // happened. An operator configuring a WEBHOOK escalation got no
+            // error, no log, and no delivery. Surfacing it as a warning is the
+            // honest interim: wiring the full action executor here is a larger
+            // change (it would need the tenant execution context the breach
+            // path does not currently build), and shipping a half-wired
+            // executor is worse than a loud gap.
+            if (
+                exec.rule.slaBreachActionType &&
+                exec.rule.slaBreachActionType !== 'NOTIFY_USER'
+            ) {
+                logger.warn('SLA breach action is not supported and was NOT executed', {
+                    component: 'sla-monitor',
+                    tenantId,
+                    ruleId: exec.rule.id,
+                    breachAction: exec.rule.slaBreachActionType,
+                });
+            }
+
             // NOTIFY_USER breach action — create notifications for recipients.
             if (exec.rule.slaBreachActionType === 'NOTIFY_USER' && exec.rule.slaBreachConfigJson) {
                 const cfg = exec.rule.slaBreachConfigJson as { userIds?: string[]; message?: string };
-                const userIds = Array.isArray(cfg.userIds) ? cfg.userIds : [];
+                const requested = Array.isArray(cfg.userIds) ? cfg.userIds : [];
+                // Membership-check the recipients, exactly as the executor's
+                // notifyUser does (action-executor.ts:135-139). This path did
+                // not, and `Notification.userId` is a REAL foreign key — so a
+                // single stale or foreign id raised an FK violation. Because
+                // `sweepTenant` wraps the whole loop in ONE transaction, that
+                // rolled back every `recordCompletion` for the tenant, and did
+                // so again every five minutes, forever. The unchecked insert
+                // was not just a tenant-isolation gap; it was a permanent
+                // poison pill for the tenant's entire SLA sweep.
+                const members = requested.length
+                    ? await db.tenantMembership.findMany({
+                          where: { tenantId, userId: { in: requested }, status: 'ACTIVE' },
+                          select: { userId: true },
+                      })
+                    : [];
+                const userIds = members.map((m: { userId: string }) => m.userId);
                 if (userIds.length > 0) {
                     await db.notification.createMany({
                         data: userIds.map((userId) => ({

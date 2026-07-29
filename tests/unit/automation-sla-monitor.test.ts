@@ -11,7 +11,20 @@
 const mockDb = {
     automationExecution: { findMany: jest.fn() },
     notification: { createMany: jest.fn() },
+    // Breach recipients are membership-checked now, exactly as the executor's
+    // notifyUser does. Notification.userId is a real FK, and sweepTenant runs
+    // the whole loop in ONE transaction — so an unchecked stale id rolled back
+    // every recordCompletion for the tenant, every five minutes, forever.
+    tenantMembership: { findMany: jest.fn() },
 } as any;
+
+beforeEach(() => {
+    // Default: requested recipients ARE active members, so tests that are not
+    // about membership keep asserting what they were written to assert.
+    mockDb.tenantMembership.findMany.mockImplementation(
+        async (args: any) => (args?.where?.userId?.in ?? []).map((userId: string) => ({ userId })),
+    );
+});
 
 jest.mock('@/lib/db-context', () => ({
     withTenantDb: jest.fn(async (_tid: string, fn: (db: any) => any) => fn(mockDb)),
