@@ -4,6 +4,7 @@
  * Controlled field markup for the vendor-create form.
  */
 import { useTranslations } from 'next-intl';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -207,11 +208,10 @@ export function NewVendorFields({ form }: { form: NewVendorFormReturn }) {
             </div>
 
             <label className="flex items-center gap-tight text-sm text-content-default">
-                <input
-                    type="checkbox"
+                <Checkbox
                     checked={form.fields.isSubprocessor}
-                    onChange={(e) =>
-                        form.setField('isSubprocessor', e.target.checked)
+                    onCheckedChange={(v) =>
+                        form.setField('isSubprocessor', !!v)
                     }
                     id="vendor-subprocessor"
                 />

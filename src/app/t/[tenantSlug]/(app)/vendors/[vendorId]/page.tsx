@@ -25,6 +25,7 @@ import { useToastWithUndo, useToast } from '@/components/ui/hooks';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { CopyText } from '@/components/ui/copy-text';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -823,14 +824,12 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             {tab === 'overview' && editing && canWrite && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
                     <div className="grid grid-cols-2 gap-default">
-                        <div>
-                            <label className="block text-sm text-content-muted mb-1">{tx('detail.name')}</label>
-                            <input className="input w-full" value={editForm.name} onChange={e => setEditForm((p) => ({ ...p, name: e.target.value }))} />
-                        </div>
-                        <div>
-                            <label className="block text-sm text-content-muted mb-1">{tx('detail.legalName')}</label>
-                            <input className="input w-full" value={editForm.legalName} onChange={e => setEditForm((p) => ({ ...p, legalName: e.target.value }))} />
-                        </div>
+                        <FormField label={tx('detail.name')}>
+                            <Input value={editForm.name} onChange={e => setEditForm((p) => ({ ...p, name: e.target.value }))} />
+                        </FormField>
+                        <FormField label={tx('detail.legalName')}>
+                            <Input value={editForm.legalName} onChange={e => setEditForm((p) => ({ ...p, legalName: e.target.value }))} />
+                        </FormField>
                         <div>
                             <label className="block text-sm text-content-muted mb-1">{tx('detail.status')}</label>
                             <Combobox hideSearch selected={STATUS_OPTIONS_L.find(o => o.value === editForm.status) ?? null} setSelected={(opt) => setEditForm((p) => ({ ...p, status: opt?.value ?? p.status }))} options={STATUS_OPTIONS_L} matchTriggerWidth />
@@ -888,7 +887,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                     </div>
                     <div>
                         <label className="block text-sm text-content-muted mb-1">{tx('detail.description')}</label>
-                        <textarea className="input w-full h-20" value={editForm.description} onChange={e => setEditForm((p) => ({ ...p, description: e.target.value }))} />
+                        <Textarea className="w-full h-20" value={editForm.description} onChange={e => setEditForm((p) => ({ ...p, description: e.target.value }))} />
                     </div>
                     <div className="flex gap-compact">
                         <Button variant="primary" onClick={saveEdit} id="save-vendor-btn">{tx('detail.save')}</Button>
@@ -913,7 +912,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                         <div className="flex flex-wrap items-center gap-compact min-w-0">
                             <input
                                 type="search"
-                                className="input w-64 max-w-full"
+                                className="w-64 max-w-full"
                                 placeholder={tx('detail.searchDocs')}
                                 value={docSearch}
                                 onChange={(e) => setDocSearch(e.target.value)}
@@ -979,25 +978,22 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                     <label className="block text-sm text-content-muted mb-1">{tx('detail.type')}</label>
                                     <Combobox hideSearch id="doc-type-select" selected={DOC_TYPE_CB_OPTIONS.find(o => o.value === docForm.type) ?? null} setSelected={(opt) => setDocForm(p => ({ ...p, type: opt?.value ?? p.type }))} options={DOC_TYPE_CB_OPTIONS} matchTriggerWidth />
                                 </div>
-                                <div>
-                                    <label className="block text-sm text-content-muted mb-1">{tx('detail.title')}</label>
-                                    <input className="input w-full" value={docForm.title} onChange={e => setDocForm(p => ({ ...p, title: e.target.value }))} id="doc-title-input" />
-                                </div>
+                                <FormField label={tx('detail.title')}>
+                                    <Input value={docForm.title} onChange={e => setDocForm(p => ({ ...p, title: e.target.value }))} id="doc-title-input" />
+                                </FormField>
                             </div>
-                            <div>
-                                <label className="block text-sm text-content-muted mb-1">{tx('detail.externalUrl')}</label>
-                                <input className="input w-full" type="url" value={docForm.externalUrl} onChange={e => setDocForm(p => ({ ...p, externalUrl: e.target.value }))} placeholder="https://..." id="doc-url-input" />
-                            </div>
-                            <div>
-                                <label className="block text-sm text-content-muted mb-1">{tx('detail.notes')}</label>
-                                <input className="input w-full" value={docForm.notes} onChange={e => setDocForm(p => ({ ...p, notes: e.target.value }))} id="doc-notes-input" />
-                            </div>
+                            <FormField label={tx('detail.externalUrl')}>
+                                <Input type="url" value={docForm.externalUrl} onChange={e => setDocForm(p => ({ ...p, externalUrl: e.target.value }))} placeholder="https://..." id="doc-url-input" />
+                            </FormField>
+                            <FormField label={tx('detail.notes')}>
+                                <Input value={docForm.notes} onChange={e => setDocForm(p => ({ ...p, notes: e.target.value }))} id="doc-notes-input" />
+                            </FormField>
                             <div>
                                 <label className="block text-sm text-content-muted mb-1" htmlFor="doc-folder-input">
                                     {tx('detail.folder')} <span className="text-content-subtle font-normal">{tx('detail.optional')}</span>
                                 </label>
                                 <input
-                                    className="input w-full"
+                                    className="w-full"
                                     id="doc-folder-input"
                                     placeholder={tx('detail.folderPlaceholder')}
                                     list="doc-folder-suggestions"
@@ -1088,12 +1084,13 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                         <div className={cn(cardVariants({ density: 'compact' }), 'space-y-tight')} id="send-assessment-link">
                             <div className="flex items-center justify-between gap-compact">
                                 <Heading level={3}>{tx('detail.assessmentLink')}</Heading>
-                                <button
-                                    className="text-content-muted text-xs hover:underline"
+                                <Button
+                                    variant="ghost"
+                                    size="xs"
                                     onClick={() => setConfirmDismissLink(true)}
                                 >
                                     {tx('detail.dismiss')}
-                                </button>
+                                </Button>
                             </div>
                             {/* The hint used to assert the invitation WAS
                                 emailed. It is only true when the outbox
@@ -1412,12 +1409,9 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                 </StatusBadge>
                                             </span>
                                             {canWrite && (
-                                                <button
-                                                    className="text-content-error text-xs"
-                                                    onClick={() => removeLink(l.id)}
-                                                >
+                                                <Button variant="destructive" size="xs" onClick={() => removeLink(l.id)}>
                                                     {tx('detail.remove')}
-                                                </button>
+                                                </Button>
                                             )}
                                         </div>
                                     );
@@ -1439,7 +1433,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                 <div className="space-y-default">
                     {canWrite && (
                         <div className="flex items-center gap-tight justify-end">
-                            <input className="input w-48" placeholder={tx('detail.bundleNamePlaceholder')} value={bundleName}
+                            <Input className="w-48" placeholder={tx('detail.bundleNamePlaceholder')} value={bundleName}
                                 onChange={e => setBundleName(e.target.value)} id="bundle-name-input" />
                             <Button variant="primary" disabled={!bundleName} id="create-bundle-btn" onClick={async () => {
                                 await fetch(apiUrl(`/vendors/${params.vendorId}/bundles`), {
@@ -1613,18 +1607,18 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                             </div>
                             <div>
                                 <label className="block text-sm text-content-muted mb-1">{tx('detail.purpose')}</label>
-                                <input className="input w-48" value={subForm.purpose}
+                                <Input className="w-48" value={subForm.purpose}
                                     onChange={e => setSubForm(p => ({ ...p, purpose: e.target.value }))} id="sub-purpose" placeholder={tx('detail.purposePlaceholder')} />
                             </div>
                             {/* PR-T — 4th-party data-residency fields. */}
                             <div>
                                 <label className="block text-sm text-content-muted mb-1">{tx('detail.subDataTypes')}</label>
-                                <input className="input w-48" value={subForm.dataTypes}
+                                <Input className="w-48" value={subForm.dataTypes}
                                     onChange={e => setSubForm(p => ({ ...p, dataTypes: e.target.value }))} id="sub-data-types" placeholder={tx('detail.subDataTypesPlaceholder')} />
                             </div>
                             <div>
                                 <label className="block text-sm text-content-muted mb-1">{tx('detail.subCountry')}</label>
-                                <input className="input w-48" value={subForm.country}
+                                <Input className="w-48" value={subForm.country}
                                     onChange={e => setSubForm(p => ({ ...p, country: e.target.value }))} id="sub-country" placeholder={tx('detail.subCountryPlaceholder')} />
                             </div>
                             <Button variant="primary" disabled={!subForm.subprocessorVendorId} id="add-subprocessor-btn" onClick={async () => {
@@ -2088,12 +2082,9 @@ function VendorSubprocessorsTable({ subs, canWrite, onRemove }: { subs: VendorSu
                               id: 'actions',
                               header: '',
                               cell: ({ row }: { row: { original: VendorSubprocessorRow } }) => (
-                                  <button
-                                      className="text-content-error text-xs"
-                                      onClick={() => onRemove(row.original.id)}
-                                  >
+                                  <Button variant="destructive" size="xs" onClick={() => onRemove(row.original.id)}>
                                       {tx('detail.remove')}
-                                  </button>
+                                  </Button>
                               ),
                           },
                       ]
