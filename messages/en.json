@@ -6230,7 +6230,11 @@
       "notEnoughData": "Not enough data yet.",
       "mostFired": "Most-fired rules",
       "runsOk": "{count} runs · {rate}% ok",
-      "executionsEmpty": "No executions in this window."
+      "executionsEmpty": "No executions in this window.",
+      "errorTitle": "Analytics unavailable",
+      "errorDesc": "These figures could not be loaded, so none are shown — a partial number here would be worse than none.",
+      "retry": "Try again",
+      "truncated": "More runs happened in the last {days} days than this view aggregates. Every figure below is a lower bound. Narrow the window for exact numbers."
     },
     "monitor": {
       "stuckExecutions": "Stuck executions ({count})",

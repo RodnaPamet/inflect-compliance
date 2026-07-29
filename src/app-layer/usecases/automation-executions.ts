@@ -69,18 +69,43 @@ export async function listRuleExecutions(
 }
 
 /**
- * Live monitor feed (Epic 10): in-flight (RUNNING) executions + a recent
- * activity tail across all rules, for the operator console.
+ * How long an in-flight execution may run before the monitor calls it stuck,
+ * when its rule declares no `slaWindowMinutes` of its own.
+ *
+ * Rules WITH a window are swept by `sla-monitor` and completed as FAILED once
+ * breached, so they self-heal within a sweep cycle. Rules WITHOUT one are never
+ * swept at all — their RUNNING rows accumulate indefinitely, which makes them
+ * the executions the watchdog most needs to surface. Hence a default rather
+ * than skipping them.
  */
-export async function listLiveExecutions(ctx: RequestContext) {
+export const DEFAULT_STUCK_AFTER_MINUTES = 15;
+
+/**
+ * Live monitor feed (Epic 10): STUCK executions + a recent activity tail across
+ * all rules, for the operator console.
+ *
+ * `stuck` is not "everything RUNNING". It used to be — the query had no timeout
+ * predicate at all, so the console badged every healthy in-flight execution as
+ * stuck and offered to cancel it, contradicting MonitorTab's own docblock
+ * promise that the section "only appears when an execution is genuinely hung
+ * past its timeout".
+ *
+ * The deadline is per-execution (`rule.slaWindowMinutes`, else the default), so
+ * it cannot be expressed as one SQL predicate. Rows are read oldest-first —
+ * stuck executions are by definition the OLD ones, and a newest-first page
+ * would hide them behind healthy traffic — then filtered in memory.
+ */
+export async function listLiveExecutions(ctx: RequestContext, now = new Date()) {
     assertCanReadAutomationHistory(ctx);
     return runInTenantContext(ctx, async (db) => {
         const [running, recent] = await Promise.all([
             db.automationExecution.findMany({
                 where: { tenantId: ctx.tenantId, status: 'RUNNING' },
-                orderBy: { createdAt: 'desc' },
-                take: 100,
-                include: { rule: { select: { name: true } } },
+                orderBy: { createdAt: 'asc' },
+                take: 200,
+                include: {
+                    rule: { select: { name: true, slaWindowMinutes: true } },
+                },
             }),
             db.automationExecution.findMany({
                 where: { tenantId: ctx.tenantId },
@@ -98,7 +123,15 @@ export async function listLiveExecutions(ctx: RequestContext) {
             triggeredBy: e.triggeredBy,
             createdAt: e.createdAt,
         });
-        return { running: running.map(shape), recent: recent.map(shape) };
+        const isStuck = (e: (typeof running)[number]) => {
+            const windowMin = e.rule?.slaWindowMinutes ?? DEFAULT_STUCK_AFTER_MINUTES;
+            const startedAtMs = (e.startedAt ?? e.createdAt).getTime();
+            return now.getTime() >= startedAtMs + windowMin * 60_000;
+        };
+        return {
+            stuck: running.filter(isStuck).map(shape),
+            recent: recent.map(shape),
+        };
     });
 }
 

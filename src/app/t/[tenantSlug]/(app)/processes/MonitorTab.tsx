@@ -40,7 +40,7 @@ export function MonitorTab() {
     const t = useTranslations('processes');
     const apiUrl = useTenantApiUrl();
     const key = apiUrl(CACHE_KEYS.automation.executions.live());
-    const { data, mutate } = useSWR<{ running: ExecRow[]; recent: ExecRow[] }>(
+    const { data, mutate } = useSWR<{ stuck: ExecRow[]; recent: ExecRow[] }>(
         key,
         (url: string) => fetch(url).then((r) => r.json()),
         { refreshInterval: 5000, revalidateOnFocus: true },
@@ -55,7 +55,7 @@ export function MonitorTab() {
         await mutate();
     }
 
-    const running = data?.running ?? [];
+    const stuck = data?.stuck ?? [];
     const recent = data?.recent ?? [];
 
     return (
@@ -86,13 +86,13 @@ export function MonitorTab() {
                     )}
                 </Card>
 
-                {running.length > 0 && (
+                {stuck.length > 0 && (
                     <Card>
                         <p className="mb-default text-[11px] uppercase tracking-wide text-content-subtle">
-                            {t('monitor.stuckExecutions', { count: running.length })}
+                            {t('monitor.stuckExecutions', { count: stuck.length })}
                         </p>
                         <ul className="space-y-tight" data-testid="stuck-list">
-                            {running.map((e) => (
+                            {stuck.map((e) => (
                                 <li key={e.id} className="flex items-center justify-between gap-default">
                                     <span className="flex items-center gap-compact text-sm">
                                         <StatusBadge variant="warning">{t('monitor.stuck')}</StatusBadge>
