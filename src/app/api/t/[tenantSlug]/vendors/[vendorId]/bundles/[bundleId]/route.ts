@@ -13,7 +13,7 @@ const AddItemSchema = z.object({
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; vendorId: string; bundleId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    return jsonResponse(await getEvidenceBundle(ctx, params.bundleId));
+    return jsonResponse(await getEvidenceBundle(ctx, params.bundleId, params.vendorId));
 });
 
 export const POST = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; vendorId: string; bundleId: string }> }) => {
@@ -21,7 +21,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
     const ctx = await getTenantCtx(params, req);
     const url = new URL(req.url);
     if (url.searchParams.get('action') === 'freeze') {
-        return jsonResponse(await freezeBundle(ctx, params.bundleId));
+        return jsonResponse(await freezeBundle(ctx, params.bundleId, params.vendorId));
     }
     const raw = await req.json();
     const body = AddItemSchema.parse(raw);

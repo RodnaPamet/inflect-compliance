@@ -74,11 +74,25 @@ export async function removeBundleItem(ctx: RequestContext, bundleId: string, it
     });
 }
 
-export async function freezeBundle(ctx: RequestContext, bundleId: string) {
+export async function freezeBundle(
+    ctx: RequestContext,
+    bundleId: string,
+    /**
+     * The vendor the URL claims this bundle belongs to. Resolving by
+     * (id, tenantId) alone made a bundle owned by vendor A freezable at
+     * /vendors/B/bundles/{id} — and freezing is irreversible, so the wrong
+     * parent in the URL produces a permanent artefact attributed to it.
+     */
+    vendorId?: string,
+) {
     assertCanManageVendorDocs(ctx);
     return runInTenantContext(ctx, async (db) => {
         const bundle = await db.vendorEvidenceBundle.findFirst({
-            where: { id: bundleId, tenantId: ctx.tenantId },
+            where: {
+                id: bundleId,
+                tenantId: ctx.tenantId,
+                ...(vendorId ? { vendorId } : {}),
+            },
             include: { items: true },
         });
         if (!bundle) throw notFound('Bundle not found');
@@ -122,11 +136,20 @@ export async function freezeBundle(ctx: RequestContext, bundleId: string) {
     });
 }
 
-export async function getEvidenceBundle(ctx: RequestContext, bundleId: string) {
+export async function getEvidenceBundle(
+    ctx: RequestContext,
+    bundleId: string,
+    /** The vendor the URL claims this bundle belongs to — see freezeBundle. */
+    vendorId?: string,
+) {
     assertCanReadVendors(ctx);
     return runInTenantContext(ctx, async (db) => {
         const bundle = await db.vendorEvidenceBundle.findFirst({
-            where: { id: bundleId, tenantId: ctx.tenantId },
+            where: {
+                id: bundleId,
+                tenantId: ctx.tenantId,
+                ...(vendorId ? { vendorId } : {}),
+            },
             include: { items: true, createdBy: { select: { id: true, name: true } }, vendor: { select: { id: true, name: true } } },
         });
         if (!bundle) throw notFound('Bundle not found');

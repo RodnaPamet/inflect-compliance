@@ -146,3 +146,54 @@ describe('assertFileInTenant', () => {
         );
     });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Child routes are scoped to the vendor named in their URL
+// ═══════════════════════════════════════════════════════════════════
+//
+// [vendorId]/{links,documents,bundles}/[childId] resolved the child by
+// (id, tenantId) alone and ignored the vendorId in their own path. Tenant
+// scoping held — this was never a cross-tenant breach — but the URL named
+// one parent while the operation acted on another, so a link belonging to
+// vendor A was deletable at /vendors/B/links/{id} and the audit trail
+// recorded it against B.
+//
+// These assertions are structural: the behaviour lives in a Prisma where
+// clause, which a mock cannot meaningfully exercise without restating the
+// query.
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+describe('vendor child routes pass their path vendorId through', () => {
+    const ROOT = path.resolve(__dirname, '../..');
+    const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+    it.each([
+        ['links/[linkId]', 'removeVendorLink'],
+        ['documents/[docId]', 'removeVendorDocument'],
+    ])('%s forwards params.vendorId', (dir, fn) => {
+        const src = read(
+            `src/app/api/t/[tenantSlug]/vendors/[vendorId]/${dir}/route.ts`,
+        );
+        expect(src).toMatch(new RegExp(`${fn}\\(ctx, params\\.\\w+, params\\.vendorId\\)`));
+    });
+
+    it('the bundle route forwards it for both read and freeze', () => {
+        const src = read(
+            'src/app/api/t/[tenantSlug]/vendors/[vendorId]/bundles/[bundleId]/route.ts',
+        );
+        expect(src).toMatch(/getEvidenceBundle\(ctx, params\.bundleId, params\.vendorId\)/);
+        expect(src).toMatch(/freezeBundle\(ctx, params\.bundleId, params\.vendorId\)/);
+    });
+
+    it('the usecases actually constrain on it', () => {
+        const vendor = read('src/app-layer/usecases/vendor.ts');
+        expect(vendor).toMatch(/where: \{ id: linkId, vendorId, tenantId: ctx\.tenantId \}/);
+        expect(vendor).toMatch(/where: \{ id: docId, vendorId, tenantId: ctx\.tenantId \}/);
+
+        const audit = read('src/app-layer/usecases/vendor-audit.ts');
+        // Spread form: the parameter stays optional for non-route callers.
+        expect(audit).toMatch(/\.\.\.\(vendorId \? \{ vendorId \} : \{\}\)/);
+    });
+});
