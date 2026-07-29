@@ -89,7 +89,7 @@ export function FrameworkUpdatesClient({
                 description={t('description')}
             />
 
-            {error && <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-danger')}>{error}</div>}
+            {error && <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}>{error}</div>}
             {note && <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-success')}>{note}</div>}
 
             {deltas.length === 0 ? (

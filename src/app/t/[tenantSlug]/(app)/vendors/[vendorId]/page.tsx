@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState, useCallback, use } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useTenantContext, usePermissions } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { Pen2, Plus, ChevronRight } from '@/components/ui/icons/nucleo';
 import { Tooltip, InfoTooltip } from '@/components/ui/tooltip';
@@ -1618,6 +1618,7 @@ interface VendorAssessmentRow {
 }
 function VendorAssessmentsTable({ assessments, vendorId, tenantHref }: { assessments: VendorAssessmentRow[]; vendorId: string; tenantHref: (path: string) => string }) {
     const tx = useTranslations('vendors');
+    const perms = usePermissions();
     const columns = useMemo(
         () =>
             createColumns<VendorAssessmentRow>([
@@ -1687,6 +1688,19 @@ function VendorAssessmentsTable({ assessments, vendorId, tenantHref }: { assessm
                                 </span>
                             );
                         }
+                        // The review surface lives under /admin, which the
+                        // edge middleware and the admin layout both gate on
+                        // admin authority. Send/resend is a canWrite action,
+                        // so an EDITOR can put an assessment into SUBMITTED
+                        // and then be shown a "Review →" affordance that
+                        // dead-ends on a Forbidden page. Don't offer it.
+                        if (!perms.admin.view) {
+                            return (
+                                <span className="text-content-subtle text-xs">
+                                    {tx('detail.awaitingReview')}
+                                </span>
+                            );
+                        }
                         return (
                             <Link
                                 href={tenantHref(`/admin/vendor-assessment-reviews/${row.original.id}`)}
@@ -1699,7 +1713,7 @@ function VendorAssessmentsTable({ assessments, vendorId, tenantHref }: { assessm
                     },
                 },
             ]),
-        [vendorId, tenantHref, tx],
+        [vendorId, tenantHref, tx, perms],
     );
     return (
         <DataTable

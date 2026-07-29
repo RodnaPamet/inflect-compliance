@@ -8,7 +8,7 @@
  * tests/integration/audit-middleware.test.ts). */
 import {
     assertCanReadVendors, assertCanManageVendors, assertCanManageVendorDocs,
-    assertCanRunAssessment, assertCanApproveAssessment,
+    assertCanRunAssessment, assertCanApproveAssessment, assertCanExportVendors,
     assertCanManageVendorAssessmentTemplates,
 } from '../../src/app-layer/policies/vendor.policies';
 import { getPermissionsForRole } from '../../src/lib/permissions';
@@ -128,5 +128,45 @@ describe('Vendor Policies', () => {
             expect(ctx.permissions.canWrite).toBe(false); // coarse tier would have denied
             expect(() => assertCanManageVendors(ctx)).not.toThrow();
         });
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Bulk export is a distinct authority from read
+// ═══════════════════════════════════════════════════════════════════
+//
+// The export endpoint gated on assertCanReadVendors, which is true for
+// EVERY role — so a read-only member could pull the entire vendor register,
+// every assessment and all document metadata in one request. Reading one
+// vendor's detail page and exfiltrating the whole register are different
+// acts.
+
+describe('assertCanExportVendors', () => {
+    it('refuses a role that can read but not export', () => {
+        expect(readerCtx.permissions.canRead).toBe(true);
+        expect(readerCtx.permissions.canExport).toBe(false);
+        expect(() => assertCanExportVendors(readerCtx)).toThrow();
+    });
+
+    it('allows ADMIN and OWNER', () => {
+        expect(() => assertCanExportVendors(adminCtx)).not.toThrow();
+        expect(() => assertCanExportVendors(ownerCtx)).not.toThrow();
+    });
+
+    it('allows AUDITOR — export is core to the audit role', () => {
+        expect(() => assertCanExportVendors(auditorCtx)).not.toThrow();
+    });
+
+    it('refuses a role that cannot see vendors at all', () => {
+        // Layered on the read check, not parallel to it: no visibility must
+        // mean no export, whatever canExport says.
+        const blind = {
+            ...editorCtx,
+            appPermissions: {
+                ...editorCtx.appPermissions,
+                vendors: { ...editorCtx.appPermissions.vendors, view: false },
+            },
+        };
+        expect(() => assertCanExportVendors(blind)).toThrow();
     });
 });

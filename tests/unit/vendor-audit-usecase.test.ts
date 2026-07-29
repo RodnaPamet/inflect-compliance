@@ -21,6 +21,10 @@ jest.mock('@/app-layer/policies/vendor.policies', () => ({
     assertCanReadVendors: jest.fn(),
     assertCanManageVendors: jest.fn(),
     assertCanManageVendorDocs: jest.fn(),
+    // Bulk export is its own authority, not a synonym for read — the three
+    // export usecases gate on this rather than assertCanReadVendors, which
+    // is true for every role including READER.
+    assertCanExportVendors: jest.fn(),
 }));
 
 import { logEvent } from '@/app-layer/events/audit';
@@ -89,8 +93,30 @@ describe('evidence bundles', () => {
         await expect(addBundleItem(ctx, 'b1', { entityType: 'ASSESSMENT', entityId: 'a1' })).rejects.toThrow('frozen');
 
         db.vendorEvidenceBundle.findFirst.mockResolvedValueOnce({ id: 'b1', frozenAt: null });
+        // The item target is now resolved in-tenant before the write.
+        db.vendorAssessment.findFirst.mockResolvedValueOnce({ id: 'a1' });
         const r = await addBundleItem(ctx, 'b1', { entityType: 'ASSESSMENT', entityId: 'a1' });
         expect(r).toEqual({ id: 'i1' });
+    });
+
+    it('addBundleItem: refuses a target that does not resolve in this tenant', async () => {
+        const db = mockDbHolder.db;
+        db.vendorEvidenceBundle.findFirst.mockResolvedValueOnce({ id: 'b1', frozenAt: null });
+        db.vendorAssessment.findFirst.mockResolvedValueOnce(null);
+        await expect(
+            addBundleItem(ctx, 'b1', { entityType: 'ASSESSMENT', entityId: 'foreign' }),
+        ).rejects.toThrow();
+        // freezeBundle tenant-scopes its snapshot lookup, so a foreign id
+        // used to freeze into an EMPTY snapshot with no error at all.
+        expect(db.vendorEvidenceBundleItem.create).not.toHaveBeenCalled();
+    });
+
+    it('addBundleItem: refuses an unknown item type', async () => {
+        const db = mockDbHolder.db;
+        db.vendorEvidenceBundle.findFirst.mockResolvedValueOnce({ id: 'b1', frozenAt: null });
+        await expect(
+            addBundleItem(ctx, 'b1', { entityType: 'NOT_A_THING', entityId: 'x' }),
+        ).rejects.toThrow();
     });
 
     it('removeBundleItem: missing bundle, frozen, item-not-found, then success', async () => {
@@ -176,10 +202,23 @@ describe('subprocessors', () => {
         db.vendor.findFirst.mockResolvedValueOnce(null);
         await expect(addSubprocessor(ctx, 'v1', { subprocessorVendorId: 'v2' })).rejects.toThrow('not found');
 
+        // Two lookups now: the subprocessor target, then the PRIMARY —
+        // vendorId comes straight off the URL path and was never verified.
         db.vendor.findFirst.mockResolvedValueOnce({ id: 'v2', name: 'Sub' });
+        db.vendor.findFirst.mockResolvedValueOnce({ id: 'v1' });
         const rel = await addSubprocessor(ctx, 'v1', { subprocessorVendorId: 'v2', purpose: 'p' });
         expect(rel).toEqual({ id: 'rel1' });
         expect((logEvent as jest.Mock).mock.calls.some((c: any) => c[2].action === 'VENDOR_SUBPROCESSOR_ADDED')).toBe(true);
+    });
+
+    it('addSubprocessor: refuses a primary vendor outside this tenant', async () => {
+        const db = mockDbHolder.db;
+        db.vendor.findFirst.mockResolvedValueOnce({ id: 'v2', name: 'Sub' }); // target resolves
+        db.vendor.findFirst.mockResolvedValueOnce(null); // primary does not
+        await expect(
+            addSubprocessor(ctx, 'foreign-primary', { subprocessorVendorId: 'v2' }),
+        ).rejects.toThrow();
+        expect(db.vendorRelationship.create).not.toHaveBeenCalled();
     });
 
     it('removeSubprocessor: not-found then success with audit', async () => {
