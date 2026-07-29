@@ -197,9 +197,31 @@ export async function addVendorDocument(ctx: RequestContext, vendorId: string, d
     return result;
 }
 
-export async function removeVendorDocument(ctx: RequestContext, docId: string) {
+export async function removeVendorDocument(
+    ctx: RequestContext,
+    docId: string,
+    /**
+     * The vendor the URL claims this document belongs to.
+     *
+     * Optional for the moment so existing non-route callers keep working,
+     * but the route passes it. Without it the child was resolved by
+     * (id, tenantId) alone, so a document belonging to vendor A was
+     * reachable — and deletable — at /vendors/B/documents/{id}. Tenant
+     * scoping held, so this was never a cross-tenant breach; it was the URL
+     * naming one parent while the operation acted on another, which is how
+     * an audit trail ends up attributing a deletion to the wrong vendor.
+     */
+    vendorId?: string,
+) {
     assertCanManageVendorDocs(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        if (vendorId) {
+            const owned = await db.vendorDocument.findFirst({
+                where: { id: docId, vendorId, tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            if (!owned) throw notFound('Document not found');
+        }
         const doc = await VendorDocumentRepository.deleteById(db, ctx, docId);
         if (!doc) throw notFound('Document not found');
         await logEvent(db, ctx, {
@@ -369,9 +391,21 @@ export async function addVendorLink(ctx: RequestContext, vendorId: string, data:
     return result;
 }
 
-export async function removeVendorLink(ctx: RequestContext, linkId: string) {
+export async function removeVendorLink(
+    ctx: RequestContext,
+    linkId: string,
+    /** The vendor the URL claims this link belongs to — see removeVendorDocument. */
+    vendorId?: string,
+) {
     assertCanManageVendors(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        if (vendorId) {
+            const owned = await db.vendorLink.findFirst({
+                where: { id: linkId, vendorId, tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            if (!owned) throw notFound('Link not found');
+        }
         const link = await VendorLinkRepository.deleteById(db, ctx, linkId);
         if (!link) throw notFound('Link not found');
         return link;
