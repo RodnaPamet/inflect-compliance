@@ -297,12 +297,19 @@ async function invokeSubflow(rule: ExecutableRule, event: ActionEvent): Promise<
     if (!cfg?.targetGroupId) return { ok: false, summary: 'No sub-flow target configured' };
     // The chained execution is created by the subflow-dispatch job; here we
     // only enqueue it. parentExecutionId is wired by the caller via the event.
+    // Carry the recursion depth forward. `__subflowDepth` is stamped by
+    // subflow-dispatcher on the data it hands to `executeAction`; absent on
+    // the first hop, so an initial invoke enqueues depth 1. The dispatcher
+    // refuses above MAX_SUBFLOW_DEPTH — a group whose entry rule invokes its
+    // own group used to recurse without bound.
+    const currentDepth = Number(event.data?.__subflowDepth ?? 0);
     await enqueue('subflow-dispatch', {
         tenantId: event.tenantId,
         targetGroupId: cfg.targetGroupId,
         parentExecutionId: (event.data?.__parentExecutionId as string) ?? '',
         triggerEvent: event.event,
         data: event.data ?? {},
+        depth: (Number.isFinite(currentDepth) ? currentDepth : 0) + 1,
     });
     return { ok: true, summary: `Enqueued sub-flow ${cfg.targetGroupId}` };
 }

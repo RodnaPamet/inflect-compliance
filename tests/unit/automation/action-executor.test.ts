@@ -527,6 +527,31 @@ describe('INVOKE_SUBFLOW', () => {
     const invoke = (cfg: Record<string, unknown>, e: Record<string, unknown> = {}) =>
         run({ actionType: 'INVOKE_SUBFLOW', actionConfigJson: cfg }, e);
 
+    // The recursion cap in subflow-dispatcher is only meaningful if the depth
+    // actually advances per hop — a cap the caller never increments is
+    // decorative. `__subflowDepth` rides event.data, stamped by the dispatcher.
+    it('carries depth forward so the recursion cap can bite', async () => {
+        await invoke(
+            { targetGroupId: 'g-1' },
+            { data: { __parentExecutionId: 'exec-9', __subflowDepth: 4 } },
+        );
+        expect(enqueue).toHaveBeenCalledWith(
+            'subflow-dispatch',
+            expect.objectContaining({ depth: 5 }),
+        );
+    });
+
+    it('treats a non-numeric depth marker as the first hop', async () => {
+        await invoke(
+            { targetGroupId: 'g-1' },
+            { data: { __subflowDepth: 'not-a-number' } },
+        );
+        expect(enqueue).toHaveBeenCalledWith(
+            'subflow-dispatch',
+            expect.objectContaining({ depth: 1 }),
+        );
+    });
+
     it('fails when no target is configured', async () => {
         expect(await invoke({})).toEqual({
             ok: false,
@@ -547,6 +572,8 @@ describe('INVOKE_SUBFLOW', () => {
             parentExecutionId: 'exec-9',
             triggerEvent: 'risk.created',
             data: { __parentExecutionId: 'exec-9', foo: 'bar' },
+            // First hop — no `__subflowDepth` on the event, so depth starts at 1.
+            depth: 1,
         });
         expect(res).toEqual({ ok: true, summary: 'Enqueued sub-flow g-1' });
     });

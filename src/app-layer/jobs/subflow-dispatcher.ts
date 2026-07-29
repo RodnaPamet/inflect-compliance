@@ -14,6 +14,17 @@ import { runJob } from '@/lib/observability/job-runner';
 import { prisma } from '@/lib/prisma';
 import type { JobRunResult, SubflowDispatchPayload } from './types';
 import { executeAction } from '../automation/action-executor';
+import { logger } from '@/lib/observability/logger';
+
+/**
+ * Recursion cap, mirroring `MAX_CHAIN_DEPTH` in rule-chain-dispatch.
+ *
+ * A sub-flow whose entry rule's action is INVOKE_SUBFLOW pointing back at its
+ * own group recursed forever: this dispatcher had no cap, and `targetGroupId`
+ * is a free-form string with no existence or self-reference validation. The
+ * chain dispatcher has been capped since Epic 7; this one was simply missed.
+ */
+const MAX_SUBFLOW_DEPTH = 10;
 
 export async function runSubflowDispatch(
     payload: SubflowDispatchPayload,
@@ -22,6 +33,33 @@ export async function runSubflowDispatch(
         const startedAt = new Date().toISOString();
         const startMs = performance.now();
         const { tenantId, targetGroupId, parentExecutionId, triggerEvent, data } = payload;
+        const depth = payload.depth ?? 1;
+
+        if (depth > MAX_SUBFLOW_DEPTH) {
+            // Refuse rather than throw: a runaway sub-flow is a misconfigured
+            // rule, not an infrastructure fault, and throwing would put the job
+            // into retry — turning one bad rule into sustained queue pressure.
+            logger.warn('subflow-dispatch: recursion cap reached, refusing to descend', {
+                component: 'subflow-dispatcher',
+                tenantId,
+                targetGroupId,
+                depth,
+                maxDepth: MAX_SUBFLOW_DEPTH,
+            });
+            const capped: JobRunResult = {
+                jobName: 'subflow-dispatch',
+                jobRunId: crypto.randomUUID(),
+                success: true,
+                startedAt,
+                completedAt: new Date().toISOString(),
+                durationMs: Math.round(performance.now() - startMs),
+                itemsScanned: 1,
+                itemsActioned: 0,
+                itemsSkipped: 1,
+                details: { targetGroupId, dispatched: false, skipped: 'max-subflow-depth', depth },
+            };
+            return { result: capped, executionId: null };
+        }
 
         // Entry rule = the first ENABLED rule in the target group. A group's
         // trigger node owns this rule (priority breaks ties deterministically).
@@ -41,7 +79,12 @@ export async function runSubflowDispatch(
             const outcome = await executeAction(prisma, entry, {
                 tenantId,
                 event: triggerEvent,
-                data: { ...data, __parentExecutionId: parentExecutionId },
+                // `__subflowDepth` rides `data` alongside the existing
+                // `__parentExecutionId` marker — same convention. It is read
+                // back by `invokeSubflow` so a nested INVOKE_SUBFLOW enqueues
+                // depth+1. Without this the cap below would never be reached
+                // and the guard would be decorative.
+                data: { ...data, __parentExecutionId: parentExecutionId, __subflowDepth: depth },
             });
             const exec = await prisma.automationExecution.create({
                 data: {

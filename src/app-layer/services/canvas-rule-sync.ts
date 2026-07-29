@@ -25,6 +25,9 @@
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
 import { AutomationRuleRepository } from '../automation';
+import { assertCanManageAutomation } from '../automation/policies';
+import { assertNoChainCycle } from '../usecases/automation-rules';
+import { logEvent } from '../events/audit';
 
 const ACTION_KIND = 'action';
 const CHAIN_EDGE_KIND = 'chain-delay';
@@ -77,12 +80,46 @@ export async function syncCanvasToRules(
         select: { sourceKey: true, targetKey: true, edgeKind: true, dataJson: true },
     })) as GraphEdge[];
 
+    // ── Authorization (was entirely absent) ─────────────────────────────
+    //
+    // `saveProcessMap` gates on `assertCanWrite` (EDITOR), then called this
+    // function, which creates and updates AutomationRule rows. Rule authoring
+    // through REST requires ADMIN (`assertCanManageAutomation` → canAdmin), so
+    // the canvas was a lower-privilege path to the same writes.
+    //
+    // The escalation was not theoretical. `dataJson.ruleId` is typed
+    // `z.unknown()` in ProcessNodeInputSchema and `ruleIdOf` took it at face
+    // value — so an EDITOR could craft an action node carrying an ADMIN's rule
+    // id, add a chain edge from it, and have the loop below call
+    // `AutomationRuleRepository.update` on a rule they cannot otherwise touch.
+    //
+    // The assert is conditional on the sync actually WRITING. A map with no
+    // action nodes and no chain edges mutates no rule, and an EDITOR must stay
+    // able to edit a plain document canvas — gating those saves on ADMIN would
+    // be a functional regression unrelated to the vulnerability.
+    const wouldWrite = nodes.length > 0 || edges.length > 0;
+    if (wouldWrite) {
+        assertCanManageAutomation(ctx);
+    }
+
+    // Claimed rule ids must be REAL and IN-TENANT before they are trusted as
+    // chain endpoints. `getById` runs under the tenant-bound client, so a
+    // cross-tenant or deleted id resolves to null and is dropped rather than
+    // adopted — the repository's `create` writes these as raw FK scalars, and
+    // FK checks bypass row security, so an unvalidated id would persist.
+    const claimed = nodes.map(ruleIdOf).filter((v): v is string => typeof v === 'string');
+    const verified = new Set<string>();
+    for (const id of new Set(claimed)) {
+        const row = await AutomationRuleRepository.getById(db, ctx, id);
+        if (row) verified.add(id);
+    }
+
     const ruleByNodeKey = new Map<string, string>();
     let rulesCreated = 0;
 
     for (const node of nodes) {
         const existing = ruleIdOf(node);
-        if (existing) {
+        if (existing && verified.has(existing)) {
             ruleByNodeKey.set(node.nodeKey, existing);
             continue;
         }
@@ -118,6 +155,13 @@ export async function syncCanvasToRules(
         const sourceRuleId = ruleByNodeKey.get(edge.sourceKey);
         const targetRuleId = ruleByNodeKey.get(edge.targetKey);
         if (!sourceRuleId || !targetRuleId) continue;
+        // Cycle guard — the REST path has run one since Epic 7, the canvas
+        // path never did. A canvas is the easiest place to draw a loop, so
+        // this was the writer that most needed it.
+        await assertNoChainCycle(db, ctx, sourceRuleId, {
+            nextRuleId: edge.edgeKind === FAIL_EDGE_KIND ? null : targetRuleId,
+            elseRuleId: edge.edgeKind === FAIL_EDGE_KIND ? targetRuleId : null,
+        });
         if (edge.edgeKind === FAIL_EDGE_KIND) {
             await AutomationRuleRepository.update(db, ctx, sourceRuleId, {
                 elseRuleId: targetRuleId,
@@ -133,6 +177,28 @@ export async function syncCanvasToRules(
             });
         }
         chainsLinked++;
+    }
+
+    // Audit the RULE writes specifically. `saveProcessMap` already emits a
+    // ProcessMap/UPDATE row, but it carries no rule ids — so a chain rewire
+    // through the canvas left no trace naming which automation rules changed,
+    // which is exactly what a reviewer would need. Emitted only when something
+    // was written, so a read-only save stays quiet.
+    if (rulesCreated > 0 || chainsLinked > 0) {
+        await logEvent(db, ctx, {
+            action: 'AUTOMATION_RULES_SYNCED_FROM_CANVAS',
+            entityType: 'ProcessMap',
+            entityId: processMapId,
+            details: `Canvas sync wrote ${rulesCreated} rule(s) and ${chainsLinked} chain link(s)`,
+            detailsJson: {
+                category: 'relationship',
+                entityName: 'ProcessMap',
+                operation: 'updated',
+                rulesCreated,
+                chainsLinked,
+                ruleIds: Array.from(new Set(ruleByNodeKey.values())),
+            },
+        });
     }
 
     return { rulesCreated, chainsLinked };

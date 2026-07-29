@@ -24,7 +24,7 @@ import {
 } from '../automation';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { recordAutomationRuleCreated } from '@/lib/observability/business-metrics';
 
@@ -50,6 +50,76 @@ export function followChainHasCycle(
         hops++;
     }
     return false;
+}
+
+/**
+ * Async cycle guard over the rule chain — the one both writers share.
+ *
+ * ── Why this exists ─────────────────────────────────────────────────
+ *
+ * `followChainHasCycle` above is the pure algorithm and is unit-tested, but it
+ * was DEAD in production: it needs a SYNCHRONOUS `nextOf`, and the real walk
+ * has to read each hop from the database. `updateAutomationRule` therefore
+ * re-implemented the identical walk inline, and the canvas sync path had no
+ * guard at all. The duplication was a signature mismatch, not laziness — so
+ * the fix is a shared ASYNC walker that collects the reachable sub-graph and
+ * then delegates the verdict to the pure function, which makes the tested
+ * algorithm live again and removes the copy.
+ *
+ * ── Both edges, not just one ────────────────────────────────────────
+ *
+ * The old inline guard covered `nextRuleId` only, while
+ * `rule-chain-dispatch` follows `elseRuleId` identically. A cycle built out of
+ * `elseRuleId` hops was therefore unguarded. `MAX_CHAIN_DEPTH` bounds the
+ * damage at run time, but a rejected cycle is better than a silently truncated
+ * one.
+ */
+async function collectChainGraph(
+    db: PrismaTx,
+    ctx: RequestContext,
+    roots: string[],
+    maxHops = 100,
+): Promise<Map<string, { next: string | null; else: string | null }>> {
+    const graph = new Map<string, { next: string | null; else: string | null }>();
+    const queue = [...roots.filter(Boolean)];
+    let hops = 0;
+    while (queue.length && hops < maxHops) {
+        const id = queue.shift()!;
+        if (graph.has(id)) continue;
+        const r = await AutomationRuleRepository.getById(db, ctx, id);
+        // A missing rule is not a cycle — it is either cross-tenant (RLS hid
+        // it) or deleted. Record it as a terminal node so the walk stops.
+        const node = { next: r?.nextRuleId ?? null, else: r?.elseRuleId ?? null };
+        graph.set(id, node);
+        if (node.next) queue.push(node.next);
+        if (node.else) queue.push(node.else);
+        hops++;
+    }
+    return graph;
+}
+
+export async function assertNoChainCycle(
+    db: PrismaTx,
+    ctx: RequestContext,
+    ruleId: string,
+    proposed: { nextRuleId?: string | null; elseRuleId?: string | null },
+): Promise<void> {
+    const roots = [proposed.nextRuleId, proposed.elseRuleId].filter(
+        (v): v is string => typeof v === 'string' && v.length > 0,
+    );
+    if (roots.length === 0) return;
+
+    const graph = await collectChainGraph(db, ctx, roots);
+
+    for (const root of roots) {
+        // Delegate to the pure, unit-tested algorithm — once per edge kind, so
+        // a cycle reachable only through `elseRuleId` is caught too.
+        const viaNext = followChainHasCycle(ruleId, root, (id) => graph.get(id)?.next ?? null);
+        const viaElse = followChainHasCycle(ruleId, root, (id) => graph.get(id)?.else ?? null);
+        if (viaNext || viaElse) {
+            throw badRequest('Rule chain would create a cycle');
+        }
+    }
 }
 
 /** Optional free-text fields are sanitised before persistence. */
@@ -113,24 +183,14 @@ export async function updateAutomationRule(
 ) {
     assertCanManageAutomation(ctx);
     return runInTenantContext(ctx, async (db) => {
-        // Chain cycle guard (Epic 7): a new nextRuleId must not loop back.
-        if (input.nextRuleId) {
-            const nextCache = new Map<string, string | null>();
-            let cur: string | null = input.nextRuleId;
-            const seen = new Set<string>();
-            let hops = 0;
-            while (cur && hops < 100) {
-                if (cur === id) throw badRequest('Rule chain would create a cycle');
-                if (seen.has(cur)) break;
-                seen.add(cur);
-                if (!nextCache.has(cur)) {
-                    const r = await AutomationRuleRepository.getById(db, ctx, cur);
-                    nextCache.set(cur, r?.nextRuleId ?? null);
-                }
-                cur = nextCache.get(cur) ?? null;
-                hops++;
-            }
-        }
+        // Chain cycle guard (Epic 7). Was an inline copy of
+        // `followChainHasCycle` covering nextRuleId ONLY; now the shared
+        // async walker, which covers elseRuleId too — the dispatcher follows
+        // both identically, so guarding one was arbitrary.
+        await assertNoChainCycle(db, ctx, id, {
+            nextRuleId: input.nextRuleId,
+            elseRuleId: input.elseRuleId,
+        });
         const rule = await AutomationRuleRepository.update(db, ctx, id, {
             ...input,
             ...(input.name !== undefined ? { name: sanitizePlainText(input.name) } : {}),
