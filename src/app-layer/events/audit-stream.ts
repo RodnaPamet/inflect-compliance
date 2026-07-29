@@ -43,7 +43,7 @@
  */
 
 import { computeHmacSha256 } from '@/app-layer/integrations/webhook-crypto';
-import { safeFetch, SsrfBlockedError } from '@/app-layer/automation/webhook-safety';
+import { safeFetch, SsrfBlockedError, RedirectNotAllowedError } from '@/app-layer/automation/webhook-safety';
 import { logger } from '@/lib/observability/logger';
 import { buildOutboundHeaders, computeBatchId } from '@/app-layer/events/webhook-headers';
 import {
@@ -187,6 +187,15 @@ const defaultPost: StreamPostFn = async (url, body, headers) => {
             // Permanently unsafe destination — 403 is non-retryable so the
             // batch fails fast rather than retrying a blocked URL.
             return { ok: false, status: 403, statusText: `SSRF blocked: ${err.message}` };
+        }
+        if (err instanceof RedirectNotAllowedError) {
+            // Same class: a CONFIGURATION error, not a transient one. Mapped to
+            // 403 for the same reason — the retry loop treats 4xx as
+            // non-retryable, and re-POSTing a signed batch two more times to an
+            // endpoint that will redirect again is pure waste. Reported
+            // distinctly from the SSRF case so the operator sees "your endpoint
+            // redirects" rather than "your endpoint is forbidden".
+            return { ok: false, status: 403, statusText: `Redirect refused: ${err.message}` };
         }
         throw err;
     } finally {
