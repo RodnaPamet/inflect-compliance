@@ -9176,7 +9176,9 @@
       "submitting": "Submitting…",
       "fileUploadHint": "File-upload responses are coordinated through your contact at this stage. Please add a note here describing the file you intend to share.",
       "fileUploadPlaceholder": "e.g. Will send DPA via secure email",
-      "deadline": "Please respond by {date}."
+      "deadline": "Please respond by {date}.",
+      "missingTokenTitle": "Your access link is missing",
+      "errorMissingToken": "This page needs the personal link from your invitation email. Open the original invitation, or ask your contact to send a new one."
     },
     "auditShare": {
       "invalidOrExpired": "Invalid or expired link",

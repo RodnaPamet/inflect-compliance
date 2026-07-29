@@ -13,7 +13,7 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, notFound, forbidden } from '@/lib/errors/types';
 import {
     computeAisvsCoverage,
     type AisvsAnsweredQuestion,
@@ -77,7 +77,8 @@ export async function getAisvsVendorCoverage(
     ctx: RequestContext,
     assessmentId: string,
 ): Promise<AisvsCoverageReadout> {
-    if (!ctx.permissions.canRead) throw badRequest('Read access required.');
+    // 403, not 400 — an authorization denial is not a malformed request.
+    if (!ctx.permissions.canRead) throw forbidden('Read access required.');
     const { questions } = await loadAnswered(ctx, assessmentId);
     return computeAisvsCoverage(questions);
 }
@@ -97,7 +98,7 @@ export async function raiseFindingFromAisvsCoverage(
     assessmentId: string,
     opts: RaiseFindingOptions = {},
 ): Promise<{ findingId: string; l1Percent: number } | null> {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    if (!ctx.permissions.canWrite) throw forbidden('Write access required.');
     const threshold = opts.l1Threshold ?? 70;
 
     const { vendorId, questions } = await loadAnswered(ctx, assessmentId);

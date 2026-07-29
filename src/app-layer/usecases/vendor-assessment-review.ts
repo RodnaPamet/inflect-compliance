@@ -34,7 +34,7 @@
 import type { RequestContext } from '../types';
 import type { VendorCriticality } from '@prisma/client';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { assertCanApproveAssessment } from '../policies/vendor.policies';
@@ -691,7 +691,11 @@ export async function getReviewView(
     assessmentId: string,
 ): Promise<ReviewView> {
     if (!ctx.permissions.canRead) {
-        throw badRequest('Read access required.');
+        // 403, not 400. An authorization denial is not a malformed request —
+        // a 400 tells the caller to fix their input, and tells monitoring
+        // this was a client-side validation error rather than an access
+        // refusal, so real denials never surface as such.
+        throw forbidden('Read access required.');
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -845,7 +849,11 @@ export async function listReviewableAssessments(
     ctx: RequestContext,
 ): Promise<ReviewableAssessmentRow[]> {
     if (!ctx.permissions.canRead) {
-        throw badRequest('Read access required.');
+        // 403, not 400. An authorization denial is not a malformed request —
+        // a 400 tells the caller to fix their input, and tells monitoring
+        // this was a client-side validation error rather than an access
+        // refusal, so real denials never surface as such.
+        throw forbidden('Read access required.');
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -927,7 +935,11 @@ export async function listVendorAssessments(
     vendorId: string,
 ): Promise<VendorAssessmentRow[]> {
     if (!ctx.permissions.canRead) {
-        throw badRequest('Read access required.');
+        // 403, not 400. An authorization denial is not a malformed request —
+        // a 400 tells the caller to fix their input, and tells monitoring
+        // this was a client-side validation error rather than an access
+        // refusal, so real denials never surface as such.
+        throw forbidden('Read access required.');
     }
 
     return runInTenantContext(ctx, async (db) => {

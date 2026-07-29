@@ -77,6 +77,9 @@ const LINK_ENTITY_HREF: Record<string, (id: string) => string> = {
     CONTROL: (id) => `/controls/${id}`,
     ASSET: (id) => `/assets/${id}`,
     ISSUE: (id) => `/tasks/${id}`,
+    // Bundle items can be EVIDENCE. Without an entry here buildHref is
+    // undefined and the row renders a bare cuid with nothing to click.
+    EVIDENCE: (id) => `/evidence/${id}`,
 };
 
 type Tab = 'overview' | 'documents' | 'assessments' | 'monitoring' | 'links' | 'bundles' | 'subprocessors' | 'tasks';
@@ -763,7 +766,21 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             }
             tabs={tabs}
             activeTab={tab}
-            onTabChange={(next) => setTab(next as Tab)}
+            onTabChange={(next) => {
+                setTab(next as Tab);
+                // Persist the tab back to the URL. It was read once at mount
+                // and never written, so the active tab was neither shareable
+                // nor reachable with the back button — a link to a vendor's
+                // Documents tab always opened on Overview.
+                //
+                // replaceState, not push: tab switches are not navigation
+                // steps a user expects the back button to walk through one at
+                // a time. Router-free so it does not remount the page and
+                // discard the fetched tab data.
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', next);
+                window.history.replaceState(null, '', url.toString());
+            }}
         >
             {/* OVERVIEW */}
             {tab === 'overview' && !editing && (
