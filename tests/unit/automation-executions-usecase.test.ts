@@ -25,6 +25,9 @@ jest.mock('@/app-layer/automation', () => ({
 }));
 
 jest.mock('@/app-layer/jobs/queue', () => ({ enqueue: jest.fn() }));
+// reTriggerRule now emits an audit event (the attribution gap it had). Without
+// this mock the real writer runs and reaches for the database.
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn().mockResolvedValue(undefined) }));
 
 import { listRuleExecutions, reTriggerRule } from '@/app-layer/usecases/automation-executions';
 import { AutomationRuleRepository, AutomationExecutionRepository } from '@/app-layer/automation';

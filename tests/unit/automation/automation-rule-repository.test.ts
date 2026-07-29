@@ -103,6 +103,48 @@ describe('getById / findEnabledForEvent', () => {
 });
 
 describe('create', () => {
+    beforeEach(() => {
+        // `create` now verifies nextRuleId/elseRuleId belong to THIS tenant
+        // before writing them. They are raw FK scalars and PostgreSQL evaluates
+        // FK checks with row security bypassed, so an unvalidated cross-tenant
+        // id would satisfy the constraint and persist. Default the lookup to
+        // "target exists" so tests about field pass-through keep testing that.
+        db.automationRule.findFirst.mockResolvedValue({ id: 'target-rule' });
+    });
+
+    it('REJECTS a nextRuleId that does not resolve in this tenant', async () => {
+        // The hole: `create` writes chain links as RAW FK SCALARS, and
+        // PostgreSQL evaluates foreign-key checks with row security bypassed —
+        // so a cross-tenant id satisfies the constraint and PERSISTS as an
+        // existence oracle for another tenant's rule ids. Runtime re-scoping
+        // stops it FIRING, but not the disclosure.
+        db.automationRule.findFirst.mockResolvedValue(null);
+        await expect(
+            AutomationRuleRepository.create(db as never, ctx as never, {
+                name: 'R',
+                triggerEvent: 'risk.created',
+                actionType: 'WEBHOOK',
+                actionConfig: { url: 'https://x.test' },
+                nextRuleId: 'rule-in-another-tenant',
+            } as never),
+        ).rejects.toThrow(/nextRuleId does not reference a rule in this tenant/);
+        expect(db.automationRule.create).not.toHaveBeenCalled();
+    });
+
+    it('REJECTS an elseRuleId that does not resolve in this tenant', async () => {
+        db.automationRule.findFirst.mockResolvedValue(null);
+        await expect(
+            AutomationRuleRepository.create(db as never, ctx as never, {
+                name: 'R',
+                triggerEvent: 'risk.created',
+                actionType: 'WEBHOOK',
+                actionConfig: { url: 'https://x.test' },
+                elseRuleId: 'rule-in-another-tenant',
+            } as never),
+        ).rejects.toThrow(/elseRuleId does not reference a rule in this tenant/);
+        expect(db.automationRule.create).not.toHaveBeenCalled();
+    });
+
     const minimal = {
         name: 'R',
         triggerEvent: 'risk.created',
