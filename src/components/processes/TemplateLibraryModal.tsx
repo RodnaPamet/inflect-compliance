@@ -11,6 +11,7 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
+import { useToast } from '@/components/ui/hooks';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -50,6 +51,7 @@ export interface TemplateLibraryModalProps {
 
 export function TemplateLibraryModal({ open, setOpen }: TemplateLibraryModalProps) {
     const t = useTranslations('automation.templates');
+    const toast = useToast();
     const apiUrl = useTenantApiUrl();
     const { mutate } = useSWRConfig();
     const { data: templates } = useTenantSWR<Template[]>(CACHE_KEYS.automation.templates());
@@ -71,10 +73,17 @@ export function TemplateLibraryModal({ open, setOpen }: TemplateLibraryModalProp
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ templateId: id }),
             });
-            if (res.ok) {
-                await mutate(apiUrl(CACHE_KEYS.automation.rules.list()));
-                setOpen(false);
+            // `if (res.ok)` with no else: a failed import closed nothing, said
+            // nothing, and left the spinner to stop on its own — the user was
+            // left looking at the library wondering whether the rule was
+            // created. It was not.
+            if (!res.ok) {
+                toast.error(t('importFailed'));
+                return;
             }
+            await mutate(apiUrl(CACHE_KEYS.automation.rules.list()));
+            setOpen(false);
+            toast.success(t('importDone'));
         } finally {
             setUsingId(null);
         }

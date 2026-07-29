@@ -11,7 +11,7 @@
  * The execution mini-log is a placeholder until Epic 6 (execution history)
  * lands; the Edit button opens the builder modal from Epic 3.
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Sheet } from '@/components/ui/sheet';
 import { Card } from '@/components/ui/card';
@@ -19,6 +19,8 @@ import { Switch } from '@/components/ui/switch';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
+import { useToastWithUndo, useToast } from '@/components/ui/hooks';
+import { useSWRConfig } from 'swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -26,7 +28,10 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ExecutionsPanel } from '@/components/processes/ExecutionsPanel';
 import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
 import type { RuleDetail } from '@/components/processes/RuleBuilderModal';
-import { buildRuleActionLabels } from '@/app/t/[tenantSlug]/(app)/processes/automation-filter-defs';
+import {
+    buildRuleActionLabels,
+    buildRuleStatusLabels,
+} from '@/app/t/[tenantSlug]/(app)/processes/automation-filter-defs';
 import { useTranslations } from 'next-intl';
 
 function humanizeEvent(name: string): string {
@@ -62,7 +67,13 @@ export interface RuleDetailSheetProps {
 export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetailSheetProps) {
     const t = useTranslations('processes');
     const RULE_ACTION_LABELS = buildRuleActionLabels((k) => t(k as Parameters<typeof t>[0]));
+    // The list row renders "Enabled" via these labels while this sheet printed
+    // the raw `ENABLED` — one click apart, two vocabularies.
+    const RULE_STATUS_LABELS = buildRuleStatusLabels((k) => t(k as Parameters<typeof t>[0]));
     const apiUrl = useTenantApiUrl();
+    const triggerUndoToast = useToastWithUndo();
+    const toast = useToast();
+    const { mutate: globalMutate } = useSWRConfig();
 
     const patchMutation = useTenantMutation<
         AutomationRuleRow[],
@@ -108,6 +119,50 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
         rulesList?.find((r) => r.id === id)?.name ?? id;
 
     const isArchived = rule?.status === 'ARCHIVED';
+
+    /**
+     * Archive the rule after a 5-second undo window (Epic 67).
+     *
+     * The sheet closes immediately and the row is optimistically restamped
+     * ARCHIVED, so the outcome is visible at once; `undoAction` puts the list
+     * back if the user takes it back. Because `useToastWithUndo` DEFERS the
+     * commit rather than compensating for it, an undo means the DELETE never
+     * happens at all — no un-archive endpoint is required.
+     */
+    const archiveRule = useCallback(() => {
+        if (!rule) return;
+        const listKey = apiUrl(CACHE_KEYS.automation.rules.list());
+        const ruleId = rule.id;
+        onOpenChange(false);
+        globalMutate(
+            listKey,
+            (current?: AutomationRuleRow[]) =>
+                (current ?? []).map((r) =>
+                    r.id === ruleId ? { ...r, status: 'ARCHIVED' as const } : r,
+                ),
+            { revalidate: false },
+        );
+        triggerUndoToast({
+            message: t('rules.archived'),
+            undoMessage: t('rules.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(CACHE_KEYS.automation.rules.detail(ruleId)), {
+                    method: 'DELETE',
+                });
+                if (!res.ok) throw new Error(`Archive failed (${res.status})`);
+            },
+            undoAction: () => {
+                globalMutate(listKey);
+            },
+            onCommit: () => {
+                globalMutate(listKey);
+            },
+            onError: () => {
+                toast.error(t('rules.archiveFailed'));
+                globalMutate(listKey);
+            },
+        });
+    }, [rule, apiUrl, globalMutate, triggerUndoToast, t, toast, onOpenChange]);
     const isEnabled = rule?.status === 'ENABLED';
 
     const triggerSummary = useMemo(
@@ -157,7 +212,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                     <StatusBadge
                                         variant={isEnabled ? 'success' : 'neutral'}
                                     >
-                                        {rule.status}
+                                        {RULE_STATUS_LABELS[rule.status] ?? rule.status}
                                     </StatusBadge>
                                 </div>
                                 <label className="flex items-center gap-compact text-sm text-content-muted">
@@ -171,7 +226,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                                 status: checked ? 'ENABLED' : 'DISABLED',
                                             })
                                         }
-                                        aria-label="Toggle rule enabled"
+                                        aria-label={t('rules.toggleEnabledAria')}
                                     />
                                 </label>
                             </div>
@@ -459,7 +514,7 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                     onChange={(value) =>
                                         patchMutation.trigger({ id: rule.id, priority: value })
                                     }
-                                    aria-label="Rule priority"
+                                    aria-label={t('rules.priorityAria')}
                                 />
                             </div>
 
@@ -471,13 +526,33 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                     </Sheet.Body>
                     <Sheet.Actions align="between">
                         <Sheet.Close asChild>
-                            <Button variant="ghost">Close</Button>
+                            <Button variant="ghost">{t('rules.close')}</Button>
                         </Sheet.Close>
-                        {onEdit && !isArchived && (
-                            <Button variant="secondary" onClick={() => onEdit(rule)}>
-                                Edit
-                            </Button>
-                        )}
+                        <div className="flex items-center gap-tight">
+                            {/* `AutomationRuleStatus.ARCHIVED` and
+                                `DELETE /automation/rules/[id]` →
+                                `archiveAutomationRule` both shipped; NO UI ever
+                                called the route, so a rule could be DRAFT,
+                                ENABLED or DISABLED but never archived — the enum
+                                member, the STATUS_VARIANT entry, the status
+                                filter option and this sheet's own `isArchived`
+                                branches were all unreachable.
+                                Epic 67 wiring rather than a bare DELETE: an
+                                archive is a soft delete with history preserved,
+                                which is exactly the reversible-destructive case
+                                the undo toast exists for — and the processes
+                                surface had zero Epic 67 sites before this. */}
+                            {!isArchived && (
+                                <Button variant="ghost" onClick={archiveRule}>
+                                    {t('rules.archive')}
+                                </Button>
+                            )}
+                            {onEdit && !isArchived && (
+                                <Button variant="secondary" onClick={() => onEdit(rule)}>
+                                    {t('rules.edit')}
+                                </Button>
+                            )}
+                        </div>
                     </Sheet.Actions>
                 </>
             )}

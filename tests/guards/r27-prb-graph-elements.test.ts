@@ -32,6 +32,11 @@ function read(rel: string): string {
 const NODE = read("src/components/processes/ProcessTypedNode.tsx");
 const EDGE = read("src/components/processes/ProcessEdge.tsx");
 const CANVAS = read("src/components/processes/PersistedProcessCanvas.tsx");
+// R32/P3.1 — the graph→PUT projection moved out of the canvas into a shared
+// module so save / rename / duplicate / diff could stop keeping four
+// hand-written copies of it in agreement. The invariants below are unchanged;
+// they just live here now.
+const SERIALIZER = read("src/lib/processes/serialize-graph.ts");
 const INSPECTOR = read("src/components/processes/ProcessInspector.tsx");
 const TOKENS = read("src/styles/tokens.css");
 
@@ -130,14 +135,19 @@ describe("R27-PR-B — edge connection language", () => {
 
 describe("R27-PR-B — persistence", () => {
     it("edge variant round-trips via edgeKind", () => {
+        expect(SERIALIZER).toMatch(/edgeKindOf/);
         expect(CANVAS).toMatch(/edgeKindOf/);
-        // No more hardcoded "flow".
+        // No more hardcoded "flow" in either.
         expect(CANVAS).not.toMatch(/edgeKind:\s*["']flow["']/);
+        expect(SERIALIZER).not.toMatch(/edgeKind:\s*["']flow["']/);
     });
 
     it("node size round-trips via dataJson", () => {
-        expect(CANVAS).toMatch(/nodeDataJson/);
-        expect(CANVAS).toMatch(/dataJson:\s*nodeDataJson\(n\)/);
+        expect(SERIALIZER).toMatch(/nodeDataJson/);
+        expect(SERIALIZER).toMatch(/dataJson:\s*nodeDataJson\(n\)/);
+        // …and the canvas still USES the shared projection rather than
+        // reintroducing one of its own.
+        expect(CANVAS).toMatch(/serializeGraphForSave\(nodes, edges\)/);
     });
 
     it("the inspector exposes the size control", () => {

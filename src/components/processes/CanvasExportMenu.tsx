@@ -4,10 +4,18 @@
  * Epic P3-PR-A — Canvas export menu (PNG / SVG).
  *
  * Opens from the document bar's action group. Mounts a Popover
- * trigger button labelled "Export" with two items: "Export as PNG"
- * and "Export as SVG". Each fires the corresponding helper from
+ * trigger button labelled "Export" over the menu below. Each item
+ * fires the corresponding helper from
  * `src/lib/processes/canvas-export.ts` — the helper handles the
- * download side-effect.
+ * download / clipboard / upload side-effect.
+ *
+ *   - Export as PNG / SVG / PDF
+ *   - Copy as image (clipboard)
+ *   - Attach to evidence
+ *
+ * (This list said "two items: PNG and SVG" long after PDF, clipboard
+ * copy and evidence attachment landed. Kept enumerated because the
+ * "why a Popover" reasoning below turns on how many items there are.)
  *
  * Why a Popover (not three side-by-side buttons):
  *   - The document bar is already dense (process selector, name,

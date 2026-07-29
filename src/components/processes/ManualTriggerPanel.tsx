@@ -8,6 +8,7 @@
  * real (manual re-trigger). EDITOR+ only; the API enforces the gate.
  */
 import { useMemo, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -17,6 +18,9 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
 
 export function ManualTriggerPanel() {
+    // The whole panel was hardcoded English — heading, both buttons, the
+    // placeholder and all five result messages.
+    const t = useTranslations('automation.manualTrigger');
     const apiUrl = useTenantApiUrl();
     const { data: rules } = useTenantSWR<AutomationRuleRow[]>(CACHE_KEYS.automation.rules.list());
     const [ruleId, setRuleId] = useState<string>('');
@@ -41,8 +45,14 @@ export function ManualTriggerPanel() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
             });
+            if (!res.ok) {
+                // Was: parse the body regardless and report a match verdict
+                // derived from an error payload. A 403 read as "would skip".
+                setResult(t('dryRunFailed'));
+                return;
+            }
             const json = await res.json();
-            setResult(json.matches ? 'Dry run: filter MATCHES — would fire.' : 'Dry run: filter does NOT match — would skip.');
+            setResult(json.matches ? t('dryRunMatches') : t('dryRunNoMatch'));
         } finally {
             setBusy(false);
         }
@@ -64,15 +74,13 @@ export function ManualTriggerPanel() {
             // actually enqueued. Distinguish the no-op outcomes so the panel
             // never reports "Fired" for something that did nothing.
             if (res.ok && body.enqueued) {
-                setResult('Fired — a manual execution was enqueued.');
+                setResult(t('fired'));
             } else if (res.ok && body.reason === 'no_prior_execution') {
-                setResult('Nothing to replay — this rule has no prior execution to re-fire.');
+                setResult(t('nothingToReplay'));
             } else if (res.ok && body.reason === 'entity_target_not_replayable') {
-                setResult(
-                    'Not replayable — an update-status rule targets a specific entity, and a replay cannot re-target the original entity, so no entity would change.',
-                );
+                setResult(t('notReplayable'));
             } else {
-                setResult('Fire failed.');
+                setResult(t('fireFailed'));
             }
         } finally {
             setBusy(false);
@@ -83,21 +91,21 @@ export function ManualTriggerPanel() {
         <Card>
             <div className="space-y-default">
                 <p className="text-[11px] uppercase tracking-wide text-content-subtle">
-                    Test a rule
+                    {t('heading')}
                 </p>
                 <Combobox
                     options={options}
                     selected={ruleId ? options.find((o) => o.value === ruleId) ?? null : null}
                     setSelected={(o) => setRuleId(o?.value ?? '')}
-                    placeholder="Select an enabled rule…"
+                    placeholder={t('selectRulePlaceholder')}
                     matchTriggerWidth
                 />
                 <div className="flex gap-compact">
                     <Button variant="secondary" disabled={!ruleId || busy} loading={busy} onClick={dryRun}>
-                        Dry run
+                        {t('dryRun')}
                     </Button>
                     <Button variant="primary" disabled={!ruleId || busy} onClick={fire}>
-                        Fire
+                        {t('fire')}
                     </Button>
                 </div>
                 {result && <p className="text-sm text-content-muted">{result}</p>}

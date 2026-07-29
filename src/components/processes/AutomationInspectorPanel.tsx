@@ -21,6 +21,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { eventOptionsByDomain } from '@/lib/automation/event-labels';
+import { useToast } from '@/components/ui/hooks';
 
 type AutomationKind = 'trigger' | 'condition' | 'action' | 'slaGate';
 
@@ -65,6 +66,7 @@ export function AutomationInspectorPanel({
     ruleId: string | null;
 }) {
     const t = useTranslations('automation.autoInspector');
+    const toast = useToast();
     const actionLabels = useMemo(() => buildActionLabels(t), [t]);
     const apiUrl = useTenantApiUrl();
     const { data: rule, mutate } = useTenantSWR<Rule>(
@@ -83,11 +85,21 @@ export function AutomationInspectorPanel({
     // AND actionConfig are sent together, so single-field edits are valid).
     async function patchRule(patch: Record<string, unknown>) {
         if (!ruleId || !rule) return;
-        await fetch(apiUrl(CACHE_KEYS.automation.rules.detail(ruleId)), {
+        const res = await fetch(apiUrl(CACHE_KEYS.automation.rules.detail(ruleId)), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(patch),
         });
+        // Every edit on this panel went through here fire-and-forget. A 403 (no
+        // automation.manage grant) or a 400 from the action-config validator
+        // looked exactly like a save: the control moved, then `mutate()`
+        // refetched and silently snapped it back to the stored value. The user
+        // saw their own edit undo itself with no explanation.
+        if (!res.ok) {
+            toast.error(t('saveFailed'));
+            await mutate();
+            return;
+        }
         await mutate();
     }
 

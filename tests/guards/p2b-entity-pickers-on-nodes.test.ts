@@ -137,16 +137,23 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
     });
 
     describe("Canvas — round-trips linkedEntityId on load + save", () => {
+        // P3.1 — `nodeDataJson` (which carries linkedEntityId into dataJson)
+        // moved into the shared graph serialiser; rehydration stayed in the
+        // canvas. Read both so each half is asserted where it actually lives.
         const src = read(
             "src/components/processes/PersistedProcessCanvas.tsx",
         );
+        const serializer = read("src/lib/processes/serialize-graph.ts");
 
         it("nodeDataJson emits linkedEntityId when present", () => {
-            // The canvas's save serialiser MUST include the field;
-            // the pre-P2-B shape only emitted size + width + height.
-            expect(src).toMatch(
+            // The save serialiser MUST include the field; the pre-P2-B shape
+            // only emitted size + width + height.
+            expect(serializer).toMatch(
                 /linkedEntityId\?:\s*string;[\s\S]{0,2000}out\.linkedEntityId\s*=\s*linkedEntityId/,
             );
+            // And the canvas must still route its save through it rather than
+            // reintroducing a local projection.
+            expect(src).toMatch(/serializeGraphForSave\(nodes, edges\)/);
         });
 
         it("rehydration projects linkedEntityId onto data when present", () => {

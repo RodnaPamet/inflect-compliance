@@ -18,6 +18,10 @@ jest.mock('@/lib/observability/job-runner', () => ({
     ),
 }));
 
+// The chain hop is a dynamic `await import('./queue')` inside the executor.
+const enqueue = jest.fn();
+jest.mock('@/app-layer/jobs/queue', () => ({ enqueue: (...a: unknown[]) => enqueue(...a) }));
+
 // Build the mock BEFORE importing the executor so the import binds
 // to the mocked prisma client.
 const automationRule = {
@@ -73,6 +77,8 @@ function rule(overrides: Partial<{
     id: string;
     triggerFilterJson: Record<string, string | number | boolean> | null;
     actionType: string;
+    nextRuleId: string | null;
+    nextRuleDelay: number | null;
 }> = {}) {
     return {
         id: 'rule-1',
@@ -103,6 +109,7 @@ describe('runAutomationEventDispatch', () => {
         automationExecution.update.mockReset();
         automationExecution.updateMany.mockReset();
         automationRuleUpdate.updateMany.mockReset();
+        enqueue.mockReset();
 
         automationExecution.create.mockResolvedValue({ id: 'exec-1' });
         automationExecution.update.mockResolvedValue({ id: 'exec-1' });
@@ -158,9 +165,14 @@ describe('runAutomationEventDispatch', () => {
         });
         expect(runningArgs.data.status).toBe('RUNNING');
 
-        // RUNNING → SUCCEEDED
-        const completeArgs = automationExecution.update.mock.calls[0][0];
-        expect(completeArgs.where).toEqual({ id: 'exec-1' });
+        // RUNNING → SUCCEEDED, scoped to status RUNNING so it cannot
+        // overwrite an operator's cancellation.
+        const completeArgs = automationExecution.updateMany.mock.calls[1][0];
+        expect(completeArgs.where).toEqual({
+            id: 'exec-1',
+            tenantId: 'tenant-A',
+            status: 'RUNNING',
+        });
         expect(completeArgs.data.status).toBe('SUCCEEDED');
         expect(completeArgs.data.outcomeJson).toMatchObject({
             actionType: 'NOTIFY_USER',
@@ -205,7 +217,7 @@ describe('runAutomationEventDispatch', () => {
         expect(result.executionsCreated).toBe(0);
         expect(result.executionsSkippedDuplicate).toBe(1);
         expect(result.executionsFailed).toBe(0);
-        expect(automationExecution.update).not.toHaveBeenCalled();
+        expect(automationExecution.updateMany).not.toHaveBeenCalled();
     });
 
     it('counts non-P2002 claim failures as failed, not skipped', async () => {
@@ -220,24 +232,93 @@ describe('runAutomationEventDispatch', () => {
         expect(result.executionsSkippedDuplicate).toBe(0);
     });
 
-    it('marks the execution FAILED when the action step throws', async () => {
+    it('marks the execution FAILED when the settle write throws', async () => {
         automationRule.findMany.mockResolvedValue([rule()]);
-        // The action step is `automationExecution.update` → SUCCEEDED.
-        // Simulate failure mid-flight.
-        automationExecution.update.mockImplementationOnce(async () => {
-            throw new Error('boom');
-        });
-        // Second update() call (the FAILED write) must succeed.
-        automationExecution.update.mockResolvedValueOnce({ id: 'exec-1' });
+        // updateMany call order: [0] PENDING→RUNNING claim, [1] settle.
+        automationExecution.updateMany
+            .mockResolvedValueOnce({ count: 1 })
+            .mockImplementationOnce(async () => {
+                throw new Error('boom');
+            })
+            .mockResolvedValue({ count: 1 });
 
         const result = await runAutomationEventDispatch(makePayload());
 
         expect(result.executionsFailed).toBe(1);
-        // Second update() call should write FAILED + errorMessage.
-        const failedArgs = automationExecution.update.mock.calls[1][0];
+        const failedArgs = automationExecution.updateMany.mock.calls[2][0];
         expect(failedArgs.data.status).toBe('FAILED');
         expect(failedArgs.data.errorMessage).toBe('boom');
         expect(failedArgs.data.completedAt).toBeInstanceOf(Date);
+        // The catch path is RUNNING-scoped too: a throw must not overwrite a
+        // cancellation any more than a success may.
+        expect(failedArgs.where).toEqual({
+            id: 'exec-1',
+            tenantId: 'tenant-A',
+            status: 'RUNNING',
+        });
+    });
+
+    describe('an operator cancellation survives the dispatcher', () => {
+        it('does not run the action at all when the cancel landed pre-start', async () => {
+            // Cancel writes SKIPPED, so the PENDING→RUNNING claim matches no
+            // row. The claim result used to be discarded and the action fired
+            // regardless — an operator who cancelled a queued execution still
+            // got the webhook.
+            automationRule.findMany.mockResolvedValue([rule()]);
+            automationExecution.updateMany.mockResolvedValueOnce({ count: 0 });
+
+            const result = await runAutomationEventDispatch(makePayload());
+
+            // The claim is the ONLY execution write; no settle, no counter bump.
+            expect(automationExecution.updateMany).toHaveBeenCalledTimes(1);
+            expect(automationRuleUpdate.updateMany).not.toHaveBeenCalled();
+            expect(result.executionsFailed).toBe(0);
+        });
+
+        it('leaves the row cancelled when the cancel landed mid-flight', async () => {
+            // The action cannot be recalled, but the RECORD must not lie: the
+            // settle write matches no RUNNING row, so SKIPPED stands.
+            automationRule.findMany.mockResolvedValue([rule()]);
+            automationExecution.updateMany
+                .mockResolvedValueOnce({ count: 1 }) // claim
+                .mockResolvedValueOnce({ count: 0 }); // settle — row is SKIPPED
+
+            const result = await runAutomationEventDispatch(makePayload());
+
+            const settle = automationExecution.updateMany.mock.calls[1][0];
+            expect(settle.where.status).toBe('RUNNING');
+            expect(result.executionsFailed).toBe(0);
+        });
+
+        it('does not fire the chained rule after a mid-flight cancel', async () => {
+            // The part of "cancel" that CAN still be honoured: stop everything
+            // downstream.
+            automationRule.findMany.mockResolvedValue([
+                rule({ nextRuleId: 'rule-2' }),
+            ]);
+            automationExecution.updateMany
+                .mockResolvedValueOnce({ count: 1 })
+                .mockResolvedValueOnce({ count: 0 });
+
+            await runAutomationEventDispatch(makePayload());
+
+            expect(enqueue).not.toHaveBeenCalled();
+        });
+
+        it('DOES fire the chained rule on an uncancelled run', async () => {
+            // Guards the assertion above from passing for the wrong reason.
+            automationRule.findMany.mockResolvedValue([
+                rule({ nextRuleId: 'rule-2' }),
+            ]);
+
+            await runAutomationEventDispatch(makePayload());
+
+            expect(enqueue).toHaveBeenCalledWith(
+                'rule-chain-dispatch',
+                expect.objectContaining({ ruleId: 'rule-2' }),
+                undefined,
+            );
+        });
     });
 
     it('throws on tenantId mismatch between payload and event', async () => {

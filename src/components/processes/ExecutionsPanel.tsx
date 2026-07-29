@@ -16,6 +16,12 @@ import { Button } from '@/components/ui/button';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { formatDateTime } from '@/lib/format-date';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { useToast } from '@/components/ui/hooks';
+import {
+    buildExecutionStatusLabels,
+    buildTriggerSourceLabels,
+} from '@/lib/automation/execution-status-labels';
 
 interface ExecutionRow {
     id: string;
@@ -42,18 +48,28 @@ export function ExecutionsPanel({
     ruleEnabled: boolean;
 }) {
     const t = useTranslations('automation.executions');
+    const toast = useToast();
     const apiUrl = useTenantApiUrl();
-    const statusLabels: Record<string, string> = {
-        SUCCEEDED: t('statusSucceeded'),
-        FAILED: t('statusFailed'),
-        RUNNING: t('statusRunning'),
-        PENDING: t('statusPending'),
-        SKIPPED: t('statusSkipped'),
-    };
+    // Shared with MonitorTab — see execution-status-labels.ts for why these
+    // stopped being a local record.
+    const statusLabels = buildExecutionStatusLabels((k) => t(k as Parameters<typeof t>[0]));
+    const triggerLabels = buildTriggerSourceLabels((k) => t(k as Parameters<typeof t>[0]));
     const key = apiUrl(CACHE_KEYS.automation.rules.executions(ruleId));
-    const { data, isLoading, mutate } = useSWR<{ items: ExecutionRow[]; nextCursor: string | null }>(
+    const { data, isLoading, error, mutate } = useSWR<{
+        items: ExecutionRow[];
+        nextCursor: string | null;
+    }>(
         key,
-        (url: string) => fetch(url).then((r) => r.json()),
+        // `.then(r => r.json())` alone swallowed the status: a 403 or 500 body
+        // parsed into an object with no `items`, so `items` fell back to `[]`
+        // and the panel rendered the "no executions yet" empty state. On a
+        // rule's audit trail, "we could not load this" and "this rule has never
+        // run" are opposite claims and must not look identical.
+        async (url: string) => {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(`executions ${r.status}`);
+            return r.json();
+        },
     );
     const [expanded, setExpanded] = useState<string | null>(null);
     const [retriggering, setRetriggering] = useState(false);
@@ -61,7 +77,18 @@ export function ExecutionsPanel({
     async function reTrigger() {
         setRetriggering(true);
         try {
-            await fetch(apiUrl(`/automation/rules/${ruleId}/re-trigger`), { method: 'POST' });
+            const res = await fetch(apiUrl(`/automation/rules/${ruleId}/re-trigger`), {
+                method: 'POST',
+            });
+            // Fire-and-forget before: a 403 (no execute grant), a 429 (mutation
+            // rate limit) and a successful enqueue were indistinguishable — the
+            // spinner stopped and the list did not change, which reads as "the
+            // rule ran and produced nothing".
+            if (!res.ok) {
+                toast.error(t('retriggerFailed'));
+                return;
+            }
+            toast.success(t('retriggerQueued'));
             // Give the worker a beat, then refresh the list.
             await mutate();
         } finally {
@@ -87,7 +114,9 @@ export function ExecutionsPanel({
                     {t('retrigger')}
                 </Button>
             </div>
-            {isLoading ? (
+            {error ? (
+                <InlineNotice variant="error">{t('loadError')}</InlineNotice>
+            ) : isLoading ? (
                 <p className="text-sm text-content-muted">{t('loading')}</p>
             ) : items.length === 0 ? (
                 <p className="text-sm text-content-subtle">{t('empty')}</p>
@@ -104,7 +133,9 @@ export function ExecutionsPanel({
                                     <StatusBadge variant={STATUS_VARIANT[e.status] ?? 'neutral'}>
                                         {statusLabels[e.status] ?? e.status}
                                     </StatusBadge>
-                                    <span className="text-xs text-content-muted">{e.triggeredBy}</span>
+                                    <span className="text-xs text-content-muted">
+                                        {triggerLabels[e.triggeredBy] ?? e.triggeredBy}
+                                    </span>
                                 </span>
                                 <span className="text-xs text-content-subtle tabular-nums">
                                     {formatDateTime(e.createdAt)}
