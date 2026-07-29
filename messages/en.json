@@ -5457,7 +5457,9 @@
         "description": "The link cannot be shown again — only its hash is stored. Recovering it means resending, which creates a new link and invalidates this one. Copy it first if the respondent still needs it.",
         "confirm": "Dismiss link",
         "cancel": "Keep showing"
-      }
+      },
+      "inviteExpired": "Link expired",
+      "inviteRevoked": "Link revoked"
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
@@ -9171,7 +9173,8 @@
       "submit": "Submit responses",
       "submitting": "Submitting…",
       "fileUploadHint": "File-upload responses are coordinated through your contact at this stage. Please add a note here describing the file you intend to share.",
-      "fileUploadPlaceholder": "e.g. Will send DPA via secure email"
+      "fileUploadPlaceholder": "e.g. Will send DPA via secure email",
+      "deadline": "Please respond by {date}."
     },
     "auditShare": {
       "invalidOrExpired": "Invalid or expired link",

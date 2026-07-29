@@ -23,6 +23,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
+import { formatDate } from '@/lib/format-date';
 import { RequiredMarker } from '@/components/ui/required-marker';
 
 interface Question {
@@ -230,6 +231,20 @@ export function VendorAssessmentClient({
                     {data.template.description && (
                         <p className="text-sm text-gray-600 mt-2">
                             {data.template.description}
+                        </p>
+                    )}
+                    {/* The payload has carried expiresAtIso all along and the
+                        page never rendered it, so the respondent had no way
+                        to know how long they had — and no warning before a
+                        mid-form expiry threw their answers away. */}
+                    {data.expiresAtIso && (
+                        <p
+                            className="text-sm text-gray-600 mt-2"
+                            data-testid="vendor-assessment-deadline"
+                        >
+                            {t('deadline', {
+                                date: formatDate(data.expiresAtIso),
+                            })}
                         </p>
                     )}
                 </header>

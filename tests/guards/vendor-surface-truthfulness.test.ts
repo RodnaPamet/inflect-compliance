@@ -170,3 +170,63 @@ describe('7 — the one-time link is not destroyed by an unguarded click', () =>
         expect(src).toMatch(/detail\.linkExpiresOn/);
     });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 8 — a dead invite is not shown as "awaiting response"
+// ═══════════════════════════════════════════════════════════════════
+//
+// listVendorAssessments did not select externalAccessTokenExpiresAt, and the
+// row type had no expiry field, so an assessment whose token died three
+// weeks ago rendered identically to one sent this morning: "Outstanding —
+// awaiting response", with a Resend button and nothing to distinguish them.
+// The wait was on us to resend, not on the respondent to reply.
+
+describe('8 — invite lifecycle reaches the surface', () => {
+    const REVIEW = 'src/app-layer/usecases/vendor-assessment-review.ts';
+    const RESPONDENT =
+        'src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx';
+
+    it('the list query selects the invite lifecycle columns', () => {
+        const src = read(REVIEW);
+        const fn = src.slice(src.indexOf('export async function listVendorAssessments'));
+        expect(fn).toMatch(/externalAccessTokenExpiresAt: true/);
+        expect(fn).toMatch(/revokedAt: true/);
+    });
+
+    it('the DTO carries them through', () => {
+        const src = read(REVIEW);
+        expect(src).toMatch(/inviteExpiresAt: string \| null/);
+        expect(src).toMatch(/inviteRevokedAt: string \| null/);
+    });
+
+    it('the detail page badges expired and revoked distinctly', () => {
+        const src = read(DETAIL);
+        expect(src).toMatch(/detail\.inviteExpired/);
+        expect(src).toMatch(/detail\.inviteRevoked/);
+    });
+
+    it('the expiry comparison is hydration-safe', () => {
+        // Comparing against `new Date()` during render differs between the
+        // SSR pass and hydration; an invite crossing its expiry between the
+        // two renders a different badge on each side and trips React #418 —
+        // which is exactly what useHydratedNow exists to prevent.
+        const src = read(DETAIL);
+        expect(src).toMatch(/useHydratedNow\(\)/);
+        const fn = src.slice(
+            src.indexOf('function inviteState'),
+            src.indexOf('function VendorAssessmentsTable'),
+        );
+        expect(fn).toMatch(/now: Date \| null/);
+        // Guard the null case explicitly — without it the badge would paint
+        // during SSR and mismatch on hydrate.
+        expect(fn).toMatch(/now &&/);
+    });
+
+    it('the respondent is told their deadline', () => {
+        // expiresAtIso has been in the payload all along and was never shown,
+        // so the respondent had no idea how long they had.
+        const src = read(RESPONDENT);
+        expect(src).toMatch(/data\.expiresAtIso &&/);
+        expect(src).toMatch(/data-testid="vendor-assessment-deadline"/);
+    });
+});

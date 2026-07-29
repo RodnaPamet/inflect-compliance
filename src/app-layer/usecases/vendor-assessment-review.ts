@@ -904,6 +904,15 @@ export interface VendorAssessmentRow {
     reviewedAt: string | null;
     closedAt: string | null;
     respondentEmail: string | null;
+    /**
+     * When the external respondent link dies, and whether an operator killed
+     * it early. Both were absent, so a SENT assessment whose token expired
+     * three weeks ago rendered identically to one sent this morning —
+     * "Outstanding, awaiting response", with a Resend button and no hint
+     * that the respondent has had no working link for most of that time.
+     */
+    inviteExpiresAt: string | null;
+    inviteRevokedAt: string | null;
 }
 
 /**
@@ -935,6 +944,12 @@ export async function listVendorAssessments(
                 reviewedAt: true,
                 closedAt: true,
                 respondentEmail: true,
+                // The invite's lifecycle, without which the surface cannot
+                // tell a link sent this morning from one that died three
+                // weeks ago — both rendered as "awaiting response" with a
+                // Resend button and nothing to distinguish them.
+                externalAccessTokenExpiresAt: true,
+                revokedAt: true,
                 template: { select: { name: true } },
                 templateVersion: { select: { name: true } },
             },
@@ -961,6 +976,8 @@ export async function listVendorAssessments(
             reviewedAt: r.reviewedAt?.toISOString() ?? null,
             closedAt: r.closedAt?.toISOString() ?? null,
             respondentEmail: r.respondentEmail,
+            inviteExpiresAt: r.externalAccessTokenExpiresAt?.toISOString() ?? null,
+            inviteRevokedAt: r.revokedAt?.toISOString() ?? null,
         }));
     });
 }
