@@ -6241,7 +6241,10 @@
       "stuck": "Stuck",
       "cancel": "Cancel",
       "recentActivity": "Recent activity",
-      "recentEmpty": "No recent executions."
+      "recentEmpty": "No recent executions.",
+      "cancelHint": "Stops the workflow here: the run is recorded as cancelled and nothing chained to it will fire. An action already in flight cannot be recalled.",
+      "cancelFailed": "Could not cancel this run.",
+      "cancelDone": "Run cancelled. Chained rules will not fire."
     },
     "governance": {
       "crumbDashboard": "Dashboard",

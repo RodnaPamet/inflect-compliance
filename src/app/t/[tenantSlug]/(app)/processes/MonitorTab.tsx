@@ -18,6 +18,8 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { formatDateTime } from '@/lib/format-date';
 import { ManualTriggerPanel } from '@/components/processes/ManualTriggerPanel';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/hooks';
 
 interface ExecRow {
     id: string;
@@ -38,20 +40,33 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
 
 export function MonitorTab() {
     const t = useTranslations('processes');
+    const toast = useToast();
     const apiUrl = useTenantApiUrl();
     const key = apiUrl(CACHE_KEYS.automation.executions.live());
     const { data, mutate } = useSWR<{ stuck: ExecRow[]; recent: ExecRow[] }>(
         key,
-        (url: string) => fetch(url).then((r) => r.json()),
+        // `.then(r => r.json())` alone swallows the status: a 403 or 500 body
+        // parses into an object with no `stuck`/`recent`, and the panel renders
+        // as merely empty. Throwing lets SWR expose `error`.
+        async (url: string) => {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(`live feed ${r.status}`);
+            return r.json();
+        },
         { refreshInterval: 5000, revalidateOnFocus: true },
     );
 
     async function cancel(id: string) {
-        await fetch(apiUrl(`/automation/executions/${id}`), {
+        const res = await fetch(apiUrl(`/automation/executions/${id}`), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'cancel' }),
         });
+        if (!res.ok) {
+            toast.error(t('monitor.cancelFailed'));
+            return;
+        }
+        toast.success(t('monitor.cancelDone'));
         await mutate();
     }
 
@@ -98,9 +113,21 @@ export function MonitorTab() {
                                         <StatusBadge variant="warning">{t('monitor.stuck')}</StatusBadge>
                                         <span className="text-content-default">{e.ruleName}</span>
                                     </span>
-                                    <Button variant="ghost" size="sm" onClick={() => cancel(e.id)}>
-                                        {t('monitor.cancel')}
-                                    </Button>
+                                    {/* Cancel cannot recall an action already
+                                        in flight — no cooperative abort exists
+                                        for an outbound webhook. What it DOES do
+                                        is settle the row as cancelled (the
+                                        dispatcher's completion write is now
+                                        scoped to RUNNING, so it no longer
+                                        overwrites the operator) and stop the
+                                        downstream chain. The tooltip says so
+                                        rather than letting the verb imply more
+                                        than it delivers. */}
+                                    <Tooltip content={t('monitor.cancelHint')}>
+                                        <Button variant="ghost" size="sm" onClick={() => cancel(e.id)}>
+                                            {t('monitor.cancel')}
+                                        </Button>
+                                    </Tooltip>
                                 </li>
                             ))}
                         </ul>

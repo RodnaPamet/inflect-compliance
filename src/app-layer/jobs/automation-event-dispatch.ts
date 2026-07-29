@@ -202,11 +202,16 @@ export async function runAutomationEventDispatch(
                     continue;
                 }
 
-                // 4. Advance RUNNING → SUCCEEDED (stub action layer).
-                //    `updateMany` with status='PENDING' in the predicate
-                //    prevents double-advance if two workers somehow
-                //    held the same row.
-                await prisma.automationExecution.updateMany({
+                // 4. Claim the row: PENDING → RUNNING. The status predicate
+                //    prevents a double-advance if two workers somehow held the
+                //    same row — AND is now load-bearing for cancellation.
+                //
+                //    A cancel writes SKIPPED. If it landed before this claim,
+                //    the predicate does not match and `count` is 0, so the
+                //    action must NOT run. Previously the result was discarded
+                //    and the action fired anyway: an operator who cancelled a
+                //    queued execution still got the webhook.
+                const claimed = await prisma.automationExecution.updateMany({
                     where: {
                         id: executionId,
                         tenantId: event.tenantId,
@@ -214,6 +219,16 @@ export async function runAutomationEventDispatch(
                     },
                     data: { status: 'RUNNING' },
                 });
+                if (claimed.count === 0) {
+                    logger.info('automation-dispatch.not_claimed', {
+                        component: 'automation-event-dispatch',
+                        ruleId: rule.id,
+                        executionId,
+                        event: event.event,
+                        reason: 'cancelled_or_already_claimed',
+                    });
+                    continue;
+                }
 
                 const startedAt = Date.now();
                 try {
@@ -229,8 +244,20 @@ export async function runAutomationEventDispatch(
                         actorUserId: event.actorUserId,
                         data: event.data as Record<string, unknown> | undefined,
                     });
-                    await prisma.automationExecution.update({
-                        where: { id: executionId },
+                    // `updateMany` scoped to status RUNNING, not `update` by id.
+                    //
+                    // An unconditional write here is what made Cancel cosmetic:
+                    // the operator marked the row SKIPPED, the action returned
+                    // moments later, and the dispatcher overwrote it with
+                    // SUCCEEDED — so the UI reported a cancellation that left
+                    // no trace. An in-flight action cannot be recalled, but the
+                    // RECORD of it must not lie.
+                    const settled = await prisma.automationExecution.updateMany({
+                        where: {
+                            id: executionId,
+                            tenantId: event.tenantId,
+                            status: 'RUNNING',
+                        },
                         data: {
                             status: outcome.ok ? 'SUCCEEDED' : 'FAILED',
                             outcomeJson: {
@@ -243,7 +270,16 @@ export async function runAutomationEventDispatch(
                             completedAt: new Date(),
                         },
                     });
-                    if (!outcome.ok) result.executionsFailed++;
+                    const cancelledMidFlight = settled.count === 0;
+                    if (cancelledMidFlight) {
+                        logger.info('automation-dispatch.cancelled_mid_flight', {
+                            component: 'automation-event-dispatch',
+                            ruleId: rule.id,
+                            executionId,
+                            event: event.event,
+                        });
+                    }
+                    if (!outcome.ok && !cancelledMidFlight) result.executionsFailed++;
 
                     // 5. Counter bump on the rule — non-audit,
                     //    dispatcher-only mutation.
@@ -259,7 +295,10 @@ export async function runAutomationEventDispatch(
                     //    a next rule, enqueue it (optionally delayed),
                     //    carrying the payload + lineage. The chain job has
                     //    its own depth-cap cycle backstop.
-                    if (rule.nextRuleId) {
+                    // A cancel cannot recall the action already in flight, but
+                    // it CAN stop everything downstream — which is the part of
+                    // "cancel" an operator can still be given honestly.
+                    if (rule.nextRuleId && !cancelledMidFlight) {
                         const { enqueue } = await import('./queue');
                         await enqueue(
                             'rule-chain-dispatch',
@@ -281,8 +320,14 @@ export async function runAutomationEventDispatch(
                     const msg = err instanceof Error ? err.message : String(err);
                     const stack = err instanceof Error ? err.stack ?? null : null;
 
-                    await prisma.automationExecution.update({
-                        where: { id: executionId },
+                    // Same RUNNING predicate as the success path — a throw
+                    // must not overwrite an operator's cancellation either.
+                    await prisma.automationExecution.updateMany({
+                        where: {
+                            id: executionId,
+                            tenantId: event.tenantId,
+                            status: 'RUNNING',
+                        },
                         data: {
                             status: 'FAILED',
                             errorMessage: msg,
