@@ -53,6 +53,9 @@ export const PUT = withApiErrorHandling(
             slaBreachConfig: body.slaBreachConfig,
             nextRuleId: body.nextRuleId,
             nextRuleDelay: body.nextRuleDelay,
+            // See the POST route: both were dropped by hand-enumeration.
+            elseRuleId: body.elseRuleId,
+            scheduleConfig: body.scheduleConfig,
         });
         return jsonResponse(rule);
     }),

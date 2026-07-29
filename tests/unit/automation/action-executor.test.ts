@@ -431,6 +431,49 @@ describe('WEBHOOK', () => {
     // X-Inflect-Signature: a rule author is not necessarily the person who owns
     // the destination, so forging the authenticity header let one rule make its
     // payload look signed by the platform.
+    // The WEBHOOK HMAC key moved out of plaintext actionConfigJson.secretRef
+    // into the encrypted AutomationRule.webhookSecretEncrypted column. The
+    // legacy field is read only as a fallback until the backfill sweep runs.
+    it('prefers the encrypted column over the legacy plaintext secretRef', async () => {
+        await run(
+            {
+                actionType: 'WEBHOOK',
+                actionConfigJson: { url: 'https://hooks.example.com/x', secretRef: 'legacy-plaintext' },
+                webhookSecretEncrypted: 'from-encrypted-column',
+            },
+            {},
+        );
+        const init = safeFetch.mock.calls[0][1];
+        const sig = init.headers['X-Inflect-Signature'];
+        expect(sig).toMatch(/^sha256=/);
+        // Signed with the column value, not the legacy one — recompute both and
+        // assert which matched, rather than trusting the presence of a header.
+        const { createHmac } = await import('node:crypto');
+        const body = init.body as string;
+        const withColumn = `sha256=${createHmac('sha256', 'from-encrypted-column').update(body).digest('hex')}`;
+        const withLegacy = `sha256=${createHmac('sha256', 'legacy-plaintext').update(body).digest('hex')}`;
+        expect(sig).toBe(withColumn);
+        expect(sig).not.toBe(withLegacy);
+    });
+
+    it('falls back to the legacy secretRef while the backfill has not run', async () => {
+        await run(
+            {
+                actionType: 'WEBHOOK',
+                actionConfigJson: { url: 'https://hooks.example.com/x', secretRef: 'legacy-plaintext' },
+            },
+            {},
+        );
+        const init = safeFetch.mock.calls[0][1];
+        expect(init.headers['X-Inflect-Signature']).toMatch(/^sha256=/);
+    });
+
+    it('sends no signature when neither is configured', async () => {
+        await fire({ url: 'https://hooks.example.com/x' });
+        const init = safeFetch.mock.calls[0][1];
+        expect(init.headers['X-Inflect-Signature']).toBeUndefined();
+    });
+
     it('does not let rule config override Content-Type or User-Agent', async () => {
         await fire({
             url: 'https://hooks.example.com/x',

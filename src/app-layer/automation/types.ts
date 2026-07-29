@@ -51,16 +51,15 @@ export interface WebhookActionConfig {
     method?: 'POST' | 'PUT' | 'PATCH';
     headers?: Record<string, string>;
     /**
-     * INTENDED as a reference into a secret store. In the current
-     * implementation it is used DIRECTLY as the HMAC key
-     * (`action-executor.ts`), so the value stored here is the raw secret, in
-     * plaintext, inside `actionConfigJson` — which is not covered by the
-     * Epic B encrypted-field manifest.
+     * @deprecated LEGACY — the raw HMAC key, stored in clear in
+     * `actionConfigJson`. Superseded by `AutomationRule.webhookSecretEncrypted`,
+     * which IS in the Epic B encrypted-field manifest.
      *
-     * Documented rather than quietly corrected: resolving it properly needs a
-     * secret store that does not yet exist for automation rules, and changing
-     * the contract means a field rename plus a config rewrite. Treat any value
-     * here as sensitive until one of those lands.
+     * Read only as a fallback while `scripts/migrate-webhook-secrets.ts` sweeps
+     * existing rules across, so already-configured webhooks keep signing. Do
+     * not write it; new configuration goes to the encrypted column. Treat any
+     * value still here as an exposed secret that needs rotating after the
+     * sweep.
      */
     secretRef?: string;
 }
