@@ -109,7 +109,11 @@ describe('create', () => {
         // FK checks with row security bypassed, so an unvalidated cross-tenant
         // id would satisfy the constraint and persist. Default the lookup to
         // "target exists" so tests about field pass-through keep testing that.
-        db.automationRule.findFirst.mockResolvedValue({ id: 'target-rule' });
+        // Link targets are resolved with ONE findMany (a per-field findFirst
+        // would be an N+1). Echo back whatever ids were asked for.
+        db.automationRule.findMany.mockImplementation(async (args: any) =>
+            (args?.where?.id?.in ?? []).map((id: string) => ({ id })),
+        );
     });
 
     it('REJECTS a nextRuleId that does not resolve in this tenant', async () => {
@@ -118,7 +122,7 @@ describe('create', () => {
         // so a cross-tenant id satisfies the constraint and PERSISTS as an
         // existence oracle for another tenant's rule ids. Runtime re-scoping
         // stops it FIRING, but not the disclosure.
-        db.automationRule.findFirst.mockResolvedValue(null);
+        db.automationRule.findMany.mockResolvedValue([]);
         await expect(
             AutomationRuleRepository.create(db as never, ctx as never, {
                 name: 'R',
@@ -132,7 +136,7 @@ describe('create', () => {
     });
 
     it('REJECTS an elseRuleId that does not resolve in this tenant', async () => {
-        db.automationRule.findFirst.mockResolvedValue(null);
+        db.automationRule.findMany.mockResolvedValue([]);
         await expect(
             AutomationRuleRepository.create(db as never, ctx as never, {
                 name: 'R',

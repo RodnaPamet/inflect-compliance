@@ -21,9 +21,12 @@ const mockDb = {
 beforeEach(() => {
     // Default: requested recipients ARE active members, so tests that are not
     // about membership keep asserting what they were written to assert.
-    mockDb.tenantMembership.findMany.mockImplementation(
-        async (args: any) => (args?.where?.userId?.in ?? []).map((userId: string) => ({ userId })),
-    );
+    // Resolved ONCE per tenant now (hoisted out of the breach loop to avoid an
+    // N+1), so there is no userId filter to echo — return the ids the tests use.
+    mockDb.tenantMembership.findMany.mockResolvedValue([
+        { userId: 'u1' },
+        { userId: 'u2' },
+    ]);
 });
 
 jest.mock('@/lib/db-context', () => ({

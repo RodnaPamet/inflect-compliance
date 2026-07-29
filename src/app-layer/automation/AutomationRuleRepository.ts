@@ -78,17 +78,25 @@ export class AutomationRuleRepository {
         // `update` does NOT share this hole: it uses `connect`, which runs
         // under the tenant-bound role and rejects a foreign id as P2025. That
         // asymmetry is why the guard lives here and `update` is left alone.
-        for (const [field, id] of [
+        const linkTargets = [
             ['nextRuleId', input.nextRuleId],
             ['elseRuleId', input.elseRuleId],
-        ] as const) {
-            if (!id) continue;
-            const target = await db.automationRule.findFirst({
-                where: { id, tenantId: ctx.tenantId },
+        ] as const;
+        const linkIds = linkTargets
+            .map(([, id]) => id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        if (linkIds.length > 0) {
+            // ONE query for both fields — a per-field lookup would be an N+1
+            // (and the query-shape ratchet rightly rejects reads inside loops).
+            const found = await db.automationRule.findMany({
+                where: { id: { in: linkIds }, tenantId: ctx.tenantId },
                 select: { id: true },
             });
-            if (!target) {
-                throw badRequest(`${field} does not reference a rule in this tenant`);
+            const ok = new Set(found.map((r: { id: string }) => r.id));
+            for (const [field, id] of linkTargets) {
+                if (id && !ok.has(id)) {
+                    throw badRequest(`${field} does not reference a rule in this tenant`);
+                }
             }
         }
 

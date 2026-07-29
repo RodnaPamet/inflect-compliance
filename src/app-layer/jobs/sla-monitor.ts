@@ -100,6 +100,21 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
             take: 500,
         });
 
+        // Resolve the tenant's ACTIVE members ONCE for the whole sweep.
+        //
+        // Recipients must be membership-checked — Notification.userId is a real
+        // FK and this whole loop runs in ONE transaction, so a single stale id
+        // rolled back every recordCompletion for the tenant, every five
+        // minutes, forever. Doing that check per execution would be an N+1 over
+        // the breach list; the tenant is fixed here, so one query covers it.
+        const activeMembers = await db.tenantMembership.findMany({
+            where: { tenantId, status: 'ACTIVE' },
+            select: { userId: true },
+        });
+        const activeMemberIds = new Set(
+            activeMembers.map((m: { userId: string }) => m.userId),
+        );
+
         let count = 0;
         for (const exec of running) {
             const windowMin = exec.rule.slaWindowMinutes;
@@ -163,13 +178,10 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
                 // so again every five minutes, forever. The unchecked insert
                 // was not just a tenant-isolation gap; it was a permanent
                 // poison pill for the tenant's entire SLA sweep.
-                const members = requested.length
-                    ? await db.tenantMembership.findMany({
-                          where: { tenantId, userId: { in: requested }, status: 'ACTIVE' },
-                          select: { userId: true },
-                      })
-                    : [];
-                const userIds = members.map((m: { userId: string }) => m.userId);
+                // Membership set is resolved ONCE per tenant above, not per
+                // execution — the tenant is fixed for the whole sweep, so a
+                // per-iteration query would be an N+1 over the breach list.
+                const userIds = requested.filter((u) => activeMemberIds.has(u));
                 if (userIds.length > 0) {
                     await db.notification.createMany({
                         data: userIds.map((userId) => ({
