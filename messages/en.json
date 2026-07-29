@@ -9178,7 +9178,14 @@
       "fileUploadPlaceholder": "e.g. Will send DPA via secure email",
       "deadline": "Please respond by {date}.",
       "missingTokenTitle": "Your access link is missing",
-      "errorMissingToken": "This page needs the personal link from your invitation email. Open the original invitation, or ask your contact to send a new one."
+      "errorMissingToken": "This page needs the personal link from your invitation email. Open the original invitation, or ask your contact to send a new one.",
+      "networkTitle": "We could not reach the server",
+      "errorNetwork": "This looks like a connection problem, not a problem with your invitation. Check your connection and try again.",
+      "retry": "Try again",
+      "submitNetworkFailed": "We could not reach the server. Your answers are still here — check your connection and submit again.",
+      "submitExpired": "This questionnaire expired before your answers were submitted. Your answers are still on this page — copy anything you need, then ask your contact for a new link.",
+      "submitRevoked": "This invitation was withdrawn before your answers were submitted. Your answers are still on this page — copy anything you need, then contact the requester.",
+      "submitAccessDenied": "We could not accept this submission. Your answers are still on this page — copy anything you need, then contact the requester."
     },
     "auditShare": {
       "invalidOrExpired": "Invalid or expired link",

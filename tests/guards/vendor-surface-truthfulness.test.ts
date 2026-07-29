@@ -230,3 +230,67 @@ describe('8 — invite lifecycle reaches the surface', () => {
         expect(src).toMatch(/data-testid="vendor-assessment-deadline"/);
     });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 9 — the external respondent page
+// ═══════════════════════════════════════════════════════════════════
+//
+// This is the surface with the least forgiving audience: an unauthenticated
+// third party, often filling a long form once, with no account to recover
+// state from. Every failure here used to end the same way — one screen
+// saying the link was dead, whether or not it was, and whatever they had
+// typed gone with it.
+
+describe('9 — the respondent page distinguishes its failure modes', () => {
+    const RESPONDENT =
+        'src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx';
+
+    it('a transport failure is not reported as a dead link', () => {
+        // A thrown fetch says nothing about the invitation — the respondent
+        // may be offline or on bad wifi with a perfectly valid link.
+        const src = read(RESPONDENT);
+        expect(src).toMatch(/errorReason === 'network'/);
+        expect(src).toMatch(/networkTitle/);
+    });
+
+    it('the network failure is retryable', () => {
+        const src = read(RESPONDENT);
+        expect(src).toMatch(/data-testid="vendor-assessment-retry"/);
+        expect(src).toMatch(/onClick=\{\(\) => void load\(\)\}/);
+    });
+
+    it('submit has a catch, not just a finally', () => {
+        // try/finally with no catch un-spun the button and did nothing else,
+        // after the respondent had typed the entire form.
+        const src = read(RESPONDENT);
+        const fn = src.slice(src.indexOf('async function handleSubmit'));
+        expect(fn.slice(0, 3000)).toMatch(/\} catch \{/);
+        expect(fn.slice(0, 3000)).toMatch(/submitNetworkFailed/);
+    });
+
+    it('a mid-form token death does NOT discard the answers', () => {
+        // There is no draft-save, so switching to the error phase here
+        // destroys everything typed, with no export and no way back.
+        const src = read(RESPONDENT);
+        const fn = src.slice(src.indexOf('async function handleSubmit'));
+        const accessDenied = fn.slice(fn.indexOf("body.error === 'access_denied'"));
+        expect(accessDenied.slice(0, 900)).not.toMatch(/setPhase\('error'\)/);
+        expect(accessDenied.slice(0, 900)).toMatch(/setSubmitErrors/);
+    });
+
+    it('warns before a navigation would discard a part-filled form', () => {
+        const src = read(RESPONDENT);
+        expect(src).toMatch(/hasUnsavedAnswers/);
+        expect(src).toMatch(/addEventListener\('beforeunload'/);
+        expect(src).toMatch(/removeEventListener\('beforeunload'/);
+    });
+
+    it('uses design-system tokens, so it has a dark mode at all', () => {
+        const src = read(RESPONDENT);
+        // The page was entirely raw palette — bg-white, text-gray-900,
+        // bg-indigo-600 — which renders identically in both themes.
+        expect(src).not.toMatch(/\b(?:bg|text|border)-(?:gray|indigo|slate)-\d{2,3}\b/);
+        expect(src).not.toMatch(/\bbg-white\b/);
+        expect(src).toMatch(/bg-bg-|text-content-|border-border-/);
+    });
+});
