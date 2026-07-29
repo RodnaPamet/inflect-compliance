@@ -445,6 +445,33 @@ describe('processIncomingWebhook — provider dispatch', () => {
         expect(mockPrisma.evidence.create).toHaveBeenCalledTimes(3);
     });
 
+    it('creates that evidence SUBMITTED — it does not pre-approve it', async () => {
+        // Webhook-authored evidence was written `status: 'APPROVED'`, which put
+        // rows into the compliance record as reviewed without any human seeing
+        // them AND bypassed the evidence state machine outright:
+        // EVIDENCE_TRANSITIONS permits APPROVED only from SUBMITTED, and only
+        // through reviewEvidence, which also enforces segregation of duties.
+        setupHappyPath({ triggeredKeys: ['build-passed'] });
+        mockPrisma.control.findMany.mockResolvedValueOnce([
+            { id: 'ctrl-1', name: 'Build OK' },
+        ]);
+        mockPrisma.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
+        mockPrisma.evidence.create.mockResolvedValue({ id: 'ev-1' });
+
+        await processIncomingWebhook(makeInput());
+
+        const data = mockPrisma.evidence.create.mock.calls[0][0].data;
+        expect(data.status).toBe('SUBMITTED');
+        expect(data.status).not.toBe('APPROVED');
+        // Still tenant-scoped and still linked to the control it evidences.
+        expect(data.tenantId).toBe('t-1');
+        expect(mockPrisma.evidenceControlLink.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ evidenceId: 'ev-1', controlId: 'ctrl-1' }),
+            }),
+        );
+    });
+
     it('returns processed (no fan-out) when isWebhookEventProvider is false', async () => {
         // Provider impl exists but doesn't support the WebhookEvent
         // interface — we still verify the signature (above) and

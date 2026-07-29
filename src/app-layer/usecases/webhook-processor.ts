@@ -130,7 +130,7 @@ function verifyProviderSignature(
         // with an unscoped connection lookup that breaks on the first verified
         // match, ONE tenant leaving its secret unset made that tenant the
         // catch-all destination for any forged webhook for the provider —
-        // creating IntegrationExecution rows and APPROVED Evidence in a tenant
+        // creating IntegrationExecution rows and Evidence in a tenant
         // the sender never named.
         //
         // BEHAVIOUR CHANGE: connections with no configured secret stop
@@ -458,7 +458,28 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                                 title: `[${provider}] Webhook: ${automationKey}`,
                                 content: `Automated evidence from ${provider} webhook event.\nEvent type: ${event.eventType ?? 'unknown'}\nExecution ID: ${execution.id}`,
                                 category: 'integration',
-                                status: 'APPROVED',
+                                // SUBMITTED, not APPROVED.
+                                //
+                                // APPROVED here put automation-authored rows
+                                // into the compliance record as reviewed
+                                // evidence without any human ever seeing them —
+                                // and it bypassed the evidence state machine
+                                // outright: `EVIDENCE_TRANSITIONS` allows
+                                // APPROVED only from SUBMITTED, and only via
+                                // `reviewEvidence`, which additionally enforces
+                                // segregation of duties. A direct write is not
+                                // a shortcut through that gate, it is a hole in
+                                // it. For a GRC product this is a
+                                // record-integrity defect, not a UX one.
+                                //
+                                // SUBMITTED rather than DRAFT because the
+                                // content IS complete — nobody is still
+                                // authoring it — so it belongs in the review
+                                // queue, which is exactly what SUBMITTED means
+                                // here. With no submitter recorded, the
+                                // no-self-approval rule leaves any reviewer
+                                // eligible.
+                                status: 'SUBMITTED',
                             },
                         });
                         await prisma.evidenceControlLink.create({
