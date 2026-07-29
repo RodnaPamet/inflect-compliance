@@ -98,7 +98,13 @@ const STATUS_BADGE_BUDGET: Record<string, number> = {
     // chain tree (criticality per node), bundle-item entity types, and link
     // relations. +3 for the P3.3 bundle-items view + the P3.7 recursive
     // subprocessor chain tree.
-    "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx": 12,
+    // +1 for the dead-invite badge on the outstanding-assessment rows. That
+    // row previously carried only quiet status text, so this is that row's
+    // ONE loud badge, not a secondary competing with another — the budget is
+    // per-file, so a new row type with its own single badge raises the count.
+    // It has to be loud: it changes what the operator should do (resend now,
+    // rather than keep waiting on a respondent who has had no working link).
+    "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx": 13,
     // Asset detail — badges live across separate tabs/sections (never stacked
     // in one cell): the CVE-vulnerability sub-table (severity + status) and the
     // scanner-findings sub-table (severity + status) each on the vuln tab, plus
