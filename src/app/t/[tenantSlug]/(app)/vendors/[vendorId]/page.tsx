@@ -10,6 +10,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref, useTenantContext, usePermissions } from '@/lib/tenant-context-provider';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { Button } from '@/components/ui/button';
 import { Pen2, Plus, ChevronRight } from '@/components/ui/icons/nucleo';
 import { Tooltip, InfoTooltip } from '@/components/ui/tooltip';
@@ -76,6 +77,9 @@ const LINK_ENTITY_HREF: Record<string, (id: string) => string> = {
     CONTROL: (id) => `/controls/${id}`,
     ASSET: (id) => `/assets/${id}`,
     ISSUE: (id) => `/tasks/${id}`,
+    // Bundle items can be EVIDENCE. Without an entry here buildHref is
+    // undefined and the row renders a bare cuid with nothing to click.
+    EVIDENCE: (id) => `/evidence/${id}`,
 };
 
 type Tab = 'overview' | 'documents' | 'assessments' | 'monitoring' | 'links' | 'bundles' | 'subprocessors' | 'tasks';
@@ -286,6 +290,8 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     // means a resend, which ROTATES it and invalidates anything already
     // shared — so the dismiss is confirmed rather than instant.
     const [confirmDismissLink, setConfirmDismissLink] = useState(false);
+    // Hydration-safe clock — see the note in inviteState.
+    const hydratedNow = useHydratedNow();
     // Enrichment
     const [enriching, setEnriching] = useState(false);
     // Links
@@ -760,7 +766,21 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             }
             tabs={tabs}
             activeTab={tab}
-            onTabChange={(next) => setTab(next as Tab)}
+            onTabChange={(next) => {
+                setTab(next as Tab);
+                // Persist the tab back to the URL. It was read once at mount
+                // and never written, so the active tab was neither shareable
+                // nor reachable with the back button — a link to a vendor's
+                // Documents tab always opened on Overview.
+                //
+                // replaceState, not push: tab switches are not navigation
+                // steps a user expects the back button to walk through one at
+                // a time. Router-free so it does not remount the page and
+                // discard the fetched tab data.
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', next);
+                window.history.replaceState(null, '', url.toString());
+            }}
         >
             {/* OVERVIEW */}
             {tab === 'overview' && !editing && (
@@ -1124,9 +1144,32 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                     {a.respondentEmail || '—'}
                                                     {' · '}
                                                     {tx('detail.sentOn', { date: a.sentAt ? formatDate(a.sentAt) : '—' })}
+                                                    {a.inviteExpiresAt && (
+                                                        <>
+                                                            {' · '}
+                                                            {tx('detail.linkExpiresOn', {
+                                                                date: formatDate(a.inviteExpiresAt),
+                                                            })}
+                                                        </>
+                                                    )}
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-tight">
+                                                {/* A dead invite is the one thing this row must not hide.
+                                                    "Awaiting response" is misleading when the respondent
+                                                    has had no working link for weeks — the wait is on us
+                                                    to resend, not on them to reply. */}
+                                                {(() => {
+                                                    const state = inviteState(a, hydratedNow);
+                                                    if (state === 'live') return null;
+                                                    return (
+                                                        <StatusBadge variant="warning">
+                                                            {state === 'revoked'
+                                                                ? tx('detail.inviteRevoked')
+                                                                : tx('detail.inviteExpired')}
+                                                        </StatusBadge>
+                                                    );
+                                                })()}
                                                 {/* Quiet status text (not a loud badge) — the section header
                                                     already says these are awaiting a response; the main table
                                                     below carries the one loud status badge per assessment. */}
@@ -1333,7 +1376,16 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                         if (typeLinks.length === 0) return null;
                         return (
                             <div key={type} className={cn(cardVariants({ density: 'compact' }), 'space-y-tight')}>
-                                <Heading level={3}>{tx('detail.linkGroup', { type, count: typeLinks.length })}</Heading>
+                                {/* Was tx('detail.linkGroup', { type }) against the
+                                    message '{type}s ({count})', which rendered the raw
+                                    enum plus an English plural — "ASSETs (2)". The
+                                    linkType.* keys the ADD form uses are right there. */}
+                                <Heading level={3}>
+                                    {tx('detail.linkGroupNamed', {
+                                        type: tx(`linkType.${type}`),
+                                        count: typeLinks.length,
+                                    })}
+                                </Heading>
                                 {typeLinks.map((l) => {
                                     const buildHref = LINK_ENTITY_HREF[l.entityType];
                                     // `entityName` IS resolved server-side (listVendorLinks
@@ -1355,7 +1407,9 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                 ) : (
                                                     <code className="text-xs text-content-info">{l.entityId}</code>
                                                 )}
-                                                <StatusBadge variant="neutral" className="ml-1">{l.relation}</StatusBadge>
+                                                <StatusBadge variant="neutral" className="ml-1">
+                                                    {tx(`linkRelation.${l.relation}`)}
+                                                </StatusBadge>
                                             </span>
                                             {canWrite && (
                                                 <button
@@ -1773,7 +1827,41 @@ interface VendorAssessmentRow {
     reviewedAt: string | null;
     closedAt: string | null;
     respondentEmail: string | null;
+    // Invite lifecycle — see the DTO note in vendor-assessment-review.ts.
+    inviteExpiresAt: string | null;
+    inviteRevokedAt: string | null;
 }
+
+/**
+ * Is this invite still usable by the respondent?
+ *
+ * Mirrors the server gate in `verifyAccessToken`: expired OR revoked means
+ * the link is dead, whatever the assessment status says. The status alone is
+ * not enough — an assessment sits in SENT indefinitely, so a dead invite and
+ * a fresh one are the same row without this.
+ */
+function inviteState(
+    row: Pick<VendorAssessmentRow, 'inviteExpiresAt' | 'inviteRevokedAt'>,
+    now: Date | null,
+): 'live' | 'expired' | 'revoked' {
+    // Revocation is a stored fact, so it is safe to read during SSR.
+    if (row.inviteRevokedAt) return 'revoked';
+    // Expiry is a comparison against the clock, and `new Date()` during
+    // render differs between the server pass and hydration — an invite that
+    // crosses its expiry between the two renders a different badge on each
+    // side and trips React #418. `useHydratedNow` returns null until the
+    // client has painted once; until then this reports 'live' so the SSR
+    // HTML and the first client render agree exactly.
+    if (
+        now &&
+        row.inviteExpiresAt &&
+        new Date(row.inviteExpiresAt).getTime() < now.getTime()
+    ) {
+        return 'expired';
+    }
+    return 'live';
+}
+
 function VendorAssessmentsTable({ assessments, vendorId, tenantHref }: { assessments: VendorAssessmentRow[]; vendorId: string; tenantHref: (path: string) => string }) {
     const tx = useTranslations('vendors');
     const perms = usePermissions();

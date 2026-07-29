@@ -64,20 +64,15 @@ export async function sendAssessmentReminder(
             throw badRequest('Assessment is missing vendor or template context.');
         }
 
-        // Reminder reuses the original token — we don't have the raw
-        // value (only its hash is stored). The admin must paste the
-        // original URL into the reminder body, or the receiving end
-        // can detect "no token" and fall through to a "your link has
-        // expired" page. For now, the reminder includes a generic
-        // "open your invitation" CTA pointing at the assessment id;
-        // the real raw token lives in the original sent email.
+        // The raw token cannot be recovered server-side — only its hash is
+        // stored, which is the point — so the reminder cannot reproduce the
+        // original URL. It links to /vendor-assessment/{id} without a token.
         //
-        // Pragmatic compromise: the raw token cannot be recovered
-        // server-side (security feature), so the reminder cannot
-        // include the exact same URL. The reminder body therefore
-        // links to a /vendor-assessment/{id} page that gracefully
-        // surfaces "use your original invitation link" if the
-        // visitor arrives without a token.
+        // That page used to title a tokenless visit "This link is no longer
+        // active", which is false and alarming for someone whose invitation
+        // is perfectly valid: the reminder simply cannot carry the token. It
+        // now has a distinct missing_token state telling the respondent to
+        // open their original invitation, or ask for a new one.
         const responseUrl = buildReminderUrl(a.id);
 
         const result = await enqueueEmail(db, {

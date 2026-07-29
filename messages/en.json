@@ -5457,7 +5457,10 @@
         "description": "The link cannot be shown again — only its hash is stored. Recovering it means resending, which creates a new link and invalidates this one. Copy it first if the respondent still needs it.",
         "confirm": "Dismiss link",
         "cancel": "Keep showing"
-      }
+      },
+      "inviteExpired": "Link expired",
+      "inviteRevoked": "Link revoked",
+      "linkGroupNamed": "{type} ({count})"
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
@@ -5625,7 +5628,8 @@
       "MEDIUM": "Medium",
       "HIGH": "High",
       "CRITICAL": "Critical"
-    }
+    },
+    "createFailed": "Could not create the vendor."
   },
   "frameworks": {
     "crumb": {
@@ -9171,7 +9175,10 @@
       "submit": "Submit responses",
       "submitting": "Submitting…",
       "fileUploadHint": "File-upload responses are coordinated through your contact at this stage. Please add a note here describing the file you intend to share.",
-      "fileUploadPlaceholder": "e.g. Will send DPA via secure email"
+      "fileUploadPlaceholder": "e.g. Will send DPA via secure email",
+      "deadline": "Please respond by {date}.",
+      "missingTokenTitle": "Your access link is missing",
+      "errorMissingToken": "This page needs the personal link from your invitation email. Open the original invitation, or ask your contact to send a new one."
     },
     "auditShare": {
       "invalidOrExpired": "Invalid or expired link",

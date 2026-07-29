@@ -23,6 +23,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
+import { formatDate } from '@/lib/format-date';
 import { RequiredMarker } from '@/components/ui/required-marker';
 
 interface Question {
@@ -131,14 +132,24 @@ export function VendorAssessmentClient({
                     data-testid="vendor-assessment-error"
                 >
                     <h1 className="text-xl font-semibold text-gray-900 mb-2">
-                        {t('errorTitle')}
+                        {/* A missing token is not a dead link. The reminder
+                            email deliberately omits it — the raw token is
+                            unrecoverable server-side, so the reminder can
+                            only link to /vendor-assessment/{id}. Titling that
+                            "no longer active" tells the respondent their
+                            invitation is broken when it is not. */}
+                        {errorReason === 'missing_token'
+                            ? t('missingTokenTitle')
+                            : t('errorTitle')}
                     </h1>
                     <p className="text-sm text-gray-600">
-                        {errorReason === 'expired'
-                            ? t('errorExpired')
-                            : errorReason === 'wrong_status'
-                                ? t('errorWrongStatus')
-                                : t('errorDefault')}
+                        {errorReason === 'missing_token'
+                            ? t('errorMissingToken')
+                            : errorReason === 'expired'
+                                ? t('errorExpired')
+                                : errorReason === 'wrong_status'
+                                    ? t('errorWrongStatus')
+                                    : t('errorDefault')}
                     </p>
                 </div>
             </div>
@@ -230,6 +241,20 @@ export function VendorAssessmentClient({
                     {data.template.description && (
                         <p className="text-sm text-gray-600 mt-2">
                             {data.template.description}
+                        </p>
+                    )}
+                    {/* The payload has carried expiresAtIso all along and the
+                        page never rendered it, so the respondent had no way
+                        to know how long they had — and no warning before a
+                        mid-form expiry threw their answers away. */}
+                    {data.expiresAtIso && (
+                        <p
+                            className="text-sm text-gray-600 mt-2"
+                            data-testid="vendor-assessment-deadline"
+                        >
+                            {t('deadline', {
+                                date: formatDate(data.expiresAtIso),
+                            })}
                         </p>
                     )}
                 </header>

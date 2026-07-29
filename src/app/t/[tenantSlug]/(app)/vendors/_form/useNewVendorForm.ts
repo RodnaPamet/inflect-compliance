@@ -46,6 +46,12 @@ export interface NewVendorFormReturn {
 
 export interface UseNewVendorFormOptions {
     onSuccess: (vendor: { id: string }) => void;
+    /**
+     * Localised fallback for when the server sends no message of its own.
+     * Passed in rather than resolved here because this hook is not a
+     * component and has no translator in scope.
+     */
+    fallbackErrorMessage: string;
 }
 
 const INITIAL: NewVendorFormFields = {
@@ -65,6 +71,7 @@ const INITIAL: NewVendorFormFields = {
 
 export function useNewVendorForm({
     onSuccess,
+    fallbackErrorMessage,
 }: UseNewVendorFormOptions): NewVendorFormReturn {
     const apiUrl = useTenantApiUrl();
     const zod = useZodForm({
@@ -98,7 +105,11 @@ export function useNewVendorForm({
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                throw new Error(err.error?.message || 'Failed to create vendor');
+                // The server message is already localised and specific
+                // (plan limits, duplicate name, validation). The fallback was
+                // a hardcoded English string on an otherwise localised
+                // surface — now supplied by the caller.
+                throw new Error(err.error?.message || fallbackErrorMessage);
             }
             const vendor = await res.json();
             onSuccess(vendor);

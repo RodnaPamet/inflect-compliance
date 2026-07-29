@@ -34,7 +34,7 @@
 import type { RequestContext } from '../types';
 import type { VendorCriticality } from '@prisma/client';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { assertCanApproveAssessment } from '../policies/vendor.policies';
@@ -691,7 +691,11 @@ export async function getReviewView(
     assessmentId: string,
 ): Promise<ReviewView> {
     if (!ctx.permissions.canRead) {
-        throw badRequest('Read access required.');
+        // 403, not 400. An authorization denial is not a malformed request —
+        // a 400 tells the caller to fix their input, and tells monitoring
+        // this was a client-side validation error rather than an access
+        // refusal, so real denials never surface as such.
+        throw forbidden('Read access required.');
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -845,7 +849,11 @@ export async function listReviewableAssessments(
     ctx: RequestContext,
 ): Promise<ReviewableAssessmentRow[]> {
     if (!ctx.permissions.canRead) {
-        throw badRequest('Read access required.');
+        // 403, not 400. An authorization denial is not a malformed request —
+        // a 400 tells the caller to fix their input, and tells monitoring
+        // this was a client-side validation error rather than an access
+        // refusal, so real denials never surface as such.
+        throw forbidden('Read access required.');
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -904,6 +912,15 @@ export interface VendorAssessmentRow {
     reviewedAt: string | null;
     closedAt: string | null;
     respondentEmail: string | null;
+    /**
+     * When the external respondent link dies, and whether an operator killed
+     * it early. Both were absent, so a SENT assessment whose token expired
+     * three weeks ago rendered identically to one sent this morning —
+     * "Outstanding, awaiting response", with a Resend button and no hint
+     * that the respondent has had no working link for most of that time.
+     */
+    inviteExpiresAt: string | null;
+    inviteRevokedAt: string | null;
 }
 
 /**
@@ -918,7 +935,11 @@ export async function listVendorAssessments(
     vendorId: string,
 ): Promise<VendorAssessmentRow[]> {
     if (!ctx.permissions.canRead) {
-        throw badRequest('Read access required.');
+        // 403, not 400. An authorization denial is not a malformed request —
+        // a 400 tells the caller to fix their input, and tells monitoring
+        // this was a client-side validation error rather than an access
+        // refusal, so real denials never surface as such.
+        throw forbidden('Read access required.');
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -935,6 +956,12 @@ export async function listVendorAssessments(
                 reviewedAt: true,
                 closedAt: true,
                 respondentEmail: true,
+                // The invite's lifecycle, without which the surface cannot
+                // tell a link sent this morning from one that died three
+                // weeks ago — both rendered as "awaiting response" with a
+                // Resend button and nothing to distinguish them.
+                externalAccessTokenExpiresAt: true,
+                revokedAt: true,
                 template: { select: { name: true } },
                 templateVersion: { select: { name: true } },
             },
@@ -961,6 +988,8 @@ export async function listVendorAssessments(
             reviewedAt: r.reviewedAt?.toISOString() ?? null,
             closedAt: r.closedAt?.toISOString() ?? null,
             respondentEmail: r.respondentEmail,
+            inviteExpiresAt: r.externalAccessTokenExpiresAt?.toISOString() ?? null,
+            inviteRevokedAt: r.revokedAt?.toISOString() ?? null,
         }));
     });
 }

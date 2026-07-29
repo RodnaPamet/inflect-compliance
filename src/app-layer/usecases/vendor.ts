@@ -386,6 +386,10 @@ import { getEnrichmentProvider } from '../services/vendor-enrichment';
 
 export async function enrichVendor(ctx: RequestContext, vendorId: string) {
     assertCanManageVendors(ctx);
+    // Records that the attempt failed, so the stamp can be written AFTER the
+    // transaction has rolled back rather than inside it. See the note on the
+    // catch block below.
+    let attemptFailed = false;
     const result = await runInTenantContext(ctx, async (db) => {
         const vendor = await db.vendor.findFirst({ where: { id: vendorId, tenantId: ctx.tenantId } });
         if (!vendor) throw notFound('Vendor not found');
@@ -425,9 +429,33 @@ export async function enrichVendor(ctx: RequestContext, vendorId: string) {
 
             return updated;
         } catch (err: unknown) {
-            await db.vendor.update({ where: { id: vendorId }, data: { enrichmentStatus: 'FAILED', enrichmentLastRunAt: new Date() } });
+            // The FAILED stamp CANNOT be written here. runInTenantContext
+            // opens a transaction, and rethrowing rolls the whole thing back
+            // — so this write, and the PENDING write above it, were both
+            // discarded. A failed enrichment left no trace at all: the status
+            // reverted to whatever it was before and enrichmentLastRunAt was
+            // never advanced, so an operator could not tell an attempt had
+            // been made, let alone that it failed. Stamp it after the
+            // rollback instead.
+            attemptFailed = true;
             throw err;
         }
+    }).catch(async (err: unknown) => {
+        if (attemptFailed) {
+            // Best-effort and deliberately swallowed: the caller is about to
+            // receive the original enrichment error, and losing the status
+            // stamp must not replace it with a less useful one.
+            await runInTenantContext(ctx, (db) =>
+                db.vendor.update({
+                    where: { id: vendorId, tenantId: ctx.tenantId },
+                    data: {
+                        enrichmentStatus: 'FAILED',
+                        enrichmentLastRunAt: new Date(),
+                    },
+                }),
+            ).catch(() => undefined);
+        }
+        throw err;
     });
     await bumpEntityCacheVersion(ctx, 'vendor');
     return result;
