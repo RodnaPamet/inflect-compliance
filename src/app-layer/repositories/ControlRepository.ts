@@ -1,10 +1,10 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { Prisma } from '@prisma/client';
+import { Prisma, ControlStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
-import { notFound } from '@/lib/errors/types';
+import { notFound, badRequest } from '@/lib/errors/types';
 
 export interface ControlListFilters {
     status?: string;
@@ -102,12 +102,48 @@ export class ControlRepository {
         });
     }
 
+    /**
+     * Parse the `status` filter, which arrives as a comma-joined list from
+     * the list page's multi-select.
+     *
+     * This used to be `filters.status as Prisma.EnumControlStatusFilter` — an
+     * `as` cast that told the compiler the string was already a valid enum
+     * filter. It is not: a single value happened to work, but selecting two
+     * sent Prisma the literal `"IN_PROGRESS,IMPLEMENTING"` as an enum, which
+     * it rejects with a validation error. The route returned 500 and the
+     * whole section fell over with a Server Components render error.
+     *
+     * Same shape as `parseListFilter` in WorkItemRepository: dedupe, validate
+     * every member against the real enum, and collapse to a scalar or `{ in }`.
+     * An unknown value is a 400, not a 500 — the caller sent something wrong.
+     */
+    private static _parseStatusFilter(
+        raw: string,
+    ): Prisma.EnumControlStatusFilter | ControlStatus | undefined {
+        const values = [
+            ...new Set(raw.split(',').map((v) => v.trim()).filter(Boolean)),
+        ];
+        if (values.length === 0) return undefined;
+
+        const valid = new Set<string>(Object.values(ControlStatus));
+        const bad = values.find((v) => !valid.has(v));
+        if (bad) {
+            throw badRequest(
+                `Invalid control status "${bad}". Must be one of: ${[...valid].join(', ')}.`,
+            );
+        }
+
+        return values.length === 1
+            ? (values[0] as ControlStatus)
+            : { in: values as ControlStatus[] };
+    }
+
     private static _buildWhere(ctx: RequestContext, filters?: ControlListFilters): Prisma.ControlWhereInput {
         const where: Prisma.ControlWhereInput = {
             OR: [{ tenantId: ctx.tenantId }, { tenantId: null }],
         };
 
-        if (filters?.status) where.status = filters.status as Prisma.EnumControlStatusFilter;
+        if (filters?.status) where.status = ControlRepository._parseStatusFilter(filters.status);
         if (filters?.applicability && (filters.applicability === 'APPLICABLE' || filters.applicability === 'NOT_APPLICABLE')) {
             where.applicability = filters.applicability;
         }
