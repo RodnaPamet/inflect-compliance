@@ -263,6 +263,16 @@ export interface SubflowDispatchPayload {
     parentExecutionId: string;
     triggerEvent: string;
     data: Record<string, unknown>;
+    /**
+     * Recursion depth, mirroring `RuleChainDispatchPayload.depth`.
+     *
+     * Absent on the first hop (treated as 1). A sub-flow whose entry rule
+     * invokes its OWN group recursed forever before this existed: unlike
+     * rule-chain-dispatch, which has enforced `MAX_CHAIN_DEPTH` since Epic 7,
+     * this dispatcher had no cap at all — and `targetGroupId` is a free-form
+     * string with no self-reference check, so `G → G` was one field edit away.
+     */
+    depth?: number;
 }
 
 /** PR-E — global cron sweep that fires SCHEDULE rules whose target entity is
