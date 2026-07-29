@@ -6149,12 +6149,18 @@
       "close": "Close",
       "shape": "{steps, plural, one {# step} other {# steps}} · {links, plural, one {# link} other {# links}}",
       "items": {
-        "accessReview.name": "Access provisioning & review",
-        "accessReview.summary": "Request → approval → provision, with periodic recertification and leaver revocation.",
-        "vendorOnboarding.name": "Vendor onboarding & due diligence",
-        "vendorOnboarding.summary": "Intake → risk tiering → security review → contract & DPA → approval → ongoing monitoring.",
-        "incidentResponse.name": "Incident response",
-        "incidentResponse.summary": "Detect → triage → contain → investigate → remediate → post-incident review, with a regulatory-notification branch."
+        "accessReview": {
+          "name": "Access provisioning & review",
+          "summary": "Request → approval → provision, with periodic recertification and leaver revocation."
+        },
+        "vendorOnboarding": {
+          "name": "Vendor onboarding & due diligence",
+          "summary": "Intake → risk tiering → security review → contract & DPA → approval → ongoing monitoring."
+        },
+        "incidentResponse": {
+          "name": "Incident response",
+          "summary": "Detect → triage → contain → investigate → remediate → post-incident review, with a regulatory-notification branch."
+        }
       }
     },
     "governanceLink": "Automation graph →",
