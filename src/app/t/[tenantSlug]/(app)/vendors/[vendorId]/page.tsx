@@ -26,6 +26,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { CopyText } from '@/components/ui/copy-text';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { normaliseHref } from '@/lib/security/safe-url';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
@@ -277,6 +278,14 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState<string | null>(null);
     const [sendLink, setSendLink] = useState<string | null>(null);
+    // Both returned by send/resend and both previously discarded: whether the
+    // invitation email actually queued, and when the link dies.
+    const [sendLinkEmailed, setSendLinkEmailed] = useState(true);
+    const [sendLinkExpiresAt, setSendLinkExpiresAt] = useState<string | null>(null);
+    // Dismissing the reveal destroys the only copy of the raw token. Recovery
+    // means a resend, which ROTATES it and invalidates anything already
+    // shared — so the dismiss is confirmed rather than instant.
+    const [confirmDismissLink, setConfirmDismissLink] = useState(false);
     // Enrichment
     const [enriching, setEnriching] = useState(false);
     // Links
@@ -299,21 +308,44 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const [subForm, setSubForm] = useState({ subprocessorVendorId: '', purpose: '', dataTypes: '', country: '' });
     // P3.7b — recursive subprocessor chain.
     const [chain, setChain] = useState<SubprocessorChainNode | null>(null);
+    // Distinguishes "this vendor does not exist" (404) from "we could not
+    // load it" (500, offline, aborted). Both used to render as
+    // detail.notFound, which told the operator a vendor was deleted when the
+    // server had merely failed.
+    const [loadError, setLoadError] = useState<'missing' | 'failed' | null>(null);
 
     const fetchVendor = useCallback(async () => {
         setLoading(true);
-        const res = await fetch(apiUrl(`/vendors/${params.vendorId}`));
-        if (res.ok) {
+        setLoadError(null);
+        try {
+            const res = await fetch(apiUrl(`/vendors/${params.vendorId}`));
+            if (!res.ok) {
+                // A 404 genuinely means "no such vendor"; anything else is a
+                // failure to load one that may well exist. Reporting a 500 as
+                // "vendor doesn't exist" sends the operator looking for a
+                // deletion that never happened.
+                setLoadError(res.status === 404 ? 'missing' : 'failed');
+                return;
+            }
             const v = await res.json();
             setVendor(v);
             setEditForm({ name: v.name, legalName: v.legalName || '', websiteUrl: v.websiteUrl || '', domain: v.domain || '', country: v.country || '', description: v.description || '', criticality: v.criticality, status: v.status, residualRisk: v.residualRisk || '', dataAccess: v.dataAccess || '' });
+        } catch {
+            // Without this, a thrown fetch (offline, DNS, abort) skipped the
+            // setLoading(false) below and left a skeleton on screen forever.
+            setLoadError('failed');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     }, [apiUrl, params.vendorId]);
 
     const fetchDocs = useCallback(async () => {
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/documents`));
+        // An `if (res.ok)` with no else renders a 403 or 500 as the "no
+        // documents" empty state — the operator is told there is nothing
+        // here when in fact we could not find out.
         if (res.ok) setDocs(await res.json());
+        else toast.error(tx('detail.loadDocsFailed'));
     }, [apiUrl, params.vendorId]);
 
     const fetchAssessments = useCallback(async () => {
@@ -341,9 +373,24 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
         try {
             const res = await fetch(apiUrl(`/vendor-assessment-reviews/${assessmentId}/resend`), { method: 'POST' });
             if (!res.ok) { toast.error(tx('detail.resendFailed')); return; }
-            const result = (await res.json()) as { assessmentId: string; externalAccessToken: string };
+            const result = (await res.json()) as {
+                assessmentId: string;
+                externalAccessToken: string;
+                expiresAt?: string;
+                notificationQueued?: boolean;
+            };
             setSendLink(`${window.location.origin}/vendor-assessment/${result.assessmentId}?t=${result.externalAccessToken}`);
-            toast.success(tx('detail.resendToast'));
+            setSendLinkExpiresAt(result.expiresAt ?? null);
+            // Same honesty as the send path — a resend can also collapse in
+            // the outbox dedupe, and the operator needs to know the link was
+            // rotated without anyone being told.
+            if (result.notificationQueued === false) {
+                setSendLinkEmailed(false);
+                toast.info(tx('detail.sentNotEmailedToast'));
+            } else {
+                setSendLinkEmailed(true);
+                toast.success(tx('detail.resendToast'));
+            }
             fetchAssessments();
         } catch {
             toast.error(tx('detail.resendFailed'));
@@ -361,6 +408,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const fetchLinks = useCallback(async () => {
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/links`));
         if (res.ok) setLinks(await res.json());
+        else toast.error(tx('detail.loadLinksFailed'));
     }, [apiUrl, params.vendorId]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { if (tab === 'links') fetchLinks(); }, [tab, fetchLinks]);
@@ -368,6 +416,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const fetchBundles = useCallback(async () => {
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles`));
         if (res.ok) setBundles(await res.json());
+        else toast.error(tx('detail.loadBundlesFailed'));
     }, [apiUrl, params.vendorId]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { if (tab === 'bundles') fetchBundles(); }, [tab, fetchBundles]);
@@ -434,11 +483,13 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const fetchSubs = useCallback(async () => {
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/subprocessors`));
         if (res.ok) setSubs(await res.json());
+        else toast.error(tx('detail.loadSubsFailed'));
     }, [apiUrl, params.vendorId]);
     // P3.7b — recursive nth-party chain, fetched alongside the flat list.
     const fetchChain = useCallback(async () => {
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/subprocessors/chain`));
         if (res.ok) setChain(await res.json());
+        else toast.error(tx('detail.loadSubsFailed'));
     }, [apiUrl, params.vendorId]);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { if (tab === 'subprocessors') { fetchSubs(); fetchChain(); } }, [tab, fetchSubs, fetchChain]);
@@ -483,6 +534,49 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     // a blocking double-click. Snapshot + optimistic-filter pattern,
     // identical shape to tasks/removeLink and the other rolled-out
     // sites — see docs/destructive-actions.md.
+    // Epic 67 — same shape as removeDoc below. These were bare DELETEs with
+    // no confirm and no undo: one mis-click permanently detached a link or a
+    // subprocessor relationship with nothing to grab. Optimistic remove,
+    // 5-second window, restore on undo OR on failure.
+    const removeLink = (linkId: string) => {
+        const previous = links;
+        setLinks(prev => prev.filter(l => l.id !== linkId));
+        triggerUndoToast({
+            message: tx('detail.linkRemovedToast'),
+            undoMessage: tx('detail.undo'),
+            action: async () => {
+                const res = await fetch(
+                    apiUrl(`/vendors/${params.vendorId}/links/${linkId}`),
+                    { method: 'DELETE' },
+                );
+                if (!res.ok) throw new Error(tx('detail.removeLinkFailed'));
+                fetchLinks();
+            },
+            undoAction: () => setLinks(previous),
+            onError: () => setLinks(previous),
+        });
+    };
+
+    const removeSubprocessor = (relationId: string) => {
+        const previous = subs;
+        setSubs(prev => prev.filter(r => r.id !== relationId));
+        triggerUndoToast({
+            message: tx('detail.subRemovedToast'),
+            undoMessage: tx('detail.undo'),
+            action: async () => {
+                const res = await fetch(
+                    apiUrl(`/vendors/${params.vendorId}/subprocessors?relationId=${relationId}`),
+                    { method: 'DELETE' },
+                );
+                if (!res.ok) throw new Error(tx('detail.removeSubFailed'));
+                fetchSubs();
+                fetchChain();
+            },
+            undoAction: () => setSubs(previous),
+            onError: () => setSubs(previous),
+        });
+    };
+
     const removeDoc = (docId: string) => {
         const previous = docs;
         setDocs(prev => prev.filter(d => d.id !== docId));
@@ -531,11 +625,26 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             const result = (await res.json()) as {
                 assessmentId: string;
                 externalAccessToken: string;
+                expiresAt?: string;
+                notificationQueued?: boolean;
             };
             const link = `${window.location.origin}/vendor-assessment/${result.assessmentId}?t=${result.externalAccessToken}`;
             setSendLink(link);
+            setSendLinkExpiresAt(result.expiresAt ?? null);
             setShowSendModal(false);
-            toast.success(tx('detail.sentToast'));
+            // sendAssessment returns notificationQueued: false when tenant
+            // notifications are off or the same-day outbox dedupe collapsed
+            // the send. The flag was destructured away and the toast said
+            // "sent to vendor" regardless — asserting an email that never
+            // left. When it is false the link exists but nobody was told, so
+            // say that and let the operator deliver it themselves.
+            if (result.notificationQueued === false) {
+                setSendLinkEmailed(false);
+                toast.info(tx('detail.sentNotEmailedToast'));
+            } else {
+                setSendLinkEmailed(true);
+                toast.success(tx('detail.sentToast'));
+            }
             fetchAssessments();
         } catch {
             setSendError(tx('detail.sendFailed'));
@@ -559,6 +668,19 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     if (loading) {
         return (
             <EntityDetailLayout loading title="" breadcrumbs={breadcrumbs}>
+                <></>
+            </EntityDetailLayout>
+        );
+    }
+    if (loadError === 'failed') {
+        // Retryable. The vendor may exist perfectly well — we just could not
+        // reach it — so offer the retry rather than asserting it is gone.
+        return (
+            <EntityDetailLayout
+                title=""
+                breadcrumbs={breadcrumbs}
+                error={{ message: tx('detail.loadFailed'), onRetry: fetchVendor }}
+            >
                 <></>
             </EntityDetailLayout>
         );
@@ -948,13 +1070,33 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                 <Heading level={3}>{tx('detail.assessmentLink')}</Heading>
                                 <button
                                     className="text-content-muted text-xs hover:underline"
-                                    onClick={() => setSendLink(null)}
+                                    onClick={() => setConfirmDismissLink(true)}
                                 >
                                     {tx('detail.dismiss')}
                                 </button>
                             </div>
+                            {/* The hint used to assert the invitation WAS
+                                emailed. It is only true when the outbox
+                                actually queued it — otherwise the link exists
+                                and nobody has been told, which makes copying
+                                it the operator's job, not an afterthought. */}
+                            <p className={cn('text-xs', sendLinkEmailed ? 'text-content-muted' : 'text-content-warning')}>
+                                {sendLinkEmailed
+                                    ? tx('detail.linkShareHint')
+                                    : tx('detail.linkNotEmailedHint')}
+                            </p>
+                            {sendLinkExpiresAt && (
+                                <p className="text-xs text-content-muted">
+                                    {tx('detail.linkExpiresOn', {
+                                        date: formatDate(sendLinkExpiresAt),
+                                    })}
+                                </p>
+                            )}
+                            {/* This is the ONLY time this token is ever
+                                visible — only its SHA-256 is stored. Say so,
+                                and make copying the primary affordance. */}
                             <p className="text-xs text-content-muted">
-                                {tx('detail.linkShareHint')}
+                                {tx('detail.linkOneTimeWarning')}
                             </p>
                             <CopyText value={sendLink} label={tx('detail.copyLink')} truncate className="text-xs">
                                 {sendLink}
@@ -1171,10 +1313,17 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                 <Combobox hideSearch id="link-relation" selected={VENDOR_LINK_RELATION_OPTIONS.find(o => o.value === linkForm.relation) ?? null} setSelected={(opt) => setLinkForm(p => ({ ...p, relation: opt?.value ?? p.relation }))} options={VENDOR_LINK_RELATION_OPTIONS} matchTriggerWidth />
                             </div>
                             <Button variant="primary" id="submit-link-btn" onClick={async () => {
-                                await fetch(apiUrl(`/vendors/${params.vendorId}/links`), {
+                                // The write is now checked before the form is
+                                // torn down. Previously a 400 (unresolvable
+                                // target) or 403 closed the form and cleared
+                                // the input exactly like a success, leaving
+                                // the missing link as the only clue.
+                                const res = await fetch(apiUrl(`/vendors/${params.vendorId}/links`), {
                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(linkForm),
                                 });
+                                if (!res.ok) { toast.error(tx('detail.addLinkFailed')); return; }
+                                toast.success(tx('detail.addLinkToast'));
                                 setShowLinkForm(false); setLinkForm({ entityType: 'ASSET', entityId: '', relation: 'RELATED' }); fetchLinks();
                             }}>{tx('detail.add')}</Button>
                         </div>
@@ -1208,9 +1357,14 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                 )}
                                                 <StatusBadge variant="neutral" className="ml-1">{l.relation}</StatusBadge>
                                             </span>
-                                            {canWrite && <button className="text-content-error text-xs" onClick={async () => {
-                                                await fetch(apiUrl(`/vendors/${params.vendorId}/links/${l.id}`), { method: 'DELETE' }); fetchLinks();
-                                            }}>{tx('detail.remove')}</button>}
+                                            {canWrite && (
+                                                <button
+                                                    className="text-content-error text-xs"
+                                                    onClick={() => removeLink(l.id)}
+                                                >
+                                                    {tx('detail.remove')}
+                                                </button>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -1431,16 +1585,7 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                     <VendorSubprocessorsTable
                         subs={subs}
                         canWrite={canWrite}
-                        onRemove={async (relationId: string) => {
-                            await fetch(
-                                apiUrl(
-                                    `/vendors/${params.vendorId}/subprocessors?relationId=${relationId}`,
-                                ),
-                                { method: 'DELETE' },
-                            );
-                            fetchSubs();
-                            fetchChain();
-                        }}
+                        onRemove={removeSubprocessor}
                     />
                     {/* P3.7b — transitive (nth-party) chain view. Rendered
                         below the flat one-hop table; shows the full
@@ -1471,7 +1616,20 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                     />
                 </div>
             )}
-        </EntityDetailLayout>
+                    <ConfirmDialog
+                showModal={confirmDismissLink}
+                setShowModal={setConfirmDismissLink}
+                tone="warning"
+                title={tx('detail.dismissLink.title')}
+                description={tx('detail.dismissLink.description')}
+                confirmLabel={tx('detail.dismissLink.confirm')}
+                cancelLabel={tx('detail.dismissLink.cancel')}
+                onConfirm={() => {
+                    setSendLink(null);
+                    setSendLinkExpiresAt(null);
+                }}
+            />
+</EntityDetailLayout>
     );
 }
 

@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
-import { useThresholdLoadMore } from '@/components/ui/hooks';
+import { useThresholdLoadMore, useToast } from '@/components/ui/hooks';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { buildVendorFilters, VENDOR_FILTER_KEYS } from './filter-defs';
@@ -245,6 +245,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [bulkApplying, setBulkApplying] = useState(false);
+    const toast = useToast();
     const handleBulkApply = async (action: string, value: string) => {
         const ids = Array.from(selected);
         if (!action || ids.length === 0) return;
@@ -266,9 +267,20 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error('Bulk action failed');
+            if (!res.ok) {
+                // Was `throw new Error('Bulk action failed')` inside a
+                // try/finally with NO catch, from an un-awaited handler — so a
+                // 403 on a 40-vendor bulk delete produced an unhandled
+                // rejection and nothing but a stopped spinner. Also a
+                // hardcoded English string in an otherwise localised surface.
+                toast.error(t('bulk.failed'));
+                return;
+            }
             await vendorsQuery.mutate();
             setSelected(new Set());
+            toast.success(t('bulk.applied', { count: ids.length }));
+        } catch {
+            toast.error(t('bulk.failed'));
         } finally {
             setBulkApplying(false);
         }

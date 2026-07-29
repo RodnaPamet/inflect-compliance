@@ -179,7 +179,8 @@
       "tasks": "Tasks",
       "tests": "Tests",
       "vendors": "Vendors"
-    }
+    },
+    "retry": "Retry"
   },
   "login": {
     "title": "Inflect Compliance",
@@ -5203,7 +5204,9 @@
       "selectStatus": "Select status...",
       "assignOwner": "Assign owner",
       "ownerPlaceholder": "Owner (blank = unassign)",
-      "delete": "Delete"
+      "delete": "Delete",
+      "failed": "Bulk action failed.",
+      "applied": "Applied to {count} vendors"
     },
     "statusOption": {
       "ACTIVE": "Active",
@@ -5433,7 +5436,28 @@
       "chainDepth": "Tier {depth}",
       "subChainTitle": "Subprocessor chain (nth-party)",
       "subChainHint": "Transitive downstream subprocessors — your vendors' vendors and beyond.",
-      "awaitingReview": "Awaiting review"
+      "awaitingReview": "Awaiting review",
+      "loadFailed": "Could not load this vendor.",
+      "loadDocsFailed": "Could not load documents.",
+      "loadLinksFailed": "Could not load links.",
+      "loadBundlesFailed": "Could not load evidence bundles.",
+      "loadSubsFailed": "Could not load subprocessors.",
+      "addLinkFailed": "Could not add the link.",
+      "addLinkToast": "Link added",
+      "linkRemovedToast": "Link removed",
+      "removeLinkFailed": "Could not remove the link.",
+      "subRemovedToast": "Subprocessor removed",
+      "removeSubFailed": "Could not remove the subprocessor.",
+      "sentNotEmailedToast": "Link created — but the invitation was NOT emailed",
+      "linkNotEmailedHint": "The invitation was not emailed (notifications are off, or an identical invite already went out today). Copy the link below and send it to the respondent yourself.",
+      "linkOneTimeWarning": "This link is shown once and cannot be recovered — only its hash is stored. A resend creates a NEW link and invalidates this one.",
+      "linkExpiresOn": "Expires {date}",
+      "dismissLink": {
+        "title": "Dismiss this link?",
+        "description": "The link cannot be shown again — only its hash is stored. Recovering it means resending, which creates a new link and invalidates this one. Copy it first if the respondent still needs it.",
+        "confirm": "Dismiss link",
+        "cancel": "Keep showing"
+      }
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",

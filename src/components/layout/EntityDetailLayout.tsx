@@ -37,6 +37,7 @@
 import { type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { cardVariants } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 import { cn } from '@/lib/cn';
 import { type BreadcrumbItem } from '@/components/ui/breadcrumbs';
@@ -100,11 +101,17 @@ export interface EntityDetailLayoutProps<TKey extends string = string> {
      */
     loading?: boolean;
     /**
-     * Inline error message rendered in place of the body. The shell
-     * intentionally does NOT echo back arbitrary error JSON — the
-     * caller passes the user-facing string.
+     * Inline error rendered in place of the body. The shell intentionally
+     * does NOT echo back arbitrary error JSON — the caller passes the
+     * user-facing string.
+     *
+     * Pass an object with `onRetry` to render a retry affordance alongside
+     * it. A load failure is usually transient (offline, a 500, an aborted
+     * request), and a bare message leaves the operator with a dead end and
+     * a browser reload as their only option. The plain-string form is
+     * retained — most callers have nothing useful to retry.
      */
-    error?: string | null;
+    error?: string | { message: string; onRetry?: () => void } | null;
     /**
      * Empty-state copy rendered when the entity wasn't found. Pass a
      * string for the default rendering or omit for "Not found.".
@@ -179,6 +186,7 @@ export function EntityDetailLayout<TKey extends string = string>({
     rail,
 }: EntityDetailLayoutProps<TKey>) {
     const t = useTranslations('common');
+    const retryLabel = t('retry');
     // v2-fu-4 — render the breadcrumbs / back link in EVERY state
     // (loading / error / empty / main). Previously the loading
     // skeleton, error block, and empty block returned early before
@@ -210,6 +218,8 @@ export function EntityDetailLayout<TKey extends string = string>({
         );
     }
     if (error) {
+        const errorMessage = typeof error === 'string' ? error : error.message;
+        const onRetry = typeof error === 'string' ? undefined : error.onRetry;
         return (
             <div
                 className={cn('space-y-section animate-fadeIn', className)}
@@ -217,11 +227,20 @@ export function EntityDetailLayout<TKey extends string = string>({
             >
                 {headerNode}
                 <div
-                    className="p-12 text-center text-content-error"
+                    className="p-12 text-center text-content-error space-y-default"
                     role="alert"
                     data-testid="entity-detail-error"
                 >
-                    {error}
+                    <p>{errorMessage}</p>
+                    {onRetry && (
+                        <Button
+                            variant="secondary"
+                            onClick={onRetry}
+                            data-testid="entity-detail-retry"
+                        >
+                            {retryLabel}
+                        </Button>
+                    )}
                 </div>
             </div>
         );
