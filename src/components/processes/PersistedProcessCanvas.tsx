@@ -83,6 +83,12 @@ import {
     PROCESS_EDGE_TYPE,
     isProcessEdgeVariant,
 } from "./ProcessEdge";
+import {
+    serializeGraphForSave,
+    nodeDataJson,
+    nodeParent,
+    edgeKindOf,
+} from "@/lib/processes/serialize-graph";
 import { useProximityAutoBind } from "@/lib/processes/use-proximity-auto-bind";
 import { useCanvasHistory } from "@/lib/processes/use-canvas-history";
 import { useCanvasAutosave } from "@/lib/processes/use-canvas-autosave";
@@ -193,100 +199,26 @@ const EDGE_TYPES: EdgeTypes = {
 // slot; edge variant persists in the `ProcessEdge.edgeKind` column.
 // Both already round-trip end to end — no schema migration needed.
 
-function nodeDataJson(n: Node): {
-    size?: string;
-    width?: number;
-    height?: number;
-    linkedEntityId?: string;
-} | null {
-    const size = (n.data as { size?: unknown } | undefined)?.size;
-    // R30 — group nodes persist their explicit width / height
-    // alongside the rest of `dataJson`. Reading from `data` and
-    // `style` covers both freshly-created groups (whose width/
-    // height start in `style`) and round-tripped groups (whose
-    // width/height landed in `data` on rehydration).
-    const styleW = (n.style as { width?: unknown } | undefined)?.width;
-    const styleH = (n.style as { height?: unknown } | undefined)?.height;
-    const dataW = (n.data as { width?: unknown } | undefined)?.width;
-    const dataH = (n.data as { height?: unknown } | undefined)?.height;
-    const width =
-        typeof styleW === "number"
-            ? styleW
-            : typeof dataW === "number"
-              ? dataW
-              : null;
-    const height =
-        typeof styleH === "number"
-            ? styleH
-            : typeof dataH === "number"
-              ? dataH
-              : null;
-    // Epic P2-PR-B — entity FK on risk / asset / control nodes.
-    const linkedEntityId = (n.data as { linkedEntityId?: unknown } | undefined)
-        ?.linkedEntityId;
-    const out: {
-        size?: string;
-        width?: number;
-        height?: number;
-        linkedEntityId?: string;
-    } = {};
-    if (isProcessNodeSize(size)) out.size = size;
-    if (width != null) out.width = width;
-    if (height != null) out.height = height;
-    if (typeof linkedEntityId === "string" && linkedEntityId.length > 0) {
-        out.linkedEntityId = linkedEntityId;
-    }
-    return Object.keys(out).length === 0 ? null : out;
-}
-
-function nodeParent(n: Node): string | null {
-    const p = (n as { parentId?: unknown }).parentId;
-    return typeof p === "string" && p.length > 0 ? p : null;
-}
-
-function edgeKindOf(e: Edge): string {
-    const v = (e.data as { variant?: unknown } | undefined)?.variant;
-    return isProcessEdgeVariant(v) ? v : "flow";
-}
-
 /**
  * Epic P5-PR-B — project the live xyflow graph into a
- * `DiffGraphSnapshot` so it can be diffed against a fetched
- * snapshot. Mirrors the projection used by `saveGraph` so the
- * identity + position + data fields line up exactly.
+ * `DiffGraphSnapshot` so it can be diffed against a fetched snapshot.
+ *
+ * The NODE projection is taken verbatim from `serializeGraphForSave` rather
+ * than re-derived. Its previous doc comment said it "mirrors the projection
+ * used by saveGraph" — which is precisely the property a second copy cannot
+ * keep. A field added to the save projection now shows up in the diff by
+ * construction instead of by diligence.
+ *
+ * The EDGE projection genuinely differs: the diff compares raw `e.data`, while
+ * a save sends the derived `controls` array. That divergence is deliberate, so
+ * it stays local and visible.
  *
  * Deliberately NOT memoised here — call sites memo per their own
  * dependency shape.
  */
 function buildLiveSnapshot(nodes: Node[], edges: Edge[]): DiffGraphSnapshot {
     return {
-        nodes: nodes.map((n, idx) => {
-            const kind: ProcessNodeKind = isProcessNodeKind(n.type)
-                ? n.type
-                : PROCESS_STEP_NODE_TYPE;
-            const meta = NODE_TAXONOMY[kind];
-            const dataLabel =
-                n.data &&
-                typeof (n.data as { label?: unknown }).label === "string"
-                    ? (n.data as { label: string }).label
-                    : meta.defaultLabel;
-            const dataSubtitle =
-                n.data &&
-                typeof (n.data as { subtitle?: unknown }).subtitle ===
-                    "string"
-                    ? (n.data as { subtitle: string }).subtitle
-                    : null;
-            return {
-                nodeKey: n.id || `node-${idx + 1}`,
-                nodeType: kind,
-                label: dataLabel,
-                subtitle: dataSubtitle,
-                posX: n.position.x,
-                posY: n.position.y,
-                parentNodeKey: nodeParent(n),
-                dataJson: nodeDataJson(n) as unknown,
-            };
-        }),
+        nodes: serializeGraphForSave(nodes, edges).nodes,
         edges: edges.map((e, idx) => ({
             edgeKey: e.id || `edge-${idx + 1}`,
             sourceKey: e.source,
@@ -611,51 +543,7 @@ function Inner({
         setError(null);
         try {
             const payload = {
-                nodes: nodes.map((n, idx) => {
-                    // The xyflow node carries its kind on `type`
-                    // (registered in NODE_TYPES) AND on `data.kind`
-                    // (consumed by the renderer). Both come back
-                    // from the rehydration step. On save we trust
-                    // `n.type` — it is the canonical xyflow
-                    // identifier and the field the registry keys
-                    // off — and fall back to the default kind if
-                    // it ever drifts.
-                    const kind: ProcessNodeKind = isProcessNodeKind(n.type)
-                        ? n.type
-                        : PROCESS_STEP_NODE_TYPE;
-                    const meta = NODE_TAXONOMY[kind];
-                    const dataLabel =
-                        n.data &&
-                        typeof (n.data as { label?: unknown }).label ===
-                            "string"
-                            ? (n.data as { label: string }).label
-                            : meta.defaultLabel;
-                    const dataSubtitle =
-                        n.data &&
-                        typeof (n.data as { subtitle?: unknown }).subtitle ===
-                            "string"
-                            ? (n.data as { subtitle: string }).subtitle
-                            : null;
-                    return {
-                        nodeKey: n.id || `node-${idx + 1}`,
-                        nodeType: kind,
-                        label: dataLabel,
-                        subtitle: dataSubtitle,
-                        posX: n.position.x,
-                        posY: n.position.y,
-                        parentNodeKey: nodeParent(n),
-                        dataJson: nodeDataJson(n),
-                    };
-                }),
-                edges: edges.map((e, idx) => ({
-                    edgeKey: e.id || `edge-${idx + 1}`,
-                    sourceKey: e.source,
-                    targetKey: e.target,
-                    edgeKind: edgeKindOf(e),
-                    labelOverride:
-                        typeof e.label === "string" ? e.label : null,
-                    controls: edgeControlsForSave(e),
-                })),
+                ...serializeGraphForSave(nodes, edges),
                 // Epic P1 — version we last loaded/saved; server
                 // refuses on mismatch (409 / STALE_DATA).
                 ...(loadedMap?.version !== undefined
@@ -784,35 +672,15 @@ function Inner({
             // node/edge edits the user has open.
             const payload = {
                 name: trimmed,
-                nodes: nodes.map((n, idx) => ({
-                    nodeKey: n.id || `node-${idx + 1}`,
-                    nodeType: isProcessNodeKind(n.type)
-                        ? n.type
-                        : PROCESS_STEP_NODE_TYPE,
-                    label:
-                        n.data &&
-                        typeof (n.data as { label?: unknown }).label === "string"
-                            ? (n.data as { label: string }).label
-                            : "Untitled step",
-                    subtitle:
-                        n.data &&
-                        typeof (n.data as { subtitle?: unknown }).subtitle ===
-                            "string"
-                            ? (n.data as { subtitle: string }).subtitle
-                            : null,
-                    posX: n.position.x,
-                    posY: n.position.y,
-                    dataJson: nodeDataJson(n),
-                })),
-                edges: edges.map((e, idx) => ({
-                    edgeKey: e.id || `edge-${idx + 1}`,
-                    sourceKey: e.source,
-                    targetKey: e.target,
-                    edgeKind: edgeKindOf(e),
-                    labelOverride:
-                        typeof e.label === "string" ? e.label : null,
-                    controls: edgeControlsForSave(e),
-                })),
+                ...serializeGraphForSave(nodes, edges),
+                // Rename PUTs the WHOLE graph, so it is a full write and needs
+                // the same optimistic-concurrency guard as an ordinary save.
+                // Without it a rename silently clobbered a concurrent editor —
+                // the one write that skipped the check was also the one users
+                // think of as "just metadata".
+                ...(loadedMap?.version !== undefined
+                    ? { expectedVersion: loadedMap.version }
+                    : {}),
             };
             const res = await fetch(
                 `/api/t/${tenantSlug}/processes/${activeId}`,
@@ -822,6 +690,17 @@ function Inner({
                     body: JSON.stringify(payload),
                 },
             );
+            // Epic P1 — 409 / STALE_DATA surfaces the Reload toast rather than
+            // a bare "Rename failed (409)". The name input reverts so the
+            // field matches what the server actually holds.
+            const conflict = await surfaceVersionConflict(res, toast, () =>
+                setReloadCounter((c) => c + 1),
+            );
+            if (conflict) {
+                setError(null);
+                setEditedName(activeProcess.name);
+                return;
+            }
             if (!res.ok) throw new Error(`Rename failed (${res.status})`);
             const data = await res.json();
             onProcessesChange(
@@ -850,6 +729,8 @@ function Inner({
         tenantSlug,
         processes,
         onProcessesChange,
+        loadedMap,
+        toast,
     ]);
 
     // ─── Duplicate: clone the current graph into a new map ────────
@@ -880,39 +761,7 @@ function Inner({
                 {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        nodes: nodes.map((n, idx) => ({
-                            nodeKey: n.id || `node-${idx + 1}`,
-                            nodeType: isProcessNodeKind(n.type)
-                                ? n.type
-                                : PROCESS_STEP_NODE_TYPE,
-                            label:
-                                n.data &&
-                                typeof (n.data as { label?: unknown }).label ===
-                                    "string"
-                                    ? (n.data as { label: string }).label
-                                    : "Untitled step",
-                            subtitle:
-                                n.data &&
-                                typeof (n.data as { subtitle?: unknown })
-                                    .subtitle === "string"
-                                    ? (n.data as { subtitle: string }).subtitle
-                                    : null,
-                            posX: n.position.x,
-                            posY: n.position.y,
-                            parentNodeKey: nodeParent(n),
-                        dataJson: nodeDataJson(n),
-                        })),
-                        edges: edges.map((e, idx) => ({
-                            edgeKey: e.id || `edge-${idx + 1}`,
-                            sourceKey: e.source,
-                            targetKey: e.target,
-                            edgeKind: edgeKindOf(e),
-                            labelOverride:
-                                typeof e.label === "string" ? e.label : null,
-                            controls: edgeControlsForSave(e),
-                        })),
-                    }),
+                    body: JSON.stringify(serializeGraphForSave(nodes, edges)),
                 },
             );
             if (!saveRes.ok)
@@ -1091,6 +940,20 @@ function Inner({
                 // Intermediate drag ticks have `dragging: true`
                 // and shouldn't push history.
                 return c.dragging === false;
+            case "replace":
+                // Inspector edits. `updateNodeData` (the ONLY instance-level
+                // node mutation in this component) queues a store update, which
+                // xyflow diffs into a `replace` change and forwards here — so
+                // falling through to `default: false` meant label / subtitle /
+                // size / linked-entity edits were neither autosaved NOR
+                // undoable, while ProcessInspector told the user "Click off the
+                // field or press Enter to save the edit."
+                //
+                // Classified here rather than by calling history.push +
+                // markDirty inside handleInspectorUpdate: doing both would push
+                // TWO undo entries per edit, and this way any future
+                // updateNodeData caller is covered by construction.
+                return true;
             default:
                 return false;
         }
@@ -1672,6 +1535,12 @@ function Inner({
     // mouse-up still in range, commit it.
     const handleProximityCommit = useCallback(
         (cand: { source: string; target: string }) => {
+            // Auto-bound edges are real graph edits, but they are written
+            // through the raw setter rather than onEdgesChange — so without
+            // these two lines they were neither autosaved nor undoable, and an
+            // accidental proximity bind could not be taken back.
+            history.push({ nodes, edges });
+            autosave.markDirty();
             setEdges((eds) => {
                 // Guard against the (rare) race where the candidate
                 // edge already landed via the in-flight onConnect
@@ -1697,7 +1566,7 @@ function Inner({
                 ];
             });
         },
-        [],
+        [nodes, edges, history, autosave],
     );
     const proximity = useProximityAutoBind(nodes, edges, {
         onCommit: handleProximityCommit,
@@ -1739,6 +1608,11 @@ function Inner({
                 y: event.clientY,
             });
             const meta = NODE_TAXONOMY[kind];
+            // Same omission as the proximity commit: a palette drag adds a node
+            // through the raw setter, so it skipped both the undo stack and the
+            // autosave debounce. Dropping a node and pressing ⌘Z did nothing.
+            history.push({ nodes, edges });
+            autosave.markDirty();
             setNodes((nds) => [
                 ...nds,
                 {
@@ -1749,7 +1623,7 @@ function Inner({
                 },
             ]);
         },
-        [screenToFlowPosition],
+        [screenToFlowPosition, nodes, edges, history, autosave],
     );
 
     const showEmpty = !activeId;
