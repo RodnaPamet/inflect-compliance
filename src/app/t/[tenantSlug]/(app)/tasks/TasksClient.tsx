@@ -8,7 +8,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus, Trash } from '@/components/ui/icons/nucleo';
+import { IconAction } from '@/components/ui/icon-action';
 import { NewTaskModal } from './NewTaskModal';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import { TaskEditPanel } from '@/app/t/[tenantSlug]/(app)/controls/TaskEditPanel';
@@ -1187,20 +1188,24 @@ function TasksPageInner({
                                 who can edit — restore is admin-gated
                                 server-side, so showing it to a reader
                                 would advertise an action they'd be
-                                refused. */}
+                                refused.
+
+                                The label here is stateful where
+                                assets/controls are static — it names the
+                                destination, so the tooltip still says what
+                                the click does now the text is gone. */}
                             {appPermissions.tasks.edit && (
-                                <Button
+                                <IconAction
                                     variant={showDeleted ? 'primary' : 'secondary'}
-                                    size="sm"
                                     onClick={() => {
                                         setShowDeleted((v) => !v);
                                         setSelected(new Set());
                                     }}
                                     aria-pressed={showDeleted}
                                     id="show-deleted-toggle"
-                                >
-                                    {showDeleted ? t('list.showLive') : t('list.showDeleted')}
-                                </Button>
+                                    icon={<Trash className="size-4" />}
+                                    label={showDeleted ? t('list.showLive') : t('list.showDeleted')}
+                                />
                             )}
                             {columnsDropdown}
                             {filtersDropdown}
