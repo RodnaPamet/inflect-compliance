@@ -5459,7 +5459,8 @@
         "cancel": "Keep showing"
       },
       "inviteExpired": "Link expired",
-      "inviteRevoked": "Link revoked"
+      "inviteRevoked": "Link revoked",
+      "linkGroupNamed": "{type} ({count})"
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
@@ -5627,7 +5628,8 @@
       "MEDIUM": "Medium",
       "HIGH": "High",
       "CRITICAL": "Critical"
-    }
+    },
+    "createFailed": "Could not create the vendor."
   },
   "frameworks": {
     "crumb": {

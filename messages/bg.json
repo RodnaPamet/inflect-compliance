@@ -5459,7 +5459,8 @@
         "cancel": "Продължи да показваш"
       },
       "inviteExpired": "Връзката е изтекла",
-      "inviteRevoked": "Връзката е отменена"
+      "inviteRevoked": "Връзката е отменена",
+      "linkGroupNamed": "{type} ({count})"
     },
     "monitoring": {
       "loadFailed": "Зареждането на наблюдението е неуспешно",
@@ -5627,7 +5628,8 @@
       "MEDIUM": "Среден",
       "HIGH": "Висок",
       "CRITICAL": "Критичен"
-    }
+    },
+    "createFailed": "Доставчикът не можа да бъде създаден."
   },
   "frameworks": {
     "crumb": {

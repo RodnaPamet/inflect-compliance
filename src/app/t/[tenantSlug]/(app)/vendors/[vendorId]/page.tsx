@@ -1359,7 +1359,16 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                         if (typeLinks.length === 0) return null;
                         return (
                             <div key={type} className={cn(cardVariants({ density: 'compact' }), 'space-y-tight')}>
-                                <Heading level={3}>{tx('detail.linkGroup', { type, count: typeLinks.length })}</Heading>
+                                {/* Was tx('detail.linkGroup', { type }) against the
+                                    message '{type}s ({count})', which rendered the raw
+                                    enum plus an English plural — "ASSETs (2)". The
+                                    linkType.* keys the ADD form uses are right there. */}
+                                <Heading level={3}>
+                                    {tx('detail.linkGroupNamed', {
+                                        type: tx(`linkType.${type}`),
+                                        count: typeLinks.length,
+                                    })}
+                                </Heading>
                                 {typeLinks.map((l) => {
                                     const buildHref = LINK_ENTITY_HREF[l.entityType];
                                     // `entityName` IS resolved server-side (listVendorLinks
@@ -1381,7 +1390,9 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                 ) : (
                                                     <code className="text-xs text-content-info">{l.entityId}</code>
                                                 )}
-                                                <StatusBadge variant="neutral" className="ml-1">{l.relation}</StatusBadge>
+                                                <StatusBadge variant="neutral" className="ml-1">
+                                                    {tx(`linkRelation.${l.relation}`)}
+                                                </StatusBadge>
                                             </span>
                                             {canWrite && (
                                                 <button

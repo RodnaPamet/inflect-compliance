@@ -31,7 +31,21 @@ function MetricCard({ label, value, tone, href }: { label: string; value: number
     return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
-function BreakdownBar({ data, colors }: { data: Record<string, number>; colors: Record<string, string> }) {
+function BreakdownBar({
+    data,
+    colors,
+    labelFor,
+}: {
+    data: Record<string, number>;
+    colors: Record<string, string>;
+    /**
+     * Resolve an enum key to its display label. Was `label: key`, which put
+     * the raw enum on screen — "CRITICAL", "OFFBOARDED" — while
+     * `vendors.criticalityLabel.*` and `vendors.statusOption.*` sat in the
+     * message catalogue already carrying the localised forms.
+     */
+    labelFor: (key: string) => string;
+}) {
     // Epic 59 — hand-rolled per-row distribution bar replaced with the
     // shared `<StatusBreakdown>`. Preserves the legacy category-
     // specific colour palette via `colorClass` since these are
@@ -40,7 +54,7 @@ function BreakdownBar({ data, colors }: { data: Record<string, number>; colors: 
     const items: StatusBreakdownItem[] = Object.entries(data).map(
         ([key, value]) => ({
             id: key,
-            label: key,
+            label: labelFor(key),
             value,
             colorClass: colors[key] ?? 'bg-bg-info',
         }),
@@ -143,7 +157,7 @@ export default function VendorDashboardPage() {
                         <p className="text-xs text-content-muted">{tx('dashboard.byCriticalityCaption')}</p>
                     </div>
                     <div className="flex flex-1 flex-col justify-center">
-                        <BreakdownBar data={metrics.byCriticality} colors={CRIT_COLORS} />
+                        <BreakdownBar data={metrics.byCriticality} colors={CRIT_COLORS} labelFor={(k) => tx(`criticalityLabel.${k}`)} />
                     </div>
                 </div>
 
@@ -151,7 +165,7 @@ export default function VendorDashboardPage() {
                 <div className={cn(cardVariants(), 'flex flex-col space-y-compact')}>
                     <Heading level={3}>{tx('dashboard.byStatus')}</Heading>
                     <div className="flex flex-1 flex-col justify-center">
-                        <BreakdownBar data={metrics.byStatus} colors={STATUS_COLORS} />
+                        <BreakdownBar data={metrics.byStatus} colors={STATUS_COLORS} labelFor={(k) => tx(`statusOption.${k}`)} />
                     </div>
                 </div>
 
@@ -163,7 +177,7 @@ export default function VendorDashboardPage() {
                     </div>
                     <div className="flex flex-1 flex-col justify-center">
                         {Object.keys(metrics.byRiskRating).length > 0
-                            ? <BreakdownBar data={metrics.byRiskRating} colors={CRIT_COLORS} />
+                            ? <BreakdownBar data={metrics.byRiskRating} colors={CRIT_COLORS} labelFor={(k) => tx(`criticalityLabel.${k}`)} />
                             : <InlineEmptyState title={tx('dashboard.riskRatingEmpty')} />}
                     </div>
                 </div>
