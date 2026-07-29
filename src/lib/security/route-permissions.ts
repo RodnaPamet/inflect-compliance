@@ -392,6 +392,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             '(OWNER/ADMIN), not the assets.edit an EDITOR holds.',
     },
 
+    // ── Tenant security settings ────────────────────────────────────
+    // Admin-only on BOTH verbs, unlike the sibling MFA-policy route whose
+    // GET is member-visible: this payload carries the session cap and
+    // reveals whether an outbound audit-stream endpoint is configured.
+    {
+        path: new RegExp(`^${T}\\/admin\\/security-settings$`),
+        permission: 'admin.manage',
+        note:
+            'Reading and writing the tenant security configuration — session ' +
+            'cap, audit-stream endpoint + HMAC secret, AI guard mode and AI ' +
+            'residency. Every field here was previously unreachable: the ' +
+            'consumers existed, the writer did not.',
+    },
+
     // ── Vendor sub-processor register (4th-party graph) ─────────────
     // Split read/write so AUDITOR and READER keep visibility of the
     // nth-party chain — reading who a vendor sub-processes to IS a

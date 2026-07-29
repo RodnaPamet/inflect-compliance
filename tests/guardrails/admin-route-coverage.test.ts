@@ -73,6 +73,10 @@ const ADMIN_ONLY_ROUTES = [
 
     // Epic 44 — risk matrix configuration
     'admin/risk-matrix-config/route.ts',
+    // Tenant security settings — session cap, audit-stream endpoint + HMAC
+    // secret, AI guard mode + residency. Admin-only on BOTH verbs: the read
+    // reveals whether an outbound streaming endpoint is configured.
+    'admin/security-settings/route.ts',
 
     // Billing routes (admin-only)
     'billing/checkout/route.ts',
