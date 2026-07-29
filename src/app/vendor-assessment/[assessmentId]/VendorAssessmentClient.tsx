@@ -20,7 +20,7 @@
  * tenant-context dependency, no internal admin concepts. Vendors
  * see only what they need.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
 import { formatDate } from '@/lib/format-date';
@@ -82,6 +82,69 @@ export function VendorAssessmentClient({
         Array<{ questionId: string | null; message: string }>
     >([]);
 
+    const load = useCallback(async () => {
+        if (!initialToken) return;
+        setPhase('loading');
+        try {
+            const res = await fetch(
+                `/api/vendor-assessment/${assessmentId}?t=${encodeURIComponent(initialToken)}`,
+            );
+            if (!res.ok) {
+                const body = (await res
+                    .json()
+                    .catch(() => ({}))) as { reason?: string };
+                setPhase('error');
+                setErrorReason(body.reason ?? 'unknown');
+                return;
+            }
+            const payload = (await res.json()) as LoadResponse;
+            setData(payload);
+            // Pre-populate from existing answers if any.
+            const initial: Record<string, unknown> = {};
+            for (const a of payload.answers) initial[a.questionId] = a.answerJson;
+            setAnswers(initial);
+            setPhase('ready');
+        } catch {
+            // A thrown fetch is a TRANSPORT failure — the respondent is
+            // offline, or on hotel wifi, or the request was aborted. It says
+            // nothing about the invitation. Mapping it to the same
+            // "no longer active" screen as a revoked token tells someone with
+            // a perfectly good link that it has been cancelled, and offers
+            // them no way to try again.
+            setPhase('error');
+            setErrorReason('network');
+        }
+    }, [assessmentId, initialToken]);
+
+    // There is no draft-save on this surface — nothing PATCHes partial
+    // answers, which is also why the IN_PROGRESS status is unreachable
+    // anywhere in the codebase. Until that exists, the least we can do is not
+    // let a stray back-navigation or tab close silently discard a
+    // half-completed questionnaire the respondent may have spent an hour on.
+    const hasUnsavedAnswers =
+        phase === 'ready' && Object.values(answers).some((v) => {
+            if (v == null) return false;
+            if (typeof v === 'string') return v.trim().length > 0;
+            if (Array.isArray(v)) return v.length > 0;
+            if (typeof v === 'object' && 'value' in (v as object)) {
+                const inner = (v as { value: unknown }).value;
+                return inner != null && String(inner).trim().length > 0;
+            }
+            return true;
+        });
+
+    useEffect(() => {
+        if (!hasUnsavedAnswers) return;
+        const onBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            // Browsers ignore custom text now and show their own copy; the
+            // assignment is still required to trigger the prompt at all.
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [hasUnsavedAnswers]);
+
     useEffect(() => {
         if (!initialToken) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -89,68 +152,59 @@ export function VendorAssessmentClient({
             setErrorReason('missing_token');
             return;
         }
-        (async () => {
-            try {
-                const res = await fetch(
-                    `/api/vendor-assessment/${assessmentId}?t=${encodeURIComponent(initialToken)}`,
-                );
-                if (!res.ok) {
-                    const body = (await res
-                        .json()
-                        .catch(() => ({}))) as { reason?: string };
-                    setPhase('error');
-                    setErrorReason(body.reason ?? 'unknown');
-                    return;
-                }
-                const payload = (await res.json()) as LoadResponse;
-                setData(payload);
-                // Pre-populate from existing answers if any.
-                const initial: Record<string, unknown> = {};
-                for (const a of payload.answers) initial[a.questionId] = a.answerJson;
-                setAnswers(initial);
-                setPhase('ready');
-            } catch {
-                setPhase('error');
-                setErrorReason('network');
-            }
-        })();
+        void load();
+        // `load` is stable for a given (assessmentId, token) pair.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [assessmentId, initialToken]);
 
     if (phase === 'loading') {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <p className="text-sm text-gray-500">{t('loading')}</p>
+            <div className="min-h-screen flex items-center justify-center bg-bg-subtle">
+                <p className="text-sm text-content-subtle">{t('loading')}</p>
             </div>
         );
     }
 
     if (phase === 'error') {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+            <div className="min-h-screen flex items-center justify-center bg-bg-subtle p-6">
                 <div
-                    className="max-w-md text-center bg-white p-8 rounded-lg shadow"
+                    className="max-w-md text-center bg-bg-default p-8 rounded-lg shadow"
                     data-testid="vendor-assessment-error"
                 >
-                    <h1 className="text-xl font-semibold text-gray-900 mb-2">
-                        {/* A missing token is not a dead link. The reminder
-                            email deliberately omits it — the raw token is
-                            unrecoverable server-side, so the reminder can
-                            only link to /vendor-assessment/{id}. Titling that
-                            "no longer active" tells the respondent their
-                            invitation is broken when it is not. */}
+                    <h1 className="text-xl font-semibold text-content-emphasis mb-2">
+                        {/* Three distinct situations that used to share one
+                            screen. A missing token is not a dead link — the
+                            reminder email deliberately omits it. A network
+                            failure is not a dead link either; it says nothing
+                            about the invitation at all. */}
                         {errorReason === 'missing_token'
                             ? t('missingTokenTitle')
-                            : t('errorTitle')}
+                            : errorReason === 'network'
+                                ? t('networkTitle')
+                                : t('errorTitle')}
                     </h1>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-content-muted">
                         {errorReason === 'missing_token'
                             ? t('errorMissingToken')
-                            : errorReason === 'expired'
-                                ? t('errorExpired')
-                                : errorReason === 'wrong_status'
-                                    ? t('errorWrongStatus')
-                                    : t('errorDefault')}
+                            : errorReason === 'network'
+                                ? t('errorNetwork')
+                                : errorReason === 'expired'
+                                    ? t('errorExpired')
+                                    : errorReason === 'wrong_status'
+                                        ? t('errorWrongStatus')
+                                        : t('errorDefault')}
                     </p>
+                    {errorReason === 'network' && (
+                        <button
+                            type="button"
+                            onClick={() => void load()}
+                            data-testid="vendor-assessment-retry"
+                            className="mt-4 inline-flex items-center justify-center rounded-md border border-border-subtle px-4 py-2 text-sm font-medium text-content-default hover:bg-bg-muted"
+                        >
+                            {t('retry')}
+                        </button>
+                    )}
                 </div>
             </div>
         );
@@ -158,15 +212,15 @@ export function VendorAssessmentClient({
 
     if (phase === 'submitted') {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+            <div className="min-h-screen flex items-center justify-center bg-bg-subtle p-6">
                 <div
-                    className="max-w-md text-center bg-white p-8 rounded-lg shadow"
+                    className="max-w-md text-center bg-bg-default p-8 rounded-lg shadow"
                     data-testid="vendor-assessment-submitted"
                 >
-                    <h1 className="text-xl font-semibold text-gray-900 mb-2">
+                    <h1 className="text-xl font-semibold text-content-emphasis mb-2">
                         {t('submittedTitle')}
                     </h1>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-content-muted">
                         {t('submittedBody')}
                     </p>
                 </div>
@@ -207,8 +261,23 @@ export function VendorAssessmentClient({
                     return;
                 }
                 if (body.error === 'access_denied') {
-                    setPhase('error');
-                    setErrorReason(body.reason ?? 'unknown');
+                    // Do NOT switch to the error phase here. There is no
+                    // draft-save on this surface, so replacing the form with
+                    // an error screen destroys every answer the respondent
+                    // has typed — with no export and no way back. Report it
+                    // in place instead, so the text is still on screen and
+                    // can be copied out while they ask for a fresh link.
+                    setSubmitErrors([
+                        {
+                            questionId: null,
+                            message:
+                                body.reason === 'revoked'
+                                    ? t('submitRevoked')
+                                    : body.reason === 'expired'
+                                        ? t('submitExpired')
+                                        : t('submitAccessDenied'),
+                        },
+                    ]);
                     return;
                 }
                 setSubmitErrors([
@@ -220,26 +289,34 @@ export function VendorAssessmentClient({
                 return;
             }
             setPhase('submitted');
+        } catch {
+            // try/finally with NO catch: a dropped connection during submit
+            // un-spun the button and did nothing else, so the respondent had
+            // no idea whether their answers had been received. They had
+            // typed the whole form by this point.
+            setSubmitErrors([
+                { questionId: null, message: t('submitNetworkFailed') },
+            ]);
         } finally {
             setSubmitting(false);
         }
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 py-10 px-4">
+        <div className="min-h-screen bg-bg-subtle py-10 px-4">
             <div
-                className="max-w-2xl mx-auto bg-white rounded-lg shadow p-8"
+                className="max-w-2xl mx-auto bg-bg-default rounded-lg shadow p-8"
                 data-testid="vendor-assessment-form"
             >
                 <header className="border-b pb-4 mb-6">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">
+                    <p className="text-xs uppercase tracking-wide text-content-subtle">
                         {t('headerFor', { vendor: data.vendor.name })}
                     </p>
-                    <Heading level={1} className="text-gray-900 mt-1">
+                    <Heading level={1} className="text-content-emphasis mt-1">
                         {data.template.name}
                     </Heading>
                     {data.template.description && (
-                        <p className="text-sm text-gray-600 mt-2">
+                        <p className="text-sm text-content-muted mt-2">
                             {data.template.description}
                         </p>
                     )}
@@ -249,7 +326,7 @@ export function VendorAssessmentClient({
                         mid-form expiry threw their answers away. */}
                     {data.expiresAtIso && (
                         <p
-                            className="text-sm text-gray-600 mt-2"
+                            className="text-sm text-content-muted mt-2"
                             data-testid="vendor-assessment-deadline"
                         >
                             {t('deadline', {
@@ -285,11 +362,11 @@ export function VendorAssessmentClient({
                 >
                     {data.template.sections.map((section) => (
                         <section key={section.id}>
-                            <Heading level={2} className="text-gray-900 mb-1">
+                            <Heading level={2} className="text-content-emphasis mb-1">
                                 {section.title}
                             </Heading>
                             {section.description && (
-                                <p className="text-sm text-gray-600 mb-4">
+                                <p className="text-sm text-content-muted mb-4">
                                     {section.description}
                                 </p>
                             )}
@@ -316,7 +393,7 @@ export function VendorAssessmentClient({
                             type="submit"
                             disabled={submitting}
                             data-testid="vendor-assessment-submit-btn"
-                            className="bg-indigo-600 text-white px-6 py-2 rounded-md font-medium disabled:opacity-50"
+                            className="bg-brand-default text-content-inverted px-6 py-2 rounded-md font-medium disabled:opacity-50"
                         >
                             {submitting ? t('submitting') : t('submit')}
                         </button>
@@ -339,7 +416,7 @@ function QuestionField({
     const t = useTranslations('external.vendorAssessment');
     const tCommon = useTranslations('common');
     const baseLabel = (
-        <label className="block text-sm font-medium text-gray-900 mb-1">
+        <label className="block text-sm font-medium text-content-emphasis mb-1">
             {question.prompt}
             {question.required && <RequiredMarker />}
         </label>
@@ -354,7 +431,7 @@ function QuestionField({
                         {['yes', 'no'].map((opt) => (
                             <label
                                 key={opt}
-                                className="inline-flex items-center text-sm text-gray-800"
+                                className="inline-flex items-center text-sm text-content-default"
                             >
                                 <input
                                     type="radio"
@@ -379,7 +456,7 @@ function QuestionField({
                         value={typeof value === 'string' ? value : ''}
                         onChange={(e) => onChange(e.target.value)}
                         rows={4}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                        className="w-full border border-border-subtle rounded-md px-3 py-2 text-sm"
                     />
                 </div>
             );
@@ -399,7 +476,7 @@ function QuestionField({
                             const n = Number(txt);
                             onChange(Number.isFinite(n) ? n : null);
                         }}
-                        className="border border-gray-300 rounded-md px-3 py-2 text-sm w-40"
+                        className="border border-border-subtle rounded-md px-3 py-2 text-sm w-40"
                     />
                 </div>
             );
@@ -426,8 +503,8 @@ function QuestionField({
                                 onClick={() => onChange(n)}
                                 className={`w-9 h-9 rounded-full border text-sm ${
                                     cur === n
-                                        ? 'bg-indigo-600 text-white border-indigo-600'
-                                        : 'bg-white text-gray-800 border-gray-300'
+                                        ? 'bg-brand-default text-content-inverted border-brand-default'
+                                        : 'bg-bg-default text-content-default border-border-subtle'
                                 }`}
                             >
                                 {n}
@@ -435,7 +512,7 @@ function QuestionField({
                         ))}
                     </div>
                     {labels && labels.length >= 2 && (
-                        <div className="flex justify-between text-xs text-gray-500 mt-1 max-w-xs">
+                        <div className="flex justify-between text-xs text-content-subtle mt-1 max-w-xs">
                             <span>{labels[0]}</span>
                             <span>{labels[labels.length - 1]}</span>
                         </div>
@@ -467,7 +544,7 @@ function QuestionField({
                             return (
                                 <label
                                     key={o.value}
-                                    className="flex items-center text-sm text-gray-800"
+                                    className="flex items-center text-sm text-content-default"
                                 >
                                     <input
                                         type={isMulti ? 'checkbox' : 'radio'}
@@ -501,7 +578,7 @@ function QuestionField({
             return (
                 <div data-testid={`q-${question.id}`}>
                     {baseLabel}
-                    <p className="text-xs text-gray-500 italic">
+                    <p className="text-xs text-content-subtle italic">
                         {t('fileUploadHint')}
                     </p>
                     <textarea
@@ -509,7 +586,7 @@ function QuestionField({
                         onChange={(e) => onChange(e.target.value)}
                         rows={2}
                         placeholder={t('fileUploadPlaceholder')}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+                        className="w-full border border-border-subtle rounded-md px-3 py-2 text-sm mt-1"
                     />
                 </div>
             );

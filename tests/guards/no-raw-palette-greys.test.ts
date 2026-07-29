@@ -60,7 +60,6 @@ const ALLOWLIST_FILES = new Set<string>([
     'src/app/audit/shared/[token]/page.tsx',
     // External vendor-assessment surface (vendor-facing
     // outside-the-shell page; same reasoning).
-    'src/app/vendor-assessment/[assessmentId]/VendorAssessmentClient.tsx',
 ]);
 
 interface Hit {
