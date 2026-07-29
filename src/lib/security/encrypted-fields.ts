@@ -124,6 +124,12 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  holding the decryption key.
     TenantSecuritySettings: ['auditStreamSecretEncrypted'],
 
+    // ─── Automation ────────────────────────────────────
+    //  The WEBHOOK HMAC signing key. Previously lived in
+    //  `actionConfigJson.secretRef` — a plain JSON column — despite the type
+    //  documenting it as "never the raw secret".
+    AutomationRule: ['webhookSecretEncrypted'],
+
     // ─── Risk ──────────────────────────────────────────
     //  `description` omitted — searched via RiskRepository `contains`.
     Risk: ['treatmentNotes', 'threat', 'vulnerability'],

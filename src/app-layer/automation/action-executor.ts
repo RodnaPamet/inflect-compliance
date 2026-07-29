@@ -58,6 +58,14 @@ export interface ExecutableRule {
     actionType: string;
     actionConfigJson: unknown;
     createdByUserId: string | null;
+    /**
+     * WEBHOOK HMAC key, decrypted on read by the Epic B middleware.
+     *
+     * Optional so the many call sites that build an ExecutableRule by hand do
+     * not all have to change at once; absent means "fall back to the legacy
+     * `actionConfig.secretRef`" during the migration window.
+     */
+    webhookSecretEncrypted?: string | null;
 }
 
 /** The slice of the firing event the executor needs. */
@@ -271,22 +279,14 @@ async function fireWebhook(rule: ExecutableRule, event: ActionEvent): Promise<Ac
     };
     // Sign the body so the consumer can verify authenticity (mirrors the
     // audit-stream's X-Inflect-Signature contract).
-    if (cfg.secretRef) {
-        // CONTRACT MISMATCH, deliberately left as-is but documented.
-        //
-        // `WebhookActionConfig.secretRef` is documented as "Reference into the
-        // secret store (never the raw secret)", but it is used DIRECTLY as the
-        // HMAC key — so whatever an operator types lands verbatim in
-        // `actionConfigJson`, which is NOT in the Epic B encrypted-field
-        // manifest. In practice the field holds the raw secret in plaintext.
-        //
-        // Not resolved here because both directions are real changes with
-        // migrations attached: honouring the contract needs a secret store to
-        // resolve against (none exists for automation rules yet), and changing
-        // the contract means renaming the field and rewriting stored configs.
-        // Silently doing neither while the doc claims otherwise is the part
-        // that had to stop — the mismatch is now visible at the call site.
-        const sig = createHmac('sha256', cfg.secretRef).update(body).digest('hex');
+    // Prefer the ENCRYPTED column. `actionConfig.secretRef` is the legacy
+    // location — a plain JSON column that stored the raw key in clear despite
+    // the type claiming otherwise. The fallback keeps already-configured
+    // webhooks signing until `scripts/migrate-webhook-secrets.ts` has swept
+    // them across; it is removed once that reports zero remaining.
+    const signingSecret = rule.webhookSecretEncrypted ?? cfg.secretRef;
+    if (signingSecret) {
+        const sig = createHmac('sha256', signingSecret).update(body).digest('hex');
         headers['X-Inflect-Signature'] = `sha256=${sig}`;
     }
     const controller = new AbortController();

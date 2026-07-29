@@ -229,8 +229,22 @@ model AutomationRule {
   ///   NOTIFY_USER       → { userIds: string[], message: string }
   ///   CREATE_TASK       → { title, severity, assigneeUserId? }
   ///   UPDATE_STATUS     → { entityType, field, toStatus }
-  ///   WEBHOOK           → { url, method, headers?, secretRef? }
+  ///   WEBHOOK           → { url, method, headers? }
+  ///
+  /// NEVER put a secret here. `actionConfigJson` is NOT in the Epic B
+  /// encrypted-field manifest, so anything stored in it sits in clear in the
+  /// database, in backups and in any query result. The WEBHOOK HMAC key lives
+  /// in `webhookSecretEncrypted` below.
   actionConfigJson    Json
+  /// WEBHOOK HMAC signing key, encrypted at rest via the Epic B field manifest
+  /// (`ENCRYPTED_FIELDS.AutomationRule`). Written as plaintext by the usecase;
+  /// the Prisma middleware encrypts on write and decrypts on read.
+  ///
+  /// Replaces the old `actionConfig.secretRef`, which was documented as "a
+  /// reference into the secret store (never the raw secret)" but was used
+  /// DIRECTLY as the HMAC key — so the raw secret sat in plaintext
+  /// `actionConfigJson`. Null means the outbound webhook is unsigned.
+  webhookSecretEncrypted String?
   status              AutomationRuleStatus  @default(DRAFT)
   /// Higher priority runs first when multiple rules match the same
   /// event. Ties broken by `createdAt`.

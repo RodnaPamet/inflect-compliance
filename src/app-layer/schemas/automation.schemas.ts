@@ -120,7 +120,22 @@ const ScheduleConfig = z
 const SlaFields = {
     slaWindowMinutes: z.number().int().min(1).max(525600).nullable().optional(),
     slaBreachActionType: z.nativeEnum(AutomationActionType).nullable().optional(),
-    slaBreachConfig: z.record(z.string(), z.unknown()).nullable().optional(),
+    /**
+     * Breach-action config. Typed as NotifyUserConfig because NOTIFY_USER is
+     * the only breach action the SLA monitor actually executes — anything else
+     * is logged and skipped (see sla-monitor.ts).
+     *
+     * Was `z.record(z.string(), z.unknown())`, which accepted any object at
+     * all: a config with no `userIds`, or with ids that are not tenant members,
+     * validated cleanly and then failed at 03:00 inside the sweep. Typing it
+     * here moves that failure to the moment the operator saves the rule.
+     *
+     * Validation applies to WRITES only. Rules stored before this landed may
+     * hold shapes that would not pass, and rejecting them on READ would make
+     * existing rules un-listable and un-editable — locking operators out of the
+     * very screen where they would fix them.
+     */
+    slaBreachConfig: NotifyUserConfig.nullable().optional(),
     nextRuleId: z.string().min(1).nullable().optional(),
     nextRuleDelay: z.number().int().min(0).max(525600).nullable().optional(),
     elseRuleId: z.string().min(1).nullable().optional(),

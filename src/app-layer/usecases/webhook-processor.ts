@@ -203,30 +203,9 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
         parsedBody = rawBody; // Store raw if not JSON
     }
 
-    // 2.5. Replay/idempotency check — deduplicate by payload hash
+    // 2.5. Payload hash — computed here, but the DEDUPE CHECK now runs AFTER
+    // signature verification (step 6a). See the note there.
     const payloadHash = crypto.createHash('sha256').update(rawBody).digest('hex');
-    const dedupWindow = new Date(Date.now() - DEDUP_WINDOW_MS);
-
-    const duplicateEvent = await prisma.integrationWebhookEvent.findFirst({
-        where: {
-            provider,
-            payloadHash,
-            createdAt: { gte: dedupWindow },
-            status: { in: ['processed', 'received'] },
-        },
-        select: { id: true },
-    });
-
-    if (duplicateEvent) {
-        logger.info('Webhook deduplicated — replay detected', {
-            component: 'integrations',
-            provider,
-            requestId,
-            duplicateOf: duplicateEvent.id,
-            payloadHash: payloadHash.slice(0, 12),
-        });
-        return { status: 'ignored', eventId: duplicateEvent.id, reason: 'duplicate_payload' };
-    }
 
     // 3. Persist raw event immediately (before validation)
     let event;
@@ -329,6 +308,56 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
         where: { id: event.id },
         data: { tenantId: matchedConnection.tenantId },
     });
+
+    // 6a. Replay/idempotency check — AFTER verification, SCOPED to the tenant.
+    //
+    // This used to run before any authentication, against rows in either
+    // `processed` OR `received` state, with no tenant predicate. Two problems,
+    // both exploitable by anyone who could reach the endpoint:
+    //
+    //   • POISONING. An unverified request persists a `received` row (step 3,
+    //     which is deliberately pre-auth so a forged delivery is still
+    //     forensically visible). Replaying an observed body therefore planted a
+    //     row that caused the GENUINE redelivery to be dropped as
+    //     `duplicate_payload` — denial-of-delivery with no credentials.
+    //   • CROSS-TENANT SUPPRESSION. The lookup had no tenant predicate, so an
+    //     identical body legitimately delivered to tenant B within the window
+    //     was discarded because tenant A had already received it.
+    //
+    // Both close by moving the check here: the tenant is known, and only rows
+    // that actually reached `processed` — i.e. passed signature verification —
+    // can suppress anything. An attacker's row never reaches that state.
+    //
+    // Trade-off accepted: a genuine duplicate arriving while the first is still
+    // in flight is no longer collapsed. Processing a rare in-flight duplicate is
+    // strictly better than dropping a real delivery because someone poisoned the
+    // cache.
+    const duplicateEvent = await prisma.integrationWebhookEvent.findFirst({
+        where: {
+            provider,
+            payloadHash,
+            tenantId: matchedConnection.tenantId,
+            createdAt: { gte: new Date(Date.now() - DEDUP_WINDOW_MS) },
+            status: 'processed',
+            id: { not: event.id },
+        },
+        select: { id: true },
+    });
+
+    if (duplicateEvent) {
+        logger.info('Webhook deduplicated — verified replay detected', {
+            component: 'integrations',
+            provider,
+            requestId,
+            duplicateOf: duplicateEvent.id,
+            payloadHash: payloadHash.slice(0, 12),
+        });
+        await prisma.integrationWebhookEvent.update({
+            where: { id: event.id },
+            data: { status: 'ignored', errorMessage: 'Duplicate of an already-processed delivery' },
+        });
+        return { status: 'ignored', eventId: duplicateEvent.id, reason: 'duplicate_payload' };
+    }
 
     // 7. Establish tenant execution context
     const ctx = {

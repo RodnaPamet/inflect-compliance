@@ -128,6 +128,10 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
     TenantSecuritySettings:
         'auditStreamSecretEncrypted is a system-generated HMAC secret, ' +
         'never user-supplied free text — there is nothing to sanitise.',
+    AutomationRule:
+        'webhookSecretEncrypted is an HMAC signing key. It is opaque bytes ' +
+        'used only as a crypto key — never rendered, never user rich text. ' +
+        'Sanitising it would corrupt the signature.',
     WorkflowRun:
         'contextJson/summary are engine-internal accumulated state — a JSON ' +
         'snapshot of read-tool outputs (tenant data already sanitised at its own ' +

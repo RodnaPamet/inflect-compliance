@@ -57,6 +57,14 @@ export const POST = withApiErrorHandling(
                 slaBreachConfig: body.slaBreachConfig,
                 nextRuleId: body.nextRuleId,
                 nextRuleDelay: body.nextRuleDelay,
+                // Both were DROPPED here. The schema accepts them, the repo
+                // persists them and the builder constructs them — the route
+                // enumerated fields by hand and stopped short. Consequences:
+                // the entire "Else / when conditions fail" branch was
+                // write-only theatre, and scheduleConfigJson stayed null so
+                // SCHEDULE rules COULD NEVER FIRE.
+                elseRuleId: body.elseRuleId,
+                scheduleConfig: body.scheduleConfig,
             });
             return jsonResponse(rule, { status: 201 });
         },

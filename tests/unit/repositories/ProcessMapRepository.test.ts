@@ -51,6 +51,16 @@ function freshDb() {
             ),
             findMany: jest.fn((..._args: any[]) => Promise.resolve([] as any[])),
         },
+        // Default: every referenced control resolves as owned by this tenant, so
+        // the pre-existing replaceGraph tests are unaffected. Tests that exercise
+        // the ownership guard override this with an explicit resolution.
+        control: {
+            findMany: jest.fn((args: any) =>
+                Promise.resolve(
+                    ((args?.where?.id?.in ?? []) as string[]).map((id) => ({ id })),
+                ),
+            ),
+        },
         processMapSnapshot: {
             create: jest.fn((..._args: any[]) => Promise.resolve({ id: 's1' } as any)),
             findMany: jest.fn((..._args: any[]) => Promise.resolve([] as any[])),
@@ -510,6 +520,95 @@ describe('ProcessMapRepository.replaceGraph — happy path', () => {
 
         // newVersion = (null ?? 0) + 1 = 1
         expect(db.processMapSnapshot.create.mock.calls[0][0].data.version).toBe(1);
+    });
+});
+
+describe('ProcessMapRepository.replaceGraph — edge controlId ownership', () => {
+    /** Existence check + the final getByIdWithGraph re-read. */
+    function primeMap() {
+        db.processMap.findFirst
+            .mockResolvedValueOnce({ id: 'm1', version: 1 })
+            .mockResolvedValueOnce({
+                id: 'm1',
+                name: 'x',
+                description: null,
+                status: 'DRAFT',
+                version: 2,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                nodes: [],
+                edges: [],
+            });
+        db.processEdge.create.mockResolvedValue({ id: 'edge-1' });
+        db.processMap.updateMany.mockResolvedValueOnce({ count: 1 });
+    }
+
+    function graphWithControlIds(ids: (string | null)[]) {
+        return {
+            nodes: [node({ nodeKey: 'n1' })],
+            edges: [
+                edge({
+                    sourceKey: 'n1',
+                    targetKey: 'n1',
+                    controls: ids.map((controlId, i) => ({
+                        controlKey: `c${i}`,
+                        label: `C${i}`,
+                        controlId,
+                        dataJson: null,
+                    })),
+                }),
+            ],
+        };
+    }
+
+    it('rejects the whole save when an edge references a control from another tenant', async () => {
+        primeMap();
+        // The foreign id simply does not come back from a tenant-scoped read.
+        db.control.findMany.mockResolvedValueOnce([{ id: 'ctrl-mine' }]);
+
+        await expect(
+            ProcessMapRepository.replaceGraph(
+                db as any,
+                ctx,
+                'm1',
+                graphWithControlIds(['ctrl-mine', 'ctrl-theirs']) as any,
+            ),
+        ).rejects.toThrow(/do not belong to this tenant/);
+
+        // Nothing was written — the check runs before the edge loop.
+        expect(db.processEdge.create).not.toHaveBeenCalled();
+        expect(db.processEdgeControl.createMany).not.toHaveBeenCalled();
+    });
+
+    it('scopes the ownership lookup to the tenant and asks once for the whole graph (no N+1)', async () => {
+        primeMap();
+
+        await ProcessMapRepository.replaceGraph(
+            db as any,
+            ctx,
+            'm1',
+            graphWithControlIds(['ctrl-a', 'ctrl-b', 'ctrl-a']) as any,
+        );
+
+        expect(db.control.findMany).toHaveBeenCalledTimes(1);
+        const where = db.control.findMany.mock.calls[0][0].where;
+        expect(where.tenantId).toBe(ctx.tenantId);
+        // de-duplicated
+        expect(where.id.in.slice().sort()).toEqual(['ctrl-a', 'ctrl-b']);
+    });
+
+    it('skips the lookup entirely when no edge control carries a controlId', async () => {
+        primeMap();
+
+        await ProcessMapRepository.replaceGraph(
+            db as any,
+            ctx,
+            'm1',
+            graphWithControlIds([null, null]) as any,
+        );
+
+        expect(db.control.findMany).not.toHaveBeenCalled();
+        expect(db.processEdgeControl.createMany).toHaveBeenCalled();
     });
 });
 
