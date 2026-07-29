@@ -1742,6 +1742,9 @@
         "docs/implementation-notes/2026-07-29-fail-open-security-paths.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-07-29-canvas-privilege-escalation.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-07-27-calendar-deeplinks-scheduler-tz.md": {
             "class": "historical"
         },
