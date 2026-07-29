@@ -129,7 +129,8 @@ export default function VendorDashboardPage() {
                 <MetricCard label={tx('dashboard.kpiTotal')} value={metrics.totalVendors} />
                 <MetricCard label={tx('dashboard.kpiOverdueReviews')} value={metrics.overdueReview} tone={metrics.overdueReview > 0 ? 'critical' : 'success'}
                     href={tenantHref('/vendors?reviewDue=overdue')} />
-                <MetricCard label={tx('dashboard.kpiUpcomingReviews')} value={metrics.upcomingReview} tone="attention" />
+                <MetricCard label={tx('dashboard.kpiUpcomingReviews')} value={metrics.upcomingReview} tone="attention"
+                    href={tenantHref('/vendors?reviewDue=next30d')} />
                 <MetricCard label={tx('dashboard.kpiOverdueRenewals')} value={metrics.overdueRenewal} tone={metrics.overdueRenewal > 0 ? 'critical' : 'success'} />
                 <MetricCard label={tx('dashboard.kpiUpcomingRenewals')} value={metrics.upcomingRenewal} tone="attention" />
                 <MetricCard label={tx('dashboard.kpiHighRisk')} value={metrics.highRiskNoAssessment} tone={metrics.highRiskNoAssessment > 0 ? 'critical' : 'success'} />
@@ -143,9 +144,18 @@ export default function VendorDashboardPage() {
                         tone={metrics.expiredAttestations > 0 ? 'critical' : 'success'} />
                     <MetricCard label={tx('dashboard.kpiRecentBreach')} value={metrics.recentBreachActivity}
                         tone={metrics.recentBreachActivity > 0 ? 'critical' : 'success'} />
+                    {/* No href. This drilled to ?reviewDue=overdue — the
+                        destination of the overdue-REVIEW card above, which is
+                        a different metric with a different definition
+                        (nextReviewAt, the manual review-cadence date, versus
+                        lastAssessmentReviewedAt and the yearly reassessment
+                        cadence). Two cards showing different numbers and
+                        landing on the same filtered list is worse than one
+                        that does not link: the operator concludes the list is
+                        wrong. There is no reassessment filter to point at
+                        yet, so the card states its number and stops. */}
                     <MetricCard label={tx('dashboard.kpiOverdueReassessment')} value={metrics.overdueReassessment}
-                        tone={metrics.overdueReassessment > 0 ? 'critical' : 'success'}
-                        href={tenantHref('/vendors?reviewDue=overdue')} />
+                        tone={metrics.overdueReassessment > 0 ? 'critical' : 'success'} />
                 </div>
             </div>
 
