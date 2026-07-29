@@ -87,6 +87,14 @@ interface VendorsClientProps {
  * Client island for vendors — handles filter interactions and table navigation.
  * Data is pre-fetched server-side and passed via props.
  */
+/** Subset of getVendorMetrics the KPI row reads. */
+interface VendorMetricsPayload {
+    totalVendors: number;
+    byStatus?: Record<string, number>;
+    byCriticality?: Record<string, number>;
+    overdueReview: number;
+}
+
 export function VendorsClient(props: VendorsClientProps) {
     const filterCtx = useFilterContext([], VENDOR_FILTER_KEYS, {
         serverFilters: props.initialFilters,
@@ -348,18 +356,29 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
 
     // ─── R23-PR-F — KPI definitions for the Vendors page ───
     type VendorKpiId = 'total' | 'active' | 'critical' | 'reviewOverdue';
-    // guardrail-ignore: KPI counts across the loaded page, not a refilter.
-    const totalVendors = vendors.length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const activeVendors = vendors.filter((v) => v.status === 'ACTIVE').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const criticalVendors = vendors.filter(
-        (v) => v.criticality === 'CRITICAL',
-    ).length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const reviewOverdueVendors = vendors.filter((v) =>
-        isOverdue(v.nextReviewAt ?? null, hydratedNow),
-    ).length;
+
+    // KPI counts come from the tenant-wide metrics endpoint, NOT from the
+    // loaded rows.
+    //
+    // `vendors` is the server-FILTERED result and may additionally be capped
+    // (`truncated`), so counting it put a filtered, possibly-truncated number
+    // under a label reading "Total vendors" — and clicking that card called
+    // clearAll(), which widened the filter and made the number it had just
+    // quoted jump. reviewOverdue was worse: computed client-side against the
+    // browser clock, but drilling through to `reviewDue=overdue`, which the
+    // server evaluates against its own clock over the uncapped set. The card
+    // and its destination could disagree by construction.
+    //
+    // getVendorMetrics is the same source the vendor dashboard uses, so the
+    // two surfaces now agree as well.
+    const metricsQuery = useTenantSWR<VendorMetricsPayload>(
+        `/api/t/${tenantSlug}/vendors/metrics`,
+    );
+    const metrics = metricsQuery.data;
+    const totalVendors = metrics?.totalVendors ?? 0;
+    const activeVendors = metrics?.byStatus?.ACTIVE ?? 0;
+    const criticalVendors = metrics?.byCriticality?.CRITICAL ?? 0;
+    const reviewOverdueVendors = metrics?.overdueReview ?? 0;
 
     // Canonical KPI-card sparklines (shared hook). total + reviewOverdue are
     // always-present series; active + critical are forward-only nullable
