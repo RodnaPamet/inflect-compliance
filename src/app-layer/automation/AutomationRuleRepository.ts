@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
+import { badRequest } from '@/lib/errors/types';
 import type {
     AutomationRuleListFilters,
     CreateAutomationRuleInput,
@@ -66,6 +67,39 @@ export class AutomationRuleRepository {
         ctx: RequestContext,
         input: CreateAutomationRuleInput
     ) {
+        // Verify chain link targets belong to THIS tenant before writing them.
+        //
+        // `create` writes `nextRuleId`/`elseRuleId` as RAW FK SCALARS, and
+        // PostgreSQL evaluates foreign-key checks with row security bypassed —
+        // so a cross-tenant id satisfies the constraint and PERSISTS. Runtime
+        // re-scoping in `rule-chain-dispatch` stops it firing, but the stored
+        // row is still an existence oracle for another tenant's rule ids.
+        //
+        // `update` does NOT share this hole: it uses `connect`, which runs
+        // under the tenant-bound role and rejects a foreign id as P2025. That
+        // asymmetry is why the guard lives here and `update` is left alone.
+        const linkTargets = [
+            ['nextRuleId', input.nextRuleId],
+            ['elseRuleId', input.elseRuleId],
+        ] as const;
+        const linkIds = linkTargets
+            .map(([, id]) => id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        if (linkIds.length > 0) {
+            // ONE query for both fields — a per-field lookup would be an N+1
+            // (and the query-shape ratchet rightly rejects reads inside loops).
+            const found = await db.automationRule.findMany({
+                where: { id: { in: linkIds }, tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            const ok = new Set(found.map((r: { id: string }) => r.id));
+            for (const [field, id] of linkTargets) {
+                if (id && !ok.has(id)) {
+                    throw badRequest(`${field} does not reference a rule in this tenant`);
+                }
+            }
+        }
+
         return db.automationRule.create({
             data: {
                 tenantId: ctx.tenantId,

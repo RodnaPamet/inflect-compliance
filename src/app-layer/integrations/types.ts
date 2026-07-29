@@ -136,6 +136,19 @@ export interface WebhookPayload {
     eventType?: string;
     headers: Record<string, string>;
     body: unknown;
+    /**
+     * The EXACT bytes as received, before parsing.
+     *
+     * HMAC signatures are computed over the wire body, so a verifier must hash
+     * these bytes and not a re-serialisation. `JSON.stringify(JSON.parse(raw))`
+     * is not byte-identical to `raw` — key order, float normalisation (`1.0` →
+     * `1`) and `\uXXXX` escapes all differ — so reconstructing the body
+     * produced signature failures that looked like a wrong secret.
+     *
+     * Optional so existing callers keep compiling; verifiers fall back to
+     * re-serialising when it is absent, which is the old (lossy) behaviour.
+     */
+    rawBody?: string;
     receivedAt: Date;
 }
 

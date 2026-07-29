@@ -135,6 +135,13 @@ beforeEach(() => {
     // Default: no orchestrator integration.
     mockIntegrationRegistry.has.mockReturnValue(false);
     _isWebhookProvider = false;
+    // Signature verification FAILS CLOSED as of 2026-07-29, so a connection
+    // must present a valid signature to be reached at all. Tests that are not
+    // about signatures get a valid one by default; the ones that ARE override
+    // these two mocks explicitly.
+    mockExtractSig.mockReturnValue('sha256=valid');
+    mockVerifyGitHub.mockReturnValue(true);
+    mockVerifyHmac.mockReturnValue(true);
 });
 
 // Helper: build a minimal viable input.
@@ -247,10 +254,16 @@ describe('processIncomingWebhook — signature verification', () => {
         });
     });
 
-    it('NO-SECRET branch ALLOWS the webhook to proceed (operator responsibility)', async () => {
-        // Documented behaviour: a connection with no webhookSecret
-        // logs a warning but still verifies as `true`. This is a
-        // dev-mode convenience; prod should configure secrets.
+    it('NO-SECRET branch now REJECTS the webhook (fail closed)', async () => {
+        // This test previously asserted the opposite and was named
+        // "...ALLOWS the webhook to proceed (operator responsibility)".
+        // It pinned the vulnerability: a connection with no configured secret
+        // verified as `true`, so with an unscoped connection lookup that broke
+        // on first match, ONE secretless tenant became the catch-all for any
+        // forged webhook for that provider.
+        //
+        // Inverted deliberately. The old behaviour is not a dev-mode
+        // convenience worth keeping — it is unauthenticated write access.
         mockRegistry.getProvider.mockReturnValueOnce(mockProviderImpl);
         mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce(null);
         mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-1' });
@@ -258,13 +271,11 @@ describe('processIncomingWebhook — signature verification', () => {
             { id: 'c-1', tenantId: 't-1', secretEncrypted: '{}', configJson: {} },
         ]);
         mockPrisma.integrationWebhookEvent.update.mockResolvedValueOnce({});
-        mockPrisma.integrationWebhookEvent.update.mockResolvedValueOnce({});
-        _isWebhookProvider = false; // skip provider branch
+        _isWebhookProvider = false;
 
         const result = await processIncomingWebhook(makeInput());
 
-        // Reaches the processed-status finalize path despite no secret.
-        expect(result).toMatchObject({ status: 'processed', eventId: 'evt-1' });
+        expect(result).toMatchObject({ status: 'auth_failed' });
     });
 
     it('resolves the tenant from IntegrationConnection (NEVER from the caller)', async () => {
@@ -275,7 +286,7 @@ describe('processIncomingWebhook — signature verification', () => {
         mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce(null);
         mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-1' });
         mockPrisma.integrationConnection.findMany.mockResolvedValueOnce([
-            { id: 'c-1', tenantId: 'resolved-tenant-A', secretEncrypted: '{}', configJson: {} },
+            { id: 'c-1', tenantId: 'resolved-tenant-A', secretEncrypted: '{\"webhookSecret\":\"s1\"}', configJson: {} },
         ]);
         mockPrisma.integrationWebhookEvent.update.mockResolvedValue({});
 
@@ -425,7 +436,7 @@ describe('processIncomingWebhook — orchestrator dispatch', () => {
         mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce(null);
         mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-1', eventType: 'push' });
         mockPrisma.integrationConnection.findMany.mockResolvedValueOnce([
-            { id: 'c-1', tenantId: 't-1', secretEncrypted: '{}', configJson: { repo: 'a/b' } },
+            { id: 'c-1', tenantId: 't-1', secretEncrypted: '{\"webhookSecret\":\"s1\"}', configJson: { repo: 'a/b' } },
         ]);
         mockPrisma.integrationWebhookEvent.update.mockResolvedValue({});
         _isWebhookProvider = false;
@@ -456,7 +467,7 @@ describe('processIncomingWebhook — orchestrator dispatch', () => {
         mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce(null);
         mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-1' });
         mockPrisma.integrationConnection.findMany.mockResolvedValueOnce([
-            { id: 'c-1', tenantId: 't-1', secretEncrypted: '{}', configJson: {} },
+            { id: 'c-1', tenantId: 't-1', secretEncrypted: '{"webhookSecret":"s1"}', configJson: {} },
         ]);
         mockPrisma.integrationWebhookEvent.update.mockResolvedValue({});
         _isWebhookProvider = false;
@@ -474,7 +485,7 @@ describe('processIncomingWebhook — orchestrator dispatch', () => {
         mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce(null);
         mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-1' });
         mockPrisma.integrationConnection.findMany.mockResolvedValueOnce([
-            { id: 'c-1', tenantId: 't-1', secretEncrypted: '{}', configJson: {} },
+            { id: 'c-1', tenantId: 't-1', secretEncrypted: '{"webhookSecret":"s1"}', configJson: {} },
         ]);
         mockPrisma.integrationWebhookEvent.update.mockResolvedValue({});
         _isWebhookProvider = false;
@@ -492,22 +503,23 @@ describe('processIncomingWebhook — orchestrator dispatch', () => {
 // Helper-level branches via dispatch coverage
 // ──────────────────────────────────────────────────────────────────────
 describe('processIncomingWebhook — helper branch coverage via dispatch', () => {
-    it('decryptWebhookSecret: JSON parse failure falls back to empty secrets', async () => {
-        // `secretEncrypted` is non-null but unparseable. The empty-{}
-        // fallback means `getWebhookSecret` returns null, which puts
-        // verifyProviderSignature into the no-secret allow branch.
+    it('decryptWebhookSecret: an unparseable secret REJECTS rather than falling back', async () => {
+        // Previously named "...falls back to empty secrets": a secret that
+        // could not be parsed collapsed to `{}`, which then verified as `true`
+        // under the fail-open branch. So a corrupted secret was indistinguishable
+        // from a correctly-signed request. It now reports `malformed` and the
+        // connection is skipped.
         mockRegistry.getProvider.mockReturnValueOnce(mockProviderImpl);
         mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce(null);
         mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-1' });
         mockPrisma.integrationConnection.findMany.mockResolvedValueOnce([
             { id: 'c-1', tenantId: 't-1', secretEncrypted: 'not-json{', configJson: {} },
         ]);
-        mockPrisma.integrationWebhookEvent.update.mockResolvedValue({});
-        _isWebhookProvider = false;
+        mockPrisma.integrationWebhookEvent.update.mockResolvedValueOnce({});
 
         const result = await processIncomingWebhook(makeInput());
 
-        expect(result.status).toBe('processed');
+        expect(result).toMatchObject({ status: 'auth_failed' });
     });
 
     it('getWebhookSecret: picks any of the 4 supported key-name aliases', async () => {

@@ -369,10 +369,12 @@ export class GitHubProvider implements ScheduledCheckProvider, WebhookEventProvi
         const sigHeader = payload.headers['x-hub-signature-256'] || '';
         if (!sigHeader) return false;
 
-        // Reconstruct raw body for verification
-        const rawBody = typeof payload.body === 'string'
-            ? payload.body
-            : JSON.stringify(payload.body);
+        // Use the bytes GitHub actually signed. Re-serialising the parsed
+        // body (the previous behaviour, kept only as a fallback) is not
+        // byte-identical to the wire body, so a correctly-configured secret
+        // could still fail verification.
+        const rawBody = payload.rawBody
+            ?? (typeof payload.body === 'string' ? payload.body : JSON.stringify(payload.body));
 
         return verifyGitHubSignature(rawBody, sigHeader, secret);
     }

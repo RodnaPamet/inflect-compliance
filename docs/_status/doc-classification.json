@@ -1745,6 +1745,9 @@
         "docs/implementation-notes/2026-07-29-canvas-privilege-escalation.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-07-29-automation-security-audit-part2.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-07-27-calendar-deeplinks-scheduler-tz.md": {
             "class": "historical"
         },

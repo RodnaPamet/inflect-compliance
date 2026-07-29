@@ -248,14 +248,44 @@ async function fireWebhook(rule: ExecutableRule, event: ActionEvent): Promise<Ac
         event: { name: event.event, entityType: event.entityType, entityId: event.entityId },
         data: event.data ?? {},
     });
+    // Caller headers are applied FIRST so the platform's own headers win.
+    //
+    // The spread used to come last, so a rule could override Content-Type and
+    // User-Agent — and, when `secretRef` was unset, inject its own
+    // `X-Inflect-Signature` and `Authorization`. A rule author is not
+    // necessarily the person who owns the destination, so letting rule config
+    // forge the platform's authenticity header is the sharp end of it.
+    //
+    // Reserved names are stripped rather than merely overwritten, so the
+    // rejection is explicit and greppable rather than depending on key order.
+    const RESERVED_HEADERS = ['content-type', 'user-agent', 'x-inflect-signature', 'authorization'];
+    const callerHeaders = Object.fromEntries(
+        Object.entries(cfg.headers ?? {}).filter(
+            ([k]) => !RESERVED_HEADERS.includes(k.toLowerCase()),
+        ),
+    );
     const headers: Record<string, string> = {
+        ...callerHeaders,
         'Content-Type': 'application/json',
         'User-Agent': 'Inflect-Automation/1',
-        ...(cfg.headers ?? {}),
     };
     // Sign the body so the consumer can verify authenticity (mirrors the
     // audit-stream's X-Inflect-Signature contract).
     if (cfg.secretRef) {
+        // CONTRACT MISMATCH, deliberately left as-is but documented.
+        //
+        // `WebhookActionConfig.secretRef` is documented as "Reference into the
+        // secret store (never the raw secret)", but it is used DIRECTLY as the
+        // HMAC key — so whatever an operator types lands verbatim in
+        // `actionConfigJson`, which is NOT in the Epic B encrypted-field
+        // manifest. In practice the field holds the raw secret in plaintext.
+        //
+        // Not resolved here because both directions are real changes with
+        // migrations attached: honouring the contract needs a secret store to
+        // resolve against (none exists for automation rules yet), and changing
+        // the contract means renaming the field and rewriting stored configs.
+        // Silently doing neither while the doc claims otherwise is the part
+        // that had to stop — the mismatch is now visible at the call site.
         const sig = createHmac('sha256', cfg.secretRef).update(body).digest('hex');
         headers['X-Inflect-Signature'] = `sha256=${sig}`;
     }

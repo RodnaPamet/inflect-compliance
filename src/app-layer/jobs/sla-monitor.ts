@@ -50,7 +50,12 @@ export async function runSlaMonitorJob(options?: {
 
         const tenants = options?.tenantId
             ? [{ id: options.tenantId }]
-            : await prisma.tenant.findMany({ select: { id: true } });
+            // Soft-deleted tenants were swept too — pure waste every 5 minutes,
+            // and it kept dead tenants' rules alive in the breach path.
+            : await prisma.tenant.findMany({
+                  where: { deletedAt: null },
+                  select: { id: true },
+              });
 
         let breached = 0;
         let errored = 0;
@@ -95,6 +100,21 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
             take: 500,
         });
 
+        // Resolve the tenant's ACTIVE members ONCE for the whole sweep.
+        //
+        // Recipients must be membership-checked — Notification.userId is a real
+        // FK and this whole loop runs in ONE transaction, so a single stale id
+        // rolled back every recordCompletion for the tenant, every five
+        // minutes, forever. Doing that check per execution would be an N+1 over
+        // the breach list; the tenant is fixed here, so one query covers it.
+        const activeMembers = await db.tenantMembership.findMany({
+            where: { tenantId, status: 'ACTIVE' },
+            select: { userId: true },
+        });
+        const activeMemberIds = new Set(
+            activeMembers.map((m: { userId: string }) => m.userId),
+        );
+
         let count = 0;
         for (const exec of running) {
             const windowMin = exec.rule.slaWindowMinutes;
@@ -125,10 +145,43 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
                 },
             });
 
+            // Any breach action OTHER than NOTIFY_USER — including WEBHOOK —
+            // was silently ignored: the row was marked breached and nothing
+            // happened. An operator configuring a WEBHOOK escalation got no
+            // error, no log, and no delivery. Surfacing it as a warning is the
+            // honest interim: wiring the full action executor here is a larger
+            // change (it would need the tenant execution context the breach
+            // path does not currently build), and shipping a half-wired
+            // executor is worse than a loud gap.
+            if (
+                exec.rule.slaBreachActionType &&
+                exec.rule.slaBreachActionType !== 'NOTIFY_USER'
+            ) {
+                logger.warn('SLA breach action is not supported and was NOT executed', {
+                    component: 'sla-monitor',
+                    tenantId,
+                    ruleId: exec.rule.id,
+                    breachAction: exec.rule.slaBreachActionType,
+                });
+            }
+
             // NOTIFY_USER breach action — create notifications for recipients.
             if (exec.rule.slaBreachActionType === 'NOTIFY_USER' && exec.rule.slaBreachConfigJson) {
                 const cfg = exec.rule.slaBreachConfigJson as { userIds?: string[]; message?: string };
-                const userIds = Array.isArray(cfg.userIds) ? cfg.userIds : [];
+                const requested = Array.isArray(cfg.userIds) ? cfg.userIds : [];
+                // Membership-check the recipients, exactly as the executor's
+                // notifyUser does (action-executor.ts:135-139). This path did
+                // not, and `Notification.userId` is a REAL foreign key — so a
+                // single stale or foreign id raised an FK violation. Because
+                // `sweepTenant` wraps the whole loop in ONE transaction, that
+                // rolled back every `recordCompletion` for the tenant, and did
+                // so again every five minutes, forever. The unchecked insert
+                // was not just a tenant-isolation gap; it was a permanent
+                // poison pill for the tenant's entire SLA sweep.
+                // Membership set is resolved ONCE per tenant above, not per
+                // execution — the tenant is fixed for the whole sweep, so a
+                // per-iteration query would be an N+1 over the breach list.
+                const userIds = requested.filter((u) => activeMemberIds.has(u));
                 if (userIds.length > 0) {
                     await db.notification.createMany({
                         data: userIds.map((userId) => ({

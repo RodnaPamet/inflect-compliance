@@ -26,6 +26,7 @@ import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { ACTION_CONFIG_BY_TYPE } from '../schemas/automation.schemas';
 import { recordAutomationRuleCreated } from '@/lib/observability/business-metrics';
 
 /**
@@ -191,6 +192,37 @@ export async function updateAutomationRule(
             nextRuleId: input.nextRuleId,
             elseRuleId: input.elseRuleId,
         });
+
+        // Cross-field action validation against the EFFECTIVE type.
+        //
+        // The Zod `superRefine` only fires when actionType AND actionConfig
+        // arrive together, so two sequential PUTs slipped past it entirely:
+        // send `actionConfig` alone (stored unvalidated), then `actionType`
+        // alone (nothing left to validate against). The rule ends up ENABLED
+        // with a config its own schema would reject.
+        //
+        // This cannot live in the schema: validating a config against the
+        // STORED actionType requires reading the row, which Zod cannot do. So
+        // it lives here, where both halves are available — the incoming value
+        // when supplied, the persisted one otherwise.
+        if (input.actionType !== undefined || input.actionConfig !== undefined) {
+            const existing = await AutomationRuleRepository.getById(db, ctx, id);
+            if (!existing) throw notFound('Automation rule not found');
+            const effectiveType = input.actionType ?? existing.actionType;
+            const effectiveConfig =
+                input.actionConfig ?? (existing.actionConfigJson as unknown);
+            const schema = ACTION_CONFIG_BY_TYPE[
+                effectiveType as keyof typeof ACTION_CONFIG_BY_TYPE
+            ];
+            if (schema) {
+                const res = schema.safeParse(effectiveConfig);
+                if (!res.success) {
+                    throw badRequest(
+                        `Invalid config for ${effectiveType}: ${res.error.issues[0]?.message ?? 'invalid'}`,
+                    );
+                }
+            }
+        }
         const rule = await AutomationRuleRepository.update(db, ctx, id, {
             ...input,
             ...(input.name !== undefined ? { name: sanitizePlainText(input.name) } : {}),

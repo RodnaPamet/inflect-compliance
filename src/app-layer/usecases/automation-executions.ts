@@ -16,6 +16,7 @@ import {
 import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { enqueue } from '../jobs/queue';
+import { logEvent } from '../events/audit';
 import type { AutomationExecutionStatus } from '@prisma/client';
 
 /**
@@ -147,11 +148,34 @@ export async function dryRunRule(
             emittedAt: new Date(),
             data,
         };
+        // Match on the RAW data, deliberately. `filters.ts` indexes
+        // `data[cond.field]` directly and fails closed on undefined, so
+        // scrubbing BEFORE this call would flip a `contains` verdict from true
+        // to false for any rule filtering on a blocklisted field — silently
+        // changing which rules the operator is told would fire.
         const matches = matchesFilter(
             event as never,
             (rule.triggerFilterJson as never) ?? null,
         );
-        return { matches, sampleData: data, triggerEvent: rule.triggerEvent };
+
+        // Scrub only what LEAVES. The history endpoint already routes the same
+        // `triggerPayloadJson` through `scrubPayload`; dry-run returned it raw,
+        // so POSTing `{}` here was a one-request bypass of that scrubber.
+        //
+        // Caller-supplied `sampleData` is passed back untouched — it is the
+        // caller's own input, not a stored payload, and redacting it would make
+        // the response useless for the thing dry-run exists to do.
+        const returned = sampleData ?? scrubPayload(data);
+        const redactedFields = Object.keys(returned).filter(
+            (k) => returned[k] === '[redacted]',
+        );
+
+        return {
+            matches,
+            sampleData: returned,
+            redactedFields,
+            triggerEvent: rule.triggerEvent,
+        };
     });
 }
 
@@ -196,6 +220,27 @@ export async function reTriggerRule(ctx: RequestContext, ruleId: string) {
         }
         const data = (recent[0]?.triggerPayloadJson as Record<string, unknown>) ?? {};
 
+        // The random stableKey is DELIBERATE and stays.
+        //
+        // The audit asked for a "deterministic key" to make replays dedupe.
+        // That would be a regression, not a fix: a key derived from the rule
+        // makes replay one-shot-forever (the second replay is silently
+        // swallowed by automation-event-dispatch and the route still answers
+        // 202), and a key derived from the latest execution changes on every
+        // replay anyway. The randomness is what makes an intentional replay
+        // actually replay — documented at
+        // docs/implementation-notes/2026-06-08-automation-epic6-execution-history.md:44-46.
+        //
+        // The audit also called this endpoint "unrate-limited". It is not:
+        // `withApiErrorHandling` applies API_MUTATION_LIMIT (60/min) to POST by
+        // default. And CREATE_TASK does NOT amplify — on a replay
+        // `event.entityId` is the constant ruleId, so the executor's
+        // `auto:${ruleId}:${entityId}` dedupe collides on every replay after
+        // the first. The genuinely un-deduped actions are NOTIFY_USER (one
+        // Notification row per recipient per replay) and WEBHOOK (one outbound
+        // POST per replay), both bounded by the same 60/min limit.
+        //
+        // What was actually missing is ATTRIBUTION — see the audit event below.
         const stableKey = `manual-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
         await enqueue('automation-event-dispatch', {
             tenantId: ctx.tenantId,
@@ -212,6 +257,27 @@ export async function reTriggerRule(ctx: RequestContext, ruleId: string) {
                 data,
             },
         });
+        // Attribution. `assertCanExecuteAutomation` is the canWrite tier, so an
+        // EDITOR can replay a rule an ADMIN configured — firing that ADMIN's
+        // webhook or notifications. The execution row records `triggeredBy:
+        // 'manual'`, a literal with no actor column, so nothing anywhere named
+        // WHO. In a hash-chained GRC product that gap is sharper than the
+        // rate-limit concern the finding led with.
+        await logEvent(db, ctx, {
+            action: 'AUTOMATION_RULE_RETRIGGERED',
+            entityType: 'AutomationRule',
+            entityId: ruleId,
+            details: `Manually replayed rule: ${rule.name}`,
+            detailsJson: {
+                category: 'custom',
+                entityName: 'AutomationRule',
+                operation: 'retriggered',
+                actionType: rule.actionType,
+                triggerEvent: rule.triggerEvent,
+                stableKey,
+            },
+        });
+
         return { enqueued: true as const, ruleId, stableKey };
     });
 }

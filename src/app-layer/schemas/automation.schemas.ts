@@ -58,7 +58,14 @@ const InvokeSubflowConfig = z.object({
  * config shape against the declared action type via `superRefine` so a
  * NOTIFY_USER rule can't ship a webhook config.
  */
-const ACTION_CONFIG_BY_TYPE = {
+/**
+ * Exported so the usecase can validate a config against the EFFECTIVE action
+ * type — the incoming one when supplied, the STORED one otherwise. Zod cannot
+ * do that itself (it would need a database read), which is why the schema's
+ * superRefine only covers the both-fields-present case and the usecase covers
+ * the rest.
+ */
+export const ACTION_CONFIG_BY_TYPE = {
     NOTIFY_USER: NotifyUserConfig,
     CREATE_TASK: CreateTaskConfig,
     UPDATE_STATUS: UpdateStatusConfig,

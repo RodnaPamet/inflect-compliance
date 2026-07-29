@@ -53,13 +53,50 @@ export type WebhookResult =
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function decryptWebhookSecret(secretEncrypted: string | null): Record<string, unknown> {
-    if (!secretEncrypted) return {};
+/**
+ * Three states, not two.
+ *
+ * `absent`         — no secret configured. An operator action.
+ * `undecryptable`  — decryptField threw. Usually DEK drift or a rotation gone
+ *                    wrong: an INFRASTRUCTURE alarm.
+ * `malformed`      — decrypted fine but is not JSON. A data-shape bug.
+ *
+ * Collapsing all three to `{}` (the previous behaviour) meant a key-management
+ * failure and an unconfigured connection were indistinguishable, so neither
+ * could be alerted on correctly.
+ */
+type SecretState =
+    | { state: 'ok'; secrets: Record<string, unknown> }
+    | { state: 'absent' }
+    | { state: 'undecryptable' }
+    | { state: 'malformed' };
+
+function decryptWebhookSecret(secretEncrypted: string | null): SecretState {
+    if (!secretEncrypted) return { state: 'absent' };
+    let plaintext: string;
     try {
-        return JSON.parse(decryptField(secretEncrypted));
+        plaintext = decryptField(secretEncrypted);
     } catch {
-        return {};
+        return { state: 'undecryptable' };
     }
+    try {
+        return { state: 'ok', secrets: JSON.parse(plaintext) };
+    } catch {
+        return { state: 'malformed' };
+    }
+}
+
+/**
+ * Unwrap a `SecretState` to the plain secrets bag, or `{}` when unusable.
+ *
+ * Needed because `SecretState` is STRUCTURALLY assignable to
+ * `Record<string, unknown>` — so passing the wrapper straight to
+ * `getWebhookSecret` typechecks cleanly and then silently yields null at
+ * runtime, skipping the gate that reads it. tsc cannot catch that; this helper
+ * makes the unwrap explicit at every call site.
+ */
+function secretsOf(state: SecretState): Record<string, unknown> {
+    return state.state === 'ok' ? state.secrets : {};
 }
 
 function getWebhookSecret(secrets: Record<string, unknown>): string | null {
@@ -86,11 +123,25 @@ function verifyProviderSignature(
     // No secret configured — in dev, allow; in prod, this should be an error
     // but we log a warning and allow it (admin's responsibility to configure)
     if (!webhookSecret) {
-        logger.warn('Webhook received without configured secret', {
+        // FAIL CLOSED.
+        //
+        // This returned `{ verified: true, reason: 'no_secret_configured' }`,
+        // with a comment conceding "in prod this should be an error". Combined
+        // with an unscoped connection lookup that breaks on the first verified
+        // match, ONE tenant leaving its secret unset made that tenant the
+        // catch-all destination for any forged webhook for the provider —
+        // creating IntegrationExecution rows and APPROVED Evidence in a tenant
+        // the sender never named.
+        //
+        // BEHAVIOUR CHANGE: connections with no configured secret stop
+        // accepting deliveries. That is the point — they were never
+        // authenticated — but it is a live functional change, not a silent
+        // hardening. See the PR for the coverage query.
+        logger.error('Webhook rejected: no signing secret configured for connection', {
             component: 'integrations',
             provider,
         });
-        return { verified: true, reason: 'no_secret_configured' };
+        return { verified: false, reason: 'no_secret_configured' };
     }
 
     const signature = extractSignature(provider, headers);
@@ -225,17 +276,45 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
     // 5. Try to verify and match to a connection
     let matchedConnection: typeof connections[0] | null = null;
 
+    // Collect ALL matches rather than breaking on the first.
+    //
+    // With fail-open, "first verified wins" meant the first secretless
+    // connection swallowed every forged delivery. With fail-closed a match is
+    // a real HMAC match — but two connections sharing a secret is a
+    // misconfiguration, and silently picking whichever the database returned
+    // first would route a tenant's data to the other tenant. Refuse to guess.
+    const matches: typeof connections = [];
     for (const conn of connections) {
-        const secrets = decryptWebhookSecret(conn.secretEncrypted);
-        const webhookSecret = getWebhookSecret(secrets);
-
-        const verification = verifyProviderSignature(provider, rawBody, headers, webhookSecret);
-
-        if (verification.verified) {
-            matchedConnection = conn;
-            break;
+        const secretState = decryptWebhookSecret(conn.secretEncrypted);
+        if (secretState.state !== 'ok') {
+            // Emitted per-connection, not hoisted: a fleet-wide misconfiguration
+            // has to be visible per connection to be actionable.
+            logger.error('Webhook connection has no usable signing secret', {
+                component: 'integrations',
+                provider,
+                connectionId: conn.id,
+                secretState: secretState.state,
+            });
+            continue;
         }
+        const webhookSecret = getWebhookSecret(secretState.secrets);
+        const verification = verifyProviderSignature(provider, rawBody, headers, webhookSecret);
+        if (verification.verified) matches.push(conn);
     }
+
+    if (matches.length > 1) {
+        logger.error('Webhook signature matched multiple connections — refusing to guess', {
+            component: 'integrations',
+            provider,
+            matchCount: matches.length,
+        });
+        await prisma.integrationWebhookEvent.update({
+            where: { id: event.id },
+            data: { status: 'error', errorMessage: 'Ambiguous signature match across connections' },
+        });
+        return { status: 'auth_failed', eventId: event.id };
+    }
+    matchedConnection = matches[0] ?? null;
 
     if (!matchedConnection) {
         await prisma.integrationWebhookEvent.update({
@@ -268,7 +347,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
 
     if (isWebhookEventProvider(providerImpl)) {
         try {
-            const secrets = decryptWebhookSecret(matchedConnection.secretEncrypted);
+            const secrets = secretsOf(decryptWebhookSecret(matchedConnection.secretEncrypted));
             const webhookSecret = getWebhookSecret(secrets);
 
             // Verify using provider's own verification method
@@ -278,6 +357,10 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                         provider,
                         headers,
                         body: parsedBody,
+                        // The bytes the provider signed. Without this the
+                        // verifier re-serialises and the HMAC can never match
+                        // for payloads that do not round-trip byte-identically.
+                        rawBody,
                         receivedAt: new Date(),
                     },
                     webhookSecret
@@ -302,7 +385,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                 },
                 {
                     ...(matchedConnection.configJson as Record<string, unknown>),
-                    ...decryptWebhookSecret(matchedConnection.secretEncrypted),
+                    ...secretsOf(decryptWebhookSecret(matchedConnection.secretEncrypted)),
                 }
             );
 
@@ -385,7 +468,7 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
         try {
             // Build complete connection config by merging stored config + decrypted secrets.
             // This ensures the orchestrator gets all required fields (e.g. owner, repo, token for GitHub).
-            const connectionSecrets = decryptWebhookSecret(matchedConnection.secretEncrypted);
+            const connectionSecrets = secretsOf(decryptWebhookSecret(matchedConnection.secretEncrypted));
             const connectionConfig = {
                 ...(matchedConnection.configJson as Record<string, unknown>),
                 ...connectionSecrets,

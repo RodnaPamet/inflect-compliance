@@ -50,7 +50,18 @@ export interface WebhookActionConfig {
     url: string;
     method?: 'POST' | 'PUT' | 'PATCH';
     headers?: Record<string, string>;
-    /** Reference into the secret store (never the raw secret). */
+    /**
+     * INTENDED as a reference into a secret store. In the current
+     * implementation it is used DIRECTLY as the HMAC key
+     * (`action-executor.ts`), so the value stored here is the raw secret, in
+     * plaintext, inside `actionConfigJson` — which is not covered by the
+     * Epic B encrypted-field manifest.
+     *
+     * Documented rather than quietly corrected: resolving it properly needs a
+     * secret store that does not yet exist for automation rules, and changing
+     * the contract means a field rename plus a config rewrite. Treat any value
+     * here as sensitive until one of those lands.
+     */
     secretRef?: string;
 }
 
