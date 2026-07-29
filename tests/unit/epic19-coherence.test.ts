@@ -207,9 +207,21 @@ describe('Epic 19 Coherence: alert rules', () => {
         'CertificateExpiryCritical',
     ];
 
-    const ALL_ALERT_NAMES = [...SLO_ALERT_NAMES, ...INFRA_ALERT_NAMES];
+    // Security-control integrity alerts. Distinct from both tiers above: they
+    // do not track an SLO and they are not infrastructure health — they fire
+    // when a security control stops applying while the system stays otherwise
+    // healthy, which is precisely the condition nothing else would surface.
+    const SECURITY_ALERT_NAMES = [
+        'SessionPolicyResolutionFailing',
+    ];
 
-    it('should define exactly 16 alert rules (9 SLO + 7 infra)', () => {
+    const ALL_ALERT_NAMES = [
+        ...SLO_ALERT_NAMES,
+        ...INFRA_ALERT_NAMES,
+        ...SECURITY_ALERT_NAMES,
+    ];
+
+    it('should define exactly 17 alert rules (9 SLO + 7 infra + 1 security)', () => {
         const alertCount = (alertContent.match(/- alert:/g) || []).length;
         expect(alertCount).toBe(ALL_ALERT_NAMES.length);
     });
@@ -220,9 +232,10 @@ describe('Epic 19 Coherence: alert rules', () => {
         }
     });
 
-    it('should have 8 alert groups', () => {
+    it('should have 9 alert groups', () => {
+        // 9th group: inflect.security_controls — see SECURITY_ALERT_NAMES.
         const groupCount = (alertContent.match(/- name: inflect\./g) || []).length;
-        expect(groupCount).toBe(8);
+        expect(groupCount).toBe(9);
     });
 
     it('every alert should have service: inflect-compliance label', () => {

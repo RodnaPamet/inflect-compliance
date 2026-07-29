@@ -117,12 +117,60 @@ export async function assertPublicAddress(rawUrl: string): Promise<PublicAddress
 }
 
 /**
+ * Thrown when a guarded request is answered with a redirect.
+ *
+ * Separate from `SsrfBlockedError` so a caller (and an operator reading logs)
+ * can tell "you configured a forbidden destination" apart from "your endpoint
+ * redirects, which this client will not follow".
+ */
+export class RedirectNotAllowedError extends Error {
+    constructor(
+        readonly status: number,
+        readonly location: string | null,
+    ) {
+        super(
+            `Refusing to follow a ${status} redirect` +
+                (location ? ` to ${location}` : '') +
+                ' — configure the final URL directly.',
+        );
+        this.name = 'RedirectNotAllowedError';
+    }
+}
+
+/**
  * SSRF-safe `fetch` for any tenant-controlled URL. Runs `assertPublicAddress`
  * (structural + DNS re-check of every resolved address), then PINS the
  * connection to those pre-validated IPs via an undici dispatcher whose
  * `lookup` returns only them — so DNS cannot change between the check and the
  * connect (TOCTOU). The original hostname is preserved for TLS SNI + cert
  * validation. Throws `SsrfBlockedError` if the URL is unsafe.
+ *
+ * ── Redirects are REFUSED, not followed ─────────────────────────────
+ *
+ * Without `redirect: 'manual'`, fetch follows up to 20 redirects while
+ * `assertPublicAddress` had validated only the FIRST url — and the IP pin does
+ * not survive a hop, because Node's `net.connect` skips `options.lookup` for
+ * IP-literal hosts. So an attacker-controlled public endpoint answering
+ *
+ *     302 Location: http://169.254.169.254/latest/meta-data/
+ *
+ * reached cloud metadata with the scheme check, the host blocklist and the pin
+ * all bypassed on the redirect leg.
+ *
+ * Refusing outright rather than re-validating each hop, deliberately:
+ *
+ *   • Re-validating would prove only that the NEXT host is public — not that
+ *     it is a host the operator ever configured. This client POSTs signed
+ *     audit batches and automation payloads; sending that body to a
+ *     destination nobody entered is the thing worth preventing, and a
+ *     per-hop public-address check does not prevent it.
+ *   • A redirect on a POST endpoint is a misconfiguration signal, not a normal
+ *     pattern. Surfacing it as an actionable error is better than silently
+ *     re-pointing an integration.
+ *
+ * The cost is a behaviour change for any endpoint that relied on a redirect;
+ * those get a clear `RedirectNotAllowedError` naming the target, so the fix is
+ * to configure the final URL.
  */
 export async function safeFetch(rawUrl: string, init?: RequestInit): Promise<Response> {
     const { addresses } = await assertPublicAddress(rawUrl);
@@ -148,5 +196,19 @@ export async function safeFetch(rawUrl: string, init?: RequestInit): Promise<Res
             },
         },
     } as unknown as ConstructorParameters<typeof Agent>[0]);
-    return fetch(rawUrl, { ...init, dispatcher } as unknown as RequestInit);
+
+    const res = await fetch(rawUrl, {
+        ...init,
+        // Callers MUST NOT be able to opt back in — a spread of `init` after
+        // this would let a caller reinstate 'follow' and reopen the hole, so
+        // it is applied last.
+        redirect: 'manual',
+        dispatcher,
+    } as unknown as RequestInit);
+
+    if (res.status >= 300 && res.status < 400) {
+        throw new RedirectNotAllowedError(res.status, res.headers.get('location'));
+    }
+
+    return res;
 }

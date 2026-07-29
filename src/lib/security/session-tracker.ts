@@ -41,6 +41,7 @@ import { randomBytes } from 'node:crypto';
 
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
+import { recordSessionPolicyResolution } from '@/lib/observability/metrics';
 
 // ─── Header capture ─────────────────────────────────────────────────
 
@@ -120,6 +121,52 @@ export interface RecordedSession {
 }
 
 /**
+ * Resolve the tenant's session policy, with one retry and loud observability.
+ *
+ * Returns the tenant's configured caps, or the permissive defaults when the
+ * tenant genuinely has no settings row. Those two outcomes are NOT the same as
+ * a read failure, and the third case is what this helper exists to make
+ * visible: on failure the caller proceeds uncapped, but an ERROR log and a
+ * `session.policy.resolution` counter are emitted so the lapse is alertable
+ * rather than invisible.
+ */
+async function readTenantSessionPolicy(tenantId: string): Promise<{
+    sessionMaxAgeMinutes: number | null;
+    maxConcurrentSessions: number | null;
+}> {
+    const attempt = () =>
+        prisma.tenantSecuritySettings.findUnique({
+            where: { tenantId },
+            select: { sessionMaxAgeMinutes: true, maxConcurrentSessions: true },
+        });
+
+    for (let i = 0; i < 2; i++) {
+        try {
+            const settings = await attempt();
+            recordSessionPolicyResolution({ outcome: 'ok' });
+            return {
+                sessionMaxAgeMinutes: settings?.sessionMaxAgeMinutes ?? null,
+                maxConcurrentSessions: settings?.maxConcurrentSessions ?? null,
+            };
+        } catch (err) {
+            if (i === 0) continue; // transient blip — one retry
+            logger.error(
+                'session-tracker: could not resolve tenant session policy; ' +
+                    'proceeding WITHOUT the concurrent-session cap or lifetime cap',
+                {
+                    component: 'session-tracker',
+                    tenantId,
+                    error: err instanceof Error ? err.message : String(err),
+                },
+            );
+            recordSessionPolicyResolution({ outcome: 'failed' });
+        }
+    }
+
+    return { sessionMaxAgeMinutes: null, maxConcurrentSessions: null };
+}
+
+/**
  * Insert a UserSession row for a freshly minted JWT. Best-effort: a
  * DB failure must NOT break the sign-in flow, so any error logs to
  * stderr and returns a row-less placeholder. Subsequent calls to
@@ -144,7 +191,9 @@ export interface RecordedSession {
  *
  * Both reads are best-effort: if the security-settings lookup fails
  * we proceed with the legacy unlimited behaviour rather than block
- * the sign-in.
+ * the sign-in — but that lapse is now logged at ERROR and counted on
+ * `session.policy.resolution`, so a control that stops applying is
+ * alertable instead of silent. See `readTenantSessionPolicy`.
  */
 export async function recordNewSession(
     input: RecordSessionInput,
@@ -156,19 +205,29 @@ export async function recordNewSession(
     let maxAgeMinutes: number | null = null;
     let maxConcurrent: number | null = null;
     if (input.tenantId) {
-        try {
-            const settings = await prisma.tenantSecuritySettings.findUnique({
-                where: { tenantId: input.tenantId },
-                select: {
-                    sessionMaxAgeMinutes: true,
-                    maxConcurrentSessions: true,
-                },
-            });
-            maxAgeMinutes = settings?.sessionMaxAgeMinutes ?? null;
-            maxConcurrent = settings?.maxConcurrentSessions ?? null;
-        } catch {
-            // Fall back to unlimited / NextAuth default lifetime.
-        }
+        // ── Fail-OPEN, but never fail-SILENT ────────────────────────────
+        //
+        // If this read fails we cannot know the tenant's policy, and the
+        // fallback (`null` / `null`) means UNLIMITED concurrent sessions and
+        // the NextAuth default lifetime — i.e. two security controls quietly
+        // stop applying.
+        //
+        // Staying non-blocking is deliberate and matches the rest of this
+        // function (eviction failure and the row insert below both degrade
+        // rather than deny — "never block sign-in"). Failing closed here would
+        // turn a transient database blip into a tenant-wide sign-in outage,
+        // which is the worse trade for most operators.
+        //
+        // What was NOT acceptable is that this was the ONE handler in the file
+        // that swallowed in total silence — no log, no metric — so a control
+        // could lapse for hours with nothing to notice it. It is now:
+        //   • retried once, since the stated concern is a TRANSIENT blip and a
+        //     single retry removes most of the window;
+        //   • logged at ERROR (not warn — a security control is not applying);
+        //   • counted on `session.policy.resolution` so it is alertable.
+        const settings = await readTenantSessionPolicy(input.tenantId);
+        maxAgeMinutes = settings.sessionMaxAgeMinutes;
+        maxConcurrent = settings.maxConcurrentSessions;
     }
 
     // ── Cap expiry to the tenant policy ──

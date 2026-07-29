@@ -22,9 +22,15 @@ jest.mock('@/app-layer/notifications/settings', () => ({
 
 const safeFetch = jest.fn();
 class SsrfBlockedError extends Error {}
+// Must mirror EVERY export the executor references. Omitting one turns
+// `err instanceof <undefined>` into a TypeError that masquerades as the
+// error under test — which is exactly how the missing
+// `RedirectNotAllowedError` first surfaced here.
+class RedirectNotAllowedError extends Error {}
 jest.mock('@/app-layer/automation/webhook-safety', () => ({
     safeFetch: (...a: unknown[]) => safeFetch(...a),
     SsrfBlockedError,
+    RedirectNotAllowedError,
 }));
 
 const enqueue = jest.fn();
@@ -493,6 +499,19 @@ describe('WEBHOOK', () => {
             ok: false,
             summary: 'Webhook blocked: private address',
         });
+    });
+
+    it('turns a refused redirect into a clean failure, not an exception', async () => {
+        // safeFetch now refuses 3xx rather than following it. That must settle
+        // the execution row as a normal FAILED outcome — if it escaped as an
+        // unhandled throw, one misconfigured endpoint would break the
+        // dispatcher rather than just its own rule.
+        safeFetch.mockRejectedValue(
+            new RedirectNotAllowedError('Refusing to follow a 302 redirect to http://169.254.169.254/'),
+        );
+        const res = await fire({ url: 'https://hooks.example.com/x' });
+        expect(res.ok).toBe(false);
+        expect(res.summary).toMatch(/redirect refused/i);
     });
 
     it('lets a non-SSRF error bubble to the executeAction catch', async () => {

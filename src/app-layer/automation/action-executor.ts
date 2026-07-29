@@ -15,7 +15,7 @@ import { createHmac } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { enqueue } from '../jobs/queue';
 import { UPDATE_STATUS_TARGETS } from '@/lib/automation/status-allowlist';
-import { safeFetch, SsrfBlockedError } from './webhook-safety';
+import { safeFetch, SsrfBlockedError, RedirectNotAllowedError } from './webhook-safety';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import { createTask as createTaskUsecase } from '../usecases/task';
@@ -278,6 +278,13 @@ async function fireWebhook(rule: ExecutableRule, event: ActionEvent): Promise<Ac
     } catch (err) {
         if (err instanceof SsrfBlockedError) {
             return { ok: false, summary: `Webhook blocked: ${err.message}` };
+        }
+        if (err instanceof RedirectNotAllowedError) {
+            // A redirect is a configuration error, not a transient failure.
+            // Reported as a clean execution outcome rather than rethrown, so a
+            // misconfigured endpoint fails the ONE rule instead of escaping as
+            // an unhandled throw through the dispatcher.
+            return { ok: false, summary: `Webhook redirect refused: ${err.message}` };
         }
         throw err;
     } finally {

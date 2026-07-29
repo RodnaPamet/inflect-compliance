@@ -487,3 +487,35 @@ groups:
             issue a manual cert via Let's Encrypt acme.sh or
             equivalent and replace the Ingress's TLS Secret directly.
           dashboard: "/d/inflect-app-overview"
+
+  # ─── Security-control Integrity ──────────────────────────────────────
+  - name: inflect.security_controls
+    interval: 30s
+    rules:
+      # A SECURITY alert, not an availability one.
+      #
+      # The session tracker is deliberately non-blocking: if it cannot read a
+      # tenant's session policy it still lets the sign-in through, rather than
+      # turning a database blip into a tenant-wide sign-in outage. The cost is
+      # that the sign-in proceeds with NO concurrent-session cap and NO
+      # lifetime cap — two controls silently not applying.
+      #
+      # The read already retries once before counting a failure, so a non-zero
+      # rate here is a real, sustained inability to resolve policy.
+      - alert: SessionPolicyResolutionFailing
+        expr: rate(session_policy_resolution{outcome="failed"}[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: inflect-compliance
+        annotations:
+          summary: "Tenant session policy not applying for some sign-ins"
+          description: >-
+            {{ $value | humanize }}/s of sign-ins could not resolve their
+            tenant's session policy and proceeded UNCAPPED — no
+            concurrent-session limit and no session-lifetime cap.
+
+            This does NOT block sign-in by design, which is why it needs an
+            alert: the controls lapse invisibly otherwise. Check database
+            reachability from the auth path.
+          dashboard: "/d/inflect-app-overview"

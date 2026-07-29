@@ -506,6 +506,37 @@ export function recordAuditStreamBufferOverflow(): void {
     getAuditStreamOverflow().add(1);
 }
 
+// ── Session-policy resolution (Epic C.3) ──────────────────────────────
+
+let _sessionPolicyResolution: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+
+function getSessionPolicyResolution() {
+    if (!_sessionPolicyResolution) {
+        _sessionPolicyResolution = getMeter().createCounter('session.policy.resolution', {
+            description:
+                'Outcome of reading a tenant session policy at sign-in. `failed` means the ' +
+                'concurrent-session cap and lifetime cap did NOT apply for that sign-in',
+            unit: '1',
+        });
+    }
+    return _sessionPolicyResolution;
+}
+
+/**
+ * Record whether the tenant session policy could be resolved at sign-in.
+ *
+ * `outcome: 'failed'` is a SECURITY signal, not a availability one: the sign-in
+ * still succeeds (the tracker is deliberately non-blocking), but it proceeds
+ * with NO concurrent-session cap and NO lifetime cap. Any sustained non-zero
+ * rate means a security control is silently not applying, which is exactly the
+ * condition this counter exists to make alertable.
+ */
+export function recordSessionPolicyResolution(attrs: {
+    outcome: 'ok' | 'failed';
+}): void {
+    getSessionPolicyResolution().add(1, { outcome: attrs.outcome });
+}
+
 // ── Auth verification-email delivery counters ─────────────────────────
 
 let _verificationEmailSent: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
