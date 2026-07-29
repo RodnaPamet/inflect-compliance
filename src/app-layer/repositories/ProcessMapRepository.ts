@@ -26,7 +26,7 @@
 import { PrismaTx } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
-import { staleData } from '@/lib/errors/types';
+import { staleData, badRequest } from '@/lib/errors/types';
 import type {
     ProcessNodeInput,
     ProcessEdgeInput,
@@ -378,6 +378,43 @@ export class ProcessMapRepository {
                               Prisma.JsonNull,
                 })),
             });
+        }
+
+        // Verify every referenced controlId belongs to THIS tenant, once,
+        // before any edge is written.
+        //
+        // `processEdgeControl` rows stamp `tenantId: ctx.tenantId` onto a
+        // caller-supplied `controlId` that was never checked — so a foreign id
+        // was stored under this tenant's stamp, and the row then reads as if
+        // the tenant owns a control it does not. RLS does not save this: the
+        // row's own tenantId is correct, it is the REFERENCE that is foreign.
+        //
+        // Hoisted out of the loop deliberately — a per-edge lookup would be an
+        // N+1, which the query-shape ratchet rejects and which would scale with
+        // canvas size.
+        const referencedControlIds = Array.from(
+            new Set(
+                input.edges
+                    .flatMap((e) => e.controls ?? [])
+                    .map((c) => c.controlId)
+                    .filter((v): v is string => typeof v === 'string' && v.length > 0),
+            ),
+        );
+        if (referencedControlIds.length > 0) {
+            // Bounded by `referencedControlIds`, which is derived from the
+            // caller's own edge list. A `take:` here would silently truncate the
+            // owned set and reject legitimate controls as foreign.
+            const owned = await db.control.findMany({ // guardrail-allow: unbounded
+                where: { id: { in: referencedControlIds }, tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            const ownedIds = new Set(owned.map((c: { id: string }) => c.id));
+            const foreign = referencedControlIds.filter((cid) => !ownedIds.has(cid));
+            if (foreign.length > 0) {
+                throw badRequest(
+                    `Edge references ${foreign.length} control(s) that do not belong to this tenant`,
+                );
+            }
         }
 
         // Edges and their controls. Need each edge's row id back

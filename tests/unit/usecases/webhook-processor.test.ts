@@ -180,20 +180,60 @@ describe('processIncomingWebhook — entry branches', () => {
         expect(createArgs.data.eventType).toBeNull();
     });
 
-    it('DEDUPE hit within window → ignored (no persist, no provider dispatch)', async () => {
-        // Replay defense — the same payload hash within the 5-min
-        // window returns the prior event id rather than processing
-        // again. Without this an attacker could spam the same
-        // signed payload to amplify executions/evidence.
+    it('DEDUPE now runs AFTER verification and DOES persist the replay', async () => {
+        // Rewritten. The old assertion was `create` NOT called — it pinned the
+        // pre-auth design, which was the vulnerability:
+        //
+        //   • the check ran before ANY authentication, against rows in either
+        //     `processed` OR `received` state, so replaying an observed body
+        //     planted a `received` row that caused the GENUINE redelivery to be
+        //     dropped as duplicate_payload — denial-of-delivery, no credentials;
+        //   • it had no tenant predicate, so an identical body legitimately
+        //     delivered to tenant B was discarded because tenant A saw it first.
+        //
+        // Now: the row IS persisted (deliberately — a forged delivery must stay
+        // forensically visible), and only an already-`processed` row in the SAME
+        // tenant can suppress anything.
         mockRegistry.getProvider.mockReturnValueOnce(mockProviderImpl);
+        // 1st findFirst = the pre-persist lookup is gone; this one is the
+        // post-auth dedupe check.
+        mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-new' });
+        mockPrisma.integrationConnection.findMany.mockResolvedValueOnce([
+            { id: 'c-1', tenantId: 't-1', secretEncrypted: '{"webhookSecret":"s1"}', configJson: {} },
+        ]);
         mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce({ id: 'prior-evt' });
+        mockPrisma.integrationWebhookEvent.update.mockResolvedValue({});
+        _isWebhookProvider = false;
 
         const result = await processIncomingWebhook(makeInput());
 
         expect(result).toEqual({
             status: 'ignored', eventId: 'prior-evt', reason: 'duplicate_payload',
         });
-        expect(mockPrisma.integrationWebhookEvent.create).not.toHaveBeenCalled();
+        // The replay is recorded, not silently swallowed.
+        expect(mockPrisma.integrationWebhookEvent.create).toHaveBeenCalled();
+    });
+
+    it('an UNVERIFIED replay cannot suppress a genuine delivery', async () => {
+        // The poisoning case, stated directly: the dedupe query must only
+        // consider rows that reached `processed`. An attacker's row never does.
+        mockRegistry.getProvider.mockReturnValueOnce(mockProviderImpl);
+        mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-new' });
+        mockPrisma.integrationConnection.findMany.mockResolvedValueOnce([
+            { id: 'c-1', tenantId: 't-1', secretEncrypted: '{"webhookSecret":"s1"}', configJson: {} },
+        ]);
+        mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce(null);
+        mockPrisma.integrationWebhookEvent.update.mockResolvedValue({});
+        _isWebhookProvider = false;
+
+        await processIncomingWebhook(makeInput());
+
+        const dedupeQuery = mockPrisma.integrationWebhookEvent.findFirst.mock.calls[0][0];
+        // Only `processed` — never `received`, which is what an unverified
+        // request creates.
+        expect(dedupeQuery.where.status).toBe('processed');
+        // And scoped to the resolved tenant, so one tenant cannot suppress another.
+        expect(dedupeQuery.where.tenantId).toBe('t-1');
     });
 
     it('returns error when event persistence fails', async () => {
