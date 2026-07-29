@@ -22,7 +22,23 @@ type Resolver = (key: string) => string;
 const IDENTITY: Resolver = (k) => k;
 
 export type RuleStatusKey = 'DRAFT' | 'ENABLED' | 'DISABLED' | 'ARCHIVED';
-export type RuleActionKey = 'NOTIFY_USER' | 'CREATE_TASK' | 'UPDATE_STATUS' | 'WEBHOOK';
+/**
+ * MUST stay in lockstep with the `AutomationActionType` Prisma enum
+ * (`enums.prisma`) and `ACTION_CONFIG_BY_TYPE` (`automation.schemas.ts`).
+ *
+ * `INVOKE_SUBFLOW` was omitted here while existing everywhere else, which had
+ * two silent consequences: the Action filter could not select sub-flow rules
+ * at all, and `buildRuleActionLabels` had no entry for them so both the rules
+ * table and the detail sheet fell through to the raw enum string.
+ * `tests/guards/automation-action-vocabulary.test.ts` fails if the next enum
+ * member is added without being wired here.
+ */
+export type RuleActionKey =
+    | 'NOTIFY_USER'
+    | 'CREATE_TASK'
+    | 'UPDATE_STATUS'
+    | 'WEBHOOK'
+    | 'INVOKE_SUBFLOW';
 
 export const buildRuleStatusLabels = (t: Resolver): Record<RuleStatusKey, string> => ({
     DRAFT: t('ruleStatusLabels.DRAFT'),
@@ -36,6 +52,7 @@ export const buildRuleActionLabels = (t: Resolver): Record<RuleActionKey, string
     CREATE_TASK: t('ruleActionLabels.CREATE_TASK'),
     UPDATE_STATUS: t('ruleActionLabels.UPDATE_STATUS'),
     WEBHOOK: t('ruleActionLabels.WEBHOOK'),
+    INVOKE_SUBFLOW: t('ruleActionLabels.INVOKE_SUBFLOW'),
 });
 
 /** Trigger-event options derived from the canonical event catalog. */

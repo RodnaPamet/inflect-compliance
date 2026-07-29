@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { UserCombobox } from '@/components/ui/user-combobox';
@@ -147,6 +148,11 @@ function buildOperatorOptions(
 
 interface BuilderState {
     name: string;
+    /** Free text shown on the rule detail sheet. Templates set one
+     *  (`src/data/automation-templates`), so the builder must be able to EDIT
+     *  and CLEAR it — omitting the field from the payload made a template's
+     *  description permanent. */
+    description: string;
     triggerEvent: string;
     logic: 'AND' | 'OR';
     conditions: Condition[];
@@ -190,6 +196,7 @@ type ScheduleTarget = 'Evidence' | 'ControlException' | 'ControlTestPlan';
 
 const EMPTY: BuilderState = {
     name: '',
+    description: '',
     triggerEvent: '',
     logic: 'AND',
     conditions: [],
@@ -217,6 +224,7 @@ const EMPTY: BuilderState = {
  */
 export interface RuleDetail {
     name: string;
+    description: string | null;
     triggerEvent: string;
     actionType: ActionType;
     // The stored filter is a `FilterGroup` (possibly with nested sub-groups) OR
@@ -244,6 +252,7 @@ export function detailToBuilderState(d: RuleDetail): BuilderState {
     const filter = hydrateFilter(d.triggerFilterJson);
     return {
         name: d.name ?? '',
+        description: d.description ?? '',
         triggerEvent: d.triggerEvent ?? '',
         logic: filter.logic,
         conditions: filter.conditions,
@@ -395,6 +404,10 @@ function buildTriggerFilter(form: BuilderState): RawFilter | null {
 export function buildRulePayload(form: BuilderState) {
     return {
         name: form.name.trim(),
+        // Sent even when empty — `null` is what CLEARS a description the user
+        // (or a template) set earlier. Omitting the key means "leave it alone",
+        // which is why the field was previously uneditable once set.
+        description: form.description.trim() || null,
         triggerEvent: form.triggerEvent,
         triggerFilter: buildTriggerFilter(form),
         actionType: form.actionType,
@@ -641,6 +654,14 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                 value={form.name}
                                 onChange={(e) => patch({ name: e.target.value })}
                                 placeholder={t('ruleNamePlaceholder')}
+                            />
+                        </FormField>
+                        <FormField label={t('ruleDescription')} description={t('ruleDescriptionHint')}>
+                            <Textarea
+                                rows={2}
+                                value={form.description}
+                                onChange={(e) => patch({ description: e.target.value })}
+                                placeholder={t('ruleDescriptionPlaceholder')}
                             />
                         </FormField>
                         <FormField label={t('triggerEvent')} required>
@@ -1150,6 +1171,23 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                     placeholder={t('slaPlaceholder')}
                                 />
                             </FormField>
+                            {/* Clearing the window nulls `slaBreachConfig` in the
+                                payload — and the whole breach block below unmounts,
+                                so the recipient list disappears from the screen at
+                                the same moment it disappears from the save. The
+                                state still holds it, which is what makes the loss
+                                silent AND recoverable: retype the window and the
+                                recipients come back. Say so rather than let the
+                                user find out after saving. */}
+                            {!form.slaWindowMinutes && form.slaBreach.userIds.length > 0 && (
+                                <div className="mt-default">
+                                    <InlineNotice variant="warning">
+                                        {t('slaBreachDiscardWarning', {
+                                            count: form.slaBreach.userIds.length,
+                                        })}
+                                    </InlineNotice>
+                                </div>
+                            )}
                             {/* PR-E — breach action. Only shown once a window is
                                 set. Only NOTIFY_USER is implemented server-side
                                 (sla-monitor.ts), so it's the only real option —

@@ -6267,7 +6267,8 @@
       "NOTIFY_USER": "Уведоми потребител",
       "CREATE_TASK": "Създай задача",
       "UPDATE_STATUS": "Обнови статус",
-      "WEBHOOK": "Уебхук"
+      "WEBHOOK": "Уебхук",
+      "INVOKE_SUBFLOW": "Извикване на подпоток"
     },
     "filters": {
       "status": "Статус",
@@ -8619,7 +8620,11 @@
       "webhookSecretRefPlaceholder": "напр. WEBHOOK_HMAC",
       "subflowTargetLabel": "Целева група под-поток",
       "subflowTargetHint": "Ключът на възела на групата под-поток за извикване.",
-      "subflowTargetPlaceholder": "ID на група под-поток"
+      "subflowTargetPlaceholder": "ID на група под-поток",
+      "ruleDescription": "Описание",
+      "ruleDescriptionHint": "По желание. Показва се в панела с детайли на правилото. Изчистете го, за да премахнете описание, зададено от шаблон.",
+      "ruleDescriptionPlaceholder": "За какво служи това правило…",
+      "slaBreachDiscardWarning": "Изчистването на прозореца на наблюдателя отхвърля и известието при нарушение ({count, plural, one {# получател} other {# получатели}}). Въведете отново прозорец, за да ги запазите."
     },
     "autoInspector": {
       "actionNotify": "Уведоми потребител",
@@ -8645,7 +8650,10 @@
       "configured": "конфигуриран",
       "matchesAll": "съответства на всички",
       "slaLabel": "Наблюдател на изпълнението (макс. минути)",
-      "slaPlaceholder": "напр. 15"
+      "slaPlaceholder": "напр. 15",
+      "actionInvokeSubflow": "Извикване на подпоток",
+      "actionUnknown": "Неизвестно действие",
+      "actionTypeHint": "Променете действието в конструктора на правила — новото действие изисква нова конфигурация."
     },
     "diff": {
       "title": "Разлики v{x} спрямо v{y}",
