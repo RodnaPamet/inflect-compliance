@@ -503,6 +503,36 @@ describe('updateSchedule', () => {
         expect('isActive' in data).toBe(false);
     });
 
+    it('recomputes nextRunAt when the cadence changes', async () => {
+        // Without this, switching MONTHLY -> WEEKLY left the stored nextRunAt a
+        // month out and the row went on rendering that date — the UI stating a
+        // schedule the system was not keeping.
+        await updateSchedule(ctx, 's1', { cadence: 'WEEKLY' });
+        const data = mockDbHolder.db.reportSchedule.updateMany.mock.calls[0][0].data;
+        expect(data.cadence).toBe('WEEKLY');
+        expect(data.nextRunAt).toBeInstanceOf(Date);
+        // A week out, not a month.
+        const days = (data.nextRunAt.getTime() - Date.now()) / 86_400_000;
+        expect(days).toBeGreaterThan(6.5);
+        expect(days).toBeLessThan(7.5);
+    });
+
+    it('leaves nextRunAt alone when the cadence is NOT part of the patch', async () => {
+        // Pausing or re-addressing a schedule must not silently reschedule it.
+        await updateSchedule(ctx, 's1', { isActive: false });
+        const data = mockDbHolder.db.reportSchedule.updateMany.mock.calls[0][0].data;
+        expect('nextRunAt' in data).toBe(false);
+    });
+
+    it('persists format and the deep-dive scope from the edit path', async () => {
+        // Both were stored at creation and neither was editable, so a deep-dive
+        // schedule's scope was write-once and invisible.
+        await updateSchedule(ctx, 's1', { format: 'CSV', parameters: { riskId: 'risk-9' } });
+        const data = mockDbHolder.db.reportSchedule.updateMany.mock.calls[0][0].data;
+        expect(data.format).toBe('CSV');
+        expect(data.parametersJson).toEqual({ riskId: 'risk-9' });
+    });
+
     it('rejects a non-member recipient on the edit path', async () => {
         await expect(
             updateSchedule(ctx, 's1', { recipients: ['attacker@example.com'] }),

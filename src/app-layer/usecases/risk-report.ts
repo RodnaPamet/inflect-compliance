@@ -335,7 +335,17 @@ export async function createSchedule(ctx: RequestContext, input: CreateScheduleI
     );
 }
 
-export async function updateSchedule(ctx: RequestContext, scheduleId: string, patch: { isActive?: boolean; cadence?: string; recipients?: string[] }) {
+export async function updateSchedule(
+    ctx: RequestContext,
+    scheduleId: string,
+    patch: {
+        isActive?: boolean;
+        cadence?: string;
+        recipients?: string[];
+        format?: ReportFormat;
+        parameters?: ReportParameters;
+    },
+) {
     assertCanWrite(ctx);
     // The edit path is the same exfiltration channel as create — gating only
     // create would let a writer save an innocuous schedule and then re-point it.
@@ -347,8 +357,25 @@ export async function updateSchedule(ctx: RequestContext, scheduleId: string, pa
             where: { id: scheduleId, tenantId: ctx.tenantId },
             data: {
                 ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
-                ...(patch.cadence ? { cadence: patch.cadence } : {}),
+                // Changing the cadence MUST move the next run with it.
+                //
+                // It did not, so switching MONTHLY → WEEKLY left the stored
+                // `nextRunAt` a month out and the row went on rendering that
+                // date — the UI stated a schedule the system was not keeping.
+                // `computeNextRun` was already right here in this file.
+                //
+                // Recomputed from NOW rather than from the old nextRunAt: the
+                // user has just re-declared how often they want this, and
+                // anchoring to a date chosen under the previous cadence would
+                // make the first run of the new one arbitrary.
+                ...(patch.cadence
+                    ? { cadence: patch.cadence, nextRunAt: computeNextRun(patch.cadence, new Date()) }
+                    : {}),
                 ...(resolved ? { recipientsJson: resolved as unknown as Prisma.InputJsonValue } : {}),
+                ...(patch.format ? { format: patch.format } : {}),
+                ...(patch.parameters
+                    ? { parametersJson: patch.parameters as unknown as Prisma.InputJsonValue }
+                    : {}),
             },
         }),
     );

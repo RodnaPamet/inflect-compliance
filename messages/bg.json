@@ -1502,7 +1502,15 @@
       "nextRun": "Следващ: {date}",
       "cadence_WEEKLY": "Седмично",
       "cadence_MONTHLY": "Месечно",
-      "cadence_QUARTERLY": "Тримесечно"
+      "cadence_QUARTERLY": "Тримесечно",
+      "templatesEmpty": "Все още няма шаблони за отчети.",
+      "retry": "Опитайте отново",
+      "scheduleFormat": "Формат",
+      "scheduleDeliveryDayReadOnly": "Ден на доставка: {day}",
+      "scheduleInvalidRecipients": "Невалидни имейл адреси: {list}",
+      "templateCreated": "Шаблонът е създаден.",
+      "scheduleCreated": "Графикът е създаден.",
+      "scheduleUpdated": "Графикът е обновен."
     },
     "scenarios": {
       "breadcrumb": "Сценарии",
