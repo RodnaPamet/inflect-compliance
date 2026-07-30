@@ -694,6 +694,19 @@ model ReportSchedule {
   sharePointDriveId  String?
   sharePointFolderId String?
   isActive           Boolean        @default(true)
+  /// Who authored this recurring outbound feed.
+  ///
+  /// Load-bearing for attribution, not bookkeeping. The delivery cron used to
+  /// execute every schedule as the tenant's OLDEST ACTIVE OWNER/ADMIN and stamp
+  /// `ReportRun.requestedBy` with that admin's id — so an EDITOR's scheduled
+  /// export to an external address was logged against an owner who had never
+  /// seen it. The job now runs under a synthetic system principal and carries
+  /// this value into `requestedBy` instead.
+  ///
+  /// Nullable: rows created before this column existed have no recorded author.
+  /// No FK — a departed author must not block the row, and `requestedBy` is
+  /// likewise FK-free.
+  createdByUserId    String?
   nextRunAt          DateTime?
   lastRunAt          DateTime?
   createdAt          DateTime       @default(now())

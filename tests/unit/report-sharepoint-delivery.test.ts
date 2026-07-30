@@ -6,7 +6,12 @@
 const uploadNewFile = jest.fn().mockResolvedValue({ id: 'sp-item-1', webUrl: 'https://sp/item' });
 
 jest.mock('@/app-layer/integrations/providers/sharepoint', () => ({
-    listSharePointConnections: jest.fn().mockResolvedValue([{ id: 'conn-1' }]),
+    // The delivery path now filters on isEnabled and picks the OLDEST enabled
+    // connection deterministically, so the fixture needs both fields. A
+    // connection with isEnabled absent reads as NOT enabled — fail-closed.
+    listSharePointConnections: jest.fn().mockResolvedValue([
+        { id: 'conn-1', isEnabled: true, createdAt: new Date('2026-01-01') },
+    ]),
     getSharePointClient: jest.fn().mockResolvedValue({ uploadNewFile }),
 }));
 
@@ -15,7 +20,13 @@ jest.mock('@/lib/storage', () => ({
         // an async-iterable stream of one chunk
         readStream: () => (async function* () { yield Buffer.from('PDFBYTES'); })(),
     }),
-    generatePathKey: (t: string, n: string) => `${t}/${n}`,
+    // Real key shape, so the tenant assertion below is a real check.
+    generatePathKey: (t: string, n: string) => `tenants/${t}/reports/2026/07/aaaaaaaa-${n}`,
+    assertTenantKey: (pathKey: string, tenantId: string) => {
+        if (!pathKey.startsWith(`tenants/${tenantId}/`)) {
+            throw new Error(`Tenant isolation violation: "${pathKey}" is not in tenant "${tenantId}"`);
+        }
+    },
 }));
 
 import { deliverReportToSharePoint } from '@/app-layer/usecases/risk-report';
@@ -23,7 +34,15 @@ import { listSharePointConnections } from '@/app-layer/integrations/providers/sh
 import { makeRequestContext } from '../helpers/make-context';
 
 const ctx = makeRequestContext();
-const completed = { id: 'r1', outputPath: 'tenant/report.pdf', format: 'PDF', status: 'COMPLETED' };
+// `openReportArtefact` now asserts the key belongs to the ctx tenant, so the
+// stub path must be a real tenant-scoped key.
+const completed = {
+    id: 'r1',
+    outputPath: `tenants/${ctx.tenantId}/reports/2026/07/aaaaaaaa-report_r1.pdf`,
+    format: 'PDF',
+    status: 'COMPLETED',
+};
+
 
 describe('deliverReportToSharePoint', () => {
     beforeEach(() => uploadNewFile.mockClear());

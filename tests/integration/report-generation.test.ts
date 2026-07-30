@@ -77,7 +77,7 @@ describeFn('RQ-10 — report generation (integration)', () => {
         const templates = await listTemplates(ctx);
         const run = await generateReport(ctx, templates.find((t) => t.type === 'PORTFOLIO_SUMMARY')!.id, {}, 'CSV');
 
-        const sent = await deliverReportByEmail(run, ['ciso@example.test', 'cfo@example.test'], 'Portfolio Risk Summary');
+        const sent = await deliverReportByEmail(ctx, run, ['ciso@example.test', 'cfo@example.test'], 'Portfolio Risk Summary');
         expect(sent).toBe(2);
         expect(stub.sentMessages).toHaveLength(1);
         const msg = stub.sentMessages[0];
@@ -93,7 +93,7 @@ describeFn('RQ-10 — report generation (integration)', () => {
         const stub = new StubEmailProvider();
         setEmailProvider(stub);
         const run = { id: 'x', outputPath: 'whatever', format: 'CSV', status: 'COMPLETED' };
-        expect(await deliverReportByEmail(run, [], 'X')).toBe(0);
+        expect(await deliverReportByEmail(ctx, run, [], 'X')).toBe(0);
         expect(stub.sentMessages).toHaveLength(0);
     });
 });

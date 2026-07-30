@@ -17,9 +17,13 @@ import { resolveALE } from './fair-calculator';
 import { getLatestSimulation } from './monte-carlo';
 import { getAppetiteStatus } from './risk-appetite';
 import { renderCsv, renderPdf, renderPptx, type ReportData } from '../reports/risk-report-render';
-import { getStorageProvider, generatePathKey } from '@/lib/storage';
+import { getStorageProvider, generatePathKey, assertTenantKey } from '@/lib/storage';
 import { sendEmail } from '@/lib/mailer';
 import { getSharePointClient, listSharePointConnections } from '../integrations/providers/sharepoint';
+import {
+    resolveScheduleRecipients,
+    MAX_EMAIL_ATTACHMENT_BYTES,
+} from './report-recipients';
 
 export type ReportFormat = 'PDF' | 'CSV' | 'PPTX';
 
@@ -123,13 +127,28 @@ export async function createTemplate(ctx: RequestContext, input: { name: string;
 
 // ── Generation ────────────────────────────────────────────────────────
 
-export async function generateReport(ctx: RequestContext, templateId: string, parameters: ReportParameters, format: ReportFormat) {
+export async function generateReport(
+    ctx: RequestContext,
+    templateId: string,
+    parameters: ReportParameters,
+    format: ReportFormat,
+    /**
+     * Who to record as having requested this run.
+     *
+     * Defaults to `ctx.userId`, which is right for an interactive request. The
+     * scheduled-delivery cron passes the SCHEDULE'S AUTHOR instead: it executes
+     * as a synthetic system principal, and stamping that principal here would
+     * lose the only record of who set the recurring export up. Explicit `null`
+     * is honest for a pre-existing schedule whose authorship was never captured.
+     */
+    opts: { requestedBy?: string | null } = {},
+) {
     assertCanWrite(ctx);
     const template = await runInTenantContext(ctx, (db) => db.reportTemplate.findFirst({ where: { id: templateId, tenantId: ctx.tenantId } }));
     if (!template) throw notFound('Report template not found');
 
     const run = await runInTenantContext(ctx, (db) =>
-        db.reportRun.create({ data: { tenantId: ctx.tenantId, templateId, parametersJson: parameters as unknown as Prisma.InputJsonValue, format, status: 'GENERATING', requestedBy: ctx.userId, startedAt: new Date() } }),
+        db.reportRun.create({ data: { tenantId: ctx.tenantId, templateId, parametersJson: parameters as unknown as Prisma.InputJsonValue, format, status: 'GENERATING', requestedBy: opts.requestedBy !== undefined ? opts.requestedBy : ctx.userId, startedAt: new Date() } }),
     );
 
     try {
@@ -158,9 +177,38 @@ export async function getReport(ctx: RequestContext, reportRunId: string) {
     return r;
 }
 
-/** Read a COMPLETED report's stored artefact into a Buffer. */
-export async function readReportArtefact(outputPath: string): Promise<Buffer> {
-    const stream = getStorageProvider().readStream(outputPath);
+/**
+ * Open a COMPLETED report's stored artefact as a stream, asserting the storage
+ * key belongs to this tenant first.
+ *
+ * ── Why ctx is a parameter ──────────────────────────────────────────
+ *
+ * This took a bare `outputPath` with no ctx, which made the tenant assertion
+ * structurally impossible to write — the function had nothing to compare
+ * against. Not exploitable today (`outputPath` is only ever produced by
+ * `generatePathKey(ctx.tenantId, …)` and the ReportRun row is read
+ * tenant-scoped), but that is a property of the current callers, not of this
+ * function, and it is exactly the missing guard that made the cross-tenant read
+ * in audit-hardening possible elsewhere. Matches `evidence.ts`'s
+ * `assertTenantKey` usage.
+ *
+ * Returns the stream, NOT a Buffer: the download route used to Buffer.concat
+ * the whole artefact into memory before writing a byte to the client.
+ */
+export function openReportArtefact(ctx: RequestContext, outputPath: string) {
+    assertTenantKey(outputPath, ctx.tenantId);
+    return getStorageProvider().readStream(outputPath);
+}
+
+/**
+ * Read a COMPLETED report's artefact fully into memory.
+ *
+ * Only for paths that genuinely need the bytes at once — an email attachment
+ * (which must be sized and encoded) and the SharePoint upload primitive. Prefer
+ * `openReportArtefact` anywhere the destination is a stream.
+ */
+export async function readReportArtefact(ctx: RequestContext, outputPath: string): Promise<Buffer> {
+    const stream = openReportArtefact(ctx, outputPath);
     const chunks: Buffer[] = [];
     for await (const c of stream) chunks.push(Buffer.from(c as Buffer));
     return Buffer.concat(chunks);
@@ -172,13 +220,25 @@ export async function readReportArtefact(outputPath: string): Promise<Buffer> {
  * Returns the number of recipients the email was addressed to.
  */
 export async function deliverReportByEmail(
+    ctx: RequestContext,
     run: { id: string; outputPath: string | null; format: string; status: string },
     recipients: string[],
     label: string,
 ): Promise<number> {
     if (run.status !== 'COMPLETED' || !run.outputPath || recipients.length === 0) return 0;
     const meta = FORMAT_META[run.format as ReportFormat] ?? FORMAT_META.PDF;
-    const content = await readReportArtefact(run.outputPath);
+    const content = await readReportArtefact(ctx, run.outputPath);
+    // mailer.ts has no size logic, so without this an oversized artefact was
+    // handed straight to the transport — failing the delivery opaquely, or
+    // succeeding and mailing tens of megabytes to every recipient. Refuse
+    // loudly instead: the run itself is COMPLETED and downloadable.
+    if (content.length > MAX_EMAIL_ATTACHMENT_BYTES) {
+        throw badRequest(
+            `Report is ${Math.round(content.length / 1024 / 1024)} MB, over the ` +
+                `${Math.round(MAX_EMAIL_ATTACHMENT_BYTES / 1024 / 1024)} MB email attachment limit. ` +
+                'Deliver it to SharePoint or download it directly.',
+        );
+    }
     await sendEmail({
         to: recipients.join(', '),
         subject: `Scheduled risk report — ${label}`,
@@ -203,11 +263,21 @@ export async function deliverReportToSharePoint(
     deps: { fetchImpl?: typeof fetch } = {},
 ): Promise<string | null> {
     if (run.status !== 'COMPLETED' || !run.outputPath || !driveId) return null;
-    const connectionId = (await listSharePointConnections(ctx))[0]?.id;
+    // Two fixes in one line. `[0]` picked whichever connection the query
+    // happened to return first — with `orderBy: createdAt desc` that is the
+    // NEWEST, which is neither documented nor stable across a re-connect — and
+    // it did not test `isEnabled`, which was selected and never read, so a
+    // DISABLED integration still received pushed reports. Filter, then take the
+    // oldest ENABLED one so the choice is deterministic and stable.
+    const connections = await listSharePointConnections(ctx);
+    const enabled = connections
+        .filter((c: { isEnabled: boolean }) => c.isEnabled)
+        .sort((a: { createdAt: Date }, b: { createdAt: Date }) => a.createdAt.getTime() - b.createdAt.getTime());
+    const connectionId = enabled[0]?.id;
     if (!connectionId) return null;
     const client = await getSharePointClient(ctx, connectionId, deps);
     const meta = FORMAT_META[run.format as ReportFormat] ?? FORMAT_META.PDF;
-    const content = await readReportArtefact(run.outputPath);
+    const content = await readReportArtefact(ctx, run.outputPath);
     const safe = label.replace(/[^\w.-]+/g, '-');
     const item = await client.uploadNewFile(driveId, folderId ?? 'root', `${safe}-${run.id}.${meta.ext}`, content, meta.mime);
     return item.id;
@@ -234,13 +304,32 @@ export interface CreateScheduleInput { templateId: string; cadence: 'WEEKLY' | '
 export async function createSchedule(ctx: RequestContext, input: CreateScheduleInput) {
     assertCanWrite(ctx);
     if (!input.recipients?.length && !input.sharePointDriveId) throw badRequest('A schedule needs at least one recipient or a SharePoint destination');
+
+    // A schedule is a STANDING outbound feed, so its destination is validated
+    // here rather than trusted from the request: every recipient must be an
+    // ACTIVE member or allowlisted, and aiming off-tenant needs
+    // `reports.schedule_external`. See report-recipients.ts.
+    const { recipients } = await resolveScheduleRecipients(ctx, input.recipients ?? []);
+
+    // Mirror generateReport's check (:128). Without it a cross-tenant id was
+    // stamped with THIS tenant's tenantId, producing a schedule whose FK points
+    // at another tenant's template — permanently broken, and a tenant/FK
+    // inconsistency that no later read can repair.
+    const template = await runInTenantContext(ctx, (db) =>
+        db.reportTemplate.findFirst({ where: { id: input.templateId, tenantId: ctx.tenantId }, select: { id: true } }),
+    );
+    if (!template) throw notFound('Report template not found');
+
     return runInTenantContext(ctx, (db) =>
         db.reportSchedule.create({
             data: {
                 tenantId: ctx.tenantId, templateId: input.templateId, cadence: input.cadence, format: input.format ?? 'PDF',
-                recipientsJson: input.recipients as unknown as Prisma.InputJsonValue, parametersJson: (input.parameters ?? {}) as unknown as Prisma.InputJsonValue,
+                recipientsJson: recipients as unknown as Prisma.InputJsonValue, parametersJson: (input.parameters ?? {}) as unknown as Prisma.InputJsonValue,
                 deliveryDay: input.deliveryDay ?? null, isActive: true, nextRunAt: computeNextRun(input.cadence, new Date()),
                 sharePointDriveId: input.sharePointDriveId ?? null, sharePointFolderId: input.sharePointFolderId ?? null,
+                // Attribution, so the delivery cron never has to borrow an
+                // admin identity to explain who set this up.
+                createdByUserId: ctx.userId,
             },
         }),
     );
@@ -248,13 +337,18 @@ export async function createSchedule(ctx: RequestContext, input: CreateScheduleI
 
 export async function updateSchedule(ctx: RequestContext, scheduleId: string, patch: { isActive?: boolean; cadence?: string; recipients?: string[] }) {
     assertCanWrite(ctx);
+    // The edit path is the same exfiltration channel as create — gating only
+    // create would let a writer save an innocuous schedule and then re-point it.
+    const resolved = patch.recipients
+        ? (await resolveScheduleRecipients(ctx, patch.recipients)).recipients
+        : undefined;
     await runInTenantContext(ctx, (db) =>
         db.reportSchedule.updateMany({
             where: { id: scheduleId, tenantId: ctx.tenantId },
             data: {
                 ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
                 ...(patch.cadence ? { cadence: patch.cadence } : {}),
-                ...(patch.recipients ? { recipientsJson: patch.recipients as unknown as Prisma.InputJsonValue } : {}),
+                ...(resolved ? { recipientsJson: resolved as unknown as Prisma.InputJsonValue } : {}),
             },
         }),
     );

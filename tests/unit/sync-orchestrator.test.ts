@@ -75,7 +75,7 @@ export const mockCtx: RequestContext = {
         incidents: { view: true, manage: true },
         frameworks: { view: true, install: true },
         audits: { view: true, manage: true, freeze: true, share: true },
-        reports: { view: true, export: true },
+        reports: { view: true, export: true, schedule_external: true },
         admin: { view: true, manage: true, members: true, sso: true, scim: true, tenant_lifecycle: true, owner_management: true, compliance_dsar_view: true, compliance_dsar_manage: true },
     },
 };

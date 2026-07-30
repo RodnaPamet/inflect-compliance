@@ -62,7 +62,14 @@ jest.mock('@/lib/storage', () => ({
         write: (...a: any[]) => storageWrite(...a),
         readStream: () => (async function* () { yield Buffer.from('ARTEFACT'); })(),
     }),
-    generatePathKey: (t: string, n: string) => `${t}/${n}`,
+    // Keep the REAL key shape so assertTenantKey below is a real check rather
+    // than a formality — `${t}/${n}` would not start with `tenants/`.
+    generatePathKey: (t: string, n: string) => `tenants/${t}/reports/2026/07/aaaaaaaa-${n}`,
+    assertTenantKey: (pathKey: string, tenantId: string) => {
+        if (!pathKey.startsWith(`tenants/${tenantId}/`)) {
+            throw new Error(`Tenant isolation violation: "${pathKey}" is not in tenant "${tenantId}"`);
+        }
+    },
 }));
 
 const sendEmail = jest.fn(async (..._a: any[]) => undefined);
@@ -108,6 +115,17 @@ function freshDb() {
             findFirst: jest.fn(),
             findMany: jest.fn().mockResolvedValue([{ id: 'run-1' }]),
         },
+        // resolveScheduleRecipients resolves each recipient against ACTIVE
+        // membership, then the tenant's external allowlist.
+        tenantMembership: {
+            findMany: jest.fn().mockResolvedValue([
+                { user: { email: 'a@b.com' } },
+                { user: { email: 'c@d.com' } },
+            ]),
+        },
+        tenantSecuritySettings: {
+            findUnique: jest.fn().mockResolvedValue({ reportRecipientAllowlistJson: null }),
+        },
         reportSchedule: {
             create: jest.fn().mockResolvedValue({ id: 'sch-1' }),
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -120,6 +138,9 @@ function freshDb() {
 beforeEach(() => {
     jest.clearAllMocks();
     mockDbHolder.db = freshDb();
+    // createSchedule now mirrors generateReport's in-tenant template check, so
+    // the happy path needs a template to exist.
+    mockDbHolder.db.reportTemplate.findFirst.mockResolvedValue({ id: 'tpl-1' });
     // Default sibling-usecase returns; individual tests override.
     getLatestSimulation.mockResolvedValue(null);
     getAppetiteStatus.mockResolvedValue({ status: 'NONE', portfolioAle: 0 });
@@ -364,22 +385,30 @@ describe('listReports', () => {
 
 // ── deliverReportByEmail: no-op guards + happy + format fallback ──────────
 describe('deliverReportByEmail', () => {
-    const completed = { id: 'r1', outputPath: 'tenant/report.pdf', format: 'PDF', status: 'COMPLETED' };
+    // `openReportArtefact` now asserts the storage key belongs to the ctx
+    // tenant, so the stub key must be a real tenant-scoped key rather than the
+    // previous arbitrary 'tenant/report.pdf'.
+    const completed = {
+        id: 'r1',
+        outputPath: `tenants/${ctx.tenantId}/reports/2026/07/aaaaaaaa-report_r1.pdf`,
+        format: 'PDF',
+        status: 'COMPLETED',
+    };
 
     it('no-ops (0) when the run is not COMPLETED', async () => {
-        expect(await deliverReportByEmail({ ...completed, status: 'FAILED' }, ['a@b.com'], 'L')).toBe(0);
+        expect(await deliverReportByEmail(ctx, { ...completed, status: 'FAILED' }, ['a@b.com'], 'L')).toBe(0);
         expect(sendEmail).not.toHaveBeenCalled();
     });
     it('no-ops (0) when there is no outputPath', async () => {
-        expect(await deliverReportByEmail({ ...completed, outputPath: null }, ['a@b.com'], 'L')).toBe(0);
+        expect(await deliverReportByEmail(ctx, { ...completed, outputPath: null }, ['a@b.com'], 'L')).toBe(0);
         expect(sendEmail).not.toHaveBeenCalled();
     });
     it('no-ops (0) when there are no recipients', async () => {
-        expect(await deliverReportByEmail(completed, [], 'L')).toBe(0);
+        expect(await deliverReportByEmail(ctx, completed, [], 'L')).toBe(0);
         expect(sendEmail).not.toHaveBeenCalled();
     });
     it('sends with PDF meta + returns recipient count', async () => {
-        const n = await deliverReportByEmail(completed, ['a@b.com', 'c@d.com'], 'Q2 Report');
+        const n = await deliverReportByEmail(ctx, completed, ['a@b.com', 'c@d.com'], 'Q2 Report');
         expect(n).toBe(2);
         const arg = sendEmail.mock.calls[0][0];
         expect(arg.to).toBe('a@b.com, c@d.com');
@@ -387,13 +416,13 @@ describe('deliverReportByEmail', () => {
         expect(arg.attachments[0].filename).toBe('risk-report-r1.pdf');
     });
     it('falls back to PDF meta when the run format is unknown', async () => {
-        const n = await deliverReportByEmail({ ...completed, format: 'WEIRD' }, ['a@b.com'], 'L');
+        const n = await deliverReportByEmail(ctx, { ...completed, format: 'WEIRD' }, ['a@b.com'], 'L');
         expect(n).toBe(1);
         const arg = sendEmail.mock.calls[0][0];
         expect(arg.attachments[0].contentType).toBe(FORMAT_META.PDF.mime); // ?? FORMAT_META.PDF branch
     });
     it('uses CSV meta for a CSV run', async () => {
-        await deliverReportByEmail({ ...completed, format: 'CSV' }, ['a@b.com'], 'L');
+        await deliverReportByEmail(ctx, { ...completed, format: 'CSV' }, ['a@b.com'], 'L');
         expect(sendEmail.mock.calls[0][0].attachments[0].contentType).toBe('text/csv');
     });
 });
@@ -465,11 +494,102 @@ describe('updateSchedule', () => {
         expect(mockDbHolder.db.reportSchedule.updateMany.mock.calls[0][0].data).toEqual({ isActive: false });
     });
     it('includes cadence + recipients when provided', async () => {
-        await updateSchedule(ctx, 's1', { cadence: 'WEEKLY', recipients: ['x@y.com'] });
+        // Recipients must resolve on the EDIT path too — gating only create
+        // would let a writer save an innocuous schedule and re-point it after.
+        await updateSchedule(ctx, 's1', { cadence: 'WEEKLY', recipients: ['a@b.com'] });
         const data = mockDbHolder.db.reportSchedule.updateMany.mock.calls[0][0].data;
         expect(data.cadence).toBe('WEEKLY');
-        expect(data.recipientsJson).toEqual(['x@y.com']);
+        expect(data.recipientsJson).toEqual(['a@b.com']);
         expect('isActive' in data).toBe(false);
+    });
+
+    it('rejects a non-member recipient on the edit path', async () => {
+        await expect(
+            updateSchedule(ctx, 's1', { recipients: ['attacker@example.com'] }),
+        ).rejects.toThrow(/not a member of this tenant/);
+        expect(mockDbHolder.db.reportSchedule.updateMany).not.toHaveBeenCalled();
+    });
+});
+
+// ── Recipient validation — the exfiltration channel itself ───────────────
+describe('scheduled delivery cannot be aimed at an arbitrary address', () => {
+    it('refuses a schedule whose recipient is neither a member nor allowlisted', async () => {
+        // The headline attack: an EDITOR points the tenant's portfolio-risk PDF
+        // at an address they control, weekly, forever.
+        await expect(
+            createSchedule(ctx, {
+                templateId: 'tpl-1',
+                cadence: 'WEEKLY',
+                recipients: ['attacker@example.com'],
+            }),
+        ).rejects.toThrow(/not a member of this tenant/);
+        expect(mockDbHolder.db.reportSchedule.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts an allowlisted external recipient when the caller may schedule externally', async () => {
+        mockDbHolder.db.tenantSecuritySettings.findUnique.mockResolvedValue({
+            reportRecipientAllowlistJson: ['@kpmg.com'],
+        });
+        await createSchedule(ctx, {
+            templateId: 'tpl-1',
+            cadence: 'WEEKLY',
+            recipients: ['auditor@kpmg.com'],
+        });
+        expect(mockDbHolder.db.reportSchedule.create).toHaveBeenCalled();
+    });
+
+    it('refuses an allowlisted external recipient WITHOUT reports.schedule_external', async () => {
+        // Two independent gates: the allowlist says the address is acceptable,
+        // the permission says who may aim a standing feed at it.
+        mockDbHolder.db.tenantSecuritySettings.findUnique.mockResolvedValue({
+            reportRecipientAllowlistJson: ['@kpmg.com'],
+        });
+        const editorCtx = {
+            ...ctx,
+            appPermissions: {
+                ...ctx.appPermissions,
+                reports: { ...ctx.appPermissions.reports, schedule_external: false },
+            },
+        };
+        await expect(
+            createSchedule(editorCtx, {
+                templateId: 'tpl-1',
+                cadence: 'WEEKLY',
+                recipients: ['auditor@kpmg.com'],
+            }),
+        ).rejects.toThrow(/requires an administrator/);
+        expect(mockDbHolder.db.reportSchedule.create).not.toHaveBeenCalled();
+    });
+
+    it('caps the recipient count', async () => {
+        const many = Array.from({ length: 25 }, (_, i) => `p${i}@acme.test`);
+        await expect(
+            createSchedule(ctx, { templateId: 'tpl-1', cadence: 'WEEKLY', recipients: many }),
+        ).rejects.toThrow(/at most 20 recipients/);
+    });
+
+    it('records the schedule author, so the cron need not borrow an identity', async () => {
+        await createSchedule(ctx, {
+            templateId: 'tpl-1',
+            cadence: 'WEEKLY',
+            recipients: ['a@b.com'],
+        });
+        const data = mockDbHolder.db.reportSchedule.create.mock.calls[0][0].data;
+        expect(data.createdByUserId).toBe(ctx.userId);
+    });
+
+    it('refuses a cross-tenant templateId instead of persisting a broken FK', async () => {
+        // generateReport verified the template; createSchedule did not, so a
+        // foreign id was stamped with THIS tenant's tenantId.
+        mockDbHolder.db.reportTemplate.findFirst.mockResolvedValue(null);
+        await expect(
+            createSchedule(ctx, {
+                templateId: 'tpl-from-another-tenant',
+                cadence: 'WEEKLY',
+                recipients: ['a@b.com'],
+            }),
+        ).rejects.toThrow(/Report template not found/);
+        expect(mockDbHolder.db.reportSchedule.create).not.toHaveBeenCalled();
     });
 });
 
