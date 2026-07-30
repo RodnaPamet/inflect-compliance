@@ -10,7 +10,16 @@ import { jsonResponse } from '@/lib/api-response';
 const PatchSchema = z.object({
     isActive: z.boolean().optional(),
     cadence: z.enum(['WEEKLY', 'MONTHLY', 'QUARTERLY']).optional(),
-    recipients: z.array(z.string().email()).optional(),
+    // `.max()` mirrors MAX_SCHEDULE_RECIPIENTS in the usecase. The usecase is
+    // the authority (the delivery job and any future caller bypass Zod), but
+    // rejecting an over-long list at the boundary is cheaper and gives a
+    // clearer error than a usecase throw.
+    recipients: z.array(z.string().email()).max(20).optional(),
+    // Editable since the edit form began surfacing them — the schedule stored
+    // both from creation and the UI could neither show nor change either, so a
+    // deep-dive schedule's scope was write-once and invisible.
+    format: z.enum(['PDF', 'CSV', 'PPTX']).optional(),
+    parameters: z.object({ confidenceLevel: z.number().optional(), riskId: z.string().optional() }).optional(),
 });
 
 export const PATCH = withApiErrorHandling(

@@ -81,6 +81,12 @@ export async function runReportDelivery(_payload: ReportDeliveryPayload) {
     const now = new Date();
     const due = await prisma.reportSchedule.findMany({
         where: { isActive: true, nextRunAt: { lte: now } },
+        // Most-overdue first. There was no ordering at all, so which 1000 of a
+        // larger backlog got picked was whatever the planner returned — and any
+        // schedule outside that arbitrary window could be skipped repeatedly
+        // while newer ones ran. Oldest-first makes the take a fair queue rather
+        // than a lottery.
+        orderBy: { nextRunAt: 'asc' },
         select: { id: true, tenantId: true, templateId: true, format: true, cadence: true, parametersJson: true, recipientsJson: true, sharePointDriveId: true, sharePointFolderId: true, createdByUserId: true, template: { select: { name: true } } },
         take: 1000,
     });

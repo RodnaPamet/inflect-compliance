@@ -3,7 +3,7 @@
     "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\".",
     "counts": {
         "authoritative": 114,
-        "historical": 473,
+        "historical": 474,
         "living": 5,
         "deprecated": 1
     },
@@ -1755,6 +1755,9 @@
             "class": "historical"
         },
         "docs/implementation-notes/2026-07-30-report-exfiltration-and-entitlement-gates.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-07-30-reports-page-client-correctness.md": {
             "class": "historical"
         },
         "docs/implementation-notes/2026-07-29-automation-data-loss-and-residue.md": {

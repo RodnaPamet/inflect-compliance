@@ -33,7 +33,56 @@ describe('2. schedules can be edited in place', () => {
         expect(REPORTS).toMatch(/const startEdit/);
         expect(REPORTS).toMatch(/const saveEdit/);
         expect(REPORTS).toMatch(/schedule-edit-btn-/);
-        expect(REPORTS).toMatch(/patch\(id, \{ cadence: editCadence, recipients: emails \}\)/);
+        // Asserted as fields of the patch rather than as one literal call
+        // shape. The previous regex pinned the exact argument text, so ADDING a
+        // field to the patch broke the guard even though the invariant it
+        // protects — an edit sends cadence and recipients — still held.
+        const save = REPORTS.slice(
+            REPORTS.indexOf('const saveEdit'),
+            REPORTS.indexOf('const removeSchedule'),
+        );
+        expect(save).toMatch(/patch\(\s*id,/);
+        expect(save).toMatch(/cadence: editCadence/);
+        expect(save).toMatch(/recipients: emails/);
+    });
+
+    it('the edit form surfaces the fields a schedule actually stores', () => {
+        // `startEdit` seeded only cadence + recipients, so `format` and the
+        // deep-dive `riskId` were stored at creation and then neither visible
+        // nor editable — a user who scoped a schedule to one risk could not see
+        // what it was scoped to. `deliveryDay` is shown read-only because
+        // updateSchedule does not accept it, and an editable control that
+        // silently does nothing is worse than an honest read-only one.
+        expect(REPORTS).toMatch(/setEditFormat/);
+        expect(REPORTS).toMatch(/setEditRiskId/);
+        expect(REPORTS).toMatch(/schedule-edit-format-/);
+        expect(REPORTS).toMatch(/schedule-edit-risk-/);
+        expect(REPORTS).toMatch(/scheduleDeliveryDayReadOnly/);
+    });
+
+    it('every write affordance on the page is permission-gated', () => {
+        // The page had ZERO RequirePermission, so a READER (reports.export =
+        // false) was shown eight write buttons, clicked them and got a 403.
+        expect(REPORTS).toMatch(/import \{ RequirePermission \}/);
+        expect(REPORTS).toMatch(/import \{ UpgradeGate \}/);
+        const gates = REPORTS.match(/<RequirePermission resource="reports" action="export">/g) ?? [];
+        expect(gates.length).toBeGreaterThanOrEqual(4);
+        // PDF/PPTX additionally sit behind the entitlement the risk-report route
+        // began enforcing in #1759; CSV deliberately does not.
+        const upgrades = REPORTS.match(/<UpgradeGate feature="PDF_EXPORTS">/g) ?? [];
+        expect(upgrades.length).toBe(2);
+    });
+
+    it('polls only while a run is non-terminal, and surfaces a failure reason', () => {
+        // Generation is synchronous inside the POST, so a serverless timeout
+        // stranded a run in GENERATING with no refreshInterval and no manual
+        // refresh to move it. And `errorMessage` was already on the wire —
+        // omitted from the client interface, so FAILED rendered as a bare pill.
+        expect(REPORTS).toMatch(/TERMINAL_STATUSES/);
+        expect(REPORTS).toMatch(/refreshInterval:\s*\(latest\)/);
+        expect(REPORTS).toMatch(/errorMessage: string \| null/);
+        expect(REPORTS).toMatch(/run-error-/);
+        expect(REPORTS).toMatch(/run-retry-/);
     });
 });
 

@@ -1502,7 +1502,15 @@
       "nextRun": "Next: {date}",
       "cadence_WEEKLY": "Weekly",
       "cadence_MONTHLY": "Monthly",
-      "cadence_QUARTERLY": "Quarterly"
+      "cadence_QUARTERLY": "Quarterly",
+      "templatesEmpty": "No report templates yet.",
+      "retry": "Try again",
+      "scheduleFormat": "Format",
+      "scheduleDeliveryDayReadOnly": "Delivery day: {day}",
+      "scheduleInvalidRecipients": "Not valid email addresses: {list}",
+      "templateCreated": "Template created.",
+      "scheduleCreated": "Schedule created.",
+      "scheduleUpdated": "Schedule updated."
     },
     "scenarios": {
       "breadcrumb": "Scenarios",

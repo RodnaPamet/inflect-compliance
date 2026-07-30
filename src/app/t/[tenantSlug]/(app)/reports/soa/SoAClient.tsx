@@ -279,9 +279,15 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                 The "Show gaps only" toggle remains; cross-page
                 navigation goes through ⌘K. */}
             <div className="flex flex-wrap items-center gap-tight">
+                {/* `primary` for the active state, not `destructive`.
+                    Destructive tone means "this button destroys something";
+                    using it to say "this filter is on" inverts the convention
+                    and teaches the palette wrong — the danger colour stops
+                    meaning danger. Nothing here deletes: it narrows a list. */}
                 <Button
-                    variant={gapsOnly ? 'destructive' : 'ghost'}
+                    variant={gapsOnly ? 'primary' : 'ghost'}
                     onClick={() => setGapsOnly(!gapsOnly)}
+                    aria-pressed={gapsOnly}
                     id="soa-gaps-only"
                 >
                     <AlertTriangle className="w-3.5 h-3.5" />
