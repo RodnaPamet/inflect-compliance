@@ -175,17 +175,30 @@ describe('checkPasswordAgainstHIBP', () => {
             return new Response('');
         });
 
-        const started = Date.now();
         const result = await checkPasswordAgainstHIBP('password', {
             fetchImpl: fetchImpl as unknown as typeof fetch,
             endpoint: 'https://example/range',
             timeoutMs: 50,
         });
-        const elapsed = Date.now() - started;
 
+        // Assert the abort WON, unconditionally.
+        //
+        // This used to read `if ('skipped' in result) expect(reason)…`, which
+        // passes silently when the timeout never fires — so the only thing
+        // actually proving the abort worked was a wall-clock
+        // `expect(elapsed).toBeLessThan(400)`. That made the test both weak
+        // and flaky: on a loaded runner the 50 ms abort can land after the
+        // 400 ms budget, failing a correct implementation, while a genuinely
+        // broken abort could slip through the conditional.
+        //
+        // `skipped` + reason 'timeout' is only reachable via the abort path
+        // (the stub endpoint otherwise resolves a 200 at 500 ms, which would
+        // parse as a clean not-breached result with no `skipped` key), so
+        // asserting it directly proves what the elapsed check was groping
+        // for — with no dependency on how busy the machine is.
         expect(result.breached).toBe(false);
+        expect('skipped' in result).toBe(true);
         if ('skipped' in result) expect(result.reason).toBe('timeout');
-        expect(elapsed).toBeLessThan(400);
         expect(receivedSignal).toBeDefined();
     });
 
