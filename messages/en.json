@@ -7191,7 +7191,10 @@
     "closeBody": "Closing executes every <b>REVOKE</b> and <b>MODIFY</b> decision against the live tenant memberships. <b>CONFIRM</b> decisions stay untouched. A signed PDF evidence artifact will be generated and linked to the campaign. This cannot be undone.",
     "closeFailed": "Failed to close campaign",
     "closing": "Closing…",
-    "closeGenerate": "Close + generate evidence"
+    "closeGenerate": "Close + generate evidence",
+    "directoryNotSynced": "No synced accounts from this directory yet — connect and sync it under Admin → Integrations first.",
+    "directoryNoneSynced": "No directory has synced accounts yet — connect one under Admin → Integrations first.",
+    "directoryConnectLink": "Connect a directory →"
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",

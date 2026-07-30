@@ -9,6 +9,7 @@
  *   • Row click → /t/:slug/access-reviews/:id (detail page)
  */
 import { useMemo, useState } from 'react';
+import { apiErrorMessage } from '@/lib/api-error';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -251,13 +252,52 @@ function CreateCampaignButton({
     const [directory, setDirectory] = useState<string>('all');
     const [reviewerUserId, setReviewerUserId] = useState('');
 
-    const directoryOptions: ComboboxOption[] = [
-        { value: 'all', label: t('directoryAll') },
-        { value: 'okta', label: t('directoryOkta') },
-        { value: 'google-workspace', label: t('directoryGoogle') },
-        { value: 'entra-id', label: t('directoryEntra') },
-        { value: 'active-directory', label: t('directoryAd') },
-    ];
+    // Which directories actually have ACTIVE synced accounts.
+    //
+    // The option list used to be a static four-provider array with no idea
+    // what was connected, so picking an unsynced directory was allowed and
+    // only failed on submit — the server correctly refuses a campaign that
+    // would have zero subjects, but by then the operator has filled in the
+    // whole form. Fetch the accounts and let the picker say so up front.
+    const accountsQuery = useTenantSWR<
+        Array<{ provider: string; status: string }>
+    >(`/api/t/${tenantSlug}/admin/integrations/identity-accounts`);
+    const syncedProviders = useMemo(() => {
+        // Shape-guarded rather than `data ?? []`. Several list endpoints in
+        // this codebase return `{ rows, truncated }` rather than a bare
+        // array, so assuming the array form would take the whole page down
+        // with a render-time TypeError if this one ever grew a cap — and
+        // there would be no type error to catch it, because the response is
+        // untyped at the wire.
+        const rows = Array.isArray(accountsQuery.data)
+            ? accountsQuery.data
+            : [];
+        return new Set(
+            rows.filter((a) => a?.status === 'ACTIVE').map((a) => a.provider),
+        );
+    }, [accountsQuery.data]);
+    // Only gate once the fetch has resolved — while it is in flight we cannot
+    // tell "not synced" from "not loaded yet", and disabling on the latter
+    // would block a directory that is perfectly usable.
+    const accountsKnown = Array.isArray(accountsQuery.data);
+
+    const directoryOptions: ComboboxOption[] = useMemo(() => {
+        const gate = (value: string, label: string): ComboboxOption =>
+            accountsKnown && !syncedProviders.has(value)
+                ? { value, label, disabledTooltip: t('directoryNotSynced') }
+                : { value, label };
+        return [
+            // 'all' spans every synced provider, so it is unavailable only
+            // when nothing at all is synced.
+            accountsKnown && syncedProviders.size === 0
+                ? { value: 'all', label: t('directoryAll'), disabledTooltip: t('directoryNoneSynced') }
+                : { value: 'all', label: t('directoryAll') },
+            gate('okta', t('directoryOkta')),
+            gate('google-workspace', t('directoryGoogle')),
+            gate('entra-id', t('directoryEntra')),
+            gate('active-directory', t('directoryAd')),
+        ];
+    }, [accountsKnown, syncedProviders, t]);
     const [dueAt, setDueAt] = useState<Date | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -295,8 +335,13 @@ function CreateCampaignButton({
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('createFailed'));
+                // Was `await res.text()` used verbatim as the message, so the
+                // whole API envelope was rendered into the form — braces,
+                // quotes, error code and requestId included. The server's
+                // message here is genuinely useful ("connect and sync a
+                // directory first"); it was just buried in JSON.
+                const body = (await res.json().catch(() => null)) as unknown;
+                throw new Error(apiErrorMessage(body, t('createFailed')));
             }
             const data = (await res.json()) as { accessReviewId: string };
             setOpen(false);
@@ -409,6 +454,30 @@ function CreateCampaignButton({
                                             options={directoryOptions}
                                             matchTriggerWidth
                                         />
+                                        {/* When nothing is synced, every
+                                            directory option is disabled and the
+                                            only way forward is to connect one.
+                                            A tooltip on a disabled option is
+                                            too easy to miss for the one thing
+                                            the operator has to do next, so the
+                                            route is offered inline as a real
+                                            link rather than described in
+                                            prose. */}
+                                        {accountsKnown && syncedProviders.size === 0 && (
+                                            <p
+                                                className="mt-tight text-xs text-content-warning"
+                                                data-testid="access-review-no-directories"
+                                            >
+                                                {t('directoryNoneSynced')}{' '}
+                                                <Link
+                                                    href={`/t/${tenantSlug}/admin/integrations/identity-accounts`}
+                                                    className="text-content-info hover:underline"
+                                                    id="access-review-connect-directory-link"
+                                                >
+                                                    {t('directoryConnectLink')}
+                                                </Link>
+                                            </p>
+                                        )}
                                     </div>
                                 </FormField>
                             ) : null}
