@@ -21,7 +21,21 @@ export type PermissionSet = {
     personnel: { view: boolean; manage: boolean };
     frameworks: { view: boolean; install: boolean };
     audits: { view: boolean; manage: boolean; freeze: boolean; share: boolean };
-    reports: { view: boolean; export: boolean };
+    reports: {
+        view: boolean;
+        export: boolean;
+        /**
+         * Point a RECURRING report delivery at an address outside this tenant's
+         * own membership (allowlisted per `TenantSecuritySettings`).
+         *
+         * Separate from `export` on purpose. A one-off export hands data to the
+         * person who asked for it and is already bounded by their session; a
+         * schedule is a standing outbound feed that keeps sending after that
+         * person loses access. Creating one to a colleague stays at write level;
+         * aiming it off-tenant is the elevation.
+         */
+        schedule_external: boolean;
+    };
     admin: {
         view: boolean;
         manage: boolean;
@@ -71,7 +85,7 @@ const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     personnel: ['view', 'manage'],
     frameworks: ['view', 'install'],
     audits: ['view', 'manage', 'freeze', 'share'],
-    reports: ['view', 'export'],
+    reports: ['view', 'export', 'schedule_external'],
     admin: [
         'view', 'manage', 'members', 'sso', 'scim',
         'tenant_lifecycle', 'owner_management',
@@ -106,7 +120,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 personnel: { view: true, manage: true },
                 frameworks: { view: true, install: true },
                 audits: { view: true, manage: true, freeze: true, share: true },
-                reports: { view: true, export: true },
+                reports: { view: true, export: true, schedule_external: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     tenant_lifecycle: true, owner_management: true,
@@ -127,7 +141,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 personnel: { view: true, manage: true },
                 frameworks: { view: true, install: true },
                 audits: { view: true, manage: true, freeze: true, share: true },
-                reports: { view: true, export: true },
+                reports: { view: true, export: true, schedule_external: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     // Explicit false: ADMIN is NOT the tenant owner.
@@ -152,7 +166,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 personnel: { view: true, manage: false },
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
-                reports: { view: true, export: true },
+                reports: { view: true, export: true, schedule_external: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false },
             };
         case 'AUDITOR':
@@ -172,7 +186,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
-                reports: { view: true, export: true },
+                reports: { view: true, export: true, schedule_external: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false },
             };
         case 'READER':
@@ -190,7 +204,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 personnel: { view: true, manage: false },
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
-                reports: { view: true, export: false },
+                reports: { view: true, export: false, schedule_external: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false },
             };
     }

@@ -62,6 +62,19 @@ export async function requireFeature(tenantId: string, feature: FeatureKey): Pro
 }
 
 /**
+ * Boolean form of `requireFeature`, for callers that must BRANCH rather than
+ * throw — a server component deciding whether to render or redirect.
+ *
+ * Same semantics: no billing account configured means every feature is
+ * available (self-hosted mode), so this returns true.
+ */
+export async function hasFeatureForTenant(tenantId: string, feature: FeatureKey): Promise<boolean> {
+    const plan = await getTenantPlan(tenantId);
+    if (!plan) return true;
+    return hasFeature(plan, feature);
+}
+
+/**
  * List recent billing events for a tenant.
  * Server-side only — delegates the Prisma call away from route handlers.
  */

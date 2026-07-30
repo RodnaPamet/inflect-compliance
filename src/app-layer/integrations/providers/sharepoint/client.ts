@@ -137,6 +137,67 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
         throw new Error('SharePoint update is not supported via the generic CRUD contract — use uploadItemContent (SP-4)');
     }
 
+
+    // ── Drive allowlist enforcement ──
+
+    /**
+     * Drive ids the connection is permitted to touch, derived from the admin's
+     * approved `allowedSiteIds`.
+     *
+     * ── Why derived rather than stored ──────────────────────────────
+     *
+     * The allowlist an admin configures is a list of SITES; every write takes a
+     * DRIVE id. Nothing mapped between the two, so `allowedSiteIds` was
+     * consulted only by `testConnection` and `listSites`-style calls and was
+     * enforced on ZERO drive operations — a caller who could name any drive id
+     * had it PUT to with the tenant's app-only token.
+     *
+     * Resolving drives from the approved sites is a POSITIVE allowlist: an id
+     * that is not in a drive of an approved site simply is not in the set. The
+     * alternative — reading a `siteId` off the drive resource and comparing —
+     * would trust a field on the object being validated, which is the wrong
+     * direction of trust for an authorization check.
+     *
+     * Cached per client instance: a client is short-lived (one operation or one
+     * sync), the site list is small and admin-controlled, and an upload is
+     * already a network round trip.
+     */
+    private allowedDriveIdsCache: Set<string> | null = null;
+
+    async allowedDriveIds(): Promise<Set<string>> {
+        if (this.allowedDriveIdsCache) return this.allowedDriveIdsCache;
+        const ids = new Set<string>();
+        for (const siteId of this.config.allowedSiteIds) {
+            const drives = await this.listDrives(siteId);
+            for (const d of drives) if (d.id) ids.add(d.id);
+        }
+        this.allowedDriveIdsCache = ids;
+        return ids;
+    }
+
+    /**
+     * Throw unless `driveId` belongs to an approved site.
+     *
+     * Fails CLOSED on an empty allowlist. An unconfigured connection must not be
+     * a wildcard — "the admin has not chosen any sites yet" and "every site is
+     * fine" are opposite statements, and the previous code effectively read the
+     * first as the second.
+     */
+    async assertDriveAllowed(driveId: string): Promise<void> {
+        if (this.config.allowedSiteIds.length === 0) {
+            throw new Error(
+                'SharePoint connection has no approved sites, so no drive may be written to. ' +
+                    'Approve a site on the integration before pushing files.',
+            );
+        }
+        const allowed = await this.allowedDriveIds();
+        if (!allowed.has(driveId)) {
+            throw new Error(
+                `SharePoint drive "${driveId}" is not in an approved site for this connection.`,
+            );
+        }
+    }
+
     // ── SharePoint-specific surface ──
 
     /** List sites the connection can reach (admin site-selection). */
@@ -232,6 +293,7 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
         body: ArrayBuffer | Uint8Array,
         contentType: string,
     ): Promise<SpDriveItem> {
+        await this.assertDriveAllowed(driveId);
         const parent = parentItemId === 'root' ? 'root' : `items/${encodeURIComponent(parentItemId)}`;
         const url = `${GRAPH}/drives/${encodeURIComponent(driveId)}/${parent}:/${encodeURIComponent(name)}:/content`;
         const res = await this.request(url, {
@@ -250,6 +312,7 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
         body: string | ArrayBuffer,
         contentType: string,
     ): Promise<SpDriveItem> {
+        await this.assertDriveAllowed(driveId);
         const url = `${GRAPH}/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/content`;
         const res = await this.request(url, {
             method: 'PUT',

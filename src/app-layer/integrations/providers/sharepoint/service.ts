@@ -83,12 +83,20 @@ export async function completeSharePointConnect(
     });
 }
 
-/** Load a connection (secret + config) — internal helper. */
+/**
+ * Load a connection (secret + config) — internal helper.
+ *
+ * `isEnabled: true` is in the WHERE clause, not just the select. It used to be
+ * selected and never tested — here or at any call site — so an integration an
+ * admin had explicitly DISABLED still authenticated and still received pushed
+ * reports. Disabling an integration has to mean it stops working; a flag that
+ * only affects how the row renders is not a control.
+ */
 async function loadConnection(db: PrismaTx, ctx: RequestContext, connectionId: string) {
     const conn = await db.integrationConnection.findFirst({
-        where: { id: connectionId, tenantId: ctx.tenantId, provider: SHAREPOINT_PROVIDER },
+        where: { id: connectionId, tenantId: ctx.tenantId, provider: SHAREPOINT_PROVIDER, isEnabled: true },
     });
-    if (!conn) throw notFound('SharePoint connection not found');
+    if (!conn) throw notFound('SharePoint connection not found or disabled');
     return conn;
 }
 

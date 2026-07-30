@@ -1248,6 +1248,19 @@ model TenantSecuritySettings {
   aiResidency                AiResidency @default(EXTERNAL)
   aiLocalBaseUrl             String?
   aiLocalModel               String?
+  /// Recipients outside the tenant's own membership that scheduled reports may
+  /// be delivered to. A JSON array of exact addresses ("auditor@kpmg.com")
+  /// and/or domain suffixes ("@kpmg.com").
+  ///
+  /// Why an allowlist at all: `recipients` on a ReportSchedule was validated for
+  /// RFC email SHAPE only, so any writer could point a recurring board-risk PDF
+  /// at an arbitrary address forever. Membership alone is too strict — external
+  /// auditors are a real use case — so non-members must be pre-approved HERE
+  /// (an admin surface) rather than at schedule-creation time.
+  ///
+  /// Null or empty = no external recipients permitted; schedules may only be
+  /// delivered to ACTIVE members of this tenant.
+  reportRecipientAllowlistJson Json?
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
   mfaFailClosed              Boolean     @default(false)
