@@ -7193,7 +7193,8 @@
     "closing": "Closing…",
     "closeGenerate": "Close + generate evidence",
     "directoryNotSynced": "No synced accounts from this directory yet — connect and sync it under Admin → Integrations first.",
-    "directoryNoneSynced": "No directory has synced accounts yet — connect one under Admin → Integrations first."
+    "directoryNoneSynced": "No directory has synced accounts yet — connect one under Admin → Integrations first.",
+    "directoryConnectLink": "Connect a directory →"
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",

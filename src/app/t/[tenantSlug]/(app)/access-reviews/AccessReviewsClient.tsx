@@ -263,15 +263,23 @@ function CreateCampaignButton({
         Array<{ provider: string; status: string }>
     >(`/api/t/${tenantSlug}/admin/integrations/identity-accounts`);
     const syncedProviders = useMemo(() => {
-        const rows = accountsQuery.data ?? [];
+        // Shape-guarded rather than `data ?? []`. Several list endpoints in
+        // this codebase return `{ rows, truncated }` rather than a bare
+        // array, so assuming the array form would take the whole page down
+        // with a render-time TypeError if this one ever grew a cap — and
+        // there would be no type error to catch it, because the response is
+        // untyped at the wire.
+        const rows = Array.isArray(accountsQuery.data)
+            ? accountsQuery.data
+            : [];
         return new Set(
-            rows.filter((a) => a.status === 'ACTIVE').map((a) => a.provider),
+            rows.filter((a) => a?.status === 'ACTIVE').map((a) => a.provider),
         );
     }, [accountsQuery.data]);
     // Only gate once the fetch has resolved — while it is in flight we cannot
     // tell "not synced" from "not loaded yet", and disabling on the latter
     // would block a directory that is perfectly usable.
-    const accountsKnown = accountsQuery.data !== undefined;
+    const accountsKnown = Array.isArray(accountsQuery.data);
 
     const directoryOptions: ComboboxOption[] = useMemo(() => {
         const gate = (value: string, label: string): ComboboxOption =>
@@ -446,6 +454,30 @@ function CreateCampaignButton({
                                             options={directoryOptions}
                                             matchTriggerWidth
                                         />
+                                        {/* When nothing is synced, every
+                                            directory option is disabled and the
+                                            only way forward is to connect one.
+                                            A tooltip on a disabled option is
+                                            too easy to miss for the one thing
+                                            the operator has to do next, so the
+                                            route is offered inline as a real
+                                            link rather than described in
+                                            prose. */}
+                                        {accountsKnown && syncedProviders.size === 0 && (
+                                            <p
+                                                className="mt-tight text-xs text-content-warning"
+                                                data-testid="access-review-no-directories"
+                                            >
+                                                {t('directoryNoneSynced')}{' '}
+                                                <Link
+                                                    href={`/t/${tenantSlug}/admin/integrations/identity-accounts`}
+                                                    className="text-content-info hover:underline"
+                                                    id="access-review-connect-directory-link"
+                                                >
+                                                    {t('directoryConnectLink')}
+                                                </Link>
+                                            </p>
+                                        )}
                                     </div>
                                 </FormField>
                             ) : null}
