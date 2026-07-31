@@ -12,6 +12,7 @@ import type { SoAReportDTO, SoAEntryDTO } from '@/lib/dto/soa';
 import { Modal } from '@/components/ui/modal';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Textarea } from '@/components/ui/textarea';
+import { buttonLikeKeys } from '@/components/ui/hooks';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/hooks/use-toast';
@@ -537,16 +538,7 @@ function SoARow({
                 the SoA's substance behind a mouse-only affordance. */}
             <tr
                 className={`${hasGap ? 'bg-bg-error' : ''} cursor-pointer hover:bg-bg-muted/50`}
-                onClick={onToggle}
-                role="button"
-                tabIndex={0}
-                aria-expanded={expanded}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        onToggle();
-                    }
-                }}
+                {...buttonLikeKeys(onToggle, { expanded })}
             >
                 <td className="text-xs font-mono text-[var(--brand-default)]">{entry.requirementCode}</td>
                 <td className="text-sm text-content-emphasis">
