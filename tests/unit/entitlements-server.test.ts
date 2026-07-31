@@ -31,6 +31,7 @@ import {
     EntitlementError,
     getTenantPlan,
     requireFeature,
+    hasFeatureForTenant,
     listBillingEvents,
 } from '@/lib/entitlements-server';
 import { FEATURES } from '@/lib/entitlements';
@@ -152,5 +153,48 @@ describe('listBillingEvents', () => {
         findManyMock.mockResolvedValueOnce([]);
         await listBillingEvents('t1', 5);
         expect(findManyMock.mock.calls[0][0].take).toBe(5);
+    });
+});
+
+
+// ── hasFeatureForTenant ───────────────────────────────────────────────────
+//
+// The boolean twin of requireFeature, for callers that must BRANCH rather than
+// throw — a server component deciding whether to render or redirect. The SoA
+// print view uses it: that page had no entitlement check at all, so any member
+// could open it and window.print() a full Statement of Applicability.
+describe('hasFeatureForTenant', () => {
+    it('is true when the plan includes the feature', async () => {
+        findUniqueMock.mockResolvedValueOnce({ plan: 'PRO' });
+        await expect(hasFeatureForTenant('t1', FEATURES.PDF_EXPORTS)).resolves.toBe(true);
+    });
+
+    it('is false when the plan does not include it', async () => {
+        findUniqueMock.mockResolvedValueOnce({ plan: 'FREE' });
+        await expect(hasFeatureForTenant('t1', FEATURES.PDF_EXPORTS)).resolves.toBe(false);
+    });
+
+    it('is true when no billing account exists (self-hosted / billing off)', async () => {
+        // Same semantics as requireFeature's pass-through. A self-hosted
+        // deployment must not have features silently disabled by the absence of
+        // a billing row it will never have.
+        findUniqueMock.mockResolvedValueOnce(null);
+        await expect(hasFeatureForTenant('t1', FEATURES.AUDIT_PACK_SHARING)).resolves.toBe(true);
+    });
+
+    it('agrees with requireFeature on the same inputs', async () => {
+        // The two must never disagree: a page that renders a control because
+        // hasFeatureForTenant said yes, over an API that throws because
+        // requireFeature said no, is the client/server split this pair exists
+        // to keep closed.
+        for (const plan of ['FREE', 'TRIAL', 'PRO', 'ENTERPRISE']) {
+            for (const feature of Object.values(FEATURES)) {
+                findUniqueMock.mockResolvedValueOnce({ plan });
+                const allowed = await hasFeatureForTenant('t1', feature);
+                findUniqueMock.mockResolvedValueOnce({ plan });
+                const threw = await requireFeature('t1', feature).then(() => false, () => true);
+                expect(allowed).toBe(!threw);
+            }
+        }
     });
 });

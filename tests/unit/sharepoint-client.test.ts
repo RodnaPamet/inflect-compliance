@@ -160,3 +160,93 @@ describe('SharePointClient — generic CRUD contract', () => {
         await expect(c.updateRemoteObject('x', {})).rejects.toThrow();
     });
 });
+
+// ── Drive allowlist enforcement ───────────────────────────────────────────
+//
+// `allowedSiteIds` is a list of SITES; every drive write takes a DRIVE id, and
+// nothing mapped between the two — so the allowlist was consulted only by
+// testConnection and listSites and enforced on ZERO drive operations. A caller
+// who could name any drive id had it PUT to with the tenant's app-only token.
+//
+// The allowed set is DERIVED from the approved sites (a positive allowlist)
+// rather than read off the drive resource, because trusting a field on the
+// object being validated is the wrong direction of trust for an authz check.
+describe('SharePointClient — drive allowlist on writes', () => {
+    /** Graph returns the drives of an approved site, then the upload result. */
+    const drivesThen = (drives: unknown[], then: unknown) => {
+        const f = jest.fn();
+        f.mockResolvedValueOnce(jsonRes({ value: drives }));
+        f.mockResolvedValueOnce(jsonRes(then));
+        return f;
+    };
+
+    it('allows an upload to a drive belonging to an approved site', async () => {
+        const f = drivesThen([{ id: 'drive-ok' }], { id: 'item-1' });
+        const item = await client(f).uploadNewFile('drive-ok', 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf');
+        expect(item.id).toBe('item-1');
+        // First call resolved the approved site's drives; second did the PUT.
+        expect(f.mock.calls[0][0]).toContain('/sites/site-1/drives');
+        expect(f.mock.calls[1][1].method).toBe('PUT');
+    });
+
+    it('refuses an upload to a drive outside every approved site', async () => {
+        const f = drivesThen([{ id: 'drive-ok' }], { id: 'item-1' });
+        await expect(
+            client(f).uploadNewFile('drive-elsewhere', 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf'),
+        ).rejects.toThrow(/not in an approved site/);
+        // and it never reached Graph with a PUT
+        expect(f.mock.calls.some((c: any[]) => c[1]?.method === 'PUT')).toBe(false);
+    });
+
+    it('fails CLOSED when no sites are approved', async () => {
+        // "The admin has not chosen any sites yet" and "every site is fine" are
+        // opposite statements; the previous code effectively read the first as
+        // the second.
+        const f = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
+        await expect(
+            client(f, { allowedSiteIds: [] }).uploadNewFile('any-drive', 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf'),
+        ).rejects.toThrow(/no approved sites/);
+        expect(f).not.toHaveBeenCalled();
+    });
+
+    it('enforces the same rule on uploadItemContent, not just new files', async () => {
+        const f = drivesThen([{ id: 'drive-ok' }], { id: 'item-1' });
+        await expect(
+            client(f).uploadItemContent('drive-elsewhere', 'item-9', 'body', 'text/plain'),
+        ).rejects.toThrow(/not in an approved site/);
+    });
+
+    it('unions drives across every approved site', async () => {
+        const f = jest.fn();
+        f.mockResolvedValueOnce(jsonRes({ value: [{ id: 'd-a' }] }));
+        f.mockResolvedValueOnce(jsonRes({ value: [{ id: 'd-b' }] }));
+        f.mockResolvedValueOnce(jsonRes({ id: 'item-1' }));
+        const c = client(f, { allowedSiteIds: ['site-1', 'site-2'] });
+        await expect(
+            c.uploadNewFile('d-b', 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf'),
+        ).resolves.toMatchObject({ id: 'item-1' });
+    });
+
+    it('resolves the allowed set once per client, not once per write', async () => {
+        // A client is short-lived and the site list is admin-controlled; paying
+        // for the lookup on every write would make the guard expensive enough
+        // to be worth removing.
+        const f = jest.fn();
+        f.mockResolvedValueOnce(jsonRes({ value: [{ id: 'drive-ok' }] }));
+        f.mockResolvedValue(jsonRes({ id: 'item-1' }));
+        const c = client(f);
+        await c.uploadNewFile('drive-ok', 'root', 'a.pdf', new Uint8Array([1]), 'application/pdf');
+        await c.uploadNewFile('drive-ok', 'root', 'b.pdf', new Uint8Array([1]), 'application/pdf');
+        // Match the SITE-drives lookup specifically: an upload URL is also
+        // /drives/<id>/... so a bare '/drives' filter counts the writes too.
+        const driveLookups = f.mock.calls.filter((cl: any[]) => /\/sites\/[^/]+\/drives$/.test(String(cl[0])));
+        expect(driveLookups).toHaveLength(1);
+    });
+
+    it('tolerates a site whose drive list is empty', async () => {
+        const f = jest.fn().mockResolvedValue(jsonRes({ value: [] }));
+        await expect(
+            client(f).uploadNewFile('any', 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf'),
+        ).rejects.toThrow(/not in an approved site/);
+    });
+});
