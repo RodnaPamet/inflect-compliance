@@ -312,14 +312,21 @@ export default function KpiCard({
     onClick,
     selected = false,
 }: KpiCardProps) {
-    const isEmpty = value === null || value === undefined;
+    // Non-finite (`NaN`, `±Infinity`) counts as empty alongside
+    // null/undefined. A KPI whose numerator/denominator collapsed is
+    // "no data", and must read as `—` — never as the formatter's
+    // leftovers (`NaN%`, or bare punctuation once the gradient below
+    // swallows the digits). Narrowing to a local keeps the renderable
+    // branch typed as `number` without an `as` cast.
+    const numericValue =
+        typeof value === 'number' && Number.isFinite(value) ? value : null;
     const animatedFormat = kpiFormatToAnimated(format);
     // While loading, suppress the trend indicator — showing a stale
     // delta against an unknown current value would be misleading.
     const indicator = loading
         ? null
         : resolveTrendIndicator({
-              value: value ?? null,
+              value: numericValue,
               delta: delta ?? null,
               previousValue: previousValue ?? null,
               format,
@@ -339,13 +346,33 @@ export default function KpiCard({
                 aria-label={`${label} loading`}
             />
         </span>
-    ) : isEmpty ? (
+    ) : numericValue === null ? (
         <span className="text-content-subtle">{'—'}</span>
     ) : (
+        // `animate={false}` is LOAD-BEARING, not a preference.
+        //
+        // The headline value is painted by clipping a gradient to the
+        // text (`bg-clip-text` + `text-transparent`). The animated
+        // branch of <AnimatedNumber> mounts the `<number-flow>` custom
+        // element, and its shadow root sets `isolation: isolate` on
+        // `:host` (its symbols additionally carry
+        // `mix-blend-mode: plus-lighter`). An isolated subtree is
+        // painted as its own group, so the ancestor's text-clipped
+        // background never reaches those glyphs — they keep
+        // `color: transparent` and the whole number renders INVISIBLE
+        // in Chrome. Engines that paint the un-clipped punctuation but
+        // not the transformed digit stacks show only the separators,
+        // which is how a healthy 11.2% coverage figure reached
+        // production reading `. %`.
+        //
+        // The static branch is ordinary text in an ordinary span, which
+        // `bg-clip-text` clips correctly. Nothing visible is lost —
+        // an animation of invisible digits was never observable.
+        // Guarded by tests/guards/animated-number-gradient-clip.test.ts.
         <span
             className={`bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}
         >
-            <AnimatedNumber value={value} format={animatedFormat} />
+            <AnimatedNumber value={numericValue} format={animatedFormat} animate={false} />
         </span>
     );
 

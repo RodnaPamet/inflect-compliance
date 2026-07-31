@@ -6,6 +6,7 @@ import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { TERMINAL_WORK_ITEM_STATUSES, isTerminalStatus } from '../domain/work-item-status';
 import { badRequest } from '@/lib/errors/types';
 import { withDeleted } from '@/lib/soft-delete';
+import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 
 /**
  * Cap on the Deleted view's flat (uncursored) read. Matches the other
@@ -61,24 +62,11 @@ function parseListFilter<T extends string>(
     valid: Set<string>,
     label: string,
 ): T | { in: T[] } | undefined {
-    if (raw == null || raw === '') return undefined;
-    const values = [...new Set(raw.split(',').map((v) => v.trim()).filter(Boolean))];
-    if (values.length === 0) return undefined;
-    const bad = values.find((v) => !valid.has(v));
-    if (bad) {
-        throw badRequest(
-            `Invalid ${label} "${bad}". Must be one of: ${[...valid].join(', ')}.`,
-        );
-    }
-    return values.length === 1 ? (values[0] as T) : { in: values as T[] };
-}
-
-/** Same comma-joined parse for a free-form id list (no enum to validate). */
-function parseIdListFilter(raw: string | undefined): string | { in: string[] } | undefined {
-    if (raw == null || raw === '') return undefined;
-    const values = [...new Set(raw.split(',').map((v) => v.trim()).filter(Boolean))];
-    if (values.length === 0) return undefined;
-    return values.length === 1 ? values[0] : { in: values };
+    // Delegates to the shared parser in `../domain/list-filter`, which this
+    // function was the original of. Kept as a local alias so the many call
+    // sites below stay unchanged; the behaviour (including the 400 message)
+    // is identical.
+    return parseEnumListFilter<T>(raw, valid, label);
 }
 
 const VALID_WORK_ITEM_STATUSES = new Set<string>(Object.values(WorkItemStatus));
@@ -425,7 +413,14 @@ export class WorkItemRepository {
             const viaLink: Prisma.TaskWhereInput = {
                 links: {
                     some: {
-                        entityType: filters.linkedEntityType as TaskLinkEntityType,
+                        // Raw query-string value bound for an enum column —
+                        // validate rather than cast (an unknown value is a
+                        // Prisma validation error, i.e. a 500).
+                        entityType: parseEnumListFilter<TaskLinkEntityType>(
+                            filters.linkedEntityType,
+                            Object.values(TaskLinkEntityType),
+                            'linked entity type',
+                        ),
                         entityId: filters.linkedEntityId,
                     },
                 },

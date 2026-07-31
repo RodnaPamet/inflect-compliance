@@ -1,10 +1,11 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { Prisma } from '@prisma/client';
+import { Prisma, EvidenceType, EvidenceStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
 import type { EvidenceRetentionMetrics } from '@/lib/evidence-review-currency';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 export interface EvidenceListFilters {
     type?: string;
@@ -132,12 +133,23 @@ export class EvidenceRepository {
         const where: Prisma.EvidenceWhereInput = { tenantId: ctx.tenantId };
         const andConditions: Prisma.EvidenceWhereInput[] = [];
 
-        if (filters?.type) {
-            where.type = filters.type as Prisma.EnumEvidenceTypeFilter;
-        }
-        if (filters?.status) {
-            where.status = filters.status as Prisma.EnumEvidenceStatusFilter;
-        }
+        // Raw query-string values, NOT validated enum filters — see
+        // `parseEnumListFilter`. The `as Prisma.Enum…Filter` casts these
+        // replace 500'd on any two-value selection from the list page's
+        // multi-select facets. (The route's Zod schema narrows `status` to
+        // the enum, but only ONE member at a time — it cannot express the
+        // comma-joined form the UI actually sends, and `type` was unnarrowed
+        // either way.)
+        where.type = parseEnumListFilter<EvidenceType>(
+            filters?.type,
+            Object.values(EvidenceType),
+            'evidence type',
+        );
+        where.status = parseEnumListFilter<EvidenceStatus>(
+            filters?.status,
+            Object.values(EvidenceStatus),
+            'evidence status',
+        );
         if (filters?.controlId) {
             // EP-3 — filter through the many-to-many join.
             where.evidenceControlLinks = { some: { controlId: filters.controlId } };

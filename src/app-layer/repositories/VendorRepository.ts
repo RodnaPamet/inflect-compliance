@@ -4,6 +4,7 @@ import { Prisma, VendorStatus, VendorCriticality, VendorDataAccess, VendorDocume
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import { validateVendorTags } from '../schemas/json-columns.schemas';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 export interface VendorFilters {
     status?: string;
@@ -87,8 +88,19 @@ export class VendorRepository {
     private static _buildWhere(ctx: RequestContext, filters: VendorFilters = {}): Prisma.VendorWhereInput {
         const where: Prisma.VendorWhereInput = { tenantId: ctx.tenantId };
 
-        if (filters.status) where.status = filters.status as VendorStatus;
-        if (filters.criticality) where.criticality = filters.criticality as VendorCriticality;
+        // Raw query-string values, NOT validated enums — see
+        // `parseEnumListFilter`. The `as` casts these replace 500'd on any
+        // two-value selection from the list page's multi-select facets.
+        where.status = parseEnumListFilter<VendorStatus>(
+            filters.status,
+            Object.values(VendorStatus),
+            'vendor status',
+        );
+        where.criticality = parseEnumListFilter<VendorCriticality>(
+            filters.criticality,
+            Object.values(VendorCriticality),
+            'vendor criticality',
+        );
         if (filters.riskRating) {
             // PR-T — "EVER rated": matches any historical assessment carrying this
             // rating. This is deliberately DIFFERENT from the vendor dashboard's
@@ -99,7 +111,15 @@ export class VendorRepository {
             // assessment-derived (not the manually-editable inherentRisk), so the
             // filter is LABELLED "Ever rated {X}" (see vendors filter-defs i18n)
             // rather than silently disagreeing with the dashboard bucket.
-            where.assessments = { some: { riskRating: filters.riskRating as VendorCriticality } };
+            where.assessments = {
+                some: {
+                    riskRating: parseEnumListFilter<VendorCriticality>(
+                        filters.riskRating,
+                        Object.values(VendorCriticality),
+                        'vendor risk rating',
+                    ),
+                },
+            };
         }
         if (filters.q) {
             where.OR = [

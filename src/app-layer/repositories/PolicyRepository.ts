@@ -3,6 +3,7 @@ import { RequestContext } from '../types';
 import { Prisma, PolicyStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 export interface PolicyFilters {
     status?: string;
@@ -189,7 +190,15 @@ export class PolicyRepository {
 
     private static _buildWhere(ctx: RequestContext, filters?: PolicyFilters): Prisma.PolicyWhereInput {
         const where: Prisma.PolicyWhereInput = { tenantId: ctx.tenantId };
-        if (filters?.status) where.status = filters.status as Prisma.EnumPolicyStatusFilter;
+        // Raw query-string value, NOT a validated enum filter — see
+        // `parseEnumListFilter`. The `as Prisma.EnumPolicyStatusFilter` cast
+        // this replaces 500'd on any two-value selection from the list page's
+        // multi-select facet.
+        where.status = parseEnumListFilter<PolicyStatus>(
+            filters?.status,
+            Object.values(PolicyStatus),
+            'policy status',
+        );
         if (filters?.category) where.category = filters.category;
         if (filters?.language) where.language = filters.language;
         if (filters?.q) {

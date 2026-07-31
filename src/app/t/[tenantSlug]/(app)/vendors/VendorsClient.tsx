@@ -371,9 +371,13 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     //
     // getVendorMetrics is the same source the vendor dashboard uses, so the
     // two surfaces now agree as well.
-    const metricsQuery = useTenantSWR<VendorMetricsPayload>(
-        `/api/t/${tenantSlug}/vendors/metrics`,
-    );
+    //
+    // The path is TENANT-RELATIVE: useTenantSWR prepends `/api/t/{slug}`
+    // itself. Passing an absolute `/api/t/${tenantSlug}/...` here
+    // double-prefixed the URL into `/api/t/{slug}/api/t/{slug}/...`,
+    // which 404'd (× the SWR retry count) and left every KPI card on
+    // this page reading 0.
+    const metricsQuery = useTenantSWR<VendorMetricsPayload>('/vendors/metrics');
     const metrics = metricsQuery.data;
     const totalVendors = metrics?.totalVendors ?? 0;
     const activeVendors = metrics?.byStatus?.ACTIVE ?? 0;

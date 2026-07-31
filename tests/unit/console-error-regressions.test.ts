@@ -28,6 +28,17 @@ describe('C1 — control status filter accepts a comma-joined list', () => {
         path.join(ROOT, 'src/app-layer/repositories/ControlRepository.ts'),
         'utf8',
     );
+    // The parse itself now lives in ONE shared module. It had grown a
+    // second independent copy in WorkItemRepository, and then the same
+    // bug shipped again on /risks?status=ACTIVE — three copies of the
+    // same fifteen lines is how a fixed bug comes back. Both prior
+    // copies delegate here, so the behavioural assertions below follow
+    // the logic to its new home rather than pinning a shape the
+    // repository no longer owns.
+    const shared = fs.readFileSync(
+        path.join(ROOT, 'src/app-layer/domain/list-filter.ts'),
+        'utf8',
+    );
 
     it('no longer casts the raw query string straight into Prisma', () => {
         // Comments stripped — the fix's own doc comment quotes the old line
@@ -41,17 +52,20 @@ describe('C1 — control status filter accepts a comma-joined list', () => {
     });
 
     it('splits the value and validates each member', () => {
+        // The repository still owns "which enum" …
         expect(src).toMatch(/_parseStatusFilter/);
-        expect(src).toMatch(/raw\.split\(','\)/);
         expect(src).toMatch(/Object\.values\(ControlStatus\)/);
+        expect(src).toMatch(/parseEnumListFilter/);
+        // … and the shared parser owns the split + membership check.
+        expect(shared).toMatch(/raw\.split\(','\)/);
+        expect(shared).toMatch(/values\.find\(\(v\) => !allowed\.has\(v\)\)/);
     });
 
     it('rejects an unknown status as a 400, not a 500', () => {
         // The distinction matters: a bad client value is the caller's fault
         // and should say so, rather than surfacing as an opaque server error
         // that renders as a broken page.
-        const fn = src.slice(src.indexOf('_parseStatusFilter'));
-        expect(fn).toMatch(/badRequest\(/);
+        expect(shared).toMatch(/throw badRequest\(/);
     });
 
     it('IMPLEMENTING is a real status — the value was never the problem', () => {

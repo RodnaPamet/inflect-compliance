@@ -73,11 +73,16 @@ describe('Dashboard Widget Exports', () => {
 // ─── Empty / Zero / Null State Handling ───
 
 describe('Widget Empty State Handling', () => {
-    test('KpiCard handles null value gracefully (renders "—")', () => {
+    test('KpiCard handles absent/non-finite values gracefully (renders "—")', () => {
         const content = fs.readFileSync(path.join(UI_DIR, 'KpiCard.tsx'), 'utf-8');
-        // Should have null/undefined checks and a fallback display
-        expect(content).toContain("value === null");
-        expect(content).toContain("value === undefined");
+        // The emptiness test used to be `value === null || value === undefined`.
+        // That let `NaN` through to the formatter, which printed "NaN%" — and
+        // once the headline gradient swallowed the letters, bare punctuation.
+        // `typeof value === 'number' && Number.isFinite(value)` subsumes both
+        // original checks AND covers NaN / ±Infinity, so this asserts the
+        // stronger contract rather than the shape it replaced.
+        expect(content).toContain("typeof value === 'number'");
+        expect(content).toContain('Number.isFinite(value)');
         expect(content).toMatch(/['"]—['"]/); // Em dash fallback
     });
 

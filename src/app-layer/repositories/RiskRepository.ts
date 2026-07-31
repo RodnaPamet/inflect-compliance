@@ -1,9 +1,10 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { Prisma, RiskStatus } from '@prisma/client';
+import { Prisma, RiskStatus, TreatmentDecision } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 export interface RiskFilters {
     status?: string;
@@ -131,7 +132,19 @@ export class RiskRepository {
     private static _buildWhere(ctx: RequestContext, filters: RiskFilters = {}): Prisma.RiskWhereInput {
         const where: Prisma.RiskWhereInput = { tenantId: ctx.tenantId };
 
-        if (filters.status) where.status = filters.status as RiskStatus;
+        // `status` is raw query-string input, NOT a validated enum. It was
+        // cast straight onto the column (`as RiskStatus`), which 500'd on
+        // both reachable shapes: a comma-joined multi-select
+        // (`?status=OPEN,MITIGATING`) and a value carried over from another
+        // list page (`?status=ACTIVE` — an AssetStatus/VendorStatus, never a
+        // RiskStatus). Prisma rejects both with a validation error that maps
+        // to 500, and `/risks` reads the same filters in its Server
+        // Component, so the whole section fell over.
+        where.status = parseEnumListFilter<RiskStatus>(
+            filters.status,
+            Object.values(RiskStatus),
+            'risk status',
+        );
         // An empty id set means "no stale risks" — return nothing, not all.
         if (filters.idIn !== undefined) where.id = { in: filters.idIn };
         if (filters.scoreMin !== undefined || filters.scoreMax !== undefined) {
@@ -158,13 +171,14 @@ export class RiskRepository {
             if (filters.residualScoreMin !== undefined) where.residualScore.gte = filters.residualScoreMin;
             if (filters.residualScoreMax !== undefined) where.residualScore.lte = filters.residualScoreMax;
         }
-        if (filters.treatment) {
-            // Multi-select serialises as a comma-joined value; match any.
-            const decisions = filters.treatment.split(',').map((s) => s.trim()).filter(Boolean);
-            where.treatment = (decisions.length > 1
-                ? { in: decisions }
-                : decisions[0]) as Prisma.RiskWhereInput['treatment'];
-        }
+        // `treatment` already handled the comma-joined multi-select, but
+        // still cast the members onto the enum unchecked — so an unknown
+        // decision was the same 500 as `status`.
+        where.treatment = parseEnumListFilter<TreatmentDecision>(
+            filters.treatment,
+            Object.values(TreatmentDecision),
+            'risk treatment',
+        );
         if (filters.quantified) {
             // Quantified = a FAIR ALE OR a legacy SLE×ARO pair. Compose via
             // AND (not top-level OR) so it never clobbers the `q` search OR.

@@ -9,6 +9,24 @@ import {
 } from '../domain/evidence-expiry';
 import { normalizeActivityEntity } from '@/lib/audit/activity-humanize';
 
+/**
+ * Ratio → percentage, guaranteed finite and clamped to [0, 100], with
+ * one decimal place.
+ *
+ * The dashboard's percentage KPIs are read by formatters that assume a
+ * real number — `AnimatedNumber`, `toFixed(1)` in the digest email, and
+ * the `× 10` basis-point conversion in the daily snapshot job. None of
+ * them can distinguish "no data" from "bad arithmetic", so the guard
+ * belongs at the point of derivation: a non-finite ratio (zero or
+ * negative denominator, non-numeric count from a future aggregate
+ * shape) collapses to 0 here rather than travelling to the UI.
+ */
+function finitePercent(numerator: number, denominator: number): number {
+    const ratio = numerator / denominator;
+    if (!Number.isFinite(ratio)) return 0;
+    return Math.min(100, Math.max(0, Math.round(ratio * 1000) / 10));
+}
+
 // ─── Executive Dashboard DTO Types ─────────────────────────────────
 
 /**
@@ -395,9 +413,17 @@ export class DashboardRepository {
             },
         });
 
-        const coveragePercent = applicable > 0
-            ? Math.round((implemented / applicable) * 1000) / 10
-            : 0;
+        // `coveragePercent` is a CONTRACT: always a finite number in
+        // [0, 100], one decimal place. Every consumer (the dashboard KPI
+        // tile, the masthead hero, the daily snapshot's basis-point
+        // column, the digest email's `.toFixed(1)`) formats it without
+        // re-checking, so a `NaN` leaking out of here does not surface as
+        // an error — it surfaces as a mangled number on the page. The
+        // zero-denominator branch is the only way to divide by zero today;
+        // `finitePercent` makes the invariant total rather than
+        // situational, so a future numerator/denominator change cannot
+        // reintroduce the failure silently.
+        const coveragePercent = finitePercent(implemented, applicable);
 
         return {
             total,

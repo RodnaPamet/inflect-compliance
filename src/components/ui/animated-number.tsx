@@ -23,6 +23,25 @@
  * percent rendering in this codebase. We don't use Intl's
  * `style: 'percent'` (which divides by 100) to avoid contradicting
  * the existing convention.
+ *
+ * Non-finite guard: `NaN` / `±Infinity` NEVER reach the formatter.
+ * `Intl.NumberFormat().format(NaN)` yields the literal `"NaN"`, and
+ * NumberFlow's part-splitter drops the `nan` Intl part into its
+ * symbol section — so a single upstream divide-by-zero used to
+ * surface as `NaN%` or, once the surrounding gradient swallowed the
+ * digits, as bare punctuation (`. %`). A non-finite value is "no
+ * data", so it renders the same `—` placeholder a `null` would.
+ *
+ * ⚠️ Do NOT render an ANIMATED `<AnimatedNumber>` inside a
+ * `bg-clip-text text-transparent` gradient wrapper. The animated
+ * branch mounts the `<number-flow>` custom element, whose shadow
+ * root sets `isolation: isolate` (and blends its symbols with
+ * `mix-blend-mode: plus-lighter`); the ancestor's text-clipped
+ * background is never painted into that isolated subtree, so the
+ * glyphs stay `color: transparent` — i.e. invisible. Pass
+ * `animate={false}` for gradient-clipped surfaces (the static branch
+ * is ordinary text and clips correctly). Enforced by
+ * `tests/guards/animated-number-gradient-clip.test.ts`.
  */
 'use client';
 
@@ -102,8 +121,22 @@ function resolveFormat(format: AnimatedNumberFormat): ResolvedFormat {
 
 // ─── Props ──────────────────────────────────────────────────────────
 
+/**
+ * Placeholder rendered when `value` is not a finite number. Matches the
+ * `—` every other "no data" surface in the product uses (KpiCard,
+ * HeroMetric, TenantCoverageList), so a broken metric reads as "no
+ * value" rather than as a formatting artefact.
+ */
+export const ANIMATED_NUMBER_EMPTY = '—';
+
 export interface AnimatedNumberProps {
-    /** Target value to animate to (or render statically when `animate={false}`). */
+    /**
+     * Target value to animate to (or render statically when
+     * `animate={false}`). Non-finite input (`NaN`, `±Infinity`, and —
+     * for untyped callers — `null`/`undefined`) renders the
+     * `ANIMATED_NUMBER_EMPTY` placeholder instead of reaching the
+     * formatter.
+     */
     value: number;
     /** Format preset or Intl options. Defaults to `{ kind: 'integer' }`. */
     format?: AnimatedNumberFormat;
@@ -159,7 +192,12 @@ export function AnimatedNumber({
 }: AnimatedNumberProps) {
     const { intl, suffix: presetSuffix } = resolveFormat(format);
     const composedSuffix = `${presetSuffix}${suffix ?? ''}`;
+    // `Number.isFinite` (not the global `isFinite`) so a stray
+    // string/null/undefined from an untyped payload is rejected rather
+    // than coerced — a metric that arrived as `null` must not print `0`.
+    const isFinite = Number.isFinite(value);
     const formatted = React.useMemo(() => {
+        if (!Number.isFinite(value)) return ANIMATED_NUMBER_EMPTY;
         const body = new Intl.NumberFormat(locale, intl).format(value);
         return `${prefix ?? ''}${body}${composedSuffix}`;
         // The Intl options object is rebuilt every render but its
@@ -168,6 +206,23 @@ export function AnimatedNumber({
     }, [value, locale, prefix, composedSuffix, intl]);
 
     const a11yLabel = ariaLabel ?? formatted;
+
+    // Non-finite → static placeholder. Never hand `NaN`/`Infinity` to
+    // NumberFlow: its part-splitter has no digit parts to render, so the
+    // element degrades to whatever punctuation the locale emitted.
+    if (!isFinite) {
+        return (
+            <span
+                id={id}
+                className={className}
+                data-trend={trend}
+                data-animated-number="empty"
+                aria-label={a11yLabel}
+            >
+                {ANIMATED_NUMBER_EMPTY}
+            </span>
+        );
+    }
 
     if (!animate) {
         return (
