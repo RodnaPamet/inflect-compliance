@@ -5,10 +5,11 @@
  * writes run inside `runInTenantContext` at the usecase layer, so `db` here is
  * always the tenant-bound client.
  */
-import { Prisma } from '@prisma/client';
+import { Prisma, AiSystemStatus } from '@prisma/client';
 import type { AiDeploymentRole, AiRiskTier } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 const listSelect = {
     id: true,
@@ -53,7 +54,19 @@ export class AiSystemRepository {
                 tenantId: ctx.tenantId,
                 deletedAt: null,
                 ...(options.riskTier ? { riskTier: options.riskTier } : {}),
-                ...(options.status ? { status: options.status as never } : {}),
+                // `as never` silenced the compiler on a raw string bound
+                // for an enum column — Prisma still rejects an unknown or
+                // comma-joined value with a validation error (a 500). Same
+                // class as the /risks?status=ACTIVE bug.
+                ...(options.status
+                    ? {
+                          status: parseEnumListFilter<AiSystemStatus>(
+                              options.status,
+                              Object.values(AiSystemStatus),
+                              'AI system status',
+                          ),
+                      }
+                    : {}),
             },
             select: listSelect,
             orderBy: [{ riskTier: 'asc' }, { createdAt: 'desc' }],

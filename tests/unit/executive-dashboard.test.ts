@@ -120,6 +120,71 @@ describe('Dashboard — Control Coverage', () => {
 
         expect(result.inProgress).toBe(5); // 3 + 2
     });
+
+    // ── coveragePercent is a CONTRACT: finite, in [0, 100], 1 decimal ──
+    //
+    // Every consumer formats it without re-checking — the dashboard KPI
+    // tile and the masthead hero hand it to `<AnimatedNumber>`, the daily
+    // snapshot multiplies it into a basis-point column, and the digest
+    // email calls `.toFixed(1)` on it. A non-finite value therefore does
+    // not surface as an error, it surfaces as a mangled number on the
+    // page — which is how the CONTROLS tile reached production rendering
+    // punctuation instead of a percentage.
+
+    it('reproduces the production shape exactly (14 of 125 → 11.2%)', async () => {
+        // The counts read off the live tenant when the broken tile was
+        // reported: the derivation was never at fault.
+        setupControlMock([
+            { status: 'NOT_STARTED', _count: 92 },
+            { status: 'IN_PROGRESS', _count: 4 },
+            { status: 'IMPLEMENTED', _count: 14 },
+            { status: 'NEEDS_REVIEW', _count: 15 },
+        ], 125);
+
+        const result = await DashboardRepository.getControlCoverage(mockTx as never, makeCtx());
+
+        expect(result.implemented).toBe(14);
+        expect(result.applicable).toBe(125);
+        expect(result.coveragePercent).toBe(11.2);
+    });
+
+    it.each([
+        ['no applicable controls at all', [], 0],
+        ['applicable rows that all count zero', [{ status: 'NOT_STARTED', _count: 0 }], 0],
+    ])('never yields NaN — %s', async (_label, groups, total) => {
+        setupControlMock(groups as { status: string; _count: number }[], total as number);
+
+        const result = await DashboardRepository.getControlCoverage(mockTx as never, makeCtx());
+
+        expect(Number.isFinite(result.coveragePercent)).toBe(true);
+        expect(Number.isNaN(result.coveragePercent)).toBe(false);
+        expect(result.coveragePercent).toBe(0);
+    });
+
+    it('always returns a finite value inside [0, 100]', async () => {
+        // Spans the interesting shapes in one sweep: empty, partial,
+        // fully implemented, and a long repeating decimal.
+        const shapes: Array<{ status: string; _count: number }[]> = [
+            [],
+            [{ status: 'IMPLEMENTED', _count: 1 }, { status: 'NOT_STARTED', _count: 2 }],
+            [{ status: 'IMPLEMENTED', _count: 14 }, { status: 'NOT_STARTED', _count: 111 }],
+            [{ status: 'IMPLEMENTED', _count: 9 }],
+            [{ status: 'NOT_STARTED', _count: 9 }],
+        ];
+        for (const groups of shapes) {
+            setupControlMock(groups, 99);
+            const { coveragePercent } = await DashboardRepository.getControlCoverage(
+                mockTx as never,
+                makeCtx(),
+            );
+            expect(Number.isFinite(coveragePercent)).toBe(true);
+            expect(coveragePercent).toBeGreaterThanOrEqual(0);
+            expect(coveragePercent).toBeLessThanOrEqual(100);
+            // One decimal place — never a floating-point tail that would
+            // make the formatted tile jitter.
+            expect(Math.round(coveragePercent * 10) / 10).toBe(coveragePercent);
+        }
+    });
 });
 
 // ─── Risk by Severity ───

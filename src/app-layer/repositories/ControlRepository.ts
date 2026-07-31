@@ -4,7 +4,8 @@ import { Prisma, ControlStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound } from '@/lib/errors/types';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 export interface ControlListFilters {
     status?: string;
@@ -120,22 +121,14 @@ export class ControlRepository {
     private static _parseStatusFilter(
         raw: string,
     ): Prisma.EnumControlStatusFilter | ControlStatus | undefined {
-        const values = [
-            ...new Set(raw.split(',').map((v) => v.trim()).filter(Boolean)),
-        ];
-        if (values.length === 0) return undefined;
-
-        const valid = new Set<string>(Object.values(ControlStatus));
-        const bad = values.find((v) => !valid.has(v));
-        if (bad) {
-            throw badRequest(
-                `Invalid control status "${bad}". Must be one of: ${[...valid].join(', ')}.`,
-            );
-        }
-
-        return values.length === 1
-            ? (values[0] as ControlStatus)
-            : { in: values as ControlStatus[] };
+        // Delegates to the shared parser in `../domain/list-filter`, which
+        // this method (and its WorkItemRepository twin) was extracted into.
+        // Behaviour — including the 400 message — is unchanged.
+        return parseEnumListFilter<ControlStatus>(
+            raw,
+            Object.values(ControlStatus),
+            'control status',
+        );
     }
 
     private static _buildWhere(ctx: RequestContext, filters?: ControlListFilters): Prisma.ControlWhereInput {

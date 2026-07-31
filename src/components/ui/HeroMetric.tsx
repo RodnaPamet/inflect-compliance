@@ -164,7 +164,13 @@ export function HeroMetric({
     className,
     "data-testid": dataTestId,
 }: HeroMetricProps) {
-    const isEmpty = value === null || value === undefined;
+    // Non-finite (`NaN`, `±Infinity`) is "no data", exactly like
+    // null/undefined — a 72px masthead must never print `NaN%`. The
+    // local narrows to `number` so the animated branch stays typed
+    // without a cast.
+    const numericValue =
+        typeof value === "number" && Number.isFinite(value) ? value : null;
+    const isEmpty = numericValue === null;
     const animatedFormat: AnimatedNumberFormat =
         format === "percent"
             ? { kind: "percent", fractionDigits: 1 }
@@ -238,11 +244,11 @@ export function HeroMetric({
                     )}
                     data-hero-metric-value
                 >
-                    {isEmpty ? (
+                    {numericValue === null ? (
                         "—"
                     ) : (
                         <AnimatedNumber
-                            value={value}
+                            value={numericValue}
                             format={animatedFormat}
                         />
                     )}

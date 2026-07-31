@@ -4,6 +4,7 @@ import { Prisma, AssetType, AssetStatus, Criticality } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { withDeleted } from '@/lib/soft-delete';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 export interface AssetFilters {
     type?: string;
@@ -92,9 +93,25 @@ export class AssetRepository {
     private static _buildWhere(ctx: RequestContext, filters?: AssetFilters): Prisma.AssetWhereInput {
         const where: Prisma.AssetWhereInput = { tenantId: ctx.tenantId };
 
-        if (filters?.type) where.type = filters.type as AssetType;
-        if (filters?.status) where.status = filters.status as AssetStatus;
-        if (filters?.criticality) where.criticality = filters.criticality as Criticality;
+        // Raw query-string values, NOT validated enums — see
+        // `parseEnumListFilter`. The `as` casts these replace 500'd on any
+        // two-value selection from the list page's multi-select facets
+        // (`?status=ACTIVE,ONBOARDING` reached Prisma as one literal string).
+        where.type = parseEnumListFilter<AssetType>(
+            filters?.type,
+            Object.values(AssetType),
+            'asset type',
+        );
+        where.status = parseEnumListFilter<AssetStatus>(
+            filters?.status,
+            Object.values(AssetStatus),
+            'asset status',
+        );
+        where.criticality = parseEnumListFilter<Criticality>(
+            filters?.criticality,
+            Object.values(Criticality),
+            'asset criticality',
+        );
         if (filters?.q) {
             where.OR = [
                 { name: { contains: filters.q, mode: 'insensitive' } },

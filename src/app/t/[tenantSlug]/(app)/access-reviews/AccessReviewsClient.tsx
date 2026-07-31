@@ -259,9 +259,15 @@ function CreateCampaignButton({
     // only failed on submit — the server correctly refuses a campaign that
     // would have zero subjects, but by then the operator has filled in the
     // whole form. Fetch the accounts and let the picker say so up front.
+    //
+    // The path is TENANT-RELATIVE: useTenantSWR prepends `/api/t/{slug}`
+    // itself. An absolute `/api/t/${tenantSlug}/...` double-prefixes into
+    // `/api/t/{slug}/api/t/{slug}/...` — which 404s SILENTLY here: `data`
+    // stays undefined, `accountsKnown` stays false, and the whole
+    // directory-availability gate below never applies.
     const accountsQuery = useTenantSWR<
         Array<{ provider: string; status: string }>
-    >(`/api/t/${tenantSlug}/admin/integrations/identity-accounts`);
+    >('/admin/integrations/identity-accounts');
     const syncedProviders = useMemo(() => {
         // Shape-guarded rather than `data ?? []`. Several list endpoints in
         // this codebase return `{ rows, truncated }` rather than a bare
