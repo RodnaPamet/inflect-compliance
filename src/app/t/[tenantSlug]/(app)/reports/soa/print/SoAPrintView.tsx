@@ -6,6 +6,8 @@ import { formatDate } from '@/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 
 interface SoAPrintViewProps {
+    /** Where to go when there is no history to go back to (fresh tab). */
+    backHref: string;
     report: SoAReportDTO;
     tenantName: string;
 }
@@ -16,7 +18,7 @@ interface SoAPrintViewProps {
  *
  * Print styles are in globals.css (moved there for CSP compliance — no inline <style> tags).
  */
-export function SoAPrintView({ report, tenantName }: SoAPrintViewProps) {
+export function SoAPrintView({ report, tenantName, backHref }: SoAPrintViewProps) {
     const t = useTranslations('reports');
     const { summary, entries } = report;
     // Epic 58 — canonical app-wide formatter so the printed SoA's
@@ -46,8 +48,17 @@ export function SoAPrintView({ report, tenantName }: SoAPrintViewProps) {
                     >
                         {t('soaPrint.printBtn')}
                     </button>
+                    {/* `history.back()` is a NO-OP in the tab this page opens in.
+                        The SoA "Print" affordance uses target="_blank", so the
+                        fresh tab has no history to go back to and the button
+                        did nothing at all — the one control on an
+                        otherwise-chrome-less page. Fall back to the reports hub
+                        when there is nowhere to return to. */}
                     <button
-                        onClick={() => window.history.back()}
+                        onClick={() => {
+                            if (window.history.length > 1) window.history.back();
+                            else window.location.assign(backHref);
+                        }}
                         className="px-4 py-2 bg-bg-default text-content-default rounded-lg text-sm font-medium hover:bg-bg-muted transition-colors"
                     >
                         {t('soaPrint.back')}

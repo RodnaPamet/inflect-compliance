@@ -427,9 +427,30 @@ async function loadOpenTaskCounts(ctx: RequestContext, controlIds: string[]): Pr
     return result;
 }
 
+/**
+ * How far back a control test can be and still describe the control.
+ *
+ * There was no date bound and no `take`, so this pulled EVERY completed run for
+ * every mapped control and then kept the first per control in JS — the query
+ * grew without limit over a tenant's lifetime while the answer it produced
+ * stayed the same size. A two-year-old passing test is not evidence about the
+ * control today, so bounding the window costs nothing the SoA was using.
+ */
+const TEST_RESULT_LOOKBACK_DAYS = 730;
+
+/**
+ * Upper bound on rows scanned. Generous relative to `controlIds.length` (the
+ * answer is one row per control) so a control with a busy test history still
+ * resolves, while a pathological tenant cannot make this unbounded.
+ */
+const TEST_RESULT_MAX_ROWS = 5_000;
+
 async function loadLatestTestResults(ctx: RequestContext, controlIds: string[]): Promise<Map<string, string>> {
     const result = new Map<string, string>();
-    // Get the latest completed test run per control
+    if (controlIds.length === 0) return result;
+    const since = new Date(Date.now() - TEST_RESULT_LOOKBACK_DAYS * 86_400_000);
+    // Latest completed test run per control, newest first — the loop below
+    // keeps the first it sees for each control, so ordering is load-bearing.
     const runs = await runInTenantContext(ctx, (db) =>
         db.controlTestRun.findMany({
             where: {
@@ -437,9 +458,11 @@ async function loadLatestTestResults(ctx: RequestContext, controlIds: string[]):
                 controlId: { in: controlIds },
                 status: 'COMPLETED',
                 result: { not: null },
+                executedAt: { gte: since },
             },
             orderBy: { executedAt: 'desc' },
             select: { controlId: true, result: true },
+            take: TEST_RESULT_MAX_ROWS,
         })
     );
     // Take first (latest) per control

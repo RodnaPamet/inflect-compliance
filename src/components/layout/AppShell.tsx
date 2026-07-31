@@ -183,8 +183,16 @@ export function AppShell({
         <div className="min-h-screen md:h-full md:overflow-hidden flex">
             {/* Desktop sidebar — hidden on mobile, visible on md+. Collapses to
                 a 56px icon rail (w-14); expanded is a thinner 208px (w-52). */}
+            {/* `no-print`: the print rule in globals.css hides only elements
+                carrying that class, and no shell chrome carried it — so the
+                SoA print view, which lives under (app) and therefore mounts
+                this shell, put the nav rail on every page of an auditor
+                artefact. Marking the chrome is the narrower fix than moving the
+                route out of (app): the print view genuinely wants the layout's
+                providers (tenant context, theme), just not its furniture. */}
             <aside
                 className={cn(
+                    'no-print',
                     'hidden md:flex bg-bg-default border-r border-border-subtle flex-col flex-shrink-0 transition-[width] duration-200 ease-out',
                     sidebarCollapsed ? 'md:w-14' : 'md:w-[180px]',
                 )}
@@ -217,11 +225,16 @@ export function AppShell({
                     chrome AND the page tree so pages can push
                     breadcrumbs from any depth. */}
                 <BreadcrumbsProvider>
-                    <TopChrome
-                        variant={variant}
-                        user={user}
-                        onMobileMenuClick={openDrawer}
-                    />
+                    {/* Wrapped rather than prop-drilled: TopChrome composes
+                        several bars and giving each a no-print prop would be a
+                        wider change than the print rule needs. */}
+                    <div className="no-print">
+                        <TopChrome
+                            variant={variant}
+                            user={user}
+                            onMobileMenuClick={openDrawer}
+                        />
+                    </div>
 
                 {/* Inner content container.
                     Mobile: just padding + max-width + centering.

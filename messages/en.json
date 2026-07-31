@@ -3911,8 +3911,6 @@
       "mapFailed": "Could not map the control. Please try again.",
       "justificationFailed": "Could not save the justification. Please try again.",
       "mapSearchPlaceholder": "Search controls…",
-      "nonIsoNotice": "The Statement of Applicability is an ISO 27001 Annex A artifact. {framework} is not an ISO-family framework —",
-      "nonIsoLink": "view its coverage & readiness instead",
       "excepted": "Excepted",
       "exceptedUntil": "Excepted until {date}",
       "print": "Print"
@@ -3977,7 +3975,8 @@
     "overdueTasksHeading": "Overdue tasks — {count}",
     "riskTplPortfolio": "Portfolio Risk Summary",
     "riskTplDeepDive": "Risk Deep Dive",
-    "riskTplBia": "Business Impact Analysis"
+    "riskTplBia": "Business Impact Analysis",
+    "riskTplMore": "+{count} more"
   },
   "notifications": {
     "title": "Notifications",
@@ -9297,6 +9296,18 @@
         "submitError": "Could not send. Please try again.",
         "submittedTitle": "Your submissions",
         "submittedEmpty": "No submissions yet in this session."
+      }
+    }
+  },
+  "billing": {
+    "upgradeGate": {
+      "requiresPlan": "Requires the {plan} plan — click to upgrade.",
+      "requiresPlanAria": "{label} requires the {plan} plan — upgrade",
+      "feature": {
+        "PDF_EXPORTS": "PDF Exports",
+        "AUDIT_PACK_SHARING": "Audit Pack Sharing",
+        "ADVANCED_VENDOR_MGMT": "Advanced Vendor Management",
+        "CUSTOM_INTEGRATIONS": "Custom Integrations"
       }
     }
   }

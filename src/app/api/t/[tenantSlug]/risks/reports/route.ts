@@ -8,6 +8,12 @@ import { requireFeature } from '@/lib/entitlements-server';
 import { FEATURES } from '@/lib/entitlements';
 import { jsonResponse } from '@/lib/api-response';
 
+// Report generation is long-running by nature, and the platform default
+// cuts it off well before these finish — a run killed mid-flight leaves a
+// ReportRun stranded in GENERATING with no worker to settle it.
+// POST renders a PDF/PPTX/CSV synchronously inside the request.
+export const maxDuration = 60;
+
 /** RQ-10 — reports: GET templates + recent runs, POST to generate. */
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {

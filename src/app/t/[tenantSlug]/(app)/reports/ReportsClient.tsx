@@ -20,6 +20,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { PdfExportButton } from '@/components/PdfExportButton';
 import { RequirePermission } from '@/components/require-permission';
 import { UpgradeGate } from '@/components/UpgradeGate';
+import useSWR from 'swr';
 import { Tooltip } from '@/components/ui/tooltip';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { LoadingSpinner } from '@/components/ui/icons/loading-spinner';
@@ -80,6 +81,24 @@ export function ReportsClient({
     canEdit,
 }: ReportsClientProps) {
     const tx = useTranslations('reports');
+    // The hub's risk-report card lists what the tenant ACTUALLY has, including
+    // custom templates. Read-only and non-blocking: the card renders without it
+    // and shows nothing until it arrives.
+    //
+    // Plain `useSWR` over the `tenantSlug` prop rather than `useTenantSWR`:
+    // this component is handed its slug explicitly and is rendered in tests
+    // without a TenantProvider, so reaching for tenant context here would add a
+    // provider dependency the component does not otherwise have — for one
+    // read-only list.
+    const { data: riskReports } = useSWR<{ templates: { id: string; name: string }[] }>(
+        `/api/t/${tenantSlug}/risks/reports`,
+        async (url: string) => {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error(`templates ${r.status}`);
+            return r.json();
+        },
+    );
+    const riskTemplates = riskReports?.templates;
     const [selectedKey, setSelectedKey] = useState(defaultFrameworkKey);
     const [readiness, setReadiness] = useState<ReadinessReport>(initialReadiness);
     const [loading, setLoading] = useState(false);
@@ -222,13 +241,27 @@ export function ReportsClient({
                                 templates on the hub (PDF/CSV/PPTX + ReportRun
                                 lifecycle + schedules live at /risks/reports).
                                 The hub no longer offers a thin duplicate. */}
+                            {/* The real list, not three hardcoded strings.
+                                These duplicated SYSTEM_TEMPLATES, so a tenant's
+                                CUSTOM template — creatable at /risks/reports —
+                                never appeared here. Worse, the hub TRANSLATED
+                                the names while /risks/reports renders the raw
+                                English DB value, so in bg the same template had
+                                two different names one click apart. Reading the
+                                DB makes the hub agree with the page by
+                                construction. */}
                             <ul
                                 className="text-xs text-content-subtle space-y-0.5"
                                 data-testid="risk-report-templates"
                             >
-                                <li>• {tx('riskTplPortfolio')}</li>
-                                <li>• {tx('riskTplDeepDive')}</li>
-                                <li>• {tx('riskTplBia')}</li>
+                                {(riskTemplates ?? []).slice(0, 5).map((tpl) => (
+                                    <li key={tpl.id}>• {tpl.name}</li>
+                                ))}
+                                {(riskTemplates?.length ?? 0) > 5 && (
+                                    <li className="text-content-subtle">
+                                        {tx('riskTplMore', { count: (riskTemplates?.length ?? 0) - 5 })}
+                                    </li>
+                                )}
                             </ul>
                             <Link
                                 href={`/t/${tenantSlug}/risks/reports`}

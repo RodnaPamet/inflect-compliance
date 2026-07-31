@@ -11,6 +11,7 @@ import {
 import type { SoAReportDTO, SoAEntryDTO } from '@/lib/dto/soa';
 import { Modal } from '@/components/ui/modal';
 import { Tooltip } from '@/components/ui/tooltip';
+import { Textarea } from '@/components/ui/textarea';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/hooks/use-toast';
@@ -230,17 +231,15 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                 artifact. For a non-ISO framework, say so and point at that
                 framework's coverage/readiness rather than passing this off as
                 a native SoA. */}
-            {!report.isIsoFamily && (
-                <InlineNotice variant="info">
-                    {t('soaView.nonIsoNotice', { framework: report.frameworkName })}{' '}
-                    <a
-                        href={`/t/${tenantSlug}/frameworks/${report.framework}`}
-                        className={textLinkVariants({ tone: 'link' })}
-                    >
-                        {t('soaView.nonIsoLink')}
-                    </a>
-                </InlineNotice>
-            )}
+            {/* The non-ISO notice that used to live here was UNREACHABLE:
+                both soa/page.tsx and soa/print/page.tsx redirect when
+                `!report.isIsoFamily`, so this component only ever renders for an
+                ISO-family framework. It and its two i18n strings are gone rather
+                than kept "just in case" — dead UI that looks live is how a
+                reviewer concludes a case is handled when it is not. If non-ISO
+                SoA is ever supported, the redirect is what has to change first,
+                and this branch should be written against the behaviour that
+                replaces it. */}
 
             {/* Summary cards */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-compact">
@@ -474,8 +473,12 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                     }
                 />
                 <Modal.Body>
-                    <textarea
-                        className="input min-h-[100px] w-full"
+                    {/* The <Textarea> primitive rather than a raw element
+                        wearing `className="input"`: the primitive owns the
+                        focus ring, disabled treatment and dark-mode tokens, and
+                        a hand-styled copy drifts from them silently. */}
+                    <Textarea
+                        className="min-h-[100px] w-full"
                         placeholder={t('soaView.justPlaceholder')}
                         value={justText}
                         onChange={(e) => setJustText(e.target.value)}
@@ -527,7 +530,24 @@ function SoARow({
 
     return (
         <>
-            <tr className={`${hasGap ? 'bg-bg-error' : ''} cursor-pointer hover:bg-bg-muted/50`} onClick={onToggle}>
+            {/* A bare `onClick` on a <tr> is invisible to the keyboard and to
+                assistive tech: no role, no tab stop, no Enter/Space handling and
+                nothing announcing that the row expands or whether it is open.
+                The rows carry the per-requirement control detail, so that was
+                the SoA's substance behind a mouse-only affordance. */}
+            <tr
+                className={`${hasGap ? 'bg-bg-error' : ''} cursor-pointer hover:bg-bg-muted/50`}
+                onClick={onToggle}
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onToggle();
+                    }
+                }}
+            >
                 <td className="text-xs font-mono text-[var(--brand-default)]">{entry.requirementCode}</td>
                 <td className="text-sm text-content-emphasis">
                     <div>{entry.requirementTitle}</div>

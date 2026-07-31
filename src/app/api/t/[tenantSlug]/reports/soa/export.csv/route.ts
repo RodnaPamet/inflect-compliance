@@ -5,6 +5,12 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { logEvent } from '@/app-layer/events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 
+// Report generation is long-running by nature, and the platform default
+// cuts it off well before these finish — a run killed mid-flight leaves a
+// ReportRun stranded in GENERATING with no worker to settle it.
+// Same assembly as the SoA view, then rendered to CSV.
+export const maxDuration = 60;
+
 /**
  * SoA CSV Export
  *
