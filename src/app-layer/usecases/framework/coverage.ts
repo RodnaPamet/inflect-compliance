@@ -23,10 +23,20 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
         orderBy: { sortOrder: 'asc' },
     });
 
-    // Get all tenant control requirement links for this framework
+    // Get all tenant control requirement links for this framework.
+    //
+    // `control: { deletedAt: null }` for the same reason as
+    // `generateReadinessReport` below: a soft-deleted control kept satisfying
+    // the requirement it used to cover, so coverage counted rows the product
+    // considers deleted and drifted UPWARD as data was removed. `getSoA`
+    // filters, so the two disagreed about the same tenant at the same moment.
     const links = await runInTenantContext(ctx, (tdb) =>
         tdb.controlRequirementLink.findMany({
-            where: { tenantId: ctx.tenantId, requirementId: { in: requirements.map((r) => r.id) } },
+            where: {
+                tenantId: ctx.tenantId,
+                requirementId: { in: requirements.map((r) => r.id) },
+                control: { deletedAt: null },
+            },
             include: {
                 control: { select: { id: true, code: true, name: true, status: true } },
                 requirement: { select: { id: true, code: true, title: true } },
@@ -195,11 +205,29 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     // Get tenant control-requirement mappings
     const links = await runInTenantContext(ctx, (tdb) =>
         tdb.controlRequirementLink.findMany({
-            where: { tenantId: ctx.tenantId, requirementId: { in: requirements.map((r) => r.id) } },
+            // `control: { deletedAt: null }` is the second half of the same fix
+            // the evidence filter below already made.
+            //
+            // Without it, a soft-deleted control still arrived through its link
+            // and still counted toward `mapped`, `coveragePercent`,
+            // `readinessScore` and `controlsMissingEvidence` — while `getSoA`
+            // filters soft-deleted controls (soa.ts), so the SoA and the
+            // readiness report gave DIFFERENT compliance numbers for the same
+            // tenant at the same moment. Readiness was the optimistic one: a
+            // deleted control kept satisfying the requirement it used to cover.
+            where: {
+                tenantId: ctx.tenantId,
+                requirementId: { in: requirements.map((r) => r.id) },
+                control: { deletedAt: null },
+            },
             include: {
                 control: {
                     include: {
-                        tasks: { select: { id: true, status: true, dueAt: true, title: true } },
+                        // Bounded: an unbounded per-control task load is the
+                        // dominant cost of this query on a large tenant, and
+                        // only status/dueAt are read — the overdue check below
+                        // does not need every task ever created.
+                        tasks: { select: { id: true, status: true, dueAt: true, title: true }, take: 500 },
                         // Evidence↔Control is a many-to-many join now; read the
                         // linked Evidence through it (flattened at the consumer).
                         // PR-I — exclude soft-deleted evidence at the query
@@ -212,11 +240,14 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
                         evidenceControlLinks: {
                             where: { tenantId: ctx.tenantId, evidence: { deletedAt: null } },
                             select: { evidence: { select: { id: true, status: true, title: true, expiredAt: true, isArchived: true, deletedAt: true } } },
+                            take: 500,
                         },
                         // In-force exceptions: APPROVED and not yet expired.
                         exceptions: {
                             where: { status: 'APPROVED', expiresAt: { gt: now } },
                             select: { id: true },
+                            // Only `.length > 0` is read, so one row settles it.
+                            take: 1,
                         },
                     },
                 },

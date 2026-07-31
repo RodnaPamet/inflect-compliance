@@ -68,6 +68,7 @@ export default async function SoAPrintPage({
         <SoAPrintView
             report={JSON.parse(JSON.stringify(report))}
             tenantName={tenant?.name || tenantSlug}
+            backHref={`/t/${tenantSlug}/reports`}
         />
     );
 }

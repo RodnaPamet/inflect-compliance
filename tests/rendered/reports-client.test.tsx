@@ -101,9 +101,22 @@ describe('ReportsClient — honest metrics + unified risk reporting (PR-I)', () 
         renderClient([ISO, SOC2], 'ISO27001');
         // The Risk Register card lists the engine's templates and links into it.
         expect(screen.getByTestId('risk-report-templates')).toBeInTheDocument();
-        expect(screen.getByText(/riskTplPortfolio/)).toBeInTheDocument();
+        expect(document.querySelector('#report-card-risk-link')).toBeInTheDocument();
         // The retired thin hub CSV/PDF export button is gone.
         expect(document.querySelector('#export-risks-btn')).toBeNull();
+    });
+
+    it('lists the tenant\'s REAL templates, not three hardcoded i18n strings', () => {
+        // The card used to render `riskTplPortfolio` / `riskTplDeepDive` /
+        // `riskTplBia` as static <li>s, duplicating SYSTEM_TEMPLATES — so a
+        // tenant's CUSTOM template never appeared here, and because the hub
+        // TRANSLATED those names while /risks/reports renders the raw English DB
+        // value, the same template had two different names one click apart.
+        renderClient([ISO, SOC2], 'ISO27001');
+        const list = screen.getByTestId('risk-report-templates');
+        // next-intl is mocked to echo keys, so any surviving hardcoded key would
+        // still be visible in the DOM.
+        expect(list.textContent).not.toMatch(/riskTpl(Portfolio|DeepDive|Bia)/);
     });
 });
 

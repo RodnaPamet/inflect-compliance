@@ -3911,8 +3911,6 @@
       "mapFailed": "Контролът не можа да бъде свързан. Опитайте отново.",
       "justificationFailed": "Обосновката не можа да бъде запазена. Опитайте отново.",
       "mapSearchPlaceholder": "Търсене на контроли…",
-      "nonIsoNotice": "Декларацията за приложимост е артефакт по ISO 27001 Приложение A. {framework} не е рамка от ISO семейството —",
-      "nonIsoLink": "вижте нейното покритие и готовност вместо това",
       "excepted": "Изключен",
       "exceptedUntil": "Изключен до {date}",
       "print": "Печат"
@@ -3977,7 +3975,8 @@
     "overdueTasksHeading": "Просрочени задачи — {count}",
     "riskTplPortfolio": "Обобщение на портфейлния риск",
     "riskTplDeepDive": "Задълбочен анализ на риска",
-    "riskTplBia": "Анализ на въздействието върху бизнеса"
+    "riskTplBia": "Анализ на въздействието върху бизнеса",
+    "riskTplMore": "+още {count}"
   },
   "notifications": {
     "title": "Известия",
@@ -9297,6 +9296,18 @@
         "submitError": "Изпращането е неуспешно. Моля, опитайте отново.",
         "submittedTitle": "Вашите изпращания",
         "submittedEmpty": "Все още няма изпращания в тази сесия."
+      }
+    }
+  },
+  "billing": {
+    "upgradeGate": {
+      "requiresPlan": "Изисква план {plan} — щракнете за надграждане.",
+      "requiresPlanAria": "{label} изисква план {plan} — надграждане",
+      "feature": {
+        "PDF_EXPORTS": "Експорт в PDF",
+        "AUDIT_PACK_SHARING": "Споделяне на одитен пакет",
+        "ADVANCED_VENDOR_MGMT": "Разширено управление на доставчици",
+        "CUSTOM_INTEGRATIONS": "Персонализирани интеграции"
       }
     }
   }

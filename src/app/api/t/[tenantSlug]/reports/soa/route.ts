@@ -5,6 +5,12 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 
+// Report generation is long-running by nature, and the platform default
+// cuts it off well before these finish — a run killed mid-flight leaves a
+// ReportRun stranded in GENERATING with no worker to settle it.
+// getSoA assembles the full Statement of Applicability.
+export const maxDuration = 60;
+
 const SoAQuerySchema = z.object({
     // Optional: when omitted, getSoA resolves the tenant's installed
     // framework (was hard-defaulted to ISO27001, which showed ISO's 93

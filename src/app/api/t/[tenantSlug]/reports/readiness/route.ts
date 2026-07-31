@@ -5,6 +5,13 @@ import { resolveInstalledFrameworkKey } from '@/app-layer/usecases/soa';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
+// Report generation is long-running by nature, and the platform default
+// cuts it off well before these finish — a run killed mid-flight leaves a
+// ReportRun stranded in GENERATING with no worker to settle it.
+// generateReadinessReport walks the requirement -> link -> control graph;
+// on a large framework that is the slowest read in the product.
+export const maxDuration = 60;
+
 /**
  * PR-G — per-framework Coverage/Readiness report for the Reports catalog. The
  * framework selector re-fetches this when the user switches frameworks.
