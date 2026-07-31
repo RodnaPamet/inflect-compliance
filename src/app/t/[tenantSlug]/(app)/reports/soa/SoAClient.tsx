@@ -12,7 +12,7 @@ import type { SoAReportDTO, SoAEntryDTO } from '@/lib/dto/soa';
 import { Modal } from '@/components/ui/modal';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Textarea } from '@/components/ui/textarea';
-import { buttonLikeKeys } from '@/components/ui/hooks';
+import { buttonLikeKeys } from '@/components/ui/button-like-keys';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/hooks/use-toast';

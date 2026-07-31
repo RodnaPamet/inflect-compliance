@@ -49,7 +49,7 @@ export function SoAPrintView({ report, tenantName, backHref }: SoAPrintViewProps
                         {t('soaPrint.printBtn')}
                     </button>
                     {/* `history.back()` is a NO-OP in the tab this page opens in.
-                        The SoA "Print" affordance uses target="_blank", so the
+                        The SoA "Print" affordance opens this in a NEW TAB, so the
                         fresh tab has no history to go back to and the button
                         did nothing at all — the one control on an
                         otherwise-chrome-less page. Fall back to the reports hub

@@ -52,7 +52,6 @@ export {
     type UseEnterSubmitOptions,
     type UseEnterSubmitResult,
 } from "./use-enter-submit";
-export { buttonLikeKeys } from './use-button-like-keys';
 export { useInputFocused } from "./use-input-focused";
 export { useKeyboardShortcut } from "./use-keyboard-shortcut";
 

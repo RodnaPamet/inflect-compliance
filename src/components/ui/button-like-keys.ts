@@ -23,6 +23,11 @@ import type { KeyboardEvent } from 'react';
  * `src/app/**` precisely so this behaviour is centralised rather than
  * re-derived per surface.
  *
+ * NOT in `ui/hooks/`, despite being shared: it calls no React hook, so a `use`
+ * prefix would be a lie that the rules-of-hooks lint takes literally, and the
+ * `ui/hooks` barrel guard derives an expected `useXxx` export from every
+ * `use-*` filename in that directory.
+ *
  * Prefer a real `<button>` when the markup allows it. This exists for the cases
  * where it does not — a table row that expands, most obviously, where nesting a
  * button around `<td>`s is not valid HTML.
