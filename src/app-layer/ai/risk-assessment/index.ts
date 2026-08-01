@@ -2,8 +2,15 @@
  * AI Risk Assessment — Provider Factory
  *
  * Returns the appropriate provider based on environment configuration.
- * Default: stub (no API key needed).
- * Set AI_RISK_PROVIDER=openrouter + OPENROUTER_API_KEY for real LLM.
+ * Default: stub (no API key needed). `AI_RISK_PROVIDER` selects:
+ *   - 'stub'       — deterministic templates, no network, no key
+ *   - 'anthropic'  — direct Claude API (ANTHROPIC_API_KEY / ANTHROPIC_MODEL,
+ *                    the SAME credential the compliance-posture summary uses)
+ *   - 'openrouter' — OpenRouter        (OPENROUTER_API_KEY / OPENROUTER_MODEL)
+ *   - 'local'      — self-hosted gateway (AI_LOCAL_BASE_URL)
+ *
+ * 'anthropic' and 'openrouter' are EXTERNAL and are therefore only reachable
+ * after the LOCAL_ONLY short-circuit in getProvider below.
  *
  * If the configured provider fails, each provider handles its own fallback
  * to the deterministic knowledge-base templates.
@@ -11,6 +18,7 @@
 import type { RiskSuggestionProvider } from './types';
 import { StubRiskSuggestionProvider } from './stub-provider';
 import { OpenRouterRiskSuggestionProvider } from './openrouter-provider';
+import { AnthropicRiskSuggestionProvider } from './anthropic-provider';
 import { LocalRiskSuggestionProvider } from './local-provider';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
@@ -68,6 +76,20 @@ export function getProvider(sel?: ProviderSelection): RiskSuggestionProvider {
             }
             const model = env.OPENROUTER_MODEL ?? undefined;
             return new OpenRouterRiskSuggestionProvider(apiKey, model);
+        }
+        case 'anthropic': {
+            // Direct Claude API — the SAME credential the compliance-posture
+            // summary uses (ANTHROPIC_API_KEY / ANTHROPIC_MODEL), so both AI
+            // surfaces share one key, one spend line, one model pin.
+            //
+            // EXTERNAL, like openrouter: this arm is inside the switch, which
+            // is only reached AFTER the LOCAL_ONLY short-circuit above.
+            const apiKey = env.ANTHROPIC_API_KEY;
+            if (!apiKey) {
+                logger.warn('ANTHROPIC_API_KEY not set, falling back to baseline template provider', { component: 'ai' });
+                return new StubRiskSuggestionProvider(/* isFallbackMode */ true);
+            }
+            return new AnthropicRiskSuggestionProvider(apiKey, env.ANTHROPIC_MODEL ?? undefined);
         }
         default:
             return new StubRiskSuggestionProvider();

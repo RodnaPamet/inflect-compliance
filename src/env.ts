@@ -221,7 +221,11 @@ export const env = createEnv({
         STRIPE_PRICE_ID_ENTERPRISE: z.string().optional(),
         APP_URL: z.string().url().optional(),
 
-        // AI Risk Assessment
+        // AI Risk Assessment. 'stub' (default, no network/key) | 'anthropic'
+        // (direct Claude API — reuses ANTHROPIC_API_KEY / ANTHROPIC_MODEL
+        // below, the SAME credential as the posture summary) | 'openrouter' |
+        // 'local'. 'anthropic' and 'openrouter' are EXTERNAL and are never
+        // reached by a tenant with aiResidency=LOCAL_ONLY.
         AI_RISK_PROVIDER: z.string().default('stub'),
         AI_QUESTIONNAIRE_PROVIDER: z.string().default('stub'),
         OPENROUTER_API_KEY: z.string().optional(),
@@ -250,7 +254,11 @@ export const env = createEnv({
         // 'stub' (default) is fully functional with zero config; 'anthropic'
         // / 'openrouter' opt in to a real LLM narrative (keys below).
         AI_POSTURE_PROVIDER: z.string().default('stub'),
-        // Direct Claude API — used when AI_POSTURE_PROVIDER=anthropic.
+        // Direct Claude API. SHARED by two features — used when
+        // AI_POSTURE_PROVIDER=anthropic (aggregate posture metrics) and/or
+        // AI_RISK_PROVIDER=anthropic (risk-suggestion prompt text). One key to
+        // rotate, one spend line, one model pin. The two payloads differ in
+        // sensitivity — see docs/sub-processors.md before enabling either.
         ANTHROPIC_API_KEY: z.string().optional(),
         ANTHROPIC_MODEL: z.string().default('claude-haiku-4-5'),
 
