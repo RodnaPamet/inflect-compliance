@@ -18,8 +18,13 @@
  *      required status check answers `merge_group`, and the lean queue
  *      gate keeps the jobs that catch semantic merge collisions
  *      (`merge-queue-trigger-coverage`).
+ *   6. Release-bot push identity — semantic-release pushes the
+ *      `chore(release)` commit to `main` under a dedicated GitHub App,
+ *      because `GITHUB_TOKEN` is declined (GH006) once `main` has
+ *      required status checks and cannot be a ruleset bypass actor
+ *      (`release-bot-identity`).
  *
- * Each of 1–3 and 5 shipped its OWN structural guardrail. THIS test
+ * Each of 1–3, 5 and 6 shipped its OWN structural guardrail. THIS test
  * guards the guards: it fails CI if any of those guardrail files is
  * deleted or gutted to a no-op, so a future "simplify the tests"
  * change cannot quietly dismantle the protection. It also locks the
@@ -80,6 +85,11 @@ const GUARDRAILS: ReadonlyArray<{
         pillar: 'merge-queue trigger coverage + lean gate',
         anchors: ['merge_group', 'QUEUE_ENFORCED_JOBS', 'MERGE_GROUP_EXEMPT'],
     },
+    {
+        file: 'tests/guardrails/release-bot-identity.test.ts',
+        pillar: 'release-bot push identity (GH006 freeze)',
+        anchors: ['create-github-app-token', 'RELEASE_APP_ID', 'skip ci'],
+    },
 ];
 
 /** Count `it(` / `it.each(` assertion blocks in a test file. */
@@ -105,12 +115,12 @@ describe('CI/CD pipeline-integrity — guard the guards', () => {
         });
     });
 
-    it('every registry pillar is distinct and the set is complete (6 guardrails)', () => {
+    it('every registry pillar is distinct and the set is complete (7 guardrails)', () => {
         // A drive-by deletion of one entry shrinks this count; the
         // number is the explicit contract for "how many pipeline
         // guardrails exist".
-        expect(GUARDRAILS).toHaveLength(6);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(6);
+        expect(GUARDRAILS).toHaveLength(7);
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(7);
     });
 });
 

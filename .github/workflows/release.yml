@@ -71,11 +71,65 @@ jobs:
           done
           exit 1
 
+      # ── Release identity ──────────────────────────────────────────
+      #  @semantic-release/git pushes the `chore(release)` commit
+      #  (CHANGELOG.md · package.json · package-lock.json ·
+      #  infra/helm/inflect/Chart.yaml) DIRECTLY to `main`.
+      #
+      #  `secrets.GITHUB_TOKEN` cannot do that once `main` carries a
+      #  ruleset with required status checks: the freshly-pushed release
+      #  commit has no passing checks yet, so the push is declined —
+      #  `GH006: Protected branch update failed`. Releases then freeze
+      #  SILENTLY. This repo lost three merges to exactly that on
+      #  2026-06-29, and the failure is worse than a stale version
+      #  number: once Chart.yaml stops being synced, the structural guard
+      #  at tests/guards/helm-chart-foundation.test.ts fails on EVERY
+      #  subsequent PR.
+      #
+      #  GitHub Actions is not an installable app, so it cannot be named
+      #  in a ruleset's bypass list (the API rejects it outright). A
+      #  dedicated GitHub App can. This step mints a short-lived
+      #  installation token for that app; the app is the ONLY bypass
+      #  actor on the ruleset, so its release push is allowed while every
+      #  human PR still goes through the merge queue.
+      #
+      #  Required app permissions: contents:write (push + tags),
+      #  issues:write + pull-requests:write (@semantic-release/github
+      #  comments on released issues/PRs).
+      #
+      #  Note the side effect of switching identity: pushes made with
+      #  GITHUB_TOKEN never trigger workflows, whereas an App token does.
+      #  Harmless here only because the release commit message carries
+      #  `[skip ci]`, which GitHub honours for push events — so the
+      #  release commit still triggers nothing. Do not remove `[skip ci]`
+      #  from the message in .releaserc.json without re-reading this.
+      - name: Mint release-bot token
+        id: release-token
+        if: vars.RELEASE_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      # Fail LOUDLY rather than silently, if the app is not configured
+      # yet. The fallback below keeps this workflow working on a repo or
+      # fork without the app, but that state is precisely the one that
+      # freezes releases once the ruleset is enabled — so say so in the
+      # run's annotations rather than letting it look healthy.
+      - name: Warn when falling back to GITHUB_TOKEN
+        if: vars.RELEASE_APP_ID == ''
+        run: |
+          echo "::warning title=Release bot has no dedicated identity::RELEASE_APP_ID is unset, so semantic-release will push as github-actions[bot]. That push is DECLINED (GH006) the moment main has required status checks. See the Release identity docblock in .github/workflows/release.yml."
+
       # semantic-release reads .releaserc.json and does everything:
       # analyze commits → determine version → generate notes → publish
       - name: Run semantic-release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # App token when configured; GITHUB_TOKEN otherwise (an empty
+          # output from a skipped step is falsy, so `||` selects the
+          # fallback). Keep these two in the same expression — splitting
+          # them across steps reintroduces the silent-freeze mode.
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token || secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
       - name: Post release summary
