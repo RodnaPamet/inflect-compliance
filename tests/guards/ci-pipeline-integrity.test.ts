@@ -14,8 +14,12 @@
  *   4. Build / env-validation discipline — the CI build skips
  *      compile-time env validation deliberately; runtime is the
  *      real gate.
+ *   5. Merge-queue trigger coverage — every workflow that could own a
+ *      required status check answers `merge_group`, and the lean queue
+ *      gate keeps the jobs that catch semantic merge collisions
+ *      (`merge-queue-trigger-coverage`).
  *
- * Each of 1–3 shipped its OWN structural guardrail. THIS test
+ * Each of 1–3 and 5 shipped its OWN structural guardrail. THIS test
  * guards the guards: it fails CI if any of those guardrail files is
  * deleted or gutted to a no-op, so a future "simplify the tests"
  * change cannot quietly dismantle the protection. It also locks the
@@ -71,6 +75,11 @@ const GUARDRAILS: ReadonlyArray<{
         pillar: 'release workflow (OI-2 helm invariants)',
         anchors: ['helm', 'deploy-staging'],
     },
+    {
+        file: 'tests/guardrails/merge-queue-trigger-coverage.test.ts',
+        pillar: 'merge-queue trigger coverage + lean gate',
+        anchors: ['merge_group', 'QUEUE_ENFORCED_JOBS', 'MERGE_GROUP_EXEMPT'],
+    },
 ];
 
 /** Count `it(` / `it.each(` assertion blocks in a test file. */
@@ -96,12 +105,12 @@ describe('CI/CD pipeline-integrity — guard the guards', () => {
         });
     });
 
-    it('every registry pillar is distinct and the set is complete (5 guardrails)', () => {
+    it('every registry pillar is distinct and the set is complete (6 guardrails)', () => {
         // A drive-by deletion of one entry shrinks this count; the
         // number is the explicit contract for "how many pipeline
         // guardrails exist".
-        expect(GUARDRAILS).toHaveLength(5);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(5);
+        expect(GUARDRAILS).toHaveLength(6);
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(6);
     });
 });
 

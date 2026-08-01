@@ -16,7 +16,14 @@
 #    security ─────────┤
 #    codeql ───────────┘
 #
-#  Runs on PRs and pushes to main.
+#  Runs on PRs, pushes to main, and merge-queue groups.
+#
+#  Merge-queue lean set (see docs/implementation-notes/2026-08-01-merge-queue.md):
+#    RUN  in the queue — changes · lint · typecheck · test · test-summary
+#                        · build · security   (the semantic-collision gate)
+#    SKIP in the queue — e2e · docker · trivy · codeql   (different failure
+#                        class; each already runs on the PR AND on push to main)
+#    Already push/schedule-only — coverage · load-smoke.
 # ───────────────────────────────────────────────────────────────
 name: CI
 
@@ -44,6 +51,33 @@ on:
       - ".github/ISSUE_TEMPLATE/**"
       - "LICENSE"
       - ".gitignore"
+  # ── Merge queue ──
+  # Two PRs each pass CI against `main` as it was when their run STARTED.
+  # Both merge. Nothing ever tests the combination. Git only objects when
+  # the collision is textual, so this class merges clean and lands red on
+  # `main` — e.g. PR A's tests exercise an exported helper that PR B
+  # renamed, or both bump a different structural-ratchet floor so neither
+  # count is right afterwards. The cost isn't the redness; it's that every
+  # concurrent PR then inherits failures that aren't theirs.
+  #
+  # GitHub's merge queue builds a temporary `gh-readonly-queue/main/...`
+  # ref of main + everything already queued + the new PR, and merges only
+  # if the required checks pass against THAT combination.
+  #
+  # This trigger MUST exist on every workflow that owns a required status
+  # check. A job that SKIPS reports `skipped`, which branch protection
+  # counts as a pass; a workflow that never TRIGGERS reports nothing at
+  # all, and the required check stays pending forever — the queue hangs
+  # and every merge in the repo stalls with no error message. Leanness is
+  # achieved INSIDE a triggered workflow (see the per-job `merge_group`
+  # skips below), never by leaving a workflow untriggered. Locked by
+  # tests/guardrails/merge-queue-trigger-coverage.test.ts.
+  #
+  # Note: `merge_group` supports no `paths` / `paths-ignore` filter, so a
+  # docs-only PR that skips CI on the `pull_request` event WILL run the
+  # lean gate on its way through the queue. That is deliberate — a queued
+  # merge is a merge into main and gets the same gate as any other.
+  merge_group:
   # Weekly scheduled scan — GitHub's Code Scanning UI expects a
   # periodic refresh of CodeQL + Trivy results on the default branch,
   # independent of PR cadence. Without this the Security tab can
@@ -69,6 +103,13 @@ concurrency:
   # BOTH tools showing "reporting errors / check the status page" on the
   # Security tab even though the scans themselves passed. A half-uploaded
   # SARIF is worse than a duplicate run, so we let push runs finish too.
+  #
+  # MERGE-QUEUE runs: `github.ref` is the per-entry
+  # `refs/heads/gh-readonly-queue/main/pr-<n>-<sha>` ref, so each queued
+  # entry already lands in its own concurrency group and nothing can
+  # cancel a sibling. `cancel-in-progress: false` is load-bearing here for
+  # a second reason: GitHub reports a CANCELLED queue run as a FAILURE,
+  # which ejects the PR from the queue and forces a re-queue.
   #
   # Cost: an occasional duplicate full run on stacked commits — the same
   # trade already accepted for PRs, now extended to push for upload safety.
@@ -131,10 +172,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      container: ${{ steps.filter.outputs.container }}
+      # `|| 'true'` is the merge-queue fallback. A `merge_group` event
+      # carries no base/head pair, so `dorny/paths-filter` has nothing to
+      # diff and errors out ("This action requires 'base' input to be
+      # configured"). The filter step below is therefore skipped in the
+      # queue, which leaves `steps.filter.outputs.container` empty — the
+      # fallback resolves that to the CONSERVATIVE value, erring toward
+      # running more rather than less. (`docker` skips in the queue on its
+      # own explicit condition, so today this fallback is belt-and-braces
+      # for any FUTURE consumer of this output.)
+      container: ${{ steps.filter.outputs.container || 'true' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
+        # See the output fallback above — no base/head to diff in a queue run.
+        if: github.event_name != 'merge_group'
         id: filter
         with:
           filters: |
@@ -503,6 +555,21 @@ jobs:
   e2e:
     name: E2E
     needs: [build]
+    # ── Merge-queue lean set: SKIP ──
+    # E2E is ~17-25 min serial and would be the single longest job in the
+    # queue, serialising that cost onto EVERY merge. It also catches a
+    # different class than the one the queue exists for: a semantic merge
+    # collision surfaces as a compile or unit failure (Typecheck / Test),
+    # not as a browser-flow failure that typechecks and unit-passes.
+    #
+    # Coverage is NOT lost — this job has no event gate, so it runs on the
+    # PR AND again on the push to `main` after the merge lands. Skipping
+    # here declines a THIRD run, it does not remove a run.
+    #
+    # Residual risk, stated deliberately: a collision that compiles,
+    # passes the unit suite, and only breaks end-to-end still reaches
+    # `main` and is caught by the post-merge run rather than pre-merge.
+    if: ${{ github.event_name != 'merge_group' }}
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # The Playwright suite runs serially (workers: 1, fullyParallel:
     # false — specs share seeded-tenant state) and is ~17-25 min
@@ -936,7 +1003,19 @@ jobs:
     # replaces the old `continue-on-error: true` workaround: when the
     # variable says scanning is on, a real upload failure is still a hard
     # failure (loud, not a silent Security-tab warning).
-    if: ${{ vars.CODE_SCANNING_ENABLED == 'true' }}
+    #
+    # ── Merge-queue lean set: SKIP ──
+    # SAST finds injection/taint patterns in the code as written; it does
+    # not find "PR A's rename broke PR B's caller" — a different class
+    # entirely. Worse, `analyze` UPLOADS SARIF, and in a queue run the
+    # analysed ref is the throwaway `gh-readonly-queue/main/pr-<n>-<sha>`
+    # branch, so every queued merge would file a code-scanning analysis
+    # against a ref that ceases to exist seconds later. This repo has
+    # already been burnt once by partial SARIF state leaving BOTH CodeQL
+    # and Trivy showing "reporting errors" on the Security tab (see the
+    # `concurrency` docblock at the top of this file). CodeQL runs on the
+    # PR and again on the push to `main`, so nothing is lost.
+    if: ${{ github.event_name != 'merge_group' && vars.CODE_SCANNING_ENABLED == 'true' }}
 
     permissions:
       security-events: write
@@ -982,11 +1061,21 @@ jobs:
   #  changed (see the `changes` job) — a pure app-source PR can't move the
   #  image's CVE surface, so the ~40-min build + scan is redundant there.
   #  `trivy` (needs: docker) skips in lockstep; nothing else needs docker.
+  #
+  #  ── Merge-queue lean set: SKIP ──
+  #  A merge collision does not produce a container-scan finding: the
+  #  image's OS/library CVE surface is a property of the base image + the
+  #  dependency tree, not of how two source branches interleave. Build +
+  #  scan is ~40 + ~12 min of budget — the most expensive thing in the
+  #  pipeline — and the pair runs UNCONDITIONALLY on every push to `main`
+  #  (this `if` only narrows pull_request runs), so post-merge coverage is
+  #  intact. `trivy` needs this job, so it skips in lockstep and its SARIF
+  #  upload never targets a throwaway queue ref.
   # ═══════════════════════════════════════════════════════════════
   docker:
     name: Docker Build
     needs: [build, changes]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.container == 'true' }}
+    if: ${{ github.event_name != 'merge_group' && (github.event_name != 'pull_request' || needs.changes.outputs.container == 'true') }}
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # Roadmap-27 CI hardening — bumped 15 → 25, then 25 → 40 (2026-06-18)
     # after a job was observed hitting the 25 min limit exactly and being

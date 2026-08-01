@@ -25,12 +25,26 @@ on:
       - 'infra/observability/grafana/dashboards/**'
       - '.github/workflows/helm-validate.yml'
   workflow_dispatch:
+  # Merge queue — present so this workflow can ANSWER a `merge_group`
+  # event. A workflow that never triggers reports nothing and a required
+  # check hangs forever; a job that skips reports `skipped`, which branch
+  # protection counts as a pass. Both jobs below skip in the queue (see
+  # their `if:`) — chart rendering is path-scoped, cannot be perturbed by
+  # an app-source collision, and `helm dependency update` fetches from
+  # external chart repos, so running it on every queued merge would turn a
+  # third-party network flake into a blocked merge. It already runs on the
+  # infra PR and on the push to `main`. Note `merge_group` accepts no
+  # `paths` filter, so without the skip this would run on EVERY queued
+  # merge, infra-touching or not. Locked by
+  # tests/guardrails/merge-queue-trigger-coverage.test.ts.
+  merge_group:
 
 permissions:
   contents: read
 
 jobs:
   helm-validate:
+    if: ${{ github.event_name != 'merge_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -74,6 +88,8 @@ jobs:
   # actually render. The dashboards are symlinked from the canonical
   # compose location (single source of truth) — helm follows the symlink.
   observability-validate:
+    # Merge-queue lean set: SKIP — see the `merge_group:` docblock above.
+    if: ${{ github.event_name != 'merge_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

@@ -46,6 +46,20 @@ on:
         options:
           - staging
           - production
+  # Merge queue — present so this workflow can ANSWER a `merge_group`
+  # event. A workflow that never triggers reports nothing and a required
+  # check hangs forever; a job that skips reports `skipped`, which branch
+  # protection counts as a pass. Every job below skips in the queue:
+  # `plan` / `apply-*` are already event-gated to pull_request / push /
+  # dispatch, and `fmt-validate` carries an explicit skip. HCL validation
+  # is path-scoped, cannot be perturbed by an app-source collision, and
+  # `terraform init` pulls providers from registry.terraform.io — running
+  # it on every queued merge would turn a third-party registry flake into
+  # a blocked merge. It already runs on the infra PR and on the push to
+  # `main`. Note `merge_group` accepts no `paths` filter, so without the
+  # skip this would run on EVERY queued merge, infra-touching or not.
+  # Locked by tests/guardrails/merge-queue-trigger-coverage.test.ts.
+  merge_group:
 
 permissions:
   contents: read
@@ -63,6 +77,10 @@ jobs:
   # ═══════════════════════════════════════════════════════════════
   fmt-validate:
     name: "Lint: fmt + validate"
+    # Merge-queue lean set: SKIP — see the `merge_group:` docblock above.
+    # Every other job in this workflow `needs:` this one, so they skip in
+    # lockstep (a job whose `needs` skipped is itself skipped).
+    if: ${{ github.event_name != 'merge_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
