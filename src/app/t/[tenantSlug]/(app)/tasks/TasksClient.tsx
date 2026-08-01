@@ -197,7 +197,6 @@ function TasksPageInner({
     appPermissions,
 }: TasksClientProps) {
     const t = useTranslations('tasks');
-    const tUi = useTranslations('common.ui');
     // Memoised on `t` so they keep a stable identity across renders —
     // `sortAccessors` below closes over them and needs them in its dep
     // array (see the note there). Rebuilding a fresh object every render
@@ -1197,8 +1196,6 @@ function TasksPageInner({
                                 row still says what the click does. */}
                             <ViewsMenu
                                 id="tasks-views-menu"
-                                label={tUi('viewsMenu')}
-                                ariaLabel={tUi('viewsMenuAria')}
                                 groups={[
                                     {
                                         id: 'views',

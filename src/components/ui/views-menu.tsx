@@ -38,6 +38,7 @@
  * an empty popover.
  */
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { useState, type ReactNode } from 'react';
 
 import { cn } from '@/lib/cn';
@@ -69,10 +70,14 @@ export interface ViewsMenuGroup {
 
 export interface ViewsMenuProps {
     groups: ViewsMenuGroup[];
-    /** Trigger label — "Views". */
-    label: string;
-    /** Accessible name for the menu container. */
-    ariaLabel: string;
+    /**
+     * Trigger label. Defaults to the shared `common.ui.viewsMenu` string —
+     * the menu owns its own copy so twelve call sites don't each thread the
+     * same word through. Pass it only to say something different.
+     */
+    label?: string;
+    /** Accessible name for the menu container. Defaults to `common.ui.viewsMenuAria`. */
+    ariaLabel?: string;
     /** Trigger id (e.g. "risks-views-menu"). */
     id?: string;
     className?: string;
@@ -90,11 +95,14 @@ const ROW_CLASS =
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 export function ViewsMenu({ groups, label, ariaLabel, id, className }: ViewsMenuProps) {
+    const t = useTranslations('common.ui');
     const [open, setOpen] = useState(false);
+    const triggerLabel = label ?? t('viewsMenu');
+    const menuAria = ariaLabel ?? t('viewsMenuAria');
 
     const populated = groups
         .map((g) => ({ ...g, items: g.items.filter(Boolean) as ViewsMenuItem[] }))
-        .filter((g) => g.items.length > 0);
+        .filter((g) => g.items.length !== 0);
 
     if (populated.length === 0) return null;
 
@@ -107,7 +115,7 @@ export function ViewsMenu({ groups, label, ariaLabel, id, className }: ViewsMenu
             sideOffset={6}
             popoverContentClassName="w-full sm:w-56 p-1"
             content={
-                <Popover.Menu aria-label={ariaLabel}>
+                <Popover.Menu aria-label={menuAria}>
                     {populated.map((group, gi) => (
                         <div key={group.id} role="presentation">
                             {gi > 0 && <Popover.Separator />}
@@ -160,7 +168,7 @@ export function ViewsMenu({ groups, label, ariaLabel, id, className }: ViewsMenu
             }
         >
             <Button variant="secondary" size="sm" id={id} className={className}>
-                {label}
+                {triggerLabel}
                 <span aria-hidden="true" className="ml-1 -mr-0.5 opacity-60">
                     ▾
                 </span>

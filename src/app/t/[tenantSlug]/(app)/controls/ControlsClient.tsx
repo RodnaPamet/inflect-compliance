@@ -224,7 +224,6 @@ function ControlsPageInner({
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
     const t = useTranslations('controls');
-    const tUi = useTranslations('common.ui');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     // Bulk soft-delete + the Deleted-controls lifecycle view (Restore / Purge)
@@ -1737,8 +1736,6 @@ function ControlsPageInner({
                     <>
                         <ViewsMenu
                             id="controls-views-menu"
-                            label={tUi('viewsMenu')}
-                            ariaLabel={tUi('viewsMenuAria')}
                             groups={[
                                 {
                                     id: 'views',

@@ -153,7 +153,6 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // pattern). `tx` is the live next-intl translator for the strings this
     // island localizes directly under the `assets` namespace.
     const tx = useTranslations('assets');
-    const tUi = useTranslations('common.ui');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     // Modal-form follow-up — create-asset modal mounted off the list,
@@ -988,8 +987,6 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                                 gears. */}
                             <ViewsMenu
                                 id="assets-views-menu"
-                                label={tUi('viewsMenu')}
-                                ariaLabel={tUi('viewsMenuAria')}
                                 groups={[
                                     {
                                         id: 'views',
