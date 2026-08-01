@@ -59,17 +59,76 @@ import { useChartHoverPop } from './chart-motion';
 import type { ChartState } from './types';
 
 /**
- * Number of concentric rings in the grid. Four gives a clear
- * read for 0-100% style profiles without crowding the radar.
+ * Default number of concentric rings in the grid. Four gives a
+ * clear read for 0-100% style profiles without crowding the radar.
+ *
+ * Pass `rings` to override — a chart whose scale IS a ladder wants
+ * one ring per rung so the grid reads as the scale itself (the
+ * dashboard posture radar passes 5).
  */
 const GRID_RINGS = 4;
 
 /**
- * Padding inside the chart frame. The radar's outer radius is
- * bound by `min(width, height) / 2 - DEFAULT_INSET` so axis
- * labels at the outer edges have room to breathe.
+ * Margins reserved for the axis labels, which are drawn OUTSIDE the
+ * outer ring (see `labelAnchorFor`).
+ *
+ * Horizontal and vertical are separate because the labels are: a side
+ * label runs along the x-axis and needs room for a word, a top or bottom
+ * one needs room for a line of text. Reserving the horizontal figure on
+ * all four sides — the original single square `inset` — threw away
+ * vertical space and shrank the dial for nothing.
+ *
+ * The horizontal margin SCALES with the chart, between a floor and a
+ * ceiling. A fixed number cannot serve both consumers: 58px starves a
+ * wide chart's long domain names ("Supply chain security" wrapping four
+ * times) while a value generous enough for those would leave a 300px
+ * dashboard dial tiny. 18% of the width, clamped to 48-84, gives each
+ * chart a margin proportional to what it has.
+ *
+ * The horizontal margin is also the wrap width handed to visx `Text`, so
+ * a long label breaks onto another line instead of running off the SVG.
  */
-const DEFAULT_INSET = 28;
+const H_INSET_MIN = 48;
+const H_INSET_MAX = 84;
+const H_INSET_RATIO = 0.18;
+const V_INSET = 28;
+
+function horizontalInset(width: number): number {
+    return Math.min(H_INSET_MAX, Math.max(H_INSET_MIN, width * H_INSET_RATIO));
+}
+
+/**
+ * Gap between the outer ring and the near edge of a label.
+ *
+ * 14, not 10: a vertex sitting AT the outer ring (a 100% axis) is a
+ * 4px-radius dot centred on the ring, so a 10px gap left ~3px of white
+ * between dot and text — measured, and too close to read as separate
+ * things. 14 gives ~7px, and `V_INSET` is sized to keep the bottom
+ * label inside the SVG at that distance.
+ */
+const LABEL_GAP = 14;
+
+/**
+ * Anchor a label by which side of the dial it sits on, so text
+ * always grows AWAY from the plot.
+ *
+ * `middle` is correct only at the top and bottom of the dial, where
+ * the label extends sideways into empty margin. Everywhere else a
+ * centred anchor pulls half the string back over the polygon. The
+ * 0.2 cosine cut-off is ~±78° from vertical — wide enough that the
+ * near-vertical axes of a 5- or 6-axis dial stay centred.
+ */
+function labelAnchorFor(cos: number, sin: number) {
+    if (cos > 0.2) return { textAnchor: 'start' as const, verticalAnchor: 'middle' as const };
+    if (cos < -0.2) return { textAnchor: 'end' as const, verticalAnchor: 'middle' as const };
+    return {
+        textAnchor: 'middle' as const,
+        // Above the dial the text hangs upward from its baseline;
+        // below it, downward. Without this the top label's descenders
+        // cross the ring.
+        verticalAnchor: sin < 0 ? ('end' as const) : ('start' as const),
+    };
+}
 
 /**
  * Default vertex circle radius (px).
@@ -104,6 +163,12 @@ interface RadarChartProps {
     ariaLabel?: string;
     /** Override the empty-state body (forwarded to ChartFrame). */
     emptyFallback?: ReactNode;
+    /**
+     * Concentric grid rings. Defaults to `GRID_RINGS` (4). Set it to
+     * the number of rungs when the scale IS a ladder — then a vertex
+     * sitting on the third ring literally means level 3.
+     */
+    rings?: number;
 }
 
 /**
@@ -130,6 +195,7 @@ export function RadarChart({
     testId,
     ariaLabel,
     emptyFallback,
+    rings = GRID_RINGS,
 }: RadarChartProps) {
     return (
         <ChartFrame
@@ -146,6 +212,7 @@ export function RadarChart({
                     seriesIndex={seriesIndex}
                     maxValue={maxValue}
                     ariaLabel={ariaLabel}
+                    rings={rings}
                 />
             )}
         </ChartFrame>
@@ -159,6 +226,7 @@ interface RadarChartInnerProps {
     seriesIndex: ChartSeriesIndex;
     maxValue: number;
     ariaLabel?: string;
+    rings: number;
 }
 
 function RadarChartInner({
@@ -168,6 +236,7 @@ function RadarChartInner({
     seriesIndex,
     maxValue,
     ariaLabel,
+    rings,
 }: RadarChartInnerProps) {
     const reactId = useId();
     const chartId = `radar-${reactId.replace(/:/g, '')}`;
@@ -184,9 +253,12 @@ function RadarChartInner({
 
     const cx = width / 2;
     const cy = height / 2;
+    // Bound by whichever margin runs out first — horizontal room for a
+    // side label, vertical room for a line above/below the dial.
+    const hInset = horizontalInset(width);
     const outerRadius = Math.max(
         0,
-        Math.min(width, height) / 2 - DEFAULT_INSET,
+        Math.min(width / 2 - hInset, height / 2 - V_INSET),
     );
 
     // Angle per axis. -PI/2 starts the first axis at 12 o'clock
@@ -201,22 +273,26 @@ function RadarChartInner({
     const points = data.map((d, idx) => {
         const angle = angleFor(idx);
         const valueRadius = (d.value / maxValue) * outerRadius;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
         return {
             key: d.key,
             label: d.label,
             value: d.value,
             angle,
             // Outer-edge point (for axis lines + labels).
-            edgeX: cx + Math.cos(angle) * outerRadius,
-            edgeY: cy + Math.sin(angle) * outerRadius,
+            edgeX: cx + cos * outerRadius,
+            edgeY: cy + sin * outerRadius,
             // Value-scaled point (vertex of the data polygon).
-            valueX: cx + Math.cos(angle) * valueRadius,
-            valueY: cy + Math.sin(angle) * valueRadius,
-            // Label position — push slightly past the outer
-            // ring so the text doesn't overlap the axis line
-            // tick.
-            labelX: cx + Math.cos(angle) * (outerRadius + 14),
-            labelY: cy + Math.sin(angle) * (outerRadius + 14),
+            valueX: cx + cos * valueRadius,
+            valueY: cy + sin * valueRadius,
+            // Label position — past the outer ring by LABEL_GAP,
+            // anchored so the text grows AWAY from the plot. A
+            // centred anchor here put half of every side label back
+            // over the ring, on top of the vertex dot.
+            labelX: cx + cos * (outerRadius + LABEL_GAP),
+            labelY: cy + sin * (outerRadius + LABEL_GAP),
+            ...labelAnchorFor(cos, sin),
         };
     });
 
@@ -228,8 +304,9 @@ function RadarChartInner({
     // Build N concentric grid circles. Could be rings but the
     // straight-line "spider-web" layout reads as more honest
     // for a radar.
-    const gridRings = Array.from({ length: GRID_RINGS }, (_, i) => {
-        const ringRadius = ((i + 1) / GRID_RINGS) * outerRadius;
+    const ringCount = Math.max(1, Math.round(rings));
+    const gridRings = Array.from({ length: ringCount }, (_, i) => {
+        const ringRadius = ((i + 1) / ringCount) * outerRadius;
         return ringRadius;
     });
 
@@ -365,9 +442,12 @@ function RadarChartInner({
                             <Text
                                 x={p.labelX}
                                 y={p.labelY}
-                                textAnchor="middle"
-                                verticalAnchor="middle"
+                                textAnchor={p.textAnchor}
+                                verticalAnchor={p.verticalAnchor}
                                 fontSize={11}
+                                // Wrap inside the reserved margin rather
+                                // than running off the SVG.
+                                width={hInset - LABEL_GAP}
                                 fontFamily="Inter, system-ui, sans-serif"
                                 fill={
                                     isHovered

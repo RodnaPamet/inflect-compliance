@@ -22,7 +22,15 @@ import { AnimatedNumber } from '@/components/ui/animated-number';
 import { Button } from '@/components/ui/button';
 import type { PostureSummaryDto } from '@/app-layer/usecases/compliance-posture';
 import type { PostureLabel, AdvicePriority } from '@/app-layer/ai/compliance-posture/types';
-import { RadarChart, chartReady, type RadarAxisDatum } from '@/components/ui/charts';
+import { RadarChart, chartReady } from '@/components/ui/charts';
+import {
+    POSTURE_LADDER,
+    levelKey,
+    overallLevel,
+    toRadarAxes,
+    type PostureAxisRating,
+} from '@/lib/charts/posture-radar';
+import { PostureLadder, LEVEL_TONE } from './PostureLadder';
 
 const LABEL_COPY: Record<PostureLabel, string> = {
     STRONG: 'Strong',
@@ -53,11 +61,11 @@ export interface PostureHeroCardProps {
     onRegenerate?: () => void;
     regenerating?: boolean;
     /**
-     * The six-axis profile behind the headline (`buildPostureRadarAxes`).
-     * Omit — or pass an empty array — and the hero renders exactly as it
-     * did before, full-width narrative and no chart column.
+     * The six rated axes behind the headline (`ratePostureAxes`). Omit —
+     * or pass an empty array — and the hero renders exactly as it did
+     * before: full-width narrative, no chart column, no level.
      */
-    radarAxes?: RadarAxisDatum[];
+    ratings?: PostureAxisRating[];
 }
 
 export function PostureHeroCard({
@@ -65,7 +73,7 @@ export function PostureHeroCard({
     canRegenerate = false,
     onRegenerate,
     regenerating = false,
-    radarAxes,
+    ratings,
 }: PostureHeroCardProps) {
     const t = useTranslations('dashboard');
     // Defend against partial/stale cache data — fall back to a neutral band,
@@ -76,9 +84,13 @@ export function PostureHeroCard({
             ? summary.postureLabel
             : 'DEVELOPING';
     const advice = Array.isArray(summary.advice) ? summary.advice : [];
-    const maturityScore =
-        typeof summary.maturityScore === 'number' ? summary.maturityScore : null;
-    const hasRadar = Array.isArray(radarAxes) && radarAxes.length > 0;
+    const hasRadar = Array.isArray(ratings) && ratings.length > 0;
+    // The headline number and the chart are ONE reading: the level is the
+    // weakest rated axis, which is the shortest spoke on the radar beside
+    // it. Previously the headline carried the model's own 0-100 maturity
+    // score, which no feature of the chart corresponded to — two numbers
+    // for one claim, and nothing to check either against.
+    const { level, limitedBy } = overallLevel(ratings ?? []);
 
     return (
         <section
@@ -115,13 +127,15 @@ export function PostureHeroCard({
                 advice list rather than squeezing beside it — at ~300px
                 wide the axis labels collide.
 
-                `items-start` (not `stretch`): the radar keeps its own
-                fixed height and must not inherit the narrative column's,
-                which grows with the advice list. */}
+                `items-center`, not `items-start`: the radar is a fixed-height
+                block beside a column that grows with the advice list, so
+                top-aligning it left the dial riding high with dead space
+                under it. Centring reads as one composition — and because
+                the chart keeps its own height, centring never stretches it. */}
             <div
                 className={cn(
-                    'grid grid-cols-1 gap-default items-start',
-                    hasRadar && 'lg:grid-cols-[minmax(0,1fr)_320px]',
+                    'grid grid-cols-1 gap-default items-center',
+                    hasRadar && 'lg:grid-cols-[minmax(0,1fr)_340px]',
                 )}
             >
             {/* Headline + narrative + advice. */}
@@ -132,28 +146,62 @@ export function PostureHeroCard({
                 >
                     {t('hero.eyebrow')}
                 </p>
+                {/* ONE voice. The headline word used to be the model's own
+                    posture label, which sat beside a deterministic level
+                    computed from the six axes — "Developing" next to
+                    "Level 1 · Initial" is two answers to one question, and
+                    only one of them can be checked. The ladder names the
+                    band now; the model keeps the narrative and the advice,
+                    which is what it is actually good at.
+
+                    The model's label still leads when there is no estate to
+                    rate (no axes ⇒ no level), so a tenant that has not
+                    started yet still gets a headline. */}
                 <div className="flex items-baseline gap-default flex-wrap">
-                    <p
-                        className={cn('text-[28px] leading-none font-bold', LABEL_TONE[label])}
-                        data-posture-label={label}
-                    >
-                        {LABEL_COPY[label]}
-                    </p>
-                    {maturityScore !== null && (
+                    {hasRadar ? (
+                        <>
+                            <p
+                                className={cn('text-[28px] leading-none font-bold', LEVEL_TONE[level])}
+                                data-posture-label={levelKey(level)}
+                            >
+                                {t(`hero.ladder.${levelKey(level)}`)}
+                            </p>
+                            <p
+                                className="text-sm text-content-muted tabular-nums"
+                                data-posture-level={level}
+                            >
+                                <span className="text-2xl font-semibold text-content-emphasis">
+                                    <AnimatedNumber
+                                        value={level}
+                                        format={{ kind: 'decimal', fractionDigits: 0 }}
+                                    />
+                                </span>
+                                <span className="ml-1">{t('hero.levelOfSuffix')}</span>
+                            </p>
+                        </>
+                    ) : (
                         <p
-                            className="text-sm text-content-muted tabular-nums"
-                            data-posture-maturity
+                            className={cn('text-[28px] leading-none font-bold', LABEL_TONE[label])}
+                            data-posture-label={label}
                         >
-                            <span className="text-2xl font-semibold text-content-emphasis">
-                                <AnimatedNumber
-                                    value={maturityScore}
-                                    format={{ kind: 'decimal', fractionDigits: 0 }}
-                                />
-                            </span>
-                            <span className="ml-1">{t('hero.maturitySuffix')}</span>
+                            {LABEL_COPY[label]}
                         </p>
                     )}
                 </div>
+
+                {/* The sentence that joins the headline to the chart. The
+                    level is the weakest spoke, so naming that spoke turns a
+                    number into an instruction — and tells the reader which
+                    point of the polygon to look at. */}
+                {limitedBy && (
+                    <p className="text-xs text-content-subtle" data-posture-limited-by={limitedBy.key}>
+                        {t('hero.limitedBy', {
+                            axis: limitedBy.label,
+                            measured: limitedBy.measured,
+                            total: limitedBy.total,
+                        })}
+                    </p>
+                )}
 
                 <p
                     className="text-sm text-content-muted mt-tight"
@@ -188,21 +236,27 @@ export function PostureHeroCard({
             </div>
 
                 {hasRadar && (
-                    // Guaranteed-height slot. NEVER `min-h-0` here — a
-                    // collapsible flex/grid child gives the chart's
-                    // auto-sizer a 0-height box and it renders blank
-                    // (the lesson the org maturity widget carries).
-                    <div
-                        className="h-[260px] w-full min-w-0"
-                        data-testid="dashboard-hero-radar"
-                    >
-                        <RadarChart
-                            state={chartReady(radarAxes!)}
-                            seriesIndex={2}
-                            maxValue={100}
-                            testId="posture-radar"
-                            ariaLabel={t('hero.radarAria')}
-                        />
+                    <div className="flex w-full min-w-0 flex-col gap-tight" data-testid="dashboard-hero-radar">
+                        {/* Guaranteed-height slot. NEVER `min-h-0` here — a
+                            collapsible flex/grid child gives the chart's
+                            auto-sizer a 0-height box and it renders blank
+                            (the lesson the org maturity widget carries). */}
+                        <div className="h-[300px] w-full">
+                            <RadarChart
+                                state={chartReady(toRadarAxes(ratings!))}
+                                seriesIndex={2}
+                                maxValue={100}
+                                // One ring per rung, so a vertex sitting on
+                                // the third ring means level 3 — the grid IS
+                                // the ladder rather than decoration.
+                                rings={POSTURE_LADDER.length}
+                                testId="posture-radar"
+                                ariaLabel={t('hero.radarAria')}
+                            />
+                        </div>
+                        {/* The ladder, spelled out — the half that makes the
+                            chart checkable. */}
+                        <PostureLadder ratings={ratings!} />
                     </div>
                 )}
             </div>

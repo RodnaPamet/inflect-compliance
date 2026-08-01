@@ -101,7 +101,14 @@ const TrendCard = dynamic(
 );
 import { cn } from '@/lib/cn';
 import { RadarChart, chartReady } from '@/components/ui/charts';
-import { buildPostureRadarAxes, isPostureRadarMeaningful } from '@/lib/charts/posture-radar';
+import {
+    POSTURE_LADDER,
+    isPostureRadarMeaningful,
+    levelKey,
+    overallLevel,
+    ratePostureAxes,
+    toRadarAxes,
+} from '@/lib/charts/posture-radar';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref, usePermissions, useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -111,6 +118,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { HeroMetric } from '@/components/ui/HeroMetric';
 import { NextBestActionCard } from '@/components/ui/NextBestActionCard';
 import { PostureHeroCard } from './PostureHeroCard';
+import { PostureLadder } from './PostureLadder';
 import type { PostureSummaryDto } from '@/app-layer/usecases/compliance-posture';
 import {
     DashboardChartProvider,
@@ -243,12 +251,19 @@ export default function DashboardClient({
     // Empty for a tenant with no estate: every axis would read 100 for the
     // want of anything to be overdue, which would be a lie next to an
     // "At risk" headline.
-    const radarAxes = React.useMemo(
+    const ratings = React.useMemo(
         () =>
             isPostureRadarMeaningful(exec)
-                ? buildPostureRadarAxes(exec, (axis) => t(`hero.radarAxes.${axis}`))
+                ? ratePostureAxes(exec, (axis) => t(`hero.radarAxes.${axis}`))
                 : [],
         [exec, t],
+    );
+
+    // Same weakest-link reading the posture hero shows; the fallback
+    // masthead renders it as one line under the coverage metric.
+    const { level: fallbackLevel, limitedBy: fallbackLimitedBy } = React.useMemo(
+        () => overallLevel(ratings),
+        [ratings],
     );
 
     const [regenerating, setRegenerating] = React.useState(false);
@@ -313,7 +328,7 @@ export default function DashboardClient({
                     canRegenerate={perms.controls.edit}
                     onRegenerate={handleRegeneratePosture}
                     regenerating={regenerating}
-                    radarAxes={radarAxes}
+                    ratings={ratings}
                 />
             ) : (
                 // Fallback masthead. The radar rides along here too — it is
@@ -324,31 +339,59 @@ export default function DashboardClient({
                 <section
                     className={cn(
                         'grid grid-cols-1 gap-default items-center',
-                        radarAxes.length > 0 && 'lg:grid-cols-[minmax(0,1fr)_320px]',
+                        ratings.length > 0 && 'lg:grid-cols-[minmax(0,1fr)_340px]',
                     )}
                     data-testid="dashboard-hero-fallback"
                 >
-                    <HeroMetric
-                        eyebrow={t('controls')}
-                        value={exec.controlCoverage.coveragePercent}
-                        format="percent"
-                        description={`${exec.controlCoverage.implemented} of ${exec.controlCoverage.applicable} controls implemented`}
-                        delta={coverageDelta}
-                        deltaPolarity="up-good"
-                        deltaLabel="vs prev"
-                        data-testid="dashboard-hero"
-                    />
-                    {radarAxes.length > 0 && (
+                    <div className="min-w-0">
+                        <HeroMetric
+                            eyebrow={t('controls')}
+                            value={exec.controlCoverage.coveragePercent}
+                            format="percent"
+                            description={`${exec.controlCoverage.implemented} of ${exec.controlCoverage.applicable} controls implemented`}
+                            delta={coverageDelta}
+                            deltaPolarity="up-good"
+                            deltaLabel="vs prev"
+                            data-testid="dashboard-hero"
+                        />
+                        {/* The same ladder reading as the posture hero. Both
+                            branches are computed from the executive payload,
+                            so the level a tenant sees does not depend on
+                            whether the narrative has been generated. */}
+                        {fallbackLimitedBy && (
+                            <p
+                                className="mt-tight text-xs text-content-subtle"
+                                data-posture-level={fallbackLevel}
+                                data-posture-limited-by={fallbackLimitedBy.key}
+                            >
+                                {t('hero.levelLine', {
+                                    level: fallbackLevel,
+                                    name: t(`hero.ladder.${levelKey(fallbackLevel)}`),
+                                })}
+                                {' · '}
+                                {t('hero.limitedBy', {
+                                    axis: fallbackLimitedBy.label,
+                                    measured: fallbackLimitedBy.measured,
+                                    total: fallbackLimitedBy.total,
+                                })}
+                            </p>
+                        )}
+                    </div>
+                    {ratings.length > 0 && (
                         // Fixed height — never `min-h-0`, or the auto-sizer
                         // gets a 0-height box and paints nothing.
-                        <div className="h-[260px] w-full min-w-0" data-testid="dashboard-hero-radar">
-                            <RadarChart
-                                state={chartReady(radarAxes)}
-                                seriesIndex={2}
-                                maxValue={100}
-                                testId="posture-radar"
-                                ariaLabel={t('hero.radarAria')}
-                            />
+                        <div className="flex w-full min-w-0 flex-col gap-tight" data-testid="dashboard-hero-radar">
+                            <div className="h-[300px] w-full">
+                                <RadarChart
+                                    state={chartReady(toRadarAxes(ratings))}
+                                    seriesIndex={2}
+                                    maxValue={100}
+                                    rings={POSTURE_LADDER.length}
+                                    testId="posture-radar"
+                                    ariaLabel={t('hero.radarAria')}
+                                />
+                            </div>
+                            <PostureLadder ratings={ratings} />
                         </div>
                     )}
                 </section>
