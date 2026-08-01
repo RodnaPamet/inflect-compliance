@@ -14,7 +14,10 @@
  * hash-chained audit entry. All tool calls run in the SAME tenant/RLS/permission
  * context as the MCP tools (inherited, not reinvented).
  */
+import { WorkflowRunStatus } from '@prisma/client';
+
 import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound, forbidden } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
@@ -165,9 +168,17 @@ export async function listWorkflowRuns(
     opts: { status?: string; take?: number } = {},
 ) {
     assertCanRead(ctx);
+    // `opts.status` is a raw `?status=` query-string value — the `as never`
+    // this replaces silenced the compiler but not Prisma, which 500'd on a
+    // comma-joined multi-select or a status from another entity's enum.
+    const status = parseEnumListFilter<WorkflowRunStatus>(
+        opts.status,
+        Object.values(WorkflowRunStatus),
+        'workflow run status',
+    );
     return runInTenantContext(ctx, (db) =>
         db.workflowRun.findMany({
-            where: { tenantId: ctx.tenantId, ...(opts.status ? { status: opts.status as never } : {}) },
+            where: { tenantId: ctx.tenantId, status },
             orderBy: { startedAt: 'desc' },
             take: opts.take ?? 50,
         }),

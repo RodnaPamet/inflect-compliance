@@ -17,7 +17,10 @@
  * tenant, so every per-tenant write is RLS-scoped. Findings are materialised
  * only on explicit request, idempotently, source-tagged `FRAMEWORK_UPDATE`.
  */
+import { ControlStatus, FrameworkDeltaStatus } from '@prisma/client';
+
 import prisma from '@/lib/prisma';
+import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { withTenantDb } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
@@ -100,7 +103,15 @@ export async function recordDiffFromVersionHistory(frameworkKey: string): Promis
 
 // ─── Per-tenant propagation (global orchestration, per-tenant RLS writes) ──
 
-const REVIEWABLE_CONTROL_STATUSES = ['IMPLEMENTED', 'IMPLEMENTING', 'IN_PROGRESS'] as const;
+// Typed against the real enum rather than `as never`'d at the call site: this
+// is a compile-time constant (not user input, so not a `parseEnumListFilter`
+// site), but naming the enum makes a renamed/removed member a build failure
+// instead of a runtime `PrismaClientValidationError`.
+const REVIEWABLE_CONTROL_STATUSES: readonly ControlStatus[] = [
+    ControlStatus.IMPLEMENTED,
+    ControlStatus.IMPLEMENTING,
+    ControlStatus.IN_PROGRESS,
+];
 
 export interface PropagateResult {
     diffId: string;
@@ -140,7 +151,7 @@ export async function propagateFrameworkDelta(diffId: string): Promise<Propagate
                       where: {
                           tenantId,
                           requirement: { framework: { key: diff.frameworkKey }, code: { in: changedCodes } },
-                          control: { status: { in: [...REVIEWABLE_CONTROL_STATUSES] as never } },
+                          control: { status: { in: [...REVIEWABLE_CONTROL_STATUSES] } },
                       },
                       select: { controlId: true },
                   })
@@ -200,9 +211,17 @@ export async function propagateFrameworkDelta(diffId: string): Promise<Propagate
 
 export async function listTenantFrameworkDeltas(ctx: RequestContext, opts: { status?: string; take?: number } = {}) {
     assertCanRead(ctx);
+    // `opts.status` is a raw `?status=` query-string value — the `as never`
+    // this replaces silenced the compiler but not Prisma, which 500'd on a
+    // comma-joined multi-select or a status from another entity's enum.
+    const status = parseEnumListFilter<FrameworkDeltaStatus>(
+        opts.status,
+        Object.values(FrameworkDeltaStatus),
+        'framework delta status',
+    );
     return runInTenantContext(ctx, (db) =>
         db.tenantFrameworkDelta.findMany({
-            where: { tenantId: ctx.tenantId, ...(opts.status ? { status: opts.status as never } : {}) },
+            where: { tenantId: ctx.tenantId, status },
             orderBy: { createdAt: 'desc' },
             take: opts.take ?? 50,
             include: { diff: true },

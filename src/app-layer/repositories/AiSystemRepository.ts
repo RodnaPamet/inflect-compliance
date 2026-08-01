@@ -5,8 +5,8 @@
  * writes run inside `runInTenantContext` at the usecase layer, so `db` here is
  * always the tenant-bound client.
  */
-import { Prisma, AiSystemStatus } from '@prisma/client';
-import type { AiDeploymentRole, AiRiskTier } from '@prisma/client';
+import { Prisma, AiRiskTier, AiSystemStatus } from '@prisma/client';
+import type { AiDeploymentRole } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { parseEnumListFilter } from '../domain/list-filter';
@@ -47,26 +47,28 @@ export class AiSystemRepository {
     static async list(
         db: PrismaTx,
         ctx: RequestContext,
-        options: { take?: number; riskTier?: AiRiskTier; status?: string } = {},
+        options: { take?: number; riskTier?: string; status?: string } = {},
     ) {
         return db.aiSystem.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 deletedAt: null,
-                ...(options.riskTier ? { riskTier: options.riskTier } : {}),
-                // `as never` silenced the compiler on a raw string bound
-                // for an enum column — Prisma still rejects an unknown or
-                // comma-joined value with a validation error (a 500). Same
-                // class as the /risks?status=ACTIVE bug.
-                ...(options.status
-                    ? {
-                          status: parseEnumListFilter<AiSystemStatus>(
-                              options.status,
-                              Object.values(AiSystemStatus),
-                              'AI system status',
-                          ),
-                      }
-                    : {}),
+                // Both filters are raw `?riskTier=` / `?status=` query-string
+                // values. `riskTier` used to be typed `AiRiskTier` here while
+                // the route `as`-cast a bare string into it — the cast moved
+                // the same bug one layer up, out of this file's ratchet.
+                // Prisma still rejects an unknown or comma-joined value with
+                // a validation error (a 500). Same class as /risks?status=ACTIVE.
+                riskTier: parseEnumListFilter<AiRiskTier>(
+                    options.riskTier,
+                    Object.values(AiRiskTier),
+                    'AI risk tier',
+                ),
+                status: parseEnumListFilter<AiSystemStatus>(
+                    options.status,
+                    Object.values(AiSystemStatus),
+                    'AI system status',
+                ),
             },
             select: listSelect,
             orderBy: [{ riskTier: 'asc' }, { createdAt: 'desc' }],
