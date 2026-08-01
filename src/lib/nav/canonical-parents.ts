@@ -157,6 +157,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/risks/correlations': { href: '/risks', label: 'Risks' },
     '/risks/dashboard': { href: '/risks', label: 'Risks' },
     '/risks/hierarchy': { href: '/risks', label: 'Risks' },
+    '/risks/information-registry': { href: '/risks', label: 'Risks' },
     '/risks/import': { href: '/risks', label: 'Risks' },
     '/risks/kri': { href: '/risks', label: 'Risks' },
     '/risks/loss-events': { href: '/risks', label: 'Risks' },

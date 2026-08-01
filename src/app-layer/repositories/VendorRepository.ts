@@ -45,7 +45,56 @@ const vendorListSelect = {
     owner: { select: { name: true } },
 } as const;
 
+/**
+ * DORA Register of Information projection (Art. 28(3)).
+ *
+ * Deliberately its own SELECT rather than a widened `vendorListSelect`:
+ * the register needs four columns the list page does not render
+ * (`legalName`, `country`, `dataAccess`, `description`), and pulling them
+ * into the shared shape would make every vendor list read heavier for the
+ * benefit of one page.
+ */
+const informationRegisterSelect = {
+    id: true,
+    name: true,
+    legalName: true,
+    country: true,
+    status: true,
+    criticality: true,
+    dataAccess: true,
+    isSubprocessor: true,
+    contractRenewalAt: true,
+    nextReviewAt: true,
+    owner: { select: { name: true } },
+} as const;
+
+/** Row shape returned by `VendorRepository.listInformationRegister`. */
+export type InformationRegisterRow = Prisma.VendorGetPayload<{
+    select: typeof informationRegisterSelect;
+}>;
+
 export class VendorRepository {
+    /**
+     * Every live ICT third-party arrangement, ordered by criticality so the
+     * ones supporting critical or important functions lead the register.
+     *
+     * Soft-deleted vendors are excluded — a terminated arrangement is a
+     * retention question, not a register row, and DORA's register describes
+     * the arrangements currently in force.
+     */
+    static async listInformationRegister(
+        db: PrismaTx,
+        ctx: RequestContext,
+        options: { take?: number } = {},
+    ): Promise<InformationRegisterRow[]> {
+        return db.vendor.findMany({
+            where: { tenantId: ctx.tenantId, deletedAt: null },
+            orderBy: [{ criticality: 'desc' }, { name: 'asc' }],
+            select: informationRegisterSelect,
+            take: options.take ?? 1000,
+        });
+    }
+
     static async list(
         db: PrismaTx,
         ctx: RequestContext,

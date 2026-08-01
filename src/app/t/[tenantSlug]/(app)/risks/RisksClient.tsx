@@ -32,7 +32,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { AppIcon, type AppIconName } from '@/components/icons/AppIcon';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { Popover } from '@/components/ui/popover';
+import { ViewsMenu } from '@/components/ui/views-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import {
@@ -212,12 +212,15 @@ export function RisksClient(props: RisksClientProps) {
 }
 
 /**
- * Risk-quantification analytical views (RQ-3…RQ-10) surfaced as icon-only
- * links in the risks header, to the left of the matrix toggle. Each routes to
- * its standalone page; read-only so they show for every role.
+ * Risk-quantification analytical views (RQ-3…RQ-10), listed under the
+ * "Analytics" heading of the Views menu. Each routes to its standalone page;
+ * read-only so they show for every role.
+ *
+ * `/risks/dashboard` is deliberately NOT here — the page dashboard is the one
+ * destination that keeps a standalone icon button, to the right of the Views
+ * trigger. See the toolbar's `navActions` below.
  */
 const RISK_VIEW_LINKS: ReadonlyArray<{ href: string; labelKey: string; icon: AppIconName }> = [
-    { href: '/risks/dashboard', labelKey: 'viewLinks.dashboard', icon: 'activity' },
     // Item 30 — the risk board (RQ3-10) shipped without a nav entry; the
     // page existed but was unreachable from the list header. Restored.
     { href: '/risks/board', labelKey: 'viewLinks.board', icon: 'overview' },
@@ -241,9 +244,9 @@ function RisksPageInner({
     const tx = useTranslations('risks');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
-    // P3 — the analytical views were ~8 tooltip-only icon buttons (undiscoverable).
-    // They now live behind a labeled "Views ▾" menu.
-    const [viewsOpen, setViewsOpen] = useState(false);
+    // P3 — the analytical views were ~8 tooltip-only icon buttons
+    // (undiscoverable). They now live behind the labeled "Views ▾" menu,
+    // which owns its own open state (`<ViewsMenu>`).
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
     // Stable across renders — a bare arrow here rebuilds the table model
     // mid-double-click and kills row navigation (#1678).
@@ -1241,12 +1244,8 @@ function RisksPageInner({
                             {/* Item 30 — Register and Matrix collapse to a
                                 single two-state toggle (table ⇄ heatmap of the
                                 same register). It leads the row — the view
-                                layout is the primary control; the icon buttons
-                                that follow are secondary navigation. The
-                                histogram is no longer a third peer in this
-                                toggle — it is its own standalone icon button,
-                                so the distribution view reads as a distinct
-                                analytical mode rather than a register layout.
+                                layout is the primary control for the table
+                                itself, so it stays outside the Views menu.
                                 The choice persists (polish #13 pattern). */}
                             <ToggleGroup
                                 size="sm"
@@ -1258,91 +1257,103 @@ function RisksPageInner({
                                 selected={view === 'histogram' ? null : view}
                                 selectAction={(v) => setView(v as 'register' | 'heatmap')}
                             />
-                            <Tooltip content={t.histogram}>
-                                <Button
-                                    variant={view === 'histogram' ? 'primary' : 'secondary'}
-                                    size="icon"
-                                    id="risks-view-histogram"
-                                    aria-label={t.histogram}
-                                    aria-pressed={view === 'histogram'}
-                                    onClick={() => setView('histogram')}
-                                >
-                                    <AppIcon name="dashboard" size={16} />
-                                </Button>
-                            </Tooltip>
-                            {/* In-page entry point to the global Vulnerabilities
-                                view. It is intentionally NOT a sidebar
-                                destination — discoverability comes from inbound
-                                links like this one (the assets list + asset
-                                detail carry the same affordance). */}
-                            <Tooltip content={tx('viewVulnerabilities')}>
+                            {/* The labeled "Views ▾" menu now folds in every
+                                icon button that used to flank it: the histogram
+                                mode, the vulnerabilities link, and the importer.
+                                Three tooltip-only glyphs competing with the
+                                gears for one eye-line became one word. */}
+                            <ViewsMenu
+                                id="risks-views-menu"
+                                label={tx('viewsMenu')}
+                                ariaLabel={tx('viewsMenuAria')}
+                                groups={[
+                                    {
+                                        id: 'analytics',
+                                        label: tx('viewsAnalytics'),
+                                        items: [
+                                            // The one in-page item: histogram is a
+                                            // MODE of this page, not a destination,
+                                            // so it carries `selected` rather than
+                                            // an href.
+                                            {
+                                                id: 'risks-view-histogram',
+                                                label: t.histogram,
+                                                icon: <AppIcon name="activity" size={16} />,
+                                                onSelect: () => setView('histogram'),
+                                                selected: view === 'histogram',
+                                            },
+                                            ...RISK_VIEW_LINKS.map((v) => ({
+                                                id: `risks-view-${v.href.split('/').pop()}`,
+                                                label: tx(v.labelKey),
+                                                icon: <AppIcon name={v.icon} size={16} />,
+                                                href: tenantHref(v.href),
+                                            })),
+                                        ],
+                                    },
+                                    {
+                                        id: 'registry',
+                                        // AI-Systems is an EU AI Act registry and the
+                                        // Information Registry is DORA's Register of
+                                        // Information (Art. 28(3)) — both are
+                                        // regulatory registers ABOUT the risk estate
+                                        // rather than analytics OVER it, so they get
+                                        // their own shelf.
+                                        label: tx('viewsRegistry'),
+                                        items: [
+                                            {
+                                                id: 'views-menu-ai-systems',
+                                                'data-testid': 'views-menu-ai-systems',
+                                                label: tx('viewLinks.aiSystems'),
+                                                icon: <AppIcon name="frameworks" size={16} />,
+                                                href: tenantHref('/risks/ai-systems'),
+                                            },
+                                            {
+                                                id: 'views-menu-information-registry',
+                                                'data-testid': 'views-menu-information-registry',
+                                                label: tx('viewLinks.informationRegistry'),
+                                                icon: <AppIcon name="fileSpreadsheet" size={16} />,
+                                                href: tenantHref('/risks/information-registry'),
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        id: 'tools',
+                                        label: tx('viewsTools'),
+                                        items: [
+                                            // The global Vulnerabilities view is
+                                            // intentionally NOT a sidebar destination —
+                                            // discoverability comes from inbound links
+                                            // like this one (the assets list + asset
+                                            // detail carry the same affordance).
+                                            {
+                                                id: 'risks-view-vulnerabilities',
+                                                label: tx('viewVulnerabilities'),
+                                                icon: <AppIcon name="shield" size={16} />,
+                                                href: tenantHref('/vulnerabilities'),
+                                            },
+                                            permissions.canWrite && {
+                                                id: 'risk-import-btn',
+                                                label: tx('importRisks'),
+                                                icon: <AppIcon name="upload" size={16} />,
+                                                href: tenantHref('/risks/import'),
+                                            },
+                                        ],
+                                    },
+                                ]}
+                            />
+                            {/* The page dashboard keeps its standalone icon, to
+                                the RIGHT of the Views trigger — one click to the
+                                KPI view is the shortcut worth the toolbar width. */}
+                            <Tooltip content={tx('viewLinks.dashboard')}>
                                 <Link
-                                    href={tenantHref('/vulnerabilities')}
-                                    id="risks-view-vulnerabilities"
-                                    aria-label={tx('viewVulnerabilities')}
+                                    href={tenantHref('/risks/dashboard')}
+                                    id="risks-dashboard-btn"
+                                    aria-label={tx('viewLinks.dashboard')}
                                     className={buttonVariants({ variant: 'secondary', size: 'icon' })}
                                 >
-                                    <AppIcon name="shield" size={16} />
+                                    <AppIcon name="dashboard" size={16} />
                                 </Link>
                             </Tooltip>
-                            {/* P3 — labeled "Views ▾" menu (was tooltip-only icon
-                                buttons). The analytical views are grouped under
-                                "Analytics"; AI-Systems is re-shelved into its own
-                                "Registry" section since it's an EU AI Act registry,
-                                not a risk-analytics view over the register. */}
-                            <Popover
-                                openPopover={viewsOpen}
-                                setOpenPopover={setViewsOpen}
-                                align="end"
-                                side="bottom"
-                                sideOffset={6}
-                                popoverContentClassName="w-full sm:w-56 p-1"
-                                content={
-                                    <Popover.Menu aria-label={tx('viewsMenuAria')}>
-                                        <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
-                                            {tx('viewsAnalytics')}
-                                        </p>
-                                        {RISK_VIEW_LINKS.map((v) => (
-                                            <Link
-                                                key={v.href}
-                                                href={tenantHref(v.href)}
-                                                role="menuitem"
-                                                onClick={() => setViewsOpen(false)}
-                                                className="flex items-center gap-tight rounded-md px-2.5 py-1.5 text-sm text-content-default hover:bg-bg-muted"
-                                            >
-                                                <AppIcon name={v.icon} size={16} />
-                                                <span className="flex-1">{tx(v.labelKey)}</span>
-                                            </Link>
-                                        ))}
-                                        <Popover.Separator />
-                                        <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
-                                            {tx('viewsRegistry')}
-                                        </p>
-                                        <Link
-                                            href={tenantHref('/risks/ai-systems')}
-                                            role="menuitem"
-                                            onClick={() => setViewsOpen(false)}
-                                            className="flex items-center gap-tight rounded-md px-2.5 py-1.5 text-sm text-content-default hover:bg-bg-muted"
-                                            data-testid="views-menu-ai-systems"
-                                        >
-                                            <AppIcon name="frameworks" size={16} />
-                                            <span className="flex-1">{tx('viewLinks.aiSystems')}</span>
-                                        </Link>
-                                    </Popover.Menu>
-                                }
-                            >
-                                <Button variant="secondary" size="sm" id="risks-views-menu">
-                                    {tx('viewsMenu')}
-                                    <span aria-hidden="true" className="ml-1 -mr-0.5 opacity-60">▾</span>
-                                </Button>
-                            </Popover>
-                            {permissions.canWrite && (
-                                <Tooltip content={tx('importRisks')}>
-                                    <Link href={tenantHref('/risks/import')} aria-label={tx('importRisks')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="risk-import-btn">
-                                        <AppIcon name="upload" size={16} />
-                                    </Link>
-                                </Tooltip>
-                            )}
                         </>
                     }
                 />

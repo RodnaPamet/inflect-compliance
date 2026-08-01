@@ -22,6 +22,7 @@ import { AnimatedNumber } from '@/components/ui/animated-number';
 import { Button } from '@/components/ui/button';
 import type { PostureSummaryDto } from '@/app-layer/usecases/compliance-posture';
 import type { PostureLabel, AdvicePriority } from '@/app-layer/ai/compliance-posture/types';
+import { RadarChart, chartReady, type RadarAxisDatum } from '@/components/ui/charts';
 
 const LABEL_COPY: Record<PostureLabel, string> = {
     STRONG: 'Strong',
@@ -51,6 +52,12 @@ export interface PostureHeroCardProps {
     canRegenerate?: boolean;
     onRegenerate?: () => void;
     regenerating?: boolean;
+    /**
+     * The six-axis profile behind the headline (`buildPostureRadarAxes`).
+     * Omit — or pass an empty array — and the hero renders exactly as it
+     * did before, full-width narrative and no chart column.
+     */
+    radarAxes?: RadarAxisDatum[];
 }
 
 export function PostureHeroCard({
@@ -58,6 +65,7 @@ export function PostureHeroCard({
     canRegenerate = false,
     onRegenerate,
     regenerating = false,
+    radarAxes,
 }: PostureHeroCardProps) {
     const t = useTranslations('dashboard');
     // Defend against partial/stale cache data — fall back to a neutral band,
@@ -70,6 +78,7 @@ export function PostureHeroCard({
     const advice = Array.isArray(summary.advice) ? summary.advice : [];
     const maturityScore =
         typeof summary.maturityScore === 'number' ? summary.maturityScore : null;
+    const hasRadar = Array.isArray(radarAxes) && radarAxes.length > 0;
 
     return (
         <section
@@ -100,8 +109,22 @@ export function PostureHeroCard({
                 </div>
             )}
 
-            {/* Headline + narrative + advice — full width (control coverage
-                lives in its own section directly below the hero). */}
+            {/* Two columns from `lg` up: the narrative reads on the left,
+                the six-axis profile it summarises sits on the right. Below
+                `lg` the grid collapses and the radar stacks under the
+                advice list rather than squeezing beside it — at ~300px
+                wide the axis labels collide.
+
+                `items-start` (not `stretch`): the radar keeps its own
+                fixed height and must not inherit the narrative column's,
+                which grows with the advice list. */}
+            <div
+                className={cn(
+                    'grid grid-cols-1 gap-default items-start',
+                    hasRadar && 'lg:grid-cols-[minmax(0,1fr)_320px]',
+                )}
+            >
+            {/* Headline + narrative + advice. */}
             <div className="min-w-0 flex flex-col gap-tight">
                 <p
                     className="text-xs text-content-muted uppercase tracking-wide font-medium"
@@ -161,6 +184,26 @@ export function PostureHeroCard({
                             </li>
                         ))}
                     </ul>
+                )}
+            </div>
+
+                {hasRadar && (
+                    // Guaranteed-height slot. NEVER `min-h-0` here — a
+                    // collapsible flex/grid child gives the chart's
+                    // auto-sizer a 0-height box and it renders blank
+                    // (the lesson the org maturity widget carries).
+                    <div
+                        className="h-[260px] w-full min-w-0"
+                        data-testid="dashboard-hero-radar"
+                    >
+                        <RadarChart
+                            state={chartReady(radarAxes!)}
+                            seriesIndex={2}
+                            maxValue={100}
+                            testId="posture-radar"
+                            ariaLabel={t('hero.radarAria')}
+                        />
+                    </div>
                 )}
             </div>
         </section>

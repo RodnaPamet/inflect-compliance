@@ -23,9 +23,10 @@ import Link from 'next/link';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 import { useOrgContext } from '@/lib/org-context-provider';
 import { InitialsAvatar } from '@/components/ui/initials-avatar';
+import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
 
 const PILL_CLASS =
-    'inline-flex items-center gap-tight rounded-full border border-border-subtle bg-bg-default px-3 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
+    `relative inline-flex items-center gap-tight rounded-full border border-border-subtle bg-bg-default px-3 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${HIT_AREA_CLASS}`;
 
 export function TenantIdentityPill() {
     const { tenantName } = useTenantContext();

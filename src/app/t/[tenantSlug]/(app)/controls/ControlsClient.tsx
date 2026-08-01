@@ -35,7 +35,7 @@ import { FormField } from '@/components/ui/form-field';
 import { formatDateTime } from '@/lib/format-date';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Plus, Trash } from '@/components/ui/icons/nucleo';
-import { IconAction } from '@/components/ui/icon-action';
+import { ViewsMenu } from '@/components/ui/views-menu';
 import { Paperclip, ChevronDown, ChevronLeft } from 'lucide-react';
 import {
     createColumns,
@@ -224,6 +224,7 @@ function ControlsPageInner({
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
     const t = useTranslations('controls');
+    const tUi = useTranslations('common.ui');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     // Bulk soft-delete + the Deleted-controls lifecycle view (Restore / Purge)
@@ -1728,21 +1729,52 @@ function ControlsPageInner({
                         {t('addControl')}
                     </Button>
                 ) : undefined,
-                // Item 5 — nav icon links sit in the toolbar actions slot,
-                // to the LEFT of the kpi/columns gears.
+                // The secondary navigation folds into ONE labelled "Views ▾"
+                // menu; only the page dashboard keeps a standalone icon, to
+                // the right of the trigger. The gears stay outside and one
+                // rung smaller — they are table chrome, not views.
                 toolbarActions: (
                     <>
-                        {/* Sankey is read-only and informational — keep it
-                            outside the create-permission gate so READERs
-                            can still glance at the asset → risk → control
-                            flow. */}
-                        <Tooltip content={t('list.sankeyFlow')}>
-                            <Link href={tenantHref('/controls/sankey')} aria-label={t('list.sankeyFlow')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="controls-sankey-btn">
-                                <AppIcon name="share" size={16} />
-                            </Link>
-                        </Tooltip>
+                        <ViewsMenu
+                            id="controls-views-menu"
+                            label={tUi('viewsMenu')}
+                            ariaLabel={tUi('viewsMenuAria')}
+                            groups={[
+                                {
+                                    id: 'views',
+                                    items: [
+                                        // Sankey is read-only and informational —
+                                        // it stays outside the create-permission
+                                        // gate so READERs can still glance at the
+                                        // asset → risk → control flow.
+                                        {
+                                            id: 'controls-sankey-btn',
+                                            label: t('list.sankeyFlow'),
+                                            icon: <AppIcon name="share" size={16} />,
+                                            href: tenantHref('/controls/sankey'),
+                                        },
+                                        appPermissions.controls.create && {
+                                            id: 'install-templates-btn',
+                                            label: t('list.installTemplates'),
+                                            icon: <AppIcon name="templates" size={16} />,
+                                            href: tenantHref('/controls/templates'),
+                                        },
+                                        // #3 — Deleted-controls view. Admin only:
+                                        // only admins can Restore / Purge (and see
+                                        // soft-deleted rows) server-side.
+                                        canAdmin && {
+                                            id: 'controls-show-deleted-toggle',
+                                            label: t('deleted.toggle'),
+                                            icon: <Trash className="size-4" />,
+                                            onSelect: () => setShowDeleted((v) => !v),
+                                            selected: showDeleted,
+                                        },
+                                    ],
+                                },
+                            ]}
+                        />
                         {/* R2-P3 — the controls dashboard is a read-only KPI
-                            view; ungate it from controls.create so READERs
+                            view; ungated from controls.create so READERs
                             (who can't create) can still see posture. Only the
                             template-install action stays create-gated. */}
                         <Tooltip content={t('list.controlsDashboard')}>
@@ -1750,26 +1782,6 @@ function ControlsPageInner({
                                 <AppIcon name="dashboard" size={16} />
                             </Link>
                         </Tooltip>
-                        {appPermissions.controls.create && (
-                            <Tooltip content={t('list.installTemplates')}>
-                                <Link href={tenantHref('/controls/templates')} aria-label={t('list.installTemplates')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="install-templates-btn">
-                                    <AppIcon name="templates" size={16} />
-                                </Link>
-                            </Tooltip>
-                        )}
-                        {/* #3 — Deleted-controls view toggle. Admin only: only
-                            admins can Restore / Purge (and see soft-deleted rows)
-                            server-side. */}
-                        {canAdmin && (
-                            <IconAction
-                                id="controls-show-deleted-toggle"
-                                variant={showDeleted ? 'primary' : 'secondary'}
-                                aria-pressed={showDeleted}
-                                onClick={() => setShowDeleted((v) => !v)}
-                                icon={<Trash className="size-4" />}
-                                label={t('deleted.toggle')}
-                            />
-                        )}
                         {columnsDropdown}
                         {filtersDropdown}
                     </>

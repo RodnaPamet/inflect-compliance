@@ -50,16 +50,38 @@ describe('P3 — concept guidance', () => {
 
 describe('P3 — findability + AI-Systems re-shelf', () => {
     const client = read(P('RisksClient.tsx'));
+    const menu = read('src/components/ui/views-menu.tsx');
 
     it('replaces the icon-button rail with a labeled Views menu', () => {
         expect(client).toMatch(/id="risks-views-menu"/);
         expect(client).toMatch(/viewsMenu/);
-        expect(client).toMatch(/<Popover\b/);
+        // The popover moved into the shared `<ViewsMenu>` primitive when
+        // the menu was generalised across the main list pages (2026-08-01)
+        // — the page mounts it, the primitive owns the popover.
+        expect(client).toMatch(/<ViewsMenu\b/);
+        expect(menu).toMatch(/<Popover\b/);
     });
 
     it('re-shelves AI-Systems into its own labeled Registry entry', () => {
-        expect(client).toMatch(/data-testid="views-menu-ai-systems"/);
+        expect(client).toMatch(/'data-testid': 'views-menu-ai-systems'/);
         expect(client).toMatch(/viewsRegistry/);
         expect(client).toMatch(/\/risks\/ai-systems/);
+    });
+
+    it('shelves the DORA Register of Information beside it', () => {
+        // Same "Registry" heading, same reasoning: a regulatory register
+        // ABOUT the estate, not an analytics view OVER it.
+        expect(client).toMatch(/'data-testid': 'views-menu-information-registry'/);
+        expect(client).toMatch(/\/risks\/information-registry/);
+        expect(exists(P('information-registry/page.tsx'))).toBe(true);
+    });
+
+    it('keeps the page dashboard OUT of the menu, as its own icon', () => {
+        // The one destination worth toolbar width. It must not be in
+        // RISK_VIEW_LINKS (which renders into the menu) and must render as
+        // a `size: 'icon'` link beside the trigger.
+        expect(client).not.toMatch(/href: '\/risks\/dashboard'/);
+        expect(client).toMatch(/id="risks-dashboard-btn"/);
+        expect(client).toMatch(/tenantHref\('\/risks\/dashboard'\)/);
     });
 });

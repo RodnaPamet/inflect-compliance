@@ -83,6 +83,8 @@
       "moreInformation": "More information",
       "moreInfoAbout": "More info about {title}",
       "filter": "Filter",
+      "viewsMenu": "Views",
+      "viewsMenuAria": "Other views of this list",
       "expandRail": "Expand rail",
       "collapseRail": "Collapse rail",
       "backToFilterList": "Back to filter list",
@@ -295,7 +297,16 @@
       "eyebrow": "Compliance posture",
       "regenerate": "Regenerate",
       "regenerating": "Regenerating…",
-      "maturitySuffix": "/ 100 maturity"
+      "maturitySuffix": "/ 100 maturity",
+      "radarAria": "Compliance posture profile — six axes, higher is better",
+      "radarAxes": {
+        "controls": "Controls",
+        "evidence": "Evidence",
+        "risk": "Risk",
+        "policies": "Policies",
+        "tasks": "Tasks",
+        "vendors": "Vendors"
+      }
     },
     "controlCoverage": "Control Coverage",
     "taskStatus": "Task Status",
@@ -1019,7 +1030,8 @@
       "correlations": "Correlations",
       "lossEvents": "Loss events",
       "reports": "Reports",
-      "aiSystems": "AI Systems (EU AI Act)"
+      "aiSystems": "AI Systems (EU AI Act)",
+      "informationRegistry": "Information Registry (DORA)"
     },
     "histogramView": {
       "title": "ALE histogram",
@@ -1598,10 +1610,40 @@
     "viewsMenuAria": "Analytical views",
     "viewsAnalytics": "Analytics",
     "viewsRegistry": "Registry",
+    "viewsTools": "Tools",
     "viewVulnerabilities": "View vulnerabilities",
     "stale": "Stale",
     "kpiStale": "Stale",
-    "residualNotAssessed": "Residual not yet assessed"
+    "residualNotAssessed": "Residual not yet assessed",
+    "informationRegistry": {
+      "title": "Information Registry",
+      "subtitle": "DORA Register of Information — contractual arrangements with ICT third-party service providers (Art. 28(3)).",
+      "scopeNote": "This register is projected from your vendor inventory. A vendor is listed as supporting a critical or important function when its criticality is Critical or High. Fields DORA requires but Inflect does not yet hold — LEI codes, contract value, and the substitutability assessment — are not shown; record them in the vendor before a supervisory submission.",
+      "conceptHelp": "DORA Art. 28(3) requires financial entities to maintain, at entity and (sub)consolidated level, a register of all contractual arrangements for ICT services, flagging those that support critical or important functions. Competent authorities can request it at any time.",
+      "count": "{count, plural, =1 {# arrangement} other {# arrangements}}",
+      "criticalCount": "{count} supporting a critical or important function",
+      "colProvider": "ICT provider",
+      "colFunction": "Critical / important",
+      "colCriticality": "Criticality",
+      "colCountry": "Country",
+      "colDataAccess": "Data access",
+      "colContractEnd": "Contract renewal",
+      "colStatus": "Status",
+      "colOwner": "Owner",
+      "functionYes": "Yes",
+      "functionNo": "No",
+      "subprocessor": "Subprocessor",
+      "notRecorded": "Not recorded",
+      "empty": "No ICT third-party arrangements recorded yet.",
+      "emptyAction": "Add a vendor",
+      "backToRisks": "Risks",
+      "searchPlaceholder": "Search providers…",
+      "emptyDesc": "ICT third-party arrangements are projected from your vendor inventory — add a vendor and it appears here.",
+      "emptyFilteredTitle": "No arrangements match these filters",
+      "emptyFilteredDesc": "Clear a filter to see the rest of the register.",
+      "resourceSingular": "arrangement",
+      "resourcePlural": "arrangements"
+    }
   },
   "controls": {
     "title": "Controls Library",

@@ -12,6 +12,7 @@ import {
     useMemo,
     useRef,
 } from "react";
+import { HIT_AREA_CLASS } from "./hit-area";
 
 /**
  * Epic 60 polish primitive — ToggleGroup.
@@ -54,7 +55,10 @@ const toggleGroupVariants = cva(
 );
 
 const toggleOptionVariants = cva(
-    "text-content-emphasis relative z-10 flex items-center gap-tight font-medium capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg",
+    // `HIT_AREA_CLASS`: the rounded corners of an option were dead to
+    // `:hover` (5% of a 63x20 option, measured), so sliding along the
+    // toggle dropped the hover between options. See `hit-area.ts`.
+    `text-content-emphasis relative z-10 flex items-center gap-tight font-medium capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg ${HIT_AREA_CLASS}`,
     {
         variants: {
             size: {

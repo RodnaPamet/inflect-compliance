@@ -45,6 +45,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { formatDateCompact } from '@/lib/format-date';
 import { env } from '@/env';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
+import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -80,8 +81,11 @@ const NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS = 5 * 60_000;
 
 // ─── Recipes ───────────────────────────────────────────────────────
 
+// `HIT_AREA_CLASS`: a 22px `rounded-full` bell is a circle in a square —
+// 14% of its box rendered as bell but did not answer to `:hover`. See
+// `hit-area.ts` for the measurements.
 const BELL_BUTTON_CLASS =
-    `relative inline-flex items-center justify-center h-[22px] w-[22px] rounded-full text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS}`;
+    `relative inline-flex items-center justify-center h-[22px] w-[22px] rounded-full text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
 
 const BADGE_OVERLAY_CLASS =
     // Pill chip pinned to the bell's top-right corner. Negative

@@ -44,7 +44,12 @@ test.describe('Controls Center', () => {
         await authedPage.waitForLoadState('networkidle').catch(() => {});
         await authedPage.waitForSelector('h1', { timeout: 15000 });
         await expect(authedPage.locator('#new-control-btn')).toBeVisible({ timeout: 5000 });
+        // The template installer folded into the labelled "Views" menu with
+        // the rest of the toolbar's icon rail (2026-08-01), so it is one
+        // click deeper: open the menu, then assert the row.
+        await authedPage.locator('#controls-views-menu').click();
         await expect(authedPage.locator('#install-templates-btn')).toBeVisible();
+        await authedPage.keyboard.press('Escape');
         // R14 (#443) removed the FilterToolbar text-search input from every
         // list page — no `#control-search` element to assert.
         // Epic 53: the per-field `#control-status-filter` dropdown has been
@@ -206,6 +211,9 @@ test.describe('Controls Center', () => {
 
         // Reader should NOT see create buttons.
         await expect(page.locator('#new-control-btn')).not.toBeVisible({ timeout: 3000 });
+        // …including inside the Views menu: the install row is gated on
+        // `controls.create`, so opening the menu must not reveal it.
+        await page.locator('#controls-views-menu').click();
         await expect(page.locator('#install-templates-btn')).not.toBeVisible({
             timeout: 3000,
         });

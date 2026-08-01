@@ -92,7 +92,12 @@ describe('icon-only action discipline', () => {
     // aria-label + Tooltip render `tx('<key>')` and the English resolves
     // through the risks catalog.
     const LINK_SITES: Array<{ file: string; ariaLabel: string; i18nKey?: string; ns?: string }> = [
-        { file: `${APP}/risks/RisksClient.tsx`, ariaLabel: 'Import risks', i18nKey: 'importRisks', ns: 'risks' },
+        // 'Import risks' left this list when the risks toolbar folded its
+        // icon rail into the labelled Views menu — it is now a menu ROW
+        // (icon + text), which is the opposite of icon-only. The page
+        // dashboard is the one icon-only link that survived the fold, so
+        // it takes the slot and keeps the contract under test.
+        { file: `${APP}/risks/RisksClient.tsx`, ariaLabel: 'Risk dashboard', i18nKey: 'viewLinks.dashboard', ns: 'risks' },
         { file: `${APP}/audits/packs/[packId]/page.tsx`, ariaLabel: 'Export JSON', i18nKey: 'packs.exportJson', ns: 'audits' },
         { file: `${APP}/audits/packs/[packId]/page.tsx`, ariaLabel: 'Export CSV', i18nKey: 'packs.exportCsv', ns: 'audits' },
     ];

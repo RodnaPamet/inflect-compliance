@@ -39,7 +39,14 @@ describe('item 30 — risk navigation shape', () => {
         expect(src).toMatch(/value: 'heatmap', label: t\.heatmap/);
     });
 
-    it('histogram is rendered as its own standalone toggle button', () => {
-        expect(src).toContain("aria-pressed={view === 'histogram'}");
+    it('histogram stays a distinct MODE with a selected state', () => {
+        // It was a standalone icon button; the toolbar fold moved it into
+        // the labelled Views menu, where `<ViewsMenu>` renders it as a
+        // `<Popover.Item selected aria-pressed>` action row. What matters
+        // is unchanged: the histogram is a mode of THIS page (an action,
+        // never an href) and its current state is visible.
+        expect(src).toMatch(/id: 'risks-view-histogram'/);
+        expect(src).toMatch(/onSelect: \(\) => setView\('histogram'\)/);
+        expect(src).toMatch(/selected: view === 'histogram'/);
     });
 });
