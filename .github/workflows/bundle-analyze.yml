@@ -17,6 +17,14 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, labeled]
+  # Merge queue — present so this workflow can ANSWER a `merge_group`
+  # event if "Analyze client/server bundles" is ever selected as a
+  # required status check. A workflow that never triggers reports nothing
+  # and the required check hangs forever; a job that skips reports
+  # `skipped`, which branch protection counts as a pass. The job below
+  # skips in the queue (see its `if:`). Locked by
+  # tests/guardrails/merge-queue-trigger-coverage.test.ts.
+  merge_group:
 
 permissions:
   contents: read
@@ -29,9 +37,17 @@ jobs:
   analyze:
     name: "Analyze client/server bundles"
     # Push to main always; PRs only when labelled perf-watch.
+    #
+    # Merge-queue lean set: SKIP. `github.event.pull_request` is undefined
+    # under `merge_group`, so the label test could never be true anyway —
+    # spelling the event out keeps the intent explicit rather than relying
+    # on null-propagation. Bundle size is a trend signal measured on the
+    # opted-in PR and on every push to `main`; it is not a merge-collision
+    # class, and the analyze build is a 30-min 8 GB-heap job.
     if: >-
       github.event_name == 'push' ||
-      contains(github.event.pull_request.labels.*.name, 'perf-watch')
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'perf-watch'))
     # Match the main CI Build job's runner — the analyzer build is heavier than
     # a plain `next build` and OOMs on a small runner's heap.
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}

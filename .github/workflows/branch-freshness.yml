@@ -13,6 +13,22 @@
 #  always exits 0. A stale-but-correct PR should never be BLOCKED from
 #  merging by this signal; it should only be reminded. Escalation (if
 #  ever wanted) is a one-line change to the exit code below.
+#
+#  NO `merge_group:` TRIGGER — deliberate, and the one exemption from the
+#  repo-wide rule that every `pull_request` workflow carries one (see
+#  tests/guardrails/merge-queue-trigger-coverage.test.ts, which holds this
+#  exemption with its reason). Two grounds:
+#    (a) This check must NEVER be selected as a required status check —
+#        it is contractually non-blocking, so the invariant the trigger
+#        protects ("a required check that never reports hangs the queue")
+#        cannot apply to it.
+#    (b) The measurement is "how far is the PR head behind its base",
+#        read from `github.event.pull_request.{base,head}.sha`. That
+#        context is undefined under `merge_group`, and the queue's
+#        temporary ref is by construction up to date with `main` — the
+#        answer would be a meaningless zero.
+#  If this ever becomes blocking, add `merge_group:` in the SAME diff and
+#  delete the exemption entry.
 # ───────────────────────────────────────────────────────────────
 name: Branch Freshness
 
