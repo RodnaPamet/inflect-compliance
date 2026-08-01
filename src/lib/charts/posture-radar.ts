@@ -59,39 +59,88 @@ function healthyShare(bad: number, total: number): number {
 
 // ─── The ladder ──────────────────────────────────────────────────────
 //
-// Five rungs, one shared scale, exact cut-points. Every axis is already a
-// "share of the estate that is healthy" percentage, so ONE table of
-// numbers can rate all six — and the reader can check any rating by hand
-// from the counts on the page.
+// Five rungs, one shared scale. Every axis is already a "share of the
+// estate that is healthy" percentage, so ONE table of numbers can rate
+// all six — and the reader can check any rating by hand from the counts
+// on the page.
 //
 // Why one shared table rather than six bespoke ones: a per-axis ladder
 // would make "Controls level 3" and "Evidence level 3" mean different
 // amounts of work, and the radar's whole claim is that its six spokes are
 // comparable. They are comparable precisely because the rule is the same.
 //
-// The cut-points are deliberately NOT evenly spaced. Compliance estates
-// cluster near the top — a tenant at 88% healthy is in a materially
-// different position from one at 96% — so the rungs tighten as they rise:
-// 40 / 60 / 80 / 95. Anything below 40% healthy is one band, because the
-// difference between 12% and 30% coverage is not a difference in kind.
+// ── The top rung is a statement about DEFECTS, not a percentage ──
+//
+// Level 5 means everything is perfect: zero overdue, zero severe, nothing
+// unimplemented. It cannot be reached by scoring highly, because a
+// percentage cannot express "none left" — 249 of 250 healthy is 99.6%,
+// which ROUNDS TO 100 and would have promoted an axis with a live overdue
+// log to the top of the ladder. That was the reported bug. The rule is
+// therefore `measured === total`, evaluated on the counts, and the
+// percentage bands below cap at 4 while any defect remains.
+//
+// The four bands below the top are evenly spaced quarters (50 / 75 / 90)
+// rather than the earlier top-heavy 40/60/80/95. Once the top rung is
+// reserved for a clean sheet, the bands underneath describe how far off a
+// clean sheet the tenant is, and that distance reads better spread out:
+// "nine in ten healthy" (4) is a real position, and so is "half" (2).
 
-/** The five rungs, ascending. `min` is the inclusive floor on the 0-100 axis score. */
+/**
+ * The five rungs, ascending. `min` is the inclusive floor on the 0-100
+ * axis score.
+ *
+ * The level-5 floor of 100 is NECESSARY BUT NOT SUFFICIENT — see the note
+ * above. `levelForRating` owns the zero-defect rule; nothing should rate
+ * an axis from its score alone.
+ */
 export const POSTURE_LADDER = [
     { level: 1, key: 'initial', min: 0 },
-    { level: 2, key: 'developing', min: 40 },
-    { level: 3, key: 'defined', min: 60 },
-    { level: 4, key: 'managed', min: 80 },
-    { level: 5, key: 'optimising', min: 95 },
+    { level: 2, key: 'developing', min: 50 },
+    { level: 3, key: 'defined', min: 75 },
+    { level: 4, key: 'managed', min: 90 },
+    { level: 5, key: 'optimising', min: 100 },
 ] as const;
 
 export type PostureLevel = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * Frame height for the hero's radar.
+ *
+ * Sized so the dial is bound by the column's WIDTH rather than its
+ * height: in a 340px column the frame's inner SVG is 308px wide, the
+ * label margin is 55px, so the dial wants a 99px radius — which needs
+ * ~254px of SVG height, plus the frame's 32px of padding.
+ *
+ * Any smaller and the dial shrinks; any larger and the extra height is
+ * spent on nothing, pushing the per-component metrics away from the
+ * chart they belong to.
+ */
+export const POSTURE_RADAR_FRAME_HEIGHT = 288;
 export type PostureLevelKey = (typeof POSTURE_LADDER)[number]['key'];
 
-/** The rung a 0-100 axis score sits on. */
-export function levelForScore(score: number): PostureLevel {
+/**
+ * The rung an axis sits on, or `null` when the axis has no estate to
+ * rate.
+ *
+ * `null` rather than a default level: a tenant with no vendors is neither
+ * good nor bad at vendors, and 0/0 is not a perfect score. Scoring it 5
+ * would put a fabricated "Optimising" on the page and let an axis the
+ * tenant does not use hold up — or hold down — the headline.
+ */
+export function levelForRating(input: {
+    value: number;
+    measured: number;
+    total: number;
+}): PostureLevel | null {
+    if (input.total <= 0) return null;
+    // The ONLY route to the top rung: nothing left to fix.
+    if (input.measured >= input.total) return 5;
+    // A defect exists, so the score cannot promote past 4 however it
+    // rounds.
     let level: PostureLevel = 1;
     for (const rung of POSTURE_LADDER) {
-        if (score >= rung.min) level = rung.level as PostureLevel;
+        if (rung.level === 5) continue;
+        if (input.value >= rung.min) level = rung.level;
     }
     return level;
 }
@@ -106,15 +155,16 @@ export function levelKey(level: PostureLevel): PostureLevelKey {
  *
  * `measured` / `total` are the raw counts the score came from — the whole
  * point of "exact metrics" is that the reader can divide them and get the
- * percentage back. `total === 0` means the axis has no estate behind it
- * (see the module note on empty denominators).
+ * percentage back, and that the top rung can be verified as "these two
+ * numbers are equal". `level === null` means the axis has no estate
+ * behind it.
  */
 export interface PostureAxisRating {
     key: PostureRadarAxis;
     label: string;
     /** 0-100, higher is better. */
     value: number;
-    level: PostureLevel;
+    level: PostureLevel | null;
     /** Numerator: the part of the estate that is healthy. */
     measured: number;
     /** Denominator: the part of the estate this axis rates at all. */
@@ -122,7 +172,7 @@ export interface PostureAxisRating {
 }
 
 /**
- * The tenant's overall rung: **the weakest axis**, not the average.
+ * The tenant's overall rung: **the weakest rated axis**, not the average.
  *
  * A mean would let five strong axes hide one that is failing, which is
  * exactly the reading a posture headline must not support — and it would
@@ -131,20 +181,27 @@ export interface PostureAxisRating {
  * chart self-explaining: the shortest spoke IS the headline, and naming
  * it (`limitedBy`) turns the number into an instruction.
  *
- * Axes with no estate behind them (`total === 0`) are skipped rather than
- * scored 100 — a tenant with no vendors should be neither rewarded nor
- * punished on the vendor axis, and letting an empty axis set the overall
- * level would rate the whole tenant on something it does not do.
+ * Weakest is by LEVEL first, then by score. Ordering by score alone can
+ * pick an axis whose 99.6% rounds to 100 over one genuinely on 96% —
+ * both are level 4, but the headline must name the one that actually
+ * holds the level down.
+ *
+ * Unrated axes (`level === null`) are skipped: rating a tenant on
+ * something it does not do is worse than saying nothing.
  */
 export function overallLevel(ratings: readonly PostureAxisRating[]): {
     level: PostureLevel;
     limitedBy: PostureAxisRating | null;
 } {
-    const rated = ratings.filter((r) => r.total > 0);
+    const rated = ratings.filter(
+        (r): r is PostureAxisRating & { level: PostureLevel } => r.level !== null,
+    );
     if (rated.length === 0) return { level: 1, limitedBy: null };
     let weakest = rated[0];
     for (const r of rated) {
-        if (r.value < weakest.value) weakest = r;
+        if (r.level < weakest.level || (r.level === weakest.level && r.value < weakest.value)) {
+            weakest = r;
+        }
     }
     return { level: weakest.level, limitedBy: weakest };
 }
@@ -223,9 +280,13 @@ export function ratePostureAxes(
         key: axis,
         label: label(axis),
         value: values[axis],
-        level: levelForScore(values[axis]),
         measured: counts[axis].measured,
         total: counts[axis].total,
+        level: levelForRating({
+            value: values[axis],
+            measured: counts[axis].measured,
+            total: counts[axis].total,
+        }),
     }));
 }
 

@@ -23,10 +23,11 @@ import { cn } from '@/lib/cn';
 import type { PostureAxisRating, PostureLevel } from '@/lib/charts/posture-radar';
 
 /**
- * Rung → tone. Deliberately only three tones across five rungs: the
- * bottom two are the ones that need attention, the top two are fine, and
- * the middle is neutral. Five distinct colours would imply a precision
- * the ladder does not claim.
+ * Rung → tone. Deliberately only four tones across five rungs: the bottom
+ * two need attention, the middle is neutral, and the top two are fine.
+ * Five distinct colours would imply a precision the ladder does not
+ * claim. Level 5 is the only one that means "nothing left to fix", so it
+ * is the only one that gets the confident tone on its own.
  */
 export const LEVEL_TONE: Record<PostureLevel, string> = {
     1: 'text-content-error',
@@ -67,7 +68,7 @@ export function PostureLadder({ ratings, className }: PostureLadderProps) {
                             vendors, and printing "0/0 · L5" would be a claim
                             about something it does not do. */}
                         {r.total > 0 ? `${r.measured}/${r.total}` : t('hero.ladderNoEstate')}
-                        {r.total > 0 && (
+                        {r.level !== null && (
                             <span className={cn('ml-1.5 font-semibold', LEVEL_TONE[r.level])}>
                                 {t('hero.levelShort', { level: r.level })}
                             </span>
