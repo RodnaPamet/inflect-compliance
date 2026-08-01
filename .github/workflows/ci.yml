@@ -77,6 +77,28 @@ on:
   # docs-only PR that skips CI on the `pull_request` event WILL run the
   # lean gate on its way through the queue. That is deliberate — a queued
   # merge is a merge into main and gets the same gate as any other.
+  #
+  # ── SELECTING REQUIRED STATUS CHECKS: what must NEVER be required ──
+  # The required set is `Lint` · `Typecheck` · `Test` (the summary job,
+  # not `Test (shard N/4)`) · `Build` · `Security`. Two exclusions are
+  # not merely "buys nothing" — they would HANG every merge in the repo:
+  #
+  #   • `Analyze (<language>)` — GitHub-MANAGED code scanning, run from
+  #     `dynamic/github-code-scanning/codeql`. There is no workflow file
+  #     in this repo to add `merge_group:` to, so the trigger invariant
+  #     above cannot be enforced for it and whether it answers a
+  #     merge_group event can change without a commit here. Never
+  #     require it. (Distinct from this file's own `codeql` job, whose
+  #     context is `CodeQL SAST (<language>)` and which is a deliberate
+  #     queue SKIP — so that one must not be required either.)
+  #   • `Branch freshness (behind-base nudge)` — has no `merge_group`
+  #     trigger at all, by design; it is contractually non-blocking.
+  #
+  # The skipped-in-queue jobs (`E2E`, `Docker Build`, `Trivy Image
+  # Scan`, `Coverage`, `Load Smoke`) report `skipped` — a pass — so
+  # requiring them would not hang, it would just gate on nothing.
+  # `Detect changes` runs but is internal plumbing, not a gate.
+  # Locked by tests/guardrails/merge-queue-trigger-coverage.test.ts.
   merge_group:
   # Weekly scheduled scan — GitHub's Code Scanning UI expects a
   # periodic refresh of CodeQL + Trivy results on the default branch,

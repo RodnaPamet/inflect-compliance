@@ -40,10 +40,34 @@
  *   5. Queue-run concurrency — a CANCELLED queue run is reported as a
  *      FAILURE and ejects the PR from the queue, so `ci.yml` must never
  *      cancel in-progress runs.
+ *   6. The never-require list — contexts produced by workflows this scan
+ *      CANNOT see must stay out of the required set (see SCAN SCOPE).
+ *
+ * SCAN SCOPE — AND ITS LIMIT
+ * --------------------------
+ * This guard reads `.github/workflows/*.yml`. That is every workflow
+ * whose definition lives in this repository, but it is NOT every
+ * workflow that produces a PR check context.
+ *
+ * GitHub-managed workflows run from synthetic paths under `dynamic/`
+ * and have no file here to add `merge_group:` to. Today that is
+ * code-scanning's CodeQL (`dynamic/github-code-scanning/codeql`), which
+ * emits `Analyze (<language>)` contexts on every PR. Whether a managed
+ * workflow answers `merge_group` is GitHub's implementation detail, not
+ * ours, and it can change without a commit in this repo.
+ *
+ * Since the invariant cannot be enforced for those contexts, the safe
+ * position is that they are NEVER selected as required status checks —
+ * requiring one that does not answer `merge_group` hangs every merge in
+ * the repo. `NEVER_REQUIRE` below records them, and a test asserts the
+ * `ci.yml` docblock names them, so the operator selecting required
+ * checks reads the warning where they are already looking.
  *
  * See docs/implementation-notes/2026-08-01-merge-queue.md, which also
  * carries the enablement runbook (the queue is a repository SETTING and
- * is enabled by the repo owner AFTER this workflow change lands).
+ * is enabled by the repo owner AFTER this workflow change lands). That
+ * note is a historical record and is deliberately not edited; this file
+ * and the `ci.yml` docblock are the live, enforced statement.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -70,6 +94,27 @@ const MERGE_GROUP_EXEMPT: Readonly<Record<string, string>> = {
         'undefined under merge_group, and the queue ref is by construction up to date with main ' +
         'so the behind-count would be a meaningless zero. If it ever becomes blocking, add ' +
         'merge_group: in the same diff as deleting this entry.',
+};
+
+/**
+ * Check contexts that must NEVER be added to the required-status-check
+ * set, because they come from a workflow this guard cannot reach (see
+ * SCAN SCOPE above) and therefore cannot be held to the trigger
+ * invariant. Requiring one that does not answer `merge_group` stalls
+ * every merge in the repo with no error message.
+ *
+ * Keyed by the context name as it appears in the GitHub UI / on the PR.
+ * `Analyze (…)` is matched as a prefix — code scanning emits one context
+ * per configured language and the language list is not ours to pin.
+ */
+const NEVER_REQUIRE: Readonly<Record<string, string>> = {
+    'Analyze (':
+        'GitHub-managed code scanning, run from dynamic/github-code-scanning/codeql. There is ' +
+        'no workflow file in this repo to add merge_group: to, and whether the managed workflow ' +
+        'answers merge_group can change without a commit here. Our own SAST lives in the ci.yml ' +
+        '`codeql` job (context "CodeQL SAST (<language>)"), which is in the lean set as a ' +
+        'deliberate SKIP — so neither the managed nor the in-repo CodeQL belongs in the ' +
+        'required set.',
 };
 
 /**
@@ -297,6 +342,30 @@ describe('merge queue — the lean gate is not hollowed out', () => {
 
     it('the header documents the lean set so a reader need not diff the jobs', () => {
         expect(CI).toMatch(/Merge-queue lean set/);
+    });
+});
+
+describe('merge queue — contexts that must never be required', () => {
+    // The guard cannot enforce the trigger invariant on a workflow with no
+    // file (see SCAN SCOPE). The mitigation is that the operator selecting
+    // required checks is warned in the place they are already reading, so
+    // the list and the docblock are held together here.
+    it.each(Object.keys(NEVER_REQUIRE))(
+        'ci.yml warns against requiring the %s… context',
+        (context) => {
+            expect(NEVER_REQUIRE[context].length).toBeGreaterThan(80);
+            expect(CI).toContain(context);
+        },
+    );
+
+    it('ci.yml states the never-require rule, not merely the context names', () => {
+        expect(CI).toMatch(/never\s+be\s+(selected|added|required)|do\s+NOT\s+require/i);
+    });
+
+    it('our own CodeQL SAST job is a queue skip, so it cannot be required either', () => {
+        // If someone flips this to run in the queue, requiring it becomes
+        // defensible and this whole section needs revisiting — fail loudly.
+        expect(QUEUE_SKIPPED_JOBS).toHaveProperty('codeql');
     });
 });
 
