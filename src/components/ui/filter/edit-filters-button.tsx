@@ -29,7 +29,7 @@ export function EditFiltersButton(props: EditFiltersButtonProps) {
     return (
         <ChecklistGearButton
             {...props}
-            icon={<Settings className="h-4 w-4 shrink-0" />}
+            icon={<Settings className="h-3.5 w-3.5 shrink-0" />}
             title="Edit filter cards"
             data-testid="edit-filters-button"
         />

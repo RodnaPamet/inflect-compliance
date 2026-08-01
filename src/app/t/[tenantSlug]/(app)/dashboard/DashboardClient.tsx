@@ -100,6 +100,8 @@ const TrendCard = dynamic(
     { ssr: false, loading: () => <Skeleton className="h-full w-full min-h-[120px] rounded-lg" /> },
 );
 import { cn } from '@/lib/cn';
+import { RadarChart, chartReady } from '@/components/ui/charts';
+import { buildPostureRadarAxes, isPostureRadarMeaningful } from '@/lib/charts/posture-radar';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref, usePermissions, useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -234,6 +236,21 @@ export default function DashboardClient({
             fallbackData: initialPostureSummary,
         });
 
+    // The hero's six-axis profile. Derived from the SAME executive payload
+    // the posture narrative is generated from (`gatherPostureSignals`
+    // reuses `getExecutiveDashboard`), so the polygon and the headline
+    // beside it can never disagree — no second fetch, no second source.
+    // Empty for a tenant with no estate: every axis would read 100 for the
+    // want of anything to be overdue, which would be a lie next to an
+    // "At risk" headline.
+    const radarAxes = React.useMemo(
+        () =>
+            isPostureRadarMeaningful(exec)
+                ? buildPostureRadarAxes(exec, (axis) => t(`hero.radarAxes.${axis}`))
+                : [],
+        [exec, t],
+    );
+
     const [regenerating, setRegenerating] = React.useState(false);
     const handleRegeneratePosture = React.useCallback(async () => {
         setRegenerating(true);
@@ -296,18 +313,45 @@ export default function DashboardClient({
                     canRegenerate={perms.controls.edit}
                     onRegenerate={handleRegeneratePosture}
                     regenerating={regenerating}
+                    radarAxes={radarAxes}
                 />
             ) : (
-                <HeroMetric
-                    eyebrow={t('controls')}
-                    value={exec.controlCoverage.coveragePercent}
-                    format="percent"
-                    description={`${exec.controlCoverage.implemented} of ${exec.controlCoverage.applicable} controls implemented`}
-                    delta={coverageDelta}
-                    deltaPolarity="up-good"
-                    deltaLabel="vs prev"
-                    data-testid="dashboard-hero"
-                />
+                // Fallback masthead. The radar rides along here too — it is
+                // computed from the executive payload, not from the AI
+                // summary, so it is just as true on a tenant whose narrative
+                // hasn't been generated yet. Same section, same right-hand
+                // column, so the hero reads the same either way.
+                <section
+                    className={cn(
+                        'grid grid-cols-1 gap-default items-center',
+                        radarAxes.length > 0 && 'lg:grid-cols-[minmax(0,1fr)_320px]',
+                    )}
+                    data-testid="dashboard-hero-fallback"
+                >
+                    <HeroMetric
+                        eyebrow={t('controls')}
+                        value={exec.controlCoverage.coveragePercent}
+                        format="percent"
+                        description={`${exec.controlCoverage.implemented} of ${exec.controlCoverage.applicable} controls implemented`}
+                        delta={coverageDelta}
+                        deltaPolarity="up-good"
+                        deltaLabel="vs prev"
+                        data-testid="dashboard-hero"
+                    />
+                    {radarAxes.length > 0 && (
+                        // Fixed height — never `min-h-0`, or the auto-sizer
+                        // gets a 0-height box and paints nothing.
+                        <div className="h-[260px] w-full min-w-0" data-testid="dashboard-hero-radar">
+                            <RadarChart
+                                state={chartReady(radarAxes)}
+                                seriesIndex={2}
+                                maxValue={100}
+                                testId="posture-radar"
+                                ariaLabel={t('hero.radarAria')}
+                            />
+                        </div>
+                    )}
+                </section>
             )}
 
             {/* ─── KPI Grid (6 cards) — R17-PR7: each tile is now a

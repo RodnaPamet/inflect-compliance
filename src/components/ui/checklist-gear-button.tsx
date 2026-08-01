@@ -229,7 +229,13 @@ export function ChecklistGearButton({
             <Button
                 type="button"
                 className={cn(
-                    'size-9 shrink-0 whitespace-nowrap rounded-[8px] p-0',
+                    // One rung SMALLER than the toolbar's action buttons
+                    // (28px). The gears are table chrome — column visibility
+                    // and filter-card visibility — not navigation, and at the
+                    // old 36px they were the largest thing in a row of 28px
+                    // pills, reading as the most important control in it.
+                    // 24px puts them a step below the row they garnish.
+                    'size-6 shrink-0 whitespace-nowrap rounded-[8px] p-0 [&_svg]:size-[13px]',
                     someModified && 'ring-1 ring-[var(--brand-default)]/30',
                     className,
                 )}

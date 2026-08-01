@@ -48,6 +48,7 @@ function code(rel: string): string {
 const VARIANTS = 'src/components/ui/button-variants.ts';
 const BUTTON = 'src/components/ui/button.tsx';
 const CONTROLS = 'src/components/ui/control-variants.ts';
+const HIT_AREA = 'src/components/ui/hit-area.ts';
 
 describe('Still Surface — motionless by construction', () => {
     const src = code(VARIANTS);
@@ -119,9 +120,104 @@ describe('Still Surface — motionless by construction', () => {
         },
     );
 
-    it('has no pseudo-element layers — depth is painted on the element', () => {
-        expect(src).not.toMatch(/\bbefore:/);
+    it('has no pseudo-element MATERIAL — depth is painted on the element', () => {
+        // The original rule banned `before:` / `after:` outright, because
+        // every pseudo-element the R19→R24 stack used was a paint layer:
+        // a hover fade, an aura bloom, a glass meniscus. That is still
+        // banned — but the ban is on MATERIAL, not on the mechanism.
+        //
+        // One non-painting pseudo-element is now allowed and asserted
+        // below: the `::before` hit area that gives a `rounded-full`
+        // button its square box back for hover purposes. It carries no
+        // colour, no shadow, no filter and no transition, so it cannot
+        // reintroduce depth-through-motion by any route.
+        const PAINTING_PSEUDO = [
+            /before:bg-/, /after:bg-/,
+            /before:shadow/, /after:shadow/,
+            /before:opacity/, /after:opacity/,
+            /before:backdrop/, /after:backdrop/,
+            /before:blur/, /after:blur/,
+            /before:border-\[/, /after:border-\[/,
+        ];
+        for (const rx of PAINTING_PSEUDO) {
+            expect({ rx: String(rx), hit: rx.test(src) }).toEqual({
+                rx: String(rx),
+                hit: false,
+            });
+        }
+        // `::after` stays entirely unused — nothing needs a second layer.
         expect(src).not.toMatch(/\bafter:/);
+    });
+
+    it('keeps the hit area square so a pill has no dead corners', () => {
+        // Measured before this landed: 16% of a 28px icon button's own box
+        // (the four corner arcs) rendered as button but did not answer to
+        // `:hover`, so a diagonal approach left the pointer visibly on the
+        // tile with the hover off — and a small wiggle across the arc
+        // toggled it. Dropping the layer brings the dead corners back.
+        const recipe = code(HIT_AREA);
+        expect(recipe).toMatch(/before:content-\['']/);
+        expect(recipe).toMatch(/before:absolute/);
+        // The border box, not the padding box — `inset-0` leaves the 1px
+        // border ring dead, which measured WORSE than no fix at all (an
+        // arc plus a square edge is four wiggle crossings, not two).
+        expect(recipe).toMatch(/before:-inset-px/);
+        expect(recipe).not.toMatch(/before:inset-0/);
+        // Square, not pill — inheriting the radius would restore the very
+        // dead zone this exists to remove.
+        expect(recipe).toMatch(/before:rounded-none/);
+        expect(recipe).not.toMatch(/before:rounded-full/);
+        // …and the button actually wears it.
+        expect(src).toMatch(/HIT_AREA_CLASS/);
+        // The element must stay a positioning context, or the offsets
+        // resolve against an ancestor and the hit area detaches.
+        expect(src).toMatch(/"relative"/);
+    });
+
+    it('every rounded control recipe shares the ONE hit area', () => {
+        // The pill button was not the only offender — the probe found the
+        // same dead corners on the topbar bell (14%), the tenant switcher
+        // (3%), the view toggle (5%) and the filter trigger (2%). They are
+        // hand-rolled recipes rather than `buttonVariants` consumers, so
+        // each has to opt in explicitly. Adding a new rounded control?
+        // Import `HIT_AREA_CLASS` rather than growing a second recipe.
+        const CONSUMERS = [
+            'src/components/ui/button-variants.ts',
+            'src/components/ui/toggle-group.tsx',
+            'src/components/ui/filter/filter-select.tsx',
+            'src/components/layout/notifications-bell.tsx',
+        ];
+        for (const rel of CONSUMERS) {
+            expect({ rel, uses: code(rel).includes('HIT_AREA_CLASS') }).toEqual({
+                rel,
+                uses: true,
+            });
+        }
+    });
+
+    it('no consumer clips its own hit area', () => {
+        // `overflow: hidden` — which Tailwind's `truncate` sets — clips the
+        // pseudo-element back to the rounded padding box and silently
+        // restores the dead corners. The filter trigger shipped exactly
+        // that bug: 1% dead and FOUR hover flips per corner wiggle while
+        // looking, in source, like it had the fix.
+        const CLIPPERS = /\btruncate\b|\boverflow-hidden\b/;
+        const FILES = [
+            'src/components/ui/button-variants.ts',
+            'src/components/ui/toggle-group.tsx',
+            'src/components/ui/filter/filter-select.tsx',
+            'src/components/layout/notifications-bell.tsx',
+        ];
+        for (const rel of FILES) {
+            const src = code(rel);
+            const at = src.indexOf('HIT_AREA_CLASS', src.indexOf('HIT_AREA_CLASS') + 1);
+            // Window around the class list that carries the hit area.
+            const window = src.slice(Math.max(0, at - 400), at + 200);
+            expect({ rel, clipped: CLIPPERS.test(window) }).toEqual({
+                rel,
+                clipped: false,
+            });
+        }
     });
 });
 

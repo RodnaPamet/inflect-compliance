@@ -40,7 +40,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { Plus, Trash } from '@/components/ui/icons/nucleo';
-import { IconAction } from '@/components/ui/icon-action';
+import { ViewsMenu } from '@/components/ui/views-menu';
 import { NewAssetModal } from './NewAssetModal';
 import { AssetDetailPanel } from './AssetDetailPanel';
 import { AsidePanel } from '@/components/ui/aside-panel';
@@ -981,31 +981,48 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     }
                     actions={
                         <>
-                            <Tooltip content={tx('coverageTooltip')}>
-                                <Link href={tenantHref('/coverage')} aria-label={tx('coverageTooltip')} className={buttonVariants({ variant: 'secondary', size: 'icon' })}><AppIcon name="shield" size={16} /></Link>
-                            </Tooltip>
-                            <Tooltip content={tx('viewVulnerabilities')}>
-                                <Link href={tenantHref('/vulnerabilities')} aria-label={tx('viewVulnerabilities')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="assets-vulnerabilities-link"><AppIcon name="bug" size={16} /></Link>
-                            </Tooltip>
-                            {permissions.canWrite && (
-                                <Tooltip content={tx('importAssets')}>
-                                    <Link href={tenantHref('/assets/import')} aria-label={tx('importAssets')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="asset-import-btn">
-                                        <AppIcon name="upload" size={16} />
-                                    </Link>
-                                </Tooltip>
-                            )}
-                            {/* Deleted-assets view toggle — admin only (only
-                                admins can Restore / Purge server-side). */}
-                            {permissions.canAdmin && (
-                                <IconAction
-                                    id="assets-show-deleted-toggle"
-                                    variant={showDeleted ? 'primary' : 'secondary'}
-                                    aria-pressed={showDeleted}
-                                    onClick={() => setShowDeleted((v) => !v)}
-                                    icon={<Trash className="size-4" />}
-                                    label={tx('deleted.toggle')}
-                                />
-                            )}
+                            {/* Every secondary destination folds into the one
+                                labelled menu; the assets list has no page
+                                dashboard, so nothing sits between it and the
+                                gears. */}
+                            <ViewsMenu
+                                id="assets-views-menu"
+                                groups={[
+                                    {
+                                        id: 'views',
+                                        items: [
+                                            {
+                                                id: 'assets-coverage-link',
+                                                label: tx('coverageTooltip'),
+                                                icon: <AppIcon name="shield" size={16} />,
+                                                href: tenantHref('/coverage'),
+                                            },
+                                            {
+                                                id: 'assets-vulnerabilities-link',
+                                                label: tx('viewVulnerabilities'),
+                                                icon: <AppIcon name="bug" size={16} />,
+                                                href: tenantHref('/vulnerabilities'),
+                                            },
+                                            permissions.canWrite && {
+                                                id: 'asset-import-btn',
+                                                label: tx('importAssets'),
+                                                icon: <AppIcon name="upload" size={16} />,
+                                                href: tenantHref('/assets/import'),
+                                            },
+                                            // Deleted-assets view — admin only
+                                            // (only admins can Restore / Purge
+                                            // server-side).
+                                            permissions.canAdmin && {
+                                                id: 'assets-show-deleted-toggle',
+                                                label: tx('deleted.toggle'),
+                                                icon: <Trash className="size-4" />,
+                                                onSelect: () => setShowDeleted((v) => !v),
+                                                selected: showDeleted,
+                                            },
+                                        ],
+                                    },
+                                ]}
+                            />
                             {columnsDropdown}
                             {filtersDropdown}
                         </>

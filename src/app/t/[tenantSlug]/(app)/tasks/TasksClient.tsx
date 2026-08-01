@@ -9,7 +9,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash } from '@/components/ui/icons/nucleo';
-import { IconAction } from '@/components/ui/icon-action';
+import { ViewsMenu } from '@/components/ui/views-menu';
 import { NewTaskModal } from './NewTaskModal';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import { TaskEditPanel } from '@/app/t/[tenantSlug]/(app)/controls/TaskEditPanel';
@@ -1184,29 +1184,36 @@ function TasksPageInner({
                                 strip above is now server-computed, and
                                 "My Tasks" is the "Assigned to me" toggle).
                                 The dashboard nav icon is gone with it. */}
-                            {/* Recycle-bin toggle. Only offered to users
-                                who can edit — restore is admin-gated
-                                server-side, so showing it to a reader
-                                would advertise an action they'd be
+                            {/* Recycle-bin view, folded into the labelled
+                                Views menu with every other secondary view.
+                                Only offered to users who can edit — restore
+                                is admin-gated server-side, so showing it to
+                                a reader would advertise an action they'd be
                                 refused.
 
-                                The label here is stateful where
-                                assets/controls are static — it names the
-                                destination, so the tooltip still says what
-                                the click does now the text is gone. */}
-                            {appPermissions.tasks.edit && (
-                                <IconAction
-                                    variant={showDeleted ? 'primary' : 'secondary'}
-                                    onClick={() => {
-                                        setShowDeleted((v) => !v);
-                                        setSelected(new Set());
-                                    }}
-                                    aria-pressed={showDeleted}
-                                    id="show-deleted-toggle"
-                                    icon={<Trash className="size-4" />}
-                                    label={showDeleted ? t('list.showLive') : t('list.showDeleted')}
-                                />
-                            )}
+                                The label is stateful where assets/controls
+                                are static — it names the destination, so the
+                                row still says what the click does. */}
+                            <ViewsMenu
+                                id="tasks-views-menu"
+                                groups={[
+                                    {
+                                        id: 'views',
+                                        items: [
+                                            appPermissions.tasks.edit && {
+                                                id: 'show-deleted-toggle',
+                                                label: showDeleted ? t('list.showLive') : t('list.showDeleted'),
+                                                icon: <Trash className="size-4" />,
+                                                onSelect: () => {
+                                                    setShowDeleted((v) => !v);
+                                                    setSelected(new Set());
+                                                },
+                                                selected: showDeleted,
+                                            },
+                                        ],
+                                    },
+                                ]}
+                            />
                             {columnsDropdown}
                             {filtersDropdown}
                         </>

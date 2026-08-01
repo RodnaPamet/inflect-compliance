@@ -56,6 +56,13 @@ const MIGRATED_PAGES = [
     'risks/ai-systems/AiSystemsClient.tsx',
     'risks/ai-systems/[systemId]/page.tsx',
     'risks/ai-systems/[systemId]/AiSystemDetailClient.tsx',
+    // DORA Art. 28(3) — Register of Information; the AI-System Registry's
+    // sibling shelf and built the same way (semantic tokens +
+    // EntityListPage / StatusBadge / EmptyState / InfoTooltip only, no raw
+    // colours or legacy btn/badge). Promoted on arrival rather than added
+    // to the unmigrated tally — the ratchet's stated path forward.
+    'risks/information-registry/page.tsx',
+    'risks/information-registry/InformationRegistryClient.tsx',
     'dashboard/page.tsx',
     // Epic 69 split the dashboard into a thin server shell + a
     // `'use client'` component owning the card composition. Both

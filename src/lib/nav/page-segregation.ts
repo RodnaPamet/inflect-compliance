@@ -252,6 +252,7 @@ export const SUBPAGES: readonly string[] = [
     '/risks/correlations',
     '/risks/dashboard',
     '/risks/hierarchy',
+    '/risks/information-registry',
     '/risks/import',
     '/risks/kri',
     '/risks/loss-events',

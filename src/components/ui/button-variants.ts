@@ -1,5 +1,7 @@
 import { cva } from "class-variance-authority";
 
+import { HIT_AREA_CLASS } from "./hit-area";
+
 /**
  * STILL SURFACE — the motionless button material.
  *
@@ -100,6 +102,16 @@ export const buttonVariants = cva(
     // rectangular (`control-variants.ts`); text-entry surfaces do not
     // follow the pill.
     "border rounded-full",
+    // HIT AREA — the corners of the box belong to the button. A
+    // `rounded-full` button hit-tests as a circle inside a square, so 16%
+    // of a 28px icon button was inert; see `hit-area.ts` for the
+    // measurements and the two load-bearing details.
+    //
+    // It paints nothing — no background, no shadow, no transition. Still
+    // Surface's "no pseudo-element layers" rule is about MATERIAL (the
+    // retired hover fades and aura blooms); this layer has no material,
+    // and the ratchet distinguishes the two.
+    HIT_AREA_CLASS,
     // Mobile touch target (WCAG 2.5.5 / Apple HIG). On COARSE pointers
     // every button gets 44px regardless of its dense desktop height —
     // `min-h` only raises, so the 28px desktop density is untouched.

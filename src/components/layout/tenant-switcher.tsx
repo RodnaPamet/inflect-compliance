@@ -51,6 +51,7 @@ import { Popover } from '@/components/ui/popover';
 import { InitialsAvatar } from '@/components/ui/initials-avatar';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
+import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ const SWITCHER_PILL_CLASS =
     // Height matches the org-mode pill (<OrgWorkspaceSwitcher>): `py-1`
     // padding rather than a fixed `h-[22px]`, so the tenant + org switchers
     // are the same height across both shells.
-    `hidden sm:inline-flex items-center gap-tight rounded-full border border-border-subtle bg-bg-default px-3 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS}`;
+    `relative hidden sm:inline-flex items-center gap-tight rounded-full border border-border-subtle bg-bg-default px-3 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
 
 const MENU_ROW_CLASS =
     'flex w-full cursor-pointer select-none items-center justify-between gap-default rounded-md px-2.5 py-1.5 text-left text-sm text-content-default transition-colors duration-100 ease-out hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';

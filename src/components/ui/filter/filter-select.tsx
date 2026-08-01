@@ -37,6 +37,7 @@ import {
   FilterOption,
   parseRangeToken,
 } from "./types";
+import { HIT_AREA_CLASS } from "../hit-area";
 
 type FilterSelectProps = {
   filters: Filter[];
@@ -439,7 +440,17 @@ export function FilterSelect({
       <button
         type="button"
         className={cn(
-          "group flex h-10 cursor-pointer appearance-none items-center gap-x-2 truncate rounded-lg border px-3 text-sm outline-none pointer-coarse:min-h-11",
+          // No `truncate` on the BUTTON: it sets `overflow: hidden`, which
+          // clips the hit-area pseudo-element to the rounded padding box and
+          // re-creates the dead corners it exists to remove (measured: 1%
+          // dead, and four `:hover` flips per corner wiggle instead of
+          // zero). The label span below already truncates, which is where
+          // the ellipsis belongs anyway.
+          "group flex h-10 cursor-pointer appearance-none items-center gap-x-2 rounded-lg border px-3 text-sm outline-none pointer-coarse:min-h-11",
+          // The trigger's rounded corners were dead to `:hover`; see
+          // `hit-area.ts`.
+          "relative",
+          HIT_AREA_CLASS,
           "transition-[color,border-color,box-shadow] duration-150 ease-out motion-reduce:transition-none",
           "border-border-subtle bg-bg-default text-content-emphasis placeholder:text-content-subtle",
           "focus-visible:border-border-emphasis data-[state=open]:border-border-emphasis data-[state=open]:ring-4 data-[state=open]:ring-ring",

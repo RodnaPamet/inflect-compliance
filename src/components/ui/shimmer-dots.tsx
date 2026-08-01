@@ -66,7 +66,13 @@ export function ShimmerDots({
     const safeCols = Math.max(1, Math.floor(cols));
 
     return (
-        <div
+        // A `<span>`, not a `<div>` — `display: grid` behaves identically
+        // on either, and the callers include `<MetricCard>`'s value slot,
+        // which is a `<p>`. A `<div>` in a `<p>` is invalid HTML: the
+        // browser closes the paragraph early, so the server markup and the
+        // client tree disagree and React discards the whole dashboard tree
+        // with a hydration error (visible as a flash on first paint).
+        <span
             role="progressbar"
             aria-busy="true"
             aria-label={ariaLabel}
@@ -101,7 +107,7 @@ export function ShimmerDots({
                     />
                 );
             })}
-        </div>
+        </span>
     );
 }
 

@@ -44,6 +44,7 @@ import { InitialsAvatar } from '@/components/ui/initials-avatar';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { LocaleSwitcher } from './LocaleSwitcher';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
+import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
 
 // ─── Props ────────────────────────────────────────────────────────
 
@@ -75,7 +76,9 @@ export interface UserMenuProps {
 // motion — visual styles the avatar primitive deliberately does not
 // carry.
 const AVATAR_BUTTON_CLASS =
-    `inline-flex h-[22px] w-[22px] items-center justify-center rounded-full transition-[filter] duration-150 ease-out hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-bg-page ${NAV_BAR_SLOT_PRESS}`;
+    // `HIT_AREA_CLASS`: 14% of this 22px avatar circle's box rendered as
+    // avatar but did not answer to `:hover`. See `hit-area.ts`.
+    `relative inline-flex h-[22px] w-[22px] items-center justify-center rounded-full transition-[filter] duration-150 ease-out hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-bg-page ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
 
 const MENU_ROW_CLASS =
     'flex w-full cursor-pointer select-none items-center gap-compact rounded-md px-2.5 py-1.5 text-left text-sm text-content-default transition-colors duration-100 ease-out hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';

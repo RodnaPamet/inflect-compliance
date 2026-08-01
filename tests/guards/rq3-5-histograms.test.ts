@@ -39,7 +39,11 @@ describe('RQ3-5 — the histogram is a peer view', () => {
         // `view` state and renders the same chart — only the toggle
         // mechanism moved.
         expect(client).toMatch(/<ToggleGroup/);
-        expect(client).toMatch(/aria-pressed=\{view === 'histogram'\}/);
+        // 2026-08-01 — the standalone histogram button folded into the
+        // labelled Views menu. `<ViewsMenu>` renders an action item with
+        // `selected` (and mirrors it to aria-pressed), so the distribution
+        // view keeps its distinct-mode reading; only the affordance moved.
+        expect(client).toMatch(/selected: view === 'histogram'/);
         // The heatmap stays for the ritual.
         expect(client).toMatch(/view === 'heatmap' \? \(/);
         expect(client).toMatch(/<RiskMatrix/);

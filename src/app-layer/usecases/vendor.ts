@@ -45,6 +45,20 @@ export async function listVendors(
     return runInTenantContext(ctx, (db) => VendorRepository.list(db, ctx, filters, options));
 }
 
+/**
+ * DORA Register of Information (Art. 28(3)) — the tenant's ICT
+ * third-party arrangements, projected from the vendor inventory.
+ *
+ * Gated by the same vendor-read permission every other vendor read
+ * uses: the register is a VIEW of vendors, not a separate asset class,
+ * so it must not become a side door to vendor data for a role that
+ * cannot read `/vendors`.
+ */
+export async function listInformationRegister(ctx: RequestContext) {
+    assertCanReadVendors(ctx);
+    return runInTenantContext(ctx, (db) => VendorRepository.listInformationRegister(db, ctx));
+}
+
 export async function listVendorsPaginated(ctx: RequestContext, params: VendorListParams) {
     assertCanReadVendors(ctx);
     return runInTenantContext(ctx, (db) => VendorRepository.listPaginated(db, ctx, params));

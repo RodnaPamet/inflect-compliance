@@ -1801,6 +1801,9 @@
         },
         "docs/implementation-notes/2026-08-01-usecase-list-filter-enum-casts.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-01-hit-area-hero-radar-and-views-fold.md": {
+            "class": "historical"
         }
     }
 }
