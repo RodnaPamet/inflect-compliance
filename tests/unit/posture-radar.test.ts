@@ -9,9 +9,15 @@
  * is worst — a failure no type checks.
  */
 import {
-    buildPostureRadarAxes,
     isPostureRadarMeaningful,
+    levelForScore,
+    levelKey,
+    overallLevel,
+    POSTURE_LADDER,
     POSTURE_RADAR_AXES,
+    ratePostureAxes,
+    toRadarAxes,
+    type PostureAxisRating,
 } from '@/lib/charts/posture-radar';
 import type { ExecutiveDashboardPayload } from '@/app-layer/repositories/DashboardRepository';
 
@@ -49,13 +55,16 @@ function payload(overrides: Partial<ExecutiveDashboardPayload> = {}): ExecutiveD
 }
 
 const label = (axis: string) => axis;
-const byKey = (exec: ExecutiveDashboardPayload) =>
-    Object.fromEntries(buildPostureRadarAxes(exec, label).map((a) => [a.key, a.value]));
+const rate = (exec: ExecutiveDashboardPayload): PostureAxisRating[] =>
+    ratePostureAxes(exec, label);
+const byKey = (exec: ExecutiveDashboardPayload): Record<string, number> =>
+    Object.fromEntries(rate(exec).map((a) => [a.key, a.value]));
+const levelsByKey = (exec: ExecutiveDashboardPayload): Record<string, number> =>
+    Object.fromEntries(rate(exec).map((a) => [a.key, a.level]));
 
-describe('buildPostureRadarAxes', () => {
+describe('ratePostureAxes', () => {
     it('returns the six axes in a stable order', () => {
-        const axes = buildPostureRadarAxes(payload(), label);
-        expect(axes.map((a) => a.key)).toEqual([...POSTURE_RADAR_AXES]);
+        expect(rate(payload()).map((a) => a.key)).toEqual([...POSTURE_RADAR_AXES]);
     });
 
     it('reads control coverage straight through', () => {
@@ -67,13 +76,16 @@ describe('buildPostureRadarAxes', () => {
         expect(v.controls).toBe(50);
     });
 
-    it('scores evidence on the share that is CURRENT', () => {
+    it('scores evidence on the share that is not overdue', () => {
         const v = byKey(
             payload({
-                evidenceExpiry: { overdue: 1, dueSoon7d: 0, dueSoon30d: 1, noReviewDate: 0, current: 2 },
+                evidenceExpiry: { overdue: 1, dueSoon7d: 0, dueSoon30d: 1, noReviewDate: 0, current: 3 },
             }),
         );
-        expect(v.evidence).toBe(50);
+        // 3 current of 4 tracked. `dueSoon30d` is deliberately absent from
+        // both sides — it OVERLAPS `current`, and a denominator that
+        // double-counts cannot be checked by dividing the printed numbers.
+        expect(v.evidence).toBe(75);
     });
 
     it('excludes review-less evidence from BOTH sides of the ratio', () => {
@@ -152,7 +164,7 @@ describe('buildPostureRadarAxes', () => {
     });
 
     it('passes each axis key to the label resolver', () => {
-        const axes = buildPostureRadarAxes(payload(), (a) => `label:${a}`);
+        const axes = ratePostureAxes(payload(), (a) => `label:${a}`);
         expect(axes.map((a) => a.label)).toEqual(POSTURE_RADAR_AXES.map((a) => `label:${a}`));
     });
 });
@@ -173,5 +185,131 @@ describe('isPostureRadarMeaningful', () => {
         ['vendors', { vendorSummary: { total: 1, overdueReview: 0 } }],
     ])('is true once the tenant has any %s', (_name, overrides) => {
         expect(isPostureRadarMeaningful(payload(overrides as Partial<ExecutiveDashboardPayload>))).toBe(true);
+    });
+});
+
+describe('the ladder', () => {
+    it('has five rungs with ascending, non-overlapping floors', () => {
+        expect(POSTURE_LADDER.map((r) => r.level)).toEqual([1, 2, 3, 4, 5]);
+        const floors = POSTURE_LADDER.map((r) => r.min);
+        expect(floors).toEqual([...floors].sort((a, b) => a - b));
+        expect(new Set(floors).size).toBe(floors.length);
+        // The bottom rung must start at 0 or a score could rate nowhere.
+        expect(floors[0]).toBe(0);
+    });
+
+    it.each([
+        [0, 1],
+        [39, 1],
+        [40, 2],
+        [59, 2],
+        [60, 3],
+        [79, 3],
+        [80, 4],
+        [94, 4],
+        [95, 5],
+        [100, 5],
+    ])('score %i sits on rung %i', (score, expected) => {
+        expect(levelForScore(score)).toBe(expected);
+    });
+
+    it('names every rung', () => {
+        for (const rung of POSTURE_LADDER) {
+            expect(levelKey(rung.level)).toBe(rung.key);
+        }
+    });
+
+    it('rates each axis by its own score', () => {
+        const levels = levelsByKey(
+            payload({
+                // 1 of 4 implemented = 25% → rung 1.
+                controlCoverage: { ...payload().controlCoverage, applicable: 4, implemented: 1, coveragePercent: 25 },
+                // 19 of 20 not overdue = 95% → rung 5.
+                evidenceExpiry: { ...payload().evidenceExpiry, current: 19, overdue: 1 },
+            }),
+        );
+        expect(levels.controls).toBe(1);
+        expect(levels.evidence).toBe(5);
+    });
+
+    it('carries the raw counts the score came from', () => {
+        // "Exact metrics" means the reader can divide the two numbers on
+        // the page and get the percentage back.
+        const axes = rate(
+            payload({
+                taskSummary: { ...payload().taskSummary, total: 8, overdue: 2 },
+            }),
+        );
+        const tasks = axes.find((a) => a.key === 'tasks')!;
+        expect({ measured: tasks.measured, total: tasks.total, value: tasks.value }).toEqual({
+            measured: 6,
+            total: 8,
+            value: 75,
+        });
+        expect(Math.round((tasks.measured / tasks.total) * 100)).toBe(tasks.value);
+    });
+});
+
+describe('overallLevel — the weakest link', () => {
+    const axis = (over: Partial<PostureAxisRating>): PostureAxisRating => ({
+        key: 'controls',
+        label: 'Controls',
+        value: 100,
+        level: 5,
+        measured: 10,
+        total: 10,
+        ...over,
+    });
+
+    it('takes the WEAKEST rated axis, not the average', () => {
+        // Five strong axes must not hide one that is failing — the whole
+        // reason a posture headline exists is to refuse that averaging.
+        const { level, limitedBy } = overallLevel([
+            axis({ key: 'controls', value: 100, level: 5 }),
+            axis({ key: 'evidence', value: 98, level: 5 }),
+            axis({ key: 'risk', value: 30, level: 1, measured: 3, total: 10 }),
+            axis({ key: 'policies', value: 96, level: 5 }),
+            axis({ key: 'tasks', value: 99, level: 5 }),
+            axis({ key: 'vendors', value: 97, level: 5 }),
+        ]);
+        expect(level).toBe(1);
+        expect(limitedBy?.key).toBe('risk');
+    });
+
+    it('names the limiting axis so the number becomes an instruction', () => {
+        const { limitedBy } = overallLevel([
+            axis({ key: 'tasks', value: 55, level: 2, measured: 11, total: 20 }),
+            axis({ key: 'controls', value: 90, level: 4 }),
+        ]);
+        expect({ key: limitedBy?.key, measured: limitedBy?.measured, total: limitedBy?.total }).toEqual({
+            key: 'tasks',
+            measured: 11,
+            total: 20,
+        });
+    });
+
+    it('skips axes with no estate behind them', () => {
+        // A tenant with no vendors is neither good nor bad at vendors, and
+        // must not be rated on something it does not do.
+        const { level, limitedBy } = overallLevel([
+            axis({ key: 'controls', value: 85, level: 4 }),
+            axis({ key: 'vendors', value: 100, level: 5, measured: 0, total: 0 }),
+        ]);
+        expect(level).toBe(4);
+        expect(limitedBy?.key).toBe('controls');
+    });
+
+    it('returns the bottom rung and no limiter when nothing is rated', () => {
+        expect(overallLevel([])).toEqual({ level: 1, limitedBy: null });
+    });
+});
+
+describe('toRadarAxes', () => {
+    it('projects ratings down to what the chart needs', () => {
+        const axes = toRadarAxes(rate(payload()));
+        expect(axes).toHaveLength(POSTURE_RADAR_AXES.length);
+        for (const a of axes) {
+            expect(Object.keys(a).sort()).toEqual(['key', 'label', 'value']);
+        }
     });
 });

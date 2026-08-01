@@ -57,25 +57,128 @@ function healthyShare(bad: number, total: number): number {
     return pct(((total - bad) / total) * 100);
 }
 
+// ─── The ladder ──────────────────────────────────────────────────────
+//
+// Five rungs, one shared scale, exact cut-points. Every axis is already a
+// "share of the estate that is healthy" percentage, so ONE table of
+// numbers can rate all six — and the reader can check any rating by hand
+// from the counts on the page.
+//
+// Why one shared table rather than six bespoke ones: a per-axis ladder
+// would make "Controls level 3" and "Evidence level 3" mean different
+// amounts of work, and the radar's whole claim is that its six spokes are
+// comparable. They are comparable precisely because the rule is the same.
+//
+// The cut-points are deliberately NOT evenly spaced. Compliance estates
+// cluster near the top — a tenant at 88% healthy is in a materially
+// different position from one at 96% — so the rungs tighten as they rise:
+// 40 / 60 / 80 / 95. Anything below 40% healthy is one band, because the
+// difference between 12% and 30% coverage is not a difference in kind.
+
+/** The five rungs, ascending. `min` is the inclusive floor on the 0-100 axis score. */
+export const POSTURE_LADDER = [
+    { level: 1, key: 'initial', min: 0 },
+    { level: 2, key: 'developing', min: 40 },
+    { level: 3, key: 'defined', min: 60 },
+    { level: 4, key: 'managed', min: 80 },
+    { level: 5, key: 'optimising', min: 95 },
+] as const;
+
+export type PostureLevel = 1 | 2 | 3 | 4 | 5;
+export type PostureLevelKey = (typeof POSTURE_LADDER)[number]['key'];
+
+/** The rung a 0-100 axis score sits on. */
+export function levelForScore(score: number): PostureLevel {
+    let level: PostureLevel = 1;
+    for (const rung of POSTURE_LADDER) {
+        if (score >= rung.min) level = rung.level as PostureLevel;
+    }
+    return level;
+}
+
+/** The rung's key ('defined', …) — the i18n lookup for its name. */
+export function levelKey(level: PostureLevel): PostureLevelKey {
+    return (POSTURE_LADDER.find((r) => r.level === level) ?? POSTURE_LADDER[0]).key;
+}
+
 /**
- * Build the six axes from the same executive payload the posture
+ * One axis, rated.
+ *
+ * `measured` / `total` are the raw counts the score came from — the whole
+ * point of "exact metrics" is that the reader can divide them and get the
+ * percentage back. `total === 0` means the axis has no estate behind it
+ * (see the module note on empty denominators).
+ */
+export interface PostureAxisRating {
+    key: PostureRadarAxis;
+    label: string;
+    /** 0-100, higher is better. */
+    value: number;
+    level: PostureLevel;
+    /** Numerator: the part of the estate that is healthy. */
+    measured: number;
+    /** Denominator: the part of the estate this axis rates at all. */
+    total: number;
+}
+
+/**
+ * The tenant's overall rung: **the weakest axis**, not the average.
+ *
+ * A mean would let five strong axes hide one that is failing, which is
+ * exactly the reading a posture headline must not support — and it would
+ * also make the headline unexplainable from the chart, because no feature
+ * of the polygon corresponds to a mean. The weakest-link rule makes the
+ * chart self-explaining: the shortest spoke IS the headline, and naming
+ * it (`limitedBy`) turns the number into an instruction.
+ *
+ * Axes with no estate behind them (`total === 0`) are skipped rather than
+ * scored 100 — a tenant with no vendors should be neither rewarded nor
+ * punished on the vendor axis, and letting an empty axis set the overall
+ * level would rate the whole tenant on something it does not do.
+ */
+export function overallLevel(ratings: readonly PostureAxisRating[]): {
+    level: PostureLevel;
+    limitedBy: PostureAxisRating | null;
+} {
+    const rated = ratings.filter((r) => r.total > 0);
+    if (rated.length === 0) return { level: 1, limitedBy: null };
+    let weakest = rated[0];
+    for (const r of rated) {
+        if (r.value < weakest.value) weakest = r;
+    }
+    return { level: weakest.level, limitedBy: weakest };
+}
+
+/**
+ * Rate the six axes from the same executive payload the posture
  * narrative is generated from.
+ *
+ * Each axis carries its raw `measured / total` counts alongside the
+ * score, so every rating on the page can be checked by hand: the score
+ * is `measured / total`, and the level is that score read off
+ * `POSTURE_LADDER`. Nothing in the hero is a number the reader cannot
+ * reconstruct.
  *
  * `label` resolves the axis copy (i18n) — the caller passes a translator
  * so this module stays pure and testable.
  */
-export function buildPostureRadarAxes(
+export function ratePostureAxes(
     exec: ExecutiveDashboardPayload,
     label: (axis: PostureRadarAxis) => string,
-): RadarAxisDatum[] {
+): PostureAxisRating[] {
     const { controlCoverage, evidenceExpiry, riskBySeverity, policySummary, taskSummary, vendorSummary } = exec;
 
-    // Evidence freshness — `current` over everything with a review clock.
-    // `noReviewDate` rows are excluded from BOTH sides: evidence nobody
-    // scheduled a review for is neither fresh nor stale, and counting it
-    // as either would move the axis for a decision the tenant hasn't made.
-    const evidenceTracked =
-        evidenceExpiry.current + evidenceExpiry.overdue + evidenceExpiry.dueSoon30d;
+    // Evidence freshness — the share of review-tracked evidence that is
+    // NOT overdue.
+    //
+    // Only the two disjoint buckets are used. `noReviewDate` rows are
+    // excluded from both sides: evidence nobody scheduled a review for is
+    // neither fresh nor stale, and counting it either way would move the
+    // axis for a decision the tenant hasn't made. `dueSoon30d` is excluded
+    // because it OVERLAPS `current` (an approved item due in three weeks is
+    // in both), and a denominator that double-counts cannot be checked by
+    // dividing the two numbers on the page.
+    const evidenceTracked = evidenceExpiry.current + evidenceExpiry.overdue;
 
     // Risk posture — the share of open risks NOT in the top two severity
     // bands. Counting every risk equally would let a hundred low risks
@@ -84,9 +187,32 @@ export function buildPostureRadarAxes(
         riskBySeverity.low + riskBySeverity.medium + riskBySeverity.high + riskBySeverity.critical;
     const riskSevere = riskBySeverity.high + riskBySeverity.critical;
 
+    // measured = the healthy part, total = the part this axis rates.
+    const counts: Record<PostureRadarAxis, { measured: number; total: number }> = {
+        controls: {
+            measured: controlCoverage.implemented,
+            total: controlCoverage.applicable,
+        },
+        evidence: { measured: evidenceExpiry.current, total: evidenceTracked },
+        risk: { measured: riskTotal - riskSevere, total: riskTotal },
+        policies: {
+            measured: policySummary.total - policySummary.overdueReview,
+            total: policySummary.total,
+        },
+        tasks: { measured: taskSummary.total - taskSummary.overdue, total: taskSummary.total },
+        vendors: {
+            measured: vendorSummary.total - vendorSummary.overdueReview,
+            total: vendorSummary.total,
+        },
+    };
+
+    // The control axis takes its percentage from the payload rather than
+    // re-dividing: `coveragePercent` is rounded to one decimal upstream and
+    // is the number the Controls KPI card shows. Recomputing here would put
+    // two slightly different coverage figures on one screen.
     const values: Record<PostureRadarAxis, number> = {
         controls: pct(controlCoverage.coveragePercent),
-        evidence: evidenceTracked > 0 ? pct((evidenceExpiry.current / evidenceTracked) * 100) : 100,
+        evidence: healthyShare(evidenceExpiry.overdue, evidenceTracked),
         risk: healthyShare(riskSevere, riskTotal),
         policies: healthyShare(policySummary.overdueReview, policySummary.total),
         tasks: healthyShare(taskSummary.overdue, taskSummary.total),
@@ -97,7 +223,15 @@ export function buildPostureRadarAxes(
         key: axis,
         label: label(axis),
         value: values[axis],
+        level: levelForScore(values[axis]),
+        measured: counts[axis].measured,
+        total: counts[axis].total,
     }));
+}
+
+/** The chart's view of the ratings — `<RadarChart>` wants only these three. */
+export function toRadarAxes(ratings: readonly PostureAxisRating[]): RadarAxisDatum[] {
+    return ratings.map((r) => ({ key: r.key, label: r.label, value: r.value }));
 }
 
 /**
@@ -115,7 +249,6 @@ export function isPostureRadarMeaningful(exec: ExecutiveDashboardPayload): boole
         controlCoverage.applicable +
         evidenceExpiry.current +
         evidenceExpiry.overdue +
-        evidenceExpiry.dueSoon30d +
         riskBySeverity.low +
         riskBySeverity.medium +
         riskBySeverity.high +

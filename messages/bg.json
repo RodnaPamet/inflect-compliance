@@ -297,7 +297,6 @@
       "eyebrow": "Състояние на съответствието",
       "regenerate": "Регенерирай",
       "regenerating": "Регенериране…",
-      "maturitySuffix": "/ 100 зрялост",
       "radarAria": "Профил на съответствието — шест оси, по-високо е по-добре",
       "radarAxes": {
         "controls": "Контроли",
@@ -306,7 +305,19 @@
         "policies": "Политики",
         "tasks": "Задачи",
         "vendors": "Доставчици"
-      }
+      },
+      "levelShort": "Н{level}",
+      "levelLine": "Ниво {level} от 5 · {name}",
+      "limitedBy": "Нивото се определя от {axis} — {measured} от {total} в добро състояние. Най-късият лъч определя нивото.",
+      "ladderNoEstate": "няма още",
+      "ladder": {
+        "initial": "Начално",
+        "developing": "Развиващо се",
+        "defined": "Определено",
+        "managed": "Управлявано",
+        "optimising": "Оптимизиращо"
+      },
+      "levelOfSuffix": "/ 5 по стълбицата на зрелост"
     },
     "controlCoverage": "Покритие на контролите",
     "taskStatus": "Статус на задачите",

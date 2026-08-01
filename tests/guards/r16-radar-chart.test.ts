@@ -108,10 +108,20 @@ describe('Roadmap-16 PR-9 — RadarChart primitive', () => {
     });
 
     describe('grid + axes layout', () => {
-        it('uses GRID_RINGS = 4 concentric grid circles', () => {
+        it('defaults to GRID_RINGS = 4 concentric grid circles', () => {
             // Four rings = 25%, 50%, 75%, 100%. Clear read for
             // 0-100% style profiles without crowding.
             expect(RADAR_SRC).toMatch(/GRID_RINGS\s*=\s*4/);
+        });
+
+        it('lets a caller set the ring count to match its scale', () => {
+            // A chart whose scale IS a ladder wants one ring per rung, so
+            // a vertex on the third ring means level 3 (the dashboard
+            // posture radar passes 5). The default is unchanged for every
+            // other consumer.
+            expect(RADAR_SRC).toMatch(/rings\?:\s*number/);
+            expect(RADAR_SRC).toMatch(/rings\s*=\s*GRID_RINGS/);
+            expect(RADAR_SRC).toMatch(/length:\s*ringCount/);
         });
 
         it('grid lines + axis lines muted via --border-subtle at 0.6 opacity', () => {
@@ -188,10 +198,27 @@ describe('Roadmap-16 PR-9 — RadarChart primitive', () => {
             expect(RADAR_SRC).toMatch(/key=\{`label-\$\{p\.key\}`\}/);
         });
 
-        it('labels positioned past the outer ring (offset +14)', () => {
-            // Pushes the label so the text doesn't overlap the
-            // axis line endpoint.
-            expect(RADAR_SRC).toMatch(/outerRadius\s*\+\s*14/);
+        it('labels sit past the outer ring AND anchor away from the plot', () => {
+            // Two halves of one fix. The gap alone is not enough: with a
+            // centred anchor, half of a side label reaches back over the
+            // ring and lands on the vertex dot (the overlap reported on
+            // the dashboard hero). Anchoring by side makes the text grow
+            // outward, and the inset reserves margin for a WHOLE label
+            // rather than half of one.
+            expect(RADAR_SRC).toMatch(/outerRadius\s*\+\s*LABEL_GAP/);
+            // The label margin scales with the chart (18% of width,
+            // clamped) rather than being one number for every consumer: a
+            // fixed inset either starves a wide chart's long domain names
+            // or shrinks a small dial to nothing.
+            expect(RADAR_SRC).toMatch(/function\s+horizontalInset/);
+            expect(RADAR_SRC).toMatch(/width=\{hInset\s*-\s*LABEL_GAP\}/);
+            expect(RADAR_SRC).toMatch(/function\s+labelAnchorFor/);
+            expect(RADAR_SRC).toMatch(/textAnchor:\s*'start'/);
+            expect(RADAR_SRC).toMatch(/textAnchor:\s*'end'/);
+            expect(RADAR_SRC).toMatch(/textAnchor=\{p\.textAnchor\}/);
+            // A centred anchor on a side axis is the bug — it must not
+            // come back as a hardcoded prop.
+            expect(RADAR_SRC).not.toMatch(/textAnchor="middle"/);
         });
     });
 });

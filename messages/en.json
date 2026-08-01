@@ -297,7 +297,6 @@
       "eyebrow": "Compliance posture",
       "regenerate": "Regenerate",
       "regenerating": "Regenerating…",
-      "maturitySuffix": "/ 100 maturity",
       "radarAria": "Compliance posture profile — six axes, higher is better",
       "radarAxes": {
         "controls": "Controls",
@@ -306,7 +305,19 @@
         "policies": "Policies",
         "tasks": "Tasks",
         "vendors": "Vendors"
-      }
+      },
+      "levelShort": "L{level}",
+      "levelLine": "Level {level} of 5 · {name}",
+      "limitedBy": "Level set by {axis} — {measured} of {total} healthy. The shortest spoke sets the level.",
+      "ladderNoEstate": "none yet",
+      "ladder": {
+        "initial": "Initial",
+        "developing": "Developing",
+        "defined": "Defined",
+        "managed": "Managed",
+        "optimising": "Optimising"
+      },
+      "levelOfSuffix": "/ 5 on the maturity ladder"
     },
     "controlCoverage": "Control Coverage",
     "taskStatus": "Task Status",

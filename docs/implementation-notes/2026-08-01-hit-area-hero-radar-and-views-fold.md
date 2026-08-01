@@ -108,6 +108,75 @@ coverage-% fallback — because it is derived from the executive payload,
 not from the AI summary, and is just as true before the narrative has
 been generated.
 
+## 2b. The ladder (follow-up, same day)
+
+The first cut of the radar drew six axes and left the hero's headline as
+the model's own 0-100 maturity score. Three problems, all reported:
+
+1. The dial sat top-aligned beside a text column that grows with the
+   advice list, so it rode high with dead space under it.
+2. Axis labels were centred `LABEL_GAP` past the outer ring, so half of
+   every SIDE label reached back over the ring and landed on the vertex
+   dot. Measured clearance: **0px** (overlapping) before, **7px** after.
+3. Nothing connected the headline to the chart. "Developing · 46" and a
+   six-spoke polygon were two answers to one question, and only the
+   polygon could be checked.
+
+**The ladder.** Five rungs, one shared scale, exact cut-points:
+
+| rung | name | floor (axis score) |
+| --- | --- | --- |
+| 1 | Initial | 0 |
+| 2 | Developing | 40 |
+| 3 | Defined | 60 |
+| 4 | Managed | 80 |
+| 5 | Optimising | 95 |
+
+One table rates all six axes because every axis is already the same kind
+of number — the share of that part of the estate which is healthy. A
+per-axis ladder would make "Controls L3" and "Evidence L3" mean different
+amounts of work, and the radar's whole claim is that its spokes are
+comparable. The cut-points tighten as they rise (40/60/80/95) because
+compliance estates cluster near the top: 88% healthy and 96% healthy are
+materially different positions, while 12% and 30% are not different in
+kind.
+
+**Overall level = the weakest rated axis**, not the mean. A mean lets
+five strong axes hide one that is failing, and — just as bad — no feature
+of the polygon corresponds to a mean, so the headline could not be read
+off the chart. Weakest-link makes the chart self-explaining: the shortest
+spoke IS the headline, and naming it ("Level set by Risk — 1 of 4
+healthy") turns a number into an instruction. Axes with no estate behind
+them are skipped rather than scored: a tenant with no vendors is neither
+good nor bad at vendors.
+
+**Every number is checkable.** Each axis carries the raw `measured /
+total` counts the score came from, printed beside its level, so a reader
+can divide two numbers on the page, get the percentage back, and read the
+rung off the published cut-points. That is what made the evidence axis
+change: its denominator used to include `dueSoon30d`, which OVERLAPS
+`current`, so the printed fraction would not have divided out. It now
+uses the two disjoint buckets (`current` / `overdue`) only.
+
+**One voice.** The headline word is the ladder's, not the model's. The
+model keeps the narrative and the advice — what it is actually good at —
+and the deterministic band names the level. The model's label still leads
+when there is no estate to rate, so a tenant that has not started yet
+still gets a headline.
+
+**Chart mechanics.** `rings` is now a prop (default 4): the hero passes 5
+so the grid IS the ladder — a vertex on the third ring means level 3.
+Labels anchor by side (`start` / `end` / `middle`) so text grows away
+from the plot, and the reserved margin is split horizontal/vertical
+(58/28) rather than one square inset, because a side label needs room for
+a word and a top label needs room for a line. The horizontal figure
+doubles as the visx wrap width, so a long label breaks instead of running
+off the SVG.
+
+Verified in the browser: label↔vertex clearance 7px (was 0), no label
+outside the SVG, column centring delta **0px**, ladder rows no longer
+overflow their grid column.
+
 ## 3. The Views fold
 
 `Views ▾` existed only on the risks page, flanked by three tooltip-only
