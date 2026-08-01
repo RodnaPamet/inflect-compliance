@@ -177,6 +177,64 @@ Verified in the browser: label↔vertex clearance 7px (was 0), no label
 outside the SVG, column centring delta **0px**, ladder rows no longer
 overflow their grid column.
 
+## 2c. Space, and what the top rung means (second follow-up)
+
+Two reports, both measured before and after.
+
+**The hero wasted vertical space.**
+
+```
+                                   before    after
+eyebrow vs Regenerate button        +93px     -4px   (centres)
+painted dial → metrics list          87px      29px
+dial width                          248px    287px
+card height                         404px    392px
+```
+
+The eyebrow sat 93px down the card because the columns were centred
+against each other, and the right column is taller by construction.
+`items-start` puts both at the card's content edge, level with the
+Regenerate button opposite. The button also moved from `top-default`
+(16px) to `top-section` (24px) — the card's own padding — and the eyebrow
+took the button's 28px line box, because two boxes that start at the same
+edge only read as level when they are the same height.
+
+The 87px gap under the chart was a wrapper that did nothing.
+`<ChartFrame>` puts its measured area in `position: absolute` and
+resolves to its own `min-height`, so a `h-[300px]` parent bought 60px of
+dead space rather than a bigger dial. `<RadarChart>` now forwards
+`minHeight`, and the hero passes a figure sized so the dial is bound by
+the column's WIDTH (`POSTURE_RADAR_FRAME_HEIGHT`) — the same height now
+draws a 30% larger dial with the metrics sitting under it.
+
+**The top rung had to mean zero defects.** Tasks rated L5 while an
+overdue log existed. The old floor was a percentage (≥95), and a
+percentage cannot express "none left": 249 of 250 healthy is 99.6%, which
+ROUNDS TO 100. The rule is now `measured === total`, evaluated on the
+counts, and the bands below cap at 4 while any defect remains:
+
+| rung | name | rule |
+| --- | --- | --- |
+| 5 | Optimising | `measured === total` — nothing left to fix |
+| 4 | Managed | ≥90% healthy |
+| 3 | Defined | ≥75% |
+| 2 | Developing | ≥50% |
+| 1 | Initial | below 50% |
+
+The bands moved from the earlier top-heavy 40/60/80/95 to even quarters,
+because once the top rung is reserved for a clean sheet the rungs below
+describe *how far off* a clean sheet the tenant is, and that distance
+reads better spread out.
+
+Two consequences that fall out of the same change:
+
+- `level` is now `null` for an axis with no estate. 0/0 is not a perfect
+  score, and scoring it 5 would have put a fabricated "Optimising" on the
+  page for something the tenant does not do.
+- `overallLevel` breaks ties by level FIRST, then score. Two axes can both
+  be level 4 with one at a rounded 100% and one at 96%; the headline must
+  name the one that actually holds the level down.
+
 ## 3. The Views fold
 
 `Views ▾` existed only on the risks page, flanked by three tooltip-only

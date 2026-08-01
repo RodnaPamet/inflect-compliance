@@ -103,6 +103,7 @@ import { cn } from '@/lib/cn';
 import { RadarChart, chartReady } from '@/components/ui/charts';
 import {
     POSTURE_LADDER,
+    POSTURE_RADAR_FRAME_HEIGHT,
     isPostureRadarMeaningful,
     levelKey,
     overallLevel,
@@ -338,7 +339,7 @@ export default function DashboardClient({
                 // column, so the hero reads the same either way.
                 <section
                     className={cn(
-                        'grid grid-cols-1 gap-default items-center',
+                        'grid grid-cols-1 gap-default items-start',
                         ratings.length > 0 && 'lg:grid-cols-[minmax(0,1fr)_340px]',
                     )}
                     data-testid="dashboard-hero-fallback"
@@ -381,16 +382,18 @@ export default function DashboardClient({
                         // Fixed height — never `min-h-0`, or the auto-sizer
                         // gets a 0-height box and paints nothing.
                         <div className="flex w-full min-w-0 flex-col gap-tight" data-testid="dashboard-hero-radar">
-                            <div className="h-[300px] w-full">
-                                <RadarChart
-                                    state={chartReady(toRadarAxes(ratings))}
-                                    seriesIndex={2}
-                                    maxValue={100}
-                                    rings={POSTURE_LADDER.length}
-                                    testId="posture-radar"
-                                    ariaLabel={t('hero.radarAria')}
-                                />
-                            </div>
+                            {/* `minHeight` sizes the dial; a fixed-height
+                                wrapper would only add dead space beneath it
+                                (see the posture hero for the measurements). */}
+                            <RadarChart
+                                state={chartReady(toRadarAxes(ratings))}
+                                seriesIndex={2}
+                                maxValue={100}
+                                rings={POSTURE_LADDER.length}
+                                minHeight={POSTURE_RADAR_FRAME_HEIGHT}
+                                testId="posture-radar"
+                                ariaLabel={t('hero.radarAria')}
+                            />
                             <PostureLadder ratings={ratings} />
                         </div>
                     )}

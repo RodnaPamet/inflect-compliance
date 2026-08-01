@@ -10,7 +10,7 @@
  */
 import {
     isPostureRadarMeaningful,
-    levelForScore,
+    levelForRating,
     levelKey,
     overallLevel,
     POSTURE_LADDER,
@@ -59,7 +59,7 @@ const rate = (exec: ExecutiveDashboardPayload): PostureAxisRating[] =>
     ratePostureAxes(exec, label);
 const byKey = (exec: ExecutiveDashboardPayload): Record<string, number> =>
     Object.fromEntries(rate(exec).map((a) => [a.key, a.value]));
-const levelsByKey = (exec: ExecutiveDashboardPayload): Record<string, number> =>
+const levelsByKey = (exec: ExecutiveDashboardPayload): Record<string, number | null> =>
     Object.fromEntries(rate(exec).map((a) => [a.key, a.level]));
 
 describe('ratePostureAxes', () => {
@@ -198,19 +198,44 @@ describe('the ladder', () => {
         expect(floors[0]).toBe(0);
     });
 
+    // A defect exists in every one of these (measured < total), so the
+    // score alone decides — and can never reach the top rung.
     it.each([
         [0, 1],
-        [39, 1],
-        [40, 2],
-        [59, 2],
-        [60, 3],
-        [79, 3],
-        [80, 4],
-        [94, 4],
-        [95, 5],
-        [100, 5],
-    ])('score %i sits on rung %i', (score, expected) => {
-        expect(levelForScore(score)).toBe(expected);
+        [49, 1],
+        [50, 2],
+        [74, 2],
+        [75, 3],
+        [89, 3],
+        [90, 4],
+        [99, 4],
+    ])('score %i with a defect outstanding sits on rung %i', (value, expected) => {
+        expect(levelForRating({ value, measured: 1, total: 2 })).toBe(expected);
+    });
+
+    describe('the top rung means zero defects, not a high percentage', () => {
+        it('is reached only when measured === total', () => {
+            expect(levelForRating({ value: 100, measured: 3, total: 3 })).toBe(5);
+        });
+
+        it('is NOT reached by a score that merely rounds to 100', () => {
+            // The reported bug: 249 of 250 healthy is 99.6%, which rounds
+            // to 100. An axis with a live overdue log must not read as
+            // "everything is perfect".
+            expect(levelForRating({ value: 100, measured: 249, total: 250 })).toBe(4);
+        });
+
+        it('caps a single outstanding item at level 4 however large the estate', () => {
+            for (const total of [20, 200, 2000]) {
+                expect(levelForRating({ value: 100, measured: total - 1, total })).toBe(4);
+            }
+        });
+    });
+
+    it('does not rate an axis with no estate behind it', () => {
+        // 0/0 is not a perfect score. A tenant with no vendors is neither
+        // good nor bad at vendors.
+        expect(levelForRating({ value: 100, measured: 0, total: 0 })).toBeNull();
     });
 
     it('names every rung', () => {
@@ -219,17 +244,28 @@ describe('the ladder', () => {
         }
     });
 
-    it('rates each axis by its own score', () => {
+    it('rates each axis by its own counts', () => {
         const levels = levelsByKey(
             payload({
                 // 1 of 4 implemented = 25% → rung 1.
                 controlCoverage: { ...payload().controlCoverage, applicable: 4, implemented: 1, coveragePercent: 25 },
-                // 19 of 20 not overdue = 95% → rung 5.
+                // 19 of 20 not overdue = 95%, but one IS overdue → capped at 4.
                 evidenceExpiry: { ...payload().evidenceExpiry, current: 19, overdue: 1 },
+                // 3 of 3, nothing overdue → the top rung.
+                taskSummary: { ...payload().taskSummary, total: 3, overdue: 0 },
             }),
         );
         expect(levels.controls).toBe(1);
-        expect(levels.evidence).toBe(5);
+        expect(levels.evidence).toBe(4);
+        expect(levels.tasks).toBe(5);
+    });
+
+    it('drops a perfect axis off the top the moment one item goes overdue', () => {
+        // The behaviour the recalibration exists for.
+        const perfect = levelsByKey(payload({ taskSummary: { ...payload().taskSummary, total: 20, overdue: 0 } }));
+        const oneOverdue = levelsByKey(payload({ taskSummary: { ...payload().taskSummary, total: 20, overdue: 1 } }));
+        expect(perfect.tasks).toBe(5);
+        expect(oneOverdue.tasks).toBe(4);
     });
 
     it('carries the raw counts the score came from', () => {
@@ -266,11 +302,11 @@ describe('overallLevel — the weakest link', () => {
         // reason a posture headline exists is to refuse that averaging.
         const { level, limitedBy } = overallLevel([
             axis({ key: 'controls', value: 100, level: 5 }),
-            axis({ key: 'evidence', value: 98, level: 5 }),
+            axis({ key: 'evidence', value: 98, level: 4 }),
             axis({ key: 'risk', value: 30, level: 1, measured: 3, total: 10 }),
-            axis({ key: 'policies', value: 96, level: 5 }),
-            axis({ key: 'tasks', value: 99, level: 5 }),
-            axis({ key: 'vendors', value: 97, level: 5 }),
+            axis({ key: 'policies', value: 96, level: 4 }),
+            axis({ key: 'tasks', value: 99, level: 4 }),
+            axis({ key: 'vendors', value: 97, level: 4 }),
         ]);
         expect(level).toBe(1);
         expect(limitedBy?.key).toBe('risk');
@@ -288,15 +324,35 @@ describe('overallLevel — the weakest link', () => {
         });
     });
 
+    it('breaks a level tie on the score, not on array order', () => {
+        // Both are level 4, but one is 249/250 (rounds to 100) and the
+        // other genuinely 96%. The headline must name the one that
+        // actually holds the level down.
+        const { limitedBy } = overallLevel([
+            axis({ key: 'tasks', value: 100, level: 4, measured: 249, total: 250 }),
+            axis({ key: 'policies', value: 96, level: 4, measured: 24, total: 25 }),
+        ]);
+        expect(limitedBy?.key).toBe('policies');
+    });
+
     it('skips axes with no estate behind them', () => {
         // A tenant with no vendors is neither good nor bad at vendors, and
         // must not be rated on something it does not do.
         const { level, limitedBy } = overallLevel([
-            axis({ key: 'controls', value: 85, level: 4 }),
-            axis({ key: 'vendors', value: 100, level: 5, measured: 0, total: 0 }),
+            axis({ key: 'controls', value: 85, level: 3 }),
+            axis({ key: 'vendors', value: 100, level: null, measured: 0, total: 0 }),
         ]);
-        expect(level).toBe(4);
+        expect(level).toBe(3);
         expect(limitedBy?.key).toBe('controls');
+    });
+
+    it('reaches the top only when every rated axis is perfect', () => {
+        const { level } = overallLevel([
+            axis({ key: 'controls', value: 100, level: 5 }),
+            axis({ key: 'tasks', value: 100, level: 5 }),
+            axis({ key: 'vendors', value: 100, level: null, measured: 0, total: 0 }),
+        ]);
+        expect(level).toBe(5);
     });
 
     it('returns the bottom rung and no limiter when nothing is rated', () => {

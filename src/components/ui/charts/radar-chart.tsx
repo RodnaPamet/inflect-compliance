@@ -169,6 +169,17 @@ interface RadarChartProps {
      * sitting on the third ring literally means level 3.
      */
     rings?: number;
+    /**
+     * Frame height floor, forwarded to `<ChartFrame>` (default 240).
+     *
+     * This is the ONLY way to size the chart: `<ChartFrame>` puts its
+     * measured area in `position: absolute` so the frame resolves to its
+     * own min-height and ignores a fixed height on the parent. Wrapping
+     * the chart in `h-[300px]` therefore bought 60px of dead space under
+     * the dial rather than a bigger dial — measured, and the reason the
+     * hero's metrics floated 87px below the chart they belong to.
+     */
+    minHeight?: number | null;
 }
 
 /**
@@ -196,6 +207,7 @@ export function RadarChart({
     ariaLabel,
     emptyFallback,
     rings = GRID_RINGS,
+    minHeight,
 }: RadarChartProps) {
     return (
         <ChartFrame
@@ -203,6 +215,7 @@ export function RadarChart({
             className={className}
             testId={testId}
             emptyFallback={emptyFallback}
+            minHeight={minHeight}
         >
             {({ width, height, data }) => (
                 <RadarChartInner
