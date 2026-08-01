@@ -11,6 +11,7 @@ import { RequestContext } from '../types';
 import { assertCanReadTests, assertCanManageTestPlans } from '../policies/test.policies';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
+import { parseEnumListFilter } from '../domain/list-filter';
 
 // ─── Authoritative "due" signal (PR-Q) ───
 //
@@ -298,7 +299,15 @@ export async function listAllTestPlans(ctx: RequestContext, filters: TestPlanFil
     return runInTenantContext(ctx, async (db: PrismaTx) => {
         const where: Prisma.ControlTestPlanWhereInput = { tenantId: ctx.tenantId };
 
-        if (filters.status) where.status = filters.status as TestPlanStatus;
+        // Raw query-string values, NOT validated enums — see
+        // `parseEnumListFilter`. The `as` cast this replaces 500'd on any
+        // two-value selection from the /tests plan facet
+        // (`?status=ACTIVE,PAUSED` reached Prisma as one literal string).
+        where.status = parseEnumListFilter<TestPlanStatus>(
+            filters.status,
+            Object.values(TestPlanStatus),
+            'test plan status',
+        );
         if (filters.controlId) where.controlId = filters.controlId;
         // Reconciled due filters — either clock (nextDueAt / nextRunAt) counts, so
         // a cron-scheduled plan is never invisible here either.

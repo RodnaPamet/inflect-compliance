@@ -4,7 +4,6 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listAiSystems, createAiSystem } from '@/app-layer/usecases/ai-system';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import type { AiRiskTier } from '@prisma/client';
 
 /**
  * GET /api/t/:tenantSlug/ai-systems — the AI-System Registry list. Read-gated by
@@ -17,12 +16,13 @@ export const GET = withApiErrorHandling(async (
 ) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    const riskTier = req.nextUrl.searchParams.get('riskTier') as AiRiskTier | null;
+    // Both stay raw strings — the repository validates them against the real
+    // enum and 400s on an unknown member. The `as AiRiskTier` cast that used
+    // to live here silenced the compiler and left Prisma to 500 on a
+    // comma-joined multi-select or a tier from another entity's enum.
+    const riskTier = req.nextUrl.searchParams.get('riskTier') ?? undefined;
     const status = req.nextUrl.searchParams.get('status') ?? undefined;
-    const systems = await listAiSystems(ctx, {
-        riskTier: riskTier ?? undefined,
-        status,
-    });
+    const systems = await listAiSystems(ctx, { riskTier, status });
     return jsonResponse(systems);
 });
 

@@ -28,6 +28,7 @@
  *   2. an unknown member never reaches Prisma at all; it throws a
  *      400-shaped error before the query is built.
  */
+import { AiSystemRepository } from '@/app-layer/repositories/AiSystemRepository';
 import { AssetRepository } from '@/app-layer/repositories/AssetRepository';
 import { EvidenceRepository } from '@/app-layer/repositories/EvidenceRepository';
 import { PolicyRepository } from '@/app-layer/repositories/PolicyRepository';
@@ -131,6 +132,27 @@ const CASES: Case[] = [
         validPair: ['DRAFT', 'SUBMITTED'],
         invalid: 'ACTIVE',
         label: 'evidence status',
+    },
+    {
+        name: 'AiSystemRepository.status',
+        model: 'aiSystem',
+        list: (db, filters) => AiSystemRepository.list(db, ctx, filters as any),
+        key: 'status',
+        validPair: ['ACTIVE', 'RETIRED'],
+        invalid: 'OPEN',
+        label: 'AI system status',
+    },
+    {
+        // `riskTier` escaped the first sweep because the `as AiRiskTier` cast
+        // lived in the ROUTE, not the repository — the sibling `status` on the
+        // same call was fixed while this one stayed live.
+        name: 'AiSystemRepository.riskTier',
+        model: 'aiSystem',
+        list: (db, filters) => AiSystemRepository.list(db, ctx, filters as any),
+        key: 'riskTier',
+        validPair: ['HIGH', 'LIMITED'],
+        invalid: 'ACTIVE',
+        label: 'AI risk tier',
     },
 ];
 

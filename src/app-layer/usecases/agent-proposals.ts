@@ -18,6 +18,9 @@
  *     dual attribution.
  */
 import { z } from 'zod';
+import { SuggestionItemStatus } from '@prisma/client';
+
+import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
@@ -147,9 +150,17 @@ export async function listAgentProposals(
     opts: { status?: string; take?: number } = {},
 ) {
     assertCanRead(ctx);
+    // `opts.status` is a raw `?status=` query-string value — the `as never`
+    // this replaces silenced the compiler but not Prisma, which 500'd on a
+    // comma-joined multi-select or a status from another entity's enum.
+    const status = parseEnumListFilter<SuggestionItemStatus>(
+        opts.status,
+        Object.values(SuggestionItemStatus),
+        'proposal status',
+    );
     return runInTenantContext(ctx, (db) =>
         db.agentProposal.findMany({
-            where: { tenantId: ctx.tenantId, ...(opts.status ? { status: opts.status as never } : {}) },
+            where: { tenantId: ctx.tenantId, status },
             orderBy: { createdAt: 'desc' },
             take: opts.take ?? 100,
         }),

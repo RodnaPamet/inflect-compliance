@@ -123,7 +123,10 @@ export async function createAiSystem(ctx: RequestContext, input: unknown) {
 
 export async function listAiSystems(
     ctx: RequestContext,
-    options: { riskTier?: AiRiskTier; status?: string } = {},
+    // Raw query-string values; `AiSystemRepository.list` validates both
+    // against the real enum. Typing them here as the enum only invited the
+    // route to `as`-cast a bare string in.
+    options: { riskTier?: string; status?: string } = {},
 ) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
