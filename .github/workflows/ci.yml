@@ -1215,13 +1215,33 @@ jobs:
     name: "Trivy Image Scan"
     needs: [docker]
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    # The image is now built ONCE in the `docker` job and handed over as
-    # a tarball artifact — this job `docker load`s it instead of doing a
-    # second ~7.5-min rebuild. What remains is download + load (~1 min) +
-    # the critical+high gate scan (~1.5 min) + SARIF report. 12 min is
-    # ample headroom and flags any regression that reintroduces the
-    # in-job rebuild (locked by tests/guardrails/trivy-no-rebuild.test.ts).
-    timeout-minutes: 12
+    # The image is built ONCE in the `docker` job and handed over as a
+    # tarball artifact — this job `docker load`s it instead of doing a
+    # second ~7.5-min rebuild (locked by
+    # tests/guardrails/trivy-no-rebuild.test.ts).
+    #
+    # 12 → 25 on 2026-08-03, after the job was cancelled at 12m18s on
+    # `main` (35f3d3970) and took main red. The "12 min is ample
+    # headroom" claim it replaces was calibrated against a best case,
+    # not the spread. Four consecutive runs:
+    #
+    #   7ad55ee70   7m45s  pass
+    #   57e5bda43  10m13s  pass
+    #   2604e5e14   7m15s  pass
+    #   35f3d3970  12m18s  CANCELLED (hit the 12-min ceiling)
+    #
+    # That is VARIANCE, not growth — 7-12 min run to run against a
+    # 12-min ceiling. The wall-clock is dominated by things that are
+    # not the scan itself: pulling the image tarball artifact, and
+    # running trivy-action TWICE (the critical+high gate, then the
+    # SARIF report), each of which re-fetches the vulnerability DB.
+    # A bigger image (the 46-package production bump) lengthens all
+    # of it.
+    #
+    # If this trips again, the fix is structural rather than another
+    # ceiling bump: have the gate step emit the SARIF instead of
+    # scanning a second time, so the DB is fetched once.
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v7
