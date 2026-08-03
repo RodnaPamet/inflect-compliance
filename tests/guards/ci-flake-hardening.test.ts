@@ -98,3 +98,73 @@ describe('CI flake hardening', () => {
         expect(offenders).toEqual([]);
     });
 });
+
+describe('CI timeout ceilings', () => {
+    /**
+     * Parsed jobs of ci.yml. Uses js-yaml rather than the regex helper
+     * above because absence is the thing being asserted — a regex can
+     * only find a `timeout-minutes:` that exists, and would silently
+     * pass for a job that declares none.
+     */
+    function ciJobs(): Record<string, { name?: string; 'timeout-minutes'?: number }> {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const yaml = require('js-yaml');
+        const doc = yaml.load(CI) as {
+            jobs: Record<string, { name?: string; 'timeout-minutes'?: number }>;
+        };
+        return doc.jobs;
+    }
+
+    it('every job declares an explicit timeout-minutes', () => {
+        // A job with no ceiling inherits GitHub's default of 360 minutes.
+        // Found by the 2026-08-03 sweep: `test-summary` had none, so a
+        // hang in a job that normally runs 2-5 SECONDS could have burned
+        // six hours of runner time. Absence is the failure mode this
+        // catches — a missing ceiling looks identical to a healthy job
+        // until something wedges.
+        const missing = Object.entries(ciJobs())
+            .filter(([, j]) => typeof j['timeout-minutes'] !== 'number')
+            .map(([id]) => id);
+        expect(missing).toEqual([]);
+    });
+
+    it('no job carries a ceiling near its observed runtime', () => {
+        // Floors from the 2026-08-03 sweep (17 CI runs), each set with
+        // real margin over the OBSERVED MAXIMUM, not the median:
+        //
+        //   job            median   max      ceiling
+        //   Coverage       33m24s   35m15s*  50
+        //   Trivy          8m42s    12m18s   25
+        //   Security       1m05s    3m30s    12
+        //   E2E            18m41s   19m43s   40
+        //   Docker Build   16m46s   20m10s   40
+        //   (* cancelled AT the ceiling — true value unknown, >35)
+        //
+        // Two of these were cancelled in production before the sweep
+        // (Coverage #1780, Trivy #1781), both having reported green
+        // while sitting at 85-97% of budget. A median-day duration says
+        // nothing about the tail, so these floors are the record of what
+        // the tail actually looked like. Lowering one needs fresh data,
+        // not intuition.
+        const FLOORS: Record<string, number> = {
+            'Coverage (≥60%)': 50,
+            'Trivy Image Scan': 25,
+            Security: 12,
+            E2E: 40,
+            'Docker Build': 40,
+        };
+        const jobs = Object.values(ciJobs());
+        for (const [name, floor] of Object.entries(FLOORS)) {
+            const job = jobs.find((j) => j.name === name);
+            expect({ name, found: Boolean(job) }).toEqual({ name, found: true });
+            expect({ name, timeout: job!['timeout-minutes'] }).toEqual({
+                name,
+                timeout: expect.any(Number),
+            });
+            expect({ name, atLeast: job!['timeout-minutes']! >= floor }).toEqual({
+                name,
+                atLeast: true,
+            });
+        }
+    });
+});

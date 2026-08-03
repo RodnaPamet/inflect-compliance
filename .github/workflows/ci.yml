@@ -406,6 +406,18 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
+    # The sweep's other finding: this was the ONLY job in the workflow
+    # with no ceiling at all, which means it inherited GitHub's default
+    # of 360 minutes. It reads `needs.test.result` and exits — observed
+    # range across 17 runs is 2-5 SECONDS — so a run that somehow hangs
+    # here would burn six hours of runner time before anything stopped
+    # it, on the job least able to justify it.
+    #
+    # 5 minutes is ~60x the observed worst case and still bounds the
+    # pathological case. Note this job is the rollup that reports the
+    # `Test` check context, so it is a plausible required status check —
+    # one more reason it should not be able to hang indefinitely.
+    timeout-minutes: 5
     steps:
       - name: Verify every shard succeeded
         # `needs.test.result` is the aggregated status across all
@@ -962,7 +974,26 @@ jobs:
   security:
     name: Security
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 5 → 12 on 2026-08-03, from the timeout sweep that followed the
+    # Coverage (#1780) and Trivy (#1781) cancellations. This job has
+    # never timed out, but it has the FATTEST TAIL in the pipeline —
+    # 17 observed runs:
+    #
+    #   0m54s .. 1m56s   (16 runs, tightly clustered)
+    #   3m30s            (1 run — 1.8x the next-highest)
+    #
+    # Median 1m05s against a 5-minute ceiling reads as luxurious; the
+    # ratio that matters is ceiling ÷ WORST case, which was 1.43x —
+    # joint-tightest in the whole workflow. The work here is `npm
+    # audit` plus dependency-review, both of which are network calls to
+    # the npm registry and GitHub; a slow-registry day is exactly the
+    # kind of event that produced the 3m30s sample, and nothing says
+    # the tail stops there.
+    #
+    # This is the lesson from the two cancellations generalised: a job
+    # sitting at 20% of its budget on a median day tells you nothing
+    # about its p99, and a timeout is only ever hit on a bad day.
+    timeout-minutes: 12
 
     steps:
       - uses: actions/checkout@v7
