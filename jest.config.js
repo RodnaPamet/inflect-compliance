@@ -27,7 +27,40 @@
 // `marked` is pure ESM since v6 (v18 ships only lib/marked.esm.js with
 // `type: module` + no CJS entry), so `@/lib/policy/policy-content` —
 // which imports it — must be transformed for the CJS node test project.
-const ESM_TRANSFORM_ALLOW_LIST = 'jose|preact|preact-render-to-string|marked';
+//
+// The htmlparser2 cluster (2026-08 production bump). `sanitize-html`
+// 2.17.6 raised its dep to `htmlparser2: ^12`, and npm installs that as
+// a NESTED tree under node_modules/sanitize-html/node_modules/. Every
+// member of it is `"type": "module"` with an `import`-first entry:
+// htmlparser2@12, domhandler@6, domutils@4, dom-serializer@3,
+// domelementtype@3, entities@8.
+//
+// BOTH the outer and inner package names are required, and it is worth
+// knowing why. `transformIgnorePatterns` is an UNANCHORED regex tested
+// against the whole path, so for
+//   node_modules/sanitize-html/node_modules/htmlparser2/dist/index.js
+// it first tries to match at the OUTER `node_modules/`. If the outer
+// package is not allowlisted, the negative lookahead succeeds there, the
+// pattern matches, and the file is ignored — no matter what the inner
+// package is called. Naming only `htmlparser2` therefore fixes nothing;
+// naming only `sanitize-html` fixes nothing either, because the engine
+// then matches at the inner `node_modules/htmlparser2/`. Both must be
+// listed so no position in the path matches.
+// (`sanitize-html`'s own index.js is still CJS; it is here purely to
+// stop the outer segment from matching.)
+//
+// Symptom without this: every suite transitively reaching
+// `@/lib/security/sanitize` (the Epic C.5 sanitisation path — control-test,
+// finding, policy usecases) dies with "Cannot use import statement outside
+// a module", reported against sanitize-html/index.js:1 — the frame that
+// required the ESM module, not the module at fault.
+//
+// TEST-HARNESS break only: `Build`, `Docker Build`, `Trivy` and `E2E` were
+// all green on the same commit, i.e. Next handles the ESM entries fine at
+// build and runtime.
+const ESM_TRANSFORM_ALLOW_LIST =
+    'jose|preact|preact-render-to-string|marked' +
+    '|sanitize-html|htmlparser2|domhandler|domutils|dom-serializer|domelementtype|entities';
 
 // ─── Coverage thresholds ─────────────────────────────────────────────
 //
