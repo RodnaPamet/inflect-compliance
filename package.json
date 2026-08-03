@@ -124,7 +124,7 @@
     "@visx/tooltip": "^4.0.0",
     "@xyflow/react": "^12.11.2",
     "bcryptjs": "^3.0.3",
-    "bullmq": "^5.79.3",
+    "bullmq": "^6.0.1",
     "canvas-confetti": "^1.9.4",
     "chrono-node": "^2.9.0",
     "class-variance-authority": "^0.7.1",
