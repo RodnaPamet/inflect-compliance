@@ -32,7 +32,8 @@
         "kind": "security",
         "advisory": "GHSA-9mqv-5hh9-4cgg",
         "patchedFrom": "2.0.10",
-        "reason": "Unauthenticated memory-leak DoS affecting >=2.0.0 <=2.0.9, fixed 2.0.10. Paired with the `hono` override. Floor raised 2.0.5 → 2.0.10 on 2026-07-25: the old floor cleared only the earlier serve-static path traversal (GHSA-frvp-7c67-39w9, fixed 2.0.5) and admitted versions this later advisory still affects. The lockfile already resolves 2.0.11."
+        "currentlyInert": "Left the tree entirely on 2026-08-03. It only ever arrived transitively via @prisma/dev, which pinned @hono/node-server 1.19.11; the prisma 7.8.0 → 7.9.1 bump moved @prisma/dev 0.24.3 → 0.24.17, which no longer depends on it. The override is KEPT rather than deleted so the 2.0.10 floor re-applies automatically if anything reintroduces the package — deleting it would silently drop that protection with no signal.",
+        "reason": "Unauthenticated memory-leak DoS affecting >=2.0.0 <=2.0.9, fixed 2.0.10. Paired with the `hono` override. Floor raised 2.0.5 → 2.0.10 on 2026-07-25: the old floor cleared only the earlier serve-static path traversal (GHSA-frvp-7c67-39w9, fixed 2.0.5) and admitted versions this later advisory still affects."
     },
     "fast-uri": {
         "kind": "security",
@@ -44,6 +45,7 @@
         "kind": "security",
         "advisory": "GHSA-w62v-xxxg-mg59",
         "patchedFrom": "4.12.27",
+        "currentlyInert": "Left the tree entirely on 2026-08-03, same cause as the paired @hono/node-server entry: hono only ever arrived via @prisma/dev (^4.12.8), and the prisma 7.8.0 → 7.9.1 bump moved @prisma/dev 0.24.3 → 0.24.17, which dropped the dependency. Override KEPT rather than deleted so the 4.12.27 floor re-applies automatically if hono returns.",
         "reason": "Server-side XSS via a JSX escaping bypass in cx() (fixed 4.12.27), one of a cluster of hono advisories fixed in that release. THE cautionary entry: pinned ^4.12.23 while the lockfile sat on vulnerable 4.12.25 — the range permitted the fix but nothing pulled it in. Raising a floor is not enough; the lockfile has to move too. Was recorded as GHSA-hcxr-2v8p-3vqw until 2026-07-25 — that id does not resolve as an npm advisory."
     },
     "tmp": {
