@@ -435,13 +435,29 @@ jobs:
     name: "Coverage (≥60%)"
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     if: github.event_name == 'push' || github.event_name == 'schedule'
-    # 35-minute budget. R30 (group nodes) cancelled at 25m16s on
-    # #716 even with the prior 25-min ceiling — the coverage-
-    # instrumented variant has grown slower as the suite size +
-    # branch count climbed past ~7,800 tests. Bumping to 35 leaves
-    # ~10 min of headroom over the actual 25-min run; revisit if
-    # the gate ever runs >30 min.
-    timeout-minutes: 35
+    # 50-minute budget. History: 25 → 35 (#716, R30 group nodes
+    # cancelled at 25m16s) → 50 here, on 2026-08-03, when the job
+    # was cancelled at 35m15s on `main` (2604e5e14) and took main
+    # red. The previous comment said "revisit if the gate ever runs
+    # >30 min" — by then it already was, for three consecutive runs:
+    #
+    #   7ad55ee70  32m53s  pass
+    #   57e5bda43  33m56s  pass
+    #   2604e5e14  35m15s  CANCELLED (hit the 35-min ceiling)
+    #
+    # i.e. it had been sitting at 94-97% of budget and passing, so
+    # nothing signalled until it tipped over. ~1 min of growth per
+    # run across a dependency-bump wave; 50 restores real headroom
+    # rather than another single-run reprieve.
+    #
+    # ⚠️ This job is `push`/`schedule`-only (see the `if:` above), so
+    # it does NOT run on pull requests — a change that slows it is
+    # invisible until it lands on `main`. That is why the creep went
+    # unnoticed. If it climbs past ~40 min again, treat that as the
+    # signal to make the job itself faster (shard the coverage run
+    # the way `test` is sharded) rather than raising this number a
+    # fourth time.
+    timeout-minutes: 50
 
     env:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
