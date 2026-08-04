@@ -74,3 +74,32 @@ CVE-2026-53655
 #   an npm whose bundle carries brace-expansion ≥ 5.0.8. Re-check with
 #   `npm ls brace-expansion` in the image.
 CVE-2026-14257
+#
+# CVE-2026-69152 (brace-expansion, HIGH) — the next DoS in the same line as
+#   CVE-2026-14257 above, fixed in 5.0.9. Identical placement and identical
+#   blast radius: the affected 5.0.7 lives in the image's GLOBAL npm CLI
+#   (/usr/local/lib/node_modules/npm → minimatch → brace-expansion; the
+#   Dockerfile runs `npm install -g npm@12.0.1`), NOT an app runtime
+#   dependency. Our own RUNTIME tree is on the patched 5.0.9 — verified with
+#   `npm ls brace-expansion --omit=dev`, which is what survives the builder
+#   stage's `npm prune --omit=dev`. The server runs `next start` (node) and
+#   never invokes the npm CLI, so this copy is unreachable from
+#   request-handling code.
+#   Checked 2026-08-04: npm@12.0.2 (newest) STILL vendors brace-expansion
+#   5.0.7, so bumping the Dockerfile pin does not clear it — there is no
+#   fixed npm to move to yet.
+#   Retire when: an npm release bundles brace-expansion ≥ 5.0.9. Re-check
+#   with `npm ls brace-expansion` in the image.
+CVE-2026-69152
+#
+# CVE-2026-69192 (ip-address) — parsing flaw, fixed in 10.3.1. The affected
+#   10.2.0 reaches the image only through the GLOBAL npm CLI's vendored
+#   socks-proxy-agent → socks → ip-address. It is not in the application's
+#   runtime tree at all: `npm ls ip-address --omit=dev` returns nothing, so
+#   nothing survives `npm prune --omit=dev` into the runner stage's
+#   node_modules. Reachable only if the npm CLI parses a hostile proxy
+#   address, which happens at image-build time, never at request time.
+#   Checked 2026-08-04: npm@12.0.2 (newest) still vendors ip-address 10.2.0.
+#   Retire when: an npm release bundles ip-address ≥ 10.3.1. Re-check with
+#   `npm ls ip-address` in the image.
+CVE-2026-69192
