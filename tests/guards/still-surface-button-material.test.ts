@@ -49,6 +49,7 @@ const VARIANTS = 'src/components/ui/button-variants.ts';
 const BUTTON = 'src/components/ui/button.tsx';
 const CONTROLS = 'src/components/ui/control-variants.ts';
 const HIT_AREA = 'src/components/ui/hit-area.ts';
+const FILTER_TOOLBAR = 'src/components/filters/FilterToolbar.tsx';
 
 describe('Still Surface — motionless by construction', () => {
     const src = code(VARIANTS);
@@ -415,6 +416,19 @@ describe('Still Surface — the single-rung ladder', () => {
         for (const key of ['xs', 'sm', 'md', 'lg']) {
             expect(ctrl).toMatch(new RegExp(`${key}:\\s*CONTROL_RUNG`));
         }
+    });
+
+    it('the Filter trigger takes its size from the rung, not a hand-set height', () => {
+        // The lockstep above is only worth anything if the toolbar
+        // actually USES it. FilterToolbar hard-coded `className="h-9"`
+        // (36px) on the Filter trigger while `primary` beside it is a
+        // 28px <Button> — the precise mismatch control-variants.ts says
+        // the scale exists to prevent, sitting in the one component that
+        // renders both. Fixed 2026-08-04.
+        const toolbar = code(FILTER_TOOLBAR);
+        expect(toolbar).toMatch(/className=\{controlSize\.\w+\}/);
+        // No hand-set height may come back on the trigger.
+        expect(toolbar).not.toMatch(/className="h-\d+"/);
     });
 });
 

@@ -91,4 +91,20 @@ describe("v2-PR-6 executive dashboard adoption", () => {
         // are unaffected.
         expect(src).not.toMatch(/<Heading\s+level=\{1\}/);
     });
+
+    it("the custom-KPI section header start-aligns its picker to the top-right", () => {
+        // The header is a two-line title block (heading + subtitle) beside
+        // a one-line picker. With `sm:items-center` the picker centres
+        // against the taller block and floats BELOW the heading's top
+        // edge; `sm:items-start` parks it in the section's top-right
+        // corner, level with the heading. Fixed 2026-08-04.
+        const header = src.match(
+            /<div className="flex flex-col gap-tight sm:flex-row[^"]*">/,
+        )?.[0];
+        expect(header).toBeDefined();
+        expect(header).toContain("sm:items-start");
+        expect(header).not.toContain("sm:items-center");
+        // …and it stays on the right.
+        expect(header).toContain("sm:justify-between");
+    });
 });
