@@ -49,6 +49,8 @@ import type { AssetCore } from '@/lib/dto/asset.types';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
+import type { CappedList } from '@/lib/list-backfill-cap';
+import { TruncationBanner } from '@/components/ui/TruncationBanner';
 
 /** Item 34 — map the derived criticality tone to a StatusBadge variant. */
 const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
@@ -68,8 +70,12 @@ function severityVariant(sev: string | null | undefined): StatusBadgeVariant {
 }
 
 // listAssets → AssetRepository.list (full Asset model + _count.controls +
-// usecase-added taskTotal/taskDone). Cells/KPI callbacks stay untyped
-// (file-level disable; the colon-any category) — this types the column factory.
+// usecase-added taskTotal/taskDone) — this types the column factory.
+//
+// (An earlier version of this comment claimed the file carried a
+// file-level `any` disable. It does not, and never did: the only
+// directives here are two `eslint-disable-next-line` lines for the
+// SWR-migration hook rules.)
 /**
  * The list row = the shared asset core, minus the detail-only fields the
  * list query does not select, plus the list-only rollups it does.
@@ -115,11 +121,9 @@ interface AssetsClientProps {
         confidentiality: string;
         integrity: string;
         availability: string;
-        cia: string;
         controlsCol: string;
         noAssets: string;
         cancel: string;
-        assetsRegistered: string;
     };
 }
 
@@ -215,12 +219,19 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         const qs = params.toString();
         return qs ? `${CACHE_KEYS.assets.list()}?${qs}` : CACHE_KEYS.assets.list();
     }, [fetchParams, showDeleted]);
-    const assetsQuery = useTenantSWR<AssetListRow[]>(assetsKey, {
+    // The route returns `{ rows, truncated }` (the shape every sibling list
+    // uses). SSR seeds `truncated: false` because the server cap is well
+    // below the backfill cap.
+    const assetsQuery = useTenantSWR<CappedList<AssetListRow>>(assetsKey, {
         // The SSR initial payload never contains soft-deleted rows, so the
         // deleted view must always fetch fresh (no fallback).
-        fallbackData: filtersMatchInitial && !showDeleted ? initialAssets : undefined,
+        fallbackData:
+            filtersMatchInitial && !showDeleted
+                ? { rows: initialAssets, truncated: false }
+                : undefined,
     });
-    const assets = assetsQuery.data ?? [];
+    const assets = assetsQuery.data?.rows ?? [];
+    const truncated = assetsQuery.data?.truncated ?? false;
 
     // ─── Sortable headers (per-column asc/desc, parity with Controls) ───
     // Clicking a sortable header re-orders the in-memory rows; sort runs
@@ -290,7 +301,13 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             const idSet = new Set(ids);
             setSelected(new Set());
             // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window), NOT display refiltering — server owns the list filter; mutate() restores on Undo/failure.
-            assetsQuery.mutate((cur) => (cur ?? []).filter((a) => !idSet.has(a.id)), {
+            assetsQuery.mutate((cur) => ({
+                // guardrail-ignore: optimistic-delete cache update (drop the just-deleted rows during the Epic 67 undo window), NOT display refiltering — server owns the list filter; mutate() restores on Undo/failure.
+                rows: (cur?.rows ?? []).filter((a) => !idSet.has(a.id)),
+                // A local removal doesn't change whether the SERVER's page
+                // was clipped, so the flag is carried through untouched.
+                truncated: cur?.truncated ?? false,
+            }), {
                 revalidate: false,
             });
             triggerUndoToast({
@@ -468,6 +485,10 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // KPI's own key (status / criticality), so sibling filters
     // survive.
     type AssetKpiId = 'total' | 'active' | 'critical' | 'retired';
+    // These count the LOADED rows. That is exact until the backfill cap
+    // fires; past it the banner above the table says the list is partial,
+    // so the numbers are no longer presented as tenant totals without a
+    // signal (which is precisely what they were before).
     // guardrail-ignore: KPI counts across the loaded page, not a refilter.
     const totalAssets = assets.length;
     // guardrail-ignore: KPI count, not a refilter.
@@ -949,7 +970,14 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     searchId="assets-search"
                     searchPlaceholder={tx('searchPlaceholder')}
                     leading={
-                        <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-asset-btn">{t.addAsset}</Button>
+                        // Gated like every sibling surface. Assets already
+                        // gated its import link, its deleted-view toggle and
+                        // its empty-state CTA — the primary create button was
+                        // simply missed, so a READER saw a button that always
+                        // 403'd on submit.
+                        permissions.canWrite ? (
+                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-asset-btn">{t.addAsset}</Button>
+                        ) : undefined
                     }
                     actions={
                         <>
@@ -1003,6 +1031,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             </ListPageShell.Filters>
 
             <ListPageShell.Body aside={assetQuickViewAside}>
+                <TruncationBanner truncated={truncated} />
                 <DataTable
                     fillBody
                     onReachEnd={hasMoreAssets ? loadMoreAssets : undefined}
@@ -1034,15 +1063,21 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     onRowSelectionChange={(rows) =>
                         setSelected(new Set(rows.map((r) => r.original.id)))
                     }
-                    selectionControls={() => (
-                        <BulkActionBar
-                            actions={assetBulkActions}
-                            onApply={handleBulkApply}
-                            applying={bulkApplying}
-                            selectedCount={selected.size}
-                            entityLabel={tx('entityLabelPlural')}
-                        />
-                    )}
+                    // Selection itself stays available to readers (it drives
+                    // the quick-look panel); only the MUTATING bar is gated.
+                    selectionControls={
+                        permissions.canWrite
+                            ? () => (
+                                  <BulkActionBar
+                                      actions={assetBulkActions}
+                                      onApply={handleBulkApply}
+                                      applying={bulkApplying}
+                                      selectedCount={selected.size}
+                                      entityLabel={tx('entityLabelPlural')}
+                                  />
+                              )
+                            : undefined
+                    }
                     onRowClick={handleAssetRowClick}
                     onRowPrefetch={handleAssetRowPrefetch}
                     emptyState={

@@ -69,11 +69,9 @@ export default async function AssetsPage({
                     confidentiality: t('confidentiality'),
                     integrity: t('integrity'),
                     availability: t('availability'),
-                    cia: t('cia'),
                     controlsCol: t('controlsCol'),
                     noAssets: t('noAssets'),
                     cancel: tc('cancel'),
-                    assetsRegistered: t('assetsRegistered', { count: assets.length }),
                 }}
             />
     );

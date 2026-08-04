@@ -91,10 +91,14 @@ async function enrichAssetRows<T extends { id: string }>(db: PrismaTx, ctx: Requ
     }));
 }
 
-export async function listAssets(ctx: RequestContext, filters?: AssetFilters) {
+export async function listAssets(
+    ctx: RequestContext,
+    filters?: AssetFilters,
+    options: { take?: number } = {},
+) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const rows = await AssetRepository.list(db, ctx, filters);
+        const rows = await AssetRepository.list(db, ctx, filters, options);
         return enrichAssetRows(db, ctx, rows);
     });
 }
@@ -195,7 +199,14 @@ export async function getAssetActivity(ctx: RequestContext, assetId: string) {
 // optional so the permission-gate test path (which throws before validation) holds.
 interface CreateAssetInput {
     name: string;
-    type?: string;
+    // The Prisma enum, not `string`. This interface is hand-maintained
+    // alongside `CreateAssetSchema`, and the two had drifted: the schema
+    // said `z.string()`, this said `string`, and the payload cast to
+    // `AssetType` — three declarations agreeing only that the type was
+    // unchecked, so an unknown member reached the driver and 500'd.
+    // (Deriving this from the schema outright belongs with the asset-DTO
+    // rehoming; the enum is the part that was actually broken.)
+    type?: AssetType;
     status?: 'ACTIVE' | 'RETIRED';
     classification?: string | null;
     owner?: string | null;
@@ -290,6 +301,25 @@ export async function createAsset(ctx: RequestContext, data: CreateAssetInput) {
     });
 }
 
+/**
+ * A cleared text field must land as NULL, not `''`.
+ *
+ * The edit form sends EVERY field on every submit (its defaults are `''`,
+ * `useEditAssetForm.ts`), while the create form omits empties. Passed
+ * straight through, that difference wrote `''` into eleven nullable
+ * columns whenever a user cleared one — so "no location" was stored two
+ * different ways depending on which form you used, and `IS NULL` filters
+ * silently missed the edited rows.
+ *
+ * Three states, deliberately: `undefined` leaves the column untouched,
+ * `''` clears it, any other string is written as-is.
+ */
+function emptyToNull(value: string | null | undefined): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    return value.trim() === '' ? null : value;
+}
+
 export async function updateAsset(ctx: RequestContext, id: string, data: UpdateAssetInput) {
     assertCanWrite(ctx);
 
@@ -314,24 +344,31 @@ export async function updateAsset(ctx: RequestContext, id: string, data: UpdateA
 
         const asset = await AssetRepository.update(db, ctx, id, {
             name: data.name,
-            type: data.type as AssetType | undefined,
-            classification: data.classification,
-            owner: data.owner,
+            // `UpdateAssetSchema` validates this against the real enum, so
+            // no cast is needed and an unknown value 400s at the boundary
+            // instead of reaching Prisma.
+            type: data.type,
+            // The detail-page status control and the edit modal both send
+            // this; omitting it here meant both returned 200 OK and changed
+            // nothing. `createAsset` and `bulkSetAssetStatus` always wrote it.
+            status: data.status,
+            classification: emptyToNull(data.classification),
+            owner: emptyToNull(data.owner),
             // "Assigned to" — undefined leaves it untouched; '' or null
             // clears (an empty string would be an invalid FK).
             ownerUserId:
                 data.ownerUserId === undefined
                     ? undefined
                     : data.ownerUserId || null,
-            location: data.location,
+            location: emptyToNull(data.location),
             confidentiality: data.confidentiality,
             integrity: data.integrity,
             availability: data.availability,
             criticality: criticalityToEnum(updC, updI, updA),
-            dependencies: data.dependencies,
-            businessProcesses: data.businessProcesses,
-            dataResidency: data.dataResidency,
-            retention: data.retention,
+            dependencies: emptyToNull(data.dependencies),
+            businessProcesses: emptyToNull(data.businessProcesses),
+            dataResidency: emptyToNull(data.dataResidency),
+            retention: emptyToNull(data.retention),
             // Three-state: undefined → leave unchanged; empty/null → clear;
             // non-empty string → date. (The edit form always sends the field,
             // as '' when cleared, so '' must map to null — not `new Date('')`.)
@@ -341,11 +378,11 @@ export async function updateAsset(ctx: RequestContext, id: string, data: UpdateA
                     : data.retentionUntil
                         ? new Date(data.retentionUntil)
                         : null,
-            externalRef: data.externalRef,
-            cpe: data.cpe,
-            vendor: data.vendor,
-            product: data.product,
-            version: data.version,
+            externalRef: emptyToNull(data.externalRef),
+            cpe: emptyToNull(data.cpe),
+            vendor: emptyToNull(data.vendor),
+            product: emptyToNull(data.product),
+            version: emptyToNull(data.version),
         });
 
         if (!asset) throw notFound('Asset not found');
@@ -440,8 +477,15 @@ export async function bulkImportAssets(
     // One up-front read pass: the existing-name set (dedupe) + the member
     // roster (owner resolution). Everything else is in-memory.
     const { existingNames, ownerByKey, memberIds } = await runInTenantContext(ctx, async (db) => {
+        // `deletedAt: null` matches the DB constraint this dedupe stands in
+        // for: `Asset_tenantId_name_key` is PARTIAL (WHERE "deletedAt" IS
+        // NULL), added precisely so a name can be reused after a soft
+        // delete. Without the filter the import skipped such a row as
+        // "existing" and reported it to the user as a duplicate — refusing
+        // an insert the database would have accepted, and defeating the
+        // point of the partial index.
         const existing = await db.asset.findMany({ // guardrail-allow: unbounded — dedupe needs the full tenant name set; selects `name` only (tiny rows).
-            where: { tenantId: ctx.tenantId },
+            where: { tenantId: ctx.tenantId, deletedAt: null },
             select: { name: true },
         });
         const members = await db.tenantMembership.findMany({
@@ -460,6 +504,16 @@ export async function bulkImportAssets(
         return { existingNames: existing.map((a: { name: string }) => a.name), ownerByKey, memberIds };
     });
 
+    // Case-INSENSITIVE on purpose, and deliberately stricter than the DB's
+    // case-sensitive unique index: an import that creates "Prod DB" beside
+    // an existing "prod db" produces two rows for one asset, which the
+    // constraint would happily allow. Being stricter can only skip a row
+    // (reported back to the user), never corrupt one — the asymmetry is
+    // documented on the model in `assets.prisma`.
+    //
+    // `createAsset` takes the other side of that trade: it does no dedupe
+    // and lets the constraint answer, which is why a duplicate create
+    // returns 409 rather than being silently folded into the existing row.
     const existingSet = new Set(existingNames.map((n) => n.trim().toLowerCase()));
     const seen = new Set(existingSet);
     const result: AssetImportResult = { created: 0, skipped: 0, createdIds: [], errors: [], skippedRows: [] };

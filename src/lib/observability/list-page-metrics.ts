@@ -91,6 +91,7 @@ function getTruncationCounter() {
  * entity that hasn't been considered for instrumentation.
  */
 export type ListPageEntity =
+    | 'assets'
     | 'controls'
     | 'risks'
     | 'evidence'

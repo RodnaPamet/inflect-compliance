@@ -13,6 +13,13 @@
  * `.openapi(...)` to every NEW request schema when you add it.
  */
 import { z } from '@/lib/openapi/zod';
+// `AssetType` is a Prisma enum on a NOT NULL column. Declaring it as
+// `z.string()` let any value through Zod and fail at the driver, which
+// `withApiErrorHandling` could only render as a 500 — a validation error
+// reported as a server fault. `z.nativeEnum` moves the rejection back to
+// the boundary where it belongs. Safe to import here: this module is
+// server-only (no 'use client' file imports it).
+import { AssetType } from '@prisma/client';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -22,7 +29,7 @@ export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
 
 export const CreateAssetSchema = z.object({
     name: z.string().min(1, 'Name is required'),
-    type: z.string().min(1, 'Type is required'),
+    type: z.nativeEnum(AssetType),
     status: z.enum(['ACTIVE', 'RETIRED']).optional(),
     classification: z.string().optional(),
     owner: z.string().optional(),
@@ -55,7 +62,7 @@ export const CreateAssetSchema = z.object({
 
 export const UpdateAssetSchema = z.object({
     name: z.string().min(1).optional(),
-    type: z.string().min(1).optional(),
+    type: z.nativeEnum(AssetType).optional(),
     classification: z.string().optional(),
     owner: z.string().optional(),
     ownerUserId: z.string().optional().nullable(),    // Real user reference — "Assigned to"
@@ -98,7 +105,7 @@ export const UpdateAssetSchema = z.object({
 export const BulkImportAssetsSchema = z.object({
     assets: z.array(z.object({
         name: z.string().min(1),
-        type: z.string().min(1),
+        type: z.nativeEnum(AssetType),
         status: z.enum(['ACTIVE', 'RETIRED']).optional(),
         classification: z.string().optional().nullable(),
         owner: z.string().optional().nullable(),

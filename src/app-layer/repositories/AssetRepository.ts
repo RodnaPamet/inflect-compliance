@@ -29,12 +29,25 @@ export interface AssetListParams {
 const FLAT_LIST_CAP = 1000;
 
 export class AssetRepository {
-    static async list(db: PrismaTx, ctx: RequestContext, filters?: AssetFilters) {
+    /**
+     * `options.take` lets the API route ask for `LIST_BACKFILL_CAP + 1`
+     * rows, which is what makes truncation DETECTABLE: a hard internal cap
+     * returns exactly N rows whether the tenant has N or N+5000, so the
+     * caller cannot tell the difference and the page silently lies about
+     * completeness (and computes its KPI counts over the capped array).
+     * `FLAT_LIST_CAP` remains the floor when no caller opts in.
+     */
+    static async list(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters?: AssetFilters,
+        options: { take?: number } = {},
+    ) {
         const where = AssetRepository._buildWhere(ctx, filters);
         return db.asset.findMany({
             where,
             orderBy: { createdAt: 'desc' },
-            take: FLAT_LIST_CAP,
+            take: options.take ?? FLAT_LIST_CAP,
             include: {
                 _count: { select: { controls: true } },
                 ownerUser: { select: { id: true, name: true, email: true } },

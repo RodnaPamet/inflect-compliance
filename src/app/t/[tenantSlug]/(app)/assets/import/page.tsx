@@ -12,6 +12,7 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { getAssetCriticality } from '@/lib/asset-criticality';
 import { cn } from '@/lib/cn';
+import { parseCsvRecords } from '@/lib/csv/parse-csv';
 
 const ASSET_TYPES = [
     'INFORMATION', 'APPLICATION', 'SYSTEM', 'SERVICE', 'DATA_STORE',
@@ -60,46 +61,19 @@ export default function AssetImportPage() {
         skippedRows: { row: number; name: string; reason: string }[];
     } | null>(null);
 
-    // Single-line CSV field split — handles quoted fields containing commas
-    // and escaped "" quotes (the naive `line.split(',')` broke on both).
-    // Cross-line quoted newlines are out of scope: each physical line is parsed
-    // independently, matching the line-oriented split below.
-    const parseCsvLine = (line: string): string[] => {
-        const out: string[] = [];
-        let cur = '';
-        let inQuotes = false;
-        for (let k = 0; k < line.length; k++) {
-            const ch = line[k];
-            if (inQuotes) {
-                if (ch === '"') {
-                    if (line[k + 1] === '"') { cur += '"'; k++; } // escaped quote
-                    else inQuotes = false;
-                } else cur += ch;
-            } else if (ch === '"') {
-                inQuotes = true;
-            } else if (ch === ',') {
-                out.push(cur); cur = '';
-            } else {
-                cur += ch;
-            }
-        }
-        out.push(cur);
-        return out.map((c) => c.trim());
-    };
-
     const parseCSV = (text: string): ParsedRow[] => {
-        const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-        if (lines.length < 2) return [];
-        const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
-        const nameIdx = headers.indexOf('name');
-        if (nameIdx < 0) return [];
+        // The shared RFC-4180-ish parser, same as the risk importer. The
+        // hand-rolled one this replaces split on `\n` first and parsed each
+        // physical line independently — its own comment conceded that a
+        // quoted field containing a newline was "out of scope", so a
+        // perfectly valid CSV export (any multi-line description cell)
+        // silently produced garbage rows.
+        const records = parseCsvRecords(text);
+        if (records.length === 0) return [];
+        if (!('name' in records[0])) return [];
 
-        const col = (cols: string[], header: string): string | undefined => {
-            const idx = headers.indexOf(header);
-            if (idx < 0) return undefined;
-            const v = cols[idx];
-            return v ? v : undefined;
-        };
+        const col = (rec: Record<string, string>, header: string): string | undefined =>
+            rec[header] ? rec[header] : undefined;
         const cia = (raw: string | undefined): { value?: number; invalid?: boolean } => {
             if (raw === undefined) return {};
             const n = parseInt(raw, 10);
@@ -107,14 +81,13 @@ export default function AssetImportPage() {
             return { value: n };
         };
 
-        return lines.slice(1).map((line): ParsedRow => {
-            const cols = parseCsvLine(line);
-            const name = cols[nameIdx] ?? '';
-            const rawType = col(cols, 'type');
-            const rawStatus = col(cols, 'status');
-            const c = cia(col(cols, 'confidentiality'));
-            const i = cia(col(cols, 'integrity'));
-            const a = cia(col(cols, 'availability'));
+        return records.map((rec): ParsedRow => {
+            const name = rec.name ?? '';
+            const rawType = col(rec, 'type');
+            const rawStatus = col(rec, 'status');
+            const c = cia(col(rec, 'confidentiality'));
+            const i = cia(col(rec, 'integrity'));
+            const a = cia(col(rec, 'availability'));
 
             const errors: string[] = [];
             if (!name) errors.push(t('import.errNameRequired'));
@@ -132,22 +105,22 @@ export default function AssetImportPage() {
                 name,
                 type,
                 status,
-                owner: col(cols, 'owner'),
-                classification: col(cols, 'classification'),
-                location: col(cols, 'location'),
+                owner: col(rec, 'owner'),
+                classification: col(rec, 'classification'),
+                location: col(rec, 'location'),
                 confidentiality: c.value,
                 integrity: i.value,
                 availability: a.value,
-                externalRef: col(cols, 'externalref'),
-                dependencies: col(cols, 'dependencies'),
-                businessProcesses: col(cols, 'businessprocesses'),
-                retention: col(cols, 'retention'),
-                retentionUntil: col(cols, 'retentionuntil'),
-                dataResidency: col(cols, 'dataresidency'),
-                cpe: col(cols, 'cpe'),
-                vendor: col(cols, 'vendor'),
-                product: col(cols, 'product'),
-                version: col(cols, 'version'),
+                externalRef: col(rec, 'externalref'),
+                dependencies: col(rec, 'dependencies'),
+                businessProcesses: col(rec, 'businessprocesses'),
+                retention: col(rec, 'retention'),
+                retentionUntil: col(rec, 'retentionuntil'),
+                dataResidency: col(rec, 'dataresidency'),
+                cpe: col(rec, 'cpe'),
+                vendor: col(rec, 'vendor'),
+                product: col(rec, 'product'),
+                version: col(rec, 'version'),
                 error: errors.length ? errors.join('; ') : undefined,
             };
         }).filter((r) => r.name || r.error);

@@ -64,6 +64,21 @@ model Asset {
   /// Unique within a tenant — `AST-N` collisions are race-free
   /// via the AssetKeySequence counter.
   @@unique([tenantId, key])
+  /// CONSTRAINT NOT VISIBLE HERE: the database also carries
+  /// `Asset_tenantId_name_key`, a PARTIAL unique index on
+  /// (tenantId, name) WHERE "deletedAt" IS NULL — added by migration
+  /// 20260312210616_partial_unique_soft_delete so a name can be reused
+  /// after a soft delete. Prisma has no syntax for a filtered index, so
+  /// it CANNOT be declared here: writing `@@unique([tenantId, name])`
+  /// would be a lie in the other direction — it would make the next
+  /// `migrate dev` drop the partial index for an unconditional one and
+  /// break name reuse after deletion. The index below is the plain
+  /// lookup index; the uniqueness is enforced by the DB alone.
+  ///
+  /// Consequences for callers: the constraint is CASE-SENSITIVE and
+  /// ignores soft-deleted rows. `bulkImportAssets` matches both of those
+  /// deliberately (see its dedupe pass); `createAsset` relies on the DB
+  /// and surfaces P2002 as a 409.
   @@index([tenantId, name])
   @@index([tenantId])
   @@index([tenantId, createdAt])
