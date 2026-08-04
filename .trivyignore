@@ -74,3 +74,38 @@ CVE-2026-53655
 #   an npm whose bundle carries brace-expansion ≥ 5.0.8. Re-check with
 #   `npm ls brace-expansion` in the image.
 CVE-2026-14257
+
+# ── 2026-08-04 — two NEW advisories against the image's GLOBAL npm CLI ──
+#
+#   CVE-2026-69152  brace-expansion  5.0.7 → fixed 5.0.9   HIGH
+#   CVE-2026-69192  ip-address       10.2.0 → fixed 10.3.1 HIGH
+#                   (reached via npm's bundled `socks`)
+#
+# Same class as CVE-2026-14257 directly above, and the undici / tar
+# entries earlier: both live in /usr/local/lib/node_modules/npm, the
+# GLOBAL CLI installed by `npm install -g npm@12.0.1` (Dockerfile:81) —
+# NOT an application runtime dependency. Our own lockfile resolves the
+# top-level brace-expansion to 5.0.9 (raised in this same PR) and does
+# not carry ip-address at all outside npm's bundle.
+#
+# The server runs `next start` (node) and never invokes the npm CLI, so
+# neither copy is reachable from request-handling code — blast radius is
+# build-time only.
+#
+# npm ships its dependencies BUNDLED, so a package.json `overrides` entry
+# cannot rewrite them; the only lever is the npm version itself. Checked
+# empirically on 2026-08-04 by unpacking the tarball: npm 12.0.2 (the
+# newest release, one ahead of the pinned 12.0.1) STILL bundles
+# brace-expansion 5.0.7 and ip-address 10.2.0. There is no npm release to
+# move to, which is why this is an ignore rather than a bump.
+#
+# NOT caused by any change in this PR — both surfaced from a Trivy DB
+# refresh; the previous main run (30819169244) scanned the same image
+# layer green.
+#
+# Retire when: an npm release bundles brace-expansion >= 5.0.9 and
+# ip-address >= 10.3.1, then move the Dockerfile's `npm install -g npm@…`
+# to it and delete these two lines. Re-check with
+# `npm view npm version` + unpacking, or `npm ls` inside the image.
+CVE-2026-69152
+CVE-2026-69192
