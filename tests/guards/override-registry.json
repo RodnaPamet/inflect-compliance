@@ -1,9 +1,9 @@
 {
     "undici": {
         "kind": "security",
-        "advisory": "GHSA-vxpw-j846-p89q",
-        "patchedFrom": "7.28.0",
-        "reason": "undici WebSocket client DoS (CVE-2026-12151, high), fixed in 6.27.0 / 7.28.0 / 8.5.0. undici is a direct production dependency (^7.28.0); the override aligns the whole tree to the patched 7.28.0 line, which also clears the cluster of undici advisories fixed there (SOCKS5 cross-origin routing, TLS-cert-validation bypass, Set-Cookie header injection). Was recorded as GHSA-c76h-2ccp-4975 until 2026-07-25 — a real undici advisory but fixed at 5.28.5 / 6.21.1 / 7.2.3, so it never justified a 7.28.0 floor."
+        "advisory": "GHSA-8xcm-r25x-g524",
+        "patchedFrom": "7.29.0",
+        "reason": "Downstream response desynchronization via the retry interceptor, affecting >=7.0.0 <=7.28.0, fixed 7.29.0. One of FIVE undici advisories fixed in that release — the others are cross-user information disclosure via degenerate private cache directives (GHSA-4cwx-7wf7-3272), CRLF injection via a blob-like body `type` (GHSA-m8rv-5g2x-5cg5), cross-user disclosure via whitespace around equals in Cache-Control (GHSA-jr45-8vmc-qm54), and cookie-attribute injection via unsanitized domain (GHSA-v3r7-h72x-cjcm) — so one floor clears all five. undici is a direct production dependency. Floor 7.28.0 -> 7.29.0 on 2026-08-04: the previous floor, added for GHSA-vxpw-j846-p89q, was itself the top of this cluster's range. Held on 7.x — 8.x is a breaking major."
     },
     "tar": {
         "kind": "security",
@@ -37,9 +37,9 @@
     },
     "fast-uri": {
         "kind": "security",
-        "advisory": "GHSA-v2hh-gcrm-f6hx",
-        "patchedFrom": "3.1.4",
-        "reason": "HIGH advisory affecting >=3.0.0 <=3.1.3, fixed 3.1.4, reached through the Ajv/schema-validation chain. Floor raised 3.1.3 → 3.1.4 on 2026-07-25: the old floor cleared only the earlier IDN host-confusion (GHSA-4c8g-83qw-93j6, fixed 3.1.3) and was itself inside the newer range. The lockfile already resolves 3.1.4."
+        "advisory": "GHSA-7p8r-x3mc-p8w7",
+        "patchedFrom": "3.1.5",
+        "reason": "Host confusion via a backslash authority introducer, affecting >=3.0.0 <=3.1.4, fixed 3.1.5, reached through the Ajv/schema-validation chain. Floor 3.1.4 -> 3.1.5 on 2026-08-04: the previous floor cleared only GHSA-v2hh-gcrm-f6hx and was itself the top of this newer advisory's range. Held on the 3.x line deliberately — 4.x is a breaking major and nothing here needs it."
     },
     "hono": {
         "kind": "security",
@@ -68,9 +68,9 @@
     },
     "brace-expansion": {
         "kind": "security",
-        "advisory": "GHSA-mh99-v99m-4gvg",
-        "patchedFrom": "5.0.8",
-        "reason": "ReDoS at CVE-2026-14257 / GHSA-mh99-v99m-4gvg affecting <=5.0.7, fixed 5.0.8 — the finding that turned the CI Trivy image gate red. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window was affected by the ORIGINAL advisory; the 1.x and 2.x lines predate it and are deliberately left alone rather than force-marched to a breaking major. Floor raised 5.0.7 → 5.0.8 on 2026-07-25. The copy inside npm CLI bundle is unreachable by overrides and is carried by the `npm` pin instead."
+        "advisory": "GHSA-rgw5-rvv9-x895",
+        "patchedFrom": "5.0.9",
+        "reason": "DoS via unbounded intermediate arrays that BYPASSES the CVE-2026-14257 mitigation (<=5.0.8, fixed 5.0.9) — the previous 5.0.8 floor, added for GHSA-mh99-v99m-4gvg, was itself inside the new advisory's range. Floor 5.0.8 -> 5.0.9 on 2026-08-04. The KEY also had to change, from `brace-expansion@>=3.0.0 <=5.0.6` to `brace-expansion@>=5.0.0 <5.0.9`, and the reason is worth knowing: an npm override key carrying a version selector is matched against the declared SPECIFIER, not the resolved version, and a window spanning several majors (>=3.0.0) stopped matching the 5.x parents entirely — the top-level instance sat on vulnerable 5.0.8 through a full lockfile refresh with no error, the override silently biting nothing. Verified empirically: `>=3.0.0 <=5.0.8` left 5.0.8 in place; `>=5.0.0 <5.0.9` pulls 5.0.9. Keeping the window inside the 5.x major also preserves the original intent — the 1.x and 2.x instances under eslint/jest stay untouched rather than being force-marched across two breaking majors. npm's bundled copy (node_modules/npm/node_modules/brace-expansion) is unreachable by overrides and is carried by the `npm` pin instead."
     },
     "js-yaml": {
         "kind": "security",
