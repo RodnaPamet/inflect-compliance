@@ -230,7 +230,17 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Budget = observed max + the npm-ci RETRY path. The 2026-08-03
+    # sweep (#1782) scored every job by ceiling / observed maximum and
+    # rated this one comfortable — but all 17 sampled runs had a clean
+    # `npm ci`, so the sample could not contain the tail that actually
+    # fails. On 2026-08-04 Typecheck was cancelled at its 8-minute
+    # ceiling on #1786 with "npm ci failed (attempt 1/3) — retrying":
+    # the shared setup action retries three times with 10s+20s backoff,
+    # which is ~5-7 min of install on a cold cache BEFORE the job's own
+    # work starts. A job doing 3 min of work inside an 8-minute budget
+    # looks like 2.7x headroom and is one registry blip from red.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
@@ -257,7 +267,17 @@ jobs:
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Budget = observed max + the npm-ci RETRY path. The 2026-08-03
+    # sweep (#1782) scored every job by ceiling / observed maximum and
+    # rated this one comfortable — but all 17 sampled runs had a clean
+    # `npm ci`, so the sample could not contain the tail that actually
+    # fails. On 2026-08-04 Typecheck was cancelled at its 8-minute
+    # ceiling on #1786 with "npm ci failed (attempt 1/3) — retrying":
+    # the shared setup action retries three times with 10s+20s backoff,
+    # which is ~5-7 min of install on a cold cache BEFORE the job's own
+    # work starts. A job doing 3 min of work inside an 8-minute budget
+    # looks like 2.7x headroom and is one registry blip from red.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
@@ -558,7 +578,11 @@ jobs:
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # Normally ~3.5 min; 15 gives cold-runner headroom without masking a
     # genuine hang (the prior spurious cancels were concurrency, not timeout).
-    timeout-minutes: 15
+    # 15 -> 25 on 2026-08-04, same retry-path reasoning as Lint /
+    # Typecheck above. Observed max is 5m05s, so 15 reads as ample —
+    # but a tripped `npm ci` retry (~5-7 min) leaves under 4 minutes of
+    # slack, and this job also carries the cold-runner `next build`.
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v7
@@ -817,7 +841,12 @@ jobs:
     # push/schedule-only pattern as the `coverage` job.)
     if: github.event_name == 'push' || github.event_name == 'schedule'
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 12
+    # 12 -> 25 on 2026-08-04, retry path again — and this was the
+    # WORST of the four: observed max 6m13s plus a ~6 min npm-ci retry
+    # is ~12 min against a 12-minute ceiling, i.e. zero margin. Being
+    # push/schedule-only, it would have failed on `main` rather than on
+    # a PR, which is the expensive place to discover it.
+    timeout-minutes: 25
 
     env:
       AUTH_TEST_MODE: "1"

@@ -152,6 +152,26 @@ describe('CI timeout ceilings', () => {
             Security: 12,
             E2E: 40,
             'Docker Build': 40,
+            // Added 2026-08-04 — the sweep's own blind spot. Every one
+            // of its 17 sampled runs had a clean `npm ci`, so the
+            // sample could not contain the tail that actually fails.
+            // The shared setup action retries npm ci three times with
+            // 10s+20s backoff (~5-7 min on a cold cache) BEFORE the
+            // job's own work begins, and Typecheck was cancelled at 8
+            // minutes on #1786 for exactly that reason while showing
+            // 2.74x headroom on paper.
+            //
+            // So for any job that installs dependencies the budget is
+            // observed-max PLUS the retry path, never observed-max
+            // alone:
+            //   Lint        3m04s + ~6m retry -> 20
+            //   Typecheck   2m55s + ~6m retry -> 20
+            //   Build       5m05s + ~6m retry -> 25
+            //   Load Smoke  6m13s + ~6m retry -> 25  (was ZERO margin)
+            Lint: 20,
+            Typecheck: 20,
+            Build: 25,
+            'Load Smoke (k6)': 25,
         };
         const jobs = Object.values(ciJobs());
         for (const [name, floor] of Object.entries(FLOORS)) {
