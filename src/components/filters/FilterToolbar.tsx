@@ -37,6 +37,10 @@ import {
     type ActiveFilter,
     type FilterType,
 } from '@/components/ui/filter';
+// The single-rung control scale. Imported rather than re-spelled so the
+// Filter trigger cannot drift from the Button beside it in this very
+// toolbar — see the comment on the `className` below.
+import { controlSize } from '@/components/ui/control-variants';
 
 export interface FilterToolbarProps {
     /**
@@ -193,7 +197,17 @@ export function FilterToolbar({
                     searchPlaceholder={searchEnabled ? searchPlaceholder : undefined}
                     searchValue={searchEnabled ? search : undefined}
                     onSearchChange={searchEnabled ? handleSearchChange : undefined}
-                    className="h-9"
+                    // `controlSize.md`, not a hand-set height. This trigger
+                    // sits in the same row as `primary` (a <Button>, 28px on
+                    // the single-rung ladder), and the hard-coded `h-9` it
+                    // replaces rendered 36px — the exact "28px button beside a
+                    // 36px control reads as broken" failure that
+                    // control-variants.ts says the lockstep exists to prevent.
+                    // The rung also carries px/type/radius, so the two controls
+                    // match on every axis rather than just height. `cn` is
+                    // tailwind-merge, so these win over the trigger's own
+                    // h-10/px-3/text-sm base.
+                    className={controlSize.md}
                 >
                     {triggerLabel ?? t('filter')}
                 </FilterUI.Select>

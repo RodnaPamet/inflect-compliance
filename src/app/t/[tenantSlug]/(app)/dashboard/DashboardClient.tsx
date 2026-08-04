@@ -865,7 +865,12 @@ function CustomKpiPanel() {
 
     return (
         <Card id="custom-kpi-panel" className="space-y-default">
-            <div className="flex flex-col gap-tight sm:flex-row sm:items-center sm:justify-between">
+            {/* `sm:items-start`, not `items-center`: the title block is two
+                lines (heading + subtitle) and the picker is one control, so
+                centring drops the picker below the heading's top edge. Start-
+                aligning parks it in the section's top-right corner, level with
+                the heading — which is where a section-scoped control belongs. */}
+            <div className="flex flex-col gap-tight sm:flex-row sm:items-start sm:justify-between">
                 <div>
                     <Heading level={3}>{t('customKpi.title')}</Heading>
                     <p className="text-xs text-content-muted mt-0.5">
