@@ -235,6 +235,47 @@ Two consequences that fall out of the same change:
   be level 4 with one at a rounded 100% and one at 96%; the headline must
   name the one that actually holds the level down.
 
+## 2d. The dial and the list disagreed (third follow-up, 2026-08-04)
+
+Reported from a live tenant: **Tasks plotted on the outer ring** — reading
+as level 5, perfect — while the list directly beneath it said **L4** and
+the narrative said **18 tasks overdue**. Three surfaces, three answers.
+
+The cause was mine, and the code comment asserting otherwise was wrong.
+The dial plotted the raw PERCENTAGE against rings spaced evenly across
+0-100 (20 / 40 / 60 / 80 / 100), while the ladder's floors are
+50 / 75 / 90 / 100. Only the ring COUNT matched the rung count; "ring N =
+level N" was never true. Tasks at 582/600 = 97% therefore landed on the
+outermost ring, and the list — computing the level properly, and capping
+at 4 because a defect exists — correctly said L4.
+
+**The dial now plots the level itself** (`maxValue = 5`, `rings = 5`), so
+ring N = level N by construction rather than by coincidence. There is no
+arithmetic left that can let the two surfaces drift apart.
+
+Two consequences worth keeping:
+
+- **Unrated axes are omitted from the dial**, not plotted at zero. They
+  used to plot at 100 (the `healthyShare(0, 0) = 100` convention) and sat
+  on the outer ring reading as perfect, while the list said "none yet" —
+  the same disagreement in the opposite direction. A spoke pinned to the
+  centre would be just as wrong: "no vendors yet" is not "level 1 at
+  vendors". `MIN_RADAR_AXES = 3` keeps the chart from degenerating into a
+  line when few axes are rated; the list carries the ratings alone below
+  that.
+- **One more bullet**, and the only one that is not the model's: the
+  runner-up component (`nextWeakest`). `limitedBy` names what holds the
+  level down; this names what to fix once it is cleared, so the narrative
+  column speaks about the same components the dial plots rather than
+  stopping at one of them. Both come from a single `rankedByWeakness`
+  ordering, so they can never name the same axis.
+
+The regression lock is `tests/rendered/posture-hero-ladder-agreement.test.tsx`:
+it renders the real hero with the reported numbers and asserts, per axis,
+that the level the dial plots, the `data-posture-axis-level` on the row,
+and the visible "L<n>" are the same number. A unit test alone would not
+have caught this — both surfaces were correct in isolation.
+
 ## 3. The Views fold
 
 `Views ▾` existed only on the risks page, flanked by three tooltip-only

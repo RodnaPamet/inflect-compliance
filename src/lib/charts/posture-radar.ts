@@ -172,6 +172,27 @@ export interface PostureAxisRating {
 }
 
 /**
+ * Rated axes, weakest first.
+ *
+ * Ordered by LEVEL, then by score. Ordering by score alone can rank an
+ * axis whose 99.6% rounds to 100 above one genuinely on 96% — both are
+ * level 4, but the weaker one is the one that actually holds the level
+ * down.
+ *
+ * Unrated axes (`level === null`) are dropped: rating a tenant on
+ * something it does not do is worse than saying nothing.
+ */
+/** A rating that HAS a level — i.e. an axis with an estate behind it. */
+export type RatedAxis = PostureAxisRating & { level: PostureLevel };
+
+export function rankedByWeakness(ratings: readonly PostureAxisRating[]): RatedAxis[] {
+    return ratings
+        .filter((r): r is RatedAxis => r.level !== null)
+        .slice()
+        .sort((a, b) => a.level - b.level || a.value - b.value);
+}
+
+/**
  * The tenant's overall rung: **the weakest rated axis**, not the average.
  *
  * A mean would let five strong axes hide one that is failing, which is
@@ -180,30 +201,20 @@ export interface PostureAxisRating {
  * of the polygon corresponds to a mean. The weakest-link rule makes the
  * chart self-explaining: the shortest spoke IS the headline, and naming
  * it (`limitedBy`) turns the number into an instruction.
- *
- * Weakest is by LEVEL first, then by score. Ordering by score alone can
- * pick an axis whose 99.6% rounds to 100 over one genuinely on 96% —
- * both are level 4, but the headline must name the one that actually
- * holds the level down.
- *
- * Unrated axes (`level === null`) are skipped: rating a tenant on
- * something it does not do is worse than saying nothing.
  */
 export function overallLevel(ratings: readonly PostureAxisRating[]): {
     level: PostureLevel;
-    limitedBy: PostureAxisRating | null;
+    limitedBy: RatedAxis | null;
+    /** The runner-up — what to fix once `limitedBy` is cleared. */
+    nextWeakest: RatedAxis | null;
 } {
-    const rated = ratings.filter(
-        (r): r is PostureAxisRating & { level: PostureLevel } => r.level !== null,
-    );
-    if (rated.length === 0) return { level: 1, limitedBy: null };
-    let weakest = rated[0];
-    for (const r of rated) {
-        if (r.level < weakest.level || (r.level === weakest.level && r.value < weakest.value)) {
-            weakest = r;
-        }
-    }
-    return { level: weakest.level, limitedBy: weakest };
+    const ranked = rankedByWeakness(ratings);
+    if (ranked.length === 0) return { level: 1, limitedBy: null, nextWeakest: null };
+    return {
+        level: ranked[0].level,
+        limitedBy: ranked[0],
+        nextWeakest: ranked[1] ?? null,
+    };
 }
 
 /**
@@ -290,10 +301,36 @@ export function ratePostureAxes(
     }));
 }
 
-/** The chart's view of the ratings — `<RadarChart>` wants only these three. */
+/**
+ * The chart's view of the ratings — **levels, not percentages**.
+ *
+ * This is what makes the dial and the list beneath it tell one story.
+ * Plotting the raw percentage against evenly-spaced rings did not: the
+ * rings sit at 20/40/60/80/100 while the ladder's floors are 50/75/90/100,
+ * so a Tasks axis at 97% (18 overdue of ~600 — level 4, because a defect
+ * exists) landed on the outer ring and read as a perfect 5 while the list
+ * beside it correctly said L4.
+ *
+ * Plotting the level instead makes "ring N = level N" true by
+ * construction rather than by coincidence, so the two surfaces cannot
+ * drift apart again.
+ *
+ * Unrated axes are omitted rather than plotted at zero: "no vendors yet"
+ * is not "level 1 at vendors", and a spoke pinned to the centre would say
+ * exactly that. The list keeps their row and says "none yet".
+ */
 export function toRadarAxes(ratings: readonly PostureAxisRating[]): RadarAxisDatum[] {
-    return ratings.map((r) => ({ key: r.key, label: r.label, value: r.value }));
+    return ratings
+        .filter((r) => r.level !== null)
+        .map((r) => ({ key: r.key, label: r.label, value: r.level as number }));
 }
+
+/**
+ * A polygon needs three points. Below that the radar degenerates into a
+ * line or a dot, which reads as broken rather than as sparse — the list
+ * carries the ratings on its own in that case.
+ */
+export const MIN_RADAR_AXES = 3;
 
 /**
  * Does this tenant have enough of an estate for the radar to mean

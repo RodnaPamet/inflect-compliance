@@ -24,6 +24,7 @@ import type { PostureSummaryDto } from '@/app-layer/usecases/compliance-posture'
 import type { PostureLabel, AdvicePriority } from '@/app-layer/ai/compliance-posture/types';
 import { RadarChart, chartReady } from '@/components/ui/charts';
 import {
+    MIN_RADAR_AXES,
     POSTURE_LADDER,
     POSTURE_RADAR_FRAME_HEIGHT,
     levelKey,
@@ -91,7 +92,11 @@ export function PostureHeroCard({
     // it. Previously the headline carried the model's own 0-100 maturity
     // score, which no feature of the chart corresponded to — two numbers
     // for one claim, and nothing to check either against.
-    const { level, limitedBy } = overallLevel(ratings ?? []);
+    const { level, limitedBy, nextWeakest } = overallLevel(ratings ?? []);
+    // A polygon needs three points; below that the list carries the
+    // ratings on its own rather than drawing a degenerate dial.
+    const plotted = toRadarAxes(ratings ?? []);
+    const showRadar = plotted.length >= MIN_RADAR_AXES;
 
     return (
         <section
@@ -245,6 +250,42 @@ export function PostureHeroCard({
                         ))}
                     </ul>
                 )}
+
+                {/* One more bullet, and the only one that is not the
+                    model's: the runner-up component.
+                    `limitedBy` above names what holds the level down —
+                    this names what to fix once it is cleared, so the
+                    narrative column speaks about the SAME components the
+                    dial plots rather than stopping at one of them. It is
+                    derived, so it is present whatever the model returns. */}
+                {nextWeakest && (
+                    <ul className="mt-tight space-y-tight" data-posture-next-axis={nextWeakest.key}>
+                        <li className="flex items-start gap-tight text-sm">
+                            <span
+                                className={cn(
+                                    'mt-1.5 h-2 w-2 rounded-full shrink-0',
+                                    nextWeakest.level <= 2
+                                        ? 'bg-bg-error-emphasis'
+                                        : 'bg-bg-warning-emphasis',
+                                )}
+                                aria-hidden="true"
+                            />
+                            <span className="min-w-0">
+                                <span className="font-medium text-content-emphasis">
+                                    {t('hero.nextAxisTitle', { axis: nextWeakest.label })}
+                                </span>
+                                <span className="text-content-muted">
+                                    {' — '}
+                                    {t('hero.nextAxisDetail', {
+                                        measured: nextWeakest.measured,
+                                        total: nextWeakest.total,
+                                        level: nextWeakest.level,
+                                    })}
+                                </span>
+                            </span>
+                        </li>
+                    </ul>
+                )}
             </div>
 
                 {hasRadar && (
@@ -256,18 +297,26 @@ export function PostureHeroCard({
                             height became dead space between the chart and
                             the metrics beneath it. `minHeight` sizes the
                             dial itself. */}
+                        {showRadar && (
                         <RadarChart
-                            state={chartReady(toRadarAxes(ratings!))}
+                            state={chartReady(plotted)}
                             seriesIndex={2}
-                            maxValue={100}
-                            // One ring per rung, so a vertex sitting on
-                            // the third ring means level 3 — the grid IS
-                            // the ladder rather than decoration.
+                            // LEVELS, not percentages — with one ring per
+                            // rung this makes "ring N = level N" true by
+                            // construction. Plotting the percentage against
+                            // evenly-spaced rings did not: the rings sit at
+                            // 20/40/60/80/100 while the ladder's floors are
+                            // 50/75/90/100, so a 97% axis (level 4, because
+                            // a defect exists) landed on the outer ring and
+                            // read as a perfect 5 while the list beneath it
+                            // said L4.
+                            maxValue={POSTURE_LADDER.length}
                             rings={POSTURE_LADDER.length}
                             minHeight={POSTURE_RADAR_FRAME_HEIGHT}
                             testId="posture-radar"
                             ariaLabel={t('hero.radarAria')}
                         />
+                        )}
                         {/* The ladder, spelled out — the half that makes the
                             chart checkable. */}
                         <PostureLadder ratings={ratings!} />

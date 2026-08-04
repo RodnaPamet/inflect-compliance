@@ -317,7 +317,9 @@
         "managed": "Managed",
         "optimising": "Optimising"
       },
-      "levelOfSuffix": "/ 5 on the maturity ladder"
+      "levelOfSuffix": "/ 5 on the maturity ladder",
+      "nextAxisTitle": "Then {axis}",
+      "nextAxisDetail": "{measured} of {total} healthy — level {level}. The next spoke to lift."
     },
     "controlCoverage": "Control Coverage",
     "taskStatus": "Task Status",

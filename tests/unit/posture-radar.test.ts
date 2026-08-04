@@ -9,12 +9,14 @@
  * is worst — a failure no type checks.
  */
 import {
+    MIN_RADAR_AXES,
     isPostureRadarMeaningful,
     levelForRating,
     levelKey,
     overallLevel,
-    POSTURE_LADDER,
     POSTURE_RADAR_AXES,
+    POSTURE_LADDER,
+    rankedByWeakness,
     ratePostureAxes,
     toRadarAxes,
     type PostureAxisRating,
@@ -356,16 +358,133 @@ describe('overallLevel — the weakest link', () => {
     });
 
     it('returns the bottom rung and no limiter when nothing is rated', () => {
-        expect(overallLevel([])).toEqual({ level: 1, limitedBy: null });
+        expect(overallLevel([])).toEqual({ level: 1, limitedBy: null, nextWeakest: null });
     });
 });
 
-describe('toRadarAxes', () => {
-    it('projects ratings down to what the chart needs', () => {
-        const axes = toRadarAxes(rate(payload()));
-        expect(axes).toHaveLength(POSTURE_RADAR_AXES.length);
-        for (const a of axes) {
-            expect(Object.keys(a).sort()).toEqual(['key', 'label', 'value']);
+describe('toRadarAxes — the dial and the list must tell ONE story', () => {
+    const rated = (over: Partial<PostureAxisRating>): PostureAxisRating => ({
+        key: 'controls',
+        label: 'Controls',
+        value: 100,
+        level: 5,
+        measured: 10,
+        total: 10,
+        ...over,
+    });
+
+    it('plots the LEVEL, not the percentage', () => {
+        // The reported bug: Tasks at 97% (18 overdue of ~600) is level 4,
+        // because a defect exists. Plotted as a percentage against rings at
+        // 20/40/60/80/100 it landed on the OUTER ring and read as a perfect
+        // 5, while the list beside it correctly said L4. The ladder's floors
+        // (50/75/90/100) are not evenly spaced, so "ring N = level N" is
+        // only true if the plotted value IS the level.
+        const axes = toRadarAxes([rated({ key: 'tasks', value: 97, level: 4, measured: 582, total: 600 })]);
+        expect(axes).toEqual([{ key: 'tasks', label: 'Controls', value: 4 }]);
+    });
+
+    it.each([1, 2, 3, 4, 5] as const)('a level-%i axis plots on ring %i', (level) => {
+        const [axis] = toRadarAxes([rated({ level, value: 0 })]);
+        expect(axis.value).toBe(level);
+    });
+
+    it('every plotted value agrees with the level the list shows', () => {
+        // The invariant, stated once: whatever the chart draws for an axis
+        // is the number the list prints beside it.
+        const ratings = ratePostureAxes(
+            payload({
+                controlCoverage: { ...payload().controlCoverage, applicable: 10, implemented: 5, coveragePercent: 50 },
+                evidenceExpiry: { ...payload().evidenceExpiry, current: 19, overdue: 1 },
+                riskBySeverity: { low: 8, medium: 2, high: 0, critical: 0 },
+                policySummary: { ...payload().policySummary, total: 4, overdueReview: 3 },
+                taskSummary: { ...payload().taskSummary, total: 600, overdue: 18 },
+                vendorSummary: { total: 5, overdueReview: 0 },
+            }),
+            label,
+        );
+        const plotted = new Map(toRadarAxes(ratings).map((a) => [a.key, a.value]));
+        for (const r of ratings) {
+            if (r.level === null) continue;
+            expect({ axis: r.key, plotted: plotted.get(r.key) }).toEqual({ axis: r.key, plotted: r.level });
         }
+        // …and the case from the report specifically.
+        expect(plotted.get('tasks')).toBe(4);
+    });
+
+    it('never plots the top ring for an axis with an outstanding defect', () => {
+        const ratings = ratePostureAxes(
+            payload({ taskSummary: { ...payload().taskSummary, total: 600, overdue: 18 } }),
+            label,
+        );
+        const tasks = toRadarAxes(ratings).find((a) => a.key === 'tasks')!;
+        expect(tasks.value).toBeLessThan(POSTURE_LADDER.length);
+    });
+
+    it('omits unrated axes rather than pinning them to the centre', () => {
+        // "No vendors yet" is not "level 1 at vendors".
+        const axes = toRadarAxes([
+            rated({ key: 'controls', level: 3 }),
+            rated({ key: 'vendors', level: null, measured: 0, total: 0 }),
+        ]);
+        expect(axes.map((a) => a.key)).toEqual(['controls']);
+    });
+
+    it('needs three points to draw a polygon', () => {
+        expect(MIN_RADAR_AXES).toBe(3);
+    });
+});
+
+describe('rankedByWeakness', () => {
+    const rated = (over: Partial<PostureAxisRating>): PostureAxisRating => ({
+        key: 'controls',
+        label: 'Controls',
+        value: 100,
+        level: 5,
+        measured: 10,
+        total: 10,
+        ...over,
+    });
+
+    it('orders by level, then by score', () => {
+        const ranked = rankedByWeakness([
+            rated({ key: 'controls', value: 100, level: 5 }),
+            rated({ key: 'tasks', value: 97, level: 4 }),
+            rated({ key: 'risk', value: 30, level: 1 }),
+            rated({ key: 'policies', value: 92, level: 4 }),
+        ]);
+        expect(ranked.map((r) => r.key)).toEqual(['risk', 'policies', 'tasks', 'controls']);
+    });
+
+    it('drops unrated axes', () => {
+        const ranked = rankedByWeakness([
+            rated({ key: 'vendors', level: null, measured: 0, total: 0 }),
+            rated({ key: 'controls', level: 2, value: 55 }),
+        ]);
+        expect(ranked.map((r) => r.key)).toEqual(['controls']);
+    });
+
+    it('feeds the headline and the runner-up bullet from one ordering', () => {
+        // `limitedBy` names what holds the level down; `nextWeakest` names
+        // what to fix once it is cleared. They must never be the same axis.
+        const ratings = [
+            rated({ key: 'risk', value: 30, level: 1 }),
+            rated({ key: 'tasks', value: 60, level: 2 }),
+            rated({ key: 'controls', value: 100, level: 5 }),
+        ];
+        const { level, limitedBy, nextWeakest } = overallLevel(ratings);
+        expect({ level, limited: limitedBy?.key, next: nextWeakest?.key }).toEqual({
+            level: 1,
+            limited: 'risk',
+            next: 'tasks',
+        });
+    });
+
+    it('has no runner-up when only one axis is rated', () => {
+        const { nextWeakest } = overallLevel([
+            rated({ key: 'controls', level: 3, value: 80 }),
+            rated({ key: 'vendors', level: null, measured: 0, total: 0 }),
+        ]);
+        expect(nextWeakest).toBeNull();
     });
 });

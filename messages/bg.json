@@ -317,7 +317,9 @@
         "managed": "Управлявано",
         "optimising": "Оптимизиращо"
       },
-      "levelOfSuffix": "/ 5 по стълбицата на зрелост"
+      "levelOfSuffix": "/ 5 по стълбицата на зрелост",
+      "nextAxisTitle": "След това {axis}",
+      "nextAxisDetail": "{measured} от {total} в добро състояние — ниво {level}. Следващият лъч за повдигане."
     },
     "controlCoverage": "Покритие на контролите",
     "taskStatus": "Статус на задачите",
