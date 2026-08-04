@@ -62,7 +62,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // coverage denominator (collectCoverageFrom = src/app-layer + src/lib),
 // so they diluted rather than raised the global gate. Floor restored to
 // 194; backend coverage is the correct lever.
-const RENDERED_TEST_FLOOR = 194;
+// 203 (2026-08-04): the posture-hero ladder-agreement suite. It locks the
+// dial and the list beneath it to ONE level per axis — the surfaces
+// disagreed in production (a 97% Tasks axis plotted on the outer ring
+// while the list said L4), and only a rendered assertion catches that,
+// since both surfaces are correct in isolation.
+const RENDERED_TEST_FLOOR = 203;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

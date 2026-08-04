@@ -102,6 +102,7 @@ const TrendCard = dynamic(
 import { cn } from '@/lib/cn';
 import { RadarChart, chartReady } from '@/components/ui/charts';
 import {
+    MIN_RADAR_AXES,
     POSTURE_LADDER,
     POSTURE_RADAR_FRAME_HEIGHT,
     isPostureRadarMeaningful,
@@ -378,7 +379,7 @@ export default function DashboardClient({
                             </p>
                         )}
                     </div>
-                    {ratings.length > 0 && (
+                    {toRadarAxes(ratings).length >= MIN_RADAR_AXES && (
                         // Fixed height — never `min-h-0`, or the auto-sizer
                         // gets a 0-height box and paints nothing.
                         <div className="flex w-full min-w-0 flex-col gap-tight" data-testid="dashboard-hero-radar">
@@ -388,7 +389,9 @@ export default function DashboardClient({
                             <RadarChart
                                 state={chartReady(toRadarAxes(ratings))}
                                 seriesIndex={2}
-                                maxValue={100}
+                                // Levels, not percentages — see the posture
+                                // hero for why the two must share a scale.
+                                maxValue={POSTURE_LADDER.length}
                                 rings={POSTURE_LADDER.length}
                                 minHeight={POSTURE_RADAR_FRAME_HEIGHT}
                                 testId="posture-radar"
