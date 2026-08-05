@@ -145,6 +145,31 @@ vertical slice that touches every layer once. Edit the files **in this order**:
    `findMany`, a structural guard may fire (see "CI signals"). Read the failure;
    it tells you exactly what to update.
 
+### Before you add a new guard
+
+Two rules, both learned the hard way (2026-08-05: 153 guards retired, ~22,500
+lines, none of which had ever caught a bug).
+
+**Name it for the invariant, not for your PR.** `b7-asset-risk-tasks-column`
+tells a future reader nothing and can only ever fail when someone refactors.
+`no-client-side-filtering` and `rls-coverage` still make sense years later and
+still fail for a real reason. Guards named `b7-…`, `item-27-…`, `r14-…`,
+`epic55-…`, `pr-b-…` are rejected by
+`tests/guards/no-epic-named-ratchets.test.ts`.
+
+**If the rule is structural, write an ESLint rule instead.** Banned imports,
+required props, forbidden identifiers, naming conventions — an AST rule
+survives reformatting, renaming and class reordering. A `readFileSync` +
+regex over source text does not, so it fires on every refactor and on no
+regressions. If your guard asserts a Tailwind class order, a variable name,
+or the interior spacing of an object literal, it is testing the diff, not the
+software.
+
+The cost is not hypothetical. 775 of 2,011 test files were guards, 29 of them
+regexing `AssetsClient.tsx` alone — so extracting a shared helper meant
+repairing dozens of source-string assertions, and copy-paste was the cheaper
+option every time. The suite was holding the duplication in place.
+
 **CI signals you should see go green:** `Typecheck`, `Lint`, `Test (shard N/4)`,
 `Build`. Open the PR as a draft first if you want CI feedback before review.
 

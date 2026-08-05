@@ -208,37 +208,3 @@ describe('docs/combobox-form-strategy.md', () => {
         expect(STRATEGY_DOC).toMatch(/Adding a new surface — checklist/);
     });
 });
-
-// ─── Guardrail presence ─────────────────────────────────────────
-
-describe('Epic 55 — native <select> ratchet is installed', () => {
-    const guardPath = 'tests/guards/epic55-native-select-ratchet.test.ts';
-    const guardSrc = read(guardPath);
-
-    it('declares a numeric BASELINE_NATIVE_SELECTS constant', () => {
-        expect(guardSrc).toMatch(
-            /BASELINE_NATIVE_SELECTS\s*=\s*\d+/,
-        );
-    });
-
-    it('enumerates the 10 migrated surfaces that must not regress', () => {
-        for (const surface of [
-            'audits/cycles/page.tsx',
-            'risks/NewRiskModal.tsx',
-            'controls/NewControlModal.tsx',
-            'evidence/UploadEvidenceModal.tsx',
-            'evidence/NewEvidenceTextModal.tsx',
-            'tasks/new/page.tsx',
-            'vendors/new/page.tsx',
-            'findings/FindingsClient.tsx',
-            'clauses/ClausesBrowser.tsx',
-            'policies/new/page.tsx',
-        ]) {
-            expect(guardSrc).toContain(surface);
-        }
-    });
-
-    it('points contributors to the strategy doc on failure', () => {
-        expect(guardSrc).toContain('docs/combobox-form-strategy.md');
-    });
-});
