@@ -45,6 +45,7 @@ import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useTranslations } from 'next-intl';
+import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
     ACTIVE: 'success', ONBOARDING: 'info',
@@ -143,21 +144,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     // reopen the modal unexpectedly.
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
-    useEffect(() => {
-        if (searchParams?.get('create') === '1') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setIsCreateOpen(true);
-            const next = new URLSearchParams(searchParams.toString());
-            next.delete('create');
-            const qs = next.toString();
-            router.replace(
-                `/t/${tenantSlug}/vendors${qs ? `?${qs}` : ''}`,
-                { scroll: false },
-            );
-        }
-        // First-mount only.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/vendors`);
 
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;

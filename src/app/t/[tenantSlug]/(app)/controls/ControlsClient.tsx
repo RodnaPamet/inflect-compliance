@@ -87,6 +87,7 @@ import {
     CONTROL_HEALTH_VERDICT_VARIANT,
     type ControlHealthVerdict,
 } from '@/lib/controls/control-health';
+import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 
 // ─── Constants ───
 
@@ -279,21 +280,7 @@ function ControlsPageInner({
     // working against the modal-based flow.
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
-    useEffect(() => {
-        if (searchParams?.get('create') === '1') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setIsCreateOpen(true);
-            // Strip the flag so browser back/forward doesn't re-open the
-            // modal unexpectedly and so the URL stays clean after open.
-            const next = new URLSearchParams(searchParams.toString());
-            next.delete('create');
-            const qs = next.toString();
-            router.replace(`/t/${tenantSlug}/controls${qs ? `?${qs}` : ''}`, { scroll: false });
-        }
-        // Only run on first mount of the inner component; subsequent URL
-        // edits are driven by filter state (which does its own sync).
-
-    }, []);
+    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/controls`);
 
     // ─── Consistency deep-link restriction (?ids=…) ───
     // The controls dashboard's consistency check deep-links each issue

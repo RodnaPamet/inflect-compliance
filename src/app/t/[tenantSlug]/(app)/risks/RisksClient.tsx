@@ -81,6 +81,7 @@ import { AleHistogram, type AleHistogramDatum } from '@/components/ui/charts';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { useLocalStorage } from '@/components/ui/hooks';
 import { useTranslations } from 'next-intl';
+import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 
 /** Bulk-action status options (canonical BulkActionBar). Labels resolve
  *  through the `risks.bulkStatus.*` catalog inside the component. */
@@ -279,21 +280,7 @@ function RisksPageInner({
     // doesn't reopen the modal unexpectedly.
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
-    useEffect(() => {
-        if (searchParams?.get('create') === '1') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setIsCreateOpen(true);
-            const next = new URLSearchParams(searchParams.toString());
-            next.delete('create');
-            const qs = next.toString();
-            router.replace(
-                `/t/${tenantSlug}/risks${qs ? `?${qs}` : ''}`,
-                { scroll: false },
-            );
-        }
-        // First-mount only; filter state owns subsequent URL edits.
-
-    }, []);
+    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/risks`);
 
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;

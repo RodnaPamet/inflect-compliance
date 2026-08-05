@@ -62,6 +62,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { taskStatusVariant, TASK_STATUS_BADGE } from '@/lib/task-status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 
 // Status → badge tone AND label both come from the shared
 // `TASK_STATUS_BADGE` map (TP-1) — tone via `taskStatusVariant`, copy via the
@@ -235,21 +236,7 @@ function TasksPageInner({
     // still navigates to the full detail page.
     const [selectedTask, setSelectedTask] = useState<TaskListItem | null>(null);
     const searchParams = useSearchParams();
-    useEffect(() => {
-        if (searchParams?.get('create') === '1') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setIsCreateOpen(true);
-            const next = new URLSearchParams(searchParams.toString());
-            next.delete('create');
-            const qs = next.toString();
-            router.replace(
-                `/t/${tenantSlug}/tasks${qs ? `?${qs}` : ''}`,
-                { scroll: false },
-            );
-        }
-        // First-mount only.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/tasks`);
 
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;

@@ -48,6 +48,7 @@ import { presentCriticality } from '@/lib/asset-criticality';
 import type { AssetCore } from '@/lib/dto/asset.types';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
+import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 
 /** Item 34 — map the derived criticality tone to a StatusBadge variant. */
 const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
@@ -177,21 +178,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     const searchParams = useSearchParams();
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
-    useEffect(() => {
-        if (searchParams?.get('create') === '1') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setIsCreateOpen(true);
-            const next = new URLSearchParams(searchParams.toString());
-            next.delete('create');
-            const qs = next.toString();
-            router.replace(
-                `/t/${tenantSlug}/assets${qs ? `?${qs}` : ''}`,
-                { scroll: false },
-            );
-        }
-        // First-mount only.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/assets`);
 
     // Stable across renders — a bare arrow here rebuilds the table model
     // mid-double-click and kills row navigation (#1678).

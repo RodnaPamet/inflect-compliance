@@ -43,6 +43,7 @@ import {
 } from './filter-defs';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 
 // Status badge classes — keyed off the canonical PolicyStatus enum
 // values. POLICY_STATUS_LABELS in `filter-defs.ts` is the single
@@ -159,23 +160,7 @@ function PoliciesPageInner({
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [createTemplateMode, setCreateTemplateMode] = useState(false);
     const searchParams = useSearchParams();
-    useEffect(() => {
-        if (searchParams?.get('create') === '1') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setIsCreateOpen(true);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setCreateTemplateMode(searchParams.get('template') === '1');
-            const next = new URLSearchParams(searchParams.toString());
-            next.delete('create');
-            next.delete('template');
-            const qs = next.toString();
-            router.replace(
-                `/t/${tenantSlug}/policies${qs ? `?${qs}` : ''}`,
-                { scroll: false },
-            );
-        }
-        // First-mount only.
-    }, []);
+    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/policies`);
 
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;
