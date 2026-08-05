@@ -29,6 +29,7 @@ import {
     CHECKLIST_RESULT_VARIANT,
     DEFAULT_STATUS_VARIANT,
 } from './_lib/status-variants';
+import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
 // (distinct from the detail AuditDetail). List map callback stays untyped.
@@ -120,21 +121,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
     const router = useRouter();
-    useEffect(() => {
-        if (searchParams?.get('create') === '1') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setIsCreateOpen(true);
-            const next = new URLSearchParams(searchParams.toString());
-            next.delete('create');
-            const qs = next.toString();
-            router.replace(
-                `/t/${tenantSlug}/audits${qs ? `?${qs}` : ''}`,
-                { scroll: false },
-            );
-        }
-        // First-mount only.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/audits`);
 
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
 

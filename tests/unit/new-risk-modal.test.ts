@@ -266,11 +266,12 @@ describe('RisksClient — modal entry + auto-open', () => {
     });
 
     it('auto-opens when the URL carries ?create=1 and strips the flag', () => {
-        expect(CLIENT_SRC).toMatch(/useSearchParams/);
-        expect(CLIENT_SRC).toMatch(
-            /searchParams\?\.get\(['"]create['"]\)\s*===\s*['"]1['"]/,
-        );
-        expect(CLIENT_SRC).toMatch(/router\.replace/);
-        expect(CLIENT_SRC).toMatch(/next\.delete\(['"]create['"]\)/);
+        // Opens on `?create=1` and strips the flag — asserted as the CALL
+        // to the shared hook, not its internals. The inline mechanism
+        // (`searchParams?.get('create')`, `router.replace`,
+        // `next.delete('create')`) moved into `useCreateQueryParam` on
+        // 2026-08-05; asserting it here made extracting that seven-times
+        // duplicated effect break five tests for no behavioural change.
+        expect(CLIENT_SRC).toMatch(/useCreateQueryParam\(/);
     });
 });

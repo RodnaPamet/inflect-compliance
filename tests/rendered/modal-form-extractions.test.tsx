@@ -258,16 +258,22 @@ describe('modal-form P2 — list clients open the modal on ?create=1', () => {
         // Mounts the modal.
         expect(src).toContain(c.modal);
         expect(src).toMatch(new RegExp(`<${c.modal}\\b`));
-        // Reads the `?create=1` flag.
-        expect(src).toMatch(/useSearchParams\b/);
-        // `[\s\S]*` substitutes for the `/s` (dotAll) flag — the
-        // project tsconfig targets ES2017 and rejects ES2018 regex
-        // flags. `dotAll`-style match across newlines is what we
-        // want for this multi-line ratchet.
-        expect(src).toMatch(/searchParams[\s\S]*create[\s\S]*===[\s\S]*1/);
-        // Strips the flag after open (router.replace with the flag deleted).
-        expect(src).toMatch(/router\.replace\(/);
-        expect(src).toMatch(/next\.delete\(['"]create['"]\)/);
+        // Opens on `?create=1` and strips the flag.
+        //
+        // This used to assert the mechanism inline — `useSearchParams`, a
+        // `searchParams … create … === … 1` match, `router.replace(` and
+        // `next.delete('create')` — in each of these files. When that
+        // seven-times-duplicated effect was extracted to
+        // `useCreateQueryParam` on 2026-08-05, all of it broke, while the
+        // behaviour was unchanged. That is the failure mode this repo's
+        // roadmap calls out: source-string assertions make extracting a
+        // shared helper expensive, so copy-paste stays the cheaper option.
+        //
+        // Asserting the CALL instead survives refactors of the hook's
+        // internals, and the hook's own contract is what should be tested
+        // once — not re-tested per client. The end-to-end behaviour is
+        // covered by tests/e2e/assets-create-modal.spec.ts.
+        expect(src).toMatch(/useCreateQueryParam\(/);
     });
 });
 
