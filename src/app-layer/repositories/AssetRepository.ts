@@ -186,12 +186,36 @@ export class AssetRepository {
     /**
      * Tenant-scoped bulk update — one `updateMany` so the bulk-action path
      * never reads/writes per-id in a loop. Returns the affected-row count.
+     *
+     * `criticality` and the C/I/A triad it is derived from are excluded from
+     * the accepted payload **by type**, and that exclusion is load-bearing.
+     * `Asset.criticality` is derive-on-write (see `updateAsset`): it is
+     * stored precisely so the SQL layer can use it — the list filter
+     * (`where.criticality`) and the dashboard KPI
+     * (`count({ criticality: { in: ['HIGH','CRITICAL'] } })`) both run in the
+     * database and cannot recompute it per row.
+     *
+     * `updateMany` cannot run that derivation, because it never reads the
+     * rows it writes: given a new `confidentiality` it has no idea what the
+     * other two dimensions are. So a bulk write of any of these four columns
+     * would silently leave `criticality` stale, and the filter would then
+     * disagree with the value shown on the row.
+     *
+     * Today's callers only set `status` / `ownerUserId`, so nothing is
+     * broken — but "safe because of what the callers happen to pass" is not
+     * a property the compiler checks. Excluding the fields here makes a
+     * future bulk C/I/A write a type error at the call site instead of a
+     * data bug found later. Anything that must change the triad goes through
+     * `updateAsset`, which re-derives per asset.
      */
     static async bulkUpdate(
         db: PrismaTx,
         ctx: RequestContext,
         ids: string[],
-        data: Omit<Prisma.AssetUncheckedUpdateInput, 'tenantId'>,
+        data: Omit<
+            Prisma.AssetUncheckedUpdateInput,
+            'tenantId' | 'criticality' | 'confidentiality' | 'integrity' | 'availability'
+        >,
     ) {
         return db.asset.updateMany({
             where: { id: { in: ids }, tenantId: ctx.tenantId },

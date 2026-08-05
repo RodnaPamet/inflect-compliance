@@ -9,6 +9,8 @@
  */
 export {
     getAssetCriticality,
+    presentCriticality,
+    CRITICALITY_PRESENTATION,
     criticalityToEnum,
     CRITICALITY_CEILING,
     ASSET_CRITICALITY_TONE_CLASSES,

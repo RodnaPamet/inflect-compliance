@@ -81,6 +81,38 @@ export function criticalityToEnum(
     return LABEL_TO_ENUM[getAssetCriticality(confidentiality, integrity, availability).label];
 }
 
+/**
+ * Present the STORED `Asset.criticality` enum — the inverse of
+ * `criticalityToEnum`, sharing its table so the two cannot drift.
+ *
+ * Read surfaces should use this rather than re-deriving from the C/I/A
+ * triad. The stored enum is what the list filter (`where.criticality`) and
+ * the dashboard KPI (`count({ criticality: { in: ['HIGH','CRITICAL'] } })`)
+ * query in SQL; a cell that recomputes its own answer from the triad can
+ * disagree with the filter that selected the row — a user filtering to
+ * "HIGH" would see a row whose badge reads something else. Derivation
+ * belongs on the WRITE path (`criticalityToEnum` at create/update), which
+ * is the only place that sees the whole triad at once.
+ *
+ * `rank` orders the bands for a table sort: monotonic in severity, so
+ * sorting on it keeps the bands contiguous and in true severity order.
+ */
+export const CRITICALITY_PRESENTATION: Record<
+    CriticalityEnum,
+    { label: string; tone: AssetCriticalityTone; rank: number }
+> = {
+    LOW: { label: 'Low', tone: 'success', rank: 1 },
+    MEDIUM: { label: 'Medium', tone: 'warning', rank: 2 },
+    HIGH: { label: 'High', tone: 'danger', rank: 3 },
+    CRITICAL: { label: 'Critical', tone: 'critical', rank: 4 },
+};
+
+/** Narrow an unvalidated stored value to a presentable band, or null. */
+export function presentCriticality(value: string | null | undefined) {
+    if (!value) return null;
+    return CRITICALITY_PRESENTATION[value as CriticalityEnum] ?? null;
+}
+
 // Four distinct visual steps: green → amber → red → strong-red. HIGH
 // (danger) is deliberately distinct from MEDIUM (warning), and CRITICAL
 // is the strongest (error-emphasis fill).
