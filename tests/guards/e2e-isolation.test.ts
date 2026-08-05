@@ -358,6 +358,7 @@ describe('E2E test isolation — no cross-test `let` cascade', () => {
 const SHARED_SEED_ALLOWLIST: ReadonlyArray<{ file: string; reason: string }> = [
     // ── Read-only: navigate + assert chrome/role-gates, no DB writes ──
     { file: 'a11y.spec.ts', reason: 'read-only accessibility scan over seeded pages' },
+    { file: 'assets-create-modal.spec.ts', reason: 'read-only: navigates to /assets/new and asserts the create modal opens; never submits the form' },
     { file: 'admin-members.spec.ts', reason: 'read-only: opens the invite form + asserts its fields; never clicks #send-invite-btn' },
     { file: 'admin-regression.spec.ts', reason: 'read-only admin-page regression assertions' },
     { file: 'admin-sso.spec.ts', reason: 'read-only: asserts SSO config UI; no save' },
