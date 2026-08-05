@@ -407,19 +407,34 @@ jobs:
       # with no database. (`rls-coverage` is the single ratchet that reads
       # from Postgres and stays here — see jest.config.js.)
       #
-      # WORKER COUNT — deliberate canary. `tests/setup/globalSetup.ts`
-      # TEMPLATE-clones one database per worker, but only when
-      # `maxWorkers > 1`; every CI invocation passed `--runInBand`, so that
-      # machinery has been dead in CI and four shards each ran
-      # single-threaded. Shard 1 runs with 2 workers to exercise the clone
-      # path against the DB-touching integration tests; the rest stay
-      # serial. Roll the others over once shard 1 has been green for a few
-      # runs — the risk is cross-worker DB interference, which shows up as
-      # flake, not as a clean failure.
+      # WORKER COUNT — `--runInBand` is deliberate, and it is NOT a bug
+      # that it leaves `tests/setup/globalSetup.ts`'s per-worker database
+      # cloning switched off. That machinery gates on `maxWorkers > 1`, and
+      # it exists to make PARALLEL execution safe. Serial execution against
+      # one database is already safe; there is nothing for it to protect.
+      #
+      # This was tried the other way on 2026-08-05 and measured, on hosted
+      # 2-core `ubuntu-latest` runners with Postgres in a service container
+      # (dispatch run 30973579267 vs `main` run 30939670414). Total Jest
+      # work across the four shards:
+      #
+      #   --runInBand           1876s   (and that run also carried the 776
+      #                                  ratchet files these shards no
+      #                                  longer run)
+      #   --maxWorkers=1/2      4311s   2.3x WORSE, on FEWER files
+      #
+      # Per shard, same ~293 files: 2 workers 810s, 1 worker 1146s, and
+      # `--runInBand` on `main` 463-477s while also running the ratchets.
+      # Worker mode loses on both counts here — forking buys no parallelism
+      # on 2 cores, and 2 workers adds template-clone cost plus contention
+      # with the Postgres container on the same box.
+      #
+      # If a future runner has more cores, re-measure before switching:
+      # the conclusion is about this runner shape, not about Jest.
       - name: "Run tests: unit + integration (shard)"
         env:
           JEST_SKIP_RATCHETS: '1'
-        run: npx jest --maxWorkers=${{ matrix.shard == 1 && 2 || 1 }} --no-coverage --shard=${{ matrix.shard }}/${{ matrix.total }}
+        run: npx jest --runInBand --no-coverage --shard=${{ matrix.shard }}/${{ matrix.total }}
 
   # ═══════════════════════════════════════════════════════════════
   #  Job 3a: Ratchets — the source-text guard suite, ONCE, with no DB
@@ -635,13 +650,10 @@ jobs:
       # fail. The floors are checked once, on the merged total, in the
       # `coverage-gate` job below.
       #
-      # `--maxWorkers=2` (not `--runInBand`): tests/setup/globalSetup.ts
-      # only clones the per-worker template databases when maxWorkers > 1,
-      # so serial execution was silently running every DB-backed test
-      # against one shared database. Same change as the `test` job.
+      # `--runInBand`, deliberately — see the `test` job for the measurement.
       - name: "Measure coverage (shard ${{ matrix.shard }}/${{ matrix.total }})"
         run: |
-          npx jest --coverage --forceExit --maxWorkers=2 \
+          npx jest --coverage --forceExit --runInBand \
             --shard=${{ matrix.shard }}/${{ matrix.total }} \
             --coverageReporters=json
 

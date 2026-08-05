@@ -95,13 +95,33 @@ The two Playwright invocations (`a11y` gate, then the full suite) were also
 one `npx playwright test` each with overlapping selection; they are now a
 single invocation with the a11y specs split into their own **project**.
 
-### 5. `--runInBand` was silently disabling the DB isolation
+### 5. `--runInBand` — tried, measured, kept
 
-`tests/setup/globalSetup.ts` only clones the per-worker template databases
-when `maxWorkers > 1`. Every job passing `--runInBand` was therefore running
-its DB-backed tests against one shared database — the isolation existed but
-was switched off. Shard 1 now runs `--maxWorkers=2` as a canary before the
-other three follow.
+The observation is true: `tests/setup/globalSetup.ts` only clones the
+per-worker template databases when `maxWorkers > 1`, so every `--runInBand`
+invocation left that machinery switched off. It is not a defect. The cloning
+exists to make **parallel** execution safe; serial execution against one
+database is already safe, so there is nothing for it to protect.
+
+Switching it on was tried and measured — hosted 2-core `ubuntu-latest` with
+Postgres in a service container (dispatch run `30973579267` vs `main` run
+`30939670414`). Total Jest work across the four shards:
+
+| | total shard work | files |
+| --- | --- | --- |
+| `--runInBand` (main) | **1876s** | 1946, ratchets included |
+| `--maxWorkers=1` / `=2` | **4311s** | 1170, ratchets excluded |
+
+2.3× worse on **fewer** files. Per shard at the same ~293 files: 2 workers
+810s, 1 worker 1146s, against 463-477s for `--runInBand` on `main` while
+that run was *also* carrying the ratchets.
+
+Worker mode loses twice over on this runner shape: forking buys no
+parallelism on 2 cores, and 2 workers adds template-clone cost plus
+contention with the Postgres container on the same box. Reverted; the
+workflow comment records the numbers so the question is not re-opened on
+the same reasoning. If the runners ever get more cores, re-measure — the
+conclusion is about the runner, not about Jest.
 
 ### 6. Coverage: sharded, and one premise dropped
 
@@ -138,6 +158,28 @@ on measurement.** The ratchets are 97 seconds of a ~35-minute job — 5% — and
 they instrument 281 files under `src/`, so excluding them would move the
 measured number for a saving that is not where the time is. The 35 minutes
 is test execution, which is what sharding addresses.
+
+**Verified on real CI data** (dispatch run `30973579267`). The gate merged
+four shard files into 1453 files and every group landed just above a floor
+calibrated against the unsharded run:
+
+```
+Merged 4 shard coverage files — 1453 files.
+ok   global                     969 files  statements 77.86% (>=77)  branches 65.77% (>=65)  lines 80.41% (>=78)
+ok   ./src/app-layer/usecases/  170 files  statements 90.09% (>=87)  branches 79.24% (>=79)  lines 91.60% (>=88)
+ok   ./src/app-layer/policies/   16 files  statements 92.85% (>=92)  branches 87.50% (>=86)  lines 93.70% (>=93)
+ok   ./src/app-layer/events/      6 files  statements 88.26% (>=77)  branches 76.34% (>=75)  lines 89.65% (>=78)
+ok   ./src/lib/                 292 files  statements 90.54% (>=88)  branches 79.12% (>=78)  lines 92.10% (>=89)
+```
+
+The margins are the evidence. A merge that lost data would fall under floors
+this tight; one that double-counted or mis-grouped would inflate `global`.
+And 969 + 170 + 16 + 6 + 292 = 1453 — every file in exactly one group, which
+is the removal rule holding on real data.
+
+Worth flagging separately, because it is pre-existing and not caused here:
+`usecases` branches passes at **79.24% against a 79% floor**. A 0.24-point
+margin is thin enough that an unrelated PR can trip it.
 
 The gate job keeps the name `Coverage (≥60%)` so the required-check name in
 branch protection is unchanged. Making it run on pull requests is now
@@ -190,6 +232,13 @@ tenant per test. Corrected, with a note saying what it used to claim.
 - **`ratchets` runs without Postgres.** Of 777 ratchet files exactly one
   needs a database, so provisioning one for the whole set was paying for the
   common case at the cost of the rare one.
+- **P2.5 was implemented, measured, and reverted.** The premise was true —
+  `--runInBand` does leave the per-worker DB cloning off — but the cloning
+  protects parallel execution, and serial execution needs no protection.
+  Switching it on cost 2.3× total shard time on a 2-core runner. Keeping a
+  change because it was asked for, after the measurement says it costs
+  2.3×, would be the wrong trade; the numbers are in the workflow comment
+  so the case does not get re-argued from the same premise.
 - **The timeout floor moved with the work.** `ci-flake-hardening.test.ts`
   keyed its 50-minute floor to a job *name*; that name now belongs to a merge
   step. The floor was re-keyed to the shard job rather than deleted, and the
