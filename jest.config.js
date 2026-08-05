@@ -136,6 +136,34 @@ const nodeProject = {
         '<rootDir>/tests/e2e/',
         '<rootDir>/tests/rendered/',
         '<rootDir>/dub-reference/',
+        // ── Ratchets, when the caller opts out (JEST_SKIP_RATCHETS=1) ──
+        //
+        // `tests/guards/`, `tests/guardrails/` and `tests/contracts/` were
+        // never excluded here, so `jest --shard=K/N` already ran all 777 of
+        // them — and CI then ran `jest tests/guards/` and
+        // `jest tests/contracts/` again as two more Jest boots, each
+        // re-shelling `prisma migrate deploy`. 777 files, executed twice.
+        //
+        // They are now a separate CI job that needs no Postgres, because
+        // exactly ONE of the 777 touches a database (`rls-coverage`, which
+        // reads `pg_policies`); the rest are readFileSync + regex over
+        // source text. That job runs them once, in parallel with the
+        // shards, and the shards shed ~40% of their files.
+        //
+        // The env var (rather than a hard exclusion) keeps ONE config for
+        // both jobs: the ratchet job runs the same config with the flag
+        // unset and explicit paths.
+        ...(process.env.JEST_SKIP_RATCHETS === '1'
+            ? [
+                  '<rootDir>/tests/guards/',
+                  '<rootDir>/tests/contracts/',
+                  // …except the one that needs the database, which stays
+                  // with the DB-backed shards. Negative lookahead rather
+                  // than moving the file: six other suites and CLAUDE.md
+                  // reference it by path.
+                  '<rootDir>/tests/guardrails/(?!rls-coverage\\.test\\.ts)',
+              ]
+            : []),
         // Epic 67 — co-located UI hook tests live next to the hook
         // (`src/components/ui/hooks/__tests__/`) but require jsdom
         // (RTL render, real React lifecycle). Excluded from the node

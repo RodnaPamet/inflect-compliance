@@ -26,12 +26,25 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
     const baseName = getDbName(base);
 
     console.log(`\n[test-setup] Database URL: ${base.replace(/:[^@]*@/, ':***@')}`);
-    console.log(`[test-setup] Running migrations on base DB...`);
-    try {
-        migrateTestDb();
-        console.log(`[test-setup] Migrations complete`);
-    } catch (err) {
-        console.warn(`[test-setup] Migration skipped: ${err}`);
+
+    // CI already applied the schema ONCE per job (`prisma migrate deploy`,
+    // before Jest starts). This hook runs on every Jest process boot, so
+    // with four shards plus the coverage run it re-shelled the same
+    // migrate 6-10 times per push — each one a cold `prisma` CLI start
+    // against an already-migrated database.
+    //
+    // Locally it stays: a developer's test DB may be behind the schema,
+    // and `npm test` is expected to just work.
+    if (process.env.CI === 'true' || process.env.CI === '1') {
+        console.log('[test-setup] CI: schema already applied by the workflow, skipping migrate');
+    } else {
+        console.log(`[test-setup] Running migrations on base DB...`);
+        try {
+            migrateTestDb();
+            console.log(`[test-setup] Migrations complete`);
+        } catch (err) {
+            console.warn(`[test-setup] Migration skipped: ${err}`);
+        }
     }
 
     const maxWorkers = globalConfig?.maxWorkers ?? 1;
