@@ -12,6 +12,8 @@ import { useTranslations } from 'next-intl';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import {
     getAssetCriticality,
+    presentCriticality,
+    type AssetCriticalityTone,
     ASSET_CRITICALITY_TONE_CLASSES,
 } from './asset-criticality';
 
@@ -19,17 +21,31 @@ import {
  * Read-only criticality score chip — the single value shown on the asset
  * detail Overview (the C/I/A breakdown is collapsed into this).
  */
+/**
+ * The C/I/A triad is the LIVE form state — correct while the sliders move,
+ * because nothing is stored yet. `storedCriticality` is the persisted band,
+ * and when present it WINS: on a saved asset the badge must agree with the
+ * value the list filter and dashboard KPI query in SQL, not recompute its
+ * own answer. Read surfaces pass it; the create/edit form does not have one
+ * to pass, which is exactly the distinction.
+ */
 export function AssetCriticalityBadge({
     confidentiality,
     integrity,
     availability,
+    storedCriticality,
 }: {
     confidentiality: number;
     integrity: number;
     availability: number;
+    storedCriticality?: string | null;
 }) {
     const t = useTranslations('assets');
-    const crit = getAssetCriticality(confidentiality, integrity, availability);
+    const stored = presentCriticality(storedCriticality);
+    const derived = getAssetCriticality(confidentiality, integrity, availability);
+    const crit: { score: number; label: string; tone: AssetCriticalityTone } = stored
+        ? { score: derived.score, label: stored.label, tone: stored.tone }
+        : derived;
     return (
         <div
             className={`inline-flex flex-col items-center rounded-md border px-4 py-3 text-center ${ASSET_CRITICALITY_TONE_CLASSES[crit.tone]}`}

@@ -44,7 +44,7 @@ import { ViewsMenu } from '@/components/ui/views-menu';
 import { NewAssetModal } from './NewAssetModal';
 import { AssetDetailPanel } from './AssetDetailPanel';
 import { AsidePanel } from '@/components/ui/aside-panel';
-import { getAssetCriticality } from './_form/asset-criticality';
+import { presentCriticality } from '@/lib/asset-criticality';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 
@@ -273,15 +273,11 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             // Cell renders `String(type).replace(/_/g, ' ')` — sort on the same
             // de-underscored label, not the raw enum.
             type: (a) => (a.type ?? '').replace(/_/g, ' '),
-            // Cell renders the derived criticality label; the numeric score is
-            // monotonic with that label band, so sorting on the score keeps the
-            // bands contiguous AND in true severity order.
-            criticality: (a) =>
-                getAssetCriticality(
-                    a.confidentiality ?? 3,
-                    a.integrity ?? 3,
-                    a.availability ?? 3,
-                ).score,
+            // Sort on the STORED band's rank, matching what the cell shows
+            // and what the server filter selected on. Re-deriving here from
+            // the C/I/A triad could order rows by a value the filter never
+            // used. Unset sorts last.
+            criticality: (a) => presentCriticality(a.criticality)?.rank ?? 0,
             classification: (a) => a.classification || '—',
             owner: (a) => ownerDisplayName(a.ownerUser?.name, a.ownerUser?.email) ?? a.owner ?? '—',
             controls: (a) => a._count?.controls || 0,
@@ -718,17 +714,17 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             cell: ({ getValue }) => <StatusBadge variant="info" size="sm">{String(getValue()).replace(/_/g, ' ')}</StatusBadge>,
         },
         {
-            // Item 34 — derived criticality (top-two-mean of C/I/A with a
-            // critical-ceiling override), shown as a toned badge.
+            // Shows the STORED `Asset.criticality`, which is derived on write
+            // from the C/I/A triad (see criticalityToEnum). Deriving it again
+            // here would let the badge disagree with the filter that selected
+            // the row — filter to HIGH, and a cell recomputing its own answer
+            // could render "Medium" on a row the server matched as HIGH.
             id: 'criticality',
             header: tx('colHeaders.criticality'),
             accessorFn: sortAccessors.criticality,
             cell: ({ row }) => {
-                const crit = getAssetCriticality(
-                    row.original.confidentiality ?? 3,
-                    row.original.integrity ?? 3,
-                    row.original.availability ?? 3,
-                );
+                const crit = presentCriticality(row.original.criticality);
+                if (!crit) return <span className="text-content-muted">—</span>;
                 return (
                     <StatusBadge variant={CRITICALITY_VARIANT[crit.tone] ?? 'neutral'} size="sm">
                         {crit.label}

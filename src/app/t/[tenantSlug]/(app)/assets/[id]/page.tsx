@@ -1085,6 +1085,7 @@ export default function AssetDetailPage() {
                             confidentiality={asset.confidentiality ?? 3}
                             integrity={asset.integrity ?? 3}
                             availability={asset.availability ?? 3}
+                            storedCriticality={asset.criticality}
                         />
                         <div className="grid grid-cols-2 gap-default border-t border-border-default/50 pt-4">
                             <div><Eyebrow>{t('detail.created')}</Eyebrow><p className="text-sm text-content-muted">{formatDate(asset.createdAt)}</p></div>
