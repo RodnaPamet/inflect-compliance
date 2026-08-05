@@ -1036,7 +1036,14 @@ jobs:
     # Load smoke is a trend/perf signal, not a per-PR correctness gate —
     # run it on push-to-main + the weekly schedule, not on every PR. (Same
     # push/schedule-only pattern as the `coverage` job.)
-    if: github.event_name == 'push' || github.event_name == 'schedule'
+    # workflow_dispatch included for the same reason as `coverage`: this
+    # job now REUSES the `.next` artifact from `build` instead of
+    # recompiling, and it falls back to building if the artifact is
+    # missing. That fallback means a broken reuse would not go red — it
+    # would quietly rebuild and look identical to success. Being able to
+    # dispatch this on a branch is how the reuse gets confirmed rather
+    # than assumed.
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # 12 -> 25 on 2026-08-04, retry path again — and this was the
     # WORST of the four: observed max 6m13s plus a ~6 min npm-ci retry
