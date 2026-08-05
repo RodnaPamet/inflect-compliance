@@ -100,6 +100,13 @@ on:
   # `Detect changes` runs but is internal plumbing, not a gate.
   # Locked by tests/guardrails/merge-queue-trigger-coverage.test.ts.
   merge_group:
+  # Lets an operator run CI — including the push/schedule-only coverage
+  # gate — against a branch on demand. Added 2026-08-05 with the coverage
+  # sharding: that path is push-only, so before this it could not be
+  # exercised until it had already landed on `main`, where a mistake in it
+  # takes main red. Verifying a change to the gate now means dispatching
+  # it on the branch first.
+  workflow_dispatch:
   # Weekly scheduled scan — GitHub's Code Scanning UI expects a
   # periodic refresh of CodeQL + Trivy results on the default branch,
   # independent of PR cadence. Without this the Security tab can
@@ -531,7 +538,7 @@ jobs:
   coverage:
     name: "Coverage (shard ${{ matrix.shard }}/${{ matrix.total }})"
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    if: github.event_name == 'push' || github.event_name == 'schedule'
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -656,7 +663,7 @@ jobs:
     # skipped required check reads as "not failing". Run whenever the
     # shards were not cancelled, so a failed shard still surfaces here
     # as a failed gate.
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     timeout-minutes: 10
 
     steps:
