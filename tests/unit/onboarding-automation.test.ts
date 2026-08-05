@@ -202,6 +202,13 @@ function freshDb() {
             findFirst: jest.fn().mockResolvedValue(null),
             create: jest.fn().mockResolvedValue({}),
         },
+        // Onboarding-seeded risks go through `RiskRepository.create`, which
+        // mints the per-tenant `RSK-N` key off this counter before inserting.
+        // The previous bare `db.risk.create` skipped it — which is why every
+        // onboarding risk landed with `key = NULL` and a blank Code column.
+        riskKeySequence: {
+            upsert: jest.fn().mockResolvedValue({ tenantId: 't1', lastValue: 1 }),
+        },
         task: {
             findFirst: jest.fn().mockResolvedValue(null),
             create: jest.fn().mockResolvedValue({}),

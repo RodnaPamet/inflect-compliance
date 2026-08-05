@@ -95,6 +95,19 @@ const mockEnforceGate = enforceFeatureGate as jest.MockedFunction<typeof enforce
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
 const mockBumpCache = bumpEntityCacheVersion as jest.MockedFunction<typeof bumpEntityCacheVersion>;
 
+/**
+ * `applySession` creates risks through `RiskRepository.create`, which mints
+ * the per-tenant `RSK-N` key off this counter before inserting. Any fake db
+ * that reaches a risk create needs the table stubbed.
+ *
+ * It previously called a bare `db.risk.create` — which is precisely why
+ * every AI-accepted risk landed with `key = NULL` and a blank Code column.
+ * The extra stub here is the cost of routing through the repository.
+ */
+const riskKeySequenceStub = () => ({
+    upsert: jest.fn().mockResolvedValue({ tenantId: 't1', lastValue: 1 }),
+});
+
 beforeEach(() => {
     jest.clearAllMocks();
     // Default to feature-gate + rate-limit pass.
@@ -275,6 +288,7 @@ describe('applySession — idempotency + state guard', () => {
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 // RQ2-7 — accepted AI suggestions land an AI-source ledger event.
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
+                riskKeySequence: riskKeySequenceStub(),
                 risk: {
                     findFirst: jest.fn().mockResolvedValue({ id: 'existing-risk' }),
                     create: riskCreate,
@@ -324,6 +338,7 @@ describe('applySession — idempotency + state guard', () => {
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 // RQ2-7 — accepted AI suggestions land an AI-source ledger event.
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
+                riskKeySequence: riskKeySequenceStub(),
                 risk: {
                     findFirst: jest.fn().mockResolvedValue(null),
                     create: jest.fn().mockResolvedValue({ id: 'r-new' }),
@@ -365,6 +380,7 @@ describe('applySession — idempotency + state guard', () => {
                 riskSuggestionItem: { update: jest.fn().mockResolvedValue({}) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 riskScoreEvent: { create: scoreEventCreate },
+                riskKeySequence: riskKeySequenceStub(),
                 risk: {
                     findFirst: jest.fn().mockResolvedValue(null),
                     create: jest.fn().mockResolvedValue({ id: 'r-new' }),
@@ -400,6 +416,7 @@ describe('applySession — idempotency + state guard', () => {
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 // RQ2-7 — accepted AI suggestions land an AI-source ledger event.
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
+                riskKeySequence: riskKeySequenceStub(),
                 risk: {
                     findFirst: jest.fn().mockResolvedValue(null),
                     create: jest.fn().mockResolvedValue({ id: 'r-new' }),
@@ -431,6 +448,7 @@ describe('applySession — idempotency + state guard', () => {
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 // RQ2-7 — accepted AI suggestions land an AI-source ledger event.
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
+                riskKeySequence: riskKeySequenceStub(),
                 risk: { findFirst: jest.fn(), create: jest.fn() },
             } as never),
         );

@@ -31,6 +31,26 @@ function sanitizeOptional(v: string | null | undefined): string | null | undefin
     return sanitizePlainText(v);
 }
 
+// Second half of the same contract: a client that clears a text input may
+// send '' rather than null, and '' is not a meaningful value here — it
+// renders as blank but sorts, filters and groups differently from NULL, so
+// the two look identical to a user and differ to a query. `ownerUserId` had
+// this guard inline (an empty string is an invalid FK); category and
+// treatmentOwner did not. Composes on top of sanitizeOptional so "don't
+// touch" still survives as undefined.
+//
+// WHICH FIELDS GET THIS: the short ones the product filters, groups or
+// facets on (category, treatmentOwner) — where a stray '' becomes a real
+// bucket in a dropdown. Long free text (description, treatmentNotes,
+// threat, vulnerability) is never filtered or grouped, so '' and NULL are
+// genuinely equivalent there and the extra coercion would buy nothing. The
+// detail form already sends `value || null`, so this is defence for other
+// API consumers rather than the primary path.
+function emptyToNull(v: string | null | undefined): string | null | undefined {
+    if (v === undefined) return undefined;
+    return v === '' ? null : v;
+}
+
 // ─── Tenant-level usecases ───
 
 export async function listRisks(
@@ -203,8 +223,13 @@ export async function createRisk(ctx: RequestContext, data: {
             title: sanitizePlainText(data.title),
             description: data.description ? sanitizePlainText(data.description) : null,
             category: data.category ? sanitizePlainText(data.category) : null,
-            threat: data.threat ? sanitizePlainText(data.threat) : '',
-            vulnerability: data.vulnerability ? sanitizePlainText(data.vulnerability) : '',
+            // null, not '' — both columns are `String?`. Writing '' made an
+            // absent value indistinguishable from a deliberately blank one,
+            // and combined with the update path's `?? undefined` (fixed
+            // below) it meant threat/vulnerability could never return to
+            // empty once written. Matches description/category above.
+            threat: data.threat ? sanitizePlainText(data.threat) : null,
+            vulnerability: data.vulnerability ? sanitizePlainText(data.vulnerability) : null,
             impact: data.impact ?? 3,
             likelihood: data.likelihood ?? 3,
             inherentScore,
@@ -368,8 +393,12 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
     title?: string;
     description?: string | null;
     category?: string | null;
-    threat?: string;
-    vulnerability?: string;
+    // Nullable like description/category: an explicit null is the caller
+    // saying "clear this", which `undefined` cannot express (it means
+    // "leave unchanged"). Narrowing these to `string | undefined` is what
+    // made threat/vulnerability unclearable once set.
+    threat?: string | null;
+    vulnerability?: string | null;
     impact?: number;
     likelihood?: number;
     /// RQ2-1 — direct residual assessment. Both must be supplied
@@ -427,16 +456,23 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
             // Epic D.2 — sanitise on update only when the field is
             // actually being written (preserves "don't touch" semantics
             // for undefined; preserves explicit-clear for null).
+            // `?? undefined` is correct ONLY for title, which is non-nullable
+            // — it turns a nonsensical explicit null into "don't touch".
+            // threat/vulnerability carried it too until 2026-08-05, which
+            // collapsed null → undefined and made the field unclearable:
+            // sanitizeOptional had already produced the right answer and the
+            // `??` threw it away, two lines from description/category which
+            // preserve the same contract correctly.
             title: sanitizeOptional(data.title) ?? undefined,
             description: sanitizeOptional(data.description),
-            category: sanitizeOptional(data.category),
-            threat: sanitizeOptional(data.threat) ?? undefined,
-            vulnerability: sanitizeOptional(data.vulnerability) ?? undefined,
+            category: emptyToNull(sanitizeOptional(data.category)),
+            threat: sanitizeOptional(data.threat),
+            vulnerability: sanitizeOptional(data.vulnerability),
             impact: data.impact,
             likelihood: data.likelihood,
 
             treatment: data.treatment as TreatmentDecision | undefined,
-            treatmentOwner: sanitizeOptional(data.treatmentOwner),
+            treatmentOwner: emptyToNull(sanitizeOptional(data.treatmentOwner)),
             treatmentNotes: sanitizeOptional(data.treatmentNotes),
             // "Assigned to" — undefined leaves it untouched; '' or null
             // clears (an empty string would be an invalid FK).
