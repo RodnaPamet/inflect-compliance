@@ -23,6 +23,50 @@ number below refers to:
 | every job | Setup Node + Prisma client | 49-63s |
 | Coverage | whole job | ~35 min (cancelled at 35m15s on 2026-08-03) |
 
+## Result
+
+Measured end-to-end: `main` run `30939670414` vs verification run
+`30974778739` (same branch, all seven changes in, dispatched so the
+push-only jobs actually execute).
+
+| Job | main | now | |
+| --- | --- | --- | --- |
+| Coverage | **1967s** one job | 561-656s × 4 + **59s** gate | sharded |
+| Test (shard 1-4) | 608 / 533 / 571 / 505s | 470 / 447 / 503 / 493s | ratchets removed |
+| Ratchets | ran 8× inside the shards | **121s**, once | new job |
+| Load Smoke | 338s | **157s** | build → artifact download (197s → 4s) |
+| Build | 309s | **210s** | `.next/cache` |
+| E2E | 1062s | 996s | one Playwright invocation |
+
+- **Critical path (longest job): 1967s → 996s.** Coverage is no longer the
+  bottleneck; E2E is.
+- **Total runner seconds: 6593s → 6525s (−1%).** Essentially flat — the
+  coverage shards' extra fixed cost is paid for by the work removed
+  elsewhere.
+
+`docker` (153s → 706s) and `trivy` (449s → 554s) are excluded from that
+total. Both jobs are byte-identical to `main` in this PR; `docker` caches
+via `cache-from: type=gha`, which is ref-scoped, so a `workflow_dispatch` on
+a feature branch gets a cold layer cache and Trivy then scans the uncached
+image. Branch artefact, not a regression.
+
+### Why four coverage shards
+
+Fitting the observed numbers — unsharded 1967s, four shards averaging 597s —
+gives a per-shard fixed cost of **141s** (container init, npm ci, migrations,
+Jest boot) against **1826s** of divisible work:
+
+| shards | wall | runner | % of the 25-min budget |
+| --- | --- | --- | --- |
+| 1 | 1967s | 1967s | 131% ← the cancellation |
+| 2 | 1054s | 2108s | 70% |
+| 3 | 749s | 2248s | 50% |
+| **4** | **597s** | **2389s** | **40%** |
+
+Four costs +422s of runner time (+21% on this job) for a 3.3× wall-clock
+improvement, and lands at 40% of budget against a job whose history is three
+timeout raises and one `main`-red cancellation at ~1 min of growth per run.
+
 ## Design
 
 ### 1. The ratchet suite ran twice, on four runners
