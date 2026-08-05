@@ -84,7 +84,47 @@ const config = [
                     ],
                 },
             ],
+            // ── Platform bans, migrated from source-text guards ──
+            //
+            // These were `readFileSync` + regex tests under tests/guards.
+            // As AST selectors they survive reformatting, renaming and
+            // comment edits, which the regexes did not: the date-input
+            // guard needed a whole `stripComments()` helper so a migration
+            // note mentioning the old widget wouldn't fail the build. An
+            // AST never sees a comment.
+            //
+            // Allowlists are `files:` override blocks further down rather
+            // than in-rule arrays, so an exemption is scoped to the file it
+            // is granted to instead of being matched by path string.
+            'no-restricted-syntax': [
+                'error',
+                {
+                    // Was tests/guards/no-inline-clipboard.test.ts (Epic 56).
+                    selector:
+                        "CallExpression[callee.object.object.name='navigator'][callee.object.property.name='clipboard'][callee.property.name=/^(writeText|write)$/]",
+                    message:
+                        'Copy through the shared primitives — useCopyToClipboard, <CopyButton> or <CopyText>. Bespoke clipboard calls lose SSR safety, the execCommand fallback, typed error reporting and the shared toast contract. See docs/tooltip-and-copy-strategy.md',
+                },
+                {
+                    // Was tests/guardrails/date-input-rollout.test.ts (Epic 58).
+                    selector:
+                        "JSXOpeningElement[name.name=/^[iI]nput$/]:has(JSXAttribute[name.name='type'][value.value=/^(date|datetime-local)$/])",
+                    message:
+                        'Use <DatePicker> (single date) or <DateRangePicker> (range) instead of a native date input — native pickers differ per browser and bypass the shared formatting. See docs/date-picker.md',
+                },
+            ],
         },
+    },
+    {
+        // Legitimate clipboard call sites: the shared primitive itself, and
+        // the canvas exporter, which writes an image/png ClipboardItem —
+        // `useCopyToClipboard` is text-only, and widening its contract for
+        // every text caller to serve one image caller is the wrong trade.
+        files: [
+            'src/components/ui/hooks/use-copy-to-clipboard.tsx',
+            'src/lib/processes/canvas-export.ts',
+        ],
+        rules: { 'no-restricted-syntax': 'off' },
     },
     {
         files: [
@@ -96,6 +136,14 @@ const config = [
         rules: {
             '@typescript-eslint/no-explicit-any': 'warn',
             'no-restricted-imports': 'off',
+            // Scope parity with the guards these replaced: both scanned app
+            // source only, never `tests/`. `eslint .` lints the whole repo,
+            // so without this the migration would silently WIDEN
+            // enforcement — e.g. tests/rendered/form-field.test.tsx renders
+            // `<Input type="date" />` on purpose, to prove the FormField
+            // primitive handles one. A migration should move a rule, not
+            // quietly change what it covers.
+            'no-restricted-syntax': 'off',
         },
     },
     {
