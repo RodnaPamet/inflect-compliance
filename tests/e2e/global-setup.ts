@@ -20,21 +20,30 @@ export default async function globalSetup(config: FullConfig) {
     const projectRoot = path.resolve(__dirname, '..', '..');
 
     // ── Phase 1: Ensure the database is seeded ──
-    console.log('[global-setup] Ensuring database is seeded...');
-    try {
-        execSync('npx tsx prisma/seed.ts', {
-            cwd: projectRoot,
-            stdio: 'pipe',
-            timeout: 60_000,
-            env: { ...process.env },
-        });
-        console.log('[global-setup] Database seed complete.');
-    } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        // If seeding fails (e.g. DB not running), log but don't abort —
-        // the tests will fail with a clearer "Invalid credentials" error.
-        console.warn(`[global-setup] ⚠ Database seed failed: ${msg.slice(0, 200)}`);
-        console.warn('[global-setup] Tests requiring login will likely fail.');
+    //
+    // CI seeds explicitly in the workflow before Playwright starts, so
+    // re-seeding here is pure duplicate work (a full `prisma/seed.ts`
+    // run, ~30-60s). Locally it stays: `npx playwright test` against a
+    // fresh database has to seed itself or every login fails.
+    if (process.env.CI === 'true' || process.env.CI === '1') {
+        console.log('[global-setup] CI: database already seeded by the workflow, skipping seed.');
+    } else {
+        console.log('[global-setup] Ensuring database is seeded...');
+        try {
+            execSync('npx tsx prisma/seed.ts', {
+                cwd: projectRoot,
+                stdio: 'pipe',
+                timeout: 60_000,
+                env: { ...process.env },
+            });
+            console.log('[global-setup] Database seed complete.');
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            // If seeding fails (e.g. DB not running), log but don't abort —
+            // the tests will fail with a clearer "Invalid credentials" error.
+            console.warn(`[global-setup] ⚠ Database seed failed: ${msg.slice(0, 200)}`);
+            console.warn('[global-setup] Tests requiring login will likely fail.');
+        }
     }
 
     // ── Phase 2: Pre-warm the dev server ──

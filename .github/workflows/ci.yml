@@ -100,6 +100,13 @@ on:
   # `Detect changes` runs but is internal plumbing, not a gate.
   # Locked by tests/guardrails/merge-queue-trigger-coverage.test.ts.
   merge_group:
+  # Lets an operator run CI — including the push/schedule-only coverage
+  # gate — against a branch on demand. Added 2026-08-05 with the coverage
+  # sharding: that path is push-only, so before this it could not be
+  # exercised until it had already landed on `main`, where a mistake in it
+  # takes main red. Verifying a change to the gate now means dispatching
+  # it on the branch first.
+  workflow_dispatch:
   # Weekly scheduled scan — GitHub's Code Scanning UI expects a
   # periodic refresh of CodeQL + Trivy results on the default branch,
   # independent of PR cadence. Without this the Security tab can
@@ -388,31 +395,97 @@ jobs:
 
       # ── Jest: unit + integration tests (sharded) ──
       # Each matrix worker runs Jest's deterministic 1-of-N hash split.
-      # `--shard=${{ matrix.shard }}/${{ matrix.total }}` keeps each
-      # test file on exactly one shard, so per-DB-row test fixtures
-      # never collide across shards. The intra-shard run stays
-      # `--runInBand` for the "one DB per worker" invariant.
+      # `--shard` keeps each test file on exactly one shard, so per-DB-row
+      # fixtures never collide across shards.
+      #
+      # `JEST_SKIP_RATCHETS=1` drops tests/guards + tests/contracts + most
+      # of tests/guardrails from this run — 776 of 1946 files. They were
+      # never excluded from the shard glob, so the shards ran all of them
+      # AND two later steps ran `tests/guards/` and `tests/contracts/`
+      # again, as separate Jest boots that each re-shelled
+      # `prisma migrate deploy`. The `ratchets` job below runs them once,
+      # with no database. (`rls-coverage` is the single ratchet that reads
+      # from Postgres and stays here — see jest.config.js.)
+      #
+      # WORKER COUNT — `--runInBand` is deliberate, and it is NOT a bug
+      # that it leaves `tests/setup/globalSetup.ts`'s per-worker database
+      # cloning switched off. That machinery gates on `maxWorkers > 1`, and
+      # it exists to make PARALLEL execution safe. Serial execution against
+      # one database is already safe; there is nothing for it to protect.
+      #
+      # This was tried the other way on 2026-08-05 and measured, on hosted
+      # 2-core `ubuntu-latest` runners with Postgres in a service container
+      # (dispatch run 30973579267 vs `main` run 30939670414). Total Jest
+      # work across the four shards:
+      #
+      #   --runInBand           1876s   (and that run also carried the 776
+      #                                  ratchet files these shards no
+      #                                  longer run)
+      #   --maxWorkers=1/2      4311s   2.3x WORSE, on FEWER files
+      #
+      # Per shard, same ~293 files: 2 workers 810s, 1 worker 1146s, and
+      # `--runInBand` on `main` 463-477s while also running the ratchets.
+      # Worker mode loses on both counts here — forking buys no parallelism
+      # on 2 cores, and 2 workers adds template-clone cost plus contention
+      # with the Postgres container on the same box.
+      #
+      # If a future runner has more cores, re-measure before switching:
+      # the conclusion is about this runner shape, not about Jest.
       - name: "Run tests: unit + integration (shard)"
+        env:
+          JEST_SKIP_RATCHETS: '1'
         run: npx jest --runInBand --no-coverage --shard=${{ matrix.shard }}/${{ matrix.total }}
 
-      # ── Architectural guard + API contract gates ──
-      # These suites are fast (~30s combined) and not sharded — they
-      # are an EXPLICIT pass/fail signal in the CI log distinct from
-      # the wider Jest run. Pinned to shard 1 so they execute exactly
-      # once per CI run (no redundant work across shards).
+  # ═══════════════════════════════════════════════════════════════
+  #  Job 3a: Ratchets — the source-text guard suite, ONCE, with no DB
+  #
+  #  776 of the repo's 1946 test files are ratchets: readFileSync +
+  #  regex over source text. They were running twice per push — the
+  #  sharded Jest run never excluded them, and two further steps ran
+  #  `tests/guards/` and `tests/contracts/` again as separate Jest
+  #  boots, each re-shelling `prisma migrate deploy` against a database
+  #  that exactly one of them reads from.
+  #
+  #  Splitting them out buys three things: the duplicate execution is
+  #  gone, the shards shed ~40% of their files, and this job needs no
+  #  Postgres service, no roles, and no migrations — so it starts
+  #  immediately and runs in parallel with everything else.
+  #
+  #  `rls-coverage` is the one ratchet that queries the database. It
+  #  stays with the sharded run (see the lookahead in jest.config.js)
+  #  rather than being moved, because six suites and CLAUDE.md cite it
+  #  by path.
+  # ═══════════════════════════════════════════════════════════════
+  ratchets:
+    name: Ratchets
+    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
+    # Observed ~35s locally for the full 776 files. 10 minutes is a
+    # generous ceiling that still bounds a hang.
+    timeout-minutes: 10
+    env:
+      SKIP_ENV_VALIDATION: '1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # No database URL, no `prisma migrate deploy`, no Postgres service.
+      # If a ratchet is ever added that needs one, it belongs in the
+      # sharded run instead — this job is meant to stay DB-free.
       #
       # On legitimate contract changes:
       #   1. `npm run openapi:generate`         (rewrites public/openapi.json)
       #   2. `npx jest tests/contracts/ -u`     (updates per-schema snapshots)
-      #   3. Commit both files together. Reviewer sees the diff
-      #      against the previous contract and approves explicitly.
-      - name: "Run tests: architectural guards"
-        if: matrix.shard == 1
-        run: npx jest tests/guards/ --runInBand --forceExit --no-coverage
-
-      - name: "Gate: API contract tests"
-        if: matrix.shard == 1
-        run: npx jest tests/contracts/ --runInBand --forceExit --no-coverage --ci
+      #   3. Commit both files together, so the reviewer sees the contract
+      #      diff and approves it explicitly.
+      - name: "Run tests: architectural guards + API contracts"
+        run: |
+          npx jest tests/guards tests/guardrails tests/contracts \
+            --testPathIgnorePatterns '/node_modules/' 'rls-coverage\.test\.ts' \
+            --maxWorkers=2 --forceExit --no-coverage --ci
 
   # ═══════════════════════════════════════════════════════════════
   #  Job 3b: Test (summary) — single required check for the matrix
@@ -423,7 +496,15 @@ jobs:
   # ═══════════════════════════════════════════════════════════════
   test-summary:
     name: Test
-    needs: [test]
+    # Gates on `ratchets` as well as `test`, and that is load-bearing:
+    # this job is the REQUIRED check named "Test" in branch protection.
+    # The ratchet suites used to run inside the test shards, so they were
+    # already covered by it. Pulling them into their own job (to stop
+    # running them 8× per push) would have silently dropped them out of
+    # the merge gate — a failing ratchet would have gone red on a check
+    # that nothing required. Listing it here keeps the same ground under
+    # the same check name, with no branch-protection edit.
+    needs: [test, ratchets]
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     # The sweep's other finding: this was the ONLY job in the workflow
@@ -443,11 +524,17 @@ jobs:
         # `needs.test.result` is the aggregated status across all
         # matrix variants — `success` only when every shard passed.
         run: |
+          failed=0
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "::error::One or more Test shards failed (result=${{ needs.test.result }})"
-            exit 1
+            failed=1
           fi
-          echo "All Test shards passed."
+          if [ "${{ needs.ratchets.result }}" != "success" ]; then
+            echo "::error::Architectural ratchets failed (result=${{ needs.ratchets.result }})"
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then exit 1; fi
+          echo "All Test shards and the ratchet suite passed."
 
   # ═══════════════════════════════════════════════════════════════
   #  Job 4: Coverage — enforce minimum test coverage threshold
@@ -464,32 +551,37 @@ jobs:
   #  block.
   # ═══════════════════════════════════════════════════════════════
   coverage:
-    name: "Coverage (≥60%)"
+    name: "Coverage (shard ${{ matrix.shard }}/${{ matrix.total }})"
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    if: github.event_name == 'push' || github.event_name == 'schedule'
-    # 50-minute budget. History: 25 → 35 (#716, R30 group nodes
-    # cancelled at 25m16s) → 50 here, on 2026-08-03, when the job
-    # was cancelled at 35m15s on `main` (2604e5e14) and took main
-    # red. The previous comment said "revisit if the gate ever runs
-    # >30 min" — by then it already was, for three consecutive runs:
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+        total: [4]
+    # Sharded 4 ways as of 2026-08-05. History of the UNSHARDED job, kept
+    # because it is the argument for sharding: 25 → 35 (#716) → 50 on
+    # 2026-08-03, after it was cancelled at 35m15s on `main` (2604e5e14)
+    # and took main red. It had been sitting at 94-97% of budget and
+    # passing for three consecutive runs —
     #
     #   7ad55ee70  32m53s  pass
     #   57e5bda43  33m56s  pass
     #   2604e5e14  35m15s  CANCELLED (hit the 35-min ceiling)
     #
-    # i.e. it had been sitting at 94-97% of budget and passing, so
-    # nothing signalled until it tipped over. ~1 min of growth per
-    # run across a dependency-bump wave; 50 restores real headroom
-    # rather than another single-run reprieve.
+    # — so nothing signalled until it tipped over, and the previous
+    # comment's own advice was "shard the coverage run the way `test` is
+    # sharded rather than raising this number a fourth time". This is
+    # that change. 25 minutes per shard is generous against an expected
+    # ~9-12, and leaves the growth headroom the raises were buying.
     #
-    # ⚠️ This job is `push`/`schedule`-only (see the `if:` above), so
-    # it does NOT run on pull requests — a change that slows it is
-    # invisible until it lands on `main`. That is why the creep went
-    # unnoticed. If it climbs past ~40 min again, treat that as the
-    # signal to make the job itself faster (shard the coverage run
-    # the way `test` is sharded) rather than raising this number a
-    # fourth time.
-    timeout-minutes: 50
+    # ⚠️ Still `push`/`schedule`-only (see the `if:` above): it does NOT
+    # run on pull requests, so a change that slows it stays invisible
+    # until it lands on `main`. Sharding makes running it per-PR
+    # affordable; that is a deliberate follow-up, not part of this
+    # change, because it needs a required-check rename in branch
+    # protection (one check became five).
+    timeout-minutes: 25
 
     env:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
@@ -552,20 +644,72 @@ jobs:
       #   global   branches=56 functions=54 lines=70 statements=69
       #   usecases branches=37 functions=30 lines=49 statements=46
       #   lib      branches=48 functions=48 lines=57 statements=54
-      - name: "Gate: test coverage thresholds"
+      # This shard MEASURES; it does not gate. `--coverageThreshold` here
+      # would compare a quarter of the data against floors calibrated on
+      # all of it — every shard would report most of `src/` uncovered and
+      # fail. The floors are checked once, on the merged total, in the
+      # `coverage-gate` job below.
+      #
+      # `--runInBand`, deliberately — see the `test` job for the measurement.
+      - name: "Measure coverage (shard ${{ matrix.shard }}/${{ matrix.total }})"
         run: |
           npx jest --coverage --forceExit --runInBand \
-            --coverageThreshold "$(cat jest.thresholds.json)"
+            --shard=${{ matrix.shard }}/${{ matrix.total }} \
+            --coverageReporters=json
 
-      # Only kept for post-mortem on a RED run — the threshold gate above
-      # already ran inline, so a green run's coverage HTML is never read.
-      # Gating on failure (was `always`) stops per-PR storage creep.
-      - name: Upload coverage report
+      - name: Upload shard coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: coverage/coverage-final.json
+          retention-days: 1
+
+  # ═══════════════════════════════════════════════════════════════
+  #  Job 4b: Coverage gate — merge the shards, then enforce the floors
+  # ═══════════════════════════════════════════════════════════════
+  coverage-gate:
+    name: "Coverage (≥60%)"
+    runs-on: ubuntu-latest
+    needs: [coverage]
+    # `needs` alone would skip this job when any shard fails, and a
+    # skipped required check reads as "not failing". Run whenever the
+    # shards were not cancelled, so a failed shard still surfaces here
+    # as a failed gate.
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download shard coverage
+        uses: actions/download-artifact@v8
+        with:
+          pattern: coverage-shard-*
+          path: coverage-shards
+
+      # Merges the four `coverage-final.json` files and compares the total
+      # against jest.thresholds.json — reproducing what Jest's own
+      # `--coverageThreshold` did before the job was sharded, including
+      # the rule that a path group's files are REMOVED from `global`.
+      # The expected-shard-count argument is load-bearing: a silently
+      # missing shard would read as uncovered code and could only ever
+      # make the gate stricter-looking while measuring less.
+      # Semantics are pinned by tests/unit/scripts/check-merged-coverage.test.ts.
+      - name: "Gate: test coverage thresholds"
+        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 4
+
+      # Only kept for post-mortem on a RED run.
+      - name: Upload merged coverage inputs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
-          path: coverage/
+          name: coverage-shards-merged
+          path: coverage-shards/
           retention-days: 7
         continue-on-error: true
 
@@ -607,11 +751,56 @@ jobs:
       # runtime is. See docs/ci-cd-pipeline-integrity.md § Build /
       # env-validation discipline. The posture is locked by
       # tests/guards/ci-pipeline-integrity.test.ts.
+      # The webpack/SWC incremental cache. `.next/cache` survives across
+      # runs; the rest of `.next` must NOT be restored (a stale BUILD_ID
+      # would be published as this SHA's artifact). Falls back to the
+      # newest cache for the same lockfile when sources moved.
+      #
+      # `node_modules` is deliberately NOT cached. Measured on this repo:
+      # 1.9 GB across 129k files, which restores no faster than the
+      # `npm ci` it would replace — `actions/setup-node`'s `cache: npm`
+      # already removes the part that is actually slow (the registry
+      # fetch). Caching it would trade ~0 seconds for a stale-tree
+      # failure mode.
+      - name: Cache Next.js build cache
+        uses: actions/cache@v5
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-next-prod-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.[jt]s', 'src/**/*.[jt]sx', 'next.config.js') }}
+          restore-keys: |
+            ${{ runner.os }}-next-prod-${{ hashFiles('package-lock.json') }}-
+            ${{ runner.os }}-next-prod-
+
       - name: Build Next.js (production)
         # --webpack: nonce strict-CSP chunks (see Dockerfile + impl note).
         run: npx next build --webpack
         env:
           NODE_ENV: production
+
+      # Hand the compiled app to `load-smoke`, which builds the SAME
+      # artifact (`NODE_ENV=production`, no other build-time flags) and
+      # was recompiling this SHA from scratch to get it.
+      #
+      # NOT shared with `e2e`: that job builds with `NEXT_TEST_MODE` and
+      # `NEXT_PUBLIC_TEST_MODE` set, and `NEXT_PUBLIC_*` is INLINED at
+      # build time — so its bundle is genuinely different, and handing it
+      # this one would silently re-enable the onboarding tour and the
+      # calendar-badge polling that the test build exists to suppress.
+      # A shared artifact there would not fail loudly; it would make
+      # `networkidle` stop settling and read as flake.
+      - name: Upload .next for reuse
+        uses: actions/upload-artifact@v7
+        with:
+          name: next-build-${{ github.sha }}
+          # `cache/` is the webpack incremental cache — hundreds of MB that
+          # `next start` never reads. It is cached separately (above) for
+          # the jobs that BUILD; shipping it here would only slow the
+          # upload and the download.
+          path: |
+            .next
+            !.next/cache
+          retention-days: 1
+          include-hidden-files: true
 
       - name: Upload build logs on failure
         if: failure()
@@ -645,10 +834,17 @@ jobs:
     # `main` and is caught by the post-merge run rather than pre-merge.
     if: ${{ github.event_name != 'merge_group' }}
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    # The Playwright suite runs serially (workers: 1, fullyParallel:
-    # false — specs share seeded-tenant state) and is ~17-25 min
-    # wall-clock all-green. 40-min budget gives real headroom for
-    # the 2-retry budget without masking failures behind a timeout.
+    # The Playwright suite runs 2 workers, fullyParallel (see
+    # playwright.config.ts:23,48 — mutating specs take an isolated
+    # tenant per test via the `isolatedTenant` fixture, so they no
+    # longer share seeded state). ~17-25 min wall-clock all-green.
+    # 40-min budget gives real headroom for the 2-retry budget
+    # without masking failures behind a timeout.
+    #
+    # (This comment previously claimed "workers: 1, fullyParallel:
+    # false". That stopped being true when the e2e isolation work
+    # landed; it was describing a serial suite that had already
+    # been parallel for months.)
     #
     # E2E sharding was attempted in an earlier revision of this PR
     # and reverted: one shard's slice of specs surfaced a real
@@ -738,6 +934,18 @@ jobs:
       - name: Create upload directory
         run: mkdir -p /tmp/ci-uploads
 
+      # The e2e bundle is built with NEXT_TEST_MODE, which routes the
+      # output to `.next-test/` (next.config.js:157) — so it needs its own
+      # cache entry, not the production one.
+      - name: Cache Next.js build cache (test mode)
+        uses: actions/cache@v5
+        with:
+          path: .next-test/cache
+          key: ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.[jt]s', 'src/**/*.[jt]sx', 'next.config.js') }}
+          restore-keys: |
+            ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-
+            ${{ runner.os }}-next-test-
+
       - name: Build Next.js app
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
         run: npx next build --webpack
@@ -784,14 +992,15 @@ jobs:
       # `moderate` and `minor` findings are LOGGED for triage but
       # do not block — the policy is intentional, see the docblock
       # at the top of the spec.
-      - name: "Gate: accessibility (axe) — GAP-20"
-        run: npx playwright test tests/e2e/a11y.spec.ts
-        env:
-          CI: "true"
-
-      - name: Run E2E tests
-        # Skip the a11y spec here — already executed as the gate above.
-        run: npx playwright test --grep-invert "a11y"
+      # ONE invocation, two projects (`a11y` and `e2e` — see
+      # playwright.config.ts). This was two separate `playwright test`
+      # processes, which booted the `next start` server twice and ran the
+      # seeding global-setup twice — three seeds per run counting the
+      # workflow's own step above — purely to get a named step per signal.
+      # The projects give that separation inside one process, and each
+      # reports its own pass/fail.
+      - name: "Run E2E tests (+ accessibility gate — GAP-20)"
+        run: npx playwright test
         env:
           CI: "true"
 
@@ -839,7 +1048,14 @@ jobs:
     # Load smoke is a trend/perf signal, not a per-PR correctness gate —
     # run it on push-to-main + the weekly schedule, not on every PR. (Same
     # push/schedule-only pattern as the `coverage` job.)
-    if: github.event_name == 'push' || github.event_name == 'schedule'
+    # workflow_dispatch included for the same reason as `coverage`: this
+    # job now REUSES the `.next` artifact from `build` instead of
+    # recompiling, and it falls back to building if the artifact is
+    # missing. That fallback means a broken reuse would not go red — it
+    # would quietly rebuild and look identical to success. Being able to
+    # dispatch this on a branch is how the reuse gets confirmed rather
+    # than assumed.
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # 12 -> 25 on 2026-08-04, retry path again — and this was the
     # WORST of the four: observed max 6m13s plus a ~6 min npm-ci retry
@@ -934,6 +1150,16 @@ jobs:
           mkdir -p tmp/test-uploads
           mkdir -p tests/load/results
 
+      # Pull the artifact the `build` job published for this SHA. The
+      # guarded build below keeps the job self-sufficient if the artifact
+      # is absent (expired, or this job re-run on its own).
+      - name: Download .next from the build job
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: next-build-${{ github.sha }}
+          path: .next
+
       - name: Build Next.js app
         # Do NOT set NEXT_TEST_MODE=1 here. next.config.js routes the
         # build to `.next-test/` when that env is set; this job runs
@@ -941,8 +1167,19 @@ jobs:
         # must land in the default `.next/` directory the start
         # command reads from. The e2e job uses NEXT_TEST_MODE because
         # Playwright's runner expects the test-mode artifact path.
-        # --webpack: match the deployed bundler (nonce strict-CSP chunks).
-        run: npx next build --webpack
+        #
+        # This job `needs: [build]`, which already compiled this exact SHA
+        # with this exact env — so it downloads that artifact instead of
+        # recompiling it. If the download is ever missing (artifact expiry,
+        # a re-run of only this job), the fallback build keeps the job
+        # self-sufficient rather than failing on a missing directory.
+        run: |
+          if [ -d .next ] && [ -f .next/BUILD_ID ]; then
+            echo "Reusing .next from the build job (BUILD_ID: $(cat .next/BUILD_ID))"
+          else
+            echo "No usable .next artifact — building"
+            npx next build --webpack
+          fi
         env:
           NODE_ENV: production
 

@@ -51,11 +51,31 @@ export default defineConfig({
         baseURL: process.env.URL || 'http://localhost:3006',
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
-        video: 'on',
+        // Matches the two settings above it. `'on'` recorded video for
+        // every test — ~260 of which are green on a normal run — and the
+        // artifact upload step only fires `if: failure()`, so all of it
+        // was encoded and then discarded.
+        video: 'retain-on-failure',
     },
+    // Two projects, one process. CI used to run `playwright test
+    // tests/e2e/a11y.spec.ts` and then `playwright test --grep-invert
+    // "a11y"` as SEPARATE invocations — which booted the `next start`
+    // server twice and ran the seeding global-setup twice (three times
+    // counting the workflow's own seed step), to buy a named step in the
+    // CI log.
+    //
+    // Projects give the same separation for free: `a11y` and `e2e` report
+    // independently (and can be run alone with `--project=a11y`), while a
+    // single invocation shares one server boot and one setup.
     projects: [
         {
-            name: 'chromium',
+            name: 'a11y',
+            testMatch: /a11y\.spec\.ts$/,
+            use: { ...devices['Desktop Chrome'] },
+        },
+        {
+            name: 'e2e',
+            testIgnore: /a11y\.spec\.ts$/,
             use: { ...devices['Desktop Chrome'] },
         },
     ],

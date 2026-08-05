@@ -147,7 +147,23 @@ describe('CI timeout ceilings', () => {
         // the tail actually looked like. Lowering one needs fresh data,
         // not intuition.
         const FLOORS: Record<string, number> = {
-            'Coverage (≥60%)': 50,
+            // The coverage RUN was sharded 4 ways on 2026-08-05, so the
+            // 50-minute floor no longer belongs to the job that carries
+            // the "Coverage (≥60%)" name — that job is now a download +
+            // merge + threshold check with no test execution in it at
+            // all. This is not a floor being lowered on the same work;
+            // it is the same work split, and the floor follows the work:
+            //
+            //   Coverage (shard N/4)   the 35-min unsharded tail / 4
+            //                          ≈ 9 min, plus the ~6-min npm ci
+            //                          retry path this map accounts for
+            //                          everywhere else -> 20
+            //   Coverage (≥60%)        merge of four JSON files -> 8
+            //
+            // If the shards are ever de-sharded back into one job, this
+            // entry has to go back to 50 in the same diff.
+            'Coverage (shard ${{ matrix.shard }}/${{ matrix.total }})': 20,
+            'Coverage (≥60%)': 8,
             'Trivy Image Scan': 25,
             Security: 12,
             E2E: 40,
