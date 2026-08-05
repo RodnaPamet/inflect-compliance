@@ -122,15 +122,20 @@ describe('No unsafe any — CI Guardrails', () => {
     });
 
     test('typed hook files exist for all core domains', () => {
+        // The six per-domain hook files (use-controls/-policies/-risks/
+        // -tasks/-assets/-evidence) were deleted on 2026-08-05: measured
+        // at ZERO importers, by path and by exported name, while the
+        // product reads through `useTenantSWR` (117 files) and writes
+        // through `fetch` (190). This test required them to EXIST, which
+        // is how dead code survives — a guard asserting the presence of
+        // something nothing calls.
+        //
+        // `use-api.ts` stays: unlike the six, it has 6 real importers.
         const hooksDir = path.join(SRC_DIR, 'lib', 'hooks');
         const required = [
             'use-api.ts',
-            'use-controls.ts',
-            'use-policies.ts',
-            'use-risks.ts',
-            'use-tasks.ts',
-            'use-assets.ts',
-            'use-evidence.ts',
+            'use-tenant-swr.ts',
+            'use-tenant-mutation.ts',
             'index.ts',
         ];
         for (const file of required) {

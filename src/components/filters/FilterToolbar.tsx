@@ -88,15 +88,21 @@ export interface FilterToolbarProps {
      * lock to one slot is deliberate: list pages should not present
      * two co-equal primary actions.
      *
-     * v2-PR-7 added this slot so the canonical reading order on
-     * every list page is:
+     * WHAT IS ACTUALLY TRUE (measured 2026-08-05). This docblock used to
+     * say header "Create" buttons "should migrate here over time". They
+     * did not. All six entity list surfaces put their create button in
+     * `leading` (start of the toolbar), and the `leading` docblock below
+     * says so. Exactly ONE consumer reaches this slot, and it does so
+     * through `EntityListPage`'s `toolbarPrimary` pass-through:
+     * `processes/RulesTab.tsx`.
      *
-     *   [search + filter button] [active pills (flex-1)] [secondary] [primary]
+     * So the reading order on a list page is:
      *
-     * Header-level "Create" buttons that used to live in
-     * `EntityListPage header.actions` (right of the title) should
-     * migrate here over time — keeping page headers navigational and
-     * the toolbar mutate-only.
+     *   [leading create] [search + filter] [active pills (flex-1)] [secondary]
+     *
+     * and this slot is the right-edge exception, not the destination
+     * everything is migrating towards. Reach for `leading` unless you
+     * specifically want the right edge.
      */
     primary?: ReactNode;
     /**
