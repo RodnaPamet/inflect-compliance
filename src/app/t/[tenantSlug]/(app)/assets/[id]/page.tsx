@@ -50,45 +50,14 @@ const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel')
 
 // getAsset → AssetRepository.getById (the Asset model; controls relation
 // fetched but unread here).
-export interface AssetDetail {
-    id: string;
-    name: string;
-    type: 'INFORMATION' | 'SYSTEM' | 'SERVICE' | 'DATA_STORE' | 'VENDOR' | 'PEOPLE_PROCESS' | 'APPLICATION' | 'INFRASTRUCTURE' | 'PROCESS' | 'OTHER';
-    classification: string | null;
-    /** Legacy free-text owner — import-only fallback, distinct from the assignee. */
-    owner: string | null;
-    ownerUserId: string | null;
-    /** Resolved assignee (the one Owner concept). */
-    ownerUser: { id: string; name: string | null; email: string | null } | null;
-    location: string | null;
-    criticality: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | null;
-    status: 'ACTIVE' | 'RETIRED';
-    dataResidency: string | null;
-    externalRef: string | null;
-    dependencies: string | null;
-    businessProcesses: string | null;
-    retention: string | null;
-    retentionUntil: string | null;
-    confidentiality: number | null;
-    integrity: number | null;
-    availability: number | null;
-    // Product-identity fields — power CVE→asset matching.
-    cpe: string | null;
-    vendor: string | null;
-    product: string | null;
-    version: string | null;
-    createdAt: string;
-    updatedAt: string;
-    rollups?: AssetRollups;
-}
-
-/** 360° relationship roll-ups computed server-side by the `getAsset` usecase. */
-interface AssetRollups {
-    risks: { count: number };
-    controls: { count: number };
-    vulnerabilities: { openCount: number; maxSeverity: string | null; maxScore: number | null };
-    tasks: { openCount: number; total: number };
-}
+/**
+ * `AssetDetail` and `AssetRollups` now live in `@/lib/dto/asset.types` —
+ * this page is a route module, not a home for a domain type. They are
+ * re-exported here only so existing `from './[id]/page'` imports keep
+ * working; new code should import from the shared module directly.
+ */
+import type { AssetDetail } from '@/lib/dto/asset.types';
+export type { AssetDetail, AssetRollups } from '@/lib/dto/asset.types';
 
 /** One matched vulnerability row (GET /vulnerabilities?assetId=…). */
 interface AssetVulnRow {

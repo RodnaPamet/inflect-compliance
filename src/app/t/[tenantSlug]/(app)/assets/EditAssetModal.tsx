@@ -15,7 +15,7 @@
  */
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
-import type { AssetDetail } from './[id]/page';
+import type { AssetDetail } from '@/lib/dto/asset.types';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { useTenantContext } from '@/lib/tenant-context-provider';
