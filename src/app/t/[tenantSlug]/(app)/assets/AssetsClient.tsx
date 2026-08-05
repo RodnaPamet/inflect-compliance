@@ -45,6 +45,7 @@ import { NewAssetModal } from './NewAssetModal';
 import { AssetDetailPanel } from './AssetDetailPanel';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import { presentCriticality } from '@/lib/asset-criticality';
+import type { AssetCore } from '@/lib/dto/asset.types';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 
@@ -68,22 +69,18 @@ function severityVariant(sev: string | null | undefined): StatusBadgeVariant {
 // listAssets → AssetRepository.list (full Asset model + _count.controls +
 // usecase-added taskTotal/taskDone). Cells/KPI callbacks stay untyped
 // (file-level disable; the colon-any category) — this types the column factory.
-interface AssetListRow {
-    id: string;
+/**
+ * The list row = the shared asset core, minus the detail-only fields the
+ * list query does not select, plus the list-only rollups it does.
+ *
+ * It used to re-declare 26 of AssetCore's fields by hand, with its own
+ * looser types (`type: string`, `criticality: string | null`) — so the
+ * table could render a criticality band the detail page's type would have
+ * rejected. Deriving from AssetCore means a schema change lands in one
+ * place, and the enums are the real Prisma ones.
+ */
+type AssetListRow = Omit<AssetCore, 'cpe' | 'vendor' | 'product' | 'version' | 'createdAt' | 'updatedAt'> & {
     key: string | null;
-    name: string;
-    type: string;
-    classification: string | null;
-    /** Legacy free-text owner — import-only fallback, distinct from the assignee. */
-    owner: string | null;
-    ownerUserId: string | null;
-    /** Resolved assignee (the one Owner concept), included by the list query. */
-    ownerUser: { id: string; name: string | null; email: string | null } | null;
-    confidentiality: number | null;
-    integrity: number | null;
-    availability: number | null;
-    criticality: string | null;
-    status: string;
     _count: { controls: number };
     taskTotal: number;
     taskDone: number;
@@ -94,15 +91,7 @@ interface AssetListRow {
      *  (rows fetched with `?includeDeleted=true`). */
     deletedAt: string | null;
     deletedByUserId: string | null;
-    /** Context fields the list query returns — surfaced in the quick-look panel. */
-    location: string | null;
-    dataResidency: string | null;
-    externalRef: string | null;
-    dependencies: string | null;
-    businessProcesses: string | null;
-    retention: string | null;
-    retentionUntil: string | null;
-}
+};
 
 interface AssetsClientProps {
     initialAssets: AssetListRow[];

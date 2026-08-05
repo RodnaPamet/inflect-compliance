@@ -16,7 +16,7 @@
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import type { AssetDetail } from '../[id]/page';
+import type { AssetDetail } from '@/lib/dto/asset.types';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
 export interface EditAssetFormFields {
