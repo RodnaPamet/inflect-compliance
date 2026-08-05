@@ -1,10 +1,36 @@
 /**
- * Epic 69 — canonical tenant-aware mutation helper.
+ * Tenant-aware mutation helper — for writes that want OPTIMISTIC UI.
  *
- * `useTenantMutation` is the second half of the SWR-first migration:
- * `useTenantSWR` reads, this writes. Together they replace the
- * `fetch + router.refresh()` pattern that produces visible full-page
- * refetches with optimistic, granular cache updates.
+ * ## What is actually true (measured 2026-08-05)
+ *
+ * This docblock used to open "Epic 69 — canonical tenant-aware mutation
+ * helper". It was not canonical, and saying so made the codebase look
+ * inconsistent when it was in fact consistent about something else:
+ *
+ *   raw `fetch(`         190 files   <- the de-facto write path
+ *   useTenantSWR         117 files   <- genuinely canonical, for READS
+ *   useTenantMutation      8 files
+ *   @/lib/api-client      14 files
+ *
+ * `useTenantSWR` won for reads. For writes, `fetch` + `router.refresh()`
+ * is what the product does, and a hook claiming otherwise sends every new
+ * contributor to reconcile a 190-vs-8 contradiction that has no answer.
+ *
+ * ## So when do you use this?
+ *
+ * When the mutation should feel instant: the lifecycle below applies the
+ * predicted state to the SWR cache immediately and rolls it back if the
+ * request fails. Raw `fetch` + `router.refresh()` cannot do that — it
+ * produces a visible full-page refetch.
+ *
+ * That is a real capability, which is why this hook is kept rather than
+ * deleted. It is simply not the default: reach for it when the interaction
+ * is latency-sensitive (inline status changes, drag reordering, row
+ * toggles), and use `fetch` + `router.refresh()` for the rest.
+ *
+ * Mass-migrating the 190 raw-fetch sites is NOT implied by this note. Most
+ * of them submit a modal and navigate; optimistic cache updates would add
+ * rollback semantics they do not need.
  *
  * Lifecycle (one round trip):
  *
