@@ -220,6 +220,32 @@ export function toApiErrorResponse(error: unknown, requestId?: string): { payloa
             payload.error.code = 'NOT_FOUND';
             payload.error.message = 'Resource not found or already deleted';
         }
+    } else if (
+        error instanceof Error &&
+        (error.name === 'PrismaClientValidationError' ||
+            error.constructor?.name === 'PrismaClientValidationError')
+    ) {
+        // Prisma rejected the QUERY SHAPE — an unknown enum member, a
+        // missing required field, a wrong scalar type. It carries no
+        // `code`, so it used to fall through to the generic INTERNAL 500
+        // and become indistinguishable from a crash.
+        //
+        // Deliberately still 5xx, not 400. By the time a value reaches the
+        // driver it has passed the route's Zod schema, so a
+        // PrismaClientValidationError means OUR query construction is
+        // wrong, not that the caller sent a bad request — answering 400
+        // would blame the client for a server defect and hide the bug.
+        // (The user-input path that used to land here — a raw string cast
+        // onto an enum column — is now rejected at the boundary by
+        // `z.nativeEnum`; this branch exists so the next one is
+        // identifiable rather than silent.)
+        //
+        // Detected by name rather than `instanceof`: this module is
+        // imported from Edge middleware, which cannot pull in
+        // `@prisma/client` (see the comment above).
+        status = 500;
+        payload.error.code = 'INVALID_QUERY';
+        payload.error.message = 'An unexpected internal server error occurred';
     }
 
     // Never leak stack traces or raw messages for 500s unless in strict dev mode testing

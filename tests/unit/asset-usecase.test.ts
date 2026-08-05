@@ -268,6 +268,94 @@ describe('updateAsset — three-state ownerUserId', () => {
         (AssetRepository.update as jest.Mock).mockResolvedValue(null);
         await expect(updateAsset(editorCtx, 'missing', { name: 'X' })).rejects.toThrow(/Asset not found/i);
     });
+});
+
+describe('updateAsset — status reaches the repository', () => {
+    // The regression this locks: `UpdateAssetSchema` accepted `status` and
+    // the payload built for the repository omitted it, so the detail-page
+    // status control and the edit modal both returned 200 OK and changed
+    // nothing. Nothing failed — the write simply wasn't in the patch.
+    it.each(['ACTIVE', 'RETIRED'] as const)('passes status=%s through', async (status) => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', status: 'ACTIVE' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1', status });
+
+        await updateAsset(editorCtx, 'a-1', { status });
+
+        const updateArgs = (AssetRepository.update as jest.Mock).mock.calls[0][3];
+        expect(updateArgs.status).toBe(status);
+    });
+
+    it('leaves status untouched when the patch omits it', async () => {
+        // Three-state, like ownerUserId: absent must not be rewritten.
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', status: 'RETIRED' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1', status: 'RETIRED' });
+
+        await updateAsset(editorCtx, 'a-1', { name: 'Renamed' });
+
+        const updateArgs = (AssetRepository.update as jest.Mock).mock.calls[0][3];
+        expect(updateArgs.status).toBeUndefined();
+    });
+});
+
+describe('updateAsset — a cleared field becomes NULL, not empty string', () => {
+    // The edit form sends EVERY field on every submit, defaulting to '',
+    // while the create form omits empties. Passed through, that wrote ''
+    // into eleven nullable columns whenever a user cleared one — so "no
+    // location" was stored two ways and `IS NULL` filters missed the
+    // edited rows.
+    const CLEARABLE = [
+        'classification',
+        'owner',
+        'location',
+        'dependencies',
+        'businessProcesses',
+        'dataResidency',
+        'retention',
+        'externalRef',
+        'cpe',
+        'vendor',
+        'product',
+        'version',
+    ] as const;
+
+    it.each(CLEARABLE)('normalises a cleared %s to null', async (field) => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1' });
+
+        await updateAsset(editorCtx, 'a-1', { [field]: '' });
+
+        const updateArgs = (AssetRepository.update as jest.Mock).mock.calls[0][3];
+        expect({ field, value: updateArgs[field] }).toEqual({ field, value: null });
+    });
+
+    it('treats whitespace-only as cleared', async () => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1' });
+
+        await updateAsset(editorCtx, 'a-1', { location: '   ' });
+
+        expect((AssetRepository.update as jest.Mock).mock.calls[0][3].location).toBeNull();
+    });
+
+    it('leaves an omitted field undefined rather than nulling it', async () => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1' });
+
+        await updateAsset(editorCtx, 'a-1', { name: 'Renamed' });
+
+        const updateArgs = (AssetRepository.update as jest.Mock).mock.calls[0][3];
+        expect(updateArgs.location).toBeUndefined();
+        expect(updateArgs.cpe).toBeUndefined();
+    });
+
+    it('passes a real value through unchanged', async () => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1' });
+
+        await updateAsset(editorCtx, 'a-1', { location: 'Rack 4' });
+
+        expect((AssetRepository.update as jest.Mock).mock.calls[0][3].location).toBe('Rack 4');
+    });
 
     it('rejects READER', async () => {
         await expect(updateAsset(readerCtx, 'a-1', { name: 'X' })).rejects.toBeDefined();

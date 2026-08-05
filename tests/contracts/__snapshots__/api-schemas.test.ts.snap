@@ -15,7 +15,18 @@ exports[`API contract — per-schema snapshots schema: AssetBulkImportRequest 1`
           },
           "type": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "INFORMATION",
+              "SYSTEM",
+              "SERVICE",
+              "DATA_STORE",
+              "VENDOR",
+              "PEOPLE_PROCESS",
+              "APPLICATION",
+              "INFRASTRUCTURE",
+              "PROCESS",
+              "OTHER"
+            ]
           },
           "status": {
             "type": "string",
@@ -150,7 +161,18 @@ exports[`API contract — per-schema snapshots schema: AssetCreateRequest 1`] = 
     },
     "type": {
       "type": "string",
-      "minLength": 1
+      "enum": [
+        "INFORMATION",
+        "SYSTEM",
+        "SERVICE",
+        "DATA_STORE",
+        "VENDOR",
+        "PEOPLE_PROCESS",
+        "APPLICATION",
+        "INFRASTRUCTURE",
+        "PROCESS",
+        "OTHER"
+      ]
     },
     "status": {
       "type": "string",
@@ -551,7 +573,18 @@ exports[`API contract — per-schema snapshots schema: AssetUpdateRequest 1`] = 
     },
     "type": {
       "type": "string",
-      "minLength": 1
+      "enum": [
+        "INFORMATION",
+        "SYSTEM",
+        "SERVICE",
+        "DATA_STORE",
+        "VENDOR",
+        "PEOPLE_PROCESS",
+        "APPLICATION",
+        "INFRASTRUCTURE",
+        "PROCESS",
+        "OTHER"
+      ]
     },
     "classification": {
       "type": "string"
