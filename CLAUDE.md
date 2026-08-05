@@ -860,6 +860,33 @@ Three codebase-hygiene invariants are held by structural guardrails
 `tests/guards/codebase-hygiene-integrity.test.ts` is the meta-ratchet
 over these four guardrails.
 
+### Guard naming — epic ratchets are retired when their epic ships
+
+A guard named for one PR or epic (`b7-…`, `item-27-…`, `r14-…`, `epic55-…`,
+`pr-b-…`, `roadmap-11-…`) locks the **shape of one diff**, not an
+architectural rule. It cannot catch a regression the type system would miss —
+the code it guards is imported and type-checked at its real call sites — and
+it fires on renames, class sorting, reformatting and helper extraction. Its
+true-positive rate is structurally zero.
+
+On 2026-08-05, **153 such files (~22,500 lines) were retired**, taking the
+guard suite from 777 files to 624. The four that turned out to carry real
+security invariants were **renamed**, not deleted (`evidence-download-authz`,
+`evidence-review-authz`, `evidence-list-resilience`,
+`risk-quantitative-analytics`) — the invariant was worth keeping; only the
+name was wrong.
+
+The rule is enforced by `tests/guards/no-epic-named-ratchets.test.ts`, whose
+`ALLOWED` map lists the ten survivors with the reason each could not be
+deleted. **Shrink that list; do not grow it.** When you need a new guard:
+
+- Name it for the invariant it protects.
+- If the rule is structural — a banned import, a required prop, a forbidden
+  identifier, a naming convention — write an **ESLint rule** instead. An AST
+  rule survives reformatting and renaming; a regex over source text does not.
+
+See `docs/implementation-notes/2026-08-05-retire-epic-ratchets.md`.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on
