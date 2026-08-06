@@ -75,7 +75,7 @@ import { Plus } from '@/components/ui/icons/nucleo';
 import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
 import { resolveALE } from '@/app-layer/usecases/fair-calculator';
 import { formatCompactCurrency } from '@/lib/risk-coherence';
-import { formatTailAwareAle } from '@/lib/tail-language';
+import { RiskAleChip } from './_shared/RiskAleChip';
 import { detectCellCollisions } from '@/lib/risk-collisions';
 import { AleHistogram, type AleHistogramDatum } from '@/components/ui/charts';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -875,24 +875,13 @@ function RisksPageInner({
                             tail register beside the score chip
                             ("€120K · bad yr €1.4M" when the RQ3-1
                             cache has tails; the bare mean otherwise). */}
-                        {(() => {
-                            const ale = riskAle(row.original);
-                            const label = formatTailAwareAle(
-                                ale,
-                                tailByRisk?.[row.original.id]?.aleP90 ?? null,
-                                { money: formatCompactCurrency, compact: true },
-                            );
-                            return label !== null ? (
-                                <Tooltip content={tx('aleTitle')}>
-                                    <span
-                                        className="text-[10px] tabular-nums text-content-muted"
-                                        data-testid={`risk-ale-${row.original.id}`}
-                                    >
-                                        {label}
-                                    </span>
-                                </Tooltip>
-                            ) : null;
-                        })()}
+                        <RiskAleChip
+                            riskId={row.original.id}
+                            ale={riskAle(row.original)}
+                            aleP90={tailByRisk?.[row.original.id]?.aleP90 ?? null}
+                            money={formatCompactCurrency}
+                            tooltip={tx('aleTitle')}
+                        />
                     </span>
                 );
             },
