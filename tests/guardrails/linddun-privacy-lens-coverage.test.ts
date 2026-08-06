@@ -58,12 +58,18 @@ describe('PET treatment hints — advisory, not auto-applied', () => {
     });
 
     it('the PET hints are NEVER auto-applied as treatments (advisory only)', () => {
-        // The lens surfaces hints read-only via getRiskPrivacyLens; no write
-        // path may turn a PET hint into a created treatment/plan automatically.
+        // B3-3d: the positive half of this test used to assert that
+        // `risk.ts` contains the string `petTreatmentHints`, which proves the
+        // key is SPELLED and nothing else. What the lens actually RETURNS —
+        // canonical ordering, unknown codes dropped, an unclassified risk
+        // getting no hints at all — is now covered by
+        // tests/unit/usecases/risk-privacy-lens.test.ts.
+        //
+        // The negative half stays here, because it is a whole-file claim that
+        // no runtime test can make: no write path may turn an advisory hint
+        // into a created treatment. A behavioural test can only show that the
+        // paths it calls don't; this shows that none exists.
         const uc = read('src/app-layer/usecases/risk.ts');
-        // getRiskPrivacyLens returns them under an explicitly-advisory key.
-        expect(uc).toMatch(/petTreatmentHints/);
-        // The PET helper must not feed a treatment-creation call.
         expect(uc).not.toMatch(/createTreatment[\s\S]{0,80}petHints/i);
         expect(uc).not.toMatch(/petHints[\s\S]{0,80}create(Treatment|Plan)/i);
     });

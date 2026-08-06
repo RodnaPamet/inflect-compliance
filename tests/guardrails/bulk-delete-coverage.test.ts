@@ -7,6 +7,20 @@
  * guard locks: the per-entity usecase, the bulk/delete route, the Zod
  * schema, the list-page action wiring, the shared confirm support, and the
  * ControlTestPlan soft-delete enrolment.
+ *
+ * WHAT THIS IS AND ISN'T (2026-08-06). This is a SET-COMPLETENESS guard —
+ * it answers "does every selectable entity have a bulk delete?", which no
+ * per-entity test can answer, because the failure it catches is a NEW
+ * entity shipping without one. It is deliberately shallow per entity.
+ *
+ * It is not a substitute for depth. `bulkDeleteRisk` now has a two-tenant
+ * behavioural test at `tests/integration/risk-bulk-ops.test.ts` proving a
+ * foreign id cannot delete a foreign row — the question that actually
+ * matters for a destructive cross-tenant path, and one this file cannot
+ * ask. The risk row stays here anyway: dropping it would not remove a
+ * duplicated assertion, it would punch a hole in the set. The other seven
+ * entities deserve the same behavioural depth; that is a coverage gap to
+ * fill, not a reason to shrink this list.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
