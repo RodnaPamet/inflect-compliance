@@ -15,6 +15,7 @@ import { installPack, resolveFrameworkPackKeys } from './framework';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { OnboardingRepository } from '../repositories/OnboardingRepository';
+import { RiskRepository } from '../repositories/RiskRepository';
 import type { AssetType, WorkItemType } from '@prisma/client';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -282,20 +283,21 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData): Pr
             }
 
             const score = Math.round((risk.likelihood / maxScale) * (risk.impact / maxScale) * maxScale * maxScale);
-            await db.risk.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    title: risk.title,
-                    category: risk.category,
-                    threat: risk.threat,
-                    vulnerability: risk.vulnerability,
-                    likelihood: risk.likelihood,
-                    impact: risk.impact,
-                    score,
-                    inherentScore: score,
-                    status: 'OPEN',
-                    createdByUserId: ctx.userId,
-                },
+            // Through the repository so the RSK-N key is minted — see the
+            // matching note in risk-suggestions.ts. Creating directly left
+            // every onboarding-seeded risk with a NULL key and a blank Code
+            // column.
+            await RiskRepository.create(db, ctx, {
+                title: risk.title,
+                category: risk.category,
+                threat: risk.threat,
+                vulnerability: risk.vulnerability,
+                likelihood: risk.likelihood,
+                impact: risk.impact,
+                score,
+                inherentScore: score,
+                status: 'OPEN',
+                createdByUserId: ctx.userId,
             });
             created++;
         }

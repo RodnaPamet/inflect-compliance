@@ -153,8 +153,22 @@ export const CreateRiskSchema = z.object({
 
 export const UpdateRiskSchema = z.object({
     title: z.string().min(1).optional(),
-    threat: z.string().optional(),
-    vulnerability: z.string().optional(),
+    // description / category were MISSING here until 2026-08-05 while the
+    // usecase wrote them (updateRisk) and the edit modal sent them — and
+    // this schema ends in `.strip()`, so the values were silently dropped:
+    // PUT returned 200, the modal closed, the edit was gone. That made
+    // Risk.description and Risk.category effectively write-once-at-create
+    // for the whole product. Shapes mirror CreateRiskSchema exactly so the
+    // two paths cannot disagree about nullability.
+    description: z.string().optional().nullable(),
+    category: z.string().optional().nullable(),
+    // `.nullable()` matters here, not just cosmetically: both columns are
+    // `String?`, and the usecase honours an explicit null as "clear this".
+    // Without it the schema rejected null with a 400, so the clear could
+    // never reach the usecase — a second layer of the same unclearable-field
+    // defect, found by the round-trip test rather than by reading the code.
+    threat: z.string().optional().nullable(),
+    vulnerability: z.string().optional().nullable(),
     impact: z.coerce.number().int().min(1).max(10).optional(),
     likelihood: z.coerce.number().int().min(1).max(10).optional(),
     // RQ2-1 — direct residual assessment (both-or-neither; the
@@ -169,6 +183,10 @@ export const UpdateRiskSchema = z.object({
     treatmentNotes: z.string().optional().nullable(),
     ownerUserId: z.string().optional().nullable(),    // Real user reference — "Assigned to"
     targetDate: z.string().optional().nullable(),
+    // Same 2026-08-05 omission as description/category above: written by
+    // updateRisk, sent by the detail page's Next-Review DatePicker, and
+    // stripped in between.
+    nextReviewAt: z.string().optional().nullable(),
 }).strip().refine(
     (d) => (d.residualLikelihood === undefined) === (d.residualImpact === undefined),
     { message: 'residualLikelihood and residualImpact must be supplied together' },
@@ -186,9 +204,15 @@ export const LinkRiskControlSchema = z.object({
 
 
 export const SetRiskStatusSchema = z.object({
-    status: z.enum(['OPEN', 'MITIGATING', 'ACCEPTED', 'CLOSED']),
+    // MITIGATED was missing until 2026-08-05 while it existed in the Prisma
+    // RiskStatus enum, in BulkRiskStatusSchema, and in RISK_STATUS_VALUES —
+    // which is what builds the detail page's status combobox. So the option
+    // was offered, PATCHing it 400'd, and the identical transition succeeded
+    // via bulk-select. Keep this list in step with BulkRiskStatusSchema; the
+    // two are asserted equal in tests/unit/risk-status-enum-parity.test.ts.
+    status: z.enum(['OPEN', 'MITIGATING', 'MITIGATED', 'ACCEPTED', 'CLOSED']),
 }).strip().openapi('RiskSetStatusRequest', {
-    description: 'Lifecycle transition for a risk. The four states form an open lattice; closed risks remain queryable via includeDeleted=true.',
+    description: 'Lifecycle transition for a risk. The five states form an open lattice; closed risks remain queryable via includeDeleted=true.',
 });
 
 export const MapRiskControlSchema = z.object({

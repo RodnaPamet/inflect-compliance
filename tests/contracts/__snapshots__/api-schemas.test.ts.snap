@@ -4393,6 +4393,7 @@ exports[`API contract — per-schema snapshots schema: RiskSetStatusRequest 1`] 
       "enum": [
         "OPEN",
         "MITIGATING",
+        "MITIGATED",
         "ACCEPTED",
         "CLOSED"
       ]
@@ -4401,7 +4402,7 @@ exports[`API contract — per-schema snapshots schema: RiskSetStatusRequest 1`] 
   "required": [
     "status"
   ],
-  "description": "Lifecycle transition for a risk. The four states form an open lattice; closed risks remain queryable via includeDeleted=true."
+  "description": "Lifecycle transition for a risk. The five states form an open lattice; closed risks remain queryable via includeDeleted=true."
 }"
 `;
 
@@ -4413,11 +4414,29 @@ exports[`API contract — per-schema snapshots schema: RiskUpdateRequest 1`] = `
       "type": "string",
       "minLength": 1
     },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "threat": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "vulnerability": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "impact": {
       "type": "integer",
@@ -4471,6 +4490,12 @@ exports[`API contract — per-schema snapshots schema: RiskUpdateRequest 1`] = `
       ]
     },
     "targetDate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nextReviewAt": {
       "type": [
         "string",
         "null"

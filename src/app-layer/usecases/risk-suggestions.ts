@@ -27,6 +27,7 @@ import { enforceFeatureGate } from '@/app-layer/ai/risk-assessment/feature-gate'
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { recordAiRiskAssessment } from '@/lib/observability/metrics';
 import { logAiDecision, recordDecisionOutcome } from '@/app-layer/ai/decision-log';
+import { RiskRepository } from '../repositories/RiskRepository';
 
 // ─── Generate Risk Suggestions ───
 
@@ -472,21 +473,24 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
                 const impact = item.impactSuggested ?? 3;
                 const score = Math.round((likelihood / maxScale) * (impact / maxScale) * maxScale * maxScale);
 
-                const risk = await db.risk.create({
-                    data: {
-                        tenantId: ctx.tenantId,
-                        title: item.title,
-                        description: item.description,
-                        category: item.category,
-                        threat: item.threat,
-                        vulnerability: item.vulnerability,
-                        likelihood,
-                        impact,
-                        score,
-                        inherentScore: score,
-                        status: 'OPEN',
-                        createdByUserId: ctx.userId,
-                    },
+                // Through the repository, NOT db.risk.create — the repo mints
+                // the per-tenant RSK-N key from the atomic counter. Creating
+                // directly left `key` NULL, so every accepted AI suggestion
+                // rendered a blank Code column forever, contradicting
+                // risk.prisma's claim that "the create-path generates fresh
+                // values for every new row".
+                const risk = await RiskRepository.create(db, ctx, {
+                    title: item.title,
+                    description: item.description,
+                    category: item.category,
+                    threat: item.threat,
+                    vulnerability: item.vulnerability,
+                    likelihood,
+                    impact,
+                    score,
+                    inherentScore: score,
+                    status: 'OPEN',
+                    createdByUserId: ctx.userId,
                 });
 
                 // RQ2-7 — accepted AI suggestions land with honest

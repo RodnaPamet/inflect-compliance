@@ -325,6 +325,29 @@ describeFn('onboarding-automation — runStepAction & storeActionResult (integra
         expect(await globalPrisma.auditLog.count({ where: { tenantId: TENANT_ID, action: 'ONBOARDING_RISKS_GENERATED' } })).toBe(1);
     });
 
+    it('mints an RSK-N key on every generated risk', async () => {
+        // Onboarding used to insert via a bare `db.risk.create`, bypassing
+        // the repository's atomic key counter — so every risk a tenant saw
+        // on day one had `key = NULL` and a permanently blank Code column,
+        // on the very screen meant to make the product feel populated. The
+        // rows above are asserted by title, which a NULL key does not
+        // disturb; only reading `key` back catches it.
+        await runStepAction(ctx(), 'INITIAL_RISK_REGISTER', {}, {
+            FRAMEWORK_SELECTION: { selectedFrameworks: ['nis2'] },
+            ASSET_SETUP: { assets: ['Customer database'] },
+        });
+
+        const rows = await globalPrisma.risk.findMany({
+            where: { tenantId: TENANT_ID },
+            select: { key: true },
+        });
+
+        expect(rows.length).toBeGreaterThan(0);
+        expect(rows.every(r => /^RSK-\d+$/.test(r.key ?? ''))).toBe(true);
+        // Keys come off a per-tenant counter, so they must also be distinct.
+        expect(new Set(rows.map(r => r.key)).size).toBe(rows.length);
+    });
+
     // ─── TEAM_SETUP ───
 
     it('TEAM_SETUP creates the 5 starter tasks then skips them on re-run', async () => {

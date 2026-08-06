@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Inflect Compliance API",
-    "version": "1.843.1",
+    "version": "1.843.10",
     "description": "Multi-tenant compliance-management API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.\n\n**Authenticating.** To try an endpoint, click **Authorize**:\n- *BearerAuth* (recommended for integrations) — paste a tenant **API key** (`iflk_…`), minted under Admin → API Keys. Sent as `Authorization: Bearer iflk_…`.\n- *SessionCookie* — for the dev/staging \"Try it out\" flow, sign in first; the browser sends the `next-auth.session-token` cookie automatically (same-origin only).\n\n**Coverage.** Operations marked `x-stub: true` exist and are callable, but their request/response bodies are not yet published in this contract — only the critical-endpoint set carries full schemas. See `docs/api-consumer-guide.md` for the auth, rate-limit, versioning, and error-contract details.",
     "license": {
       "name": "Proprietary"
@@ -4234,6 +4234,7 @@
             "enum": [
               "OPEN",
               "MITIGATING",
+              "MITIGATED",
               "ACCEPTED",
               "CLOSED"
             ]
@@ -4242,7 +4243,7 @@
         "required": [
           "status"
         ],
-        "description": "Lifecycle transition for a risk. The four states form an open lattice; closed risks remain queryable via includeDeleted=true."
+        "description": "Lifecycle transition for a risk. The five states form an open lattice; closed risks remain queryable via includeDeleted=true."
       },
       "RiskUpdateRequest": {
         "type": "object",
@@ -4251,11 +4252,29 @@
             "type": "string",
             "minLength": 1
           },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "threat": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "vulnerability": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "impact": {
             "type": "integer",
@@ -4309,6 +4328,12 @@
             ]
           },
           "targetDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nextReviewAt": {
             "type": [
               "string",
               "null"
