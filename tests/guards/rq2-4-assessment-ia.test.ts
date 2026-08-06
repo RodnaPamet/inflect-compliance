@@ -10,27 +10,23 @@
  *   - the demoted tabs creeping back as top-level tabs (the
  *     inherited mappings/tests panels belong under Traceability,
  *     beside the control links they derive from);
- *   - the panel drifting off the tenant's matrix language or the
- *     RQ2-2 "propose, don't overwrite" contract (accept POST must
- *     never carry score values).
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const page = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
-const panel = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/RiskAssessmentPanel.tsx');
 
-// B3-2: the two blocks below used to slice from one declaration to the NEXT
-// ONE BY NAME — `panel.indexOf('const acceptSuggestion')` to
-// `panel.indexOf('const saveResidualOverride')`. Swapping the order of two
-// unrelated functions produced a backwards slice, which is silently empty,
-// so the `not.toMatch` assertions passed vacuously; renaming the neighbour
-// broke the build outright.
+// SCOPE (narrowed 2026-08-06). What remains here is the detail page's
+// INFORMATION ARCHITECTURE — which tabs exist, which were demoted under
+// Traceability — because that is a property of the page's own composition
+// and no panel-level render test can see it. Everything this file used to
+// assert about the assessment PANEL moved to
+// tests/rendered/risk-assessment-panel.test.tsx, which drives the real
+// component. See CLAUDE.md → "Epic-ratchet lifecycle".
 
 describe('RQ2-4 — risk detail IA', () => {
     test('the 8-tab assessment-centric bar (and nothing demoted creeps back)', () => {
@@ -72,28 +68,16 @@ describe('RQ2-4 — risk detail IA', () => {
         expect(trace).toMatch(/InheritedTestPlansPanel/);
     });
 
-    test('the panel speaks the tenant matrix language', () => {
-        // Levels are labelled from RiskMatrixConfig, bands resolved
-        // via the canonical resolver — not hardcoded vocab. The config
-        // is supplied by the parent as a prop (no independent re-fetch).
-        expect(panel).toMatch(/matrixConfig: RiskMatrixConfigShape/);
-        expect(panel).toMatch(/levelLabels/);
-        expect(panel).toMatch(/resolveBandForScore/);
-    });
+    // B3-4: "the panel speaks the tenant matrix language" is covered by the
+    // rendered test's "steppers render the tenant level labels and a live
+    // band chip", which asserts the labels a user SEES rather than that
+    // three identifiers appear in the file.
 
-    test('accept stays propose-don’t-overwrite: the POST body carries only a justification', () => {
-        const acceptBlock = declarationOf(panel, 'acceptSuggestion');
-        expect(acceptBlock).toMatch(/JSON\.stringify\(\{ justification/);
-        for (const banned of ['residualScore', 'residualLikelihood', 'residualImpact', 'effectiveness']) {
-            expect(acceptBlock).not.toMatch(new RegExp(`${banned}\\s*:`));
-        }
-    });
-
-    test('manual residual override sends decomposed dims + justification — never a rollup score', () => {
-        const overrideBlock = declarationOf(panel, 'saveResidualOverride');
-        expect(overrideBlock).toMatch(/residualLikelihood,/);
-        expect(overrideBlock).toMatch(/residualImpact,/);
-        expect(overrideBlock).toMatch(/scoreJustification/);
-        expect(overrideBlock).not.toMatch(/residualScore\s*:/);
-    });
+    // B3-4: the accept + manual-override request-shape assertions that used
+    // to live here are gone. `tests/rendered/risk-assessment-panel.test.tsx`
+    // clicks the real buttons and inspects the real request bodies, and its
+    // version is STRICTLY STRONGER: it asserts the accept body's keys equal
+    // exactly `['justification']`, where this file could only list four
+    // field names it hoped were absent. A fifth banned field would have
+    // slipped past the regexes and is caught by the rendered test.
 });

@@ -172,4 +172,23 @@ describeFn('listRisks — owner enrichment (Epic 44.4)', () => {
         expect(Array.isArray(risks)).toBe(true);
         expect((risks as unknown[]).length).toBe(3);
     });
+
+    test('the list row carries the decomposed residual dimensions (RQ2-9)', async () => {
+        // Rehomed from the deleted `tests/guards/rq2-9-matrix-movement.test.ts`,
+        // which asserted `RiskRepository.ts` contains the literal strings
+        // `residualLikelihood: true` / `residualImpact: true` in its select.
+        //
+        // The matrix movement overlay draws an arrow from a risk's inherent
+        // cell to its residual cell, so it needs BOTH dimensions on the list
+        // row — a rollup `residualScore` has no destination cell. Dropping
+        // either field from the select silently empties the overlay rather
+        // than erroring, so it is worth an assertion; but the assertion
+        // belongs on the returned ROW, which survives renaming the select.
+        const ctx = ctxFor(tenantA, aliceId);
+        const risks = (await listRisks(ctx)) as unknown as Array<Record<string, unknown>>;
+        expect(risks.length).toBeGreaterThan(0);
+        for (const key of ['residualLikelihood', 'residualImpact']) {
+            expect(Object.keys(risks[0])).toContain(key);
+        }
+    });
 });
