@@ -85,6 +85,7 @@ import type {
     ContributorDTO, AuditLogEntry,
 } from '@/lib/dto';
 import { buildControlStatusLabels } from '../filter-defs';
+import { buildControlPatchBody } from './_lib/control-edit-payload';
 
 // The detail status dropdown reuses the CANONICAL status vocabulary
 // (buildControlStatusLabels — the same i18n source the list badges + filter
@@ -365,34 +366,7 @@ export default function ControlDetailPage() {
             const res = await fetch(apiUrl(`/controls/${controlId}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: form.name.trim(),
-                    objective: form.objective.trim() || null,
-                    successCriteria: form.successCriteria.trim() || null,
-                    testingMethodology: form.testingMethodology.trim() || null,
-                    category: form.category.trim() || null,
-                    frequency: form.frequency || null,
-                    // RQ3-8 — empty string clears the price (honest
-                    // null); a parseable number is sent through, an
-                    // unparseable value is dropped (the input is
-                    // type=number so this is the belt-and-braces
-                    // case).
-                    annualCost:
-                        form.annualCost.trim() === ''
-                            ? null
-                            : Number.isFinite(Number(form.annualCost))
-                                ? Number(form.annualCost)
-                                : undefined,
-                    // Declared operating-effectiveness fallback (0–100).
-                    // Empty → null (clears the declared value); measured
-                    // pass rate wins downstream when tests exist.
-                    effectiveness:
-                        form.effectiveness.trim() === ''
-                            ? null
-                            : Number.isFinite(Number(form.effectiveness))
-                                ? Number(form.effectiveness)
-                                : undefined,
-                }),
+                body: JSON.stringify(buildControlPatchBody(form)),
             });
             if (!res.ok) {
                 const err = await res
@@ -436,6 +410,13 @@ export default function ControlDetailPage() {
                           testingMethodology: form.testingMethodology.trim() || null,
                           category: form.category.trim() || null,
                           frequency: form.frequency || null,
+                          // Kept in step with the PATCH body above — an
+                          // optimistic paint that omits a field the request
+                          // sends would flash the old value and then correct
+                          // itself, which reads as a bug even when the write
+                          // succeeded.
+                          automationType: form.automationType || null,
+                          mitigationType: form.mitigationType || null,
                       },
                   }
                 : (current as unknown as ControlPageDataDTO),

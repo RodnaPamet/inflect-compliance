@@ -1344,6 +1344,24 @@ exports[`API contract — per-schema snapshots schema: ControlCreateRequest 1`] 
         null
       ]
     },
+    "objective": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "successCriteria": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "testingMethodology": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "isCustom": {
       "type": "boolean",
       "default": true
@@ -2017,7 +2035,9 @@ exports[`API contract — per-schema snapshots schema: ControlSetStatusRequest 1
       "type": "string",
       "enum": [
         "NOT_STARTED",
+        "PLANNED",
         "IN_PROGRESS",
+        "IMPLEMENTING",
         "IMPLEMENTED",
         "NEEDS_REVIEW"
       ]

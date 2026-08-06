@@ -16,7 +16,7 @@ model Control {
   id                           String                   @id @default(cuid())
   tenantId                     String?
   code                         String?
-  annexId                      String?                  @unique
+  annexId                      String?
   name                         String
   // Internal-controls import: objective (Overview shows this as "Objective"),
   // success criteria (Overview "Success Criteria"), and testing/audit
@@ -86,6 +86,24 @@ model Control {
   /// the DB level. Same denorm-tenantId Phase-2 pattern used by
   /// AuditChecklistItem → Audit.
   @@unique([id, tenantId])
+  /// Unique within a tenant — annexId ('A.5.1' etc.) is the framework's
+  /// annex reference, which EVERY tenant adopting that framework will use.
+  /// It was `@unique` (global) until 2026-08-06, which meant the first
+  /// tenant to claim 'A.5.1' permanently blocked every other tenant, made
+  /// seeding a second tenant's ISO annex set fail with P2002, and turned
+  /// the resulting 500 into a cross-tenant existence oracle.
+  @@unique([tenantId, annexId])
+  /// CONSTRAINT NOT VISIBLE HERE: the database also carries
+  /// `Control_annexId_global_key`, a PARTIAL unique index on (annexId)
+  /// WHERE "tenantId" IS NULL — added by migration 20260806130000.
+  ///
+  /// It is needed because the composite above CANNOT constrain the shared
+  /// catalogue: Postgres treats NULLs as distinct in a unique index, so
+  /// (NULL, 'A.5.1') and (NULL, 'A.5.1') do not collide. The global library
+  /// should still hold one control per annex reference, so that uniqueness
+  /// is enforced by the partial index alone. Prisma has no syntax for a
+  /// filtered index, so declaring it here would be a lie — `migrate dev`
+  /// would replace it with an unconditional one and re-break tenants.
   @@index([tenantId, code])
   @@index([tenantId])
   @@index([tenantId, createdAt])

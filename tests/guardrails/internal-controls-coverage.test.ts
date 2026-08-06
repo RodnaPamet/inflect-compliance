@@ -97,8 +97,20 @@ describe('Internal Controls wiring', () => {
     });
 
     it('install copies the new fields + populates framework-mapped internal controls + policy links', () => {
-        expect(install).toContain('objective: tmpl.objective');
-        expect(install).toContain('testingMethodology: tmpl.testingMethodology');
+        // These used to assert the literals `objective: tmpl.objective` and
+        // `testingMethodology: tmpl.testingMethodology` inline in install.ts.
+        // On 2026-08-06 that projection moved into
+        // usecases/control/template-projection.ts, so BOTH install endpoints
+        // build the Control the same way — POST /controls/templates/install
+        // had been writing code/name/category/frequency only, silently
+        // dropping the objective, success criteria, testing methodology and
+        // policy links that controls.prisma documents as install behaviour.
+        //
+        // Asserting the literals here would have made that fix look like a
+        // regression, so this now checks the DELEGATION. The fields
+        // themselves are covered behaviourally, per field, in
+        // tests/unit/control-template-projection.test.ts.
+        expect(install).toContain('controlDataFromTemplate');
         // Installing a framework pack pulls in internal controls mapped to it.
         expect(install).toContain('mappedInternalTemplates');
         expect(install).toMatch(/requirement:\s*\{\s*frameworkId:\s*pack\.frameworkId\s*\}/);

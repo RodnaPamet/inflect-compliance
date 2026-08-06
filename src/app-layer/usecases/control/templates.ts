@@ -9,6 +9,7 @@ import { logEvent } from '../../events/audit';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
+import { controlDataFromTemplate, resolveRelatedPolicyIds } from './template-projection';
 
 // ─── Templates ───
 
@@ -31,6 +32,20 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
         // silently dropped (the row is marked `skipped: true` so it never
         // inflates the caller's install count).
         const results: Array<{ templateCode: string; controlId: string; tasksCreated: number; requirementsLinked: number; skipped: boolean; unresolvedTemplateId?: string }> = [];
+
+        // Built at most once per install call, on first use — most installs
+        // touch templates with no relatedPolicies, and this avoids a query
+        // per template inside the loop.
+        let policyIndex: Map<string, string> | null = null;
+        const policyIdByTitle = async () => {
+            if (policyIndex) return policyIndex;
+            const rows = await db.policy.findMany({
+                where: { tenantId: ctx.tenantId },
+                select: { id: true, title: true },
+            });
+            policyIndex = new Map(rows.map((p) => [p.title.trim().toLowerCase(), p.id]));
+            return policyIndex;
+        };
 
         for (const templateId of templateIds) {
             const template = await ControlTemplateRepository.getById(db, templateId);
@@ -64,19 +79,37 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
                 continue;
             }
 
-            // Create control from template
+            // Create control from template — via the SHARED projection, so
+            // this endpoint and the framework install wizard produce the
+            // same Control. Until 2026-08-06 this path wrote only
+            // code/name/category/frequency, silently dropping the objective,
+            // success criteria, testing methodology and policy links that
+            // controls.prisma documents as install behaviour.
             const control = await db.control.create({
-                data: {
+                data: controlDataFromTemplate(template, {
                     tenantId: ctx.tenantId,
-                    code: template.code,
-                    name: template.title,
-                    category: template.category,
-                    frequency: template.defaultFrequency,
-                    status: 'NOT_STARTED',
-                    isCustom: false,
-                    createdByUserId: ctx.userId,
-                },
+                    userId: ctx.userId,
+                }),
             });
+
+            // Resolve the template's relatedPolicies to this tenant's
+            // policies. Unknown titles are dropped: a shared template names
+            // policies a given tenant may not have written yet, and failing
+            // the install for that would be wrong.
+            const policyIds = resolveRelatedPolicyIds(
+                template.relatedPolicies ?? null,
+                await policyIdByTitle(),
+            );
+            if (policyIds.length > 0) {
+                await db.policyControlLink.createMany({
+                    data: policyIds.map((policyId) => ({
+                        tenantId: ctx.tenantId,
+                        policyId,
+                        controlId: control.id,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
 
             // Create unified Task rows (NOT legacy controlTask) so template
             // controls show real task counts in the list and roll up into
