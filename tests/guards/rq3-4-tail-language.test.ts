@@ -60,7 +60,12 @@ describe('RQ3-4 — one formatter, two registers', () => {
 
 describe('RQ3-4 — zero surfaces render a bare mean where tails exist', () => {
     test('risk register chip', () => {
-        expect(risksClient).toMatch(/formatTailAwareAle\(/);
+        // The chip itself is now a component with its own rendered test
+        // (tests/rendered/risk-ale-chip.test.tsx), which asserts the VISIBLE
+        // two-register output instead of the formatter's source text. What
+        // remains here is the wiring only: the list mounts the chip and
+        // feeds it from the tail-percentiles cache.
+        expect(risksClient).toMatch(/<RiskAleChip\b/);
         expect(risksClient).toMatch(/\/risks\/tail-percentiles/);
     });
 
