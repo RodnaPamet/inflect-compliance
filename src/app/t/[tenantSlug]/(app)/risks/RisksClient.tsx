@@ -76,6 +76,7 @@ import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
 import { resolveALE } from '@/app-layer/usecases/fair-calculator';
 import { formatCompactCurrency } from '@/lib/risk-coherence';
 import { RiskAleChip } from './_shared/RiskAleChip';
+import { RiskCollisionCallouts } from './_shared/RiskCollisionCallouts';
 import { detectCellCollisions } from '@/lib/risk-collisions';
 import { AleHistogram, type AleHistogramDatum } from '@/components/ui/charts';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -1362,38 +1363,18 @@ function RisksPageInner({
                         {/* RQ3-5 — range-compression callouts: the
                             same collisions the heatmap flags, spelled
                             out. Click drills into the cell's risks. */}
-                        {collisions.length > 0 && (
-                            <div data-testid="risk-collision-callouts">
-                                <Heading level={3} className="mb-1">{tx('collisions.title')}</Heading>
-                                <p className="mb-tight text-xs text-content-subtle">
-                                    {tx('collisions.description')}
-                                </p>
-                                <div className="space-y-tight">
-                                    {collisions.map((c) => (
-                                        <button
-                                            key={`${c.likelihood}-${c.impact}`}
-                                            type="button"
-                                            className="flex w-full items-center justify-between gap-default rounded p-2 text-left text-sm hover:bg-bg-muted/50 transition-colors duration-100 ease-out"
-                                            data-testid={`risk-collision-${c.likelihood}-${c.impact}`}
-                                            onClick={() => {
-                                                // Scope to the exact cell, not
-                                                // its score product (see the
-                                                // heatmap onCellClick note).
-                                                filterCtx.set('cell', `L${c.likelihood}xI${c.impact}`);
-                                                setView('register');
-                                            }}
-                                        >
-                                            <span className="truncate text-content-emphasis">
-                                                L{c.likelihood}×I{c.impact}: {c.minRisk.title} vs {c.maxRisk.title}
-                                            </span>
-                                            <span className="shrink-0 tabular-nums text-content-muted">
-                                                {formatCompactCurrency(c.minRisk.ale)} vs {formatCompactCurrency(c.maxRisk.ale)} (~{Math.round(c.ratio)}×)
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        <RiskCollisionCallouts
+                            collisions={collisions}
+                            money={formatCompactCurrency}
+                            title={tx('collisions.title')}
+                            description={tx('collisions.description')}
+                            onDrillToCell={(cellToken) => {
+                                // Scope to the exact cell, not its score
+                                // product (see the heatmap onCellClick note).
+                                filterCtx.set('cell', cellToken);
+                                setView('register');
+                            }}
+                        />
                     </div>
                 ) : view === 'heatmap' ? (
                     <RiskMatrix
