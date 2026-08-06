@@ -96,10 +96,14 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
             // policies. Unknown titles are dropped: a shared template names
             // policies a given tenant may not have written yet, and failing
             // the install for that would be wrong.
-            const policyIds = resolveRelatedPolicyIds(
-                template.relatedPolicies ?? null,
-                await policyIdByTitle(),
-            );
+            // Only touch the policy table when the template actually names
+            // policies — most do not, and the earlier form called the
+            // resolver unconditionally, which defeated the laziness it
+            // documented and made every install pay for a query it did not
+            // need.
+            const policyIds = template.relatedPolicies
+                ? resolveRelatedPolicyIds(template.relatedPolicies, await policyIdByTitle())
+                : [];
             if (policyIds.length > 0) {
                 await db.policyControlLink.createMany({
                     data: policyIds.map((policyId) => ({
