@@ -85,7 +85,6 @@ describe('RQ3-5 — cell collisions flag on BOTH views', () => {
     });
 
     test('the histogram path: the callout list with the drill-down', () => {
-        expect(client).toMatch(/risk-collision-callouts/);
         // "Cell collisions" heading migrated to next-intl; resolve via en.json.
         const en = JSON.parse(read('messages/en.json')) as { risks: { collisions: { title: string } } };
         expect(client).toMatch(/tx\('collisions\.title'\)/);
@@ -99,15 +98,13 @@ describe('RQ3-5 — cell collisions flag on BOTH views', () => {
         // cell sharing the product — and the register showed rows the user
         // never clicked on. The `cell` filter (`L{l}xI{i}` tokens) is the
         // only shape that can express one cell.
-        // B3-2: was a slice from `risk-collision-callouts` to the literal
-        // `view === 'heatmap'` — a JSX byte window that any markup move
-        // silently redefined. The negative is the load-bearing half, and it
-        // holds file-wide rather than only inside that window: nothing in
-        // the register may narrow by score, because a score is a product
-        // shared by many cells. That is a STRONGER statement than the
-        // regional one it replaces, and nothing can move out from under it.
-        expect(client).toMatch(/risk-collision-callouts/);
-        expect(client).toMatch(/filterCtx\.set\('cell'/);
+        // B3-5: the callouts are now a component, and clicking one is
+        // asserted in tests/rendered/risk-collision-callouts.test.tsx —
+        // including that two cells sharing the score 6 (L1×I6 and L2×I3)
+        // emit distinct tokens. What stays here is the file-wide negative,
+        // which no component test can make: nothing anywhere in the
+        // register may narrow by score.
+        expect(client).toMatch(/<RiskCollisionCallouts\b/);
         expect(client).not.toMatch(/filterCtx\.set\('score'/);
     });
 });

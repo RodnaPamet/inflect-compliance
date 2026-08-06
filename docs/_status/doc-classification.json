@@ -3,7 +3,7 @@
     "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\".",
     "counts": {
         "authoritative": 114,
-        "historical": 493,
+        "historical": 494,
         "living": 5,
         "deprecated": 1
     },
@@ -1821,6 +1821,9 @@
             "class": "historical"
         },
         "docs/implementation-notes/2026-08-06-risk-rendered-rewrites.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-06-risk-collision-callouts-extraction.md": {
             "class": "historical"
         },
         "docs/implementation-notes/2026-08-05-guards-to-ast-lint-rules.md": {
