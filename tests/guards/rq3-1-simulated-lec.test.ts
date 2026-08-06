@@ -42,7 +42,12 @@ describe('RQ3-1 — the simulated curve is the only dashboard LEC', () => {
     });
 
     test('the simulated stage is mounted with the appetite payload', () => {
-        expect(dashboard).toMatch(/<MonteCarloPanel appetite=\{appetite\}/);
+        // B3-2: this asserted `<MonteCarloPanel appetite={appetite}` — the
+        // prop had to be FIRST, so adding any prop before it failed the
+        // build. Assert the mount and the prop independently; JSX attribute
+        // order carries no meaning.
+        expect(dashboard).toMatch(/<MonteCarloPanel\b/);
+        expect(dashboard).toMatch(/appetite=\{appetite\}/);
     });
 
     test('the analytics payload carries the demoted sketch under its honest name', () => {

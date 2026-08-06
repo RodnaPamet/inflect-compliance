@@ -860,7 +860,9 @@ Three codebase-hygiene invariants are held by structural guardrails
 `tests/guards/codebase-hygiene-integrity.test.ts` is the meta-ratchet
 over these four guardrails.
 
-### Guard naming — epic ratchets are retired when their epic ships
+### Epic-ratchet lifecycle
+
+Guard naming — **epic ratchets are retired when their epic ships**
 
 A guard named for one PR or epic (`b7-…`, `item-27-…`, `r14-…`, `epic55-…`,
 `pr-b-…`, `roadmap-11-…`) locks the **shape of one diff**, not an
@@ -885,7 +887,37 @@ deleted. **Shrink that list; do not grow it.** When you need a new guard:
   identifier, a naming convention — write an **ESLint rule** instead. An AST
   rule survives reformatting and renaming; a regex over source text does not.
 
-See `docs/implementation-notes/2026-08-05-retire-epic-ratchets.md`.
+**Reconciling this with "ratchet every PR."** The two are not in conflict once
+the word is read precisely. Ship each PR with a test that **fails when the
+behaviour regresses** — a rendered test, a usecase test, a round trip. What is
+retired is the reflex of pinning *the shape of the diff you just wrote*. If the
+only test you can think of would pass while the feature is visibly broken, it
+is not protecting the feature. The Assets status control is the worked example:
+`tests/guards/item-29-status-buttons.test.ts` asserted the schema *mentions*
+`status` and stayed green for months while the control persisted nothing.
+
+**Never gate CI on prose.** A check that greps a markdown file for a filename
+verifies *mention*, not accuracy — a row describing behaviour that has since
+changed still passes. Worse, `tests/guards/rq3-11-capstone.test.ts` (deleted
+2026-08-06) required every `rq3-*.test.ts` name to appear in the capstone, so
+shipping an RQ3 follow-up turned CI red until a filename was pasted into
+prose, and the cheapest way back to green was writing another ratchet. Doc-index
+checks belong in `npm run docs:lint` — advisory, human-read, not a build gate.
+
+**Bounding a source read.** When a guard must assert something about one
+function inside a large file, use `declarationOf()` from
+`tests/helpers/source-blocks.ts`. Never slice between two declaration *names*
+(reordering yields a backwards slice — silently empty, so every `not.toMatch`
+in it passes while checking nothing) and never slice a magic byte offset
+(`indexOf(x) - 800`), which an unrelated edit upstream slides off the target.
+
+The `rq*` family predates this rule and escaped the 2026-08-05 sweep because
+`^rq` was missing from the pattern list. It is now a **downward ratchet** in
+`no-epic-named-ratchets.test.ts`: new `rq`-named guards are blocked, and the
+existing ones come out in tranches, each lowering the ceiling.
+
+See `docs/implementation-notes/2026-08-05-retire-epic-ratchets.md` and
+`docs/implementation-notes/2026-08-06-retire-rq-epic-ratchets.md`.
 
 ## Failing tests
 
@@ -1361,16 +1393,19 @@ points) is the architectural shift from "qualitative and quantitative
 side-by-side" to "loss distribution leads, sensors update beliefs,
 controls carry a price". The wave reshaped the dashboard, added a
 board view, closed the KRI ⇄ assessment loop, and introduced
-Mitigation ROI — every PR carries an implementation note + a
-structural ratchet.
+Mitigation ROI — each PR carries an implementation note.
 
 **Read the capstone first:** [`docs/rq3-roadmap-complete.md`](docs/rq3-roadmap-complete.md).
-It indexes every implementation note (`docs/implementation-notes/`),
-every ratchet (`tests/guards/rq3-*.test.ts`), and the load-bearing
-decisions a new contributor needs to understand the post-RQ3
-codebase.
+It indexes every implementation note (`docs/implementation-notes/`) and
+the load-bearing decisions a new contributor needs to understand the
+post-RQ3 codebase.
 
-The capstone is itself ratcheted by
-`tests/guards/rq3-11-capstone.test.ts`: a new RQ3 follow-up that ships
-an implementation note OR a `rq3-*` ratchet without threading itself
-into the capstone fails CI.
+The capstone's index is checked by `npm run docs:lint`, which is
+**advisory and not wired into CI**. It used to be gated by
+`tests/guards/rq3-11-capstone.test.ts`, deleted 2026-08-06: requiring
+every `rq3-*.test.ts` filename to appear in a markdown file meant
+shipping an RQ3 follow-up turned CI red until the filename was pasted
+into prose — and since the convention also asked for a ratchet per PR,
+the cheapest path back to green was writing another ratchet. See
+**[the epic-ratchet lifecycle](#epic-ratchet-lifecycle)** below for the
+policy that replaced it.

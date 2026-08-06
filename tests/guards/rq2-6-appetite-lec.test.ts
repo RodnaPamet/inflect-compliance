@@ -21,6 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -54,10 +55,12 @@ describe('RQ2-6 — appetite thresholds on the LEC', () => {
         // consumed only by the per-risk note, never pushed into
         // referenceLines.
         expect(mcPanel).toMatch(/mc-per-risk-appetite-note/);
-        const refBlock = mcPanel.slice(
-            mcPanel.indexOf('const referenceLines'),
-            mcPanel.indexOf('const perRiskCap'),
-        );
+        // B3-2: was sliced from `const referenceLines` to the NEXT
+        // DECLARATION BY NAME (`const perRiskCap`). Reordering the two
+        // produced a backwards slice — empty, so this `not.toMatch` passed
+        // while checking nothing — and renaming `perRiskCap` broke the
+        // build. Bound it by the declaration's own punctuation instead.
+        const refBlock = declarationOf(mcPanel, 'referenceLines');
         expect(refBlock).not.toMatch(/singleRiskAleMax/);
     });
 });
