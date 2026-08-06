@@ -30,6 +30,7 @@ import { Eyebrow } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import type { AuditLogEntry } from '@/lib/dto';
 import { AssetCriticalityBadge } from '../_form/AssetCriticalityFields';
+import { criticalityBadgeVariant } from '@/lib/asset-criticality';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { ProcessNodeReverseLookupModal } from '@/components/processes/ProcessNodeReverseLookupModal';

@@ -36,10 +36,15 @@ export function useSsrFallback(input: {
     queryKeyFilters: Record<string, string>;
     /** Filters the server rendered with. */
     initialFilters: Record<string, string> | undefined;
-    /** Did the server render a FILTERED view? */
-    serverHadFilters: boolean;
+    /**
+     * Did the server render a FILTERED view? Accepts `undefined` because
+     * call sites compute it as `initialFilters && Object.keys(...).length > 0`,
+     * which short-circuits to `undefined` when there were no initial
+     * filters at all — the same meaning as `false`.
+     */
+    serverHadFilters: boolean | undefined;
     /** Does the client currently have any active filter? */
-    hasActive: boolean;
+    hasActive: boolean | undefined;
 }): boolean {
     const { queryKeyFilters, initialFilters, serverHadFilters, hasActive } = input;
     return useMemo(() => {
