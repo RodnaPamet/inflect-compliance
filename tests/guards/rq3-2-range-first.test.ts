@@ -79,7 +79,12 @@ describe('RQ3-2 — ranges replace point floats in the panel', () => {
         expect(panel).toMatch(/pertMean/);
         expect(panel).toMatch(/fair-derived-/);
         expect(calculator).toMatch(/export function pertMean/);
-        expect(calculator).toMatch(/\(d\.min \+ 4 \* d\.mode \+ d\.max\) \/ 6/);
+        // B3-2: the literal formula `(d.min + 4 * d.mode + d.max) / 6` used
+        // to be asserted here. A mathematically identical reordering — or
+        // hoisting the weight to a named constant — failed the build, while
+        // tests/unit/fair-calculator.test.ts already proves pertMean
+        // NUMERICALLY. A source regex cannot check arithmetic; only running
+        // it can.
     });
 
     test('legacy point values migrate as degenerate triples (round-trip)', () => {

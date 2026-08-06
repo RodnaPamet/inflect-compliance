@@ -15,6 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { MAX_ASSESSMENT_AGE_DAYS } from '@/lib/risk-staleness';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -91,7 +92,14 @@ describe('RQ2-8 — staleness engine', () => {
     });
 
     test('the age ceiling is a named, shared constant', () => {
-        expect(lib).toMatch(/export const MAX_ASSESSMENT_AGE_DAYS = 180/);
+        // B3-2: was `toMatch(/export const MAX_ASSESSMENT_AGE_DAYS = 180/)`
+        // against the file text, which pinned the SPELLING of a declaration
+        // — `= 180;` vs `= 180 as const` vs a computed `6 * 30` all differ
+        // as strings while meaning the same thing. Import it and assert the
+        // value; that is what callers actually depend on.
+        expect(MAX_ASSESSMENT_AGE_DAYS).toBe(180);
+        // Still source-read: that the usecase consumes the shared constant
+        // rather than re-deriving a ceiling of its own.
         expect(usecase).toMatch(/MAX_ASSESSMENT_AGE_DAYS/);
     });
 });

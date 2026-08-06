@@ -11,8 +11,17 @@ historical trending, and board-ready reporting.
 single source of truth for "the annualised loss expectancy of a risk":
 FAIR ALE → legacy SLE×ARO → null. Every downstream epic consumes it — analytics,
 appetite, Monte Carlo, hierarchy roll-up, snapshots, reports — so the portfolio
-number is consistent everywhere. The `risk-quantification-integrity` meta-ratchet
-(`tests/guards/risk-quantification-integrity.test.ts`) locks that convergence in.
+number is consistent everywhere. `tests/unit/fair-calculator.test.ts` pins the
+precedence numerically; each consumer's own tests cover how it uses the result.
+
+A `risk-quantification-integrity` meta-ratchet used to sit here too. It was
+deleted 2026-08-06: 30 of its 32 assertions were `existsSync` over a
+hand-maintained table of epic → file, which fails with "expected true, received
+false" long after the module's own tests have already failed with a message that
+says what actually broke. Its one irreplaceable check — that the three
+cross-tenant risk crons stay scheduled — moved to
+`tests/unit/jobs/register-schedules.test.ts`, where it imports `SCHEDULED_JOBS`
+rather than regex-matching the file.
 
 ## The epics
 

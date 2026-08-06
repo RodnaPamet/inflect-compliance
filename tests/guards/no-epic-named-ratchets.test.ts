@@ -147,4 +147,41 @@ describe('epic-named ratchets are not added back', () => {
         // while catching a bulk restore.
         expect(guardFiles().length).toBeLessThan(700);
     });
+
+    /**
+     * The `rq*` family — the risk-quantification waves — is epic-named by
+     * exactly the same logic as `b7-` or `epic55-`, but `^rq` was missing
+     * from EPIC_NAME_PATTERNS above, so all 41 files sailed through the
+     * 2026-08-05 retirement untouched. Adding the pattern outright would
+     * turn CI red on 39 files at once, and several of them still hold the
+     * only written record of a contract that has to be re-expressed as a
+     * behavioural test before the file can go (see the Box 3 items:
+     * bulkDeleteRisk cross-tenant rejection, computeVelocity,
+     * getRiskPrivacyLens, the four rendered-test rewrites).
+     *
+     * So it is a DOWNWARD RATCHET instead — the same shape the repo uses
+     * for `as any`. New `rq`-named guards are blocked today; the existing
+     * ones come out in tranches, and each tranche lowers the number. It
+     * only ever goes down.
+     */
+    it('the rq* family is on a downward ratchet, not a budget', () => {
+        const RQ_CEILING = 39; // 2026-08-06: 41 -> 39 (B3-1).
+        const rqGuards = guardFiles()
+            .filter((f) => /^rq\d/.test(f))
+            .sort();
+
+        expect({
+            count: rqGuards.length,
+            ceiling: RQ_CEILING,
+            hint:
+                rqGuards.length <= RQ_CEILING
+                    ? 'ok'
+                    : 'Do not add an rq-named guard. Name it for the invariant, ' +
+                      'or write the behavioural test the ratchet was standing in for.',
+        }).toEqual({ count: rqGuards.length, ceiling: RQ_CEILING, hint: 'ok' });
+
+        // Slack cannot accumulate: retire files and lower the ceiling in the
+        // same diff, or the next PR quietly inherits room to add one back.
+        expect(rqGuards.length).toBe(RQ_CEILING);
+    });
 });

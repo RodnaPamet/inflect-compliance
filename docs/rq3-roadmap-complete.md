@@ -150,10 +150,13 @@ When you add a new risk-quantification surface:
    with empty inputs MUST render a typed "not enough data yet" copy
    (see RQ3-8's `describeRoiGap`, RQ3-10's per-card empty states).
    A fabricated zero is the bug RQ3 exists to prevent.
-3. **Add a ratchet.** Pin the structural shape of the new contract in
-   `tests/guards/`. If a future PR removes a load-bearing assertion
-   (the toast comes from the server, the orchestrator is GET-only,
-   etc.), CI must fail.
+3. **Test the behaviour, not the diff.** Cover the new contract with a
+   test that would fail if the contract broke — a rendered test, a
+   usecase test, a round trip. Reach for a `tests/guards/` source-text
+   ratchet only for an invariant no runtime test can express, and read
+   [the epic-ratchet lifecycle](../CLAUDE.md#epic-ratchet-lifecycle)
+   first: a ratchet that pins one PR's diff fires on refactors and
+   nothing else.
 4. **Write the implementation note.** `docs/implementation-notes/`
    gets a new `YYYY-MM-DD-<slug>.md` per substantive PR; this capstone
    table indexes them.
@@ -162,22 +165,23 @@ When you add a new risk-quantification surface:
 
 ## Per-PR ratchet coverage
 
-`tests/guards/rq3-*.test.ts` files: 16 ratchet suites totalling 80+
-structural assertions. Together they pin every load-bearing decision
-above. A "small tidy-up" PR that flips one bit (e.g. silently
-re-introduces `score-0-25` in the StatusScale union; replaces
-`accepted.summary` with client draft state; removes a `role="grid"`
-arrow-key handler) fails CI.
+The cohort shipped one `tests/guards/rq3-*.test.ts` ratchet per
+implementation note, mirroring the slug — `rq3-9-dashboard-orchestrator.test.ts`
+guards the contract that `2026-06-12-rq3-9-dashboard-orchestrator.md`
+describes.
+
+**That convention is retired** — see
+[the epic-ratchet lifecycle](../CLAUDE.md#epic-ratchet-lifecycle). Each
+of these files pins the shape of one PR's diff, so by construction it
+fires on refactors rather than on regressions, and several assert UI
+prose and loop-variable names. They are being retired in tranches as
+their intent is re-expressed behaviourally; the surviving ones are the
+assertions no runtime test can make.
 
 The underlying simulation infrastructure carries its own pre-cohort
 ratchet at `tests/guards/rq3-monte-carlo.test.ts` (RQ-3 epic; the
 Monte Carlo loop the RQ3 cohort builds on). RQ3-1 onward read its
 output; the cohort's PRs don't modify the engine itself.
-
-The conventional placement is one ratchet per RQ3-* implementation
-note. The naming mirrors the slug — `rq3-9-dashboard-orchestrator.test.ts`
-guards the contract that `2026-06-12-rq3-9-dashboard-orchestrator.md`
-describes.
 
 ---
 
@@ -188,8 +192,7 @@ describes.
   [`docs/risk-quantification.md`](risk-quantification.md) (the epic-
   level architecture record that pre-dates the RQ3 cohort).
 - **Not the test plan.** Per-PR test coverage lives in the individual
-  implementation notes. The capstone names the ratchet file; the note
-  enumerates the assertions inside.
+  implementation notes.
 - **Not the release history.** `CHANGELOG` + the merged-PR list on
   GitHub are the canonical timeline. This file groups the cohort
   thematically.
@@ -198,6 +201,8 @@ describes.
 
 <!-- docs-accuracy-allow: guidance for future RQ4/RQ5 waves to mirror this completed cohort's shape -->
 *Generated as part of RQ3-11 (the capstone PR). Subsequent
-risk-quantification waves (RQ4, RQ5, …) should follow the same
-shape: one implementation note per substantive PR, one ratchet per
-implementation note, one capstone synthesis at the end.*
+risk-quantification waves (RQ4, RQ5, …) should keep the parts that
+earned their keep — one implementation note per substantive PR, one
+capstone synthesis at the end — and drop the one that didn't: a
+structural ratchet per note. See
+[the epic-ratchet lifecycle](../CLAUDE.md#epic-ratchet-lifecycle).*

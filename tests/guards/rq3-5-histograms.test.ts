@@ -99,11 +99,15 @@ describe('RQ3-5 — cell collisions flag on BOTH views', () => {
         // cell sharing the product — and the register showed rows the user
         // never clicked on. The `cell` filter (`L{l}xI{i}` tokens) is the
         // only shape that can express one cell.
-        const callout = client.slice(
-            client.indexOf('risk-collision-callouts'),
-            client.indexOf('view === \'heatmap\''),
-        );
-        expect(callout).toMatch(/filterCtx\.set\('cell'/);
-        expect(callout).not.toMatch(/filterCtx\.set\('score'/);
+        // B3-2: was a slice from `risk-collision-callouts` to the literal
+        // `view === 'heatmap'` — a JSX byte window that any markup move
+        // silently redefined. The negative is the load-bearing half, and it
+        // holds file-wide rather than only inside that window: nothing in
+        // the register may narrow by score, because a score is a product
+        // shared by many cells. That is a STRONGER statement than the
+        // regional one it replaces, and nothing can move out from under it.
+        expect(client).toMatch(/risk-collision-callouts/);
+        expect(client).toMatch(/filterCtx\.set\('cell'/);
+        expect(client).not.toMatch(/filterCtx\.set\('score'/);
     });
 });

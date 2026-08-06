@@ -27,35 +27,40 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 const dashboard = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx');
 const board = read('src/app/t/[tenantSlug]/(app)/risks/board/page.tsx');
 
+/**
+ * B3-2 — the three dashboard assertions below used to slice a MAGIC BYTE
+ * WINDOW out of page.tsx: `dashboard.indexOf('risk-stale-row-') - 800` to
+ * `+ 400`, then regex inside it. Two failure modes, both silent: adding a
+ * comment upstream slid the window off the markup it meant to check, and
+ * the regexes pinned loop-variable names (`r.riskId`, `f.riskId`), so a
+ * rename failed the build.
+ *
+ * The invariant is "the three drill-down widgets deep-link INTO the
+ * assessment tab, not the detail default". It cannot be expressed as "every
+ * risk href carries the tab" — the top-10 row at page.tsx:333 links to the
+ * default tab on purpose. So this counts the deep-links instead: order-,
+ * rename- and reformat-independent, and it still fails if a widget loses
+ * its `?tab=assessment`.
+ *
+ * B3-4 replaces this with a rendered test asserting the actual hrefs.
+ */
 describe('RQ3-OB-C — risk widgets deep-link to ?tab=assessment', () => {
-    test('the staleness widget row links to the assessment tab', () => {
-        // The row is keyed `risk-stale-row-` and rendered inside the
-        // `staleness.staleRisks.slice(0, 10).map(...)` block.
-        const block = dashboard.slice(
-            dashboard.indexOf('risk-stale-row-') - 800,
-            dashboard.indexOf('risk-stale-row-') + 400,
-        );
-        expect(block).toMatch(/href=\{href\(`\/risks\/\$\{r\.riskId\}\?tab=assessment`\)\}/);
-    });
+    const assessmentLinks = (src: string) =>
+        (src.match(/\/risks\/\$\{[^}]+\}\?tab=assessment/g) ?? []).length;
 
-    test('the coherence widget row links to the assessment tab', () => {
-        const idx = dashboard.indexOf('risk-coherence-row-');
-        expect(idx).toBeGreaterThan(0);
-        const block = dashboard.slice(idx - 800, idx + 400);
-        expect(block).toMatch(/href=\{href\(`\/risks\/\$\{f\.riskId\}\?tab=assessment`\)\}/);
-    });
-
-    test('the overdue-reviews list links to the assessment tab', () => {
-        // The overdueRisks.map row uses `r.id` and lives near the
-        // bottom of the file. Look for the assessment-tab href in
-        // the overdueRisks region.
-        const idx = dashboard.indexOf('overdueRisks.map');
-        expect(idx).toBeGreaterThan(0);
-        const block = dashboard.slice(idx, idx + 600);
-        expect(block).toMatch(/href=\{href\(`\/risks\/\$\{r\.id\}\?tab=assessment`\)\}/);
+    test('all three dashboard drill-down widgets deep-link to the assessment tab', () => {
+        // staleness + coherence + overdue-reviews.
+        expect(assessmentLinks(dashboard)).toBe(3);
     });
 
     test('the board top-contributors row links to the assessment tab', () => {
-        expect(board).toMatch(/href=\{href\(`\/risks\/\$\{row\.id\}\?tab=assessment`\)\}/);
+        expect(assessmentLinks(board)).toBe(1);
+    });
+
+    test('the plain top-10 row still links to the detail default tab', () => {
+        // The counterpart to the above: this row is deliberately NOT a
+        // deep-link, so a blanket "add ?tab=assessment everywhere" change
+        // is caught rather than silently accepted.
+        expect(dashboard).toMatch(/\/risks\/\$\{[^}]+\}`/);
     });
 });

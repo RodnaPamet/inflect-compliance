@@ -17,12 +17,20 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const page = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
 const panel = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/RiskAssessmentPanel.tsx');
+
+// B3-2: the two blocks below used to slice from one declaration to the NEXT
+// ONE BY NAME — `panel.indexOf('const acceptSuggestion')` to
+// `panel.indexOf('const saveResidualOverride')`. Swapping the order of two
+// unrelated functions produced a backwards slice, which is silently empty,
+// so the `not.toMatch` assertions passed vacuously; renaming the neighbour
+// broke the build outright.
 
 describe('RQ2-4 — risk detail IA', () => {
     test('the 8-tab assessment-centric bar (and nothing demoted creeps back)', () => {
@@ -74,10 +82,7 @@ describe('RQ2-4 — risk detail IA', () => {
     });
 
     test('accept stays propose-don’t-overwrite: the POST body carries only a justification', () => {
-        const acceptBlock = panel.slice(
-            panel.indexOf('const acceptSuggestion'),
-            panel.indexOf('const saveResidualOverride'),
-        );
+        const acceptBlock = declarationOf(panel, 'acceptSuggestion');
         expect(acceptBlock).toMatch(/JSON\.stringify\(\{ justification/);
         for (const banned of ['residualScore', 'residualLikelihood', 'residualImpact', 'effectiveness']) {
             expect(acceptBlock).not.toMatch(new RegExp(`${banned}\\s*:`));
@@ -85,10 +90,7 @@ describe('RQ2-4 — risk detail IA', () => {
     });
 
     test('manual residual override sends decomposed dims + justification — never a rollup score', () => {
-        const overrideBlock = panel.slice(
-            panel.indexOf('const saveResidualOverride'),
-            panel.indexOf('const participating'),
-        );
+        const overrideBlock = declarationOf(panel, 'saveResidualOverride');
         expect(overrideBlock).toMatch(/residualLikelihood,/);
         expect(overrideBlock).toMatch(/residualImpact,/);
         expect(overrideBlock).toMatch(/scoreJustification/);

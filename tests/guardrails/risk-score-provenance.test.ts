@@ -22,6 +22,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { MAX_REDUCTION } from '@/lib/risk-residual';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -124,8 +125,15 @@ describe('RQ2-2 — control-derived residual (divisors stay dead)', () => {
     });
 
     test('the combination formula is layered (1 − ∏(1 − e)) with the documented cap', () => {
-        expect(residualLib).toMatch(/MAX_REDUCTION = 0\.8/);
-        expect(residualLib).toMatch(/Survival \*= 1 - e/);
+        // B3-2: this asserted the source TEXT of the constant declaration
+        // (`MAX_REDUCTION = 0.8`) and of the accumulator statement
+        // (`Survival *= 1 - e`). Neither can tell layered multiplication
+        // from addition — only running it can, and
+        // tests/unit/risk-residual.test.ts does exactly that ("three 60%
+        // preventive controls cap at MAX_REDUCTION (0.8), not 93.6%"), which
+        // is the whole point of the formula. Assert the exported value here
+        // and leave the arithmetic to the arithmetic test.
+        expect(MAX_REDUCTION).toBe(0.8);
     });
 
     test('the derived rollup goes through calculateRiskScore (one scoring seam)', () => {

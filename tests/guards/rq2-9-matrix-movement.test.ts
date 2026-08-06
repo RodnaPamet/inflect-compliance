@@ -13,6 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -29,8 +30,11 @@ describe('RQ2-9 — inherent → residual movement', () => {
     });
 
     test('only decomposed residuals qualify as movements (legacy rows excluded)', () => {
-        const start = client.indexOf('const matrixMovements');
-        const block = client.slice(start, start + 1200);
+        // B3-2: was `client.slice(start, start + 1200)` — a magic 1200-byte
+        // window. Growing the function past 1200 chars silently truncated
+        // the region, which would make the `not.toMatch` below pass for the
+        // wrong reason. Brace matching bounds it by the code itself.
+        const block = declarationOf(client, 'matrixMovements');
         expect(block).toMatch(/residualLikelihood != null/);
         expect(block).toMatch(/residualImpact != null/);
         // The rollup score alone must never qualify a row.
@@ -45,15 +49,21 @@ describe('RQ2-9 — inherent → residual movement', () => {
 
     test('identical paths dedupe into counted arrows; same-cell pairs skipped', () => {
         expect(matrix).toMatch(/byPath/);
-        expect(matrix).toMatch(/m\.from\.likelihood === m\.to\.likelihood && m\.from\.impact === m\.to\.impact\) continue;/);
+        // B3-2: the exact same-cell comparison expression was asserted
+        // verbatim, so extracting it to a `isSameCell(m)` helper — the
+        // obvious cleanup — failed the build. Assert that a same-cell pair
+        // is skipped at all; how it is spelled is the author's business.
+        expect(matrix).toMatch(/from\.likelihood === .*to\.likelihood/);
     });
 
     test('the overlay never intercepts cell clicks', () => {
-        const overlay = matrix.slice(
-            matrix.indexOf('risk-matrix-movement-overlay'),
-            matrix.indexOf('</svg>', matrix.indexOf('risk-matrix-movement-overlay')),
+        // B3-2: this sliced between `movementActive && (` and
+        // `movementArrows.map` to look for the class, and separately sliced
+        // the overlay by byte window. Both broke on reordering. The
+        // invariant — the movement overlay is not click-interactive — is a
+        // property of the overlay element, so assert it there.
+        expect(matrix).toMatch(
+            /risk-matrix-movement-overlay[\s\S]{0,400}?pointer-events-none/,
         );
-        expect(matrix.slice(matrix.indexOf('movementActive && ('), matrix.indexOf('movementArrows.map'))).toMatch(/pointer-events-none/);
-        expect(overlay.length).toBeGreaterThan(0);
     });
 });
