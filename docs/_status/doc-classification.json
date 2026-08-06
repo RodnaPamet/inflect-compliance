@@ -1847,7 +1847,8 @@
         "docs/implementation-notes/2026-08-05-assets-surface-defects.md": {
             "class": "historical"
         },
-        "docs/implementation-notes/2026-08-05-risks-schema-and-null-defects.md": {
+        "docs/implementation-notes/2026-08-05-risks-schema-and-null-defects.md": {,
+        "docs/implementation-notes/2026-08-06-ssr-fallback-and-criticality-variant.md": {
             "class": "historical"
         }
     }

@@ -414,7 +414,8 @@ export default function AssetDetailPage() {
     // CRITICAL + HIGH both render as the error (red) badge — the StatusBadge
     // palette has no distinct orange between amber (warning) and red (error);
     // MEDIUM stays amber, LOW green.
-    const critColor = (c: string): StatusBadgeVariant => c === 'CRITICAL' || c === 'HIGH' ? 'error' : c === 'MEDIUM' ? 'warning' : 'success';
+    // Shared with the list badge — see criticalityBadgeVariant.
+    const critColor = criticalityBadgeVariant;
 
     const breadcrumbs = [
         { label: t('detail.crumbDashboard'), href: tenantHref('/dashboard') },

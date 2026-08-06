@@ -44,21 +44,15 @@ import { ViewsMenu } from '@/components/ui/views-menu';
 import { NewAssetModal } from './NewAssetModal';
 import { AssetDetailPanel } from './AssetDetailPanel';
 import { AsidePanel } from '@/components/ui/aside-panel';
-import { presentCriticality } from '@/lib/asset-criticality';
+import { criticalityBadgeVariant, presentCriticality } from '@/lib/asset-criticality';
 import type { AssetCore } from '@/lib/dto/asset.types';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
+import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
 
-/** Item 34 — map the derived criticality tone to a StatusBadge variant. */
-const CRITICALITY_VARIANT: Record<string, StatusBadgeVariant> = {
-    critical: 'error',
-    danger: 'error',
-    warning: 'warning',
-    success: 'success',
-};
 
 /** CVSS severity → StatusBadge variant (for the per-asset open-vuln badge). */
 function severityVariant(sev: string | null | undefined): StatusBadgeVariant {
@@ -202,14 +196,12 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     }, [fetchParams]);
 
     const serverHadFilters = initialFilters && Object.keys(initialFilters).length > 0;
-    const filtersMatchInitial = useMemo(() => {
-        if (!serverHadFilters) return !hasActive;
-        const keys = new Set([...Object.keys(queryKeyFilters), ...Object.keys(initialFilters)]);
-        for (const k of keys) {
-            if ((queryKeyFilters[k] ?? '') !== (initialFilters[k] ?? '')) return false;
-        }
-        return true;
-    }, [queryKeyFilters, initialFilters, serverHadFilters, hasActive]);
+    const filtersMatchInitial = useSsrFallback({
+        queryKeyFilters,
+        initialFilters,
+        serverHadFilters,
+        hasActive,
+    });
 
     const assetsKey = useMemo(() => {
         const params = new URLSearchParams(fetchParams);
@@ -723,7 +715,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                 const crit = presentCriticality(row.original.criticality);
                 if (!crit) return <span className="text-content-muted">—</span>;
                 return (
-                    <StatusBadge variant={CRITICALITY_VARIANT[crit.tone] ?? 'neutral'} size="sm">
+                    <StatusBadge variant={criticalityBadgeVariant(row.original.criticality)} size="sm">
                         {crit.label}
                     </StatusBadge>
                 );

@@ -63,6 +63,7 @@ import { taskStatusVariant, TASK_STATUS_BADGE } from '@/lib/task-status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
 
 // Status → badge tone AND label both come from the shared
 // `TASK_STATUS_BADGE` map (TP-1) — tone via `taskStatusVariant`, copy via the
@@ -272,14 +273,12 @@ function TasksPageInner({
     }, [fetchParams]);
 
     const serverHadFilters = initialFilters && Object.keys(initialFilters).length > 0;
-    const filtersMatchInitial = useMemo(() => {
-        if (!serverHadFilters) return !hasActive;
-        const keys = new Set([...Object.keys(queryKeyFilters), ...Object.keys(initialFilters!)]);
-        for (const k of keys) {
-            if ((queryKeyFilters[k] ?? '') !== (initialFilters![k] ?? '')) return false;
-        }
-        return true;
-    }, [queryKeyFilters, initialFilters, serverHadFilters, hasActive]);
+    const filtersMatchInitial = useSsrFallback({
+        queryKeyFilters,
+        initialFilters,
+        serverHadFilters,
+        hasActive,
+    });
 
     // Epic 69 — same SWR-first read pattern as policies / risks /
     // evidence / vendors. Filter-aware key + server-rendered

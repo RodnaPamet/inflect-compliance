@@ -113,6 +113,35 @@ export function presentCriticality(value: string | null | undefined) {
     return CRITICALITY_PRESENTATION[value as CriticalityEnum] ?? null;
 }
 
+/**
+ * Stored criticality → `StatusBadge` variant, for the badge surfaces.
+ *
+ * Derived from CRITICALITY_PRESENTATION's tone rather than re-listing the
+ * bands, so it cannot disagree with the label rendered beside it. Two
+ * separate maps existed before 2026-08-06 — a tone→variant record in
+ * AssetsClient and an enum→variant ternary on the detail page. They agreed,
+ * but nothing made them: changing a band in one would silently leave the
+ * other showing a different colour for the same asset.
+ *
+ * `danger` and `critical` both surface as `error` because StatusBadge has
+ * no fifth step; the label distinguishes them.
+ */
+export function criticalityBadgeVariant(
+    value: string | null | undefined,
+): 'error' | 'warning' | 'success' | 'neutral' {
+    const band = presentCriticality(value);
+    if (!band) return 'neutral';
+    switch (band.tone) {
+        case 'critical':
+        case 'danger':
+            return 'error';
+        case 'warning':
+            return 'warning';
+        case 'success':
+            return 'success';
+    }
+}
+
 // Four distinct visual steps: green → amber → red → strong-red. HIGH
 // (danger) is deliberately distinct from MEDIUM (warning), and CRITICAL
 // is the strongest (error-emphasis fill).

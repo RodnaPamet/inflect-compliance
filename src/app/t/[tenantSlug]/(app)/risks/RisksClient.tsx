@@ -83,6 +83,7 @@ import { ToggleGroup } from '@/components/ui/toggle-group';
 import { useLocalStorage } from '@/components/ui/hooks';
 import { useTranslations } from 'next-intl';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
 
 /** Bulk-action status options (canonical BulkActionBar). Labels resolve
  *  through the `risks.bulkStatus.*` catalog inside the component. */
@@ -298,15 +299,12 @@ function RisksPageInner({
     }, [fetchParams]);
 
     const serverHadFilters = initialFilters && Object.keys(initialFilters).length > 0;
-    const filtersMatchInitial = useMemo(() => {
-        if (!serverHadFilters) return !hasActive;
-        const current = queryKeyFilters;
-        const keys = new Set([...Object.keys(current), ...Object.keys(initialFilters!)]);
-        for (const k of keys) {
-            if ((current[k] ?? '') !== (initialFilters![k] ?? '')) return false;
-        }
-        return true;
-    }, [queryKeyFilters, initialFilters, serverHadFilters, hasActive]);
+    const filtersMatchInitial = useSsrFallback({
+        queryKeyFilters,
+        initialFilters,
+        serverHadFilters,
+        hasActive,
+    });
 
     // Epic 69 — read source is `useTenantSWR` against a filter-aware
     // cache key. Each unique filter combination becomes its own
