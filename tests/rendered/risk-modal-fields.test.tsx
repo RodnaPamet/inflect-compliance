@@ -149,7 +149,13 @@ describe('NewRiskModal source (R3/R4/R7/R10)', () => {
         expect(src).not.toMatch(/label="Treatment owner"/);
     });
     it('R4 — link-controls reads the {rows} shape, and the name span is not truncated', () => {
-        expect(src).toMatch(/data\?\.rows/);
+        // The invariant is that the modal reads the backfill-capped
+        // `{ rows, truncated }` envelope rather than assuming a bare array.
+        // Either spelling satisfies it: the original inline `data?.rows`
+        // unwrap, or the shared `unwrapCappedList` helper that replaced it
+        // (see tests/unit/list-backfill-cap.test.ts, which executes the
+        // helper — this assertion only reads source text).
+        expect(src).toMatch(/data\?\.rows|unwrapCappedList\(/);
         expect(src).not.toMatch(/truncate text-content-emphasis/);
     });
     it('R7 + R10 — Treatment dropdown + Treatment notes present', () => {

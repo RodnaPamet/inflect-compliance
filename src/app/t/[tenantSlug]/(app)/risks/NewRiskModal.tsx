@@ -38,7 +38,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useToast } from '@/components/ui/hooks';
 import { useSWRConfig } from 'swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import type { CappedList } from '@/lib/list-backfill-cap';
+import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import {
     useCallback,
     useEffect,
@@ -158,14 +158,9 @@ export function NewRiskModal({
         open ? CACHE_KEYS.controls.list() : null,
     );
     const controls = useMemo<ControlOption[]>(() => {
-        const data = controlsQuery.data;
         // GET /controls returns the backfill-capped `{ rows, truncated }`
-        // shape, not a bare array — unwrap both forms.
-        const list = Array.isArray(data)
-            ? data
-            : Array.isArray(data?.rows)
-              ? data.rows
-              : [];
+        // envelope, not a bare array — unwrap both forms.
+        const list = unwrapCappedList(controlsQuery.data);
         return list.map((c) => ({
             id: c.id,
             annexId: c.annexId ?? null,

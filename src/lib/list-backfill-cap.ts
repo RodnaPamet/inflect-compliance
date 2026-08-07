@@ -43,3 +43,37 @@ export function applyBackfillCap<T>(rows: T[]): CappedList<T> {
         ? { rows: rows.slice(0, LIST_BACKFILL_CAP), truncated: true }
         : { rows, truncated: false };
 }
+
+/**
+ * Read the rows out of a capped-list response on the CLIENT side.
+ *
+ * The `useTenantSWR<T>` / `apiGet<T>` generic is an unchecked
+ * assertion — nothing validates the response against it at runtime.
+ * So when a route moved from a bare array to `{ rows, truncated }`,
+ * consumers still typed as `T[]` compiled cleanly and then threw
+ * `.map is not a function` in the browser, which the error boundary
+ * escalated into a blank page (that is exactly how the "Link a CVE"
+ * modal broke after `/assets` was converted).
+ *
+ * Every client read of a capped endpoint should funnel through here
+ * rather than hand-rolling the `Array.isArray` dance:
+ *
+ *     const { data } = useTenantSWR<CappedList<Asset> | Asset[]>('/assets');
+ *     const assets = unwrapCappedList(data);
+ *
+ * Tolerates BOTH shapes on purpose — a bare array is still returned by
+ * some endpoints (and by older cached responses), and a modal that
+ * hard-codes one shape is precisely the fragility this replaces.
+ * Anything else (undefined, an error envelope, a malformed body)
+ * yields `[]` so a bad response degrades to an empty picker instead
+ * of taking the page down.
+ */
+export function unwrapCappedList<T>(
+    data: CappedList<T> | T[] | null | undefined,
+): T[] {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray((data as CappedList<T>).rows)) {
+        return (data as CappedList<T>).rows;
+    }
+    return [];
+}
