@@ -28,6 +28,16 @@ export interface PurgeResult {
  * @param days - Number of days after which soft-deleted records are purged
  * @returns Summary of purged records per model
  */
+/**
+ * Soft-delete models that also carry GLOBAL (tenantId IS NULL) rows.
+ *
+ * Kept explicit rather than derived at runtime so adding a nullable-tenant
+ * model to SOFT_DELETE_MODELS is a decision someone makes, not a default
+ * they inherit. If this set and the schema ever disagree, the test in
+ * tests/unit/retention-purge-global-rows.test.ts fails.
+ */
+const NULLABLE_TENANT_MODELS = new Set<string>(['Control']);
+
 export async function purgeSoftDeletedOlderThan(days: number): Promise<PurgeResult> {
     if (days < 1) throw new Error('Retention days must be at least 1');
 
@@ -39,9 +49,23 @@ export async function purgeSoftDeletedOlderThan(days: number): Promise<PurgeResu
     let totalPurged = 0;
 
     for (const model of SOFT_DELETE_MODELS) {
+        // Models whose tenantId is NULLABLE also hold GLOBAL rows — the
+        // shared library every tenant reads. A purge with no tenant
+        // predicate would hard-delete those platform-wide on one tenant's
+        // retention clock.
+        //
+        // `Control` is the only such model in SOFT_DELETE_MODELS today
+        // (verified against the schema). It was unreachable in practice
+        // because deleteControl refuses to soft-delete globals — but that is
+        // one guard deep, in a different file, and nothing connected the
+        // two. This predicate makes the purge safe on its own terms.
+        const globalRowsGuard = NULLABLE_TENANT_MODELS.has(model)
+            ? ' AND "tenantId" IS NOT NULL'
+            : '';
+
         // Use raw SQL to bypass soft-delete middleware
         const result = await prisma.$executeRawUnsafe(
-            `DELETE FROM "${model}" WHERE "deletedAt" IS NOT NULL AND "deletedAt" < $1`,
+            `DELETE FROM "${model}" WHERE "deletedAt" IS NOT NULL AND "deletedAt" < $1${globalRowsGuard}`,
             cutoff,
         );
         perModel[model] = result;

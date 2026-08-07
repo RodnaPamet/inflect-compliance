@@ -1370,6 +1370,7 @@ exports[`API contract — per-schema snapshots schema: ControlCreateRequest 1`] 
   "required": [
     "name"
   ],
+  "additionalProperties": false,
   "description": "Payload for creating a control. Status defaults to NOT_STARTED. annexId references the framework annex catalogue (e.g. ISO 27001:2022 A.5.1). Custom controls (isCustom=true) are tenant-specific; framework-shipped controls install via the templates endpoint instead."
 }"
 `;
@@ -2182,6 +2183,7 @@ exports[`API contract — per-schema snapshots schema: ControlUpdateRequest 1`] 
       "maximum": 100
     }
   },
+  "additionalProperties": false,
   "description": "Partial update for a control. Status, applicability, and owner have dedicated focused endpoints; this body covers descriptive metadata only."
 }"
 `;

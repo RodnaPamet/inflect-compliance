@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { EvidenceUploadSection } from "@/components/evidence/EvidenceUploadSection";
 import { PanelTabs } from "./PanelTabs";
 import { PanelActivityFeed } from "./PanelActivityFeed";
+import { choiceOrNull, textOrNull } from './_lib/control-write-values';
 
 /** The subset of control row fields the panel needs to seed + display. */
 export interface PanelControl {
@@ -111,10 +112,12 @@ export function ControlEditPanel({
             const res = await fetch(base, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
+                // Same empty-value rule as the detail page and the create
+                // modal — see _lib/control-write-values.
                 body: JSON.stringify({
                     name: f.name.trim(),
-                    category: f.category.trim() || null,
-                    frequency: f.frequency || null,
+                    category: textOrNull(f.category),
+                    frequency: choiceOrNull(f.frequency),
                 }),
             });
             if (!res.ok) {

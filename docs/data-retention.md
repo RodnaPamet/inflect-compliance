@@ -83,7 +83,7 @@ a `userId` but stores no contact PII).
 | `ClauseProgress` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `CompliancePostureSummary` | Operational | No | Cascade on tenant delete; overwritten daily (upsert, one row/tenant) | Derived — regenerated daily by the `compliance-posture-summary` cron; no historical retention |
 | `ComplianceSnapshot` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
-| `Control` | Business record | No | retentionUntil sweep (data-lifecycle `runRetentionSweep`) + soft-delete | DEFINED (retentionUntil) where set; else indefinite |
+| `Control` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — it was removed from `RETENTION_MODELS` on 2026-08-06 rather than left as a sweep that could never match. |
 | `ControlAsset` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ControlContributor` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ControlEvidenceLink` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |

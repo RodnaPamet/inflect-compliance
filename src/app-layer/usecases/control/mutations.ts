@@ -15,26 +15,33 @@ import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { createAssignmentNotification } from '../../notifications/assignment';
 import { logger } from '@/lib/observability/logger';
 import { recordControlCreated } from '@/lib/observability/business-metrics';
+import { z } from 'zod';
+import { CreateControlSchema, UpdateControlSchema } from '@/lib/schemas';
+import { computeNextDueAt } from '../../utils/cadence';
 
 // ─── Create / Update ───
 
-export async function createControl(ctx: RequestContext, data: {
-    code?: string | null;
-    name: string;
-    category?: string | null;
-    status?: string;
-    frequency?: string | null;
-    ownerUserId?: string | null;
-    evidenceSource?: string | null;
-    automationKey?: string | null;
-    automationType?: string | null;
-    mitigationType?: string | null;
-    annexId?: string | null;
-    objective?: string | null;
-    successCriteria?: string | null;
-    testingMethodology?: string | null;
-    isCustom?: boolean;
-}) {
+/**
+ * `data` is typed as the SCHEMA's inferred output, not a hand-written shape.
+ *
+ * The two used to be maintained separately, and drifted: this function
+ * declared and wrote objective / successCriteria / testingMethodology while
+ * CreateControlSchema did not declare them, so `.strip()` removed them
+ * before the usecase ever saw them. Deriving the parameter type from the
+ * schema makes that impossible — a field this function reads must be a
+ * field the schema declares, or it does not compile.
+ *
+ * `z.input`, not `z.infer`: `z.infer` is the OUTPUT type, in which
+ * `.default()`ed fields (status, isCustom) are REQUIRED. Callers legitimately
+ * omit them — the route passes parsed data where the defaults have already
+ * been applied, but internal callers (nis2-gap-lifecycle, self-assessment)
+ * pass a raw shape and rely on the same defaults. `z.input` describes what a
+ * caller may hand in, which is the contract this parameter actually has.
+ */
+export async function createControl(
+    ctx: RequestContext,
+    data: z.input<typeof CreateControlSchema>,
+) {
     assertCanCreateControl(ctx);
     // GAP-18 — plan-limit gate. SaaS FREE tenants cap at 10 controls;
     // self-hosted is always unlimited (entitlements module resolves
@@ -95,27 +102,20 @@ export async function createControl(ctx: RequestContext, data: {
     return created;
 }
 
-export async function updateControl(ctx: RequestContext, id: string, data: {
-    name?: string;
-    category?: string | null;
-    code?: string | null;
-    frequency?: string | null;
-    evidenceSource?: string | null;
-    automationKey?: string | null;
-    automationType?: string | null;
-    mitigationType?: string | null;
-    objective?: string | null;
-    successCriteria?: string | null;
-    testingMethodology?: string | null;
-    annualCost?: number | null;
-    /** Declared operating effectiveness (0–100). The measured pass rate wins
-     *  when a control has test history; this is the fallback ROI/residual use
-     *  otherwise. Editable so the fallback is real, not a dead column. */
-    effectiveness?: number | null;
-}) {
+/** `data` derives from the schema — see createControl. */
+export async function updateControl(
+    ctx: RequestContext,
+    id: string,
+    data: z.input<typeof UpdateControlSchema>,
+) {
     assertCanUpdateControl(ctx);
 
     const updated = await runInTenantContext(ctx, async (db) => {
+        // The BEFORE image. Needed for two things the request body cannot
+        // tell us: which fields actually changed, and whether `frequency`
+        // moved (which invalidates the stored nextDueAt).
+        const before = await ControlRepository.getById(db, ctx, id);
+
         const control = await ControlRepository.update(db, ctx, id, {
             ...(data.name !== undefined && { name: data.name }),
             ...(data.category !== undefined && { category: data.category }),
@@ -133,17 +133,53 @@ export async function updateControl(ctx: RequestContext, id: string, data: {
         });
 
         if (!control) {
-            const existingAny = await ControlRepository.getById(db, ctx, id);
-            if (existingAny) throw forbidden('Cannot modify global library controls');
+            // Reuses the BEFORE read above rather than issuing a second
+            // getById: the update's where-filter excludes global rows, so a
+            // null result with a row that WAS readable means it belongs to
+            // the shared library. One read serves both the diff and this
+            // guard.
+            if (before) throw forbidden('Cannot modify global library controls');
             throw notFound('Control not found');
         }
+
+        // `frequency` drives nextDueAt, which is otherwise only computed at
+        // attest time (control-test.ts, task-source-reconcile.ts). Editing
+        // the cadence without recomputing left [nextDueAt]-driven scheduling
+        // and the controlsDueSoon dashboard count running on a value derived
+        // from a SUPERSEDED frequency until the next test completed.
+        if (
+            data.frequency !== undefined &&
+            before &&
+            data.frequency !== before.frequency
+        ) {
+            await ControlRepository.update(db, ctx, id, {
+                nextDueAt: computeNextDueAt(data.frequency, new Date()),
+            });
+        }
+
+        // changedFields is DIFFED, not read off the request body.
+        //
+        // `Object.keys(data)` made the audit trail a function of which UI the
+        // user opened: the detail page PATCHes 10 fields, ControlEditPanel
+        // PATCHes 3, so editing one field through the detail page recorded
+        // nine unchanged fields as "changed" — and the same edit through the
+        // panel recorded a different set. Comparing before/after records
+        // what actually moved, whatever the caller sent.
+        const changedFields = before
+            ? (Object.keys(data) as Array<keyof typeof data>).filter((k) => {
+                  if (data[k] === undefined) return false;
+                  return data[k] !== (before as Record<string, unknown>)[k as string];
+              })
+            : (Object.keys(data) as Array<keyof typeof data>).filter(
+                  (k) => data[k] !== undefined,
+              );
 
         await logEvent(db, ctx, {
             action: 'CONTROL_UPDATED',
             entityType: 'Control',
             entityId: id,
             details: JSON.stringify(data),
-            detailsJson: { category: 'entity_lifecycle', entityName: 'Control', operation: 'updated', changedFields: Object.keys(data).filter(k => data[k as keyof typeof data] !== undefined), summary: 'Control updated' },
+            detailsJson: { category: 'entity_lifecycle', entityName: 'Control', operation: 'updated', changedFields, summary: 'Control updated' },
         });
 
         return control;

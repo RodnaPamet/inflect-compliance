@@ -104,9 +104,12 @@ describe('NewControlModal — business behaviour preserved', () => {
         // payload is built from RHF's `values.<field>` instead of the
         // useState `form.<field>` — match either shape.
         expect(MODAL_SRC).toMatch(/name:\s*(form|values)\.name/);
-        expect(MODAL_SRC).toMatch(
-            /code:\s*(form|values)\.code[\s\S]*\|\|\s*undefined/,
-        );
+        // `|| undefined` was the DEFECT, not the contract. Omitting the key
+        // means "unchanged", so clearing a field in the create modal
+        // silently no-opped — while the same gesture on the detail page
+        // cleared it. All three write surfaces now use the shared helpers in
+        // _lib/control-write-values, where '' maps to null.
+        expect(MODAL_SRC).toMatch(/code:\s*textOrNull\((form|values)\.code\)/);
         expect(MODAL_SRC).toMatch(/isCustom:\s*true/);
     });
 

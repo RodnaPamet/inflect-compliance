@@ -34,7 +34,6 @@ model Control {
   /// a typed `NO_COST` reason rather than fabricating a number.
   annualCost                   Float?
   lastTested                   DateTime?
-  reviewCadence                ReviewCadence?
   isCustom                     Boolean                  @default(false)
   ownerUserId                  String?
   createdByUserId              String?
@@ -104,8 +103,19 @@ model Control {
   /// is enforced by the partial index alone. Prisma has no syntax for a
   /// filtered index, so declaring it here would be a lie — `migrate dev`
   /// would replace it with an unconditional one and re-break tenants.
+  /// The list ORDER BY runs on (tenantId, code) — but note the list `where`
+  /// is OR:[{tenantId:X},{tenantId:null}] (ControlRepository:136) so the
+  /// global library is included. A single tenant-prefixed btree cannot
+  /// satisfy that OR, so this index is only partially effective on the list
+  /// path. Migration 20260506020000:15 asserts the ordering is "covered by
+  /// (tenantId, code)"; that claim ignores the OR and is wrong.
   @@index([tenantId, code])
-  @@index([tenantId])
+  /// `@@index([tenantId])` was DROPPED on 2026-08-06: it is a strict prefix
+  /// of seven composites below ([tenantId,code], [tenantId,createdAt],
+  /// [tenantId,status], [tenantId,applicability], [tenantId,deletedAt],
+  /// [tenantId,ownerUserId], [tenantId,category]), so every one of them can
+  /// serve a tenantId-only lookup. It bought nothing and cost a write on
+  /// every insert and update.
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
   @@index([tenantId, applicability])
@@ -118,6 +128,12 @@ model Control {
   // specific owner without an additional filter pass.
   @@index([tenantId, ownerUserId])
   // GAP-perf — supports `category` filter (free-text exact match).
+  /// ⚠️ Currently near-dead: ControlsClient strips `category` from every API
+  /// query and re-filters client-side, so the only producer is an SSR hard
+  /// nav — which matches the RAW stored column against a DERIVED UI value
+  /// and returns ~0 rows. This index is retained pending the server-side
+  /// filter fix (roadmap P3.4); if that fix does not land, DROP it rather
+  /// than leaving an index nothing can use.
   @@index([tenantId, category])
 }
 
@@ -208,7 +224,6 @@ model ControlTemplate {
   description        String?
   category           String?
   defaultFrequency   ControlFrequency?
-  defaultOwnerHint   String?
   // Internal-controls import (customer GRC export): the control's objective
   // (what it achieves), success criteria (what "passing" looks like), and
   // testing/audit methodology. Copied onto the Control on install.
