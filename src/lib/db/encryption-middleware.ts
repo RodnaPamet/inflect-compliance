@@ -75,6 +75,7 @@ import {
 } from '@/lib/security/encrypted-fields';
 import { getAuditContext } from '@/lib/audit-context';
 import { logger } from '@/lib/observability/logger';
+import { recordFieldDecryptFailure } from '@/lib/observability/metrics';
 // `import * as` (rather than a top-level named import) keeps the
 // circular-import escape hatch — `tenant-key-manager` imports
 // `@/lib/prisma`, which composes this module — while still exposing
@@ -368,13 +369,22 @@ function decryptResultNode(
             // Never throw on read. A malformed row or a cross-tenant
             // bypass read that can't resolve the right DEK surfaces
             // as a warn + ciphertext pass-through, not a 500.
+            //
+            // FAILING OPEN HAS A BLAST RADIUS. The caller gets a string it
+            // cannot tell from plaintext, so the ciphertext flows on to
+            // every consumer of the row — UI, PDF export, audit-pack share
+            // link, SDK. A warn nobody is alerted on is not a control, so
+            // count it too; whether this SHOULD keep failing open is an
+            // open question tracked separately.
+            const version = getCiphertextVersion(value);
             logger.warn('encryption-middleware.decrypt_failed', {
                 component: 'encryption-middleware',
                 model: modelName,
                 field,
-                version: getCiphertextVersion(value),
+                version,
                 reason: err instanceof Error ? err.message : 'unknown',
             });
+            recordFieldDecryptFailure({ model: modelName, field, version: version ?? 'unknown' });
         }
     }
 }
@@ -393,13 +403,15 @@ function decryptResultNodeAllModels(
         try {
             node[key] = decryptValue(value, deks);
         } catch (err) {
+            const version = getCiphertextVersion(value);
             logger.warn('encryption-middleware.decrypt_failed', {
                 component: 'encryption-middleware',
                 model: '*',
                 field: key,
-                version: getCiphertextVersion(value),
+                version,
                 reason: err instanceof Error ? err.message : 'unknown',
             });
+            recordFieldDecryptFailure({ model: '*', field: key, version: version ?? 'unknown' });
         }
     }
 }

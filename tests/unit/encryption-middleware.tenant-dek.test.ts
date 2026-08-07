@@ -27,6 +27,10 @@ jest.mock('@/lib/observability/logger', () => ({
     },
 }));
 
+jest.mock('@/lib/observability/metrics', () => ({
+    recordFieldDecryptFailure: jest.fn(),
+}));
+
 // Mock the audit-context stack so we can script tenant context for
 // specific tests without spinning up the real request pipeline.
 const currentAuditCtx: { tenantId?: string; source?: string } = {};
@@ -64,6 +68,7 @@ import {
 import { generateDek } from '@/lib/security/tenant-keys';
 import { _internals } from '@/lib/db/encryption-middleware';
 import { logger } from '@/lib/observability/logger';
+import { recordFieldDecryptFailure } from '@/lib/observability/metrics';
 
 const { walkWriteArgument, walkReadResult, resolveTenantDekPair } = _internals;
 
@@ -314,6 +319,33 @@ describe('read path — per-value dispatch on v1 / v2', () => {
                 field: 'treatmentNotes',
             }),
         );
+        // …and it is COUNTED, not just logged. The middleware fails open —
+        // the caller receives this ciphertext as a string it cannot tell
+        // from plaintext, so it flows on to the UI, PDF exports, audit-pack
+        // share links and SDK consumers. A warn line nobody is alerted on
+        // is not a control; the counter is what makes the failure visible.
+        expect(recordFieldDecryptFailure).toHaveBeenCalledWith({
+            model: 'Risk',
+            field: 'treatmentNotes',
+            version: 'v2',
+        });
+    });
+
+    it('the returned value is the CIPHERTEXT itself — the fail-open contract', () => {
+        // Pinning this deliberately while the fail-open/fail-closed question
+        // is open. If the posture changes to throwing or to a typed
+        // sentinel, this test should fail and be rewritten — it is the
+        // executable record of what the system does today, not an
+        // endorsement of it.
+        const dek = generateDek();
+        const secret = 'operator wrote this';
+        const node = { treatmentNotes: encryptWithKey(dek, secret) };
+        const original = node.treatmentNotes;
+
+        walkReadResult(node, 'Risk', pair(null));
+
+        expect(node.treatmentNotes).toBe(original);
+        expect(node.treatmentNotes).not.toBe(secret);
     });
 });
 
