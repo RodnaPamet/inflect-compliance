@@ -1861,6 +1861,9 @@
         },
         "docs/implementation-notes/2026-08-06-controls-correctness.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-06-controls-write-contract.md": {
+            "class": "historical"
         }
     }
 }

@@ -85,7 +85,7 @@ import type {
     ContributorDTO, AuditLogEntry,
 } from '@/lib/dto';
 import { buildControlStatusLabels } from '../filter-defs';
-import { buildControlPatchBody } from './_lib/control-edit-payload';
+import { buildControlPatchBody } from '../_lib/control-write-values';
 
 // The detail status dropdown reuses the CANONICAL status vocabulary
 // (buildControlStatusLabels — the same i18n source the list badges + filter

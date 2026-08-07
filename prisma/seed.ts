@@ -1712,7 +1712,7 @@ Reviewed at least annually.` },
     // from the framework block above), so installing the pack produces mapped
     // coverage, not bare 0%.
     const ssdfStarterControls = require('./fixtures/ssdf-control-templates.json') as Array<{
-        code: string; title: string; description: string; defaultFrequency: string; defaultOwnerHint: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
+        code: string; title: string; description: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
     }>;
     for (const c of ssdfStarterControls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
@@ -1724,7 +1724,6 @@ Reviewed at least annually.` },
                     description: c.description,
                     category: 'Secure Development',
                     defaultFrequency: c.defaultFrequency as ControlFrequency,
-                    defaultOwnerHint: c.defaultOwnerHint,
                 },
             });
             for (const task of c.tasks) {
@@ -1792,7 +1791,7 @@ Reviewed at least annually.` },
     // coverage on day one, not a bare 0%. Distinct 'CIS-' code prefix. Each
     // control links to the specific IG1 safeguard requirement(s) it satisfies.
     const cisIg1Controls = require('./fixtures/cis-v8-ig1-control-templates.json') as Array<{
-        code: string; title: string; description: string; defaultFrequency: string; defaultOwnerHint: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
+        code: string; title: string; description: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
     }>;
     for (const c of cisIg1Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
@@ -1804,7 +1803,6 @@ Reviewed at least annually.` },
                     description: c.description,
                     category: 'Cyber Hygiene',
                     defaultFrequency: c.defaultFrequency as ControlFrequency,
-                    defaultOwnerHint: c.defaultOwnerHint,
                 },
             });
             for (const task of c.tasks) {
@@ -1873,7 +1871,7 @@ Reviewed at least annually.` },
     // on day one, not a bare 0%. Distinct 'ASVS-' code prefix. Each control links to
     // the specific L1 requirement(s) it satisfies.
     const asvsL1Controls = require('./fixtures/asvs-l1-control-templates.json') as Array<{
-        code: string; title: string; description: string; defaultFrequency: string; defaultOwnerHint: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
+        code: string; title: string; description: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
     }>;
     for (const c of asvsL1Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
@@ -1885,7 +1883,6 @@ Reviewed at least annually.` },
                     description: c.description,
                     category: 'Application Security',
                     defaultFrequency: c.defaultFrequency as ControlFrequency,
-                    defaultOwnerHint: c.defaultOwnerHint,
                 },
             });
             for (const task of c.tasks) {
@@ -1943,13 +1940,13 @@ Reviewed at least annually.` },
     }
     // Curated privacy starter-pack controls (PIMS-NN) with tasks + requirement links.
     const iso27701Controls = require('./fixtures/iso27701-control-templates.json') as Array<{
-        code: string; title: string; description: string; defaultFrequency: string; defaultOwnerHint: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
+        code: string; title: string; description: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
     }>;
     for (const c of iso27701Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
             const tmpl = await prisma.controlTemplate.create({
-                data: { code: c.code, title: c.title, description: c.description, category: 'Privacy', defaultFrequency: c.defaultFrequency as ControlFrequency, defaultOwnerHint: c.defaultOwnerHint },
+                data: { code: c.code, title: c.title, description: c.description, category: 'Privacy', defaultFrequency: c.defaultFrequency as ControlFrequency },
             });
             for (const task of c.tasks) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });

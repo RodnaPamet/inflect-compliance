@@ -37,8 +37,24 @@ export const DEFAULT_SOFT_DELETE_GRACE_DAYS = 90;
 export const DEFAULT_EVIDENCE_PURGE_DAYS = 365;
 
 /** Models that support retentionUntil-based sweep */
+/**
+ * Models whose `retentionUntil` the sweep enforces.
+ *
+ * `Control` was removed on 2026-08-06. It has a `retentionUntil` column and
+ * was queried on every sweep, but NOTHING in src/ ever set it — no Zod
+ * schema, no DTO, no UI, no job. (The only writer of that column anywhere is
+ * the evidence importer, which writes Evidence.) So the sweep was a
+ * guaranteed-empty query run forever, backed by a retention policy doc that
+ * claimed the column was enforced "where set".
+ *
+ * Controls are still purged via the soft-delete path, which is what
+ * docs/data-retention.md now says. If controls ever need a real retention
+ * date, put it back here AND expose it on UpdateControlSchema + the edit UI
+ * in the same change — a swept column with no writer is worse than no sweep,
+ * because it reads as a control that exists.
+ */
 const RETENTION_MODELS = [
-    'Asset', 'Risk', 'Control', 'Evidence', 'Policy',
+    'Asset', 'Risk', 'Evidence', 'Policy',
     'Vendor', 'FileRecord', 'Task',
 ] as const;
 

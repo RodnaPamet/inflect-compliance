@@ -54,6 +54,7 @@ import { useToast } from '@/components/ui/hooks/use-toast';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
+import { choiceOrNull, textOrNull } from './_lib/control-write-values';
 
 // ─── Options ─────────────────────────────────────────────────────────
 
@@ -92,7 +93,7 @@ const buildCategoryOptions = (t: OptT): ComboboxOption[] =>
 // ─── Schema ──────────────────────────────────────────────────────────
 //
 // Zod schema is the source of truth for the form contract. Server-side
-// validation lives in `src/app-layer/schemas/control.schemas.ts`; the
+// validation lives in `src/lib/schemas/index.ts`; the
 // client form intentionally enforces a SUBSET (name required + the
 // not-applicable-needs-justification rule). Cross-field validation runs
 // in `superRefine` so the error is attached to the right field.
@@ -232,14 +233,19 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
             // step failed) does NOT create a duplicate.
             let createdId = createdControlIdRef.current;
             if (!createdId) {
+                // Same empty-value rule as the detail page and the quick-edit
+                // panel — see _lib/control-write-values. These used to map ''
+                // to `undefined`, which omits the key: the same "leave this
+                // blank" gesture cleared the field on the detail page and
+                // no-opped here.
                 const body = {
                     name: values.name.trim(),
-                    code: values.code?.trim() || undefined,
-                    category: values.category || undefined,
-                    frequency: values.frequency || undefined,
-                    ownerUserId: values.ownerUserId || undefined,
-                    automationType: values.automationType || undefined,
-                    mitigationType: values.mitigationType || undefined,
+                    code: textOrNull(values.code),
+                    category: choiceOrNull(values.category),
+                    frequency: choiceOrNull(values.frequency),
+                    ownerUserId: choiceOrNull(values.ownerUserId),
+                    automationType: choiceOrNull(values.automationType),
+                    mitigationType: choiceOrNull(values.mitigationType),
                     isCustom: true,
                 };
                 const res = await fetch(apiUrl('/controls'), {

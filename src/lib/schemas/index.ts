@@ -252,7 +252,12 @@ export const CreateControlSchema = z.object({
     successCriteria: z.string().optional().nullable(),
     testingMethodology: z.string().optional().nullable(),
     isCustom: z.boolean().optional().default(true),
-}).strip().openapi('ControlCreateRequest', {
+// .strict(), not .strip(): an undeclared field is a 400, not a silent drop.
+// This schema dropped objective/successCriteria/testingMethodology for
+// months while createControl wrote them — callers got a 201 with
+// objective: null and no signal at all. Strict turns that class of drift
+// into an immediate, attributable failure.
+}).strict().openapi('ControlCreateRequest', {
     description: 'Payload for creating a control. Status defaults to NOT_STARTED. annexId references the framework annex catalogue (e.g. ISO 27001:2022 A.5.1). Custom controls (isCustom=true) are tenant-specific; framework-shipped controls install via the templates endpoint instead.',
 });
 
@@ -276,7 +281,10 @@ export const UpdateControlSchema = z.object({
     // Declared operating effectiveness 0–100 — the ROI/residual fallback when a
     // control has no measured test history (measured pass rate wins otherwise).
     effectiveness: z.number().int().min(0).max(100).optional().nullable(),
-}).strip().openapi('ControlUpdateRequest', {
+// .strict() — see CreateControlSchema. Every field the three write
+// surfaces send is declared above; an undeclared one now fails loudly
+// instead of vanishing between the request and the usecase.
+}).strict().openapi('ControlUpdateRequest', {
     description: 'Partial update for a control. Status, applicability, and owner have dedicated focused endpoints; this body covers descriptive metadata only.',
 });
 
