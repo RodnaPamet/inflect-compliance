@@ -18,8 +18,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { useTenantContext } from '@/lib/tenant-context-provider';
-import { formatCompactCurrency } from '@/lib/risk-coherence';
+import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { describeRoiGap, type ControlRoiVerdict } from '@/lib/control-roi';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
@@ -45,8 +44,9 @@ interface RoiPayload {
 
 export function ControlRoiCard({ controlId }: { controlId: string }) {
     const tx = useTranslations('controls');
-    const { currencySymbol } = useTenantContext();
-    const sym = currencySymbol ?? '€';
+    // B1-4 — one formatter per product; the ?? '€' fallback lives in the
+    // provider, not forked here.
+    const money = useMoneyFormatter();
     const { data, error, isLoading, mutate } = useTenantSWR<RoiPayload>(`/controls/${controlId}/roi`);
 
     // R2-P4 — surface a load failure with a retry instead of returning null
@@ -97,8 +97,8 @@ export function ControlRoiCard({ controlId }: { controlId: string }) {
                 <div className="space-y-default">
                     <p className="text-sm text-content-default" data-testid="control-roi-headline">
                         {tx.rich('roi.headline', {
-                            ale: `${formatCompactCurrency(verdict.value.aleProtected, sym)}/yr`,
-                            cost: `${formatCompactCurrency(annualCost, sym)}/yr`,
+                            ale: `${money(verdict.value.aleProtected)}/yr`,
+                            cost: `${money(annualCost)}/yr`,
                             roi: verdict.value.roiMultiple.toFixed(1),
                             b: (chunks) => <strong>{chunks}</strong>,
                             m: (chunks) => (

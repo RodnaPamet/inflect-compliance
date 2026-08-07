@@ -10,7 +10,7 @@ import { formatDate } from '@/lib/format-date';
 import { SkeletonCard, SkeletonDetailPage } from '@/components/ui/skeleton';
 import { useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useTenantContext, useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantContext, useTenantApiUrl, useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import dynamic from 'next/dynamic';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
@@ -38,7 +38,6 @@ import { cardVariants } from '@/components/ui/card';
 import { EditRiskModal, type EditRiskForm } from './_modals/EditRiskModal';
 import { RiskAssessmentPanel } from './RiskAssessmentPanel';
 import { resolveALE } from '@/app-layer/usecases/fair-calculator';
-import { formatCompactCurrency } from '@/lib/risk-coherence';
 import { formatTailAwareAle } from '@/lib/tail-language';
 import { FairAnalysisPanel } from './FairAnalysisPanel';
 import { BowTiePanel } from './BowTiePanel';
@@ -158,6 +157,10 @@ export default function RiskDetailPage() {
     const tenant = useTenantContext();
     const apiUrl = useTenantApiUrl();
     const href = useTenantHref();
+    // B1-4 — the tenant's configured symbol. This page formatted the ALE with
+    // the raw helper, which defaults to €, so the risk header disagreed with
+    // the dashboard for any tenant not on euros.
+    const money = useMoneyFormatter();
     const canWrite = tenant.permissions.canWrite;
     const { data: riskMembers } = useTenantMembers(tenant.tenantSlug);
     // P1 item 3 — the treatment-plan owner picker was dead (empty roster),
@@ -352,7 +355,7 @@ export default function RiskDetailPage() {
     // RQ3-4 — the chip speaks the compact tail register when the
     // simulation cache has this risk's P90.
     const riskAleLabel = formatTailAwareAle(riskAleValue, tailP90, {
-        money: formatCompactCurrency,
+        money,
         compact: true,
     });
     const overdue = isOverdue(risk.nextReviewAt, hydratedNow);

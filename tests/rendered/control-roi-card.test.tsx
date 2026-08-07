@@ -14,6 +14,12 @@ const useSWRMock = useSWR as jest.MockedFunction<typeof useSWR>;
 
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({ currencySymbol: '€', tenantSlug: 'acme' }),
+    // B1-4 — the card now formats through the tenant hook rather than
+    // importing formatCompactCurrency and re-deriving the ?? '€' fallback.
+    // Mock it with the real formatter so the assertions still read the
+    // symbol they always did.
+    useMoneyFormatter: () => (v: number | null | undefined) =>
+        jest.requireActual('@/lib/risk-coherence').formatCompactCurrency(v, '€'),
 }));
 
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
