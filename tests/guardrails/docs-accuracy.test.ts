@@ -37,6 +37,7 @@ const BANNER_EXEMPT_HISTORICAL_PREFIXES = ['docs/implementation-notes/', 'docs/a
 
 type DocClass = 'authoritative' | 'living' | 'historical' | 'deprecated';
 interface Classification {
+    counts?: Partial<Record<DocClass, number>>;
     docs: Record<string, { class: DocClass } & Record<string, unknown>>;
 }
 
@@ -107,6 +108,39 @@ describe('docs accuracy', () => {
     const classification = fs.existsSync(CLASSIFICATION_PATH) ? loadClassification() : { docs: {} };
     const onDisk = listDocs();
     const classified = Object.keys(classification.docs);
+
+    /**
+     * The `counts` header is a DERIVED tally, and until 2026-08-07 nothing
+     * checked it — so it drifted silently and repeatedly.
+     *
+     * The failure mode is specific to how it drifts. Two PRs each add one
+     * doc and each bump the same number 494 -> 495. Neither conflicts:
+     * their entries land in different places and the count line is
+     * IDENTICAL, so git takes it once. Both PRs are green, main is wrong by
+     * one, and no reviewer sees a suspicious diff — the header says exactly
+     * what each author intended it to say. It happened again between #1798
+     * and #1803, which is what prompted this test.
+     *
+     * A clean merge is the dangerous case here, not a conflicting one.
+     */
+    it('the counts header matches the actual tally', () => {
+        if (!classification.counts) return; // header is optional
+        const actual: Record<string, number> = {};
+        for (const entry of Object.values(classification.docs)) {
+            actual[entry.class] = (actual[entry.class] ?? 0) + 1;
+        }
+        const declared = classification.counts as Record<string, number>;
+        const drift = Object.keys({ ...actual, ...declared })
+            .filter((k) => (actual[k] ?? 0) !== (declared[k] ?? 0))
+            .map((k) => `${k}: header says ${declared[k] ?? 0}, ${actual[k] ?? 0} entries carry it`);
+
+        expect({
+            drift,
+            hint: drift.length === 0
+                ? 'none'
+                : 'Recount rather than incrementing. If two branches each added a doc, both bumped the same number and git kept one copy.',
+        }).toEqual({ drift: [], hint: 'none' });
+    });
 
     it('every doc on disk is classified', () => {
         const missing = onDisk.filter((d) => !classification.docs[d]);

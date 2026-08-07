@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card';
 import { KPIStat } from '@/components/ui/metric';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SkeletonDashboard } from '@/components/ui/skeleton';
-import { resolveBandForScore } from '@/lib/risk-matrix/scoring';
+import { resolveBandForScore, resolveBandTone, type RiskSeverityTone } from '@/lib/risk-matrix/scoring';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import type { RiskMatrixBand } from '@/lib/risk-matrix/types';
 import { InfoTooltip } from '@/components/ui/tooltip';
@@ -62,21 +62,46 @@ type Risk = {
 // hard-coded ladder it used pre-RQ3-9. The band resolver is the
 // same one the risk panel / PDF exporter / score explainer use, so
 // a tone shift here can't disagree with them.
-const heatmapClassForBand = (band: RiskMatrixBand): string => {
-    // Map the band's canonical name to a semantic-token bundle. The
-    // matrix config's `color` field is a CSS hex — threading it
-    // through inline styles would bypass dark-mode + the WCAG-AA
-    // contrast guarantees in our semantic tokens. The band-NAME →
-    // token mapping consults the tenant's CANONICAL band (not a
-    // hard-coded score ladder), so a tenant who customises
-    // thresholds gets the right tone without code changes.
-    switch (band.name) {
-        case 'Low': return 'bg-bg-success text-content-success';
-        case 'Medium': return 'bg-bg-warning text-content-warning';
-        case 'High': return 'bg-bg-warning/60 text-content-warning';
-        case 'Critical': return 'bg-bg-error text-content-error';
-        default: return 'bg-bg-muted/40 text-content-muted';
-    }
+/**
+ * Semantic-token bundle per severity tone. The matrix config's `color` is a
+ * CSS hex; threading it through inline styles would bypass dark-mode and the
+ * WCAG-AA contrast guarantees these tokens carry. Mirrors the maps in
+ * `_shared/RiskEvaluationFields.tsx` and `coverage/CoverageClient.tsx`.
+ */
+const HEATMAP_TONE_CLASS: Record<RiskSeverityTone, string> = {
+    default: 'bg-bg-muted/40 text-content-muted',
+    success: 'bg-bg-success text-content-success',
+    attention: 'bg-bg-warning text-content-warning',
+    critical: 'bg-bg-error text-content-error',
+};
+
+/**
+ * B1-5 — tone a heatmap cell from its score.
+ *
+ * This used to `switch (band.name)` against the literal strings 'Low',
+ * 'Medium', 'High', 'Critical' — while its own comment claimed it "consults
+ * the tenant's CANONICAL band … so a tenant who customises thresholds gets
+ * the right tone without code changes". `RiskMatrixConfig` lets a tenant
+ * RENAME bands, so any tenant who did fell straight through to `default:`
+ * and got a uniformly grey heatmap. The comment described the intent; the
+ * code keyed on English names.
+ *
+ * `resolveBandTone` keys off the band's ORDINAL POSITION in the sorted set —
+ * first is success, last is critical, the rest attention — so it is
+ * rename-proof and works for any band count.
+ *
+ * Trade-off, deliberately taken: with the default four bands, the middle two
+ * now share the attention tone where 'High' previously had a distinct
+ * `bg-bg-warning/60`. Losing one shade of distinction is a far smaller
+ * failure than a renamed band rendering the whole grid grey, and this
+ * matches how the coverage table and evaluation fields already tone scores.
+ */
+const heatmapClassForScore = (
+    score: number,
+    bands: ReadonlyArray<RiskMatrixBand> | undefined,
+): string => {
+    if (!bands || bands.length === 0) return HEATMAP_TONE_CLASS.default;
+    return HEATMAP_TONE_CLASS[resolveBandTone(score, bands).tone];
 };
 
 export default function RiskDashboardPage() {
@@ -143,6 +168,16 @@ export default function RiskDashboardPage() {
         heatmapCounts[key] = (heatmapCounts[key] || 0) + 1;
     });
 
+    // B1-5 — axis extents come from the tenant's matrix config, not a
+    // hardcoded 5. Falls back to 5 only while the payload is still loading,
+    // which matches the rest of this page's null-matrix handling.
+    const likelihoodLevels = matrix?.likelihoodLevels ?? 5;
+    const impactLevels = matrix?.impactLevels ?? 5;
+    // Impact reads left→right ascending; likelihood reads bottom→top, so the
+    // rows are rendered highest-first.
+    const impactAxis = Array.from({ length: impactLevels }, (_, n) => n + 1);
+    const likelihoodAxis = Array.from({ length: likelihoodLevels }, (_, n) => likelihoodLevels - n);
+
     if (loading) {
         return <SkeletonDashboard />;
     }
@@ -204,15 +239,26 @@ export default function RiskDashboardPage() {
                 {/* Heatmap */}
                 <Card>
                     <Heading level={3} className="mb-4">{t('heatmapTitle')}</Heading>
-                    <div className="grid grid-cols-[auto_repeat(5,1fr)] gap-1 text-xs">
+                    {/* B1-5 — the axes come from the tenant's matrix config.
+                        This grid was hardcoded 5x5 ([5,4,3,2,1] rows,
+                        [1,2,3,4,5] columns, grid-cols-repeat(5)), so a tenant
+                        on a 6x6 matrix saw a SILENTLY TRUNCATED heatmap: the
+                        6-level row and column simply were not drawn, and the
+                        risks living there vanished from the picture with no
+                        indication anything was missing. A 3x3 tenant got
+                        phantom cells for levels that do not exist. */}
+                    <div
+                        className="grid gap-1 text-xs"
+                        style={{ gridTemplateColumns: `auto repeat(${impactLevels}, 1fr)` }}
+                    >
                         <div></div>
-                        {[1, 2, 3, 4, 5].map(i => (
+                        {impactAxis.map(i => (
                             <div key={i} className="text-center text-content-subtle font-medium pb-1">{i}</div>
                         ))}
-                        {[5, 4, 3, 2, 1].map(l => (
+                        {likelihoodAxis.map(l => (
                             <Fragment key={`row-${l}`}>
                                 <div className="flex items-center text-content-subtle font-medium pr-2">{l}</div>
-                                {[1, 2, 3, 4, 5].map(i => {
+                                {impactAxis.map(i => {
                                     const count = heatmapCounts[`${l}-${i}`] || 0;
                                     const s = l * i;
                                     const band = matrix
@@ -221,7 +267,7 @@ export default function RiskDashboardPage() {
                                     return (
                                         <div
                                             key={`${l}-${i}`}
-                                            className={`h-10 rounded flex items-center justify-center font-medium transition-colors duration-150 ease-out cursor-default ${heatmapClassForBand(band)}`}
+                                            className={`h-10 rounded flex items-center justify-center font-medium transition-colors duration-150 ease-out cursor-default ${heatmapClassForScore(s, matrix?.bands)}`}
                                             title={t('dash.heatmapCell', { l, i, score: s, count, band: band.name })}
                                             data-band={band.name}
                                         >
@@ -232,7 +278,12 @@ export default function RiskDashboardPage() {
                             </Fragment>
                         ))}
                         <div className="text-content-subtle text-[10px] mt-1">L↑</div>
-                        <div className="col-span-5 text-center text-content-subtle text-[10px] mt-1">{t('dash.impactArrow')}</div>
+                        <div
+                            className="text-center text-content-subtle text-[10px] mt-1"
+                            style={{ gridColumn: `span ${impactLevels}` }}
+                        >
+                            {t('dash.impactArrow')}
+                        </div>
                     </div>
                 </Card>
             </div>
