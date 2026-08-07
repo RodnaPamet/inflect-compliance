@@ -133,8 +133,12 @@ export async function updateControl(
         });
 
         if (!control) {
-            const existingAny = await ControlRepository.getById(db, ctx, id);
-            if (existingAny) throw forbidden('Cannot modify global library controls');
+            // Reuses the BEFORE read above rather than issuing a second
+            // getById: the update's where-filter excludes global rows, so a
+            // null result with a row that WAS readable means it belongs to
+            // the shared library. One read serves both the diff and this
+            // guard.
+            if (before) throw forbidden('Cannot modify global library controls');
             throw notFound('Control not found');
         }
 

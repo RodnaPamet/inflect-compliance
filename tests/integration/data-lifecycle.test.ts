@@ -299,11 +299,26 @@ describeFn('Data Lifecycle', () => {
                 db: prisma,
             });
 
-            const controlResult = results.find(r => r.model === 'Control');
-            expect(controlResult).toBeDefined();
-            expect(controlResult!.scanned).toBeGreaterThanOrEqual(1);
+            // Control is NOT swept any more (2026-08-06). It has a
+            // retentionUntil column and was queried on every run, but NOTHING
+            // in src/ ever set it — no schema, no DTO, no UI, no job — so the
+            // sweep could never match and the retention doc claimed a
+            // guarantee the product did not provide. Controls are purged via
+            // the soft-delete path instead.
+            //
+            // This test wrote the column by raw SQL, which is precisely why
+            // the gap survived: the only thing that ever populated it was a
+            // test.
+            expect(results.find(r => r.model === 'Control')).toBeUndefined();
 
-            // Should still be active
+            // …and the sweep still does its job for the models that DO have
+            // writers, so removing Control did not disable the feature.
+            expect(results.length).toBeGreaterThan(0);
+            for (const r of results) {
+                expect(r.model).not.toBe('Control');
+            }
+
+            // dryRun must not mutate.
             const found = await prisma.control.findUnique({ where: { id: control.id } });
             expect(found).not.toBeNull();
         });
