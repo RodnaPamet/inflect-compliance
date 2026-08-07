@@ -196,6 +196,25 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             // would be a permissive sibling that re-introduces the
             // cross-tenant UPDATE leak documented in the migration.
             'UserSession',
+            // 2026-08-06 — `Control` is the third nullable-tenantId model
+            // and had been carrying the split shape this list exists to
+            // forbid. A FOR ALL policy with no explicit WITH CHECK reuses
+            // its USING as the implicit one, and permissive policies OR
+            // together, so the strict INSERT sibling could never restrict
+            // anything — it only added another way to pass. Under app_user
+            // that permitted UPDATE of a global-library row, INSERT of a
+            // global row, and (worst) setting an owned row's tenantId to
+            // NULL, promoting a private control into the shared catalogue
+            // for every tenant.
+            //
+            // Migration 20260806120000 replaced both with one asymmetric
+            // policy: USING (tenantId IS NULL OR own) so reads still see
+            // the global library, WITH CHECK (own) so writes cannot leave
+            // the tenant. Listing it here is ENFORCEMENT, not suppression —
+            // the post-loop sanity check below verifies that both clauses
+            // are really present and that the WITH CHECK does not merely
+            // repeat the permissive USING.
+            'Control',
         ]);
 
         const { Prisma } = require('@prisma/client');

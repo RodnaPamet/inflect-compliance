@@ -7,6 +7,7 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
 import { getEffectivePlan } from '@/lib/billing/entitlements';
 import { recordFrameworkInstalled } from '@/lib/observability/business-metrics';
+import { controlDataFromTemplate, resolveRelatedPolicyIds } from '../control/template-projection';
 
 // в”Ђв”Ђв”Ђ Pack Install (tenant-scoped, idempotent) в”Ђв”Ђв”Ђ
 
@@ -112,12 +113,10 @@ export async function installPack(ctx: RequestContext, packKey: string) {
         const policyByTitle = new Map(tenantPolicies.map((p) => [p.title.trim().toLowerCase(), p.id]));
         const linkPolicies = async (controlId: string, relatedPolicies: string | null) => {
             if (!relatedPolicies) return;
-            const policyIds = relatedPolicies.split('|')
-                .map((n) => policyByTitle.get(n.trim().toLowerCase()))
-                .filter((id): id is string => Boolean(id));
+            const policyIds = resolveRelatedPolicyIds(relatedPolicies, policyByTitle);
             if (!policyIds.length) return;
             const res = await tdb.policyControlLink.createMany({
-                data: [...new Set(policyIds)].map((policyId) => ({ tenantId: ctx.tenantId, policyId, controlId })),
+                data: policyIds.map((policyId) => ({ tenantId: ctx.tenantId, policyId, controlId })),
                 skipDuplicates: true,
             });
             policyLinksCreated += res.count;
@@ -145,18 +144,14 @@ export async function installPack(ctx: RequestContext, packKey: string) {
             // Create control from template
             const control = await tdb.control.create({
                 data: {
-                    tenantId: ctx.tenantId,
-                    code: tmpl.code,
-                    name: tmpl.title,
-                    category: tmpl.category,
-                    // Internal-controls import fields carry through to the Control
-                    // so the detail Overview/Tests tabs render them post-install.
-                    objective: tmpl.objective,
-                    successCriteria: tmpl.successCriteria,
-                    testingMethodology: tmpl.testingMethodology,
-                    frequency: tmpl.defaultFrequency,
-                    status: 'NOT_STARTED',
-                    createdByUserId: ctx.userId,
+                    // Shared with POST /controls/templates/install — see
+                    // control/template-projection.ts. The two paths produced
+                    // different controls from the same template until
+                    // 2026-08-06.
+                    ...controlDataFromTemplate(tmpl, {
+                        tenantId: ctx.tenantId,
+                        userId: ctx.userId,
+                    }),
                 },
             });
             controlsCreated++;

@@ -30,6 +30,13 @@ const mockDb = {
     // map/unmap still use the canonical upsert/findFirst/delete.
     task: { create: jest.fn(), createMany: jest.fn() },
     controlRequirementLink: { upsert: jest.fn(), findFirst: jest.fn(), delete: jest.fn(), createMany: jest.fn() },
+    // Policy resolution — a template's `relatedPolicies` (pipe-delimited
+    // titles) becomes PolicyControlLink rows on install, matching what the
+    // framework wizard does. Both are only touched when the template
+    // actually names policies, which is why most cases below leave these
+    // untouched.
+    policy: { findMany: jest.fn() },
+    policyControlLink: { createMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -271,3 +278,71 @@ describe('listControlMappings', () => {
 
 // keep adminCtx reference live for future expansion
 void adminCtx;
+
+
+describe('installControlsFromTemplate — policy links', () => {
+    // This path had NO coverage, which is how a mock gap surfaced as a CI
+    // failure rather than a local one: the usecase gained a policy lookup
+    // and every existing test passed a mock db with no `policy` model.
+
+    it('resolves relatedPolicies to PolicyControlLink rows', async () => {
+        (ControlTemplateRepository.getById as jest.Mock).mockResolvedValue({
+            id: 'tpl-1',
+            code: 'AC-1',
+            title: 'Access control',
+            category: 'Access',
+            objective: 'Restrict access',
+            successCriteria: 'No unauthorised access',
+            testingMethodology: 'Sample 25',
+            defaultFrequency: 'QUARTERLY',
+            relatedPolicies: 'Access Policy|Missing Policy',
+            tasks: [],
+            requirementLinks: [],
+        });
+        mockDb.control.findFirst.mockResolvedValue(null);
+        mockDb.control.create.mockResolvedValue({ id: 'c-1' });
+        mockDb.policy.findMany.mockResolvedValue([{ id: 'p-1', title: 'Access Policy' }]);
+        mockDb.policyControlLink.createMany.mockResolvedValue({ count: 1 });
+
+        await installControlsFromTemplate(editorCtx, ['tpl-1']);
+
+        // The known title links; the unknown one is dropped rather than
+        // failing the install — a shared template names policies a given
+        // tenant may not have written yet.
+        expect(mockDb.policyControlLink.createMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: [{ tenantId: editorCtx.tenantId, policyId: 'p-1', controlId: 'c-1' }],
+                skipDuplicates: true,
+            }),
+        );
+
+        // …and the three documented copy-through fields reach the Control.
+        expect(mockDb.control.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    objective: 'Restrict access',
+                    successCriteria: 'No unauthorised access',
+                    testingMethodology: 'Sample 25',
+                }),
+            }),
+        );
+    });
+
+    it('does not query policies when the template names none', async () => {
+        // The lazy path. Calling the resolver unconditionally made every
+        // install pay for a query it did not need — and was what broke the
+        // existing suites, whose mock db has no `policy` model by default.
+        (ControlTemplateRepository.getById as jest.Mock).mockResolvedValue({
+            id: 'tpl-2', code: 'AC-2', title: 'No policies', category: null,
+            objective: null, successCriteria: null, testingMethodology: null,
+            defaultFrequency: null, relatedPolicies: null, tasks: [], requirementLinks: [],
+        });
+        mockDb.control.findFirst.mockResolvedValue(null);
+        mockDb.control.create.mockResolvedValue({ id: 'c-2' });
+        mockDb.policy.findMany.mockClear();
+
+        await installControlsFromTemplate(editorCtx, ['tpl-2']);
+
+        expect(mockDb.policy.findMany).not.toHaveBeenCalled();
+    });
+});

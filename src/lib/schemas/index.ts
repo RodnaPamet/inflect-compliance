@@ -241,6 +241,16 @@ export const CreateControlSchema = z.object({
     automationKey: z.string().optional().nullable(),
     automationType: z.enum(['AUTOMATED', 'MANUAL', 'IT_DEPENDENT_MANUAL']).optional().nullable(),
     mitigationType: z.enum(['PREVENTIVE', 'DETECTIVE', 'DETERRENT', 'CORRECTIVE', 'COMPENSATING']).optional().nullable(),
+    // createControl has always DECLARED and WRITTEN these three
+    // (mutations.ts:33-35 -> :68-70), but they were missing here — and this
+    // schema ends in .strip(), so POST /controls removed them before the
+    // usecase ever saw them. The caller got a 201 with objective: null and
+    // no warning. agent-proposals.ts parses through this schema too, so
+    // AI-proposed controls lost them as well. Shapes match
+    // UpdateControlSchema.
+    objective: z.string().optional().nullable(),
+    successCriteria: z.string().optional().nullable(),
+    testingMethodology: z.string().optional().nullable(),
     isCustom: z.boolean().optional().default(true),
 }).strip().openapi('ControlCreateRequest', {
     description: 'Payload for creating a control. Status defaults to NOT_STARTED. annexId references the framework annex catalogue (e.g. ISO 27001:2022 A.5.1). Custom controls (isCustom=true) are tenant-specific; framework-shipped controls install via the templates endpoint instead.',
@@ -271,7 +281,23 @@ export const UpdateControlSchema = z.object({
 });
 
 export const SetControlStatusSchema = z.object({
-    status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'IMPLEMENTED', 'NEEDS_REVIEW']),
+    // The six the detail dropdown offers (page.tsx builds them from
+    // buildControlStatusLabels). This accepted only four until 2026-08-06,
+    // so selecting PLANNED or IMPLEMENTING returned 400 invalid_enum_value
+    // from a control the UI presented as selectable.
+    //
+    // NOT_APPLICABLE is excluded here for the same reason as the bulk
+    // schema: it is owned by the applicability action, which carries the
+    // justification and the audit trail. With that one exclusion these two
+    // enums are now identical, so all three status write paths agree.
+    status: z.enum([
+        'NOT_STARTED',
+        'PLANNED',
+        'IN_PROGRESS',
+        'IMPLEMENTING',
+        'IMPLEMENTED',
+        'NEEDS_REVIEW',
+    ]),
 }).strip().openapi('ControlSetStatusRequest', {
     description: 'Lifecycle transition for a control. NEEDS_REVIEW signals a control whose evidence has lapsed or whose owner was removed.',
 });
@@ -747,6 +773,15 @@ export const BulkImportRisksSchema = z.object({
 
 export const BulkControlStatusSchema = z.object({
     controlIds: z.array(z.string().min(1)).min(1).max(100),
+    // NOT_APPLICABLE is deliberately ABSENT. Marking a control N/A is an
+    // applicability DECISION, not a status change: the single-control path
+    // (mutations.ts:200-220) requires a justification, stamps
+    // applicabilityDecidedByUserId/At, and writes a
+    // CONTROL_APPLICABILITY_CHANGED audit row. The bulk path goes through
+    // updateMany and can do NONE of that — so accepting it here produced an
+    // unjustified, unattributed N/A with an audit row mistyped as
+    // status_change. The only guard was client-side, and its own comment
+    // named the defect. Set N/A through the applicability action.
     status: z.enum([
         'NOT_STARTED',
         'PLANNED',
@@ -754,7 +789,6 @@ export const BulkControlStatusSchema = z.object({
         'IMPLEMENTING',
         'IMPLEMENTED',
         'NEEDS_REVIEW',
-        'NOT_APPLICABLE',
     ]),
 }).strip();
 
