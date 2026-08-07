@@ -506,6 +506,51 @@ export function recordAuditStreamBufferOverflow(): void {
     getAuditStreamOverflow().add(1);
 }
 
+// ── Field decryption (Epic B) ─────────────────────────────────────────
+
+let _fieldDecryptFailures: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+function getFieldDecryptFailures() {
+    if (!_fieldDecryptFailures) {
+        _fieldDecryptFailures = getMeter().createCounter('encryption.field.decrypt_failed', {
+            description:
+                'Encrypted field values the middleware could not decrypt. Each one was handed to the caller as RAW CIPHERTEXT — see recordFieldDecryptFailure.',
+            unit: '1',
+        });
+    }
+    return _fieldDecryptFailures;
+}
+
+/**
+ * Record a field the encryption middleware failed to decrypt.
+ *
+ * WHY THIS DESERVES A METRIC RATHER THAN JUST THE EXISTING WARN LINE: the
+ * middleware fails OPEN. On a decrypt failure it logs and leaves the field
+ * as the raw ciphertext, and the caller receives a string it cannot tell
+ * from plaintext. So the blast radius is every downstream consumer of that
+ * row — the UI renders a base64 blob, a PDF export embeds it, an audit-pack
+ * share link publishes it, an SDK consumer reads it verbatim.
+ *
+ * A log line nobody is alerted on is not a control. This makes the failure
+ * countable so it can be alerted on, and gives whoever decides the
+ * fail-open/fail-closed question the evidence to decide it with.
+ *
+ * Labels are deliberately low-cardinality — model, field and envelope
+ * version, never tenantId (that would blow up the series count and put a
+ * tenant identifier in metrics).
+ */
+export function recordFieldDecryptFailure(attrs: {
+    model: string;
+    field: string;
+    version: string;
+}): void {
+    getFieldDecryptFailures().add(1, {
+        model: attrs.model,
+        field: attrs.field,
+        'ciphertext.version': attrs.version,
+    });
+}
+
 // ── Session-policy resolution (Epic C.3) ──────────────────────────────
 
 let _sessionPolicyResolution: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
