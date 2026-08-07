@@ -8,8 +8,12 @@
  *
  * Usage:
  *   import { apiGet, apiPost, ApiClientError } from '@/lib/api-client';
- *   const controls = await apiGet<ControlListItemDTO[]>('/api/t/acme/controls');
+ *   const controls = await apiGet<CappedList<ControlListItemDTO>>('/api/t/acme/controls');
  *   const risk = await apiPost<RiskDetailDTO>('/api/t/acme/risks', body);
+ *
+ * The list generic is `CappedList<T>` (`{ rows, truncated }`), not `T[]` —
+ * see `@/lib/list-backfill-cap`. The generic is an unchecked assertion, so
+ * `T[]` compiles and then throws `.map is not a function` at runtime.
  */
 import type { ZodSchema } from 'zod';
 

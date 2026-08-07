@@ -28,9 +28,15 @@
  * Usage:
  *
  *   const { data, error, isLoading, mutate } =
- *       useTenantSWR<ControlListItemDTO[]>('/controls', {
+ *       useTenantSWR<CappedList<ControlListItemDTO>>('/controls', {
  *           schema: ControlListSchema,
  *       });
+ *
+ * NOTE the generic is `CappedList<T>`, not `T[]`. The tenant list
+ * endpoints return the backfill-capped `{ rows, truncated }` envelope
+ * (see `@/lib/list-backfill-cap`), and this hook's type parameter is an
+ * UNCHECKED assertion — declaring `T[]` compiles fine and then throws
+ * `.map is not a function` at runtime. Read `data?.rows`.
  *
  * Conditional fetching mirrors SWR's null-key idiom — pass `null` (or
  * `undefined`) for `path` to skip:

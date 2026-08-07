@@ -34,6 +34,7 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { useToast, useEnterSubmit } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks';
+import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { formatDate } from '@/lib/format-date';
 import { buildVulnFilters, VULN_FILTER_KEYS, buildVulnStatusLabels } from './filter-defs';
 
@@ -720,7 +721,9 @@ function LinkCveModal({
     const t = useTranslations('vulnerabilities');
     const tc = useTranslations('common');
     const toast = useToast();
-    const { data: assets, isLoading } = useTenantSWR<AssetOption[]>('/assets');
+    const { data: assets, isLoading } = useTenantSWR<
+        CappedList<AssetOption> | AssetOption[]
+    >('/assets');
     const [assetId, setAssetId] = useState<string | null>(null);
     const [cveId, setCveId] = useState('');
     const [note, setNote] = useState('');
@@ -729,7 +732,11 @@ function LinkCveModal({
 
     const assetOptions = useMemo<ComboboxOption[]>(
         () =>
-            (assets ?? []).map((a) => ({
+            // GET /assets returns the backfill-capped `{ rows, truncated }`
+            // envelope, not a bare array. Calling `.map` on the object threw
+            // "map is not a function" and the error boundary replaced the
+            // whole page — see `unwrapCappedList`.
+            unwrapCappedList(assets).map((a) => ({
                 value: a.id,
                 label: a.key ? `${a.key} · ${a.name}` : a.name,
             })),
