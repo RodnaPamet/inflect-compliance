@@ -1,85 +1,94 @@
 /**
- * Elevation PR-2 — controls/[controlId] page-size ratchet.
+ * The control detail page's DECOMPOSITION, measured by state — not by lines.
  *
- * The control detail page is the largest in the codebase and a
- * known velocity tax. Polish PR-2 began the decomposition by
- * extracting the Edit Control modal into `_modals/`. This ratchet
- * locks the line count at the current value so future PRs:
- *   - cannot ADD inline content to the page (forced to extract
- *     instead), AND
- *   - are encouraged to extract more (the FLOOR can drop monotonically
- *     as more sub-components are pulled out).
+ * WHY THE LINE CAP WENT
+ * ---------------------
+ * This file used to pin `[controlId]/page.tsx` at `MAX_LINES = 1404`, with
+ * 21 lines of headroom and a documented history of three raises (+122)
+ * against one drop (-106): net upward. Its failure message claimed "the page
+ * is the largest in the codebase" — it was the 6th largest, and
+ * `ControlsClient.tsx` on the SAME SURFACE is ~1,958 lines and was never
+ * capped at all, so content could be moved from the capped file to the
+ * uncapped one and the ratchet would call that progress.
  *
- * To bump the floor down (good — page shrank): adjust MAX_LINES to
- * the new line count of the file in the same diff that does the
- * extraction. To bump the floor up (bad — page grew): the ratchet
- * fails CI and asks the author to extract or delete content
- * elsewhere instead.
+ * What a line cap actually incentivised, all three observable here:
  *
- * The eventual target is ≤ 300 lines (page coordinates, doesn't
- * implement). This is multi-PR work — track in
- * docs/implementation-notes/2026-05-09-controls-page-decomposition.md
- * (future).
+ *   1. DENSER CODE rather than less. Compare the one-line label builders at
+ *      the top of this page with the same logic spread over eleven lines in
+ *      ControlsClient.
+ *   2. PRESENTATION-ONLY extraction. Only 2 of 8 tab bodies live in
+ *      `_tabs/`, because JSX moves cheaply and state cannot follow it — so
+ *      the controller stayed and the markup left.
+ *   3. Extraction to ADJACENT rather than CORRECT locations. `EvidenceSubTable`
+ *      was extracted into `_tabs/` "per the page-size ratchet", and that
+ *      Next.js-private directory then became a FOUR-SURFACE public
+ *      dependency (see tests/guards/route-import-boundaries.test.ts). The
+ *      cap did not just fail to help; it produced the coupling.
+ *
+ * WHAT REPLACED IT
+ * ----------------
+ *   - `route-import-boundaries.test.ts` — where code lives, which is what
+ *     the cap was a bad proxy for.
+ *   - the state cap below — how much the page ORCHESTRATES, which is what
+ *     makes a page hard to change. Moving JSX out does not move this number;
+ *     moving a concern out does.
  */
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const PAGE = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx';
+const PAGE = path.resolve(
+    __dirname,
+    '../../src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx',
+);
 
-// Adjust DOWNWARD as the page shrinks. The single allowable upward
-// nudge happens when a deliberate platform-wide primitive adoption
-// lands here in the SAME PR (e.g. Elevation PR-1 adopted the shared
-// MetaStrip primitive across all detail pages, +42 lines net here).
-// Anything else MUST shrink the page or extract a sub-component
-// instead.
-//
-// R8-PR2 raised by 20 (1430 → 1450) to accommodate the
-// InlineEmptyState migration on four tab-body empty states (Tasks /
-// Evidence / Frameworks / Activity). Each call expands from a
-// one-line inline `<div className="p-8 text-center
-// text-content-subtle text-sm">No X yet</div>` to a 4-line
-// `<InlineEmptyState title=... description=...>` block. Visual
-// uniformity gain is real; line cost is the trade.
-//
-// R11-PR6 raised by 60 (1450 → 1510) to accommodate the
-// raw-<table> → <DataTable> migration of the tasks sub-table.
-// Inline ColumnDef<ControlTaskDTO>[] block is ~70 lines but
-// replaces ~28 lines of raw <tr>/<td> markup, net +42 + import +
-// useMemo wrapping. Visual uniformity (tasks table now matches
-// every other table in the product) is the trade.
-//
-// #102 item 1 lowered by 106 (1510 → 1404): the tab-lazy refactor
-// added per-tab `useTenantSWR` reads + loading states (~+60), then
-// extracted the whole Mappings tab — state, effects, map/unmap
-// handlers and JSX — into `_tabs/ControlMappingsTab.tsx` (~-165 net
-// on the page). A genuine downward ratchet: the page shrank below
-// every prior floor.
-const MAX_LINES = 1404;
+/**
+ * Ceiling on independent state hooks in the page component.
+ *
+ * Observed 24 at the time of writing (this counts `useState<T>(` generic
+ * forms too, which a bare `useState(` grep misses — I set the cap from the
+ * narrower count first and the test caught it). 26 leaves room for one
+ * genuine new concern without leaving room for drift. Unlike a line cap, this cannot be
+ * satisfied by relocating markup — only by moving a piece of state, and its
+ * behaviour, somewhere that owns it.
+ *
+ * To LOWER it (good — the page shed a concern): change the number in the
+ * same diff. To raise it: don't. Extract instead — that is the entire point
+ * of measuring this rather than lines.
+ */
+const MAX_STATE_HOOKS = 26;
 
-describe('Controls detail page size ratchet (Elevation PR-2)', () => {
-    it('controls/[controlId]/page.tsx stays at or below the size floor', () => {
-        const abs = path.resolve(ROOT, PAGE);
-        expect(fs.existsSync(abs)).toBe(true);
-        const content = fs.readFileSync(abs, 'utf8');
-        const lineCount = content.split('\n').length;
-        if (lineCount > MAX_LINES) {
-            throw new Error(
-                `${PAGE} grew to ${lineCount} lines (floor: ${MAX_LINES}).\n\nThe page is the largest in the codebase and a known velocity tax. Don't add inline content — extract a tab body or a modal into a sub-component under \`_modals/\` or \`_tabs/\`, then update MAX_LINES in this ratchet to the new (lower) line count.\n\nDecomposition guide: docs/implementation-notes/.../controls-page-decomposition.md`,
-            );
-        }
-        expect(lineCount).toBeLessThanOrEqual(MAX_LINES);
+function pageSource(): string {
+    return fs.readFileSync(PAGE, 'utf8');
+}
+
+function countMatches(src: string, re: RegExp): number {
+    return (src.match(re) ?? []).length;
+}
+
+describe('control detail page — decomposition', () => {
+    it('does not accumulate orchestration state', () => {
+        const src = pageSource();
+        const stateHooks = countMatches(src, /\buseState[<(]/g);
+
+        expect({
+            stateHooks,
+            withinCap: stateHooks <= MAX_STATE_HOOKS,
+            cap: MAX_STATE_HOOKS,
+        }).toEqual({ stateHooks, withinCap: true, cap: MAX_STATE_HOOKS });
     });
 
-    it('the _modals/ extraction directory exists', () => {
-        // Sanity check — if the _modals directory disappears (e.g.
-        // someone reverts the extraction), the ratchet should signal.
-        const modalsDir = path.resolve(
-            ROOT,
-            'src/app/t/[tenantSlug]/(app)/controls/[controlId]/_modals',
-        );
-        expect(fs.existsSync(modalsDir)).toBe(true);
-        const files = fs.readdirSync(modalsDir);
-        expect(files.length).toBeGreaterThan(0);
+    it('is not measured by line count any more', () => {
+        // Guards the replacement itself. Re-adding a MAX_LINES constant here
+        // would reinstate the incentive that produced the four-surface
+        // coupling, so it has to be a deliberate, visible act.
+        const self = fs.readFileSync(__filename, 'utf8');
+        // (the identifier appears in this file only inside prose, hence the
+        // split — the check is for a real constant declaration)
+        const declaration = new RegExp('const\\s+MAX_' + 'LINES\\s*=');
+        expect(declaration.test(self)).toBe(false);
+    });
+
+    it('the page still exists where the boundary guard expects it', () => {
+        expect(fs.existsSync(PAGE)).toBe(true);
     });
 });

@@ -22,8 +22,8 @@ import { UserCombobox } from "@/components/ui/user-combobox";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { EvidenceUploadSection } from "@/components/evidence/EvidenceUploadSection";
-import { PanelTabs } from "./PanelTabs";
-import { PanelActivityFeed } from "./PanelActivityFeed";
+import { PanelTabs } from "@/components/controls-shared/PanelTabs";
+import { PanelActivityFeed } from "@/components/controls-shared/PanelActivityFeed";
 import { choiceOrNull, textOrNull } from './_lib/control-write-values';
 
 /** The subset of control row fields the panel needs to seed + display. */

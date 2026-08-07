@@ -98,7 +98,7 @@ describe('Control evidence tab — unified display', () => {
         __dirname, '../../src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx'
     );
     const SUBTABLE_PATH = path.resolve(
-        __dirname, '../../src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable.tsx'
+        __dirname, '../../src/components/controls-shared/EvidenceSubTable.tsx'
     );
     const pageContent = fs.readFileSync(PAGE_PATH, 'utf-8');
     const subtableContent = fs.existsSync(SUBTABLE_PATH)

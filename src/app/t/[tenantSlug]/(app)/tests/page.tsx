@@ -26,7 +26,7 @@ import {
     buildResultLabels,
     PLAN_STATUS_BADGE,
     RESULT_BADGE,
-} from './_components/test-plan-labels';
+} from '@/components/test-plans/test-plan-labels';
 import { FilterProvider, useFilterContext, useFilters, useFilterCardVisibility, filtersToCards, selectVisibleFilters } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
@@ -94,7 +94,7 @@ const freqLabels = (t: (key: string) => string): Record<string, string> => ({
     MONTHLY: t('freq.monthly'), QUARTERLY: t('freq.quarterly'), ANNUALLY: t('freq.annually'),
 });
 // PR-DD — RESULT_BADGE + PLAN_STATUS_BADGE moved to the shared
-// `_components/test-plan-labels` module so this register and the plan detail
+// `@/components/test-plans/test-plan-labels` module so this register and the plan detail
 // view render one vocabulary with one set of tones (they were duplicated).
 //
 // Audit Coherence S2 — TestPlanStatus values: ACTIVE / PAUSED /
@@ -175,7 +175,7 @@ function TestsRollupContent() {
     const t = useTranslations('controlTests');
     const FREQ_LABELS = useMemo(() => freqLabels(t), [t]);
     // PR-R — localized enum→label maps for the plan-status + last-result badges.
-    // PR-DD moved the builders into `_components/test-plan-labels` so the plan
+    // PR-DD moved the builders into `@/components/test-plans/test-plan-labels` so the plan
     // DETAIL view renders the same vocabulary (it printed raw enums before).
     const PLAN_STATUS_LABELS = useMemo(() => buildPlanStatusLabels(t), [t]);
     const RESULT_LABELS = useMemo(() => buildResultLabels(t), [t]);

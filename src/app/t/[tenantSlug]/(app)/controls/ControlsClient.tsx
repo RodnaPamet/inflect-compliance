@@ -17,12 +17,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 // becomes deterministic. (The list quick-view is <ControlEditPanel>, mounted
 // in an <AsidePanel>.)
 import { NewControlModal } from './NewControlModal';
-import { ControlTaskRows, type ControlTask } from './ControlTaskRows';
+import { ControlTaskRows, type ControlTask } from '@/components/controls-shared/ControlTaskRows';
 // One-click on a control name / task opens an EDITABLE side panel (docked
 // AsidePanel, no overlay → table stays visible). These replace the read-only
 // quick-views AND the separate quick-edit Sheet (so no table blur, no edit btn).
 import { ControlEditPanel } from './ControlEditPanel';
-import { TaskEditPanel } from './TaskEditPanel';
+import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ownerDisplayName } from '@/lib/owner-display';

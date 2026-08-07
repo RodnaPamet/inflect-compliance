@@ -117,7 +117,7 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // PR-Q — the test-plan detail body (edit + run + new-run primaries) was
     // extracted into this shared view; the control-scoped + tenant-wide pages
     // are now thin wrappers with no primaries of their own.
-    "src/app/t/[tenantSlug]/(app)/tests/_components/TestPlanDetailView.tsx": 3,
+    "src/components/test-plans/TestPlanDetailView.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/admin/members/page.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx": 3,
 

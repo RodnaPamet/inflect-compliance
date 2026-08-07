@@ -10,7 +10,7 @@
  * control-scoped entry (control breadcrumb trail). */
 
 import { useParams } from 'next/navigation';
-import { TestPlanDetailView } from '@/app/t/[tenantSlug]/(app)/tests/_components/TestPlanDetailView';
+import { TestPlanDetailView } from '@/components/test-plans/TestPlanDetailView';
 
 export default function TestPlanDetailPage() {
     const params = useParams();

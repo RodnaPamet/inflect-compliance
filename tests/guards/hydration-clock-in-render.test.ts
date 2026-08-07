@@ -40,7 +40,7 @@ const KNOWN_CLOCK_IN_RENDER = new Set<string>([
     'src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx',
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx',
     'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx',
-    'src/app/t/[tenantSlug]/(app)/tests/_components/TestPlanDetailView.tsx',
+    'src/components/test-plans/TestPlanDetailView.tsx',
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/_components/VendorMonitoringPanel.tsx',
     'src/components/ControlExceptionsPanel.tsx',
     'src/components/TestPlansPanel.tsx',

@@ -12,7 +12,7 @@ import { Plus, Trash } from '@/components/ui/icons/nucleo';
 import { ViewsMenu } from '@/components/ui/views-menu';
 import { NewTaskModal } from './NewTaskModal';
 import { AsidePanel } from '@/components/ui/aside-panel';
-import { TaskEditPanel } from '@/app/t/[tenantSlug]/(app)/controls/TaskEditPanel';
+import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { useSWRConfig } from 'swr';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';

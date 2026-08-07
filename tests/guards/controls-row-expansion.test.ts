@@ -47,7 +47,7 @@ describe("Controls — row expansion", () => {
     });
 
     it("expanded task rows lazy-fetch the control's linked tasks + emit aligned <td>s", () => {
-        const src = read("src/app/t/[tenantSlug]/(app)/controls/ControlTaskRows.tsx");
+        const src = read("src/components/controls-shared/ControlTaskRows.tsx");
         expect(src).toMatch(/linkedEntityType=CONTROL&linkedEntityId=/);
         // One <td> per visible column id — the alignment mechanism.
         expect(src).toMatch(/columnIds\.map\(\(columnId\)/);

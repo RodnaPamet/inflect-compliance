@@ -105,7 +105,7 @@ describe('Epic G-2 — end-to-end readiness', () => {
     // tenant-wide /tests/plans/[planId] routes); the schedule picker lives there.
     test('shared test-plan detail view mounts the schedule picker', () => {
         const text = read(
-            'src/app/t/[tenantSlug]/(app)/tests/_components/TestPlanDetailView.tsx',
+            'src/components/test-plans/TestPlanDetailView.tsx',
         );
         expect(text).toMatch(/import.+TestPlanScheduleSection.+from\s+'@\/components\/TestPlanScheduleSection'/);
         expect(text).toMatch(/<TestPlanScheduleSection\b/);

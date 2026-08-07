@@ -95,7 +95,7 @@ export function EvidenceSubTable({
     onUnlinkEvidence?: (evidenceId: string) => void;
     tenantHref: (path: string) => string;
 }) {
-    const t = useTranslations('controls');
+    const t = useTranslations('sharedPanels');
     const rows = useMemo<EvidenceTableRow[]>(() => {
         const links = data?.links ?? [];
         // EP-3 — Evidence entities reach the control through the

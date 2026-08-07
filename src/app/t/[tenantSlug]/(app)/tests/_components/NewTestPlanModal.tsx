@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { TestStepsEditor, type TestStepDraft, serializeSteps, hasOrphanExpectedOutput } from './TestStepsEditor';
+import { TestStepsEditor, type TestStepDraft, serializeSteps, hasOrphanExpectedOutput } from '@/components/test-plans/TestStepsEditor';
 
 interface ControlOption { id: string; code: string | null; name: string }
 

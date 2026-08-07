@@ -55,8 +55,8 @@ const ALLOWED_VARIANTS = new Set([
 // shared module and MUST NOT redeclare a local status→variant map.
 const RENDERERS: Record<string, string> = {
     LinkedTasksPanel: 'src/components/LinkedTasksPanel.tsx',
-    ControlTaskRows: 'src/app/t/[tenantSlug]/(app)/controls/ControlTaskRows.tsx',
-    TaskEditPanel: 'src/app/t/[tenantSlug]/(app)/controls/TaskEditPanel.tsx',
+    ControlTaskRows: 'src/components/controls-shared/ControlTaskRows.tsx',
+    TaskEditPanel: 'src/components/controls-shared/TaskEditPanel.tsx',
     TasksClient: 'src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx',
 };
 

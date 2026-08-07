@@ -16,7 +16,7 @@ import { EditControlModal } from './_modals/EditControlModal';
 import { ControlReverseLookupModal } from '@/components/controls/ControlReverseLookupModal';
 import { LinkedVendorsPanel } from '@/components/LinkedVendorsPanel';
 import { ControlMappingsTab } from './_tabs/ControlMappingsTab';
-import { EvidenceSubTable, type EvidenceTabData } from './_tabs/EvidenceSubTable';
+import { EvidenceSubTable, type EvidenceTabData } from '@/components/controls-shared/EvidenceSubTable';
 import { ControlChecksTab } from './_tabs/ControlChecksTab';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { MetaStrip } from '@/components/ui/meta-strip';
@@ -1358,7 +1358,7 @@ export default function ControlDetailPage() {
     );
 }
 
-// Evidence sub-table is extracted to `_tabs/EvidenceSubTable.tsx`
+// Evidence sub-table is extracted to `@/components/controls-shared/EvidenceSubTable`
 // per the page-size ratchet (R10-PR3 follow-up).
 
-// Evidence sub-table extracted; see _tabs/EvidenceSubTable.tsx.
+// Evidence sub-table extracted; see @/components/controls-shared/EvidenceSubTable.

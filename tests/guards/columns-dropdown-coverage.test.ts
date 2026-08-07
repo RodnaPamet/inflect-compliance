@@ -70,8 +70,6 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — control-detail tasks sub-table (R11-PR6); EntityDetailLayout owns chrome.',
     'assets/[id]/page.tsx':
         '(a) sub-component — asset-detail Vulnerabilities sub-table (360° view); EntityDetailLayout owns chrome.',
-    'controls/[controlId]/_tabs/EvidenceSubTable.tsx':
-        '(a) sub-component — control-detail evidence sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
     'controls/[controlId]/_tabs/ControlMappingsTab.tsx':
         '(a) sub-component — control-detail mappings sub-table (R10-PR3 follow-up); EntityDetailLayout owns chrome.',
     'controls/[controlId]/_tabs/ControlChecksTab.tsx':
