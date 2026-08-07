@@ -46,6 +46,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useTranslations } from 'next-intl';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
     ACTIVE: 'success', ONBOARDING: 'info',
@@ -160,14 +161,12 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     }, [fetchParams]);
 
     const serverHadFilters = initialFilters && Object.keys(initialFilters).length > 0;
-    const filtersMatchInitial = useMemo(() => {
-        if (!serverHadFilters) return !hasActive;
-        const keys = new Set([...Object.keys(queryKeyFilters), ...Object.keys(initialFilters)]);
-        for (const k of keys) {
-            if ((queryKeyFilters[k] ?? '') !== (initialFilters[k] ?? '')) return false;
-        }
-        return true;
-    }, [queryKeyFilters, initialFilters, serverHadFilters, hasActive]);
+    const filtersMatchInitial = useSsrFallback({
+        queryKeyFilters,
+        initialFilters,
+        serverHadFilters,
+        hasActive,
+    });
 
     // Epic 69 — same SWR-first read pattern as policies / risks /
     // evidence. Filter-aware key + server-rendered fallbackData

@@ -88,6 +88,7 @@ import {
     type ControlHealthVerdict,
 } from '@/lib/controls/control-health';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
 
 // ─── Constants ───
 
@@ -335,15 +336,12 @@ function ControlsPageInner({
     // When server provides initialFilters, the data is already filtered server-side.
     // Only use initialData when the live filter state still matches what the server saw.
     const serverHadFilters = initialFilters && Object.keys(initialFilters).length > 0;
-    const filtersMatchInitial = useMemo(() => {
-        if (!serverHadFilters) return !hasActive;
-        const current = queryKeyFilters;
-        const keys = new Set([...Object.keys(current), ...Object.keys(initialFilters!)]);
-        for (const k of keys) {
-            if ((current[k] ?? '') !== (initialFilters![k] ?? '')) return false;
-        }
-        return true;
-    }, [queryKeyFilters, initialFilters, serverHadFilters, hasActive]);
+    const filtersMatchInitial = useSsrFallback({
+        queryKeyFilters,
+        initialFilters,
+        serverHadFilters,
+        hasActive,
+    });
 
     // PR-5 — API returns `{ rows, truncated }`; SSR initial wraps
     // with `truncated: false` because the SSR cap (100) is well below

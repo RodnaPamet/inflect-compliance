@@ -44,6 +44,7 @@ import {
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
 
 // Status badge classes — keyed off the canonical PolicyStatus enum
 // values. POLICY_STATUS_LABELS in `filter-defs.ts` is the single
@@ -176,19 +177,12 @@ function PoliciesPageInner({
 
     const serverHadFilters =
         initialFilters && Object.keys(initialFilters).length > 0;
-    const filtersMatchInitial = useMemo(() => {
-        if (!serverHadFilters) return !hasActive;
-        const keys = new Set([
-            ...Object.keys(queryKeyFilters),
-            ...Object.keys(initialFilters!),
-        ]);
-        for (const k of keys) {
-            if ((queryKeyFilters[k] ?? '') !== (initialFilters![k] ?? '')) {
-                return false;
-            }
-        }
-        return true;
-    }, [queryKeyFilters, initialFilters, serverHadFilters, hasActive]);
+    const filtersMatchInitial = useSsrFallback({
+        queryKeyFilters,
+        initialFilters,
+        serverHadFilters,
+        hasActive,
+    });
 
     // Epic 69 — read source is `useTenantSWR` against a filter-aware
     // cache key. Each filter combination becomes its own cache entry

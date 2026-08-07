@@ -30,6 +30,7 @@ import { Eyebrow } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import type { AuditLogEntry } from '@/lib/dto';
 import { AssetCriticalityBadge } from '../_form/AssetCriticalityFields';
+import { criticalityBadgeVariant } from '@/lib/asset-criticality';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { ProcessNodeReverseLookupModal } from '@/components/processes/ProcessNodeReverseLookupModal';
@@ -414,7 +415,8 @@ export default function AssetDetailPage() {
     // CRITICAL + HIGH both render as the error (red) badge — the StatusBadge
     // palette has no distinct orange between amber (warning) and red (error);
     // MEDIUM stays amber, LOW green.
-    const critColor = (c: string): StatusBadgeVariant => c === 'CRITICAL' || c === 'HIGH' ? 'error' : c === 'MEDIUM' ? 'warning' : 'success';
+    // Shared with the list badge — see criticalityBadgeVariant.
+    const critColor = criticalityBadgeVariant;
 
     const breadcrumbs = [
         { label: t('detail.crumbDashboard'), href: tenantHref('/dashboard') },
