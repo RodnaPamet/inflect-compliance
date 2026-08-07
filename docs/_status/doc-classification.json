@@ -1826,6 +1826,9 @@
         "docs/implementation-notes/2026-08-06-risk-collision-callouts-extraction.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-08-07-risks-asset-column.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-08-05-guards-to-ast-lint-rules.md": {
             "class": "historical"
         },

@@ -95,6 +95,22 @@ const RISK_STATUS_OPTIONS: ReadonlyArray<{ value: string; labelKey: string }> = 
     { value: 'CLOSED', labelKey: 'bulkStatus.closed' },
 ];
 
+/**
+ * B1-3 — the Asset column's display value.
+ *
+ * The repository selects at most ONE link (`take: 1`) plus a `_count`, so a
+ * risk linked to several assets renders as "Payroll DB +2" rather than
+ * silently naming one of them as though it were the only one. Doubles as the
+ * sort accessor, so sorting orders by the first-linked asset's name and
+ * unlinked rows sort together under the em-dash.
+ */
+function assetCellLabel(r: RiskListItem): string {
+    const first = r.assetLinks?.[0]?.asset?.name;
+    if (!first) return '—';
+    const total = r._count?.assetLinks ?? 1;
+    return total > 1 ? `${first} +${total - 1}` : first;
+}
+
 /** RQ2-5 — resolved ALE for a list row (null = not quantified). */
 function riskAle(r: RiskListItem): number | null {
     return resolveALE({
@@ -121,7 +137,13 @@ interface RiskListItem {
     treatmentOwner?: string | null;
     ownerUserId?: string | null;
     owner?: { id: string; name: string | null; email: string | null } | null;
-    asset: { name: string } | null;
+    // B1-3 — the many-to-many asset link. `take: 1` in the repository's
+    // select means at most one entry here; `_count.assetLinks` carries the
+    // real total so the cell can render "Payroll DB +2" without fetching
+    // the rest. The old singular `asset: { name } | null` could never be
+    // populated — Risk has no singular asset relation.
+    assetLinks?: Array<{ asset: { id: string; name: string } }>;
+    _count?: { assetLinks: number };
     controls: unknown[];
     /** B7 — unified linked-task counts (TaskLink RISK), supplied by listRisks. */
     taskTotal?: number;
@@ -498,7 +520,7 @@ function RisksPageInner({
     const sortAccessors = useMemo<SortAccessors<RiskListItem>>(
         () => ({
             title: (r) => r.title || '',
-            asset: (r) => r.asset?.name || '—',
+            asset: (r) => assetCellLabel(r),
             inherentScore: (r) => r.inherentScore || 0,
             // PR-K — after-controls posture. Null sorts last (not yet assessed).
             residual: (r) => r.residualScore ?? null,

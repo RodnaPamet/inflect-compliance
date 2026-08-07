@@ -84,6 +84,24 @@ const riskListSelect = {
             control: { select: { id: true, name: true, annexId: true, status: true } },
         },
     },
+    // B1-3 — the Asset column. It has been rendered, sortable and
+    // toggleable since it shipped, while this select carried no asset at
+    // all, so every row showed "—" and sorting by it was a no-op. A
+    // permanently-empty column is worse than none: it reads as "no risk is
+    // linked to an asset", which is a claim about the tenant's data.
+    //
+    // `Risk` has no singular asset — the relation is the many-to-many
+    // `AssetRiskLink`, which is why the old `asset: { name } | null` shape
+    // could never have been filled correctly either. Bounded with `take: 1`
+    // so a risk wired to fifty assets cannot fan the list query out; the
+    // `_count` supplies the honest "+N" without fetching the rest.
+    // Covered by the existing `@@index([tenantId, riskId])` on AssetRiskLink.
+    assetLinks: {
+        select: { asset: { select: { id: true, name: true } } },
+        orderBy: { createdAt: 'asc' as const },
+        take: 1,
+    },
+    _count: { select: { assetLinks: true } },
 } as const;
 
 export class RiskRepository {
