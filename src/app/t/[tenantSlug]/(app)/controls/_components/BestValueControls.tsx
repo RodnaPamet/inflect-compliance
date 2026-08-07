@@ -13,8 +13,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
-import { formatCompactCurrency } from '@/lib/risk-coherence';
+import { useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 
@@ -35,9 +34,10 @@ interface BestValueRow {
 
 export function BestValueControls({ limit = 5 }: { limit?: number }) {
     const t = useTranslations('controls');
-    const { currencySymbol } = useTenantContext();
     const tenantHref = useTenantHref();
-    const sym = currencySymbol ?? '€';
+    // B1-4 — one formatter per product; the ?? '€' fallback lives in the
+    // provider, not forked here.
+    const money = useMoneyFormatter();
     const { data, isLoading } = useTenantSWR<BestValueRow[]>(
         `/controls/best-value?limit=${limit}`,
     );
@@ -85,8 +85,8 @@ export function BestValueControls({ limit = 5 }: { limit?: number }) {
                         <p className="flex items-center gap-1.5 text-xs text-content-subtle">
                             <span className="truncate">
                                 {t('bestValue.savedLine', {
-                                    saved: formatCompactCurrency(row.aleProtected, sym),
-                                    cost: formatCompactCurrency(row.annualCost, sym),
+                                    saved: money(row.aleProtected),
+                                    cost: money(row.annualCost),
                                 })}
                             </span>
                             {/* Same provenance badge the single-control ROI card

@@ -35,7 +35,6 @@ import { SkeletonDashboard } from '@/components/ui/skeleton';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { formatTailAwareAle } from '@/lib/tail-language';
-import { formatCompactCurrency } from '@/lib/risk-coherence';
 import type { DashboardPayload } from '@/app-layer/usecases/risk-dashboard';
 
 interface BestValueRow {
@@ -164,7 +163,7 @@ export default function RiskBoardPage() {
                     </StatusBadge>
                     {appetite?.config?.totalAleThreshold != null && (
                         <span className="text-sm text-content-muted">
-                            {t('board.ceiling', { amount: formatCompactCurrency(appetite.config.totalAleThreshold, tenant.currencySymbol ?? '€') })}
+                            {t('board.ceiling', { amount: money(appetite.config.totalAleThreshold) })}
                         </span>
                     )}
                 </div>

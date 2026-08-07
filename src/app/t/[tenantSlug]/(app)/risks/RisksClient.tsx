@@ -6,7 +6,7 @@
 
 /* eslint-disable react-hooks/exhaustive-deps -- Various useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers/derived arrays recreated each render). The proper structural fix is wrapping parent-level callbacks in useCallback. Tracked as follow-up; existing per-line eslint-disable-next-line markers preserved. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { mutate as globalMutate } from 'swr';
@@ -74,7 +74,6 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
 import { resolveALE } from '@/app-layer/usecases/fair-calculator';
-import { formatCompactCurrency } from '@/lib/risk-coherence';
 import { RiskAleChip } from './_shared/RiskAleChip';
 import { RiskCollisionCallouts } from './_shared/RiskCollisionCallouts';
 import { detectCellCollisions } from '@/lib/risk-collisions';
@@ -276,6 +275,11 @@ function RisksPageInner({
     // Stable across renders — a bare arrow here rebuilds the table model
     // mid-double-click and kills row navigation (#1678).
     const tenantHref = useTenantHref();
+    // B1-4 — the tenant's configured symbol. This file imported
+    // `formatCompactCurrency` directly, which defaults to €, so a tenant on
+    // '$' saw $ on the dashboard (which uses the hook) and € on the register
+    // and the ALE chip — the same number, two currencies, one screen apart.
+    const money = useMoneyFormatter();
     const router = useRouter();
     const prefetchData = usePrefetchTenant();
     // RQ3-4 — per-risk tail percentiles (RQ3-1 cache); failure-soft:
@@ -900,7 +904,7 @@ function RisksPageInner({
                             riskId={row.original.id}
                             ale={riskAle(row.original)}
                             aleP90={tailByRisk?.[row.original.id]?.aleP90 ?? null}
-                            money={formatCompactCurrency}
+                            money={money}
                             tooltip={tx('aleTitle')}
                         />
                     </span>
@@ -1008,7 +1012,7 @@ function RisksPageInner({
                 const ale = getValue<number | null>();
                 return ale !== null ? (
                     <span className="text-xs tabular-nums text-content-muted">
-                        {formatCompactCurrency(ale)}
+                        {money(ale)}
                     </span>
                 ) : (
                     <span className="text-xs text-content-subtle">—</span>
@@ -1385,7 +1389,7 @@ function RisksPageInner({
                             out. Click drills into the cell's risks. */}
                         <RiskCollisionCallouts
                             collisions={collisions}
-                            money={formatCompactCurrency}
+                            money={money}
                             title={tx('collisions.title')}
                             description={tx('collisions.description')}
                             onDrillToCell={(cellToken) => {
