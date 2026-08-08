@@ -79,7 +79,7 @@ plumbing defects broke that loop.
 | `src/app-layer/usecases/key-risk-indicator.ts` | `RISK_MONITOR` + `P1`; pin reading→task |
 | `src/app-layer/usecases/risk-appetite.ts` | `RISK_MONITOR` + `P1` |
 | `src/app-layer/usecases/task-source-reconcile.ts` | +4 reconcilers, NIS2 note |
-| `src/app-layer/usecases/control/test-plans.ts` | `hasOpenGapTask` idempotency guard (both sites) |
+| `src/app-layer/usecases/control-test.ts` | `hasOpenGapTask` idempotency guard (both sites) |
 | `src/app-layer/automation/action-executor.ts` | route CREATE_TASK through canonical createTask; metadata dedupe |
 | `src/app-layer/jobs/policyReviewReminder.ts` | route through createTask + addTaskLink |
 | `src/app-layer/jobs/retention-notifications.ts` | route through createTask + addTaskLink |

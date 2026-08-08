@@ -107,7 +107,7 @@ with a reviewable reason.
 | `src/app-layer/usecases/risk.ts` — same shape; covers `createRisk`, `createRiskFromTemplate`, `updateRisk` |
 | `src/app-layer/usecases/vendor.ts` — same shape; `FREE_TEXT_VENDOR_FIELDS` allowlist for the loose-typed `updateVendor` patch; covers `createVendor`, `updateVendor`, `addVendorDocument`, `decideVendorAssessment` |
 | `src/app-layer/usecases/audit.ts` — covers `createAudit`, `updateAudit` (incl. per-checklist `notes`) |
-| `src/app-layer/usecases/control/test-plans.ts` — covers `createTestPlan` (incl. `steps[]`), `updateTestPlan`, `completeTestRun` (incl. threading the sanitised value into the auto-created `CONTROL_GAP` task on FAIL) |
+| `src/app-layer/usecases/control-test.ts` — covers `createTestPlan` (incl. `steps[]`), `updateTestPlan`, `completeTestRun` (incl. threading the sanitised value into the auto-created `CONTROL_GAP` task on FAIL) |
 | `src/app/api/t/[tenantSlug]/billing/{checkout,portal,events}/route.ts` — migrated to `requirePermission('admin.manage', …)` |
 | `src/app/api/t/[tenantSlug]/security/sessions/{revoke-all,revoke-user}/route.ts` — migrated to `requirePermission('admin.members', …)` |
 | `src/app/api/t/[tenantSlug]/security/mfa/policy/route.ts` — PUT migrated; GET stays open |

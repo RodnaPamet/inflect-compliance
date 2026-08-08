@@ -62,7 +62,7 @@ guidance. This adds the missing synthesis + wiring.
 
 | File | Role |
 |---|---|
-| `src/app-layer/usecases/control/test-plans.ts` | `attestControlTested`; wired into both completion paths |
+| `src/app-layer/usecases/control-test.ts` | `attestControlTested`; wired into both completion paths |
 | `src/app-layer/usecases/control/health.ts` | NEW — `getControlHealth` synthesis |
 | `.../controls/[controlId]/health/route.ts` | NEW — health API route |
 | `.../controls/[controlId]/_tabs/ControlHealthCard.tsx` | NEW — Overview synthesis card |
