@@ -48,7 +48,7 @@ MANUAL — no migration.
 
 | File | Role |
 | --- | --- |
-| `src/app-layer/usecases/control-test.ts` | `startTestRun` (PLANNED→RUNNING); `deriveMethodFromAutomationType`; `updateTestPlan` steps + method→MANUAL reconciliation |
+| `src/app-layer/usecases/control/test-plans.ts` | `startTestRun` (PLANNED→RUNNING); `deriveMethodFromAutomationType`; `updateTestPlan` steps + method→MANUAL reconciliation |
 | `src/app-layer/usecases/test-scheduling.ts` | `scheduleTestPlan` syncs `method` + `nextDueAt` into one model |
 | `src/app-layer/repositories/TestRunRepository.ts` | `start()`; `getById` now includes the plan's steps |
 | `src/app-layer/repositories/TestPlanRepository.ts` | `update` handles steps replacement + automation fields |

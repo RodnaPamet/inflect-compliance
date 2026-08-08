@@ -33,7 +33,7 @@ const CHECKLIST_FINDING_SOURCE = 'AUDIT_CHECKLIST';
  * second finding. We guard on the existing
  * (sourceKind='AUDIT_CHECKLIST', sourceRef=itemId) finding before
  * creating. `createFinding` / `createTask` open their own nested tenant
- * transactions (same pattern as control-test.ts's FAIL → task cascade);
+ * transactions (same pattern as control/test-plans.ts's FAIL → task cascade);
  * `db` here is only used for the pre-flight idempotency read.
  */
 async function cascadeChecklistFailure(

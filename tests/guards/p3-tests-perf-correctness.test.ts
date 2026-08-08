@@ -21,7 +21,7 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
 const READINESS = 'src/app-layer/usecases/test-readiness.ts';
 const DUE_PLANNING = 'src/app-layer/usecases/due-planning.ts';
-const CONTROL_TEST = 'src/app-layer/usecases/control-test.ts';
+const CONTROL_TEST = 'src/app-layer/usecases/control/test-plans.ts';
 const SCHEDULING = 'src/app-layer/usecases/test-scheduling.ts';
 const PLANS_ROUTE = 'src/app/api/t/[tenantSlug]/tests/plans/route.ts';
 

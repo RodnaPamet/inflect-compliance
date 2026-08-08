@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test mocks + fake DB. */
 /**
- * Unit tests for `src/app-layer/usecases/control/templates.ts` —
+ * Unit tests for `src/app-layer/usecases/control/mappings.ts` —
  * the control-template install + framework-mapping surface.
  *
  * Wave-3 branch coverage. The file is decision-dense:
@@ -77,7 +77,7 @@ import {
     mapRequirementToControl,
     unmapRequirementFromControl,
     listControlMappings,
-} from '@/app-layer/usecases/control/templates';
+} from '@/app-layer/usecases/control/mappings';
 import { ControlTemplateRepository } from '@/app-layer/repositories/ControlTemplateRepository';
 import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
 import { FrameworkRepository } from '@/app-layer/repositories/FrameworkRepository';

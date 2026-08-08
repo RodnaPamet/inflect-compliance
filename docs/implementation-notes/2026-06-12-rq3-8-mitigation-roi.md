@@ -60,7 +60,7 @@ controls into the leaderboard at the bottom with a synthetic zero.
 | `prisma/schema/compliance.prisma` | `Control.annualCost Float?` |
 | `prisma/migrations/20260612120000_rq3_8_control_annual_cost/migration.sql` | DDL |
 | `src/lib/control-roi.ts` | Pure math + verdict union + `rankByRoi` + `describeRoiGap` |
-| `src/app-layer/usecases/control-roi.ts` | `getControlRoi` (single) + `getBestValueControls` (batched, capped) |
+| `src/app-layer/usecases/control/roi.ts` | `getControlRoi` (single) + `getBestValueControls` (batched, capped) |
 | `src/app/api/t/[tenantSlug]/controls/[controlId]/roi/route.ts` | GET single control verdict |
 | `src/app/api/t/[tenantSlug]/controls/best-value/route.ts` | GET leaderboard (limit param) |
 | `src/lib/schemas/index.ts` | `UpdateControlSchema.annualCost` |

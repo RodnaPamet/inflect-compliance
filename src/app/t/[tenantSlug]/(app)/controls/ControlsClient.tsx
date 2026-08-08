@@ -4,7 +4,6 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-/* eslint-disable react-hooks/exhaustive-deps -- Various useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers/derived arrays recreated each render). The proper structural fix is wrapping parent-level callbacks in useCallback. Tracked as follow-up; existing per-line eslint-disable-next-line markers preserved. */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -398,9 +397,15 @@ function ControlsPageInner({
     // dies (the row DOM is replaced between the two clicks).
     const controlsMutate = controlsQuery.mutate;
     const controlsData = controlsQuery.data;
-    const rawControls = Array.isArray(controlsData)
-        ? controlsData
-        : controlsData?.rows ?? [];
+    // Memoised because the `?? []` branch mints a NEW array every render, and
+    // two downstream useMemos take `rawControls` as a dependency — without
+    // this they recompute (and rebuild the table model) on every render even
+    // when nothing changed.
+    const rawControls = useMemo(
+        () =>
+            Array.isArray(controlsData) ? controlsData : controlsData?.rows ?? [],
+        [controlsData],
+    );
     const truncated = Array.isArray(controlsData) ? false : controlsData?.truncated ?? false;
     const loading = controlsQuery.isLoading && !controlsQuery.data;
 
@@ -442,7 +447,7 @@ function ControlsPageInner({
                 c.frequency ? FREQ_LABELS[c.frequency] || c.frequency : '',
             owner: (c) => c.owner?.name || c.owner?.email || '',
         }),
-        [],
+        [FREQ_LABELS],
     );
     // #8a — `category` is applied HERE, over the already-loaded rows, on the
     // DERIVED value the column renders (see the note on `filtersForQuery`,
@@ -516,7 +521,7 @@ function ControlsPageInner({
             { id: 'inProgress', label: t('kpi.inProgress'), kind: 'kpi' },
             { id: 'notStarted', label: t('kpi.notStarted'), kind: 'kpi' },
         ],
-        [],
+        [t],
     );
     const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
         useFilterCardVisibility({
@@ -560,7 +565,6 @@ function ControlsPageInner({
         [trendsQuery.data],
     );
     // Distinct sparkline colour per card (canonical allocator).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const sparkColors = useMemo(
         () => assignSparklineVariants(['total', 'implemented', 'inProgress', 'notStarted']),
         [],
@@ -628,7 +632,7 @@ function ControlsPageInner({
             { id: 'tasks', label: t('colVis.tasks') },
             { id: 'evidence', label: t('colVis.evidence') },
         ],
-        [],
+        [t],
     );
     const {
         columnVisibility,
@@ -727,7 +731,6 @@ function ControlsPageInner({
                 // revalidation lands, which looks like the assign failed.
                 return {
                     ...c,
-                    ownerUserId: value || null,
                     owner: value ? { id: value, name: label || null, email: null } : null,
                 };
             };
@@ -1335,7 +1338,11 @@ function ControlsPageInner({
                   },
               ]
             : []),
-    ]), [appPermissions, tenantHref, taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t]);
+    // `appPermissions` and `tenantHref` are NOT here: the body reads
+    // `canEditControls` and the already-memoised callbacks, not those props
+    // directly. They were in the array while the file-wide
+    // `react-hooks/exhaustive-deps` disable hid the rule's opinion either way.
+    ]), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call — calling it inline in the `table` object would undo the memo

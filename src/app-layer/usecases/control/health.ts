@@ -15,7 +15,7 @@ import { assertCanReadControls } from '../../policies/control.policies';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
 import { listExecutionsForControl } from '../integrations';
-import { computeControlEffectivenessMap } from '../control-test';
+import { computeControlEffectivenessMap } from './test-plans';
 import {
     computeControlHealthVerdict,
     type ControlHealthVerdict,

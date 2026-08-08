@@ -29,10 +29,10 @@
  * for create/renew). Live `Control.status` is NEVER mutated by these
  * usecases — exception state is a separate axis.
  */
-import { RequestContext } from '../types';
-import { ControlExceptionRepository } from '../repositories/ControlExceptionRepository';
-import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
-import { logEvent } from '../events/audit';
+import { RequestContext } from '../../types';
+import { ControlExceptionRepository } from '../../repositories/ControlExceptionRepository';
+import { assertCanAdmin, assertCanRead, assertCanWrite } from '../../policies/common';
+import { logEvent } from '../../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { badRequest, forbidden, notFound } from '@/lib/errors/types';
@@ -45,7 +45,7 @@ import {
     type ApproveExceptionInput,
     type RejectExceptionInput,
     type RenewExceptionInput,
-} from '../schemas/control-exception.schemas';
+} from '../../schemas/control-exception.schemas';
 
 // ─── Read paths ───────────────────────────────────────────────────────
 

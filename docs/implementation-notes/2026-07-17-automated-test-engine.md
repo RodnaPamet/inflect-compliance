@@ -59,7 +59,7 @@ bridge, reachable via the `automation-run` route.
 
 | File | Role |
 | --- | --- |
-| `src/app-layer/usecases/control-test.ts` | Verdict-only pass-rate (`scored` field); `export attestControlTested` |
+| `src/app-layer/usecases/control/test-plans.ts` | Verdict-only pass-rate (`scored` field); `export attestControlTested` |
 | `src/app-layer/jobs/control-test-runner.ts` | No-handler → `handleManualPlan`; handler-completion parity (attest + cadence); `frequency` in select |
 | `src/app-layer/jobs/control-test-scheduler.ts` | `findDueTestPlans` no longer restricts by automationType |
 | `src/app-layer/usecases/test-scheduling.ts` | MANUAL may carry a cron (invariant relaxed) |

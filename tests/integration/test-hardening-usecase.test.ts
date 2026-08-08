@@ -40,7 +40,7 @@ import {
     exportTestEvidenceBundle,
 } from '@/app-layer/usecases/test-hardening';
 // PR-R — hashing on evidence link moved to the live linkEvidenceToRun path.
-import { linkEvidenceToRun } from '@/app-layer/usecases/control-test';
+import { linkEvidenceToRun } from '@/app-layer/usecases/control';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;

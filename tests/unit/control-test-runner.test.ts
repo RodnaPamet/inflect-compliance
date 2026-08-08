@@ -102,7 +102,7 @@ jest.mock('@/app-layer/repositories/TestPlanRepository', () => ({
 }));
 
 const mockAttestControlTested = jest.fn();
-jest.mock('@/app-layer/usecases/control-test', () => ({
+jest.mock('@/app-layer/usecases/control', () => ({
     attestControlTested: (...args: unknown[]) => mockAttestControlTested(...args),
     // PR-CC — the runner gates the attestation + cadence roll on a real
     // verdict. This predicate is pure, so the mock uses the REAL rule rather

@@ -25,7 +25,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const pure = read('src/lib/control-roi.ts');
-const usecase = read('src/app-layer/usecases/control-roi.ts');
+const usecase = read('src/app-layer/usecases/control/roi.ts');
 const roiRoute = read('src/app/api/t/[tenantSlug]/controls/[controlId]/roi/route.ts');
 const bestValueRoute = read('src/app/api/t/[tenantSlug]/controls/best-value/route.ts');
 const schema = readPrismaSchema();

@@ -48,11 +48,11 @@ had no UI caller — usecase, route, barrel export, and two test blocks removed.
 
 | File | Role |
 | --- | --- |
-| `src/app-layer/usecases/control-test.ts` | `computeControlEffectivenessMap` (canonical) + `getControlEffectiveness` wrapper. |
+| `src/app-layer/usecases/control/test-plans.ts` | `computeControlEffectivenessMap` (canonical) + `getControlEffectiveness` wrapper. |
 | `src/app-layer/usecases/control/health.ts` | Use canonical; add verdict + openExceptions + inconclusive; `getControlHealthVerdicts`. |
 | `src/lib/controls/control-health.ts` | New — `computeControlHealthVerdict` + verdict variants. |
 | `src/app-layer/usecases/risk-residual-suggestion.ts` | Use canonical. |
-| `src/app-layer/usecases/control-roi.ts` | MEASURED→DECLARED + `effectivenessSource`. |
+| `src/app-layer/usecases/control/roi.ts` | MEASURED→DECLARED + `effectivenessSource`. |
 | `src/app-layer/usecases/control/mutations.ts` · `src/lib/schemas/index.ts` | `effectiveness` editable. |
 | `src/app/api/t/[tenantSlug]/controls/health-verdicts/route.ts` | New batched-verdict route. |
 | UI: `ControlHealthCard` · `EditControlModal` · `ControlRoiCard` · `ControlsClient` · `controls/dashboard` | Verdict badge + inconclusive + declared editor + source badge + list column + dashboard summary. |

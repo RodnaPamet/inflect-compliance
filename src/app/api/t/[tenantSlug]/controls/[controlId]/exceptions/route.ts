@@ -14,7 +14,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import {
     listControlExceptions,
     requestException,
-} from '@/app-layer/usecases/control-exception';
+} from '@/app-layer/usecases/control';
 import { RequestExceptionSchema } from '@/app-layer/schemas/control-exception.schemas';
 import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';

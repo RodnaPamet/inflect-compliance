@@ -1,3 +1,12 @@
+/**
+ * Control ⇄ evidence links.
+ *
+ * `evidence.ts` used to also hold asset linking and contributor management —
+ * three unrelated relationship graphs behind one filename, so "where do I add
+ * a link type?" had no answer you could read off the directory. Split
+ * 2026-08-08 (roadmap P3.3) into this file, `asset-links.ts` and
+ * `contributors.ts`. The barrel re-exports all three, so no call site moved.
+ */
 import { RequestContext } from '../../types';
 import { ControlRepository } from '../../repositories/ControlRepository';
 import {
@@ -80,69 +89,6 @@ export async function unlinkEvidence(ctx: RequestContext, controlId: string, lin
             entityId: controlId,
             details: `Evidence link removed: ${linkId}`,
             detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Control', sourceId: controlId, targetEntity: 'EvidenceLink', targetId: linkId },
-        });
-        return { success: true };
-    });
-}
-
-// ─── Asset Linking ───
-
-export async function linkAssetToControl(ctx: RequestContext, controlId: string, assetId: string) {
-    assertCanUpdateControl(ctx);
-    return runInTenantContext(ctx, async (db) => {
-        const link = await ControlRepository.linkAsset(db, ctx, controlId, assetId);
-        if (!link) throw notFound('Control not found');
-        return link;
-    });
-}
-
-export async function unlinkAssetFromControl(ctx: RequestContext, controlId: string, assetId: string) {
-    assertCanUpdateControl(ctx);
-    return runInTenantContext(ctx, async (db) => {
-        const result = await ControlRepository.unlinkAsset(db, ctx, controlId, assetId);
-        if (!result) throw notFound('Control or asset link not found');
-        return { success: true };
-    });
-}
-
-// ─── Contributors ───
-
-export async function listContributors(ctx: RequestContext, controlId: string) {
-    assertCanReadControls(ctx);
-    return runInTenantContext(ctx, (db) =>
-        ControlRepository.listContributors(db, ctx, controlId)
-    );
-}
-
-export async function addContributor(ctx: RequestContext, controlId: string, userId: string) {
-    assertCanUpdateControl(ctx);
-    return runInTenantContext(ctx, async (db) => {
-        const result = await ControlRepository.addContributor(db, ctx, controlId, userId);
-        if (!result) throw notFound('Control not found');
-
-        await logEvent(db, ctx, {
-            action: 'CONTROL_CONTRIBUTOR_ADDED',
-            entityType: 'Control',
-            entityId: controlId,
-            details: `Contributor added: ${userId}`,
-            detailsJson: { category: 'relationship', operation: 'linked', sourceEntity: 'Control', sourceId: controlId, targetEntity: 'User', targetId: userId, relation: 'contributor' },
-        });
-        return result;
-    });
-}
-
-export async function removeContributor(ctx: RequestContext, controlId: string, userId: string) {
-    assertCanUpdateControl(ctx);
-    return runInTenantContext(ctx, async (db) => {
-        const result = await ControlRepository.removeContributor(db, ctx, controlId, userId);
-        if (!result) throw notFound('Control or contributor not found');
-
-        await logEvent(db, ctx, {
-            action: 'CONTROL_CONTRIBUTOR_REMOVED',
-            entityType: 'Control',
-            entityId: controlId,
-            details: `Contributor removed: ${userId}`,
-            detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Control', sourceId: controlId, targetEntity: 'User', targetId: userId, relation: 'contributor' },
         });
         return { success: true };
     });

@@ -40,7 +40,7 @@ describe('Audit S2 — Control Framework & Testing', () => {
     });
 
     describe('control-effectiveness usecase', () => {
-        const src = read('src/app-layer/usecases/control-test.ts');
+        const src = read('src/app-layer/usecases/control/test-plans.ts');
 
         it('exports `computeControlEffectivenessMap` (the live rolling pass-rate metric)', () => {
             // PR-R — the gated single-control getControlEffectiveness wrapper was
@@ -94,7 +94,7 @@ describe('Audit S2 — Control Framework & Testing', () => {
     });
 
     describe('OVERDUE semantics — documented divergence', () => {
-        const src = read('src/app-layer/usecases/control-test.ts');
+        const src = read('src/app-layer/usecases/control/test-plans.ts');
 
         it('the inline rationale comment exists', () => {
             // The comment block explains why TestPlanStatus does NOT

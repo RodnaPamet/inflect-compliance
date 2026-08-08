@@ -25,7 +25,7 @@ const TESTS_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/page.tsx';
 const DUE_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/due/page.tsx';
 const DASH_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx';
 const PLAN_DETAIL = 'src/components/test-plans/TestPlanDetailView.tsx';
-const USECASE = 'src/app-layer/usecases/control-test.ts';
+const USECASE = 'src/app-layer/usecases/control/test-plans.ts';
 const RESTORE_ROUTE = 'src/app/api/t/[tenantSlug]/tests/plans/bulk/restore/route.ts';
 const SCHEMAS = 'src/lib/schemas/index.ts';
 

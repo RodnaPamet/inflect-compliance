@@ -30,7 +30,7 @@ import {
     approveException,
     renewException,
     rejectException,
-} from '@/app-layer/usecases/control-exception';
+} from '@/app-layer/usecases/control';
 import { runExceptionExpiryMonitor } from '@/app-layer/jobs/exception-expiry-monitor';
 
 const globalPrisma = new PrismaClient({

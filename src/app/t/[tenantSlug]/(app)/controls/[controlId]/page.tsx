@@ -17,6 +17,7 @@ import { ControlReverseLookupModal } from '@/components/controls/ControlReverseL
 import { LinkedVendorsPanel } from '@/components/LinkedVendorsPanel';
 import { ControlMappingsTab } from './_tabs/ControlMappingsTab';
 import { EvidenceSubTable, type EvidenceTabData } from '@/components/controls-shared/EvidenceSubTable';
+import { PanelActivityFeed } from '@/components/controls-shared/PanelActivityFeed';
 import { ControlChecksTab } from './_tabs/ControlChecksTab';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { MetaStrip } from '@/components/ui/meta-strip';
@@ -78,7 +79,7 @@ const LinkedTasksPanel = dynamic(() => import('@/components/LinkedTasksPanel'), 
 });
 import type {
     ControlDetailDTO, EvidenceLinkDTO,
-    ContributorDTO, AuditLogEntry,
+    ContributorDTO,
 } from '@/lib/dto';
 import { buildControlStatusLabels } from '../filter-defs';
 import { buildControlPatchBody } from '../_lib/control-write-values';
@@ -135,8 +136,6 @@ type Tab = 'overview' | 'tasks' | 'evidence' | 'mappings' | 'traceability' | 'ac
  */
 
 
-const EVENT_KEYS = ['CONTROL_CREATED','CONTROL_UPDATED','CONTROL_STATUS_CHANGED','CONTROL_APPLICABILITY_CHANGED','CONTROL_OWNER_CHANGED','CONTROL_CONTRIBUTOR_ADDED','CONTROL_CONTRIBUTOR_REMOVED','CONTROL_TASK_CREATED','CONTROL_TASK_COMPLETED','CONTROL_TASK_UPDATED','CONTROL_EVIDENCE_LINKED','CONTROL_EVIDENCE_UNLINKED','CONTROL_TEST_COMPLETED','CONTROL_INSTALLED_FROM_TEMPLATE'] as const;
-const buildEventLabels = (t: (k: string) => string): Record<string, string> => Object.fromEntries(EVENT_KEYS.map(k => [k, t(`eventLabels.${k}`)]));
 
 // Read-only Policies section (Overview tab): local status → badge map so
 // this control page stays free of policy-domain helper imports.
@@ -155,7 +154,6 @@ export default function ControlDetailPage() {
     const AUTOMATION_TYPE_LABELS = buildAutomationTypeLabels(tx);
     const MITIGATION_TYPE_LABELS = buildMitigationTypeLabels(tx);
     const CATEGORY_LABELS = buildCategoryLabels(tx);
-    const EVENT_LABELS = buildEventLabels(tx);
     const FREQ_CB_OPTIONS = buildFreqCbOptions(FREQ_LABELS);
     const CATEGORY_CB_OPTIONS = buildCategoryCbOptions(CATEGORY_LABELS);
     const STATUS_CB_OPTIONS = buildStatusCbOptions(STATUS_LABELS);
@@ -288,19 +286,6 @@ export default function ControlDetailPage() {
     const [fileUploading, setFileUploading] = useState(false);
     const [fileUploadError, setFileUploadError] = useState('');
     const fileUploadRef = useRef<HTMLInputElement>(null);
-
-    // Activity trail — lazily loaded only while the Activity tab is open
-    // (conditional SWR key = null when closed), cached so re-opening the
-    // tab renders instantly instead of re-fetching every time.
-    const activityQuery = useTenantSWR<AuditLogEntry[]>(
-        tab === 'activity' ? `/controls/${controlId}/activity` : null,
-    );
-    const activity = activityQuery.data ?? [];
-    const activityLoading = activityQuery.isLoading;
-    // Distinguish a fetch FAILURE from a genuinely empty trail — without
-    // this the Activity tab renders "No activity" on an error, which reads
-    // as "nothing happened" when the real story is "we couldn't load it".
-    const activityError = activityQuery.error;
 
     // Sync status — drives the header conflict/synced badges (the
     // overview Automation section + manual "Sync Now" were removed).
@@ -450,9 +435,6 @@ export default function ControlDetailPage() {
         setShowEditModal(false);
         setEditError('');
     };
-
-    // (Activity is now loaded via the conditional `activityQuery`
-    // useTenantSWR above — no imperative fetch-on-tab-open effect.)
 
     // Hydrate sync status from the page-data response (one round-trip
     // instead of the previous control-then-sync waterfall). The
@@ -1257,36 +1239,22 @@ export default function ControlDetailPage() {
             )}
 
             {tab === 'activity' && (
-                <div className={cn(cardVariants({ density: 'none' }), 'overflow-hidden')}>
-                    {activityLoading ? (
-                        <div className="p-8 text-center text-content-subtle animate-pulse">{tx('detailPage.loadingActivity')}</div>
-                    ) : activityError ? (
-                        <InlineEmptyState
-                            title={tx('detailPage.couldntLoadActivity')}
-                            description={tx('detailPage.couldntLoadActivityDesc')}
-                        />
-                    ) : activity.length === 0 ? (
-                        <InlineEmptyState
-                            title={tx('detailPage.noActivity')}
-                            description={tx('detailPage.activityEmptyDesc')}
-                        />
-                    ) : (
-                        <div className="divide-y divide-border-default/50" id="activity-feed">
-                            {activity.map((ev: AuditLogEntry) => (
-                                <div key={ev.id} className="px-5 py-3 flex items-start gap-compact">
-                                    <div className="mt-0.5">
-                                        <StatusBadge variant="info">{EVENT_LABELS[ev.action] || ev.action}</StatusBadge>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-content-default">{ev.details}</p>
-                                        <p className="text-xs text-content-subtle mt-0.5">
-                                            {ev.user?.name || tx('detailPage.systemActor')} · {formatDateTime(ev.createdAt)}
-                                        </p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                // Same feed the side-panel Activity tab renders, off the same
+                // endpoint. This used to be a hand-rolled list of
+                // `<StatusBadge>{EVENT_LABELS[action]}</StatusBadge>` + the RAW
+                // `ev.details` string — which is authored as
+                // "<phrase> Context: {json}" and often carries a bare cuid, so
+                // the detail page showed machine text the panel deliberately
+                // strips (`humanizeDetail`). One feed, one reading.
+                //
+                // Still lazy: the component fetches on mount and only mounts
+                // while this tab is open, which is what the conditional SWR key
+                // it replaced was for.
+                <div className={cn(cardVariants({ density: 'compact' }), 'overflow-hidden')} id="activity-feed">
+                    <PanelActivityFeed
+                        tenantSlug={tenantSlug}
+                        endpoint={`/controls/${controlId}/activity`}
+                    />
                 </div>
             )}
 

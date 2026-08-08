@@ -93,7 +93,12 @@ describe("DataTable expandable rows", () => {
         const cells = screen
             .getByTestId("exp-a")
             .querySelectorAll("td[data-column]");
+        // `select` leads because passing `getRowId` enables the selection
+        // column — and the sub-row gets a `<td>` for it too. That is the
+        // contract, not an artefact: skip it and every cell shifts one column
+        // left of the header it belongs under.
         expect([...cells].map((c) => c.getAttribute("data-column"))).toEqual([
+            "select",
             "name",
             "owner",
         ]);

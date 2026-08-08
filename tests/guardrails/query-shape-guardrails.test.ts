@@ -155,7 +155,7 @@ const KNOWN_N_PLUS_ONE: Record<string, KnownNPlusOne> = {
     // removed by the quality-roadmap unused-variable sweep — the
     // resolved `controlName` was never referenced in the
     // notification body. The N+1 baseline entry is now stale.
-    'src/app-layer/usecases/control/templates.ts:findFirst:control': {
+    'src/app-layer/usecases/control/mappings.ts:findFirst:control': {
         reason:
             'template-instantiation loop over an explicit, user-supplied templateIds list — the per-template "control with this code already exists?" check keeps instantiation idempotent. Bounded by the request payload.',
     },

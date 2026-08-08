@@ -6,7 +6,7 @@
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { rejectException } from '@/app-layer/usecases/control-exception';
+import { rejectException } from '@/app-layer/usecases/control';
 import { RejectExceptionSchema } from '@/app-layer/schemas/control-exception.schemas';
 import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';

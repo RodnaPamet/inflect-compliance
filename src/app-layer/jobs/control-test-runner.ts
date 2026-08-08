@@ -101,7 +101,7 @@ import { TestPlanRepository } from '../repositories/TestPlanRepository';
 import { FindingRepository } from '../repositories/FindingRepository';
 import { emitTestRunCreated, emitTestRunCompleted, emitTestRunFailed } from '../events/test.events';
 import { logEvent } from '../events/audit';
-import { attestControlTested, isAttestingVerdict } from '../usecases/control-test';
+import { attestControlTested, isAttestingVerdict } from '../usecases/control';
 import { computeNextDueAt } from '../utils/cadence';
 
 // ─── Public types ──────────────────────────────────────────────────

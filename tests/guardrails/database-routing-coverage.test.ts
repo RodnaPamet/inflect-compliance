@@ -58,7 +58,10 @@ function readContextCallArgs(src: string): string[] {
 
 // Usecase files the dashboard/aggregation reads route through.
 const ROUTED_USECASES = [
-    'src/app-layer/usecases/control/queries.ts',
+    // The Controls replica read is the tenant-wide dashboard aggregate, which
+    // moved out of ./queries into ./dashboard (roadmap P3.3). ./queries now
+    // holds only per-request list/detail reads — none of them replica-routed.
+    'src/app-layer/usecases/control/dashboard.ts',
     'src/app-layer/usecases/vendor.ts',
     'src/app-layer/usecases/task.ts',
     'src/app-layer/usecases/loss-event.ts',

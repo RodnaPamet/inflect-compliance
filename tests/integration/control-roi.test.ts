@@ -9,7 +9,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { getControlRoi, getBestValueControls } from '@/app-layer/usecases/control-roi';
+import { getControlRoi, getBestValueControls } from '@/app-layer/usecases/control';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
