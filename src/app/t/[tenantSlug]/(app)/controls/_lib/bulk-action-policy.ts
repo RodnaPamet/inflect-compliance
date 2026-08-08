@@ -14,7 +14,7 @@
  * gate had no test at all. Pulling the decision out makes it assertable per
  * role, which is what `tests/unit/controls-bulk-action-policy.test.ts` does.
  *
- * The rule mirrors the server: any verb whose usecase asserts admin belongs
+ * The rule mirrors the server. Every verb whose usecase asserts admin belongs
  * behind `canAdmin` here. Adding a bulk verb means deciding which list it
  * goes in — not appending to a JSX array and hoping a regex notices.
  */

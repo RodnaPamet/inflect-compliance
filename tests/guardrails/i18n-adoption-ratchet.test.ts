@@ -108,12 +108,26 @@ export function hasHardcodedUiText(raw: string): boolean {
     return JSX_TEXT.test(src) || UI_PROP.test(src);
 }
 
+/**
+ * Every `.tsx` UI file under `dir`.
+ *
+ * Co-located tests are skipped. `src/**\/__tests__/` is a real directory in
+ * this codebase (Epic 67's convention — hook tests live next to the hook),
+ * and a test harness that renders `<input aria-label="name" />` is not a
+ * user-facing surface: localising it would mean translating fixtures. The
+ * guard flagged the first such file to carry JSX, which is a false positive,
+ * not un-migrated UI.
+ */
 function walk(dir: string): string[] {
     const out: string[] = [];
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
-        if (e.isDirectory()) out.push(...walk(p));
-        else if (e.name.endsWith('.tsx')) out.push(p);
+        if (e.isDirectory()) {
+            if (e.name === '__tests__') continue;
+            out.push(...walk(p));
+        } else if (e.name.endsWith('.tsx') && !e.name.endsWith('.test.tsx')) {
+            out.push(p);
+        }
     }
     return out;
 }

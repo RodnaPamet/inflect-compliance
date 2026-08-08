@@ -298,11 +298,6 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'ControlListFilters.ownerUserId (existing [ownerUserId] is not tenant-prefixed)',
     },
-    {
-        model: 'Control',
-        fields: ['tenantId', 'category'],
-        justification: 'ControlListFilters.category',
-    },
     // ── Evidence (from list-query-indexes.test.ts) ──────────────────
     {
         model: 'Evidence',

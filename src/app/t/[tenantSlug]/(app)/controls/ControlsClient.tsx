@@ -24,6 +24,7 @@ import { ControlTaskRows, type ControlTask } from '@/components/controls-shared/
 import { ControlEditPanel } from './ControlEditPanel';
 import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
@@ -673,7 +674,72 @@ function ControlsPageInner({
     // Canonical bulk path — one `updateMany`-backed endpoint instead of the
     // former per-id status loop (kills the N+1). status + assign mirror the
     // Tasks/Assets bars.
-    const [bulkApplying, setBulkApplying] = useState(false);
+    interface BulkVars {
+        action: string;
+        value: string;
+        ids: string[];
+        /** Display label for `value` (owner name) — optimistic paint only. */
+        label?: string;
+    }
+
+    /**
+     * Optimistic bulk status / owner change.
+     *
+     * `key` is the LIVE filtered list key, not a static path: the table reads
+     * `controlsKey`, so an optimistic write to `CACHE_KEYS.controls.list()`
+     * would land on a different SWR entry and paint nothing.
+     */
+    const bulkMutation = useTenantMutation<
+        CappedList<ControlListItem> | ControlListItem[],
+        BulkVars,
+        unknown
+    >({
+        key: controlsKey,
+        mutationFn: async ({ action, value, ids }) => {
+            const url =
+                action === 'status'
+                    ? apiUrl('/controls/bulk/status')
+                    : apiUrl('/controls/bulk/assign');
+            const body =
+                action === 'status'
+                    ? { controlIds: ids, status: value }
+                    : { controlIds: ids, ownerUserId: value || null };
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error('Bulk action failed');
+            return res.json().catch(() => null);
+        },
+        optimisticUpdate: (current, { action, value, ids, label }) => {
+            // Cold cache: nothing to patch, so no prediction. (The bar only
+            // appears over loaded rows, so this is unreachable in practice —
+            // but inventing an empty list here would paint "no controls".)
+            if (!current) return undefined;
+            const idSet = new Set(ids);
+            const patch = (c: ControlListItem): ControlListItem => {
+                if (!idSet.has(c.id)) return c;
+                if (action === 'status') return { ...c, status: value };
+                // Owner: `value` is a user id and the column renders
+                // `owner.name || owner.email`, so the picker's display label
+                // rides along — otherwise the cell would blank until the
+                // revalidation lands, which looks like the assign failed.
+                return {
+                    ...c,
+                    ownerUserId: value || null,
+                    owner: value ? { id: value, name: label || null, email: null } : null,
+                };
+            };
+            if (Array.isArray(current)) return current.map(patch);
+            return { ...current, rows: current.rows.map(patch) };
+        },
+        // The executive dashboard's control-coverage KPI moves on a status
+        // flip — same fan-out the detail page's statusMutation does.
+        invalidate: [CACHE_KEYS.dashboard.executive()],
+    });
+    const bulkApplying = bulkMutation.isMutating;
+
     const handleBulkApply = async (action: string, value: string, _label: string) => {
         if (!action || selectedIds.length === 0) return;
         const ids = selectedIds;
@@ -717,34 +783,20 @@ function ControlsPageInner({
             return;
         }
 
-        // #2 — status / assign. The apply was previously a try/finally with NO
-        // catch, so a `!res.ok` threw an unhandled rejection while the bar
-        // cleared — the failure looked like success. Now: toast on both
-        // outcomes, and clear the selection ONLY on success.
-        setBulkApplying(true);
+        // #2 — status / assign, through useTenantMutation. This is the shape
+        // the hook exists for (see its docstring: not the default write path,
+        // but the right one when the interaction is latency-sensitive). It
+        // used to POST and then await a full `mutate()` refetch, so every
+        // bulk apply held the table on stale values for a round trip. Now the
+        // rows repaint synchronously and roll back on throw.
         try {
-            const url =
-                action === 'status'
-                    ? apiUrl('/controls/bulk/status')
-                    : apiUrl('/controls/bulk/assign');
-            const body =
-                action === 'status'
-                    ? { controlIds: ids, status: value }
-                    : { controlIds: ids, ownerUserId: value || null };
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (!res.ok) throw new Error('Bulk action failed');
-            // Revalidate the same key the table reads (the active filtered list).
-            await controlsQuery.mutate();
+            await bulkMutation.trigger({ action, value, ids, label: _label });
             toast.success(t('bulk.applied'));
             setRowSelection({});
         } catch {
+            // The hook re-throws after rolling the cache back, so the rows
+            // are already restored by the time this runs.
             toast.error(t('bulk.actionFailed'));
-        } finally {
-            setBulkApplying(false);
         }
     };
     // The array literal is annotated INSIDE the callback, not just on the
@@ -800,6 +852,7 @@ function ControlsPageInner({
             // removing the guard kept CI green.
             { value: 'delete', label: t('bulk.delete') },
         ];
+        // guardrail-ignore: narrows the LOCAL bulk-action definitions to the ones this role may use (see _lib/bulk-action-policy) — not server-data filtering.
         return defs.filter((def) =>
             allowedBulkActions.includes(def.value as ControlBulkAction),
         );

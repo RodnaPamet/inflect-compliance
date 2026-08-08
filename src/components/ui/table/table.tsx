@@ -660,7 +660,6 @@ export function Table<T>({
   rowProps,
   rowCount,
   children,
-  renderExpandedRow,
   renderAlignedSubRows,
   onReachEnd,
   enableColumnResizing = false,
@@ -1164,10 +1163,9 @@ export function Table<T>({
                         const disableTruncate =
                           !!cell.column.columnDef.meta?.disableTruncate;
                         // Expand chevron rides the first content cell when the
-                        // row can expand (renderExpandedRow / renderAlignedSubRows
-                        // opt-in only).
+                        // row can expand (renderAlignedSubRows opt-in only).
                         const showExpandChevron =
-                          (!!renderExpandedRow || !!renderAlignedSubRows) &&
+                          !!renderAlignedSubRows &&
                           cell.column.id === firstContentColumnId &&
                           row.getCanExpand();
 
@@ -1284,16 +1282,6 @@ export function Table<T>({
                         row,
                         row.getVisibleCells().map((c) => c.column.id),
                       )}
-                    {/* Expandable sub-row — full-width slot under the row.
-                        Only when the consumer opts in (renderExpandedRow) and
-                        the row is expanded; default tables never reach here. */}
-                    {renderExpandedRow && row.getIsExpanded() && (
-                      <tr data-expanded-subrow={row.id} className="bg-bg-subtle/40">
-                        <td colSpan={row.getVisibleCells().length} className="p-0">
-                          {renderExpandedRow(row)}
-                        </td>
-                      </tr>
-                    )}
                     </Fragment>
                   );
                 })}

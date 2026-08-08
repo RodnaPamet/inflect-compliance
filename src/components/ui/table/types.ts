@@ -75,23 +75,26 @@ type BaseTableProps<T> = {
   onRowAuxClick?: (row: Row<T>, e: MouseEvent) => void;
   /**
    * Expandable rows. When `getRowCanExpand(row)` returns true the row shows a
-   * leading chevron; toggling it renders `renderExpandedRow(row)` as a
-   * full-width sub-row beneath it (the canonical tanstack expanding
-   * sub-component). Default OFF — without `renderExpandedRow` no chevron
+   * leading chevron; toggling it renders `renderAlignedSubRows(row, ...)`
+   * beneath it. Default OFF — without `renderAlignedSubRows` no chevron
    * renders and behaviour is unchanged, so every existing table is unaffected.
    */
   getRowCanExpand?: (row: Row<T>) => boolean;
-  renderExpandedRow?: (row: Row<T>) => ReactNode;
   /**
-   * Aligned expandable sub-rows. Alternative to `renderExpandedRow` (the
-   * full-width colSpan slot): the consumer returns real `<tr>`/`<td>` rows
+   * Aligned expandable sub-rows: the consumer returns real `<tr>`/`<td>` rows
    * rendered as direct `<tbody>` siblings, so the browser's table layout
    * aligns their cells with the parent COLUMNS. `columnIds` is the ordered
    * list of currently-visible column ids — render one `<td>` per id so the
    * sub-row cells land under the matching columns (empty `<td>` for columns
-   * a sub-row has no value for). The chevron shows when either this or
-   * `renderExpandedRow` is set. Used by Controls to nest task rows that align
-   * on category / status / owner / evidence.
+   * a sub-row has no value for). Used by Controls to nest task rows that
+   * align on category / status / owner / evidence.
+   *
+   * There used to be a SECOND expansion slot, `renderExpandedRow`, which
+   * rendered one full-width `colSpan` cell. It had no consumer in the product
+   * — this one exists precisely because a colSpan cell cannot align with the
+   * columns — so it was two mechanisms and one behaviour. Removed 2026-08-08
+   * (roadmap P3.2). If a full-width slot is genuinely wanted again, a consumer
+   * can render a single `<td colSpan>` row from here.
    */
   renderAlignedSubRows?: (row: Row<T>, columnIds: string[]) => ReactNode;
   /**

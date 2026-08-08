@@ -109,12 +109,14 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
         key: CACHE_KEYS.findings.list(),
         optimisticUpdate: (current, { id, status }) => {
             // `current` is always populated in practice (the status button
-            // only shows on a loaded row); the empty fallback just satisfies
-            // the non-optional OptimisticUpdater return contract.
-            const base = current ?? { rows: [], truncated: false };
+            // only shows on a loaded row). The fallback used to synthesise an
+            // empty list purely to satisfy a non-optional return type —
+            // painting "you have no findings" would have been worse than
+            // painting nothing. `undefined` says exactly that.
+            if (!current) return undefined;
             return {
-                ...base,
-                rows: base.rows.map((f) =>
+                ...current,
+                rows: current.rows.map((f) =>
                     f.id === id ? { ...f, status } : f,
                 ),
             };

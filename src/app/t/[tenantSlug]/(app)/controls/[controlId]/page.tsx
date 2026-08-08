@@ -82,7 +82,7 @@ import type {
 } from '@/lib/dto';
 import { buildControlStatusLabels } from '../filter-defs';
 import { buildControlPatchBody } from '../_lib/control-write-values';
-import { Pencil } from 'lucide-react';
+import { PenWriting } from '@/components/ui/icons/nucleo/pen-writing';
 
 // The detail status dropdown reuses the CANONICAL status vocabulary
 // (buildControlStatusLabels — the same i18n source the list badges + filter
@@ -416,7 +416,12 @@ export default function ControlDetailPage() {
                           mitigationType: form.mitigationType || null,
                       },
                   }
-                : (current as unknown as ControlPageDataDTO),
+                : // Cold cache: nothing to patch. `undefined` means "no
+                  // optimistic prediction" — the alternative used to be
+                  // `current as unknown as ControlPageDataDTO`, which types
+                  // undefined as a full DTO and would throw on the first
+                  // field read if it ever ran.
+                  undefined,
         // Refresh the list cache too — the controls list page shows
         // these same fields.
         invalidate: [CACHE_KEYS.controls.list()],
@@ -519,7 +524,12 @@ export default function ControlDetailPage() {
                       ...current,
                       control: { ...current.control, status },
                   }
-                : (current as unknown as ControlPageDataDTO),
+                : // Cold cache: nothing to patch. `undefined` means "no
+                  // optimistic prediction" — the alternative used to be
+                  // `current as unknown as ControlPageDataDTO`, which types
+                  // undefined as a full DTO and would throw on the first
+                  // field read if it ever ran.
+                  undefined,
         // List page shows status badges too — keep it in sync, and the
         // executive dashboard's control-coverage KPI shifts on a status
         // flip, so refresh its card stack too.
@@ -1025,8 +1035,10 @@ export default function ControlDetailPage() {
                                     aria-label={tx('detailPage.editControl')}
                                 >
                                     {/* B2 — icon-only edit affordance,
-                                        canonical unified pattern. */}
-                                    <Pencil size={16} />
+                                        canonical unified pattern. Nucleo is
+                                        the canonical icon family (lucide is a
+                                        closed migration allowlist). */}
+                                    <PenWriting className="h-4 w-4" />
                                 </Button>
                             </Tooltip>
                         </div>
