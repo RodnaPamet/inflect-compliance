@@ -1307,8 +1307,19 @@ jobs:
       # if the gate weakens. If a specific advisory genuinely cannot
       # be fixed today, add a tracked exemption with a written
       # rationale + upgrade plan rather than relaxing the global gate.
+      # Runs the SAME gate — `npm audit --omit=dev --audit-level=moderate`
+      # on the production tree — but subtracts advisories that have no
+      # fixed version, each recorded in security/audit-allowlist.json with
+      # a reason, a reachability assessment, a reviewBy date and an upgrade
+      # plan. The script fails on an unlisted finding, on an expired entry,
+      # AND on an entry that no longer matches anything (so an upstream fix
+      # forces the exemption out instead of leaving a standing hole).
+      #
+      # This is the escape hatch the comment above assumes: the alternative
+      # under pressure is dropping the global gate to `high`, which loses
+      # every moderate finding at once.
       - name: "Gate: npm audit (moderate+ blocks merge)"
-        run: npm audit --omit=dev --audit-level=moderate
+        run: node scripts/audit-gate.mjs
 
       # ── Full audit (informational — dev deps included) ──
       - name: "Info: npm audit (all deps)"
