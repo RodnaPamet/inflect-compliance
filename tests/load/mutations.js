@@ -141,9 +141,21 @@ export default function mutationsIteration(data) {
     const base = `${cfg.baseUrl}/api/t/${cfg.tenant}`;
 
     // ── 1. Create control ──
+    // `objective`, not `description`. Control has no `description` column —
+    // that belongs to ControlTemplate — so this payload carried a field the
+    // API never supported. CreateControlSchema used to end in `.strip()`,
+    // which dropped it silently and returned 201, so the smoke passed while
+    // sending a bogus field for as long as it has existed. #1804 changed the
+    // schema to `.strict()`, where an undeclared field is a 400, and every
+    // create in this scenario began failing — 460/460 on main.
+    //
+    // The schema change is right and this payload was wrong: `.strict()`
+    // caught a real caller bug the moment it shipped, which is exactly the
+    // argument for it. Using `objective` also gives the smoke coverage of
+    // one of the three fields #1804 restored to the create path.
     const controlBody = JSON.stringify({
         name: `[${tag}] load-test control`,
-        description: 'Created by tests/load/mutations.js — safe to delete.',
+        objective: 'Created by tests/load/mutations.js — safe to delete.',
         category: 'loadtest',
         status: 'NOT_STARTED',
         isCustom: true,
