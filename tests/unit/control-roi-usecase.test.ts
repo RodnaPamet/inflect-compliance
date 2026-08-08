@@ -19,7 +19,7 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
 }));
 
-import { getControlRoi, getBestValueControls } from '@/app-layer/usecases/control-roi';
+import { getControlRoi, getBestValueControls } from '@/app-layer/usecases/control';
 import { makeRequestContext } from '../helpers/make-context';
 
 const readerCtx = makeRequestContext('READER');

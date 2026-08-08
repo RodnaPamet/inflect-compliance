@@ -6,7 +6,7 @@
  * exportTestEvidenceBundle()   — generates CSV/JSON export of runs + evidence
  *
  * PR-R — evidence linking + hashing now lives on the live path in
- * `control-test.ts::linkEvidenceToRun` (which freezes FileRecord.sha256 on the
+ * `control/test-plans.ts::linkEvidenceToRun` (which freezes FileRecord.sha256 on the
  * link). The previously-dead `linkEvidenceWithHash` here was removed — it
  * duplicated the linker and had a broken hash source (it passed a FileRecord id
  * where verifyFileIntegrity wants a storage pathKey).

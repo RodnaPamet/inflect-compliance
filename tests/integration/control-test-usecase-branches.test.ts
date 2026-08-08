@@ -35,7 +35,7 @@ import {
     bulkDeleteTestPlan,
     bulkRestoreTestPlan,
     bulkAssignTestPlan,
-} from '@/app-layer/usecases/control-test';
+} from '@/app-layer/usecases/control';
 import { setTaskStatus } from '@/app-layer/usecases/task';
 
 const globalPrisma = new PrismaClient({

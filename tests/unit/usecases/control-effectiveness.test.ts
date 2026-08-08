@@ -16,7 +16,7 @@ const tenantDb: any = {
     controlTestRun: { groupBy: jest.fn() },
 };
 
-import { computeControlEffectivenessMap } from '@/app-layer/usecases/control-test';
+import { computeControlEffectivenessMap } from '@/app-layer/usecases/control';
 import { makeRequestContext } from '../../helpers/make-context';
 
 beforeEach(() => {

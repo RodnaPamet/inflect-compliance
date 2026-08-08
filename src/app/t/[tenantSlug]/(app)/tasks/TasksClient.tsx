@@ -1029,10 +1029,11 @@ function TasksPageInner({
     );
 
     // Quick-view side panel. Keyed by task id so switching to another task
-    // forces a fresh mount → openOnMount re-fires and TaskEditPanel re-seeds
-    // from the newly-clicked row (it seeds form state on mount only). The
-    // panel re-fetches full detail via GET /tasks/{id}, so a minimal seed
-    // object is enough.
+    // forces a fresh mount → openOnMount re-fires (it runs in a mount-only
+    // effect, so a reused AsidePanel would stay collapsed). TaskEditPanel
+    // itself is controlled now and re-seeds without the remount. The panel
+    // re-fetches full detail via GET /tasks/{id}, so a minimal seed object is
+    // enough.
     const taskQuickViewAside = selectedTask ? (
         <AsidePanel
             key={`qv-task-${selectedTask.id}`}

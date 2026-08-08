@@ -122,3 +122,11 @@ export {
 export { useIsBelowMd } from "./use-is-below-md";
 export { useCreateQueryParam } from './use-create-query-param';
 export { useSsrFallback } from './use-ssr-fallback';
+
+// ─── Debounced field autosave (Controls P3.5) ─────────────────────────
+export {
+    useAutosaveFields,
+    type AutosaveState,
+    type UseAutosaveFieldsOptions,
+    type UseAutosaveFieldsResult,
+} from "./use-autosave-fields";

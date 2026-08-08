@@ -78,6 +78,18 @@ model Control {
   //     control (i.e. "we mitigate the gap by doing this").
   exceptions                   ControlException[]       @relation("ControlExceptionAffected")
   compensatingForExceptions    ControlException[]       @relation("ControlExceptionCompensating")
+  /// `@@index([tenantId, category])` was DROPPED on 2026-08-08 (roadmap P3.4),
+  /// together with the raw `category` list filter it backed. The Category
+  /// column renders a DERIVED value (`categorizeControl`: ISO Annex clause →
+  /// granular domain, else framework prefix, else the stored string), so
+  /// matching the raw column against a picked derived value returned ~0 rows.
+  /// There is now exactly one category filter — client-side, over the derived
+  /// value — and no index pretending to serve a second one.
+  ///
+  /// `applicability` went the OTHER way in the same change: its three display
+  /// states ARE expressible over (applicability, applicabilityDecidedAt), so
+  /// it moved server-side and `@@index([tenantId, applicability])` above is
+  /// now on the hot path for real. See @/lib/controls/control-applicability.
 
   /// Composite parent key — supports the
   /// `ControlException.(controlId, tenantId) → Control.(id, tenantId)`
@@ -111,10 +123,10 @@ model Control {
   /// (tenantId, code)"; that claim ignores the OR and is wrong.
   @@index([tenantId, code])
   /// `@@index([tenantId])` was DROPPED on 2026-08-06: it is a strict prefix
-  /// of seven composites below ([tenantId,code], [tenantId,createdAt],
+  /// of the six composites below ([tenantId,code], [tenantId,createdAt],
   /// [tenantId,status], [tenantId,applicability], [tenantId,deletedAt],
-  /// [tenantId,ownerUserId], [tenantId,category]), so every one of them can
-  /// serve a tenantId-only lookup. It bought nothing and cost a write on
+  /// [tenantId,ownerUserId]), so every one of them can serve a tenantId-only
+  /// lookup. It bought nothing and cost a write on
   /// every insert and update.
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
@@ -127,14 +139,6 @@ model Control {
   // Postgres can't selectively scan one tenant's slice for a
   // specific owner without an additional filter pass.
   @@index([tenantId, ownerUserId])
-  // GAP-perf — supports `category` filter (free-text exact match).
-  /// ⚠️ Currently near-dead: ControlsClient strips `category` from every API
-  /// query and re-filters client-side, so the only producer is an SSR hard
-  /// nav — which matches the RAW stored column against a DERIVED UI value
-  /// and returns ~0 rows. This index is retained pending the server-side
-  /// filter fix (roadmap P3.4); if that fix does not land, DROP it rather
-  /// than leaving an index nothing can use.
-  @@index([tenantId, category])
 }
 
 model RiskControl {
@@ -260,20 +264,20 @@ model ControlTemplateRequirementLink {
 }
 
 model ControlRequirementLink {
-  id            String               @id @default(cuid())
-  tenantId      String
-  controlId     String
-  requirementId String
+  id                         String               @id @default(cuid())
+  tenantId                   String
+  controlId                  String
+  requirementId              String
   /// Per-framework applicability override. NULL = inherit the control's global
   /// Control.applicability. Set to scope an N/A decision to ONE framework —
   /// a control can be N/A for framework A yet applicable for framework B.
   /// SoA / coverage read the EFFECTIVE value (link ?? control).
-  applicability            Applicability?
+  applicability              Applicability?
   applicabilityJustification String?
-  createdAt     DateTime             @default(now())
-  control       Control              @relation(fields: [controlId], references: [id], onDelete: Cascade)
-  requirement   FrameworkRequirement @relation(fields: [requirementId], references: [id])
-  tenant        Tenant               @relation(fields: [tenantId], references: [id])
+  createdAt                  DateTime             @default(now())
+  control                    Control              @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  requirement                FrameworkRequirement @relation(fields: [requirementId], references: [id])
+  tenant                     Tenant               @relation(fields: [tenantId], references: [id])
 
   @@unique([controlId, requirementId])
   @@index([tenantId, requirementId])

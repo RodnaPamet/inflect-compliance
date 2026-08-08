@@ -102,11 +102,26 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
  * `undefined` if no read has populated the cache yet — callers should
  * handle the empty case explicitly so list appends still work on a
  * cold cache.
+ *
+ * Returning `undefined` means "no optimistic prediction for this state":
+ * SWR leaves the (empty) cache alone and the UI shows the loading path
+ * until the mutation resolves. This is the honest answer on a cold cache
+ * for a mutation that PATCHES an existing entity — there is nothing to
+ * patch yet.
+ *
+ * The return used to be `TData`, with no way to say that. Every caller
+ * that hit a cold cache had to invent a value: the control detail page
+ * wrote `current as unknown as ControlPageDataDTO` (a double cast that
+ * types `undefined` as a full DTO — if it ever ran, every field read off
+ * it would throw), and FindingsClient synthesised an empty list whose only
+ * job was, in its own comment, "to satisfy the non-optional
+ * OptimisticUpdater return contract". Neither was a prediction anyone
+ * wanted painted.
  */
 export type OptimisticUpdater<TData, TInput> = (
     current: TData | undefined,
     input: TInput,
-) => TData;
+) => TData | undefined;
 
 /**
  * Caller-provided shape for translating a successful API response into
@@ -253,11 +268,23 @@ export function useTenantMutation<TData, TInput, TResult = TData>(
                         // supply an updater we skip the optimistic
                         // step — the field is left undefined so SWR
                         // doesn't paint a phantom intermediate state.
+                        //
+                        // An updater that RETURNS undefined ("no
+                        // prediction for this state" — see
+                        // OptimisticUpdater) falls back to the current
+                        // value, so the cache is written with what it
+                        // already holds. On a cold cache that is
+                        // `undefined`, i.e. no paint at all, which is the
+                        // point. SWR's own `optimisticData` signature has
+                        // no way to express "skip", hence the passthrough
+                        // rather than a conditional.
                         ...(optimisticUpdate
                             ? {
                                   optimisticData: (
                                       current: TData | undefined,
-                                  ) => optimisticUpdate(current, input),
+                                  ) =>
+                                      optimisticUpdate(current, input) ??
+                                      (current as TData),
                               }
                             : {}),
                         rollbackOnError,

@@ -16,7 +16,7 @@ import { join } from 'path';
 const ROOT = join(__dirname, '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
-const CONTROL_TEST = 'src/app-layer/usecases/control-test.ts';
+const CONTROL_TEST = 'src/app-layer/usecases/control/test-plans.ts';
 const HEALTH_USECASE = 'src/app-layer/usecases/control/health.ts';
 const HEALTH_ROUTE = 'src/app/api/t/[tenantSlug]/controls/[controlId]/health/route.ts';
 const HEALTH_CARD = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlHealthCard.tsx';

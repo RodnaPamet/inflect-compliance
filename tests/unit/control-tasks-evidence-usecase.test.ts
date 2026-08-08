@@ -50,7 +50,7 @@ import {
     listContributors,
     addContributor,
     removeContributor,
-} from '@/app-layer/usecases/control/evidence';
+} from '@/app-layer/usecases/control';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {

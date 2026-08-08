@@ -12,12 +12,17 @@ import type { RequestContext } from '@/app-layer/types';
 
 import type { McpReadTool } from './types';
 
+// `category` is deliberately NOT a filter here. The product's Category is a
+// DERIVED value (`categorizeControl`: ISO Annex clause → domain, else
+// framework code prefix, else the stored string) and the server can only match
+// the raw stored column, so the two disagree — a `category` filter would
+// return ~0 rows while looking like it worked. The raw filter was removed
+// repo-wide in roadmap P3.4; use `q` for free-text instead.
 const listControlsArgs = z
     .object({
         status: z.string().optional(),
         applicability: z.string().optional(),
         ownerUserId: z.string().optional(),
-        category: z.string().optional(),
         q: z.string().optional(),
         limit: z.number().int().min(1).max(200).optional(),
     })
@@ -27,15 +32,20 @@ export const listControlsTool: McpReadTool<z.infer<typeof listControlsArgs>> = {
     name: 'list_controls',
     description:
         "List the tenant's controls with implementation status, applicability, and " +
-        'task progress. Filterable by status, applicability, owner, category, and ' +
-        'free-text query. Bounded by `limit` (default 50). Read-only, tenant-scoped.',
+        'task progress. Filterable by status, applicability, owner, and free-text ' +
+        'query. Bounded by `limit` (default 50). Read-only, tenant-scoped.',
     inputSchema: {
         type: 'object',
         properties: {
             status: { type: 'string', description: 'e.g. IMPLEMENTED, IMPLEMENTING, PLANNED.' },
-            applicability: { type: 'string', description: 'e.g. APPLICABLE, NOT_APPLICABLE.' },
+            applicability: {
+                type: 'string',
+                description:
+                    'One or more of APPLICABLE, NOT_APPLICABLE, UNASSESSED (comma-separated). ' +
+                    'UNASSESSED is applicable-but-never-decided — stored as APPLICABLE with no ' +
+                    'decision timestamp, so it is a distinct state from a deliberate one.',
+            },
             ownerUserId: { type: 'string' },
-            category: { type: 'string' },
             q: { type: 'string' },
             limit: { type: 'integer', minimum: 1, maximum: 200 },
         },
@@ -45,7 +55,11 @@ export const listControlsTool: McpReadTool<z.infer<typeof listControlsArgs>> = {
     resourceScope: { resource: 'controls', action: 'read' },
     run: async (ctx: RequestContext, args) => {
         const { limit, ...filters } = args;
-        return listControls(ctx, filters as Parameters<typeof listControls>[1], { take: limit ?? 50 });
+        // No cast: `filters` must structurally satisfy ControlListInputFilters.
+        // It used to be `as Parameters<typeof listControls>[1]`, which is how a
+        // `category` key survived here as a silent no-op after the usecase
+        // stopped accepting it.
+        return listControls(ctx, filters, { take: limit ?? 50 });
     },
 };
 

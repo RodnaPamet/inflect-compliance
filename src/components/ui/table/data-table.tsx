@@ -114,18 +114,18 @@ export interface DataTableProps<T> {
 
   /**
    * Expandable rows. `getRowCanExpand(row)` → true shows a leading chevron;
-   * toggling renders `renderExpandedRow(row)` as a full-width sub-row beneath
-   * it. Default off (no chevron / no behaviour change). Not supported in the
+   * toggling renders `renderAlignedSubRows(row, columnIds)` beneath it.
+   * Default off (no chevron / no behaviour change). Not supported in the
    * virtualized branch — a consumer using expansion should keep the table
    * non-virtualized (`virtualize={false}` or under the threshold).
    */
   getRowCanExpand?: (row: Row<T>) => boolean;
-  renderExpandedRow?: (row: Row<T>) => React.ReactNode;
   /**
    * Aligned expandable sub-rows — real `<tr>`/`<td>` rows whose cells align
    * with the parent columns (one `<td>` per visible column id). See the
-   * `BaseTableProps` doc. Forces the non-virtualized `<Table>` (like
-   * `renderExpandedRow`).
+   * `BaseTableProps` doc, which also records why the parallel
+   * `renderExpandedRow` slot was removed. Forces the non-virtualized
+   * `<Table>`.
    */
   renderAlignedSubRows?: (row: Row<T>, columnIds: string[]) => React.ReactNode;
   /**
@@ -324,7 +324,6 @@ export function DataTable<T>({
   onRowPrefetch,
   getRowId,
   getRowCanExpand,
-  renderExpandedRow,
   renderAlignedSubRows,
   onReachEnd,
   onRowSelectionChange,
@@ -408,7 +407,6 @@ export function DataTable<T>({
     !loading &&
     // Expandable rows (either mode) need the real <Table> — the virtualized
     // grid can't host colSpan slots or aligned sub-rows.
-    !renderExpandedRow &&
     !renderAlignedSubRows &&
     !(!!pagination && !!onPaginationChange && rowCount !== undefined);
   const resizingEnabled = enableColumnResizing && !willVirtualizeEarly;
@@ -429,7 +427,6 @@ export function DataTable<T>({
         onRowClick,
         getRowId,
         getRowCanExpand,
-        renderExpandedRow,
         renderAlignedSubRows,
         onRowSelectionChange: effectiveOnRowSelectionChange,
         selectedRows: effectiveSelectedRows,
@@ -458,7 +455,6 @@ export function DataTable<T>({
         onRowClick,
         getRowId,
         getRowCanExpand,
-        renderExpandedRow,
         renderAlignedSubRows,
         onRowSelectionChange: effectiveOnRowSelectionChange,
         selectedRows: effectiveSelectedRows,

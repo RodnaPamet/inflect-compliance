@@ -92,10 +92,12 @@ import {
     getControl,
     getControlHeader,
     getControlActivity,
-    getControlDashboard,
-    runConsistencyCheck,
     listControlsWithDeleted,
 } from '@/app-layer/usecases/control/queries';
+// Whole-tenant admin aggregates moved to ./dashboard (roadmap P3.3). Imported
+// from the file, not the barrel, for the same reason as above: the barrel
+// pulls in mutations.ts and with it the Prisma audit-extension stack.
+import { getControlDashboard, runConsistencyCheck } from '@/app-layer/usecases/control/dashboard';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {

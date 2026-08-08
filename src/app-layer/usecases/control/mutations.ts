@@ -143,7 +143,7 @@ export async function updateControl(
         }
 
         // `frequency` drives nextDueAt, which is otherwise only computed at
-        // attest time (control-test.ts, task-source-reconcile.ts). Editing
+        // attest time (control/test-plans.ts, task-source-reconcile.ts). Editing
         // the cadence without recomputing left [nextDueAt]-driven scheduling
         // and the controlsDueSoon dashboard count running on a value derived
         // from a SUPERSEDED frequency until the next test completed.
@@ -377,7 +377,7 @@ export async function setControlOwner(ctx: RequestContext, id: string, ownerUser
 // The manual `markControlTestCompleted` + `POST /test-completed` endpoint were
 // removed — the identical control-state write (lastTested + nextDueAt) is
 // performed automatically by `attestControlTested` on every completed
-// test/check run (see control-test.ts), and no UI ever called the manual one.
+// test/check run (see control/test-plans.ts), and no UI ever called the manual one.
 
 // ─── Soft Delete / Restore / Purge ───
 

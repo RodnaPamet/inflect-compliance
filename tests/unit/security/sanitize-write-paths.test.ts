@@ -267,7 +267,7 @@ import {
     createTestPlan,
     updateTestPlan,
     completeTestRun,
-} from '@/app-layer/usecases/control-test';
+} from '@/app-layer/usecases/control';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');

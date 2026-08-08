@@ -9,7 +9,7 @@
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { renewException } from '@/app-layer/usecases/control-exception';
+import { renewException } from '@/app-layer/usecases/control';
 import { RenewExceptionSchema } from '@/app-layer/schemas/control-exception.schemas';
 import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';

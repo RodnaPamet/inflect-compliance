@@ -17,14 +17,11 @@ import { ControlReverseLookupModal } from '@/components/controls/ControlReverseL
 import { LinkedVendorsPanel } from '@/components/LinkedVendorsPanel';
 import { ControlMappingsTab } from './_tabs/ControlMappingsTab';
 import { EvidenceSubTable, type EvidenceTabData } from '@/components/controls-shared/EvidenceSubTable';
+import { PanelActivityFeed } from '@/components/controls-shared/PanelActivityFeed';
 import { ControlChecksTab } from './_tabs/ControlChecksTab';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
-// Inline pencil icon to avoid lucide-react barrel import issue with Next.js 14
-const PencilIcon = ({ size = 14 }: { size?: number }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-);
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -82,10 +79,11 @@ const LinkedTasksPanel = dynamic(() => import('@/components/LinkedTasksPanel'), 
 });
 import type {
     ControlDetailDTO, EvidenceLinkDTO,
-    ContributorDTO, AuditLogEntry,
+    ContributorDTO,
 } from '@/lib/dto';
 import { buildControlStatusLabels } from '../filter-defs';
 import { buildControlPatchBody } from '../_lib/control-write-values';
+import { PenWriting } from '@/components/ui/icons/nucleo/pen-writing';
 
 // The detail status dropdown reuses the CANONICAL status vocabulary
 // (buildControlStatusLabels — the same i18n source the list badges + filter
@@ -138,8 +136,6 @@ type Tab = 'overview' | 'tasks' | 'evidence' | 'mappings' | 'traceability' | 'ac
  */
 
 
-const EVENT_KEYS = ['CONTROL_CREATED','CONTROL_UPDATED','CONTROL_STATUS_CHANGED','CONTROL_APPLICABILITY_CHANGED','CONTROL_OWNER_CHANGED','CONTROL_CONTRIBUTOR_ADDED','CONTROL_CONTRIBUTOR_REMOVED','CONTROL_TASK_CREATED','CONTROL_TASK_COMPLETED','CONTROL_TASK_UPDATED','CONTROL_EVIDENCE_LINKED','CONTROL_EVIDENCE_UNLINKED','CONTROL_TEST_COMPLETED','CONTROL_INSTALLED_FROM_TEMPLATE'] as const;
-const buildEventLabels = (t: (k: string) => string): Record<string, string> => Object.fromEntries(EVENT_KEYS.map(k => [k, t(`eventLabels.${k}`)]));
 
 // Read-only Policies section (Overview tab): local status → badge map so
 // this control page stays free of policy-domain helper imports.
@@ -158,7 +154,6 @@ export default function ControlDetailPage() {
     const AUTOMATION_TYPE_LABELS = buildAutomationTypeLabels(tx);
     const MITIGATION_TYPE_LABELS = buildMitigationTypeLabels(tx);
     const CATEGORY_LABELS = buildCategoryLabels(tx);
-    const EVENT_LABELS = buildEventLabels(tx);
     const FREQ_CB_OPTIONS = buildFreqCbOptions(FREQ_LABELS);
     const CATEGORY_CB_OPTIONS = buildCategoryCbOptions(CATEGORY_LABELS);
     const STATUS_CB_OPTIONS = buildStatusCbOptions(STATUS_LABELS);
@@ -292,19 +287,6 @@ export default function ControlDetailPage() {
     const [fileUploadError, setFileUploadError] = useState('');
     const fileUploadRef = useRef<HTMLInputElement>(null);
 
-    // Activity trail — lazily loaded only while the Activity tab is open
-    // (conditional SWR key = null when closed), cached so re-opening the
-    // tab renders instantly instead of re-fetching every time.
-    const activityQuery = useTenantSWR<AuditLogEntry[]>(
-        tab === 'activity' ? `/controls/${controlId}/activity` : null,
-    );
-    const activity = activityQuery.data ?? [];
-    const activityLoading = activityQuery.isLoading;
-    // Distinguish a fetch FAILURE from a genuinely empty trail — without
-    // this the Activity tab renders "No activity" on an error, which reads
-    // as "nothing happened" when the real story is "we couldn't load it".
-    const activityError = activityQuery.error;
-
     // Sync status — drives the header conflict/synced badges (the
     // overview Automation section + manual "Sync Now" were removed).
     const [syncStatus, setSyncStatus] = useState<string | null>(null);
@@ -419,7 +401,12 @@ export default function ControlDetailPage() {
                           mitigationType: form.mitigationType || null,
                       },
                   }
-                : (current as unknown as ControlPageDataDTO),
+                : // Cold cache: nothing to patch. `undefined` means "no
+                  // optimistic prediction" — the alternative used to be
+                  // `current as unknown as ControlPageDataDTO`, which types
+                  // undefined as a full DTO and would throw on the first
+                  // field read if it ever ran.
+                  undefined,
         // Refresh the list cache too — the controls list page shows
         // these same fields.
         invalidate: [CACHE_KEYS.controls.list()],
@@ -448,9 +435,6 @@ export default function ControlDetailPage() {
         setShowEditModal(false);
         setEditError('');
     };
-
-    // (Activity is now loaded via the conditional `activityQuery`
-    // useTenantSWR above — no imperative fetch-on-tab-open effect.)
 
     // Hydrate sync status from the page-data response (one round-trip
     // instead of the previous control-then-sync waterfall). The
@@ -522,7 +506,12 @@ export default function ControlDetailPage() {
                       ...current,
                       control: { ...current.control, status },
                   }
-                : (current as unknown as ControlPageDataDTO),
+                : // Cold cache: nothing to patch. `undefined` means "no
+                  // optimistic prediction" — the alternative used to be
+                  // `current as unknown as ControlPageDataDTO`, which types
+                  // undefined as a full DTO and would throw on the first
+                  // field read if it ever ran.
+                  undefined,
         // List page shows status badges too — keep it in sync, and the
         // executive dashboard's control-coverage KPI shifts on a status
         // flip, so refresh its card stack too.
@@ -1028,8 +1017,10 @@ export default function ControlDetailPage() {
                                     aria-label={tx('detailPage.editControl')}
                                 >
                                     {/* B2 — icon-only edit affordance,
-                                        canonical unified pattern. */}
-                                    <PencilIcon size={16} />
+                                        canonical unified pattern. Nucleo is
+                                        the canonical icon family (lucide is a
+                                        closed migration allowlist). */}
+                                    <PenWriting className="h-4 w-4" />
                                 </Button>
                             </Tooltip>
                         </div>
@@ -1248,36 +1239,22 @@ export default function ControlDetailPage() {
             )}
 
             {tab === 'activity' && (
-                <div className={cn(cardVariants({ density: 'none' }), 'overflow-hidden')}>
-                    {activityLoading ? (
-                        <div className="p-8 text-center text-content-subtle animate-pulse">{tx('detailPage.loadingActivity')}</div>
-                    ) : activityError ? (
-                        <InlineEmptyState
-                            title={tx('detailPage.couldntLoadActivity')}
-                            description={tx('detailPage.couldntLoadActivityDesc')}
-                        />
-                    ) : activity.length === 0 ? (
-                        <InlineEmptyState
-                            title={tx('detailPage.noActivity')}
-                            description={tx('detailPage.activityEmptyDesc')}
-                        />
-                    ) : (
-                        <div className="divide-y divide-border-default/50" id="activity-feed">
-                            {activity.map((ev: AuditLogEntry) => (
-                                <div key={ev.id} className="px-5 py-3 flex items-start gap-compact">
-                                    <div className="mt-0.5">
-                                        <StatusBadge variant="info">{EVENT_LABELS[ev.action] || ev.action}</StatusBadge>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-content-default">{ev.details}</p>
-                                        <p className="text-xs text-content-subtle mt-0.5">
-                                            {ev.user?.name || tx('detailPage.systemActor')} · {formatDateTime(ev.createdAt)}
-                                        </p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                // Same feed the side-panel Activity tab renders, off the same
+                // endpoint. This used to be a hand-rolled list of
+                // `<StatusBadge>{EVENT_LABELS[action]}</StatusBadge>` + the RAW
+                // `ev.details` string — which is authored as
+                // "<phrase> Context: {json}" and often carries a bare cuid, so
+                // the detail page showed machine text the panel deliberately
+                // strips (`humanizeDetail`). One feed, one reading.
+                //
+                // Still lazy: the component fetches on mount and only mounts
+                // while this tab is open, which is what the conditional SWR key
+                // it replaced was for.
+                <div className={cn(cardVariants({ density: 'compact' }), 'overflow-hidden')} id="activity-feed">
+                    <PanelActivityFeed
+                        tenantSlug={tenantSlug}
+                        endpoint={`/controls/${controlId}/activity`}
+                    />
                 </div>
             )}
 

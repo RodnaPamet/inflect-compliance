@@ -20,7 +20,7 @@
  *
  * Controls participate only when they carry an effectiveness signal:
  *   MEASURED — test pass-rate over the rolling window (preferred;
- *              data-driven, from control-test.ts).
+ *              data-driven, from control/test-plans.ts).
  *   DECLARED — the static `Control.effectiveness` field (0–100).
  * Controls with neither, or with no `mitigationType`, are EXCLUDED
  * from the math but reported in the breakdown so the gap is visible

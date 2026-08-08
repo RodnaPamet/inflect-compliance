@@ -107,9 +107,16 @@ describe("Controls editable side-panel interaction", () => {
             expect(editPanel).not.toMatch(/data-testid="control-edit-save"/);
             expect(editPanel).not.toMatch(/data-testid="control-edit-cancel"/);
             expect(editPanel).toMatch(/data-testid="control-edit-autosave-status"/);
-            // The debounce + flush-on-blur engine is present.
+            // The debounce + flush-on-blur engine is DELEGATED, not inlined.
+            // This used to assert the literal
+            // `setTimeout(() => void commitFields(), 800)` here AND in the
+            // task panel — an assertion that required the two copies to exist
+            // and verified nothing about what the debounce did. The engine is
+            // now `useAutosaveFields`, covered behaviourally in
+            // src/components/ui/hooks/__tests__/use-autosave-fields.test.tsx.
             expect(editPanel).toMatch(/onBlur=\{commitNow\}/);
-            expect(editPanel).toMatch(/setTimeout\(\(\)\s*=>\s*void commitFields\(\),\s*\d+\)/);
+            expect(editPanel).toMatch(/useAutosaveFields\(/);
+            expect(editPanel).not.toMatch(/setTimeout\(/);
         });
         it("mounts the shared drag-drop EvidenceUploadSection (controlId), compact dropzone, no Intent field", () => {
             expect(editPanel).toMatch(/<EvidenceUploadSection/);
@@ -137,7 +144,9 @@ describe("Controls editable side-panel interaction", () => {
             expect(taskPanel).not.toMatch(/data-testid="task-edit-cancel"/);
             expect(taskPanel).toMatch(/data-testid="task-edit-autosave-status"/);
             expect(taskPanel).toMatch(/onBlur=\{commitNow\}/);
-            expect(taskPanel).toMatch(/setTimeout\(\(\)\s*=>\s*void commitFields\(\),\s*\d+\)/);
+            // Same engine as the control panel — see the note there.
+            expect(taskPanel).toMatch(/useAutosaveFields\(/);
+            expect(taskPanel).not.toMatch(/setTimeout\(/);
             // Assignee picker lines up at sm with the other rail dropdowns.
             expect(taskPanel).toMatch(/<UserCombobox[\s\S]{0,400}size="sm"/);
             expect(taskPanel).not.toMatch(/buttonProps=\{\{[^}]*size:\s*["'](?:md|lg)["']/);

@@ -83,7 +83,7 @@ const ENTITIES: EntitySpec[] = [
         name: 'Test plan',
         statusRoute: 'src/app/api/t/[tenantSlug]/tests/plans/bulk/status/route.ts',
         assignRoute: 'src/app/api/t/[tenantSlug]/tests/plans/bulk/assign/route.ts',
-        usecaseFile: 'src/app-layer/usecases/control-test.ts',
+        usecaseFile: 'src/app-layer/usecases/control/test-plans.ts',
         statusFn: /export async function bulkSetTestPlanStatus/,
         assignFn: /export async function bulkAssignTestPlan/,
         permission: /assertCanManageTestPlans\(ctx\)/,

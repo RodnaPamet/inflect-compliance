@@ -4,7 +4,6 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-/* eslint-disable react-hooks/exhaustive-deps -- Various useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers/derived arrays recreated each render). The proper structural fix is wrapping parent-level callbacks in useCallback. Tracked as follow-up; existing per-line eslint-disable-next-line markers preserved. */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -24,6 +23,7 @@ import { ControlTaskRows, type ControlTask } from '@/components/controls-shared/
 import { ControlEditPanel } from './ControlEditPanel';
 import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
@@ -70,6 +70,7 @@ import {
     categorizeControl,
     ISO27001_DOMAIN_ORDER,
 } from '@/lib/controls/control-taxonomy';
+import { applicabilityState } from '@/lib/controls/control-applicability';
 import { AiAssistRail } from '@/components/ui/ai-assist-rail';
 import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
@@ -89,6 +90,7 @@ import {
 } from '@/lib/controls/control-health';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
+import { controlBulkActionsFor, type ControlBulkAction } from './_lib/bulk-action-policy';
 
 // ─── Constants ───
 
@@ -114,19 +116,6 @@ const CONTROL_STATUS_VALUES = [
     'NOT_APPLICABLE',
 ] as const;
 
-/** Applicability display state — the SAME three-way split the Applicability
- *  COLUMN renders: N/A · Yes (decided applicable) · Not assessed (applicable,
- *  never assessed → `applicabilityDecidedAt` null). Shared by the column cell
- *  AND the client-side applicability filter (#8b) so the filter can never offer
- *  a state a cell doesn't show. */
-type ApplicabilityState = 'NOT_APPLICABLE' | 'APPLICABLE' | 'UNASSESSED';
-function applicabilityState(c: {
-    applicability: string;
-    applicabilityDecidedAt?: string | null;
-}): ApplicabilityState {
-    if (c.applicability === 'NOT_APPLICABLE') return 'NOT_APPLICABLE';
-    return c.applicabilityDecidedAt ? 'APPLICABLE' : 'UNASSESSED';
-}
 
 
 // ─── Types ───
@@ -232,6 +221,12 @@ function ControlsPageInner({
     // require ADMIN server-side (bulkDeleteControl / listControlsWithDeleted
     // both assertCanAdmin). Editors keep the status/assign bulk verbs.
     const canAdmin = permissions.canAdmin;
+    // Single source for "which bulk verbs may this viewer use" — see
+    // _lib/bulk-action-policy.
+    const allowedBulkActions = useMemo(
+        () => controlBulkActionsFor(permissions),
+        [permissions],
+    );
     const FREQ_LABELS = useMemo<Record<string, string>>(
         () => ({
             AD_HOC: t('freq.adHoc'),
@@ -308,18 +303,20 @@ function ControlsPageInner({
         if (search) params.set('q', search);
         const idsParam = searchParams?.get('ids');
         if (idsParam) params.set('ids', idsParam);
-        // #8a/#8b — `category` and `applicability` are applied CLIENT-side over
-        // the already-loaded rows (see `clientFilteredControls`), so they must
-        // NOT reach the server query: the server filters the RAW stored
-        // `category` (ISO themes) and a two-value `applicability` enum, neither
-        // of which agrees with the DERIVED category column nor the three-state
-        // applicability column. Dropping them here keeps one authoritative
-        // value per facet (the client's) and the SWR key stable across picks.
-        // (On a hard-nav these params may still ride the URL into the SSR read;
-        // the controls repo ignores an out-of-enum applicability and returns an
-        // empty raw-category match, and the client re-derives correctly.)
+        // #8a — `category` is the ONE facet still applied client-side (see
+        // `clientFilteredControls`), so it must not reach the server query:
+        // the Category column shows a DERIVED value while the server can only
+        // match the raw stored column, and the two disagree. Dropping it here
+        // keeps one authoritative value for the facet (the client's) and the
+        // SWR key stable across picks. The SSR read drops it for the same
+        // reason, so a hard nav and a client nav now agree.
+        //
+        // `applicability` USED to be stripped here too. It no longer is: the
+        // three display states are expressible in SQL over
+        // (applicability, applicabilityDecidedAt), so the server filters them
+        // — which means the facet now sees every control, not just the loaded
+        // page. See @/lib/controls/control-applicability.
         params.delete('category');
-        params.delete('applicability');
         return params;
     }, [state, search, searchParams]);
 
@@ -400,9 +397,15 @@ function ControlsPageInner({
     // dies (the row DOM is replaced between the two clicks).
     const controlsMutate = controlsQuery.mutate;
     const controlsData = controlsQuery.data;
-    const rawControls = Array.isArray(controlsData)
-        ? controlsData
-        : controlsData?.rows ?? [];
+    // Memoised because the `?? []` branch mints a NEW array every render, and
+    // two downstream useMemos take `rawControls` as a dependency — without
+    // this they recompute (and rebuild the table model) on every render even
+    // when nothing changed.
+    const rawControls = useMemo(
+        () =>
+            Array.isArray(controlsData) ? controlsData : controlsData?.rows ?? [],
+        [controlsData],
+    );
     const truncated = Array.isArray(controlsData) ? false : controlsData?.truncated ?? false;
     const loading = controlsQuery.isLoading && !controlsQuery.data;
 
@@ -444,32 +447,34 @@ function ControlsPageInner({
                 c.frequency ? FREQ_LABELS[c.frequency] || c.frequency : '',
             owner: (c) => c.owner?.name || c.owner?.email || '',
         }),
-        [],
+        [FREQ_LABELS],
     );
-    // #8a/#8b — `category` and `applicability` are applied HERE, over the
-    // already-loaded rows, on the DERIVED values the columns render (see the
-    // note on `filtersForQuery`, which strips them from the server query).
-    // Deriving keeps one authoritative value per facet and guarantees the
-    // picker only offers values a cell can actually show. Runs before sort +
-    // windowing so the visible slice already reflects the selection.
-    // Read the raw `state.*` refs (stable across renders when unchanged) so the
+    // #8a — `category` is applied HERE, over the already-loaded rows, on the
+    // DERIVED value the column renders (see the note on `filtersForQuery`,
+    // which strips it from the server query). Deriving keeps one authoritative
+    // value for the facet and guarantees the picker only offers values a cell
+    // can actually show. Runs before sort + windowing so the visible slice
+    // already reflects the selection.
+    //
+    // KNOWN BOUND: this only sees the loaded page, so past the backfill cap a
+    // matching control is missing. It stays client-side because
+    // `categorizeControl` parses the ISO Annex clause out of `annexId`/`code`
+    // with a permissive regex and looks it up in a 93-entry map — pushing that
+    // into SQL means either duplicating the parser in the query builder (a
+    // second source of truth for the thing this function IS) or persisting the
+    // derived value in a column with a backfill. The second is the right move
+    // if the cap ever binds; neither is worth it while it doesn't.
+    // `applicability` moved to the server — see @/lib/controls/control-applicability.
+    //
+    // Read the raw `state.*` ref (stable across renders when unchanged) so the
     // memo — and the sort/window that depend on it — don't churn every render.
     const categoryFilter = state.category;
-    const applicabilityFilter = state.applicability;
     const clientFilteredControls = useMemo(() => {
-        let rows = rawControls;
-        if (categoryFilter && categoryFilter.length > 0) {
-            const wanted = new Set(categoryFilter);
-            // guardrail-ignore: client-side filter on the DERIVED framework category (matches the Category column) — not server-data refiltering; the server owns q/status/owner/health/ids.
-            rows = rows.filter((c) => wanted.has(categorizeControl(c)?.category ?? ''));
-        }
-        if (applicabilityFilter && applicabilityFilter.length > 0) {
-            const wanted = new Set(applicabilityFilter);
-            // guardrail-ignore: client-side filter on the DERIVED 3-state applicability (matches the Applicability column) — the stored enum can't express "Not assessed".
-            rows = rows.filter((c) => wanted.has(applicabilityState(c)));
-        }
-        return rows;
-    }, [rawControls, categoryFilter, applicabilityFilter]);
+        if (!categoryFilter || categoryFilter.length === 0) return rawControls;
+        const wanted = new Set(categoryFilter);
+        // guardrail-ignore: client-side filter on the DERIVED framework category (matches the Category column) — not server-data refiltering; the server owns q/status/applicability/owner/health/ids.
+        return rawControls.filter((c) => wanted.has(categorizeControl(c)?.category ?? ''));
+    }, [rawControls, categoryFilter]);
     const controls = useMemo(() => {
         // The consistency `?ids=` deep-link is now applied SERVER-SIDE (threaded
         // into the SWR query + SSR read as an `id: { in }` restriction), so
@@ -516,7 +521,7 @@ function ControlsPageInner({
             { id: 'inProgress', label: t('kpi.inProgress'), kind: 'kpi' },
             { id: 'notStarted', label: t('kpi.notStarted'), kind: 'kpi' },
         ],
-        [],
+        [t],
     );
     const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
         useFilterCardVisibility({
@@ -530,20 +535,26 @@ function ControlsPageInner({
     // one label visually, but the filter API sets only IN_PROGRESS;
     // pages that want a multi-status KPI extend the predicate.
     type ControlKpiId = 'total' | 'implemented' | 'inProgress' | 'notStarted';
-    // guardrail-ignore: KPI counts across the loaded page, not a refilter.
-    const totalControls = controls.length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const implementedControls = controls.filter(
-        (c) => c.status === 'IMPLEMENTED',
-    ).length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const inProgressControls = controls.filter(
-        (c) => c.status === 'IN_PROGRESS' || c.status === 'IMPLEMENTING',
-    ).length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const notStartedControls = controls.filter(
-        (c) => c.status === 'NOT_STARTED',
-    ).length;
+    // One pass for all four counters, instead of three separate
+    // `.filter().length` scans of the same array — which also cost three
+    // near-identical `guardrail-ignore: KPI count` suppressions, each
+    // re-explaining that counting is not refiltering.
+    const {
+        total: totalControls,
+        implemented: implementedControls,
+        inProgress: inProgressControls,
+        notStarted: notStartedControls,
+    } = useMemo(() => {
+        const counts = { total: controls.length, implemented: 0, inProgress: 0, notStarted: 0 };
+        for (const c of controls) {
+            if (c.status === 'IMPLEMENTED') counts.implemented++;
+            // IN_PROGRESS and IMPLEMENTING read as one state to a user; the
+            // filter API sets only IN_PROGRESS.
+            else if (c.status === 'IN_PROGRESS' || c.status === 'IMPLEMENTING') counts.inProgress++;
+            else if (c.status === 'NOT_STARTED') counts.notStarted++;
+        }
+        return counts;
+    }, [controls]);
 
     // Canonical KPI-card sparklines — real per-day series from the daily
     // compliance-snapshot trends (shared hook). Each card maps to its column;
@@ -560,7 +571,6 @@ function ControlsPageInner({
         [trendsQuery.data],
     );
     // Distinct sparkline colour per card (canonical allocator).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const sparkColors = useMemo(
         () => assignSparklineVariants(['total', 'implemented', 'inProgress', 'notStarted']),
         [],
@@ -628,7 +638,7 @@ function ControlsPageInner({
             { id: 'tasks', label: t('colVis.tasks') },
             { id: 'evidence', label: t('colVis.evidence') },
         ],
-        [],
+        [t],
     );
     const {
         columnVisibility,
@@ -674,7 +684,71 @@ function ControlsPageInner({
     // Canonical bulk path — one `updateMany`-backed endpoint instead of the
     // former per-id status loop (kills the N+1). status + assign mirror the
     // Tasks/Assets bars.
-    const [bulkApplying, setBulkApplying] = useState(false);
+    interface BulkVars {
+        action: string;
+        value: string;
+        ids: string[];
+        /** Display label for `value` (owner name) — optimistic paint only. */
+        label?: string;
+    }
+
+    /**
+     * Optimistic bulk status / owner change.
+     *
+     * `key` is the LIVE filtered list key, not a static path: the table reads
+     * `controlsKey`, so an optimistic write to `CACHE_KEYS.controls.list()`
+     * would land on a different SWR entry and paint nothing.
+     */
+    const bulkMutation = useTenantMutation<
+        CappedList<ControlListItem> | ControlListItem[],
+        BulkVars,
+        unknown
+    >({
+        key: controlsKey,
+        mutationFn: async ({ action, value, ids }) => {
+            const url =
+                action === 'status'
+                    ? apiUrl('/controls/bulk/status')
+                    : apiUrl('/controls/bulk/assign');
+            const body =
+                action === 'status'
+                    ? { controlIds: ids, status: value }
+                    : { controlIds: ids, ownerUserId: value || null };
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error('Bulk action failed');
+            return res.json().catch(() => null);
+        },
+        optimisticUpdate: (current, { action, value, ids, label }) => {
+            // Cold cache: nothing to patch, so no prediction. (The bar only
+            // appears over loaded rows, so this is unreachable in practice —
+            // but inventing an empty list here would paint "no controls".)
+            if (!current) return undefined;
+            const idSet = new Set(ids);
+            const patch = (c: ControlListItem): ControlListItem => {
+                if (!idSet.has(c.id)) return c;
+                if (action === 'status') return { ...c, status: value };
+                // Owner: `value` is a user id and the column renders
+                // `owner.name || owner.email`, so the picker's display label
+                // rides along — otherwise the cell would blank until the
+                // revalidation lands, which looks like the assign failed.
+                return {
+                    ...c,
+                    owner: value ? { id: value, name: label || null, email: null } : null,
+                };
+            };
+            if (Array.isArray(current)) return current.map(patch);
+            return { ...current, rows: current.rows.map(patch) };
+        },
+        // The executive dashboard's control-coverage KPI moves on a status
+        // flip — same fan-out the detail page's statusMutation does.
+        invalidate: [CACHE_KEYS.dashboard.executive()],
+    });
+    const bulkApplying = bulkMutation.isMutating;
+
     const handleBulkApply = async (action: string, value: string, _label: string) => {
         if (!action || selectedIds.length === 0) return;
         const ids = selectedIds;
@@ -718,38 +792,28 @@ function ControlsPageInner({
             return;
         }
 
-        // #2 — status / assign. The apply was previously a try/finally with NO
-        // catch, so a `!res.ok` threw an unhandled rejection while the bar
-        // cleared — the failure looked like success. Now: toast on both
-        // outcomes, and clear the selection ONLY on success.
-        setBulkApplying(true);
+        // #2 — status / assign, through useTenantMutation. This is the shape
+        // the hook exists for (see its docstring: not the default write path,
+        // but the right one when the interaction is latency-sensitive). It
+        // used to POST and then await a full `mutate()` refetch, so every
+        // bulk apply held the table on stale values for a round trip. Now the
+        // rows repaint synchronously and roll back on throw.
         try {
-            const url =
-                action === 'status'
-                    ? apiUrl('/controls/bulk/status')
-                    : apiUrl('/controls/bulk/assign');
-            const body =
-                action === 'status'
-                    ? { controlIds: ids, status: value }
-                    : { controlIds: ids, ownerUserId: value || null };
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (!res.ok) throw new Error('Bulk action failed');
-            // Revalidate the same key the table reads (the active filtered list).
-            await controlsQuery.mutate();
+            await bulkMutation.trigger({ action, value, ids, label: _label });
             toast.success(t('bulk.applied'));
             setRowSelection({});
         } catch {
+            // The hook re-throws after rolling the cache back, so the rows
+            // are already restored by the time this runs.
             toast.error(t('bulk.actionFailed'));
-        } finally {
-            setBulkApplying(false);
         }
     };
-    const controlBulkActions: BulkActionDef[] = useMemo(
-        () => [
+    // The array literal is annotated INSIDE the callback, not just on the
+    // const: `.filter(...)` makes the whole expression a method call, so the
+    // literal no longer picks up its contextual type and every `renderInput`
+    // parameter would fall back to `any`.
+    const controlBulkActions: BulkActionDef[] = useMemo(() => {
+        const defs: BulkActionDef[] = [
             {
                 value: 'status',
                 label: t('bulk.setStatus'),
@@ -786,17 +850,22 @@ function ControlsPageInner({
                     />
                 ),
             },
-            // #1 — DELETE is ADMIN-only: bulkDeleteControl asserts admin
-            // server-side, so offering it to an EDITOR was a guaranteed 403.
-            // Hidden for non-admins (editors keep status/assign). No `confirm`
-            // here — #3 routes it through the Epic 67 undo-toast in
+            // DELETE is ADMIN-only: bulkDeleteControl asserts admin
+            // server-side, so offering it to an EDITOR is a guaranteed 403.
+            // No `confirm` here — it routes through the Epic 67 undo-toast in
             // handleBulkApply (soft, restorable delete).
-            ...(canAdmin
-                ? [{ value: 'delete', label: t('bulk.delete') } as BulkActionDef]
-                : []),
-        ],
-        [tenantSlug, canAdmin, t, CONTROL_STATUS_OPTIONS],
-    );
+            //
+            // The role decision lives in _lib/bulk-action-policy, not in this
+            // ternary: inline, the only thing guarding it was a regex that
+            // matched the 'delete' literal INSIDE the conditional, so
+            // removing the guard kept CI green.
+            { value: 'delete', label: t('bulk.delete') },
+        ];
+        // guardrail-ignore: narrows the LOCAL bulk-action definitions to the ones this role may use (see _lib/bulk-action-policy) — not server-data filtering.
+        return defs.filter((def) =>
+            allowedBulkActions.includes(def.value as ControlBulkAction),
+        );
+    }, [tenantSlug, allowedBulkActions, t, CONTROL_STATUS_OPTIONS]);
 
     // ─── Deleted-control lifecycle actions (#3) ───
     // Restore un-deletes a soft-deleted control; Purge permanently removes it.
@@ -1089,8 +1158,8 @@ function ControlsPageInner({
                 // APPLICABLE and must read distinctly from a deliberately
                 // decided one — else "assessed" and "unassessed" look alike.
                 // Shared 3-state derivation — the SAME `applicabilityState`
-                // the client-side Applicability filter uses (#8b), so the
-                // column and the picker can never disagree.
+                // whose SQL twin (`applicabilityStateWhere`) backs the server
+                // filter, so the column and the picker can never disagree.
                 const applState = applicabilityState(c);
                 const applicabilityCell: { variant: StatusBadgeVariant; label: string } =
                     applState === 'NOT_APPLICABLE'
@@ -1275,7 +1344,11 @@ function ControlsPageInner({
                   },
               ]
             : []),
-    ]), [appPermissions, tenantHref, taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t]);
+    // `appPermissions` and `tenantHref` are NOT here: the body reads
+    // `canEditControls` and the already-memoised callbacks, not those props
+    // directly. They were in the array while the file-wide
+    // `react-hooks/exhaustive-deps` disable hid the rule's opinion either way.
+    ]), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call — calling it inline in the `table` object would undo the memo
@@ -1506,15 +1579,17 @@ function ControlsPageInner({
     // rail. `openOnMount` expands the rail / opens the Sheet immediately so the
     // panel "appears" on the click.
     //
-    // The `key` is LOAD-BEARING and includes the ENTITY ID. `openOnMount` runs
-    // in a mount-only effect, and these panels share their tree position (and
-    // surfaceKey) with the browse stack. Without a distinct key React would
-    // REUSE the in-place AsidePanel — and, crucially, the inner
-    // Control/TaskEditPanel, which seeds its form from props ON MOUNT only — so
-    // switching control→control would leave the previous row's data in the
-    // fields (and openOnMount would never re-fire on a collapsed rail). Keying
-    // by id forces a fresh mount on every distinct selection → openOnMount
-    // fires AND the panel re-seeds from the newly-clicked row.
+    // The `key` includes the ENTITY ID because `openOnMount` runs in a
+    // mount-only effect, and these panels share their tree position (and
+    // surfaceKey) with the browse stack: without a distinct key React reuses
+    // the in-place AsidePanel and openOnMount never re-fires on a collapsed
+    // rail. That is an AsidePanel contract, and the only reason left.
+    //
+    // It used to ALSO be compensating for the inner Control/TaskEditPanel
+    // seeding its form on mount only — switching control→control would have
+    // left the previous row's values in the fields. Those panels are
+    // controlled now (useAutosaveFields re-seeds when `seed` changes), so they
+    // no longer need the remount.
     const quickViewAside = selectedTask ? (
         <AsidePanel
             key={`qv-task-${selectedTask.id}`}

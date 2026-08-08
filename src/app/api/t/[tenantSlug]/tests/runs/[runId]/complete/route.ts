@@ -2,7 +2,7 @@
  * POST /api/t/[tenantSlug]/tests/runs/[runId]/complete — Complete a test run with result
  */
 import { getTenantCtx } from '@/app-layer/context';
-import { completeTestRun } from '@/app-layer/usecases/control-test';
+import { completeTestRun } from '@/app-layer/usecases/control';
 import { withValidatedBody } from '@/lib/validation/route';
 import { CompleteTestRunSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';

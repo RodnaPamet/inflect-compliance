@@ -1,17 +1,17 @@
 /**
  * Control Test usecases — test plan lifecycle, test run execution, evidence linking.
  */
-import { RequestContext } from '../types';
-import { TestPlanRepository } from '../repositories/TestPlanRepository';
-import { TestRunRepository } from '../repositories/TestRunRepository';
-import { TestEvidenceRepository } from '../repositories/TestEvidenceRepository';
+import { RequestContext } from '../../types';
+import { TestPlanRepository } from '../../repositories/TestPlanRepository';
+import { TestRunRepository } from '../../repositories/TestRunRepository';
+import { TestEvidenceRepository } from '../../repositories/TestEvidenceRepository';
 import {
     assertCanReadTests,
     assertCanManageTestPlans,
     assertCanExecuteTests,
     assertCanLinkTestEvidence,
     assertCanBulkManageTestPlans,
-} from '../policies/test.policies';
+} from '../../policies/test.policies';
 import {
     emitTestPlanCreated,
     emitTestPlanUpdated,
@@ -22,16 +22,16 @@ import {
     emitTestRunFailed,
     emitTestEvidenceLinked,
     emitTestEvidenceUnlinked,
-} from '../events/test.events';
-import { logEvent } from '../events/audit';
+} from '../../events/test.events';
+import { logEvent } from '../../events/audit';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { withDeleted } from '@/lib/soft-delete';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { computeNextDueAt } from '../utils/cadence';
-import { computeNextRunFromCron } from '../jobs/control-test-scheduler';
-import { createTask } from './task';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { computeNextDueAt } from '../../utils/cadence';
+import { computeNextRunFromCron } from '../../jobs/control-test-scheduler';
+import { createTask } from '../task';
+import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 
 /**
@@ -79,7 +79,7 @@ function sanitizeOptional(v: string | null | undefined): string | null | undefin
 // can derive too without a repository→usecase import (which would invert the
 // layer dependency). Imported (for local use below) AND re-exported, because
 // this has long been the import site for the usecase layer.
-import { deriveMethodFromAutomationType } from '../domain/test-plan-method';
+import { deriveMethodFromAutomationType } from '../../domain/test-plan-method';
 export { deriveMethodFromAutomationType };
 
 // ─── Queries ───

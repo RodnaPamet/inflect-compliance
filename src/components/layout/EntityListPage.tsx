@@ -172,7 +172,6 @@ export type EntityListPageTable<TRow> = Pick<
     | 'onRowPrefetch'
     | 'getRowId'
     | 'getRowCanExpand'
-    | 'renderExpandedRow'
     | 'renderAlignedSubRows'
     | 'onReachEnd'
     | 'onRowSelectionChange'

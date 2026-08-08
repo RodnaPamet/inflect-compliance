@@ -36,7 +36,7 @@ import {
     getExpiringExceptions,
     listControlExceptions,
     getControlException,
-} from '@/app-layer/usecases/control-exception';
+} from '@/app-layer/usecases/control';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),

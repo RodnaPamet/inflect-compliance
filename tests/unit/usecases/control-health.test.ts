@@ -36,7 +36,7 @@ jest.mock('@/app-layer/usecases/integrations', () => ({
 }));
 
 const computeControlEffectivenessMap = jest.fn();
-jest.mock('@/app-layer/usecases/control-test', () => ({
+jest.mock('@/app-layer/usecases/control/test-plans', () => ({
     computeControlEffectivenessMap: (...args: unknown[]) =>
         computeControlEffectivenessMap(...args),
 }));

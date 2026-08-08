@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -33,6 +33,14 @@ export default function ControlTemplatesPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const router = useRouter();
+    // Success-redirect timer — see the install handler below.
+    const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(
+        () => () => {
+            if (redirectTimer.current) clearTimeout(redirectTimer.current);
+        },
+        [],
+    );
     const { permissions } = useTenantContext();
     const t = useTranslations('controls');
 
@@ -93,7 +101,14 @@ export default function ControlTemplatesPage() {
                     ? t('templates.installedWithSkipped', { installed, skipped })
                     : t('templates.installed', { count: installed }),
             );
-            setTimeout(() => router.push(tenantHref('/controls')), 1500);
+            // Held in a ref and cleared on unmount. Uncleaned, this fires
+            // against an unmounted component if the user navigates within the
+            // 1.5s the success message is shown — a real leak, not a
+            // theoretical one, because the message invites you to look away.
+            redirectTimer.current = setTimeout(
+                () => router.push(tenantHref('/controls')),
+                1500,
+            );
 
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));

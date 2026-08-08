@@ -1,13 +1,28 @@
 /**
- * Controls — inline task-row expansion ratchet.
+ * Controls — inline task-row expansion.
  *
- * Locks: the DataTable primitive supports expandable rows (tanstack expanded
- * model) via TWO sub-row slots — `renderExpandedRow` (full-width colSpan) and
- * `renderAlignedSubRows` (real <tr>/<td> rows aligned to the parent columns).
- * The Controls table opts in to the ALIGNED slot so each linked task lines up
- * under the control's category / status / owner / evidence columns. Default-off
- * contract: the chevron/sub-rows only render when a consumer passes one of the
- * two render props.
+ * Locks the WIRING that no rendered test can see: which slot the Controls
+ * table opts in to, and that the expanded rows fetch the control's linked
+ * tasks from the unified work-item endpoint.
+ *
+ * WHAT MOVED OUT OF HERE (2026-08-08, roadmap P3.2 + P3.8)
+ * --------------------------------------------------------
+ * This file used to regex `table.tsx` for the primitive's internals —
+ * `getExpandedRowModel()`, `renderExpandedRow && row.getIsExpanded()`,
+ * `data-expanded-subrow`, and the chevron's `(!!a || !!b)` condition. Two
+ * problems with that:
+ *
+ *   1. It asserted the DataTable's own behaviour through its source text,
+ *      which `tests/rendered/data-table-row-expansion.test.tsx` now asserts by
+ *      rendering — chevron per expandable row, default-off, per-row gating,
+ *      and the column-id alignment that is the whole point of the slot.
+ *   2. It pinned `renderExpandedRow`, a SECOND expansion slot (one full-width
+ *      colSpan cell) with no consumer anywhere in the product. Removing dead
+ *      code from a shared primitive failed a Controls ratchet — the ratchet
+ *      was the only thing keeping it alive.
+ *
+ * What stays is the part that is genuinely structural: a page's choice of
+ * which primitive slot to use, and the endpoint its sub-rows read.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -16,23 +31,13 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 describe("Controls — row expansion", () => {
-    it("DataTable primitive wires the tanstack expanded model + both sub-row slots", () => {
+    it("the DataTable primitive still exposes the aligned sub-row slot", () => {
+        // Presence only — the BEHAVIOUR is covered by the rendered test. This
+        // guards against the slot being removed while a page still passes it,
+        // which would silently render nothing.
         const table = read("src/components/ui/table/table.tsx");
-        expect(table).toMatch(/getExpandedRowModel\(\)/);
+        expect(table).toMatch(/renderAlignedSubRows/);
         expect(table).toMatch(/getRowCanExpand/);
-        // colSpan slot (generic).
-        expect(table).toMatch(/renderExpandedRow && row\.getIsExpanded\(\)/);
-        expect(table).toMatch(/data-expanded-subrow/);
-        // Aligned sub-rows slot (Controls) — passes the visible column ids.
-        expect(table).toMatch(/renderAlignedSubRows && row\.getIsExpanded\(\)/);
-        expect(table).toMatch(/c\.column\.id\)/);
-    });
-
-    it("the expand chevron renders when EITHER render prop is supplied", () => {
-        const table = read("src/components/ui/table/table.tsx");
-        expect(table).toMatch(
-            /\(!!renderExpandedRow \|\| !!renderAlignedSubRows\)[\s\S]*row\.getCanExpand\(\)/,
-        );
     });
 
     it("Controls table opts in via the ALIGNED slot: getRowCanExpand + renderAlignedSubRows", () => {

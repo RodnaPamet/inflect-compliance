@@ -6,13 +6,17 @@ import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
 import { notFound } from '@/lib/errors/types';
 import { parseEnumListFilter } from '../domain/list-filter';
+import {
+    APPLICABILITY_STATES,
+    applicabilityStateWhere,
+    type ApplicabilityState,
+} from '@/lib/controls/control-applicability';
 
 export interface ControlListFilters {
     status?: string;
     applicability?: string;
     ownerUserId?: string;
     q?: string;
-    category?: string;
     /**
      * Restrict to an explicit control-id set — the server-side backing for the
      * consistency-check `?ids=` deep-link AND the resolved health-verdict facet
@@ -131,32 +135,58 @@ export class ControlRepository {
         );
     }
 
+    /**
+     * Parse the three-state `applicability` filter into a predicate.
+     *
+     * The UI shows THREE states over a two-value column (see
+     * `@/lib/controls/control-applicability`), so this cannot be a plain
+     * `where.applicability = value`. It used to be exactly that, with an
+     * inline `=== 'APPLICABLE' || === 'NOT_APPLICABLE'` guard that silently
+     * dropped anything else — which meant the Controls page stripped the
+     * param and re-filtered in the browser instead. That fork is closed:
+     * the same table drives the column and this predicate.
+     */
+    private static _parseApplicabilityFilter(raw: string) {
+        const states = parseEnumListFilter<ApplicabilityState>(
+            raw,
+            APPLICABILITY_STATES,
+            'control applicability',
+        );
+        if (states === undefined) return undefined;
+        return applicabilityStateWhere(typeof states === 'string' ? [states] : states.in);
+    }
+
     private static _buildWhere(ctx: RequestContext, filters?: ControlListFilters): Prisma.ControlWhereInput {
         const where: Prisma.ControlWhereInput = {
             OR: [{ tenantId: ctx.tenantId }, { tenantId: null }],
         };
+        // Predicates that can themselves contain an `OR` have to be nested
+        // under `AND` — the top-level `OR` above is the tenant scope, and
+        // overwriting it would return every tenant's rows.
+        const and: Prisma.ControlWhereInput[] = [];
 
         if (filters?.status) where.status = ControlRepository._parseStatusFilter(filters.status);
-        if (filters?.applicability && (filters.applicability === 'APPLICABLE' || filters.applicability === 'NOT_APPLICABLE')) {
-            where.applicability = filters.applicability;
+        if (filters?.applicability) {
+            const applicability = ControlRepository._parseApplicabilityFilter(filters.applicability);
+            if (applicability) and.push(applicability);
         }
         if (filters?.ownerUserId) where.ownerUserId = filters.ownerUserId;
-        if (filters?.category) where.category = filters.category;
         // Explicit id restriction (consistency `?ids=` deep-link + resolved
         // health facet). Filtered in-DB so it scales past the loaded page.
         // An EMPTY array is deliberate (a requested facet that matched nothing)
         // → `id in ()` → zero rows, NOT "no restriction"; only `undefined` skips.
         if (filters?.ids) where.id = { in: filters.ids };
         if (filters?.q) {
-            where.AND = [{
+            and.push({
                 OR: [
                     { name: { contains: filters.q, mode: 'insensitive' } },
                     { code: { contains: filters.q, mode: 'insensitive' } },
                     { objective: { contains: filters.q, mode: 'insensitive' } },
                 ],
-            }];
+            });
         }
 
+        if (and.length > 0) where.AND = and;
         return where;
     }
 

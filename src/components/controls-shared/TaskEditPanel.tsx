@@ -12,6 +12,7 @@
  * visible). Seeds the form from a fresh GET /tasks/{id} on mount.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAutosaveFields } from "@/components/ui/hooks";
 import { useTranslations } from "next-intl";
 import { Heading } from "@/components/ui/typography";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -110,12 +111,6 @@ export function TaskEditPanel({
     // Text fields debounce (~800ms) + flush on blur; the type/severity/
     // priority dropdowns, the due-date picker, and the assignee picker commit
     // on change. A live status line replaces the old Cancel/Save buttons.
-    const [title, setTitle] = useState(task.title ?? "");
-    const [description, setDescription] = useState("");
-    const [type, setType] = useState("TASK");
-    const [severity, setSeverity] = useState(task.severity ?? "MEDIUM");
-    const [priority, setPriority] = useState("P2");
-    const [dueAt, setDueAt] = useState("");
     const [assigneeId, setAssigneeId] = useState("");
     // TP-4 — status is part of the field set now. It commits through
     // the setTaskStatus endpoint (never a raw PATCH). Terminal moves
@@ -123,19 +118,19 @@ export function TaskEditPanel({
     const [status, setStatus] = useState(task.status ?? "OPEN");
     const [pendingTerminalStatus, setPendingTerminalStatus] = useState<string | null>(null);
     const [resolutionDraft, setResolutionDraft] = useState("");
-    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-    const [error, setError] = useState("");
     // The initial GET can fail. Until it succeeds, `loadedRef` stays false and
-    // `commitFields` early-returns — so edits would silently NOT persist. Track
-    // the failure explicitly, block the form, and offer a retry (bumping
+    // every commit is skipped — so edits would silently NOT persist. Track the
+    // failure explicitly, block the form, and offer a retry (bumping
     // `reloadKey` re-runs the load effect).
     const [loadError, setLoadError] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
     const loadedRef = useRef(false);
 
-    // Latest field values so a debounced/blurred commit PATCHes the current
-    // form, never a stale closure. `update()` is the sole writer.
-    const fieldsRef = useRef({
+    // The autosave machine (debounce, status, latest-value ref, unmount
+    // cleanup) lives in useAutosaveFields — shared with ControlEditPanel,
+    // which carried a byte-identical copy of it. The seed comes from the GET
+    // below; setting it re-seeds the fields.
+    const [seed, setSeed] = useState({
         title: task.title ?? "",
         description: "",
         type: "TASK",
@@ -143,56 +138,24 @@ export function TaskEditPanel({
         priority: "P2",
         dueAt: "",
     });
-    const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const titleInvalid = title.trim().length < 1;
-
-    useEffect(() => {
-        let active = true;
-        loadedRef.current = false;
-        setLoadError(false);
-        fetch(base)
-            .then((r) => (r.ok ? r.json() : Promise.reject(new Error("load failed"))))
-            .then((t: TaskDetail) => {
-                if (!active) return;
-                setTitle(t.title ?? "");
-                setDescription(t.description ?? "");
-                setType(t.type ?? "TASK");
-                setSeverity(t.severity ?? "MEDIUM");
-                setPriority(t.priority ?? "P2");
-                setDueAt(t.dueAt ? String(t.dueAt).slice(0, 10) : "");
-                setAssigneeId(t.assigneeUserId ?? "");
-                setStatus(t.status ?? "OPEN");
-                fieldsRef.current = {
-                    title: t.title ?? "",
-                    description: t.description ?? "",
-                    type: t.type ?? "TASK",
-                    severity: t.severity ?? "MEDIUM",
-                    priority: t.priority ?? "P2",
-                    dueAt: t.dueAt ? String(t.dueAt).slice(0, 10) : "",
-                };
-                loadedRef.current = true;
-            })
-            .catch(() => {
-                if (!active) return;
-                setLoadError(true);
-            });
-        return () => {
-            active = false;
-        };
-    }, [base, reloadKey]);
-
-    const commitFields = useCallback(async () => {
-        if (!canWrite || !loadedRef.current) return;
-        const f = fieldsRef.current;
-        if (f.title.trim().length < 1) {
-            setError(tx("detail.errors.titleRequired"));
-            setSaveState("error");
-            return;
-        }
-        setSaveState("saving");
-        setError("");
-        try {
+    const {
+        fields,
+        state: saveState,
+        error,
+        update,
+        commitNow,
+        run,
+    } = useAutosaveFields({
+        seed,
+        // `loadedRef` is a ref precisely so the async GET landing does not
+        // re-render — hence a callback, read fresh at commit time.
+        canCommit: () => canWrite && loadedRef.current,
+        validate: (f) => (f.title.trim().length < 1 ? tx("detail.errors.titleRequired") : null),
+        // Both the server-not-ok and network-throw paths surface the same
+        // translated fallback (never a raw "Failed to fetch").
+        networkErrorMessage: tx("detail.errors.saveFailed"),
+        save: async (f) => {
             const res = await fetch(base, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -205,64 +168,65 @@ export function TaskEditPanel({
                     dueAt: f.dueAt || null,
                 }),
             });
-            if (!res.ok) throw new Error("save failed");
-            setSaveState("saved");
+            if (!res.ok) return tx("detail.errors.saveFailed");
             onSaved();
-        } catch {
-            // Both the server-not-ok and network-throw paths land here — always
-            // surface the translated fallback (never a raw "Failed to fetch").
-            setError(tx("detail.errors.saveFailed"));
-            setSaveState("error");
-        }
-    }, [canWrite, base, onSaved, tx]);
-
-    const scheduleCommit = useCallback(() => {
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(() => void commitFields(), 800);
-    }, [commitFields]);
-
-    const commitNow = useCallback(() => {
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        void commitFields();
-    }, [commitFields]);
-
-    /** Update a field's ref + state in lockstep, then save (debounced or now). */
-    const update = useCallback(
-        (partial: Partial<typeof fieldsRef.current>, immediate: boolean) => {
-            fieldsRef.current = { ...fieldsRef.current, ...partial };
-            if (partial.title !== undefined) setTitle(partial.title);
-            if (partial.description !== undefined) setDescription(partial.description);
-            if (partial.type !== undefined) setType(partial.type);
-            if (partial.severity !== undefined) setSeverity(partial.severity);
-            if (partial.priority !== undefined) setPriority(partial.priority);
-            if (partial.dueAt !== undefined) setDueAt(partial.dueAt);
-            if (immediate) commitNow();
-            else scheduleCommit();
         },
-        [commitNow, scheduleCommit],
-    );
+    });
 
-    /** Assignee persists via its own POST endpoint, on change. */
-    const commitAssignee = useCallback(
-        async (userId: string) => {
-            if (!canWrite) return;
-            setSaveState("saving");
-            setError("");
-            try {
-                const res = await fetch(`${base}/assign`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ assigneeUserId: userId || null }),
+    const { title, description, type, severity, priority, dueAt } = fields;
+    const titleInvalid = title.trim().length < 1;
+
+    useEffect(() => {
+        let active = true;
+        loadedRef.current = false;
+        setLoadError(false);
+        fetch(base)
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error("load failed"))))
+            .then((t: TaskDetail) => {
+                if (!active) return;
+                setAssigneeId(t.assigneeUserId ?? "");
+                setStatus(t.status ?? "OPEN");
+                setSeed({
+                    title: t.title ?? "",
+                    description: t.description ?? "",
+                    type: t.type ?? "TASK",
+                    severity: t.severity ?? "MEDIUM",
+                    priority: t.priority ?? "P2",
+                    dueAt: t.dueAt ? String(t.dueAt).slice(0, 10) : "",
                 });
-                if (!res.ok) throw new Error("assignee update failed");
-                setSaveState("saved");
+                loadedRef.current = true;
+            })
+            .catch(() => {
+                if (!active) return;
+                setLoadError(true);
+            });
+        return () => {
+            active = false;
+        };
+    }, [base, reloadKey]);
+
+    /** Assignee persists via its own POST endpoint, through the same status line. */
+    const commitAssignee = useCallback(
+        (userId: string) => {
+            if (!canWrite) return;
+            void run(async () => {
+                try {
+                    const res = await fetch(`${base}/assign`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ assigneeUserId: userId || null }),
+                    });
+                    if (!res.ok) return tx("detail.errors.assigneeUpdateFailed");
+                } catch {
+                    // Server-rejected and network-thrown are the same message
+                    // here — the user only needs to know the assignee did not
+                    // change.
+                    return tx("detail.errors.assigneeUpdateFailed");
+                }
                 onSaved();
-            } catch {
-                setError(tx("detail.errors.assigneeUpdateFailed"));
-                setSaveState("error");
-            }
+            });
         },
-        [canWrite, base, onSaved, tx],
+        [canWrite, base, onSaved, tx, run],
     );
 
     /**
@@ -271,11 +235,11 @@ export function TaskEditPanel({
      * Terminal moves need a resolution note; non-terminal commit at once.
      */
     const commitStatus = useCallback(
-        async (nextStatus: string, resolution?: string) => {
+        (nextStatus: string, resolution?: string) => {
             if (!canWrite) return;
-            setSaveState("saving");
-            setError("");
-            try {
+            // Network / unexpected throw falls through to the hook's
+            // networkErrorMessage — no server message to show there.
+            return run(async () => {
                 const res = await fetch(`${base}/status`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -290,22 +254,15 @@ export function TaskEditPanel({
                         (typeof data?.error === "string" && data.error) ||
                         (typeof data?.message === "string" && data.message) ||
                         "";
-                    setError(serverMessage || tx("detail.errors.saveFailed"));
-                    setSaveState("error");
-                    return;
+                    return serverMessage || tx("detail.errors.saveFailed");
                 }
                 setStatus(nextStatus);
                 setPendingTerminalStatus(null);
                 setResolutionDraft("");
-                setSaveState("saved");
                 onSaved();
-            } catch {
-                // Network / unexpected throw — no server message to show.
-                setError(tx("detail.errors.saveFailed"));
-                setSaveState("error");
-            }
+            });
         },
-        [canWrite, base, onSaved, tx],
+        [canWrite, base, onSaved, tx, run],
     );
 
     const handleStatusChange = useCallback(
@@ -341,8 +298,8 @@ export function TaskEditPanel({
                 </div>
             )}
             {/* Auto-saved edit form (PATCH on change/blur) — no Save button.
-                Disabled while the initial load has failed: `commitFields`
-                early-returns until `loadedRef` is set, so editing must be
+                Disabled while the initial load has failed: `canCommit` skips
+                every save until `loadedRef` is set, so editing must be
                 visibly blocked (never let edits look saved when they can't be). */}
             <div className="space-y-default" data-testid="task-edit-form">
                 <fieldset className="space-y-default" disabled={!canWrite || loadError}>

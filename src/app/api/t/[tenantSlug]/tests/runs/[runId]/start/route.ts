@@ -4,7 +4,7 @@
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { startTestRun } from '@/app-layer/usecases/control-test';
+import { startTestRun } from '@/app-layer/usecases/control';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 

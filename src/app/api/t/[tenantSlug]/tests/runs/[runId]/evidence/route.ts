@@ -4,7 +4,7 @@
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { listRunEvidence, linkEvidenceToRun } from '@/app-layer/usecases/control-test';
+import { listRunEvidence, linkEvidenceToRun } from '@/app-layer/usecases/control';
 import { withValidatedBody } from '@/lib/validation/route';
 import { LinkTestEvidenceSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';

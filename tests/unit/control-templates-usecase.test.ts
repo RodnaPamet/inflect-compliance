@@ -2,7 +2,7 @@
  * test-mock pattern; per-line typing has poor cost/benefit ratio. */
 
 /**
- * Unit tests for `src/app-layer/usecases/control/templates.ts`.
+ * Unit tests for `src/app-layer/usecases/control/mappings.ts`.
  *
  * Roadmap Q1 — Compliance core. Mocks ControlTemplateRepository,
  * ControlRepository, FrameworkRepository, Prisma db, audit emitter,
@@ -79,7 +79,7 @@ import {
     mapRequirementToControl,
     unmapRequirementFromControl,
     listControlMappings,
-} from '@/app-layer/usecases/control/templates';
+} from '@/app-layer/usecases/control/mappings';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {

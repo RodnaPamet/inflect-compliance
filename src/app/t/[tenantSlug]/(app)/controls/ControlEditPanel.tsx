@@ -12,8 +12,9 @@
  * visible). Replaces the separate quick-edit Sheet, so there's no more table
  * blur and no separate edit button.
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
+import { useAutosaveFields } from "@/components/ui/hooks";
 import { buildCategoryOptions } from "@/lib/controls/control-categories";
 import { Heading } from "@/components/ui/typography";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -73,42 +74,31 @@ export function ControlEditPanel({
     // Field edits persist automatically: text fields debounce (~800ms) +
     // flush on blur; dropdowns + the owner picker commit on change. A
     // single "Saving…/Saved" status replaces the old Cancel/Save buttons.
-    const [name, setName] = useState(control.name ?? "");
-    const [category, setCategory] = useState(control.category ?? "");
-    // Canonical ISO 27002 themes + the current value preserved as an option
-    // when it's a legacy/granular/custom string, so a non-theme category shows
-    // honestly and round-trips instead of reading as "—".
-    const CATEGORY_OPTIONS = useMemo(
-        () => buildCategoryOptions(category, (theme) => tx(`categoryLabels.${theme}`)),
-        [category, tx],
+    // The autosave machine (debounce, status, latest-value ref, unmount
+    // cleanup) lives in useAutosaveFields — shared with TaskEditPanel, which
+    // carried a byte-identical copy of it.
+    const seed = useMemo(
+        () => ({
+            name: control.name ?? "",
+            category: control.category ?? "",
+            frequency: control.frequency ?? "",
+        }),
+        [control.name, control.category, control.frequency],
     );
-    const [frequency, setFrequency] = useState(control.frequency ?? "");
-    const [ownerId, setOwnerId] = useState(control.owner?.id ?? control.ownerUserId ?? "");
-    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-    const [error, setError] = useState("");
 
-    // Latest field values, so a debounced/blurred commit PATCHes the
-    // current form, never a stale closure. `update()` is the sole writer.
-    const fieldsRef = useRef({
-        name: control.name ?? "",
-        category: control.category ?? "",
-        frequency: control.frequency ?? "",
-    });
-    const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const nameInvalid = name.trim().length < 3;
-
-    const commitFields = useCallback(async () => {
-        if (!canWrite) return;
-        const f = fieldsRef.current;
-        if (f.name.trim().length < 3) {
-            setError(tx("detail.errors.nameMin"));
-            setSaveState("error");
-            return;
-        }
-        setSaveState("saving");
-        setError("");
-        try {
+    const {
+        fields,
+        state: saveState,
+        error,
+        update,
+        commitNow,
+        run,
+    } = useAutosaveFields({
+        seed,
+        canCommit: () => canWrite,
+        validate: (f) => (f.name.trim().length < 3 ? tx("detail.errors.nameMin") : null),
+        networkErrorMessage: tx("detail.errors.network"),
+        save: async (f) => {
             const res = await fetch(base, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -120,71 +110,48 @@ export function ControlEditPanel({
                     frequency: choiceOrNull(f.frequency),
                 }),
             });
-            if (!res.ok) {
-                // Server reached but rejected the save (validation / auth /
-                // conflict) — a distinct, translated outcome.
-                setError(tx("detail.errors.saveFailed"));
-                setSaveState("error");
-                return;
-            }
-            setSaveState("saved");
+            // Server reached but rejected the save (validation / auth /
+            // conflict) — a distinct, translated outcome from a thrown fetch.
+            if (!res.ok) return tx("detail.errors.saveFailed");
             onSaved();
-        } catch {
-            // fetch() itself threw — network / offline / DNS. Route through
-            // t() (never the raw technical Error string, which is untranslated).
-            setError(tx("detail.errors.network"));
-            setSaveState("error");
-        }
-    }, [canWrite, base, onSaved, tx]);
-
-    const scheduleCommit = useCallback(() => {
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(() => void commitFields(), 800);
-    }, [commitFields]);
-
-    const commitNow = useCallback(() => {
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        void commitFields();
-    }, [commitFields]);
-
-    /** Update a field's ref + state in lockstep, then save (debounced or now). */
-    const update = useCallback(
-        (partial: Partial<typeof fieldsRef.current>, immediate: boolean) => {
-            fieldsRef.current = { ...fieldsRef.current, ...partial };
-            if (partial.name !== undefined) setName(partial.name);
-            if (partial.category !== undefined) setCategory(partial.category);
-            if (partial.frequency !== undefined) setFrequency(partial.frequency);
-            if (immediate) commitNow();
-            else scheduleCommit();
         },
-        [commitNow, scheduleCommit],
-    );
+    });
 
-    /** Owner persists via its own POST endpoint, on change. */
+    const { name, category, frequency } = fields;
+
+    // Canonical ISO 27002 themes + the current value preserved as an option
+    // when it's a legacy/granular/custom string, so a non-theme category shows
+    // honestly and round-trips instead of reading as "—".
+    const CATEGORY_OPTIONS = useMemo(
+        () => buildCategoryOptions(category, (theme) => tx(`categoryLabels.${theme}`)),
+        [category, tx],
+    );
+    // Owner is not part of the PATCH field set (it has its own endpoint), so
+    // it is held here — but it still has to follow `control` when the panel is
+    // pointed at a different row, now that the caller no longer remounts.
+    const ownerSeed = control.owner?.id ?? control.ownerUserId ?? "";
+    const [ownerId, setOwnerId] = useState(ownerSeed);
+    useEffect(() => {
+        setOwnerId(ownerSeed);
+    }, [ownerSeed]);
+
+    const nameInvalid = name.trim().length < 3;
+
+    /** Owner persists via its own POST endpoint, through the same status line. */
     const commitOwner = useCallback(
-        async (userId: string) => {
+        (userId: string) => {
             if (!canWrite) return;
-            setSaveState("saving");
-            setError("");
-            try {
+            void run(async () => {
                 const res = await fetch(`${base}/owner`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ ownerUserId: userId || null }),
                 });
-                if (!res.ok) {
-                    setError(tx("detail.errors.ownerUpdateFailed"));
-                    setSaveState("error");
-                    return;
-                }
-                setSaveState("saved");
+                if (!res.ok) return tx("detail.errors.ownerUpdateFailed");
                 onSaved();
-            } catch {
-                setError(tx("detail.errors.network"));
-                setSaveState("error");
-            }
+            });
         },
-        [canWrite, base, onSaved, tx],
+        [canWrite, base, onSaved, tx, run],
     );
 
     return (
@@ -281,7 +248,7 @@ export function ControlEditPanel({
                                     selectedId={ownerId || null}
                                     onChange={(userId) => {
                                         setOwnerId(userId ?? "");
-                                        void commitOwner(userId ?? "");
+                                        commitOwner(userId ?? "");
                                     }}
                                     placeholder={control.owner?.name || control.owner?.email || tx("detail.fields.unassigned")}
                                 />

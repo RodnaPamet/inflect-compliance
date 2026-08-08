@@ -4,7 +4,7 @@
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { listControlTestPlans, createTestPlan } from '@/app-layer/usecases/control-test';
+import { listControlTestPlans, createTestPlan } from '@/app-layer/usecases/control';
 import { withValidatedBody } from '@/lib/validation/route';
 import { CreateTestPlanSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';

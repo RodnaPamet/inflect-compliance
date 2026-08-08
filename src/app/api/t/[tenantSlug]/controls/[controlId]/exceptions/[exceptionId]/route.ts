@@ -5,7 +5,7 @@
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { getControlException } from '@/app-layer/usecases/control-exception';
+import { getControlException } from '@/app-layer/usecases/control';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { notFound } from '@/lib/errors/types';

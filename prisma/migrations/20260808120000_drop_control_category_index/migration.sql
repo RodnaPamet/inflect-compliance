@@ -1,0 +1,20 @@
+-- Roadmap P3.4 — resolve the Controls server/client filter fork.
+--
+-- `Control_tenantId_category_idx` backed a raw-`category` list filter that no
+-- surface could use correctly. The Category column renders a DERIVED value
+-- (`categorizeControl`: ISO Annex clause -> granular domain, else framework
+-- code prefix, else the stored string), so matching the raw stored column
+-- against a value the user picked from the derived set returned ~0 rows. The
+-- client stripped the param from its API query for that reason; only an SSR
+-- hard nav still passed it through, which is why the same URL behaved
+-- differently depending on how you arrived at it.
+--
+-- The filter is now client-side only (one authoritative value, over the
+-- derived set), and the raw filter is gone from the repository, the usecase
+-- and the route schema. This index has no remaining producer.
+--
+-- `applicability` went the other way in the same change: its three display
+-- states are expressible over (applicability, applicabilityDecidedAt), so it
+-- moved server-side. Control_tenantId_applicability_idx stays and is now on
+-- the hot path for real.
+DROP INDEX IF EXISTS "Control_tenantId_category_idx";

@@ -3,7 +3,7 @@
  * poor cost/benefit in test files (codebase convention — see
  * tests/unit/usecases/control-test.test.ts). */
 /**
- * Unit tests for src/app-layer/usecases/control-exception.ts
+ * Unit tests for src/app-layer/usecases/control/exceptions.ts
  *
  * Epic G-5 — Control Exception Register. The lifecycle has hard
  * state-machine invariants the usecase enforces at the application
@@ -57,7 +57,7 @@ import {
     rejectException,
     renewException,
     getExpiringExceptions,
-} from '@/app-layer/usecases/control-exception';
+} from '@/app-layer/usecases/control';
 import { ControlExceptionRepository } from '@/app-layer/repositories/ControlExceptionRepository';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';

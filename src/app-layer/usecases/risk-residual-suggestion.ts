@@ -30,7 +30,7 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { logEvent } from '../events/audit';
 import { recordScoreEvent } from './risk-score-events';
-import { computeControlEffectivenessMap } from './control-test';
+import { computeControlEffectivenessMap } from './control/test-plans';
 import {
     combineEffectiveness,
     suggestResidual,
@@ -42,7 +42,7 @@ import {
 } from '@/lib/risk-residual';
 import type { PrismaTx } from '@/lib/db-context';
 
-/** Mirrors control-test.ts's audit-readiness convention. */
+/** Mirrors control/test-plans.ts's audit-readiness convention. */
 const MEASURED_WINDOW_DAYS = 90;
 
 export interface ResidualSuggestionPayload {

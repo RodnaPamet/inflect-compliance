@@ -7,7 +7,7 @@
  * tests/guards/helm-chart-foundation.test.ts and
  * tests/integration/audit-middleware.test.ts). */
 /**
- * Unit tests for src/app-layer/usecases/control-test.ts
+ * Unit tests for src/app-layer/usecases/control/test-plans.ts
  *
  * Wave 5 of GAP-02. The control-test usecase orchestrates test
  * plans, test runs, and the FAIL → CONTROL_GAP task fan-out.
@@ -91,7 +91,7 @@ import {
     linkEvidenceToRun,
     unlinkEvidenceFromRun,
     createAutomatedTestRun,
-} from '@/app-layer/usecases/control-test';
+} from '@/app-layer/usecases/control';
 import { runInTenantContext } from '@/lib/db-context';
 import { TestPlanRepository } from '@/app-layer/repositories/TestPlanRepository';
 import { TestRunRepository } from '@/app-layer/repositories/TestRunRepository';

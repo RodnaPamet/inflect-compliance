@@ -90,7 +90,7 @@ const buildFreqLabels = (t: (k: string) => string): Record<string, string> => ({
 const buildFreqCbOptions = (freqLabels: Record<string, string>): ComboboxOption[] => Object.entries(freqLabels).map(([v, l]) => ({ value: v, label: l }));
 // R3-P2 / PR-CC — there is deliberately NO method picker. `method` is a
 // DERIVED projection of `automationType` (see `deriveMethodFromAutomationType`
-// in control-test.ts): you make a plan automated by giving it an
+// in control/test-plans.ts): you make a plan automated by giving it an
 // `automationType` + `schedule` in the Schedule section, never by typing
 // "AUTOMATED" here. A free toggle let the two drift — the badge read AUTOMATED
 // while automationType stayed MANUAL and nothing was ever scheduled.

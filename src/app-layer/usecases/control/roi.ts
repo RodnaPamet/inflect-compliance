@@ -17,17 +17,17 @@
  * 5–10) so the "Best-value controls" widget stays a leaderboard,
  * not a full register dump.
  */
-import { RequestContext } from '../types';
-import { assertCanRead } from '../policies/common';
+import { RequestContext } from '../../types';
+import { assertCanRead } from '../../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
-import { resolveALE } from './fair-calculator';
+import { resolveALE } from '../fair-calculator';
 import {
     computeControlRoi,
     rankByRoi,
     type ControlRoiVerdict,
 } from '@/lib/control-roi';
-import { computeControlEffectivenessMap } from './control-test';
+import { computeControlEffectivenessMap } from './test-plans';
 
 const BEST_VALUE_HARD_CAP = 25;
 

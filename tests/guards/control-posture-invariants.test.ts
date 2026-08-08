@@ -29,7 +29,7 @@ import {
 const ROOT = join(__dirname, '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
-const TEMPLATES = 'src/app-layer/usecases/control/templates.ts';
+const TEMPLATES = 'src/app-layer/usecases/control/mappings.ts';
 const INSTALL = 'src/app-layer/usecases/framework/install.ts';
 const SOA = 'src/app-layer/usecases/soa.ts';
 const COVERAGE = 'src/app-layer/usecases/framework/coverage.ts';

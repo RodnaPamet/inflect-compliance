@@ -37,7 +37,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { computeNextRunFromCron } from '../jobs/control-test-scheduler';
 import { computeNextDueAt } from '../utils/cadence';
-import { deriveMethodFromAutomationType } from './control-test';
+import { deriveMethodFromAutomationType } from './control/test-plans';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 
 // ─── 1. scheduleTestPlan ───────────────────────────────────────────

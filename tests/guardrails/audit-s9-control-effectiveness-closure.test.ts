@@ -41,7 +41,7 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 describe("Audit S9 — control effectiveness scoring (closure lock)", () => {
-    const src = () => read("src/app-layer/usecases/control-test.ts");
+    const src = () => read("src/app-layer/usecases/control/test-plans.ts");
 
     describe("Exported shape", () => {
         it("ControlEffectiveness interface carries the documented fields", () => {
