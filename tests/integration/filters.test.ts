@@ -89,8 +89,18 @@ describe('ControlRepository._buildWhere', () => {
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('IN_PROGRESS');
-        expect(where.applicability).toBe('APPLICABLE');
-        expect(where.AND[0].OR).toBeDefined();
+        // `applicability` is no longer a bare column match. The UI shows three
+        // states over a two-value enum, so APPLICABLE means "not N/A AND
+        // decided" — a predicate that goes under AND (the top-level OR is the
+        // tenant scope). See @/lib/controls/control-applicability.
+        expect(where.applicability).toBeUndefined();
+        expect(where.AND).toEqual([
+            {
+                applicability: { not: 'NOT_APPLICABLE' },
+                applicabilityDecidedAt: { not: null },
+            },
+            expect.objectContaining({ OR: expect.any(Array) }),
+        ]);
     });
 
     it('enforces tenant boundary', async () => {
