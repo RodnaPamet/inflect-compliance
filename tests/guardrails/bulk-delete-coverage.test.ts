@@ -67,6 +67,21 @@ describe('bulk-delete coverage', () => {
         expect(src).toMatch(/selectedCount=/);
     });
 
+    it('the Controls delete verb is gated on admin, not merely present', () => {
+        // The assertion above matches the 'delete' LITERAL, which used to sit
+        // inside `...(canAdmin ? [{ value: 'delete', … }] : [])`. Removing the
+        // canAdmin guard left the literal in place and kept this suite green —
+        // so the gate protecting an ADMIN-only server verb had no test at all.
+        //
+        // The role decision now lives in _lib/bulk-action-policy and is
+        // asserted per role in tests/unit/controls-bulk-action-policy.test.ts.
+        // This checks the page actually DEFERS to it, which the literal match
+        // cannot tell you.
+        const src = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
+        expect(src).toMatch(/controlBulkActionsFor\(/);
+        expect(src).toMatch(/allowedBulkActions\.includes\(/);
+    });
+
     it('there are 8 bulk/delete API routes', () => {
         const routes = walk(path.join(ROOT, 'src/app/api'))
             .filter((f) => /[/\\]bulk[/\\]delete[/\\]route\.ts$/.test(f));

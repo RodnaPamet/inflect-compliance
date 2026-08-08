@@ -70,6 +70,7 @@ import {
     categorizeControl,
     ISO27001_DOMAIN_ORDER,
 } from '@/lib/controls/control-taxonomy';
+import { applicabilityState } from '@/lib/controls/control-applicability';
 import { AiAssistRail } from '@/components/ui/ai-assist-rail';
 import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
@@ -89,6 +90,7 @@ import {
 } from '@/lib/controls/control-health';
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
+import { controlBulkActionsFor, type ControlBulkAction } from './_lib/bulk-action-policy';
 
 // ─── Constants ───
 
@@ -114,19 +116,6 @@ const CONTROL_STATUS_VALUES = [
     'NOT_APPLICABLE',
 ] as const;
 
-/** Applicability display state — the SAME three-way split the Applicability
- *  COLUMN renders: N/A · Yes (decided applicable) · Not assessed (applicable,
- *  never assessed → `applicabilityDecidedAt` null). Shared by the column cell
- *  AND the client-side applicability filter (#8b) so the filter can never offer
- *  a state a cell doesn't show. */
-type ApplicabilityState = 'NOT_APPLICABLE' | 'APPLICABLE' | 'UNASSESSED';
-function applicabilityState(c: {
-    applicability: string;
-    applicabilityDecidedAt?: string | null;
-}): ApplicabilityState {
-    if (c.applicability === 'NOT_APPLICABLE') return 'NOT_APPLICABLE';
-    return c.applicabilityDecidedAt ? 'APPLICABLE' : 'UNASSESSED';
-}
 
 
 // ─── Types ───
@@ -232,6 +221,12 @@ function ControlsPageInner({
     // require ADMIN server-side (bulkDeleteControl / listControlsWithDeleted
     // both assertCanAdmin). Editors keep the status/assign bulk verbs.
     const canAdmin = permissions.canAdmin;
+    // Single source for "which bulk verbs may this viewer use" — see
+    // _lib/bulk-action-policy.
+    const allowedBulkActions = useMemo(
+        () => controlBulkActionsFor(permissions),
+        [permissions],
+    );
     const FREQ_LABELS = useMemo<Record<string, string>>(
         () => ({
             AD_HOC: t('freq.adHoc'),
@@ -308,18 +303,20 @@ function ControlsPageInner({
         if (search) params.set('q', search);
         const idsParam = searchParams?.get('ids');
         if (idsParam) params.set('ids', idsParam);
-        // #8a/#8b — `category` and `applicability` are applied CLIENT-side over
-        // the already-loaded rows (see `clientFilteredControls`), so they must
-        // NOT reach the server query: the server filters the RAW stored
-        // `category` (ISO themes) and a two-value `applicability` enum, neither
-        // of which agrees with the DERIVED category column nor the three-state
-        // applicability column. Dropping them here keeps one authoritative
-        // value per facet (the client's) and the SWR key stable across picks.
-        // (On a hard-nav these params may still ride the URL into the SSR read;
-        // the controls repo ignores an out-of-enum applicability and returns an
-        // empty raw-category match, and the client re-derives correctly.)
+        // #8a — `category` is the ONE facet still applied client-side (see
+        // `clientFilteredControls`), so it must not reach the server query:
+        // the Category column shows a DERIVED value while the server can only
+        // match the raw stored column, and the two disagree. Dropping it here
+        // keeps one authoritative value for the facet (the client's) and the
+        // SWR key stable across picks. The SSR read drops it for the same
+        // reason, so a hard nav and a client nav now agree.
+        //
+        // `applicability` USED to be stripped here too. It no longer is: the
+        // three display states are expressible in SQL over
+        // (applicability, applicabilityDecidedAt), so the server filters them
+        // — which means the facet now sees every control, not just the loaded
+        // page. See @/lib/controls/control-applicability.
         params.delete('category');
-        params.delete('applicability');
         return params;
     }, [state, search, searchParams]);
 
@@ -446,30 +443,32 @@ function ControlsPageInner({
         }),
         [],
     );
-    // #8a/#8b — `category` and `applicability` are applied HERE, over the
-    // already-loaded rows, on the DERIVED values the columns render (see the
-    // note on `filtersForQuery`, which strips them from the server query).
-    // Deriving keeps one authoritative value per facet and guarantees the
-    // picker only offers values a cell can actually show. Runs before sort +
-    // windowing so the visible slice already reflects the selection.
-    // Read the raw `state.*` refs (stable across renders when unchanged) so the
+    // #8a — `category` is applied HERE, over the already-loaded rows, on the
+    // DERIVED value the column renders (see the note on `filtersForQuery`,
+    // which strips it from the server query). Deriving keeps one authoritative
+    // value for the facet and guarantees the picker only offers values a cell
+    // can actually show. Runs before sort + windowing so the visible slice
+    // already reflects the selection.
+    //
+    // KNOWN BOUND: this only sees the loaded page, so past the backfill cap a
+    // matching control is missing. It stays client-side because
+    // `categorizeControl` parses the ISO Annex clause out of `annexId`/`code`
+    // with a permissive regex and looks it up in a 93-entry map — pushing that
+    // into SQL means either duplicating the parser in the query builder (a
+    // second source of truth for the thing this function IS) or persisting the
+    // derived value in a column with a backfill. The second is the right move
+    // if the cap ever binds; neither is worth it while it doesn't.
+    // `applicability` moved to the server — see @/lib/controls/control-applicability.
+    //
+    // Read the raw `state.*` ref (stable across renders when unchanged) so the
     // memo — and the sort/window that depend on it — don't churn every render.
     const categoryFilter = state.category;
-    const applicabilityFilter = state.applicability;
     const clientFilteredControls = useMemo(() => {
-        let rows = rawControls;
-        if (categoryFilter && categoryFilter.length > 0) {
-            const wanted = new Set(categoryFilter);
-            // guardrail-ignore: client-side filter on the DERIVED framework category (matches the Category column) — not server-data refiltering; the server owns q/status/owner/health/ids.
-            rows = rows.filter((c) => wanted.has(categorizeControl(c)?.category ?? ''));
-        }
-        if (applicabilityFilter && applicabilityFilter.length > 0) {
-            const wanted = new Set(applicabilityFilter);
-            // guardrail-ignore: client-side filter on the DERIVED 3-state applicability (matches the Applicability column) — the stored enum can't express "Not assessed".
-            rows = rows.filter((c) => wanted.has(applicabilityState(c)));
-        }
-        return rows;
-    }, [rawControls, categoryFilter, applicabilityFilter]);
+        if (!categoryFilter || categoryFilter.length === 0) return rawControls;
+        const wanted = new Set(categoryFilter);
+        // guardrail-ignore: client-side filter on the DERIVED framework category (matches the Category column) — not server-data refiltering; the server owns q/status/applicability/owner/health/ids.
+        return rawControls.filter((c) => wanted.has(categorizeControl(c)?.category ?? ''));
+    }, [rawControls, categoryFilter]);
     const controls = useMemo(() => {
         // The consistency `?ids=` deep-link is now applied SERVER-SIDE (threaded
         // into the SWR query + SSR read as an `id: { in }` restriction), so
@@ -748,8 +747,12 @@ function ControlsPageInner({
             setBulkApplying(false);
         }
     };
-    const controlBulkActions: BulkActionDef[] = useMemo(
-        () => [
+    // The array literal is annotated INSIDE the callback, not just on the
+    // const: `.filter(...)` makes the whole expression a method call, so the
+    // literal no longer picks up its contextual type and every `renderInput`
+    // parameter would fall back to `any`.
+    const controlBulkActions: BulkActionDef[] = useMemo(() => {
+        const defs: BulkActionDef[] = [
             {
                 value: 'status',
                 label: t('bulk.setStatus'),
@@ -786,17 +789,21 @@ function ControlsPageInner({
                     />
                 ),
             },
-            // #1 — DELETE is ADMIN-only: bulkDeleteControl asserts admin
-            // server-side, so offering it to an EDITOR was a guaranteed 403.
-            // Hidden for non-admins (editors keep status/assign). No `confirm`
-            // here — #3 routes it through the Epic 67 undo-toast in
+            // DELETE is ADMIN-only: bulkDeleteControl asserts admin
+            // server-side, so offering it to an EDITOR is a guaranteed 403.
+            // No `confirm` here — it routes through the Epic 67 undo-toast in
             // handleBulkApply (soft, restorable delete).
-            ...(canAdmin
-                ? [{ value: 'delete', label: t('bulk.delete') } as BulkActionDef]
-                : []),
-        ],
-        [tenantSlug, canAdmin, t, CONTROL_STATUS_OPTIONS],
-    );
+            //
+            // The role decision lives in _lib/bulk-action-policy, not in this
+            // ternary: inline, the only thing guarding it was a regex that
+            // matched the 'delete' literal INSIDE the conditional, so
+            // removing the guard kept CI green.
+            { value: 'delete', label: t('bulk.delete') },
+        ];
+        return defs.filter((def) =>
+            allowedBulkActions.includes(def.value as ControlBulkAction),
+        );
+    }, [tenantSlug, allowedBulkActions, t, CONTROL_STATUS_OPTIONS]);
 
     // ─── Deleted-control lifecycle actions (#3) ───
     // Restore un-deletes a soft-deleted control; Purge permanently removes it.
@@ -1089,8 +1096,8 @@ function ControlsPageInner({
                 // APPLICABLE and must read distinctly from a deliberately
                 // decided one — else "assessed" and "unassessed" look alike.
                 // Shared 3-state derivation — the SAME `applicabilityState`
-                // the client-side Applicability filter uses (#8b), so the
-                // column and the picker can never disagree.
+                // whose SQL twin (`applicabilityStateWhere`) backs the server
+                // filter, so the column and the picker can never disagree.
                 const applState = applicabilityState(c);
                 const applicabilityCell: { variant: StatusBadgeVariant; label: string } =
                     applState === 'NOT_APPLICABLE'
@@ -1506,15 +1513,17 @@ function ControlsPageInner({
     // rail. `openOnMount` expands the rail / opens the Sheet immediately so the
     // panel "appears" on the click.
     //
-    // The `key` is LOAD-BEARING and includes the ENTITY ID. `openOnMount` runs
-    // in a mount-only effect, and these panels share their tree position (and
-    // surfaceKey) with the browse stack. Without a distinct key React would
-    // REUSE the in-place AsidePanel — and, crucially, the inner
-    // Control/TaskEditPanel, which seeds its form from props ON MOUNT only — so
-    // switching control→control would leave the previous row's data in the
-    // fields (and openOnMount would never re-fire on a collapsed rail). Keying
-    // by id forces a fresh mount on every distinct selection → openOnMount
-    // fires AND the panel re-seeds from the newly-clicked row.
+    // The `key` includes the ENTITY ID because `openOnMount` runs in a
+    // mount-only effect, and these panels share their tree position (and
+    // surfaceKey) with the browse stack: without a distinct key React reuses
+    // the in-place AsidePanel and openOnMount never re-fires on a collapsed
+    // rail. That is an AsidePanel contract, and the only reason left.
+    //
+    // It used to ALSO be compensating for the inner Control/TaskEditPanel
+    // seeding its form on mount only — switching control→control would have
+    // left the previous row's values in the fields. Those panels are
+    // controlled now (useAutosaveFields re-seeds when `seed` changes), so they
+    // no longer need the remount.
     const quickViewAside = selectedTask ? (
         <AsidePanel
             key={`qv-task-${selectedTask.id}`}

@@ -38,7 +38,14 @@ export default async function ControlsPage({
     // `ids` (consistency deep-link) + `health` (verdict facet) are server-side
     // filters too — the register's SSR read must apply them so the first paint
     // is already restricted (and the client's fallbackData matches).
-    for (const key of ['q', 'status', 'applicability', 'ownerUserId', 'category', 'ids', 'health']) {
+    // `category` is NOT in this list: the Category column shows a DERIVED
+    // value (`categorizeControl` — ISO Annex clause → domain, else framework
+    // prefix, else the stored string), and the server can only match the raw
+    // stored column. Passing it through here matched raw-against-derived and
+    // returned ~0 rows on a hard nav, while the same URL filtered correctly
+    // after a client-side navigation. The client owns that facet; see the
+    // note on `clientFilteredControls` in ControlsClient.
+    for (const key of ['q', 'status', 'applicability', 'ownerUserId', 'ids', 'health']) {
         const val = sp[key];
         if (typeof val === 'string' && val) filters[key] = val;
     }

@@ -33,7 +33,7 @@ const FULL_SCAN_CAP = 5000;
  *  `ids` is a comma-separated string, `health` a verdict). The usecase resolves
  *  `ids`/`health` into a concrete `ControlListFilters.ids` array for the repo. */
 export interface ControlListInputFilters {
-    status?: string; applicability?: string; ownerUserId?: string; q?: string; category?: string;
+    status?: string; applicability?: string; ownerUserId?: string; q?: string;
     /** Comma-separated control ids (consistency `?ids=` deep-link). */
     ids?: string;
     /** Health verdict facet — resolved server-side to the matching control ids. */
@@ -75,7 +75,7 @@ function toRepoFilters(filters: ControlListInputFilters | undefined, ids: string
     if (!filters) return undefined;
     return {
         status: filters.status, applicability: filters.applicability,
-        ownerUserId: filters.ownerUserId, q: filters.q, category: filters.category, ids,
+        ownerUserId: filters.ownerUserId, q: filters.q, ids,
     };
 }
 

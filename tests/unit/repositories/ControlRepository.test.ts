@@ -96,22 +96,26 @@ describe('list / _buildWhere', () => {
         expect(arg.take).toBe(25);
     });
 
-    it('applies status, applicability, ownerUserId, category and search filters together', async () => {
-        // Branches: status truthy; applicability === 'APPLICABLE'; ownerUserId
-        // truthy; category truthy; q truthy → builds the OR-search AND clause.
+    it('applies status, applicability, ownerUserId and search filters together', async () => {
+        // Branches: status truthy; applicability (three-state) truthy;
+        // ownerUserId truthy; q truthy → both AND conjuncts.
         await ControlRepository.list(db as any, ctx, {
             status: 'IMPLEMENTED',
             applicability: 'APPLICABLE',
             ownerUserId: 'owner-9',
-            category: 'CC',
             q: 'firewall',
         });
         const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
         expect(where.status).toBe('IMPLEMENTED');
-        expect(where.applicability).toBe('APPLICABLE');
         expect(where.ownerUserId).toBe('owner-9');
-        expect(where.category).toBe('CC');
+        // The tenant scope OR must survive — the applicability predicate goes
+        // under AND precisely so it cannot overwrite it.
+        expect(where.OR).toEqual([{ tenantId: 'tenant-1' }, { tenantId: null }]);
         expect(where.AND).toEqual([
+            {
+                applicability: { not: 'NOT_APPLICABLE' },
+                applicabilityDecidedAt: { not: null },
+            },
             {
                 OR: [
                     { name: { contains: 'firewall', mode: 'insensitive' } },
@@ -123,10 +127,44 @@ describe('list / _buildWhere', () => {
     });
 
     it('accepts NOT_APPLICABLE applicability', async () => {
-        // Branch: applicability === 'NOT_APPLICABLE' → set.
         await ControlRepository.list(db as any, ctx, { applicability: 'NOT_APPLICABLE' });
         const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
-        expect(where.applicability).toBe('NOT_APPLICABLE');
+        expect(where.AND).toEqual([{ applicability: 'NOT_APPLICABLE' }]);
+    });
+
+    it('accepts UNASSESSED — a state the stored enum cannot express', async () => {
+        // The reason the filter used to be client-side: APPLICABLE-but-never-
+        // assessed and APPLICABLE-and-decided are the same enum value, so the
+        // predicate has to consult applicabilityDecidedAt.
+        await ControlRepository.list(db as any, ctx, { applicability: 'UNASSESSED' });
+        const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
+        expect(where.AND).toEqual([
+            { applicability: { not: 'NOT_APPLICABLE' }, applicabilityDecidedAt: null },
+        ]);
+    });
+
+    it('accepts a comma-joined multi-select as an OR under AND', async () => {
+        // The picker is multiple:true and comma-joins. This used to reach the
+        // route as `?applicability=APPLICABLE,UNASSESSED` and 400 on the
+        // z.enum(), which is why the client stripped the param entirely.
+        await ControlRepository.list(db as any, ctx, { applicability: 'NOT_APPLICABLE,UNASSESSED' });
+        const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
+        expect(where.AND).toEqual([
+            {
+                OR: [
+                    { applicability: 'NOT_APPLICABLE' },
+                    { applicability: { not: 'NOT_APPLICABLE' }, applicabilityDecidedAt: null },
+                ],
+            },
+        ]);
+    });
+
+    it('selecting all three states adds no predicate', async () => {
+        await ControlRepository.list(db as any, ctx, {
+            applicability: 'NOT_APPLICABLE,APPLICABLE,UNASSESSED',
+        });
+        const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
+        expect(where.AND).toBeUndefined();
     });
 
     it('applies an `id: { in }` restriction from the ids branch (?ids= / health facet)', async () => {
@@ -143,11 +181,14 @@ describe('list / _buildWhere', () => {
         expect(where.id).toEqual({ in: [] });
     });
 
-    it('ignores an invalid applicability value', async () => {
-        // Branch: applicability truthy but not one of the two allowed → skipped.
-        await ControlRepository.list(db as any, ctx, { applicability: 'MAYBE' });
-        const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
-        expect('applicability' in where).toBe(false);
+    it('REJECTS an invalid applicability value instead of ignoring it', async () => {
+        // It used to be silently skipped, which reads to the user as "you have
+        // no controls" rather than "that value is not a thing". Same contract
+        // as the status filter: 400, with the allowed values in the message.
+        await expect(
+            ControlRepository.list(db as any, ctx, { applicability: 'MAYBE' }),
+        ).rejects.toThrow(/control applicability/i);
+        expect(db.control.findMany).not.toHaveBeenCalled();
     });
 });
 

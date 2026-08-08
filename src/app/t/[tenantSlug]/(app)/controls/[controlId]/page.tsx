@@ -21,10 +21,6 @@ import { ControlChecksTab } from './_tabs/ControlChecksTab';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
-// Inline pencil icon to avoid lucide-react barrel import issue with Next.js 14
-const PencilIcon = ({ size = 14 }: { size?: number }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-);
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -86,6 +82,7 @@ import type {
 } from '@/lib/dto';
 import { buildControlStatusLabels } from '../filter-defs';
 import { buildControlPatchBody } from '../_lib/control-write-values';
+import { Pencil } from 'lucide-react';
 
 // The detail status dropdown reuses the CANONICAL status vocabulary
 // (buildControlStatusLabels — the same i18n source the list badges + filter
@@ -1029,7 +1026,7 @@ export default function ControlDetailPage() {
                                 >
                                     {/* B2 — icon-only edit affordance,
                                         canonical unified pattern. */}
-                                    <PencilIcon size={16} />
+                                    <Pencil size={16} />
                                 </Button>
                             </Tooltip>
                         </div>

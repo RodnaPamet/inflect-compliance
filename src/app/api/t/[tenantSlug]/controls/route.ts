@@ -13,10 +13,13 @@ const ControlsQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),
     status: z.string().optional(),
-    applicability: z.enum(['APPLICABLE', 'NOT_APPLICABLE']).optional(),
+    // Three display states over a two-value column, comma-joinable for the
+    // multi-select — see @/lib/controls/control-applicability. A plain
+    // z.enum() would 400 on `?applicability=APPLICABLE,UNASSESSED`, which is
+    // exactly what the picker sends; the repository validates each member.
+    applicability: z.string().optional(),
     ownerUserId: z.string().optional(),
     q: z.string().optional().transform(normalizeQ),
-    category: z.string().optional(),
     // Consistency `?ids=` deep-link (comma-separated) + health verdict facet —
     // both resolved to a server-side `id: { in }` restriction in the usecase.
     ids: z.string().optional(),
@@ -38,7 +41,6 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
         applicability: query.applicability,
         ownerUserId: query.ownerUserId,
         q: query.q,
-        category: query.category,
         ids: query.ids,
         health: query.health,
     };
