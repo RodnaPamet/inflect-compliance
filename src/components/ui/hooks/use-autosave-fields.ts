@@ -48,6 +48,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type AutosaveState = "idle" | "saving" | "saved" | "error";
 
+/** Value identity for a field set, insensitive to surrounding whitespace. */
+function fingerprint(fields: Record<string, string>): string {
+    return JSON.stringify(
+        Object.keys(fields)
+            .sort()
+            .map((k) => [k, (fields[k] ?? "").trim()]),
+    );
+}
+
 export interface UseAutosaveFieldsOptions<T extends Record<string, string>> {
     /**
      * Current values. A CHANGE to this object (by value, not identity)
@@ -122,12 +131,16 @@ export function useAutosaveFields<T extends Record<string, string>>(
     // Re-seed when the caller points at a different row (or an async load
     // lands). Compared by VALUE so an inline object literal does not re-seed
     // on every render and stomp what the user is typing.
-    const seedKey = JSON.stringify(seed);
+    //
+    // Trimmed, because a successful save makes the caller refetch and hand
+    // back a seed that is our own value AS THE SERVER STORED IT — callers
+    // trim before writing, so "Renamed " comes back as "Renamed". That is an
+    // echo, not a new row: re-seeding on it would flip "Saved" to "Autosaves"
+    // the instant it appeared. A genuinely different row still differs after
+    // trimming.
+    const seedKey = fingerprint(seed);
     useEffect(() => {
-        // A successful save makes the caller refetch, which hands back a seed
-        // equal to what we already hold. That is our own echo, not a new row —
-        // re-seeding there would reset "Saved" to "Autosaves" immediately.
-        if (JSON.stringify(fieldsRef.current) === seedKey) return;
+        if (fingerprint(fieldsRef.current) === seedKey) return;
         fieldsRef.current = seed;
         setFields(seed);
         setState("idle");

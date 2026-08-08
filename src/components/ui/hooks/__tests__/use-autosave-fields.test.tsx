@@ -372,6 +372,26 @@ describe('re-seeding', () => {
         expect(result.current.state).toBe('saved');
     });
 
+    it('treats the server TRIMMING our value as the same echo', async () => {
+        // Callers trim before writing (`name: f.name.trim()`), so the refetch
+        // returns "Renamed" for what we hold as "Renamed ". Comparing raw
+        // would read that as a different row and reset the status.
+        const save = jest.fn().mockResolvedValue(undefined);
+        const { result, rerender } = renderHook(
+            ({ seed }: { seed: Fields }) =>
+                useAutosaveFields<Fields>({ seed, save, networkErrorMessage: 'offline' }),
+            { initialProps: { seed: SEED } },
+        );
+
+        act(() => result.current.update({ name: 'Renamed ' }));
+        await flushDebounce();
+        expect(result.current.state).toBe('saved');
+
+        rerender({ seed: { name: 'Renamed', category: 'ORGANIZATIONAL' } });
+        expect(result.current.state).toBe('saved');
+        expect(result.current.fields.name).toBe('Renamed ');
+    });
+
     it('resets a stale error when a different row is seeded in', async () => {
         const save = jest.fn().mockResolvedValue('Server said no');
         const { result, rerender } = renderHook(
