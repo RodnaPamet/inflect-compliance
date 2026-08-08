@@ -45,7 +45,7 @@ const PRIMITIVE_PATH = 'src/components/ui/card-header.tsx';
 const ADOPTERS = [
     // PR-Q — the control test-plan detail body was extracted into this shared
     // view; the CardHeader (Test Procedure section header, R9-PR2) moved with it.
-    'src/app/t/[tenantSlug]/(app)/tests/_components/TestPlanDetailView.tsx',
+    'src/components/test-plans/TestPlanDetailView.tsx',
 ];
 
 describe('CardHeader discipline (Roadmap-3 PR-5)', () => {

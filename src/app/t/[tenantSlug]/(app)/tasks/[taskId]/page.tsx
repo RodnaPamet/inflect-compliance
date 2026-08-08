@@ -39,11 +39,11 @@ import { cardVariants } from '@/components/ui/card';
 // Shared evidence sub-table — lives under the control detail route's
 // `_tabs/` (kept there so existing guard exemptions + a unit test keyed
 // on that path stay valid). Imported here via the `@/app` alias.
-import { EvidenceSubTable, type EvidenceTabData } from '@/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable';
+import { EvidenceSubTable, type EvidenceTabData } from '@/components/controls-shared/EvidenceSubTable';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 // TP-4 — the task edit surface is now the shared inline autosave
 // TaskEditPanel (form variant), retiring the divergent EditTaskModal.
-import { TaskEditPanel } from '@/app/t/[tenantSlug]/(app)/controls/TaskEditPanel';
+import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
 import { Pen2, Xmark } from '@/components/ui/icons/nucleo';
 import { IconAction } from '@/components/ui/icon-action';
 import { Textarea } from '@/components/ui/textarea';

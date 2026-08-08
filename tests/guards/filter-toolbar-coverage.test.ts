@@ -105,7 +105,7 @@ const EXEMPTIONS: Record<string, string> = {
     // the legacy 'Control tasks' sub-table was removed when the Tasks tab
     // was aligned to Asset/Risk (a single LinkedTasksPanel). It's no longer
     // a DataTable surface, so it drops out of this exemption list.
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable.tsx":
+    "src/components/controls-shared/EvidenceSubTable.tsx":
         "Detail-page evidence sub-table (R10-PR3 follow-up) — fixed scope (evidence links + direct evidence for this one control) with per-row unlink action; not a faceted-filter surface.",
     "src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlMappingsTab.tsx":
         "Detail-page mappings sub-table (R10-PR3 follow-up) — fixed scope (framework mappings for this one control) with per-row unmap action; not a faceted-filter surface.",

@@ -27,7 +27,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { buildRunStatusLabels, buildResultLabels, RESULT_BADGE } from '../../_components/test-plan-labels';
+import { buildRunStatusLabels, buildResultLabels, RESULT_BADGE } from '@/components/test-plans/test-plan-labels';
 import { Heading } from '@/components/ui/typography';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { Card, cardVariants } from '@/components/ui/card';

@@ -41,7 +41,7 @@ const withQuery = (ui: React.ReactElement) => (
     </SWRConfig>
 );
 
-import { ControlTaskRows } from "@/app/t/[tenantSlug]/(app)/controls/ControlTaskRows";
+import { ControlTaskRows } from "@/components/controls-shared/ControlTaskRows";
 import { ControlEditPanel } from "@/app/t/[tenantSlug]/(app)/controls/ControlEditPanel";
 
 const TASK = {

@@ -84,7 +84,7 @@ describe('Audit-gap enum surfacing', () => {
         const enums = read('prisma/schema/enums.prisma');
         const detail = read(
             // PR-Q — PLAN_STATUS_OPTIONS moved into the shared detail view.
-            'src/app/t/[tenantSlug]/(app)/tests/_components/TestPlanDetailView.tsx',
+            'src/components/test-plans/TestPlanDetailView.tsx',
         );
         const list = read('src/app/t/[tenantSlug]/(app)/tests/page.tsx');
 
@@ -118,7 +118,7 @@ describe('Audit-gap enum surfacing', () => {
             // The invariant is unchanged and now has ONE home: ARCHIVED must
             // resolve to a variant rather than falling through.
             const labels = read(
-                'src/app/t/[tenantSlug]/(app)/tests/_components/test-plan-labels.ts',
+                'src/components/test-plans/test-plan-labels.ts',
             );
             const block = labels.slice(
                 labels.indexOf('PLAN_STATUS_BADGE'),

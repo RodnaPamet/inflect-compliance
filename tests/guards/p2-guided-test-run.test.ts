@@ -21,13 +21,13 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 const USECASE = 'src/app-layer/usecases/control-test.ts';
 const DERIVE_DOMAIN = 'src/app-layer/domain/test-plan-method.ts';
 const REPOSITORY = 'src/app-layer/repositories/TestPlanRepository.ts';
-const PLAN_DETAIL = 'src/app/t/[tenantSlug]/(app)/tests/_components/TestPlanDetailView.tsx';
+const PLAN_DETAIL = 'src/components/test-plans/TestPlanDetailView.tsx';
 const SCHEDULING = 'src/app-layer/usecases/test-scheduling.ts';
 const RUN_REPO = 'src/app-layer/repositories/TestRunRepository.ts';
 const START_ROUTE = 'src/app/api/t/[tenantSlug]/tests/runs/[runId]/start/route.ts';
 const RUN_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx';
 const DUE_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/due/page.tsx';
-const STEPS_EDITOR = 'src/app/t/[tenantSlug]/(app)/tests/_components/TestStepsEditor.tsx';
+const STEPS_EDITOR = 'src/components/test-plans/TestStepsEditor.tsx';
 const SCHEMAS = 'src/lib/schemas/index.ts';
 const PLAN_REPO = 'src/app-layer/repositories/TestPlanRepository.ts';
 

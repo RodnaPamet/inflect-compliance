@@ -20,7 +20,7 @@ import { EvidenceUploadSection } from '@/components/evidence/EvidenceUploadSecti
 import {
     EvidenceSubTable,
     type EvidenceTabData,
-} from '@/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable';
+} from '@/components/controls-shared/EvidenceSubTable';
 
 interface AttachedEvidencePanelProps {
     /** Tenant slug — drives the evidence-upload endpoint. */

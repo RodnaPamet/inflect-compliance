@@ -98,7 +98,11 @@ function fileMountsBackAffordance(file: string): boolean {
     // <TestPlanDetailView>. That component isn't a sibling *Client.tsx, so the
     // directory sweep can't see it — recognise the delegation explicitly.
     if (/\bTestPlanDetailView\b/.test(source)) {
-        const shared = path.join(APP_PAGES, 'tests/_components/TestPlanDetailView.tsx');
+        // Moved out of the route on 2026-08-06: two surfaces used it, so it
+        // now lives in src/components/ (see route-import-boundaries).
+        const shared = path.join(
+            APP_PAGES, '../../../../components/test-plans/TestPlanDetailView.tsx',
+        );
         if (fs.existsSync(shared) && /<BackAffordance\b/.test(fs.readFileSync(shared, 'utf-8'))) {
             return true;
         }

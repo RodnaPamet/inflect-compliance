@@ -131,8 +131,6 @@ const EXEMPTIONS: Record<string, string> = {
     // R10-PR3 follow-up — control detail page evidence + mappings
     // sub-tables migrated off raw <table> to DataTable. Detail-page
     // sub-tables; the page itself is not a list page.
-    'controls/[controlId]/_tabs/EvidenceSubTable.tsx':
-        'detail page sub-table — evidence rows for one control (R10-PR3 follow-up)',
     'controls/[controlId]/_tabs/ControlMappingsTab.tsx':
         'detail page sub-table — framework mappings for one control (R10-PR3 follow-up)',
     'controls/[controlId]/_tabs/ControlChecksTab.tsx':

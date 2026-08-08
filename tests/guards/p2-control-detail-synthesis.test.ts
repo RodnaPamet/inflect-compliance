@@ -22,7 +22,7 @@ const HEALTH_ROUTE = 'src/app/api/t/[tenantSlug]/controls/[controlId]/health/rou
 const HEALTH_CARD = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlHealthCard.tsx';
 const DETAIL_PAGE = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx';
 const TEST_PLANS = 'src/components/TestPlansPanel.tsx';
-const EVIDENCE_SUBTABLE = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/EvidenceSubTable.tsx';
+const EVIDENCE_SUBTABLE = 'src/components/controls-shared/EvidenceSubTable.tsx';
 
 describe('R2-P2 (1) completion advances control state', () => {
     const src = read(CONTROL_TEST);
@@ -84,7 +84,14 @@ describe('R2-P2 i18n parity', () => {
             expect(locale.controls.health.testResult.PASS).toBeTruthy();
             expect(locale.controls.health.checkStatus.PASSED).toBeTruthy();
             expect(locale.controls.conceptHelp.frequency).toBeTruthy();
-            expect(locale.controls.evidenceTab.colAddedBy).toBeTruthy();
+            // Moved to the `sharedPanels` namespace on 2026-08-06.
+            // EvidenceSubTable is rendered by FOUR non-control surfaces
+            // (Tasks list, Task detail, Risk detail, Asset detail) via
+            // AttachedEvidencePanel, so its copy living under `controls`
+            // meant a translator editing controls.* was editing four other
+            // pages. The key still has to exist in both locales — it just
+            // belongs to the component now, not to Controls.
+            expect(locale.sharedPanels.evidenceTab.colAddedBy).toBeTruthy();
         }
     });
 });

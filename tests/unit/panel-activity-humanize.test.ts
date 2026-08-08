@@ -21,7 +21,7 @@ jest.mock("next-intl", () => {
     };
 });
 
-import { humanizeDetail } from "@/app/t/[tenantSlug]/(app)/controls/PanelActivityFeed";
+import { humanizeDetail } from "@/components/controls-shared/PanelActivityFeed";
 
 describe("humanizeDetail", () => {
     it("drops a bare owner assignment (only a raw cuid) to nothing", () => {

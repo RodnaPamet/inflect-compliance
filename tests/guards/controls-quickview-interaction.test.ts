@@ -20,12 +20,12 @@ const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 const controls = read("src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx");
 const editPanel = read("src/app/t/[tenantSlug]/(app)/controls/ControlEditPanel.tsx");
-const taskPanel = read("src/app/t/[tenantSlug]/(app)/controls/TaskEditPanel.tsx");
+const taskPanel = read("src/components/controls-shared/TaskEditPanel.tsx");
 const userCombobox = read("src/components/ui/user-combobox.tsx");
 const aside = read("src/components/ui/aside-panel.tsx");
 const sheet = read("src/components/ui/sheet.tsx");
 const evidenceSection = read("src/components/evidence/EvidenceUploadSection.tsx");
-const activityFeed = read("src/app/t/[tenantSlug]/(app)/controls/PanelActivityFeed.tsx");
+const activityFeed = read("src/components/controls-shared/PanelActivityFeed.tsx");
 
 describe("Controls editable side-panel interaction", () => {
     it("the title cell is a <button> that opens the panel + expands inline tasks", () => {

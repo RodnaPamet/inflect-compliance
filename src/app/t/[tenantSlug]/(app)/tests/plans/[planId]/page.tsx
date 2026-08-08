@@ -5,7 +5,7 @@
  * control-scoped route via <TestPlanDetailView>. */
 
 import { useParams } from 'next/navigation';
-import { TestPlanDetailView } from '@/app/t/[tenantSlug]/(app)/tests/_components/TestPlanDetailView';
+import { TestPlanDetailView } from '@/components/test-plans/TestPlanDetailView';
 
 export default function TenantTestPlanDetailPage() {
     const params = useParams();

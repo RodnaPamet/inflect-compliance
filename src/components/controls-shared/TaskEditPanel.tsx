@@ -97,7 +97,7 @@ export function TaskEditPanel({
      */
     variant?: "panel" | "form";
 }) {
-    const tx = useTranslations("controls");
+    const tx = useTranslations("sharedPanels");
     const tTask = useTranslations("tasks");
     const SEVERITY_OPTIONS = useMemo(() => buildSeverityOptions(tTask), [tTask]);
     const PRIORITY_OPTIONS = useMemo(() => buildPriorityOptions(tTask), [tTask]);
