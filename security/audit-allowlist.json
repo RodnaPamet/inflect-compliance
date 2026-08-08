@@ -1,0 +1,36 @@
+{
+  "$comment": [
+    "Advisories the npm-audit gate tolerates because no fixed version EXISTS.",
+    "This is not a way to defer work you could do today — an entry is only",
+    "legitimate when upgrading is impossible, and it must carry the reason,",
+    "the reachability assessment, and a review date. `scripts/audit-gate.mjs`",
+    "fails the build on an expired entry, and on an entry that no longer",
+    "matches anything (so a fix upstream forces the entry out rather than",
+    "leaving a permanent hole).",
+    "The gate itself is unchanged: still moderate+ on production deps."
+  ],
+  "allow": [
+    {
+      "advisory": "GHSA-w3rx-r6r6-pgpr",
+      "package": "image-size",
+      "severity": "high",
+      "title": "ICNS parser allows denial of service through an infinite loop",
+      "reason": "No patched release exists — the advisory covers <=2.0.2 and 2.0.2 is the newest published version. It reaches us only through pptxgenjs@4.0.1 (the latest, which pins image-size ^1.2.1), so there is no version of either package that resolves it. npm's suggested fix downgrades pptxgenjs three majors to 1.1.5, which would break PPTX export outright.",
+      "reachability": "NOT REACHABLE. image-size runs only when pptxgenjs measures an embedded image, i.e. from addImage(). Our sole pptxgenjs consumer is src/app-layer/reports/risk-report-render.ts, which calls addText and addTable only — it never calls addImage, so no image bytes (attacker-supplied or otherwise) reach an image-size parser.",
+      "addedOn": "2026-08-08",
+      "reviewBy": "2026-11-08",
+      "upgradePlan": "Watch for an image-size release >2.0.2 or a pptxgenjs release that drops the dependency, then delete this entry — the gate will fail if it is stale. If risk-report-render ever gains an addImage() call, this exemption is void and must be re-argued: re-check before adding images to the PPTX export."
+    },
+    {
+      "advisory": "GHSA-5p2g-fcmc-qvqq",
+      "package": "image-size",
+      "severity": "high",
+      "title": "JXL and HEIF parsers allow denial of service through infinite loops",
+      "reason": "Same package, same absence of a fixed release (<=2.0.2 vulnerable, 2.0.2 is latest) and the same pptxgenjs pin. Listed separately so a partial upstream fix — one advisory patched, the other not — cannot be masked by a single entry.",
+      "reachability": "NOT REACHABLE. Identical argument to GHSA-w3rx-r6r6-pgpr: the JXL/HEIF parsers are only entered via addImage(), which this codebase never calls.",
+      "addedOn": "2026-08-08",
+      "reviewBy": "2026-11-08",
+      "upgradePlan": "As above. Both entries should disappear together when image-size ships a fix; if only one does, the gate will start failing on the other, which is the intended behaviour."
+    }
+  ]
+}

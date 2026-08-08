@@ -44,24 +44,60 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
     const ci = readRepoFile('.github/workflows/ci.yml');
 
     it('npm audit gate blocks on MODERATE+ severity (production deps)', () => {
-        // The canonical line — 2026-05-12 tightened from high → moderate.
-        // The ratchet accepts any tighter level (`moderate`, `low`,
-        // `info`) so future strictness bumps don't need a ratchet
-        // diff to land. It REJECTS anything looser (`high`,
-        // `critical`) — those are the regression classes this guard
-        // exists to catch.
-        const gateMatch = ci.match(
-            /npm audit --omit=dev --audit-level=(moderate|low|info)/,
-        );
-        expect(gateMatch).not.toBeNull();
-        // Regression: pre-2026-05-12 the gate was `high`; pre-GAP-05
-        // it was `critical`. A future PR that drops back to either
-        // without a written rationale is the change this guard catches.
-        // Note: the all-deps informational scan (without `--omit=dev`)
-        // legitimately stays at `critical` to limit noise from
-        // dev-only packages — it is not an audit-blocker.
+        // 2026-08-08: the gate moved from a bare `npm audit` line in the
+        // workflow to `scripts/audit-gate.mjs`, which runs the same audit
+        // and subtracts advisories with no fixed version (recorded in
+        // security/audit-allowlist.json).
+        //
+        // That move broke what this test could honestly assert. The
+        // workflow still CONTAINS the string
+        // `npm audit --omit=dev --audit-level=moderate` — but only inside
+        // the comment explaining the step. Matching the YAML would have
+        // gone green against prose while the real gate lived elsewhere,
+        // which is the precise failure this file exists to prevent. So
+        // assert against the SCRIPT that actually runs.
+        expect(ci).toMatch(/run: node scripts\/audit-gate\.mjs/);
+
+        const gate = readRepoFile('scripts/audit-gate.mjs');
+        // The blocking set is the severity floor. `moderate` present ⇒ the
+        // gate is at least as strict as it was; dropping it would let
+        // moderate findings through, which is the 2026-05-12 regression.
+        expect(gate).toMatch(/BLOCKING\s*=\s*new Set\(\[[^\]]*'moderate'[^\]]*\]\)/);
+        expect(gate).toMatch(/'high'/);
+        expect(gate).toMatch(/'critical'/);
+        // It audits the PRODUCTION tree, not the whole tree.
+        expect(gate).toMatch(/'--omit=dev'/);
+        // And it must still be capable of failing: a wrapper that only
+        // ever logs would satisfy every assertion above.
+        expect(gate).toMatch(/process\.exit\(1\)/);
+
+        // The all-deps informational scan (without `--omit=dev`)
+        // legitimately stays at `critical` to limit dev-only noise — it is
+        // not an audit-blocker, so it is untouched by the rules above.
         expect(ci).not.toMatch(/npm audit --omit=dev --audit-level=high\b/);
         expect(ci).not.toMatch(/npm audit --omit=dev --audit-level=critical\b/);
+    });
+
+    it('every audit exemption carries a reason, reachability and a live review date', () => {
+        // An exemption without an expiry is a permanent hole with extra
+        // steps. The gate script enforces this at run time; this asserts
+        // the file is well-formed even when the advisory has been fixed
+        // upstream and the script no longer reaches that branch.
+        const raw = readRepoFile('security/audit-allowlist.json');
+        const list = JSON.parse(raw) as {
+            allow: Array<Record<string, string>>;
+        };
+        const today = new Date().toISOString().slice(0, 10);
+        const bad: string[] = [];
+        for (const e of list.allow ?? []) {
+            if (!e.advisory) bad.push('entry with no advisory id');
+            if ((e.reason ?? '').length < 40) bad.push(`${e.advisory}: reason too thin`);
+            if ((e.reachability ?? '').length < 40) bad.push(`${e.advisory}: no reachability assessment`);
+            if (!e.upgradePlan) bad.push(`${e.advisory}: no upgrade plan`);
+            if (!e.reviewBy) bad.push(`${e.advisory}: no reviewBy`);
+            else if (e.reviewBy < today) bad.push(`${e.advisory}: reviewBy ${e.reviewBy} has passed`);
+        }
+        expect(bad).toEqual([]);
     });
 
     it('Trivy scan gate blocks on CRITICAL,HIGH, not CRITICAL-only', () => {
