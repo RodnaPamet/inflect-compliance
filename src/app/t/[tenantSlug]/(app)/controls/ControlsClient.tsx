@@ -535,20 +535,26 @@ function ControlsPageInner({
     // one label visually, but the filter API sets only IN_PROGRESS;
     // pages that want a multi-status KPI extend the predicate.
     type ControlKpiId = 'total' | 'implemented' | 'inProgress' | 'notStarted';
-    // guardrail-ignore: KPI counts across the loaded page, not a refilter.
-    const totalControls = controls.length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const implementedControls = controls.filter(
-        (c) => c.status === 'IMPLEMENTED',
-    ).length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const inProgressControls = controls.filter(
-        (c) => c.status === 'IN_PROGRESS' || c.status === 'IMPLEMENTING',
-    ).length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const notStartedControls = controls.filter(
-        (c) => c.status === 'NOT_STARTED',
-    ).length;
+    // One pass for all four counters, instead of three separate
+    // `.filter().length` scans of the same array — which also cost three
+    // near-identical `guardrail-ignore: KPI count` suppressions, each
+    // re-explaining that counting is not refiltering.
+    const {
+        total: totalControls,
+        implemented: implementedControls,
+        inProgress: inProgressControls,
+        notStarted: notStartedControls,
+    } = useMemo(() => {
+        const counts = { total: controls.length, implemented: 0, inProgress: 0, notStarted: 0 };
+        for (const c of controls) {
+            if (c.status === 'IMPLEMENTED') counts.implemented++;
+            // IN_PROGRESS and IMPLEMENTING read as one state to a user; the
+            // filter API sets only IN_PROGRESS.
+            else if (c.status === 'IN_PROGRESS' || c.status === 'IMPLEMENTING') counts.inProgress++;
+            else if (c.status === 'NOT_STARTED') counts.notStarted++;
+        }
+        return counts;
+    }, [controls]);
 
     // Canonical KPI-card sparklines — real per-day series from the daily
     // compliance-snapshot trends (shared hook). Each card maps to its column;
