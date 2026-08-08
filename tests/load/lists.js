@@ -9,7 +9,7 @@
 // Per iteration each VU exercises the three highest-traffic list
 // endpoints with realistic filter combinations:
 //
-//   GET /api/t/{slug}/controls  — paged + filtered (status, q, category)
+//   GET /api/t/{slug}/controls  — paged + filtered (status, q, applicability)
 //   GET /api/t/{slug}/risks     — paged + filtered (scoreMin/Max, q)
 //   GET /api/t/{slug}/evidence  — paged + filtered (status, archived)
 //
@@ -89,7 +89,16 @@ const CONTROLS_FILTERS = [
     'limit=50',
     'limit=50&status=IMPLEMENTED',
     'limit=50&q=security',
-    'limit=50&applicability=APPLICABLE&category=Access',
+    // `category` was dropped here (roadmap P3.4): the Category column shows a
+    // DERIVED value, the raw server filter that this exercised is gone, and
+    // the route schema `.strip()`s unknown keys — so it kept "passing" while
+    // measuring an unfiltered query.
+    //
+    // `applicability` replaces it and is worth more: it is now a real
+    // server-side predicate over two columns, and the multi-select form below
+    // exercises the OR branch that the single-value form does not.
+    'limit=50&applicability=APPLICABLE',
+    'limit=50&applicability=NOT_APPLICABLE,UNASSESSED',
     'limit=20&q=policy',
 ];
 
