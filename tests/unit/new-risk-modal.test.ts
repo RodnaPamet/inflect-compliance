@@ -112,39 +112,38 @@ describe('NewRiskModal — preserved form IDs', () => {
 // ─── 3. Business contract preserved ──────────────────────────────
 
 describe('NewRiskModal — business contract preserved', () => {
-    it('POSTs to /risks with the documented payload shape', () => {
-        expect(MODAL_SRC).toMatch(/apiUrl\(['"]\/risks['"]\)/);
-        expect(MODAL_SRC).toMatch(/method:\s*['"]POST['"]/);
-        for (const field of [
-            'title',
-            'description',
-            'category',
-            'likelihood',
-            'impact',
-            'ownerUserId',
-            'treatment',
-            'treatmentNotes',
-        ]) {
-            expect(MODAL_SRC).toMatch(new RegExp(`${field}:`));
-        }
-    });
-
-    it('passes templateId through when a template is selected', () => {
-        expect(MODAL_SRC).toMatch(/selectedTemplate/);
-        expect(MODAL_SRC).toMatch(
-            /payload\.templateId\s*=\s*selectedTemplate\.id/,
-        );
-    });
-
-    it('serialises nextReviewAt to ISO when supplied', () => {
-        expect(MODAL_SRC).toMatch(
-            /new Date\([\s\S]*?form\.nextReviewAt[\s\S]*?\)\.toISOString\(\)/,
-        );
+    /**
+     * B2-8 — the payload shape, the templateId pass-through and the
+     * nextReviewAt→ISO conversion moved into `_form/useNewRiskForm.ts`, and
+     * are now covered BEHAVIOURALLY in
+     * `tests/rendered/use-new-risk-form.test.tsx`, which reads the actual
+     * fetch body rather than grepping for the characters `title:`.
+     *
+     * The three source-scans that lived here are deleted rather than
+     * repointed at the hook. They asserted that text existed in a file —
+     * they would have passed against a payload that sent `category: ''` to
+     * an endpoint expecting the key absent, which is precisely the bug the
+     * behavioural test now catches.
+     *
+     * What remains below is what only a whole-file scan can claim: that the
+     * modal still wires the hook, and still owns the phase-2 control links
+     * and the cache bridge.
+     */
+    it('mounts the shared _form hook rather than hand-rolling form state', () => {
+        expect(MODAL_SRC).toMatch(/useNewRiskForm\(/);
+        // The hand-rolled shape is gone: no local form object, no local
+        // submitting/error slots.
+        expect(MODAL_SRC).not.toMatch(/const \[form, setForm\]/);
+        expect(MODAL_SRC).not.toMatch(/const \[submitting, setSubmitting\]/);
     });
 
     it('links selected controls via sequential POST /risks/:id/controls', () => {
+        // Deliberately not pinned to a variable NAME — the id was `risk.id`
+        // before B2-8 extracted the phase into `linkSelectedControls(riskId)`,
+        // and a rename is not a regression. What matters is the endpoint and
+        // that it iterates the selection.
         expect(MODAL_SRC).toMatch(
-            /apiUrl\(`\/risks\/\$\{risk\.id\}\/controls`\)/,
+            /apiUrl\(`\/risks\/\$\{\w+(?:\.\w+)?\}\/controls`\)/,
         );
         expect(MODAL_SRC).toMatch(/for \(const controlId of selectedControlIds/);
     });

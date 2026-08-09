@@ -68,6 +68,7 @@ import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { useTranslations } from 'next-intl';
 import { RISK_CATEGORY_OPTIONS } from './_shared/risk-options';
 import { extractMutationError } from '@/lib/mutations';
+import { useNewRiskForm } from './_form/useNewRiskForm';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -121,23 +122,15 @@ export function NewRiskModal({
     const { mutate: swrMutate } = useSWRConfig();
     const titleRef = useRef<HTMLInputElement>(null);
 
-    const [form, setForm] = useState({
-        title: '',
-        description: '',
-        category: '',
-        likelihood: 3,
-        impact: 3,
-        ownerUserId: '',
-        treatment: '',
-        treatmentNotes: '',
-        nextReviewAt: '',
-    });
+    // B2-8 — form state lives in `useNewRiskForm` (the shared `_form/` +
+    // `useZodForm` shape every other entity surface uses). `templateId` and
+    // `selectedControlIds` stay HERE deliberately: the first drives a fetch
+    // and rewrites fields, the second is a second-phase write after the risk
+    // exists. Neither is part of the risk payload.
     const [templateId, setTemplateId] = useState('');
     const [selectedControlIds, setSelectedControlIds] = useState<Set<string>>(
         new Set(),
     );
-    const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState('');
 
     // ─── Lookups — controls + templates load while the modal is open ───
     const controlsQuery = useTenantSWR<CappedList<ControlOption> | ControlOption[]>(
@@ -186,27 +179,54 @@ export function NewRiskModal({
         [templates],
     );
 
+    // ─── B2-8 — the shared form hook ───
+    // Placed after `selectedTemplate` so the resolved template id can ride
+    // the create payload, and before the reset effect that calls
+    // `riskForm.reset()`.
+    const riskForm = useNewRiskForm({
+        templateId: selectedTemplate?.id ?? null,
+        fallbackErrorMessage: tx('new.createFailed'),
+        // The banner comes from `riskForm.error`; this only reports.
+        onError: (err) => telemetry.trackError(err),
+        onCreated: async (risk) => {
+            // Ordering matters: link the controls BEFORE closing, so a
+            // partial-link warning is still on screen when the modal goes.
+            await linkSelectedControls(risk.id);
+            // Bridge to the SWR cache that RisksClient reads from.
+            const risksUrlPrefix = apiUrl(CACHE_KEYS.risks.list());
+            swrMutate(
+                (key) =>
+                    typeof key === 'string' &&
+                    (key === risksUrlPrefix || key.startsWith(`${risksUrlPrefix}?`)),
+                undefined,
+                { revalidate: true },
+            );
+            telemetry.trackSuccess({ riskId: risk.id });
+            close();
+        },
+    });
+    const form = riskForm.fields;
+    const submitting = riskForm.submitting;
+    const error = riskForm.error;
+
     // ─── Reset + focus on open ───
     useEffect(() => {
         if (!open) return;
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setForm({
-            title: '',
-            description: '',
-            category: '',
-            likelihood: 3,
-            impact: 3,
-            ownerUserId: '',
-            treatment: '',
-            treatmentNotes: '',
-            nextReviewAt: '',
-        });
+        // Resetting on OPEN (not on close) is deliberate: the modal stays
+        // mounted, so without this a second open would show the previous
+        // attempt's values. All three resets are one logical operation, so
+        // the rule is suppressed for the block rather than per line.
+        /* eslint-disable react-hooks/set-state-in-effect */
+        riskForm.reset();
         setTemplateId('');
         setSelectedControlIds(new Set());
-        setError('');
-        setSubmitting(false);
+        /* eslint-enable react-hooks/set-state-in-effect */
         const t = setTimeout(() => titleRef.current?.focus(), 60);
         return () => clearTimeout(t);
+        // `riskForm` is intentionally omitted — the hook returns a fresh
+        // object every render, so depending on it would reset the form on
+        // every keystroke. `open` is the only edge this should fire on.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     // Pre-fill from a newly selected template. We keep whatever the user
@@ -216,20 +236,16 @@ export function NewRiskModal({
         setTemplateId(id);
         const tmpl = templates.find((t) => t.id === id);
         if (!tmpl) return;
-        setForm((prev) => ({
-            ...prev,
+        riskForm.applyFields({
             title: tmpl.title,
             description: tmpl.description ?? '',
             category: tmpl.category ?? '',
             likelihood: tmpl.defaultLikelihood,
             impact: tmpl.defaultImpact,
-        }));
+        });
     };
 
-    const update = <K extends keyof typeof form>(
-        field: K,
-        value: (typeof form)[K],
-    ) => setForm((prev) => ({ ...prev, [field]: value }));
+    const update = riskForm.setField;
 
     const toggleControl = (id: string) =>
         setSelectedControlIds((prev) => {
@@ -239,103 +255,61 @@ export function NewRiskModal({
             return next;
         });
 
-    const canSubmit = form.title.trim().length > 0 && !submitting;
+    // B2-8 — was `form.title.trim().length > 0 && !submitting`. The schema
+    // now owns the gate, so a rule added to `NewRiskFormSchema` takes effect
+    // here without a second edit.
+    const canSubmit = riskForm.canSubmit;
 
     const telemetry = useFormTelemetry('NewRiskModal');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!canSubmit) return;
-        setSubmitting(true);
-        setError('');
         telemetry.trackSubmit({
             hasTemplate: Boolean(selectedTemplate),
             likelihood: form.likelihood,
             impact: form.impact,
             controlLinkCount: selectedControlIds.size,
         });
-        try {
-            const payload: Record<string, unknown> = {
-                title: form.title.trim(),
-                description: form.description.trim() || undefined,
-                category: form.category || undefined,
-                likelihood: form.likelihood,
-                impact: form.impact,
-                ownerUserId: form.ownerUserId || undefined,
-                treatment: form.treatment || undefined,
-                treatmentNotes: form.treatmentNotes.trim() || undefined,
-            };
-            if (form.nextReviewAt) {
-                payload.nextReviewAt = new Date(
-                    form.nextReviewAt,
-                ).toISOString();
-            }
-            if (selectedTemplate) {
-                payload.templateId = selectedTemplate.id;
-            }
-
-            const res = await fetch(apiUrl('/risks'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    data.message ||
-                        data.error ||
-                        tx('new.createFailedStatus', { status: res.status }),
-                );
-            }
-            const risk = await res.json();
-
-            // Phase 2 — link selected controls. The risk is already
-            // created, so a control-link failure never orphans it — but
-            // PR-K stops swallowing those failures silently: we COUNT them
-            // and surface a partial-failure toast so a dropped link is
-            // visible, not lost.
-            let controlLinkFailures = 0;
-            for (const controlId of selectedControlIds) {
-                try {
-                    const linkRes = await fetch(apiUrl(`/risks/${risk.id}/controls`), {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ controlId }),
-                    });
-                    if (!linkRes.ok) controlLinkFailures += 1;
-                } catch {
-                    controlLinkFailures += 1;
-                }
-            }
-            if (controlLinkFailures > 0) {
-                toast.warning(
-                    tx('new.controlLinkPartialFail', {
-                        failed: controlLinkFailures,
-                        total: selectedControlIds.size,
-                    }),
-                );
-            }
-
-            // Bridge to the SWR cache that RisksClient reads from.
-            const risksUrlPrefix = apiUrl(CACHE_KEYS.risks.list());
-            swrMutate(
-                (key) =>
-                    typeof key === 'string' &&
-                    (key === risksUrlPrefix ||
-                        key.startsWith(`${risksUrlPrefix}?`)),
-                undefined,
-                { revalidate: true },
-            );
-            telemetry.trackSuccess({ riskId: risk.id });
-            close();
-        } catch (err) {
-            telemetry.trackError(err);
-            setError(
-                extractMutationError(err, tx('new.createFailed')),
-            );
-            setSubmitting(false);
-        }
+        // B2-8 — the hook owns the POST, the payload shaping and the
+        // error/submitting lifecycle. `submit()` swallows nothing: it
+        // surfaces the failure on `riskForm.error`, which the banner below
+        // renders, so the `catch` that used to live here is gone.
+        await riskForm.submit();
     };
+
+    /**
+     * Phase 2, after the risk exists.
+     *
+     * Kept OUT of the form hook on purpose. These links need the new risk's
+     * id, so they cannot ride the create payload — and a link failure must
+     * NOT present as a failed create: the risk is already saved. Failures
+     * are counted and surfaced as a warning toast rather than thrown, which
+     * is the behaviour PR-K introduced to stop dropped links being silent.
+     */
+    async function linkSelectedControls(riskId: string) {
+        let controlLinkFailures = 0;
+        for (const controlId of selectedControlIds) {
+            try {
+                const linkRes = await fetch(apiUrl(`/risks/${riskId}/controls`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ controlId }),
+                });
+                if (!linkRes.ok) controlLinkFailures += 1;
+            } catch {
+                controlLinkFailures += 1;
+            }
+        }
+        if (controlLinkFailures > 0) {
+            toast.warning(
+                tx('new.controlLinkPartialFail', {
+                    failed: controlLinkFailures,
+                    total: selectedControlIds.size,
+                }),
+            );
+        }
+    }
 
     return (
         <Modal

@@ -193,8 +193,17 @@ describe('NewRiskModal — category Combobox', () => {
     });
 
     it('the shared list is the single source of truth for risk categories', () => {
+        // B2-8 — the DECLARATION moved to `@/lib/risk/categories` so the
+        // client form schema can validate against it without `lib/`
+        // importing from a route module. The invariant this test protects
+        // is unchanged: one list, and the shared module surfaces it.
+        // Asserting the declaration *site* would have failed on that move
+        // while the single-source property still held.
+        const lib = read('src/lib/risk/categories.ts');
+        expect(lib).toMatch(/export const RISK_CATEGORIES\s*=\s*\[/);
         const shared = read('src/app/t/[tenantSlug]/(app)/risks/_shared/risk-options.ts');
-        expect(shared).toMatch(/const RISK_CATEGORIES\s*=\s*\[/);
+        expect(shared).toMatch(/RISK_CATEGORIES/);
+        expect(shared).not.toMatch(/const RISK_CATEGORIES\s*=\s*\[/);
         // …and neither consumer re-declares its own copy.
         expect(RISK_MODAL_SRC).not.toMatch(/const CATEGORIES\s*=\s*\[/);
         const detail = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
