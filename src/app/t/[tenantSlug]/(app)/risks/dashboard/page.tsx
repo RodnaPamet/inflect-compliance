@@ -14,7 +14,7 @@ import { SkeletonDashboard } from '@/components/ui/skeleton';
 import { resolveBandForScore, resolveBandTone, type RiskSeverityTone } from '@/lib/risk-matrix/scoring';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import type { RiskMatrixBand } from '@/lib/risk-matrix/types';
-import { InfoTooltip } from '@/components/ui/tooltip';
+import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
 import { formatTailAwareAle } from '@/lib/tail-language';
 import { MonteCarloPanel, type SimulationRun } from './MonteCarloPanel';
 import { VelocityCard } from './VelocityCard';
@@ -265,14 +265,24 @@ export default function RiskDashboardPage() {
                                         ? resolveBandForScore(s, matrix.bands)
                                         : { name: '', minScore: 0, maxScore: 0, color: '' };
                                     return (
-                                        <div
+                                        // B2-7 — <Tooltip>, not a raw `title=`.
+                                        // Epic 56 bans new title attributes: the
+                                        // native tooltip is unstyled, cannot be
+                                        // opened from the keyboard, and is
+                                        // invisible to touch. This surface was
+                                        // breaking the rule its sibling
+                                        // (RisksClient's score chip) documents.
+                                        <Tooltip
                                             key={`${l}-${i}`}
-                                            className={`h-10 rounded flex items-center justify-center font-medium transition-colors duration-150 ease-out cursor-default ${heatmapClassForScore(s, matrix?.bands)}`}
-                                            title={t('dash.heatmapCell', { l, i, score: s, count, band: band.name })}
-                                            data-band={band.name}
+                                            content={t('dash.heatmapCell', { l, i, score: s, count, band: band.name })}
                                         >
-                                            {count > 0 ? count : ''}
-                                        </div>
+                                            <div
+                                                className={`h-10 rounded flex items-center justify-center font-medium transition-colors duration-150 ease-out cursor-default ${heatmapClassForScore(s, matrix?.bands)}`}
+                                                data-band={band.name}
+                                            >
+                                                {count > 0 ? count : ''}
+                                            </div>
+                                        </Tooltip>
                                     );
                                 })}
                             </Fragment>

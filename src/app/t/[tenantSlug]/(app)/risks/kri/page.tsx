@@ -25,6 +25,7 @@ import { useToast } from '@/components/ui/hooks';
 import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
+import { sparkline } from '@/lib/ascii-sparkline';
 
 type Direction = 'HIGHER_IS_WORSE' | 'LOWER_IS_WORSE';
 type Frequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY';
@@ -65,12 +66,6 @@ function draftPayload(d: KriDraft) {
     };
 }
 
-const SPARK = '▁▂▃▄▅▆▇█';
-function sparkline(values: number[]): string {
-    if (values.length === 0) return '—';
-    const min = Math.min(...values); const max = Math.max(...values); const span = max - min || 1;
-    return values.map((v) => SPARK[Math.min(SPARK.length - 1, Math.floor(((v - min) / span) * (SPARK.length - 1)))]).join('');
-}
 const ragVariant = (r: string | null | undefined) => (r === 'RED' ? 'error' : r === 'AMBER' ? 'warning' : 'success');
 
 export default function KriPage() {

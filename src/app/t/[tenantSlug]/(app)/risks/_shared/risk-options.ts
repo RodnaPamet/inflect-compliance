@@ -89,3 +89,37 @@ export function canonicalTreatmentLabel(
     const meta = TREATMENT_DECISION_META[decision as TreatmentDecisionValue];
     return meta ? t(meta.labelKey) : decision;
 }
+
+/**
+ * The risk-category vocabulary.
+ *
+ * B2-7 — declared twice before this: once in `NewRiskModal` and once in
+ * `[riskId]/page.tsx`, with the same eight values in a different line
+ * layout. Two copies of a picker's option list drift silently — a category
+ * added to the create modal but not the edit page means a risk you can
+ * create but cannot re-select the category of.
+ *
+ * Deliberately NOT localised. These are stored verbatim in `Risk.category`
+ * and filtered on as literal strings, so translating the label would either
+ * break the filter or write a translated value into the column. If they
+ * ever need localising, the stored value and the display label have to
+ * separate first.
+ */
+export const RISK_CATEGORIES = [
+    'Technical',
+    'Operational',
+    'Compliance',
+    'Strategic',
+    'Financial',
+    'Reputational',
+    'Physical',
+    'Human Resources',
+] as const;
+
+export type RiskCategory = (typeof RISK_CATEGORIES)[number];
+
+/** `RISK_CATEGORIES` as `<Combobox>` options — value and label are identical. */
+export const RISK_CATEGORY_OPTIONS: ComboboxOption[] = RISK_CATEGORIES.map((c) => ({
+    value: c,
+    label: c,
+}));
