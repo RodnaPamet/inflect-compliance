@@ -66,24 +66,10 @@ import {
 } from '@/components/ui/date-picker/date-utils';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { useTranslations } from 'next-intl';
+import { RISK_CATEGORY_OPTIONS } from './_shared/risk-options';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
-const CATEGORIES = [
-    'Technical',
-    'Operational',
-    'Compliance',
-    'Strategic',
-    'Financial',
-    'Reputational',
-    'Physical',
-    'Human Resources',
-] as const;
-
-const CATEGORY_OPTIONS: ComboboxOption[] = CATEGORIES.map((c) => ({
-    value: c,
-    label: c,
-}));
 
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -446,9 +432,9 @@ export function NewRiskModal({
                                 <Combobox
                                     id="risk-category"
                                     name="category"
-                                    options={CATEGORY_OPTIONS}
+                                    options={RISK_CATEGORY_OPTIONS}
                                     selected={
-                                        CATEGORY_OPTIONS.find(
+                                        RISK_CATEGORY_OPTIONS.find(
                                             (o) => o.value === form.category,
                                         ) ?? null
                                     }

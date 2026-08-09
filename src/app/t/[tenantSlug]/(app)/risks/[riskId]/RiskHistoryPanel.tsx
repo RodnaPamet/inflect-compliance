@@ -8,14 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { useTenantApiUrl, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { formatDate } from '@/lib/format-date';
+import { sparkline } from '@/lib/ascii-sparkline';
 
 interface Snap { id: string; score: number; ale: number | null; snapshotAt: string }
-const SPARK = '▁▂▃▄▅▆▇█';
-function sparkline(values: number[]): string {
-    if (values.length === 0) return '—';
-    const min = Math.min(...values); const max = Math.max(...values); const span = max - min || 1;
-    return values.map((v) => SPARK[Math.min(SPARK.length - 1, Math.floor(((v - min) / span) * (SPARK.length - 1)))]).join('');
-}
 // RQ3-OB-A — money speaks the tenant's currency (useMoneyFormatter).
 
 export function RiskHistoryPanel({ riskId }: { riskId: string }) {

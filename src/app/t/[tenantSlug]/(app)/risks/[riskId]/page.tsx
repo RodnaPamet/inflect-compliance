@@ -27,7 +27,7 @@ import { Pen2 } from '@/components/ui/icons/nucleo';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { useTenantMembers } from '@/components/ui/user-combobox';
-import { buildRiskTreatmentOptions, canonicalTreatmentLabel, buildRiskStatusOptions, riskStatusLabel } from '../_shared/risk-options';
+import { buildRiskTreatmentOptions, canonicalTreatmentLabel, buildRiskStatusOptions, riskStatusLabel, RISK_CATEGORY_OPTIONS } from '../_shared/risk-options';
 import { cn } from '@/lib/cn';
 import { cardVariants } from '@/components/ui/card';
 import { EditRiskModal, type EditRiskForm } from './_modals/EditRiskModal';
@@ -101,12 +101,10 @@ type Risk = {
 // must offer it; otherwise a reviewer who picks "Mitigated" in the
 // list filter cannot land on the corresponding detail-page value.
 // Options are built inside the component so the labels localize
-// (buildRiskStatusOptions), matching the filter + list badge.
-const CATEGORIES = [
-    'Technical', 'Operational', 'Compliance', 'Strategic',
-    'Financial', 'Reputational', 'Physical', 'Human Resources',
-];
-const CATEGORY_OPTIONS: ComboboxOption[] = CATEGORIES.map(c => ({ value: c, label: c }));
+// (buildRiskStatusOptions), matching the filter + list badge. Categories
+// are the exception — they are stored verbatim in `Risk.category` and
+// filtered on as literal strings, so they come from the shared list
+// unlocalised. See _shared/risk-options.
 
 // Polish PR-1 — STATUS_VARIANT moved to shared domain mapping.
 // Imported from @/app-layer/domain/entity-status-mapping as
@@ -745,7 +743,7 @@ export default function RiskDetailPage() {
                     saving={saving}
                     error={error}
                     tenantSlug={tenant.tenantSlug}
-                    categoryOptions={CATEGORY_OPTIONS}
+                    categoryOptions={RISK_CATEGORY_OPTIONS}
                     treatmentOptions={TREATMENT_OPTIONS}
                     onCancel={() => setEditing(false)}
                     onSubmit={handleSave}

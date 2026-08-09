@@ -181,14 +181,24 @@ describe('NewRiskModal — category Combobox', () => {
         );
     });
 
-    it('projects CATEGORIES into CATEGORY_OPTIONS typed as ComboboxOption[]', () => {
-        expect(RISK_MODAL_SRC).toMatch(
-            /CATEGORY_OPTIONS:\s*ComboboxOption\[\]\s*=\s*CATEGORIES\.map/,
+    it('projects the categories into ComboboxOption[] in the shared module', () => {
+        // B2-7 — the projection moved out of this modal. It was declared
+        // here AND in [riskId]/page.tsx with the same eight values in a
+        // different line layout, so the create modal and the edit page
+        // could drift apart: a category you can create but cannot re-select.
+        const shared = read('src/app/t/[tenantSlug]/(app)/risks/_shared/risk-options.ts');
+        expect(shared).toMatch(
+            /RISK_CATEGORY_OPTIONS:\s*ComboboxOption\[\]\s*=\s*RISK_CATEGORIES\.map/,
         );
     });
 
-    it('keeps the existing CATEGORIES const as the single source of truth', () => {
-        expect(RISK_MODAL_SRC).toMatch(/const CATEGORIES\s*=\s*\[/);
+    it('the shared list is the single source of truth for risk categories', () => {
+        const shared = read('src/app/t/[tenantSlug]/(app)/risks/_shared/risk-options.ts');
+        expect(shared).toMatch(/const RISK_CATEGORIES\s*=\s*\[/);
+        // …and neither consumer re-declares its own copy.
+        expect(RISK_MODAL_SRC).not.toMatch(/const CATEGORIES\s*=\s*\[/);
+        const detail = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
+        expect(detail).not.toMatch(/const CATEGORIES\s*=\s*\[/);
     });
 });
 
