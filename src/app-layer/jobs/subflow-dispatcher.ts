@@ -15,6 +15,7 @@ import { prisma } from '@/lib/prisma';
 import type { JobRunResult, SubflowDispatchPayload } from './types';
 import { executeAction } from '../automation/action-executor';
 import { logger } from '@/lib/observability/logger';
+import { readRulesWithTenantDek } from '../automation/tenant-dek-read';
 
 /**
  * Recursion cap, mirroring `MAX_CHAIN_DEPTH` in rule-chain-dispatch.
@@ -63,15 +64,17 @@ export async function runSubflowDispatch(
 
         // Entry rule = the first ENABLED rule in the target group. A group's
         // trigger node owns this rule (priority breaks ties deterministically).
-        const entry = await prisma.automationRule.findFirst({
-            where: {
-                tenantId,
-                subFlowGroupId: targetGroupId,
-                status: 'ENABLED',
-                deletedAt: null,
-            },
-            orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
-        });
+        const entry = await readRulesWithTenantDek(tenantId, () =>
+            prisma.automationRule.findFirst({
+                where: {
+                    tenantId,
+                    subFlowGroupId: targetGroupId,
+                    status: 'ENABLED',
+                    deletedAt: null,
+                },
+                orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+            }),
+        );
 
         let executionId: string | null = null;
         if (entry) {

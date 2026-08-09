@@ -39,6 +39,7 @@ import type {
 } from '../automation/event-contracts';
 import type { AutomationTriggerFilter } from '../automation/types';
 import type { AutomationEventDispatchPayload } from './types';
+import { readRulesWithTenantDek } from '../automation/tenant-dek-read';
 
 export interface AutomationEventDispatchResult {
     tenantId: string;
@@ -128,16 +129,18 @@ export async function runAutomationEventDispatch(
 
             // 1. Load matching enabled rules. Epic 6 — a manual re-trigger
             //    targets ONE rule via payload.targetRuleId.
-            const rules = await prisma.automationRule.findMany({
-                where: {
-                    tenantId: event.tenantId,
-                    triggerEvent: event.event,
-                    status: 'ENABLED',
-                    deletedAt: null,
-                    ...(payload.targetRuleId ? { id: payload.targetRuleId } : {}),
-                },
-                orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
-            });
+            const rules = await readRulesWithTenantDek(event.tenantId, () =>
+                prisma.automationRule.findMany({
+                    where: {
+                        tenantId: event.tenantId,
+                        triggerEvent: event.event,
+                        status: 'ENABLED',
+                        deletedAt: null,
+                        ...(payload.targetRuleId ? { id: payload.targetRuleId } : {}),
+                    },
+                    orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+                }),
+            );
 
             const result: AutomationEventDispatchResult = {
                 tenantId: event.tenantId,
