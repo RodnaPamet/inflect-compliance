@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { listRisks } from '@/app-layer/usecases/risk';
+import type { RiskFilters } from '@/app-layer/repositories/RiskRepository';
 import { getRiskMatrixConfig } from '@/app-layer/usecases/risk-matrix-config';
 import { cachedSsrPayload } from '@/lib/cache/ssr-cache';
 import { RisksClient } from './RisksClient';
@@ -44,13 +45,28 @@ export default async function RisksPage({
     //     `listRisks` for the SSR data fetch. The UI ↔ API split lives in
     //     `risks/filter-defs.RISK_API_TRANSFORMS` on the client.
     const clientFilters: Record<string, string> = {};
-    const apiFilters: Record<string, string | number> = {};
-    for (const key of ['q', 'status', 'category', 'ownerUserId', 'treatment', 'quantified']) {
+    // Typed as `RiskFilters`, NOT `Record<string, string | number>`. The
+    // previous shape was handed to listRisks through
+    // `as unknown as Parameters<typeof listRisks>[1]`, so adding a key here
+    // compiled even when the usecase had no such filter — the value was
+    // silently ignored at the far end and the page quietly returned
+    // unfiltered rows. Typing it makes the compiler check every assignment.
+    const apiFilters: RiskFilters = {};
+    for (const key of ['q', 'status', 'category', 'ownerUserId', 'treatment'] as const) {
         const val = sp[key];
         if (typeof val === 'string' && val) {
             clientFilters[key] = val;
             apiFilters[key] = val;
         }
+    }
+    // `quantified` is a two-value union, not a free string. The old loop
+    // assigned whatever the query string carried, so `?quantified=maybe`
+    // reached the repository as an unrecognised value; the cast hid the
+    // mismatch. Narrow it instead.
+    const quantified = sp['quantified'];
+    if (quantified === 'yes' || quantified === 'no') {
+        clientFilters.quantified = quantified;
+        apiFilters.quantified = quantified;
     }
     // Score + residualScore both carry a `min|max` range token (PR-K adds
     // the residual band so a reviewer can slice by after-controls posture).
@@ -72,9 +88,7 @@ export default async function RisksPage({
         const [risks, matrixConfig] = await Promise.all([
             listRisks(
                 ctx,
-                Object.keys(apiFilters).length > 0
-                    ? (apiFilters as unknown as Parameters<typeof listRisks>[1])
-                    : undefined,
+                Object.keys(apiFilters).length > 0 ? apiFilters : undefined,
                 { take: SSR_PAGE_LIMIT },
             ),
             getRiskMatrixConfig(ctx),
