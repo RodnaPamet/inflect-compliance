@@ -70,6 +70,7 @@ import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
 import { resolveALE } from '@/lib/fair-math';
 import { RiskAleChip } from './_shared/RiskAleChip';
 import { RiskCollisionCallouts } from './_shared/RiskCollisionCallouts';
+import { deriveMatrixMovements } from './_shared/matrix-movements';
 import { detectCellCollisions } from '@/lib/risk-collisions';
 import { AleHistogram, type AleHistogramDatum } from '@/components/ui/charts';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -755,21 +756,7 @@ function RisksPageInner({
     // Only decomposed residuals (RQ2-1 dims) qualify: a legacy
     // undecomposed score has no destination cell, and inventing one
     // would draw a lie.
-    const matrixMovements = useMemo(
-        () =>
-            risks
-                .filter(
-                    (r) =>
-                        r.residualLikelihood != null && r.residualImpact != null,
-                )
-                .map((r) => ({
-                    riskId: r.id,
-                    title: r.title,
-                    from: { likelihood: r.likelihood, impact: r.impact },
-                    to: { likelihood: r.residualLikelihood as number, impact: r.residualImpact as number },
-                })),
-        [risks],
-    );
+    const matrixMovements = useMemo(() => deriveMatrixMovements(risks), [risks]);
 
     // RQ2-10 — the Level column reads the TENANT'S OWN bands (the
     // same resolveBandForScore the score chip, matrix, and explainer
