@@ -1299,7 +1299,9 @@
             "stable": "Stable",
             "fastestRising": "Fastest rising",
             "fastestFalling": "Fastest falling",
-            "none": "None"
+            "none": "None",
+            "loadFailed": "Couldn't load risk velocity.",
+            "retry": "Retry"
         },
         "monteCarlo": {
             "title": "Loss exceedance (Monte Carlo)",

@@ -53,6 +53,7 @@ jest.mock('@/components/ui/hooks', () => ({
 }));
 
 import { RiskAssessmentPanel, type AssessmentRisk } from '@/app/t/[tenantSlug]/(app)/risks/[riskId]/RiskAssessmentPanel';
+import { SWRConfig } from 'swr';
 
 const MATRIX = {
     likelihoodLevels: 5,
@@ -163,6 +164,14 @@ const noop = () => {};
 
 async function renderPanel(props: Partial<React.ComponentProps<typeof RiskAssessmentPanel>> = {}) {
     render(
+        // B2-2 — the panel's two GET loads moved to `useTenantSWR`, and SWR's
+        // cache is MODULE-GLOBAL. Without a fresh provider per render, test N
+        // reads the response test N-1 cached for the same URL — so a case
+        // that varies `over.kriBreaches` silently asserts against the
+        // previous test's data. `dedupingInterval: 0` kills the companion
+        // problem: two renders inside one test window would otherwise share
+        // one in-flight request.
+        <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
         <RiskAssessmentPanel
             tenantSlug="t-1"
             riskId="r-1"
@@ -176,7 +185,8 @@ async function renderPanel(props: Partial<React.ComponentProps<typeof RiskAssess
             onLinkControls={noop}
             onStatusChange={noop}
             {...props}
-        />,
+        />
+        </SWRConfig>,
     );
     await waitFor(() => expect(screen.getByText(/1 · Inherent assessment/)).toBeInTheDocument());
 }
