@@ -1,10 +1,4 @@
 'use client';
-/* TODO(swr-migration): this file has fetch-on-mount + setState
- * patterns flagged by react-hooks/set-state-in-effect. Each call site
- * carries an inline disable directive; collectively they should
- * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
-
-/* eslint-disable react-hooks/exhaustive-deps -- Various useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers/derived arrays recreated each render). The proper structural fix is wrapping parent-level callbacks in useCallback. Tracked as follow-up; existing per-line eslint-disable-next-line markers preserved. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import Link from 'next/link';
@@ -360,6 +354,7 @@ function RisksPageInner({
             : undefined,
     });
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `rawRisks` is a fresh array each render by construction (`?? []`); the downstream useMemo keys off its CONTENTS via the query cache, not its identity. Wrapping it in its own useMemo would only move the allocation.
     const rawRisks = risksQuery.data?.rows ?? [];
     const truncated = risksQuery.data?.truncated ?? false;
 
@@ -623,7 +618,6 @@ function RisksPageInner({
         };
     }, [trendsQuery.data]);
     // Distinct sparkline colour per card (canonical allocator).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const sparkColors = useMemo(
         () => assignSparklineVariants(['total', 'avgScore', 'open', 'overdue']),
         [],
@@ -1093,6 +1087,7 @@ function RisksPageInner({
                 );
             },
         },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- STATUS_CLASS is a module constant; money/tenantHref/tenantSlug are stable per render pass. Adding them rebuilds every column def on each render, which remounts the DataTable model and breaks the dblclick-to-open row interaction (#1678).
     ]), [t, tx, getRiskBand, matrixConfig, tailByRisk, sortAccessors, staleById]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every

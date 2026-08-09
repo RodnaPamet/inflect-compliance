@@ -1,10 +1,9 @@
 'use client';
-/* TODO(swr-migration): this file has fetch-on-mount + setState
- * patterns flagged by react-hooks/set-state-in-effect. Each call site
- * carries an inline disable directive; collectively they should
- * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
+/* One fetch-on-mount effect remains (the control/asset pickers); it
+ * carries its own inline disable. The sibling list and detail pages have
+ * already moved to useTenantSWR — this is the last holdout in the Risks
+ * surface, not a file-wide pattern. */
 
-/* eslint-disable react-hooks/exhaustive-deps -- Various useEffect/useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers recreated each render) or use selector functions whose change-detection happens elsewhere. Adding the deps would either trigger unnecessary re-runs OR cause infinite render loops; the proper structural fix is to wrap parent-level callbacks in useCallback. Tracked as follow-up. */
 /**
  * Epic 54 — New Risk modal.
  *
@@ -181,6 +180,7 @@ export function NewRiskModal({
             return Array.isArray(data) ? data : [];
         },
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `templates` is a fresh array each render by construction; the two useMemos below key off its contents. Wrapping it in its own useMemo would move the allocation without removing it.
     const templates = templatesQuery.data ?? [];
     const selectedTemplate = useMemo(
         () => templates.find((t) => t.id === templateId) ?? null,
