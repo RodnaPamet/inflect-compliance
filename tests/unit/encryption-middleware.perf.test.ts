@@ -46,7 +46,7 @@ import {
 } from '@/lib/security/encryption';
 import { _internals } from '@/lib/db/encryption-middleware';
 
-const NO_DEKS = { primary: null, previous: null } as const;
+const NO_DEKS = { primary: null, previous: null, reason: 'by-design' as const } as const;
 const { walkReadResult, walkWriteArgument } = _internals;
 
 // ─── Timing helpers ─────────────────────────────────────────────────

@@ -543,11 +543,35 @@ export function recordFieldDecryptFailure(attrs: {
     model: string;
     field: string;
     version: string;
+    /**
+     * WHICH of the three failure classes this was. They have opposite
+     * correct responses, and before this label they were one undifferentiated
+     * number — so a genuine key mismatch was invisible inside routine
+     * no-DEK-by-design noise.
+     *
+     *   `no_dek_by_design` — the operation legitimately has no tenant DEK
+     *     (the Tenant model itself, no ambient tenantId, or a BYPASS_SOURCES
+     *     caller). Expected. The field is now handed back as NULL: the caller
+     *     has no business reading plaintext, and a null surfaces a mistaken
+     *     read immediately where a ciphertext blob hides it forever.
+     *
+     *   `dek_resolve_failed` — a tenantId WAS present but the DEK lookup
+     *     threw. Not expected. Still fails open to ciphertext, because
+     *     nulling a whole list page on a transient DB blip is its own
+     *     outage. Watch this one.
+     *
+     *   `decrypt_failed` — a DEK resolved and AES-GCM still rejected the
+     *     value: wrong key, corrupt row, or a write made under a mismatched
+     *     tenant context. Also still fails open, pending the posture
+     *     decision on whether it should throw.
+     */
+    outcome: 'no_dek_by_design' | 'dek_resolve_failed' | 'decrypt_failed';
 }): void {
     getFieldDecryptFailures().add(1, {
         model: attrs.model,
         field: attrs.field,
         'ciphertext.version': attrs.version,
+        outcome: attrs.outcome,
     });
 }
 

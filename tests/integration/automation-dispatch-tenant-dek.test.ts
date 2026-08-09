@@ -96,12 +96,21 @@ d('automation dispatch — tenant DEK resolution on the rule read', () => {
         expect(rule?.webhookSecretEncrypted).toBe(SECRET);
     });
 
-    it('returns raw CIPHERTEXT without the wrapper — the regression itself', async () => {
-        // Pinning the broken behaviour makes the test above meaningful: it
-        // proves the wrapper is what does the work, not some ambient context
-        // the harness happens to leave lying around.
+    it('yields NO usable secret without the wrapper — the regression itself', async () => {
+        // Pinning the broken path makes the test above meaningful: it proves
+        // the wrapper is what does the work, not some ambient context the
+        // harness happens to leave lying around.
+        //
+        // This originally asserted the read came back as raw `v2:`
+        // ciphertext, which was the bug's whole mechanism — a string
+        // indistinguishable from plaintext, used as the HMAC key. The
+        // encryption middleware now returns NULL for a no-DEK-by-design
+        // read instead, so the two fixes compose: even if a dispatcher lost
+        // its wrapper again, `signingSecret` would be null and the webhook
+        // would go out UNSIGNED rather than signed with the wrong key.
+        // Absent beats plausible-but-wrong.
         const rule: Rule = await prisma.automationRule.findFirst({ where: { id: ruleId } });
-        expect(rule?.webhookSecretEncrypted).toMatch(/^v2:/);
+        expect(rule?.webhookSecretEncrypted).toBeNull();
         expect(rule?.webhookSecretEncrypted).not.toBe(SECRET);
     });
 
