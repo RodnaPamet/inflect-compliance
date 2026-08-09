@@ -385,26 +385,95 @@ describe('read path — per-value dispatch on v1 / v2', () => {
         });
     });
 
-    it('a decrypt failure WITH a DEK still falls open, tagged decrypt_failed', () => {
-        // Wrong key / corrupt row / a write made under a mismatched tenant
-        // context — the genuine integrity anomaly. Deliberately still open:
-        // flipping it to throw would 500 a whole list page over one bad row,
-        // so it is made observable first and flipped once the counter is
-        // zero in steady state.
+    it('a decrypt failure WITH a DEK THROWS — fail closed', () => {
+        // Wrong key, corrupt row, or a write made under a mismatched tenant
+        // context. A DEK was in hand and AES-GCM still rejected the value, so
+        // this is an integrity anomaly about the DATA, not the key lookup.
+        //
+        // There is no safe continuation: either the ciphertext reaches an
+        // unknown consumer or the request stops. For a product whose rows land
+        // in audit packs and PDF exports, stopping is correct AND recoverable
+        // (fix the row); silent ciphertext contaminates exports indefinitely
+        // and nobody learns.
         const writtenUnder = generateDek();
         const readWith = generateDek(); // different key — AES-GCM auth fails
         const node = { treatmentNotes: encryptWithKey(writtenUnder, 'v') };
-        const original = node.treatmentNotes;
 
-        walkReadResult(node, 'Risk', pair(readWith));
-
-        expect(node.treatmentNotes).toBe(original);
+        expect(() => walkReadResult(node, 'Risk', pair(readWith))).toThrow(
+            /failed to decrypt Risk\.treatmentNotes/,
+        );
         expect(recordFieldDecryptFailure).toHaveBeenCalledWith({
             model: 'Risk',
             field: 'treatmentNotes',
             version: 'v2',
             outcome: 'decrypt_failed',
         });
+    });
+
+    it('the thrown error carries coordinates but NEVER the value', () => {
+        // The message reaches logs and, through the API error wrapper, can
+        // reach a client. Leaking the plaintext it failed on — or the
+        // ciphertext — would turn an integrity signal into a disclosure.
+        const writtenUnder = generateDek();
+        const readWith = generateDek();
+        const secret = 'operator wrote this';
+        const node = { treatmentNotes: encryptWithKey(writtenUnder, secret) };
+        const ciphertext = node.treatmentNotes;
+
+        let caught: unknown;
+        try {
+            walkReadResult(node, 'Risk', pair(readWith));
+        } catch (e) {
+            caught = e;
+        }
+        const msg = (caught as Error).message;
+        expect(msg).toContain('Risk.treatmentNotes');
+        expect(msg).toContain('v2');
+        expect(msg).not.toContain(secret);
+        expect(msg).not.toContain(ciphertext);
+    });
+
+    it('the kill-switch restores the fail-open behaviour without a redeploy', () => {
+        // The lever an operator needs at 3am when one corrupt row is 500ing a
+        // list page. Documented in docs/epic-b-encryption.md.
+        const prev = process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED;
+        process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED = '0';
+        jest.resetModules();
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { _internals } = require('@/lib/db/encryption-middleware');
+            const writtenUnder = generateDek();
+            const readWith = generateDek();
+            const node = { treatmentNotes: encryptWithKey(writtenUnder, 'v') };
+            const original = node.treatmentNotes;
+            expect(() =>
+                _internals.walkReadResult(node, 'Risk', pair(readWith)),
+            ).not.toThrow();
+            expect(node.treatmentNotes).toBe(original);
+        } finally {
+            if (prev === undefined) delete process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED;
+            else process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED = prev;
+            jest.resetModules();
+        }
+    });
+
+    it('a DEK-resolve FAILURE still falls open — infra flap is not a data anomaly', () => {
+        // Unchanged, and the distinction is the point: a tenantId WAS present
+        // and the lookup threw. Failing an entire page over a transient DB
+        // blip is its own outage, and unlike the by-design case there is a
+        // legitimate reader waiting for the value.
+        const dek = generateDek();
+        const node = { treatmentNotes: encryptWithKey(dek, 'still-needed') };
+        const original = node.treatmentNotes;
+
+        expect(() =>
+            walkReadResult(node, 'Risk', {
+                primary: null,
+                previous: null,
+                reason: 'resolve-failed',
+            }),
+        ).not.toThrow();
+        expect(node.treatmentNotes).toBe(original);
     });
 });
 
@@ -440,21 +509,29 @@ describe('mid-rotation read fallback to previous DEK', () => {
         expect(rows[1].treatmentNotes).toBe('post-row');
     });
 
-    it('without a previous DEK, a pre-rotation row fails safely (warn + ciphertext preserved)', () => {
+    it('without a previous DEK, a stale pre-rotation row now THROWS', () => {
+        // OPERATIONAL CONSEQUENCE OF FAILING CLOSED, stated plainly because it
+        // is the one that can bite: if `Tenant.previousEncryptedDek` is
+        // cleared while rows written under the old DEK have NOT yet been
+        // swept, reading one of those rows 500s instead of rendering a
+        // ciphertext blob.
+        //
+        // That is the intended trade — a blob in an audit pack is worse than a
+        // failed request — but it makes the rotation ORDER load-bearing:
+        // `previousEncryptedDek` must stay populated until the sweep reports
+        // zero remaining. See docs/epic-b-encryption.md.
         const previousDek = generateDek();
         const newPrimaryDek = generateDek();
-        // Reader does NOT have the previous DEK — simulates the
-        // post-rotation steady state where Tenant.previousEncryptedDek
-        // is now NULL but a stale row still carries the old ciphertext.
         const oldRow = {
             treatmentNotes: encryptWithKey(previousDek, 'pre-rotation-value'),
         };
-        walkReadResult(oldRow, 'Risk', pair(newPrimaryDek, null));
-        // Decryption failed; ciphertext preserved, warn emitted.
-        expect(getCiphertextVersion(oldRow.treatmentNotes as string)).toBe('v2');
+
+        expect(() => walkReadResult(oldRow, 'Risk', pair(newPrimaryDek, null))).toThrow(
+            /failed to decrypt Risk\.treatmentNotes/,
+        );
         expect(logger.warn).toHaveBeenCalledWith(
             'encryption-middleware.decrypt_failed',
-            expect.objectContaining({ version: 'v2' }),
+            expect.objectContaining({ version: 'v2', outcome: 'decrypt_failed' }),
         );
     });
 });
@@ -469,10 +546,16 @@ describe('cross-tenant isolation', () => {
         const node = { treatmentNotes: aCipher };
 
         // Reader has tenant B's DEK only — GCM tag should fail.
-        walkReadResult(node, 'Risk', pair(dekB));
-
-        // Ciphertext preserved (decryption failed safely).
+        //
+        // Fail-CLOSED strengthens this invariant rather than changing it. The
+        // property is "B never obtains A's plaintext"; previously B got A's
+        // ciphertext back as a `string` it could forward anywhere, now the
+        // read stops. The node is left untouched either way.
+        expect(() => walkReadResult(node, 'Risk', pair(dekB))).toThrow(
+            /failed to decrypt/,
+        );
         expect(node.treatmentNotes).toBe(aCipher);
+        expect(node.treatmentNotes).not.toContain('tenant-A-secret');
         expect(logger.warn).toHaveBeenCalledWith(
             'encryption-middleware.decrypt_failed',
             expect.objectContaining({ version: 'v2' }),
@@ -519,7 +602,22 @@ describe('never leaks DEK material or plaintext in logs', () => {
             treatmentNotes: encryptWithKey(dek, plaintext),
         };
         const wrongDek = generateDek();
-        walkReadResult(node, 'Risk', pair(wrongDek));
+        // Fail-closed: the read throws. The log line is still emitted first,
+        // and it is the log line under test — so catch and assert on it.
+        let thrown: unknown;
+        try {
+            walkReadResult(node, 'Risk', pair(wrongDek));
+        } catch (e) {
+            thrown = e;
+        }
+        expect(thrown).toBeInstanceOf(Error);
+        // The THROWN MESSAGE is a new disclosure surface — it reaches logs and
+        // can reach a client through the API error wrapper. Hold it to the
+        // same bar as the log line.
+        const msg = (thrown as Error).message;
+        expect(msg).not.toContain(plaintext);
+        expect(msg).not.toContain(dek.toString('hex'));
+        expect(msg).not.toContain(node.treatmentNotes as string);
 
         // Every warn call should be value-free.
         const allLogs = JSON.stringify(

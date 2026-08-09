@@ -45,8 +45,48 @@
 |---|---|---|---|
 | `DATA_ENCRYPTION_KEY` | **REQUIRED** in production (≥32 chars). Dev: dev-fallback + WARN log. Test: dev-fallback (silent). | — | Production boot exits 1 if missing, too short, or equal to the dev-fallback string. Three independent checks — zod schema (`src/env.ts`), startup hook (`src/instrumentation.ts` + `scripts/worker.ts` + `scripts/scheduler.ts`), and Compose `:?error` syntax — each refuses to start the process. Set once in every prod environment, identical across replicas, distinct between staging and prod. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | Optional (≥32 chars) | unset | Set ONLY during a master-key rotation. When set, `decryptField` tries primary, then falls back to previous on auth-tag failure. **Remove after the rotation job reports zero remaining v1 rows.** |
+| `ENCRYPTION_DECRYPT_FAIL_CLOSED` | Optional | unset (fail CLOSED) | Set to `0` ONLY as an incident lever. The read path throws on a genuine decrypt failure (a DEK resolved, AES-GCM still rejected); `0` reverts it to passing the ciphertext through. Use when one corrupt row is 500ing a page and you need the page back before you can fix the row — then unset it. |
 
 `AUTH_TEST_MODE` / `RATE_LIMIT_ENABLED` don't affect the encryption layer directly — they gate the Epic A middleware this system integrates with.
+
+## Decrypt-failure posture (fail closed)
+
+A read that cannot decrypt a value has three distinct causes, and they get
+three different answers. This matters operationally because only one of them
+stops a request.
+
+| Cause | `outcome` label | Behaviour |
+|---|---|---|
+| No tenant DEK **by design** — the `Tenant` model, no ambient `tenantId`, or a `BYPASS_SOURCES` caller | `no_dek_by_design` | field becomes `null` |
+| DEK lookup **threw** — a `tenantId` was present, the lookup failed | `dek_resolve_failed` | ciphertext passed through (fail open) |
+| Decrypt failed **with** a DEK in hand — wrong key, corrupt row, or a write made under a mismatched tenant context | `decrypt_failed` | **throws** (fail closed) |
+
+Only the third stops the request. The reasoning: for a product whose rows
+land in audit packs and PDF exports, a request that fails is recoverable —
+you fix the row — whereas a ciphertext blob that reads as a valid `string`
+contaminates exports indefinitely and nobody learns. The second case is
+deliberately NOT included: a transient DB blip is infrastructure flap, not a
+data anomaly, and failing a whole page over it is its own outage.
+
+The v1 (global-KEK) path is covered too. A corrupt legacy row throws wherever
+it is encountered, not only in per-tenant v2 reads.
+
+### The rotation ordering this makes load-bearing
+
+**`Tenant.previousEncryptedDek` must stay populated until the per-tenant
+rotation sweep reports zero remaining rows.** Clearing it while rows written
+under the old DEK are un-swept means reads of those rows now **500** rather
+than rendering a blob. That is the intended trade, but it turns a previously
+cosmetic ordering mistake into an outage, so treat the sweep's completion as
+the gate for clearing the column.
+
+### Incident lever
+
+`ENCRYPTION_DECRYPT_FAIL_CLOSED=0` reverts to the old pass-through behaviour
+without a redeploy. Reach for it when a corrupt row is blocking a page and
+the fix will take longer than the outage is tolerable; unset it once the row
+is repaired. Watch `encryption.field.decrypt_failed` — the `outcome` label
+tells you which of the three causes you are looking at.
 
 ## What is encrypted
 

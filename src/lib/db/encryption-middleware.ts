@@ -84,6 +84,7 @@ import { recordFieldDecryptFailure } from '@/lib/observability/metrics';
 // to `undefined`, surfacing as `"i is not a function"` runtime
 // errors). Same pattern as `db/rls-middleware.ts::prismaModule`.
 import * as tenantKeyManager from '@/lib/security/tenant-key-manager';
+import { env } from '@/env';
 
 // ─── Action buckets ───────────────────────────────────────────────────
 
@@ -434,6 +435,33 @@ function decryptValue(ciphertext: string, deks: TenantDekPair): string {
  * `encryption.field.decrypt_failed{outcome="decrypt_failed"}` is zero in
  * steady state.
  */
+/**
+ * A value that should have decrypted and did not.
+ *
+ * Distinct from `NoTenantDekError`: there a DEK was never available, which is
+ * either expected (cross-tenant work) or an infrastructure failure. Here the
+ * key WAS in hand and the ciphertext still failed authentication — an
+ * integrity anomaly about the DATA, not the key lookup.
+ *
+ * Carries no plaintext and no ciphertext, only the coordinates an operator
+ * needs to find the row. The message reaches logs and, via the API error
+ * wrapper, potentially a client — so it must not leak the value it failed on.
+ */
+export class DecryptIntegrityError extends Error {
+    constructor(
+        public readonly model: string,
+        public readonly field: string,
+        public readonly version: string,
+    ) {
+        super(
+            `encryption-middleware: failed to decrypt ${model}.${field} (${version}) ` +
+                `with an available tenant DEK — wrong key, corrupt row, or a write made ` +
+                `under a mismatched tenant context`,
+        );
+        this.name = 'DecryptIntegrityError';
+    }
+}
+
 function onDecryptFailure(
     err: unknown,
     ciphertext: string,
@@ -464,7 +492,25 @@ function onDecryptFailure(
         outcome,
     });
 
-    return byDesign ? null : ciphertext;
+    if (byDesign) return null;
+
+    // A DEK resolved and AES-GCM still rejected the value: wrong key, corrupt
+    // row, or a write made under a mismatched tenant context. There is no safe
+    // continuation — either the ciphertext reaches an unknown consumer or the
+    // request stops. For a product whose rows land in audit packs and PDF
+    // exports, stopping is correct AND recoverable (fix the row); silent
+    // ciphertext contaminates exports indefinitely and nobody learns.
+    //
+    // `dek_resolve_failed` is deliberately NOT included. There a tenantId WAS
+    // present and the lookup threw — a transient DB blip, a tenant with no
+    // encryptedDek row. Failing the page over infrastructure flap is its own
+    // outage, and unlike the by-design case there is a legitimate reader
+    // waiting, so it keeps passing the ciphertext through and stays visible
+    // through its own `outcome` label.
+    if (outcome === 'decrypt_failed' && env.ENCRYPTION_DECRYPT_FAIL_CLOSED !== '0') {
+        throw new DecryptIntegrityError(modelName, field, version ?? 'unknown');
+    }
+    return ciphertext;
 }
 
 function decryptResultNode(
