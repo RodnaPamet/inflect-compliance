@@ -39,6 +39,7 @@ import { SkeletonCard } from '@/components/ui/skeleton';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { calculateRiskScore } from '@/lib/risk-scoring';
+import { RiskBandChip } from '../_shared/RiskBandChip';
 import { resolveBandForScore } from '@/lib/risk-matrix/scoring';
 import {
     buildRiskTreatmentOptions,
@@ -131,20 +132,16 @@ function StepError({
 }
 
 function BandChip({ score, config }: { score: number; config: RiskMatrixConfigShape }) {
-    const band = resolveBandForScore(score, config.bands);
+    // Thin wrapper: this surface resolves the band from the tenant config
+    // and spells the name out beside the number. The chip markup itself is
+    // shared — see _shared/RiskBandChip for the axe-AA colour-role split.
     return (
-        <span
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-sm font-bold tabular-nums text-content-emphasis"
-            style={{ backgroundColor: `${band.color}33` }}
-            data-band={band.name}
-        >
-            <span
-                aria-hidden="true"
-                className="inline-block w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: band.color }}
-            />
-            {score} · {band.name}
-        </span>
+        <RiskBandChip
+            value={score}
+            band={resolveBandForScore(score, config.bands)}
+            showBandName
+            size="md"
+        />
     );
 }
 
@@ -271,7 +268,6 @@ export function RiskAssessmentPanel({
         let cancelled = false;
         fetch(apiUrl(`/risks/${riskId}/kri-breaches`))
             .then((r) => (r.ok ? r.json() : null))
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             .then((d) => { if (!cancelled) setKriBreaches(d?.breaches ?? []); })
             .catch(() => { if (!cancelled) setKriBreaches([]); });
         return () => { cancelled = true; };
