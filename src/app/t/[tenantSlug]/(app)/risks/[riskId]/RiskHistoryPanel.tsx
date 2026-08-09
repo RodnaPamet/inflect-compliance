@@ -9,6 +9,7 @@ import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { formatDate } from '@/lib/format-date';
 import { sparkline } from '@/lib/ascii-sparkline';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { StatTile } from '../_shared/StatTile';
 
 interface Snap { id: string; score: number; ale: number | null; snapshotAt: string }
 // RQ3-OB-A — money speaks the tenant's currency (useMoneyFormatter).
@@ -49,16 +50,16 @@ export function RiskHistoryPanel({ riskId }: { riskId: string }) {
             <Heading level={2}>{t('history.title')}</Heading>
             <p className="text-xs text-content-muted">{t('history.snapshotsCount', { count: history.length })} · {formatDate(new Date(first.snapshotAt))} → {formatDate(new Date(last.snapshotAt))}</p>
             <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
-                <div className="rounded-md bg-bg-muted/20 px-default py-default">
+                <StatTile tone="subtle">
                     <div className="text-xs text-content-muted">{t('history.aleTrend')}</div>
                     <div className="font-mono text-lg leading-none text-content-emphasis" aria-label={t('history.aleTrend')}>{sparkline(aleSeries)}</div>
                     <div className="mt-tight text-sm tabular-nums text-content-muted">{money(first.ale)} → {money(last.ale)} ({aleDelta >= 0 ? '+' : '−'}{money(Math.abs(aleDelta))})</div>
-                </div>
-                <div className="rounded-md bg-bg-muted/20 px-default py-default">
+                </StatTile>
+                <StatTile tone="subtle">
                     <div className="text-xs text-content-muted">{t('history.scoreTrend')}</div>
                     <div className="font-mono text-lg leading-none text-content-emphasis" aria-label={t('history.scoreTrend')}>{sparkline(scoreSeries)}</div>
                     <div className="mt-tight text-sm tabular-nums text-content-muted">{first.score} → {last.score}</div>
-                </div>
+                </StatTile>
             </div>
         </Card>
     );

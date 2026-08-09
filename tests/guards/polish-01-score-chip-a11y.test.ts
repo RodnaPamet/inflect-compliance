@@ -13,7 +13,7 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 describe('score-chip a11y label', () => {
     test('the explainer derives its aria-label from the label prop', () => {
-        const src = read('src/components/RiskScoreExplainer.tsx');
+        const src = read('src/components/risks/RiskScoreExplainer.tsx');
         // i18n-aware: the aria-label is now composed via next-intl. Assert
         // the t('key') wiring in source AND that the en.json values still
         // carry the canonical English the a11y contract requires.

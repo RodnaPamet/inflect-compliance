@@ -35,6 +35,7 @@ import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 import { computeLossCalibration } from '@/lib/risk/loss-calibration';
+import { StatTile } from '../_shared/StatTile';
 
 type Source = 'USER' | 'FINDING' | 'INCIDENT';
 interface Row {
@@ -196,15 +197,15 @@ export default function LossEventsPage() {
                 ) : (
                     <>
                         <div className="grid grid-cols-2 gap-default md:grid-cols-3">
-                            <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="loss-events-total">
+                            <StatTile testId="loss-events-total">
                                 <KPIStat value={money(agg.total)} label={t('lossEvents.totalLosses')} />
-                            </div>
-                            <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="loss-events-count">
+                            </StatTile>
+                            <StatTile testId="loss-events-count">
                                 <KPIStat value={agg.count} label={t('lossEvents.lossEventsStat')} />
-                            </div>
-                            <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="loss-events-years">
+                            </StatTile>
+                            <StatTile testId="loss-events-years">
                                 <KPIStat value={agg.byYear.length} label={t('lossEvents.calendarYears')} />
-                            </div>
+                            </StatTile>
                         </div>
                         {/* Per-year mini-bars: the actuals, with the
                             simulator's per-year predictions as honest
@@ -244,19 +245,19 @@ export default function LossEventsPage() {
                         <InfoTooltip title={t('lossEvents.calibrationConceptTitle')} content={t('lossEvents.calibrationConceptHelp')} />
                     </div>
                     <div className="grid grid-cols-2 gap-default md:grid-cols-3">
-                        <div className="rounded-md bg-bg-muted/30 px-default py-default">
+                        <StatTile>
                             <KPIStat
                                 value={calibration.coverageWithinP90 != null ? `${Math.round(calibration.coverageWithinP90 * 100)}%` : '—'}
                                 label={t('lossEvents.coverageLabel')}
                                 tone={calibration.calibrationScore != null && calibration.calibrationScore >= 0.7 ? 'success' : 'attention'}
                             />
-                        </div>
-                        <div className="rounded-md bg-bg-muted/30 px-default py-default">
+                        </StatTile>
+                        <StatTile>
                             <KPIStat value={calibration.underForecast} label={t('lossEvents.underForecastLabel')} tone={calibration.underForecast > 0 ? 'critical' : 'default'} />
-                        </div>
-                        <div className="rounded-md bg-bg-muted/30 px-default py-default">
+                        </StatTile>
+                        <StatTile>
                             <KPIStat value={calibration.scored} label={t('lossEvents.scoredLabel')} />
-                        </div>
+                        </StatTile>
                     </div>
                     <p className="text-xs text-content-muted">{t('lossEvents.coverageHint')}</p>
                     {calibration.insufficientDistribution > 0 && (

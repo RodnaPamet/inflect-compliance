@@ -26,7 +26,7 @@ describe('Epic G-7 — treatment-plan API + UI wiring', () => {
     const completePlanRoute = read(
         'src/app/api/t/[tenantSlug]/risks/[id]/treatment-plans/[planId]/complete/route.ts',
     );
-    const card = read('src/components/RiskTreatmentPlanCard.tsx');
+    const card = read('src/components/risks/RiskTreatmentPlanCard.tsx');
     // P1 — the treatment plan card moved from the detail page (Overview) into
     // the guided assessment panel (Step 4), so the whole lifecycle lives in
     // one narrated path.

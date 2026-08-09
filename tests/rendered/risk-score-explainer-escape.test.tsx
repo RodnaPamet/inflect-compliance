@@ -9,7 +9,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
-import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
+import { RiskScoreExplainer } from '@/components/risks/RiskScoreExplainer';
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
 
 const PAYLOAD = {

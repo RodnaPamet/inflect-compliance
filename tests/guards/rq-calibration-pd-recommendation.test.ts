@@ -19,7 +19,7 @@ const CORR = read('src/app-layer/usecases/risk-correlation.ts');
 const CORR_PAGE = read('src/app/t/[tenantSlug]/(app)/risks/correlations/page.tsx');
 const PANEL = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/RiskAssessmentPanel.tsx');
 const DETAIL = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
-const PLAN_CARD = read('src/components/RiskTreatmentPlanCard.tsx');
+const PLAN_CARD = read('src/components/risks/RiskTreatmentPlanCard.tsx');
 
 describe('1. calibration annualizes + excludes degenerate bands', () => {
     it('the helper takes observedYears and annualizes the cumulative actual', () => {

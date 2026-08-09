@@ -67,7 +67,7 @@ import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Plus } from '@/components/ui/icons/nucleo';
-import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
+import { RiskScoreExplainer } from '@/components/risks/RiskScoreExplainer';
 import { resolveALE } from '@/lib/fair-math';
 import { RiskAleChip } from './_shared/RiskAleChip';
 import { RiskCollisionCallouts } from './_shared/RiskCollisionCallouts';

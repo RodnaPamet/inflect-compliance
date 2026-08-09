@@ -22,7 +22,7 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const riskDetail = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
 const controlDetail = read('src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx');
-const explainer = read('src/components/RiskScoreExplainer.tsx');
+const explainer = read('src/components/risks/RiskScoreExplainer.tsx');
 const risksClient = read('src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx');
 
 describe('RQ3-OB-B — detail-page loading uses a structured skeleton', () => {

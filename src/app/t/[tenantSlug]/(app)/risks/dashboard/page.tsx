@@ -20,6 +20,7 @@ import { MonteCarloPanel, type SimulationRun } from './MonteCarloPanel';
 import { VelocityCard } from './VelocityCard';
 import type { DashboardPayload } from '@/app-layer/usecases/risk-dashboard';
 import { buildTailByRisk } from '@/lib/risk/per-risk-results';
+import { StatTile } from '../_shared/StatTile';
 
 // B10 — Quantitative risk analytics shape. Mirrors the
 // RiskQuantitativeAnalytics interface in
@@ -326,18 +327,18 @@ export default function RiskDashboardPage() {
                     {simRun ? (
                         <>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-default mb-default">
-                                <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="risk-quant-tile-p50">
+                                <StatTile testId="risk-quant-tile-p50">
                                     <KPIStat value={money(simRun.portfolioP50)} label={t('dash.p50')} />
-                                </div>
-                                <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="risk-quant-tile-p80">
+                                </StatTile>
+                                <StatTile testId="risk-quant-tile-p80">
                                     <KPIStat value={money(simRun.portfolioP80)} label={t('dash.p80')} tone="attention" />
-                                </div>
-                                <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="risk-quant-tile-p95">
+                                </StatTile>
+                                <StatTile testId="risk-quant-tile-p95">
                                     <KPIStat value={money(simRun.portfolioP95)} label={t('dash.p95')} tone="critical" />
-                                </div>
-                                <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="risk-quant-tile-max">
+                                </StatTile>
+                                <StatTile testId="risk-quant-tile-max">
                                     <KPIStat value={money(analytics.totals.maxAle)} label={t('dash.maxAle')} />
-                                </div>
+                                </StatTile>
                             </div>
                             <p className="mb-default flex items-center gap-tight text-xs text-content-subtle tabular-nums" data-testid="risk-quant-sum-line">
                                 {t('dash.sumLine', { amount: money(analytics.totals.totalAle) })}
@@ -347,32 +348,32 @@ export default function RiskDashboardPage() {
                     ) : (
                         <>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-default mb-default">
-                                <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="risk-quant-tile-total">
+                                <StatTile testId="risk-quant-tile-total">
                                     <KPIStat
                                         value={money(analytics.totals.totalAle)}
                                         label={t('dash.totalAle')}
                                     />
-                                </div>
-                                <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="risk-quant-tile-avg">
+                                </StatTile>
+                                <StatTile testId="risk-quant-tile-avg">
                                     <KPIStat
                                         value={money(analytics.totals.avgAle)}
                                         label={t('dash.avgAle')}
                                         tone="attention"
                                     />
-                                </div>
-                                <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="risk-quant-tile-max">
+                                </StatTile>
+                                <StatTile testId="risk-quant-tile-max">
                                     <KPIStat
                                         value={money(analytics.totals.maxAle)}
                                         label={t('dash.maxAle')}
                                         tone="critical"
                                     />
-                                </div>
-                                <div className="rounded-md bg-bg-muted/30 px-default py-default" data-testid="risk-quant-tile-cats">
+                                </StatTile>
+                                <StatTile testId="risk-quant-tile-cats">
                                     <KPIStat
                                         value={analytics.byCategory.length}
                                         label={t('dash.catsCarrying')}
                                     />
-                                </div>
+                                </StatTile>
                             </div>
                             <p className="mb-default text-xs text-content-subtle" data-testid="risk-quant-sum-nudge">
                                 {t('dash.sumNudge')}

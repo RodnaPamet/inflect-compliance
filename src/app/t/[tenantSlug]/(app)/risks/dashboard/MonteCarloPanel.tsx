@@ -24,6 +24,7 @@ import { LossExceedanceCurve, type LossReferenceLine } from '@/components/ui/cha
 import { useTenantApiUrl, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { formatDateTime } from '@/lib/format-date';
 import { useTranslations } from 'next-intl';
+import { StatTile } from '../_shared/StatTile';
 
 /** RQ2-6 — appetite payload from GET /risk-appetite (config + status). */
 export interface AppetitePayload {
@@ -150,10 +151,10 @@ export function MonteCarloPanel({
                         </div>
                     )}
                     <div className="mb-default grid grid-cols-2 gap-default md:grid-cols-4">
-                        <div className="rounded-md bg-bg-muted/30 px-default py-default"><KPIStat value={money(run.portfolioMean)} label={t('monteCarlo.meanAle')} /></div>
-                        <div className="rounded-md bg-bg-muted/30 px-default py-default"><KPIStat value={money(run.portfolioP95)} label={t('monteCarlo.var95')} tone="attention" /></div>
-                        <div className="rounded-md bg-bg-muted/30 px-default py-default"><KPIStat value={money(run.portfolioP99)} label={t('monteCarlo.var99')} tone="critical" /></div>
-                        <div className="rounded-md bg-bg-muted/30 px-default py-default"><KPIStat value={money(run.portfolioStdDev)} label={t('monteCarlo.stdDev')} /></div>
+                        <StatTile><KPIStat value={money(run.portfolioMean)} label={t('monteCarlo.meanAle')} /></StatTile>
+                        <StatTile><KPIStat value={money(run.portfolioP95)} label={t('monteCarlo.var95')} tone="attention" /></StatTile>
+                        <StatTile><KPIStat value={money(run.portfolioP99)} label={t('monteCarlo.var99')} tone="critical" /></StatTile>
+                        <StatTile><KPIStat value={money(run.portfolioStdDev)} label={t('monteCarlo.stdDev')} /></StatTile>
                     </div>
                     <div className="grid grid-cols-1 gap-section lg:grid-cols-2">
                         <div>

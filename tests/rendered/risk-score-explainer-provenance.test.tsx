@@ -15,7 +15,7 @@ jest.mock('@/lib/format-date', () => ({
     formatDateTime: () => '2026-06-11 12:00',
 }));
 
-import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
+import { RiskScoreExplainer } from '@/components/risks/RiskScoreExplainer';
 
 type Event = {
     kind: 'INHERENT' | 'RESIDUAL';
