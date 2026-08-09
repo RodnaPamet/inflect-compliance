@@ -44,7 +44,7 @@ import {
     computePLM,
     computeFairALE,
     pertMean,
-} from '@/app-layer/usecases/fair-calculator';
+} from '@/lib/fair-math';
 import {
     reflectTriple,
     validateFairTriples,

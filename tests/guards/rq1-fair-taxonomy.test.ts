@@ -13,7 +13,10 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('RQ-1 FAIR taxonomy', () => {
     it('the calculator exposes the FAIR ontology + resolver', () => {
-        const src = read('src/app-layer/usecases/fair-calculator.ts');
+        // B2-4 — the FAIR maths moved to src/lib/fair-math.ts so client
+        // components stop value-importing a usecase module; the path in
+        // app-layer is now a re-export shim.
+        const src = read('src/lib/fair-math.ts');
         for (const fn of ['computeLEF', 'computePLM', 'computeFairALE', 'computeTEF', 'computeVulnerability', 'sampleFairALE', 'pointToPert', 'resolveALE', 'seededRng']) {
             expect(src).toContain(`export function ${fn}`);
         }

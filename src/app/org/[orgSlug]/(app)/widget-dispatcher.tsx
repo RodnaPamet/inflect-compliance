@@ -23,7 +23,7 @@ import {
     type ChartRendererProps,
 } from '@/components/ui/dashboard-widgets';
 import type { OrgDashboardWidgetDto } from '@/app-layer/schemas/org-dashboard-widget.schemas';
-import { resolveWidgetTitle } from '@/app-layer/usecases/org-dashboard-widget-titles';
+import { resolveWidgetTitle } from '@/lib/org-dashboard-widget-titles';
 import type { OrgThreatLevelDto } from '@/app-layer/usecases/org-threat-level';
 import { OrgThreatLevelWidget } from './OrgThreatLevelWidget';
 import type { OrgMaturityDto } from '@/app-layer/usecases/org-maturity';

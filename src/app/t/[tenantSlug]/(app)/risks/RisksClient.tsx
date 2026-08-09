@@ -73,7 +73,7 @@ import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
-import { resolveALE } from '@/app-layer/usecases/fair-calculator';
+import { resolveALE } from '@/lib/fair-math';
 import { RiskAleChip } from './_shared/RiskAleChip';
 import { RiskCollisionCallouts } from './_shared/RiskCollisionCallouts';
 import { detectCellCollisions } from '@/lib/risk-collisions';

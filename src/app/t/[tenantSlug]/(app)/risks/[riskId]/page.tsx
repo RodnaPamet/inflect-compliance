@@ -37,7 +37,7 @@ import { cn } from '@/lib/cn';
 import { cardVariants } from '@/components/ui/card';
 import { EditRiskModal, type EditRiskForm } from './_modals/EditRiskModal';
 import { RiskAssessmentPanel } from './RiskAssessmentPanel';
-import { resolveALE } from '@/app-layer/usecases/fair-calculator';
+import { resolveALE } from '@/lib/fair-math';
 import { formatTailAwareAle } from '@/lib/tail-language';
 import { FairAnalysisPanel } from './FairAnalysisPanel';
 import { BowTiePanel } from './BowTiePanel';
