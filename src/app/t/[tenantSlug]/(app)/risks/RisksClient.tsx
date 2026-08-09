@@ -59,6 +59,7 @@ import {
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 import { resolveBandForScore } from '@/lib/risk-matrix/scoring';
+import { RISK_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
@@ -71,6 +72,7 @@ import { resolveALE } from '@/lib/fair-math';
 import { RiskAleChip } from './_shared/RiskAleChip';
 import { RiskCollisionCallouts } from './_shared/RiskCollisionCallouts';
 import { deriveMatrixMovements } from './_shared/matrix-movements';
+import { RiskBandChip } from './_shared/RiskBandChip';
 import { detectCellCollisions } from '@/lib/risk-collisions';
 import { AleHistogram, type AleHistogramDatum } from '@/components/ui/charts';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -767,18 +769,6 @@ function RisksPageInner({
         [matrixConfig.bands],
     );
 
-    // Workflow-status variants (Epic 44.4). The label set mirrors
-    // `RiskStatus` in the schema. Audit S1 (2026-05-24) added
-    // `MITIGATED` — controls implemented, residual accepted (distinct
-    // from CLOSED which means risk eliminated).
-    const STATUS_CLASS: Record<string, StatusBadgeVariant> = {
-        OPEN: 'warning',
-        MITIGATING: 'info',
-        MITIGATED: 'success',
-        ACCEPTED: 'neutral',
-        CLOSED: 'success',
-    };
-
     // ── Column Definitions ──
     const riskTableColumns = useMemo(() => createColumns<RiskListItem>([
         {
@@ -836,19 +826,8 @@ function RisksPageInner({
             cell: ({ getValue, row }) => {
                 const score = getValue<number>();
                 const band = resolveBandForScore(score, matrixConfig.bands);
-                // axe AA — `color-contrast`: the previous chip used
-                // `band.color` for both the tinted background AND the
-                // text, so the contrast ratio collapsed to ~2:1 (well
-                // below WCAG AA's 4.5:1 for small text). Splitting the
-                // visual roles fixes it without losing the band cue:
-                //   - background: tinted `band.color` (kept as the
-                //     band-recognition cue),
-                //   - dot: solid `band.color` (a second, higher-
-                //     saturation cue that reads even when the tint is
-                //     subtle),
-                //   - text: `text-content-emphasis` (the app's
-                //     designed-for-contrast neutral, ~16:1 against
-                //     either palette).
+                // The chip (and the axe-AA reasoning behind its three
+                // separated colour roles) lives in <RiskBandChip>.
                 return (
                     // RQ2-3 — every score chip explains itself; the
                     // popover lazy-fetches on open (no per-row cost).
@@ -859,21 +838,11 @@ function RisksPageInner({
                                 trigger so hover names the band and click still
                                 opens the score breakdown. */}
                             <Tooltip content={`${band.name} (${score})`}>
-                                <span
-                                    className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 font-bold tabular-nums text-content-emphasis"
-                                    style={{
-                                        backgroundColor: `${band.color}33`, // 20% alpha
-                                    }}
-                                    data-band={band.name}
-                                    data-testid={`risk-score-${row.original.id}`}
-                                >
-                                    <span
-                                        aria-hidden="true"
-                                        className="inline-block w-1.5 h-1.5 rounded-full"
-                                        style={{ backgroundColor: band.color }}
-                                    />
-                                    {score}
-                                </span>
+                                <RiskBandChip
+                                    value={score}
+                                    band={band}
+                                    testId={`risk-score-${row.original.id}`}
+                                />
                             </Tooltip>
                         </RiskScoreExplainer>
                         {/* RQ2-5 / RQ3-4 — qual ↔ quant side by
@@ -939,19 +908,11 @@ function RisksPageInner({
                 const band = resolveBandForScore(rs, matrixConfig.bands);
                 return (
                     <Tooltip content={`${band.name} (${rs})`}>
-                        <span
-                            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 font-bold tabular-nums text-content-emphasis"
-                            style={{ backgroundColor: `${band.color}33` }}
-                            data-band={band.name}
-                            data-testid={`risk-residual-${row.original.id}`}
-                        >
-                            <span
-                                aria-hidden="true"
-                                className="inline-block w-1.5 h-1.5 rounded-full"
-                                style={{ backgroundColor: band.color }}
-                            />
-                            {rs}
-                        </span>
+                        <RiskBandChip
+                            value={rs}
+                            band={band}
+                            testId={`risk-residual-${row.original.id}`}
+                        />
                     </Tooltip>
                 );
             },
@@ -1007,7 +968,7 @@ function RisksPageInner({
             cell: ({ row }) => {
                 const status = row.original.status ?? 'OPEN';
                 return (
-                    <StatusBadge variant={STATUS_CLASS[status] ?? 'neutral'} size="sm" data-testid={`risk-status-${row.original.id}`}>
+                    <StatusBadge variant={RISK_STATUS_VARIANT[status] ?? 'neutral'} size="sm" data-testid={`risk-status-${row.original.id}`}>
                         {riskStatusLabel(tx, status)}
                     </StatusBadge>
                 );
@@ -1074,7 +1035,7 @@ function RisksPageInner({
                 );
             },
         },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- STATUS_CLASS is a module constant; money/tenantHref/tenantSlug are stable per render pass. Adding them rebuilds every column def on each render, which remounts the DataTable model and breaks the dblclick-to-open row interaction (#1678).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- RISK_STATUS_VARIANT is a module constant (imported); money/tenantHref/tenantSlug are stable per render pass. Adding them rebuilds every column def on each render, which remounts the DataTable model and breaks the dblclick-to-open row interaction (#1678).
     ]), [t, tx, getRiskBand, matrixConfig, tailByRisk, sortAccessors, staleById]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
