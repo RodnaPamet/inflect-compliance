@@ -861,6 +861,14 @@ enum IntegrationExecutionStatus {
   // accounts / devices / roster / assignments). Distinct from PASSED: it must
   // NOT close findings or write APPROVED evidence — "no data" is not "compliant".
   NOT_APPLICABLE
+  // The run completed and produced output, but that output is INCOMPLETE.
+  // Distinct from PASSED (nothing was left out), FAILED/ERROR (no usable
+  // output at all) and NOT_APPLICABLE (nothing to do). First user: the
+  // SharePoint audit-pack export, which drops evidence that is infected,
+  // unscanned, deleted or over the size cap — and used to record those runs
+  // as PASSED, so the operator's only durable record of an incomplete pack
+  // said it was clean.
+  PARTIAL
 }
 
 enum SyncStatus {

@@ -226,8 +226,12 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
                         </Link>
                     );
                 }
+                // There is no `/audits/[id]` route — the hub is master-detail,
+                // so an audit's address is the hub with the pane pre-opened.
+                // This linked to `/audits/${a.id}` and 404'd on every finding
+                // raised outside a cycle.
                 return (
-                    <Link href={`/t/${tenantSlug}/audits/${a.id}`} className="text-xs text-content-default underline underline-offset-2" onClick={(e) => e.stopPropagation()}>
+                    <Link href={`/t/${tenantSlug}/audits?selected=${a.id}`} className="text-xs text-content-default underline underline-offset-2" onClick={(e) => e.stopPropagation()}>
                         {a.title}
                     </Link>
                 );

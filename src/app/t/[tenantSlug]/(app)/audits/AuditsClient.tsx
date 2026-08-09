@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -21,6 +21,7 @@ import { cn } from '@/lib/cn';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { NewAuditModal } from './NewAuditModal';
 import { NewFindingModal } from './NewFindingModal';
+import { EditAuditModal } from './EditAuditModal';
 // #6 — canonical audits status/result → badge-variant maps. The list and
 // detail views (and the cycle page) now share one authoritative reading so
 // CANCELLED can never disagree again.
@@ -99,6 +100,13 @@ interface AuditDetail {
     title: string;
     status: string;
     auditScope: string | null;
+    // Editable metadata — carried so `<EditAuditModal>` can seed from the
+    // audit already on screen instead of re-fetching it.
+    criteria?: string | null;
+    schedule?: string | null;
+    departments?: string | null;
+    frameworkKey?: string | null;
+    auditCycleId?: string | null;
     checklist: AuditChecklistItemRow[];
     findings: AuditFindingRow[];
 }
@@ -114,6 +122,7 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
     const toast = useToast();
     const [selected, setSelected] = useState<AuditDetail | null>(null);
     const [isFindingOpen, setIsFindingOpen] = useState(false);
+    const [isEditOpen, setIsEditOpen] = useState(false);
 
     // Modal-form follow-up — create-audit modal mounted off the list,
     // auto-opening on `?create=1` (the redirect target from
@@ -170,6 +179,31 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
             toast.error(tx('detail.loadError'));
         }
     };
+
+    /**
+     * Deep-link into one audit: `/audits?selected=<auditId>` opens that audit
+     * in the detail pane on arrival.
+     *
+     * The hub is a master-detail page, not a route per audit — there is no
+     * `/audits/[id]`. Anything that wanted to point AT an audit (the findings
+     * register's Source column, most visibly) had nowhere to point, so it
+     * linked to a URL that 404s. This is the address that pane never had.
+     *
+     * Ref-guarded rather than effect-dependency-guarded: `selected` changes on
+     * every row click, and re-running on that would drag the pane back to the
+     * query param and make the list unclickable. Tracking the last id we
+     * consumed means a browser back/forward to a different `?selected=` still
+     * re-opens, while local clicks are left alone.
+     */
+    const consumedSelectedParam = useRef<string | null>(null);
+    const selectedParam = searchParams.get('selected');
+    useEffect(() => {
+        if (!selectedParam || consumedSelectedParam.current === selectedParam) return;
+        consumedSelectedParam.current = selectedParam;
+        loadAudit(selectedParam);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAudit is
+        // re-created every render; the ref guard is what makes this run once.
+    }, [selectedParam]);
 
     // #4 — a failed PUT used to silently drop the result; surface it and
     // only refresh the pane once the write actually succeeded.
@@ -443,6 +477,11 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 <div className="flex flex-wrap gap-tight">
                                     {selected.status === 'PLANNED' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('IN_PROGRESS')}>{t.inProgress}</Button>}
                                     {selected.status === 'IN_PROGRESS' && <Button variant="secondary" size="sm" onClick={() => updateAuditStatus('COMPLETED')}>{t.completed}</Button>}
+                                    {canWrite && (
+                                        <Button variant="ghost" size="sm" id="edit-audit-btn" onClick={() => setIsEditOpen(true)}>
+                                            {tx('editModal.trigger')}
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
                             {selected.auditScope && <p className="text-sm text-content-muted">{selected.auditScope}</p>}
@@ -528,6 +567,19 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                     onCreated={() => {
                         // #8 — reload the detail AND revalidate the list key so the
                         // row's _count.findings stops showing a stale count.
+                        loadAudit(selected.id);
+                        auditsQuery.mutate();
+                    }}
+                />
+            )}
+
+            {selected && (
+                <EditAuditModal
+                    open={isEditOpen}
+                    setOpen={setIsEditOpen}
+                    audit={selected}
+                    onSaved={() => {
+                        // The title can change, so the list row is stale too.
                         loadAudit(selected.id);
                         auditsQuery.mutate();
                     }}

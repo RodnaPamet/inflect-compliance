@@ -33,6 +33,37 @@ export const SP_EXPORT_MAX_BYTES = 200 * 1024 * 1024;
 
 interface BundleFile { pathKey: string; name: string; scanStatus: string; status: string; deletedAt: Date | null }
 
+/**
+ * Why a file did not make it into the pack, counted per reason.
+ *
+ * These were one undifferentiated `skipped` number, which is how an audit pack
+ * handed to an external auditor could be silently missing evidence while the
+ * UI said "success" and the IntegrationExecution row said PASSED. The reasons
+ * are not interchangeable — "we refused to ship malware" and "your pack is
+ * over 200MB" need different words to the person holding the pack.
+ */
+export interface SkippedBreakdown {
+    /** Failed AV scan. Never bundled, in any scan mode. */
+    infected: number;
+    /** Scan still PENDING, or otherwise not yet cleared for download. */
+    unscanned: number;
+    /** Soft-deleted, or not in STORED state. */
+    deleted: number;
+    /** Would have pushed the ZIP past SP_EXPORT_MAX_BYTES. */
+    sizeCapped: number;
+    /** Storage read threw — the file is referenced but unreadable. */
+    unreadable: number;
+}
+
+/** Total across every reason. */
+export function totalSkipped(s: SkippedBreakdown): number {
+    return s.infected + s.unscanned + s.deleted + s.sizeCapped + s.unreadable;
+}
+
+const NO_SKIPS: SkippedBreakdown = {
+    infected: 0, unscanned: 0, deleted: 0, sizeCapped: 0, unreadable: 0,
+};
+
 /** Collect a storage Readable into a Buffer. */
 function streamToBuffer(stream: Readable): Promise<Buffer> {
     return new Promise((resolve, reject) => {
@@ -51,10 +82,10 @@ async function bundleEvidenceBinaries(
     ctx: RequestContext,
     packItems: Array<{ entityType: string; entityId: string }>,
     zip: JSZip,
-): Promise<{ bundled: number; skipped: number; bytes: number }> {
+): Promise<{ bundled: number; skipped: SkippedBreakdown; bytes: number }> {
     const evidenceIds = packItems.filter((i) => i.entityType === 'EVIDENCE').map((i) => i.entityId);
     const fileIds = packItems.filter((i) => i.entityType === 'FILE').map((i) => i.entityId);
-    if (evidenceIds.length === 0 && fileIds.length === 0) return { bundled: 0, skipped: 0, bytes: 0 };
+    if (evidenceIds.length === 0 && fileIds.length === 0) return { bundled: 0, skipped: { ...NO_SKIPS }, bytes: 0 };
 
     const files: BundleFile[] = await runInTenantContext(ctx, async (db) => {
         const out: BundleFile[] = [];
@@ -82,15 +113,22 @@ async function bundleEvidenceBinaries(
 
     const provider = getStorageProvider();
     let bundled = 0;
-    let skipped = 0;
+    const skipped: SkippedBreakdown = { ...NO_SKIPS };
     let bytes = 0;
     const usedNames = new Set<string>();
     for (const f of files) {
-        // Only bundle scanned-clean, stored, non-deleted files.
-        if (f.status !== 'STORED' || f.deletedAt || !isDownloadAllowed(f.scanStatus)) { skipped++; continue; }
+        // Only bundle scanned-clean, stored, non-deleted files. Each rejection
+        // is counted under its OWN reason — the caller has to be able to tell
+        // the auditor which it was.
+        if (f.status !== 'STORED' || f.deletedAt) { skipped.deleted++; continue; }
+        if (!isDownloadAllowed(f.scanStatus)) {
+            if (f.scanStatus === 'INFECTED') skipped.infected++;
+            else skipped.unscanned++;
+            continue;
+        }
         try {
             const buf = await streamToBuffer(provider.readStream(f.pathKey));
-            if (bytes + buf.byteLength > SP_EXPORT_MAX_BYTES) { skipped++; continue; }
+            if (bytes + buf.byteLength > SP_EXPORT_MAX_BYTES) { skipped.sizeCapped++; continue; }
             let name = f.name || 'file';
             if (usedNames.has(name)) name = `${bundled + 1}-${name}`; // de-dupe names within the ZIP
             usedNames.add(name);
@@ -98,7 +136,7 @@ async function bundleEvidenceBinaries(
             bundled++;
             bytes += buf.byteLength;
         } catch (err) {
-            skipped++;
+            skipped.unreadable++;
             edgeLogger.warn('Audit-pack export: evidence file read failed', {
                 component: 'sharepoint',
                 error: err instanceof Error ? err.message : String(err),
@@ -127,7 +165,14 @@ export async function exportAuditPackToSharePoint(
     packId: string,
     dest: SpExportDestination,
     deps: { fetchImpl?: typeof fetch; now?: () => Date } = {},
-): Promise<{ spItemId: string; webUrl: string }> {
+): Promise<{
+    spItemId: string;
+    webUrl: string;
+    bundled: number;
+    skipped: SkippedBreakdown;
+    skippedTotal: number;
+    bytes: number;
+}> {
     assertCanAdmin(ctx);
     if (!dest.driveId) throw badRequest('driveId is required');
 
@@ -149,6 +194,7 @@ export async function exportAuditPackToSharePoint(
     zip.file('items.csv', csv.csv);
     // SP-F2 — bundle the actual evidence binaries.
     const bundle = await bundleEvidenceBinaries(ctx, pack.items, zip);
+    const skippedTotal = totalSkipped(bundle.skipped);
     const bytes = await zip.generateAsync({ type: 'uint8array' });
 
     const connectionId =
@@ -176,9 +222,22 @@ export async function exportAuditPackToSharePoint(
                 connectionId,
                 provider: 'sharepoint',
                 automationKey: 'sharepoint.audit_pack_export',
-                status: 'PASSED',
+                // PARTIAL when anything was left out. This was hardcoded
+                // 'PASSED', so an export missing evidence recorded itself as a
+                // clean run — the operator's only durable record of the
+                // export said nothing was wrong.
+                status: skippedTotal > 0 ? 'PARTIAL' : 'PASSED',
                 triggeredBy: 'manual',
-                resultJson: { packId, fileName, spItemId: item.id, evidenceBundled: bundle.bundled, evidenceSkipped: bundle.skipped } as Prisma.InputJsonValue,
+                resultJson: {
+                    packId,
+                    fileName,
+                    spItemId: item.id,
+                    evidenceBundled: bundle.bundled,
+                    evidenceSkipped: skippedTotal,
+                    // Per-reason, so the row says WHY, not just how many.
+                    evidenceSkippedByReason: { ...bundle.skipped },
+                    bytes: bundle.bytes,
+                } as Prisma.InputJsonValue,
                 completedAt: now,
             },
         });
@@ -191,5 +250,15 @@ export async function exportAuditPackToSharePoint(
         });
     });
 
-    return { spItemId: item.id, webUrl: item.webUrl ?? '' };
+    // Return the counts, not just the link. The caller cannot warn about a
+    // partial pack it was never told about — the UI read `webUrl` and fired an
+    // unconditional success toast precisely because this was all it got.
+    return {
+        spItemId: item.id,
+        webUrl: item.webUrl ?? '',
+        bundled: bundle.bundled,
+        skipped: bundle.skipped,
+        skippedTotal,
+        bytes: bundle.bytes,
+    };
 }

@@ -1,0 +1,13 @@
+-- A run that completed but shipped INCOMPLETE output.
+--
+-- The SharePoint audit-pack export drops evidence files that are infected,
+-- still unscanned, soft-deleted, or that would push the ZIP past the 200MB
+-- cap — and recorded every one of those runs as PASSED. An audit pack handed
+-- to an external auditor could therefore be missing evidence while the only
+-- durable record of the export said it was clean.
+--
+-- PARTIAL is deliberately distinct from the neighbouring values:
+--   PASSED         — completed, nothing left out
+--   FAILED / ERROR — no usable output at all
+--   NOT_APPLICABLE — nothing to do (empty applicable population)
+ALTER TYPE "IntegrationExecutionStatus" ADD VALUE IF NOT EXISTS 'PARTIAL';

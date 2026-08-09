@@ -11,12 +11,11 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { EmptyState } from '@/components/ui/empty-state';
-import { useToast } from '@/components/ui/hooks';
+import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { cardVariants } from '@/components/ui/card';
 import { Plus, UserPlus, Xmark } from '@/components/ui/icons/nucleo';
 import { RequirePermission } from '@/components/require-permission';
@@ -57,8 +56,13 @@ export default function AuditorsManagementPage() {
 
     const [selectedPack, setSelectedPack] = useState<Record<string, string>>({});
     const [busyAuditor, setBusyAuditor] = useState<string | null>(null);
-    const [revokeTarget, setRevokeTarget] = useState<{ auditorId: string; packId: string } | null>(null);
     const [revokeAccountTarget, setRevokeAccountTarget] = useState<AuditorRow | null>(null);
+    // Account-level revoke is a TYPED confirmation, not a click-through: it
+    // cascades across every pack grant the auditor holds, which is the
+    // documented Epic 67 exception where a 5-second undo window is too short.
+    const [revokeAccountConfirmText, setRevokeAccountConfirmText] = useState('');
+    const [revokingAccount, setRevokingAccount] = useState(false);
+    const triggerUndoToast = useToastWithUndo();
 
     const loadAuditors = useCallback(() => {
         return fetch(apiUrl('/audits/auditors'))
@@ -147,31 +151,67 @@ export default function AuditorsManagementPage() {
         }
     };
 
-    const revokeAccess = async (auditorId: string, packId: string) => {
-        const res = await fetch(apiUrl('/audits/auditors/access'), {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ auditorId, packId }),
+    /**
+     * Drop ONE pack grant — routine, reversible, so it takes the Epic 67
+     * undo-toast rather than a click-through confirm. Canonical wiring per
+     * docs/destructive-actions.md: snapshot, optimistic remove, trigger.
+     * The DELETE only fires after the 5-second window elapses; Undo cancels
+     * it outright, so a mis-click never reaches the server.
+     */
+    const revokeAccess = (auditorId: string, packId: string) => {
+        const snapshot = auditors;
+        setAuditors((cur) =>
+            cur.map((a) =>
+                a.id === auditorId
+                    ? { ...a, packAccess: a.packAccess.filter((pa) => pa.auditPackId !== packId) }
+                    : a,
+            ),
+        );
+        triggerUndoToast({
+            message: tx('auditorsAdmin.revokeSuccess'),
+            undoMessage: tx('auditorsAdmin.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl('/audits/auditors/access'), {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auditorId, packId }),
+                });
+                if (!res.ok) throw new Error('revoke');
+                await loadAuditors();
+            },
+            // Undo and failure both restore what the user could see.
+            undoAction: () => setAuditors(snapshot),
+            onError: () => {
+                setAuditors(snapshot);
+                toast.error(tx('auditorsAdmin.revokeError'));
+            },
         });
-        if (res.ok) {
-            await loadAuditors();
-            toast.success(tx('auditorsAdmin.revokeSuccess'));
-        } else {
-            toast.error(tx('auditorsAdmin.revokeError'));
-        }
     };
 
     // PR-O — account-level revoke: flip the whole AuditorAccount to REVOKED and
     // drop every pack grant in one action (distinct from removing a single pack).
     const revokeAccount = async (auditorId: string) => {
-        const res = await fetch(apiUrl(`/audits/auditors/${auditorId}`), { method: 'DELETE' });
-        if (res.ok) {
-            await loadAuditors();
-            toast.success(tx('auditorsAdmin.revokeAccountSuccess'));
-        } else {
-            toast.error(tx('auditorsAdmin.revokeAccountError'));
+        setRevokingAccount(true);
+        try {
+            const res = await fetch(apiUrl(`/audits/auditors/${auditorId}`), { method: 'DELETE' });
+            if (res.ok) {
+                await loadAuditors();
+                toast.success(tx('auditorsAdmin.revokeAccountSuccess'));
+            } else {
+                toast.error(tx('auditorsAdmin.revokeAccountError'));
+            }
+        } finally {
+            setRevokingAccount(false);
         }
     };
+
+    const closeRevokeAccount = () => {
+        setRevokeAccountTarget(null);
+        setRevokeAccountConfirmText('');
+    };
+    /** What the operator must type. The auditor's email — unambiguous, and
+     *  visible on the row they clicked. */
+    const revokeAccountToken = revokeAccountTarget?.email ?? '';
 
     if (loading) {
         return (
@@ -270,7 +310,7 @@ export default function AuditorsManagementPage() {
                                                             className="-mr-1 h-5 w-5 min-w-0 border-0 px-0 text-content-subtle hover:text-content-error"
                                                             icon={<Xmark className="h-3 w-3" />}
                                                             aria-label={tx('auditorsAdmin.revokeAccessAria', { pack: packName(pa.auditPackId) })}
-                                                            onClick={() => setRevokeTarget({ auditorId: a.id, packId: pa.auditPackId })}
+                                                            onClick={() => revokeAccess(a.id, pa.auditPackId)}
                                                             id={`revoke-access-${a.id}-${pa.auditPackId}`}
                                                         />
                                                     </Tooltip>
@@ -357,35 +397,65 @@ export default function AuditorsManagementPage() {
                 </Modal.Form>
             </Modal>
 
-            {/* Revoke access confirmation */}
-            <ConfirmDialog
-                showModal={revokeTarget !== null}
-                setShowModal={(open) => { if (!open) setRevokeTarget(null); }}
-                tone="danger"
-                title={tx('auditorsAdmin.revokeAccessTitle')}
-                description={tx('auditorsAdmin.revokeAccessDesc')}
-                confirmLabel={tx('auditorsAdmin.revokeAccessConfirm')}
-                cancelLabel={tx('auditorsAdmin.cancel')}
-                onConfirm={async () => {
-                    if (revokeTarget) await revokeAccess(revokeTarget.auditorId, revokeTarget.packId);
-                    setRevokeTarget(null);
-                }}
-            />
-
-            {/* Account-level revoke confirmation */}
-            <ConfirmDialog
+            {/* Account-level revoke — TYPED confirmation.
+                This flips the whole AuditorAccount to REVOKED and drops every
+                pack grant at once. Epic 67 routes routine removals through the
+                undo toast, but names cascading actions as the exception: five
+                seconds is not long enough to reconsider revoking an external
+                auditor's entire access. Typing the email makes the target
+                explicit, so the wrong row cannot be revoked by momentum. */}
+            <Modal
                 showModal={revokeAccountTarget !== null}
-                setShowModal={(open) => { if (!open) setRevokeAccountTarget(null); }}
-                tone="danger"
+                setShowModal={(open) => { if (!open) closeRevokeAccount(); }}
                 title={tx('auditorsAdmin.revokeAccountTitle')}
-                description={tx('auditorsAdmin.revokeAccountDesc', { name: revokeAccountTarget?.name || revokeAccountTarget?.email || '' })}
-                confirmLabel={tx('auditorsAdmin.revokeAccountConfirm')}
-                cancelLabel={tx('auditorsAdmin.cancel')}
-                onConfirm={async () => {
-                    if (revokeAccountTarget) await revokeAccount(revokeAccountTarget.id);
-                    setRevokeAccountTarget(null);
-                }}
-            />
+            >
+                <Modal.Body>
+                    {revokeAccountTarget && (
+                        <div className="space-y-default" id="revoke-account-confirm">
+                            <p className="text-sm text-content-default">
+                                {tx('auditorsAdmin.revokeAccountDesc', {
+                                    name: revokeAccountTarget.name || revokeAccountTarget.email,
+                                })}
+                            </p>
+                            <FormField
+                                label={tx('auditorsAdmin.revokeAccountTypeToConfirm', {
+                                    name: revokeAccountToken,
+                                })}
+                                required
+                            >
+                                <Input
+                                    value={revokeAccountConfirmText}
+                                    onChange={(e) => setRevokeAccountConfirmText(e.target.value)}
+                                    autoComplete="off"
+                                    autoFocus
+                                    placeholder={revokeAccountToken}
+                                    id="revoke-account-confirm-input"
+                                />
+                            </FormField>
+                        </div>
+                    )}
+                </Modal.Body>
+                <Modal.Actions>
+                    <Button variant="secondary" onClick={closeRevokeAccount}>
+                        {tx('auditorsAdmin.cancel')}
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        id="revoke-account-confirm-submit"
+                        disabled={
+                            revokingAccount ||
+                            revokeAccountConfirmText.trim() !== revokeAccountToken
+                        }
+                        onClick={async () => {
+                            if (!revokeAccountTarget) return;
+                            await revokeAccount(revokeAccountTarget.id);
+                            closeRevokeAccount();
+                        }}
+                    >
+                        {tx('auditorsAdmin.revokeAccountConfirm')}
+                    </Button>
+                </Modal.Actions>
+            </Modal>
         </div>
     );
 }
