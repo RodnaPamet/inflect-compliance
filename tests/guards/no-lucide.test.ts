@@ -201,7 +201,7 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/ui/metric.tsx',
     'src/components/ui/modal.tsx',
     'src/components/ui/RichTextEditor.tsx',
-    'src/components/ui/RiskMatrix.tsx',
+    'src/components/risks/RiskMatrix.tsx',
     'src/components/ui/sheet.tsx',
     // R-filter-gear (2026-06-07): the shared gear-popover primitive + the
     // two thin wrappers carry the gear icons (Settings / Columns3 /

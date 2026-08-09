@@ -34,7 +34,7 @@ import { useToast } from '@/components/ui/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { NumberStepper } from '@/components/ui/number-stepper';
-import { RiskMatrix } from '@/components/ui/RiskMatrix';
+import { RiskMatrix } from '@/components/risks/RiskMatrix';
 import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
 import {
     validateBandsCoverage,

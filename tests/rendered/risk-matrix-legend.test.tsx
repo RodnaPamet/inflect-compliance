@@ -13,7 +13,7 @@
 import { render, screen, within } from '@testing-library/react';
 import * as React from 'react';
 
-import { RiskMatrixLegend } from '@/components/ui/RiskMatrixLegend';
+import { RiskMatrixLegend } from '@/components/risks/RiskMatrixLegend';
 import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
 
 describe('<RiskMatrixLegend>', () => {

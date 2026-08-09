@@ -27,8 +27,8 @@ const risksClient = read('src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx');
 const riskDetail = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
 const dashboard = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx');
 const dashboardOrchestrator = read('src/app-layer/usecases/risk-dashboard.ts');
-const matrix = read('src/components/ui/RiskMatrix.tsx');
-const matrixCell = read('src/components/ui/RiskMatrixCell.tsx');
+const matrix = read('src/components/risks/RiskMatrix.tsx');
+const matrixCell = read('src/components/risks/RiskMatrixCell.tsx');
 const repo = read('src/app-layer/repositories/RiskRepository.ts');
 
 describe('RQ2-5 — both languages on every surface', () => {

@@ -186,7 +186,7 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/ui/NextBestActionCard.tsx',
     'src/components/ui/OnboardingTour.tsx',
     'src/components/ui/ProgressCard.tsx',
-    'src/components/ui/RiskMatrixCell.tsx',
+    'src/components/risks/RiskMatrixCell.tsx',
     'src/components/ui/SankeyChart.tsx',
     'src/components/ui/TreeExpandCollapseToggle.tsx',
     'src/components/ui/TreeView.tsx',

@@ -134,8 +134,8 @@ describe('Risks list — Epic 44.4 column + matrix wiring', () => {
         // next/dynamic (it's the heatmap-view-only panel, code-split out of
         // the initial chunk — see the perf(bundle) note). Either form counts
         // as "uses the engine".
-        const staticImport = /import\s*\{\s*RiskMatrix\s*\}\s*from\s*['"]@\/components\/ui\/RiskMatrix['"]/;
-        const dynamicImport = /import\(\s*['"]@\/components\/ui\/RiskMatrix['"]\s*\)/;
+        const staticImport = /import\s*\{\s*RiskMatrix\s*\}\s*from\s*['"]@\/components\/risks\/RiskMatrix['"]/;
+        const dynamicImport = /import\(\s*['"]@\/components\/risks\/RiskMatrix['"]\s*\)/;
         expect(staticImport.test(clientSrc) || dynamicImport.test(clientSrc)).toBe(true);
         expect(clientSrc).toMatch(/<RiskMatrix\b/);
         // Ensures the bespoke gradient classes from the legacy heatmap

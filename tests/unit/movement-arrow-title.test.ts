@@ -8,7 +8,7 @@
 import {
     movementArrowTitle,
     MOVEMENT_ARROW_TOOLTIP_MAX,
-} from '@/components/ui/RiskMatrix';
+} from '@/components/risks/RiskMatrix';
 
 describe('movementArrowTitle', () => {
     it('empty list → empty string (caller skips the <title>)', () => {
