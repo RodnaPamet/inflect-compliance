@@ -50,6 +50,7 @@ import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 import type { ResidualSuggestionPayload } from '@/app-layer/usecases/risk-residual-suggestion';
 import { ApiClientError } from '@/lib/api-client';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { extractMutationError } from '@/lib/mutations';
 
 // Epic G-7 — the structured treatment plan now lives INSIDE the guided
 // assessment (Step 4), not scattered on the Overview tab. Dynamic-imported
@@ -309,7 +310,7 @@ export function RiskAssessmentPanel({
             onRiskUpdated();
             await reloadSuggestion();
         } catch (err) {
-            setStepError('inherent', err instanceof Error ? err.message : t('assessment.failedSave'));
+            setStepError('inherent', extractMutationError(err, t('assessment.failedSave')));
         } finally {
             setSavingInherent(false);
         }
@@ -338,7 +339,7 @@ export function RiskAssessmentPanel({
             onRiskUpdated();
             await reloadSuggestion();
         } catch (err) {
-            setStepError('accept', err instanceof Error ? err.message : t('assessment.failedAccept'));
+            setStepError('accept', extractMutationError(err, t('assessment.failedAccept')));
         } finally {
             setAccepting(false);
         }
@@ -363,7 +364,7 @@ export function RiskAssessmentPanel({
             onRiskUpdated();
             await reloadSuggestion();
         } catch (err) {
-            setStepError('residual', err instanceof Error ? err.message : t('assessment.failedSave'));
+            setStepError('residual', extractMutationError(err, t('assessment.failedSave')));
         } finally {
             setSavingResidual(false);
         }
@@ -384,7 +385,7 @@ export function RiskAssessmentPanel({
             if (!res.ok) throw new Error(t('assessment.failedTreatmentStatus', { status: res.status }));
             onRiskUpdated();
         } catch (err) {
-            setStepError('treatment', err instanceof Error ? err.message : t('assessment.failedSave'));
+            setStepError('treatment', extractMutationError(err, t('assessment.failedSave')));
         } finally {
             setSavingTreatment(false);
         }
@@ -405,7 +406,7 @@ export function RiskAssessmentPanel({
             toast.success(t('assessment.saveReviewDate'));
             onRiskUpdated();
         } catch (err) {
-            setStepError('review', err instanceof Error ? err.message : t('assessment.failedSave'));
+            setStepError('review', extractMutationError(err, t('assessment.failedSave')));
         } finally {
             setSavingReview(false);
         }
