@@ -38,7 +38,7 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 describe("Audit S7 — ISO + NIS2 routed through loadEffectiveWeights", () => {
-    const src = () => read("src/app-layer/usecases/audit-readiness-scoring.ts");
+    const src = () => read("src/app-layer/usecases/audit-readiness/scoring.ts");
 
     function isoBody(): string {
         const s = src();

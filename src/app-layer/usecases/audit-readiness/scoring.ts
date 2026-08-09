@@ -22,15 +22,34 @@
  * readiness score. Approval is load-bearing: a DRAFT / SUBMITTED /
  * expired row no longer satisfies a control's evidence dimension.
  */
-import { type AuditCycle, type Applicability, type WorkItemStatus, Prisma } from '@prisma/client';
-import { RequestContext } from '../types';
-import { assertCanViewPack } from '../policies/audit-readiness.policies';
-import { logEvent } from '../events/audit';
+import { type AuditCycle, type Applicability, type WorkItemStatus } from '@prisma/client';
+import { RequestContext } from '../../types';
+import { assertCanViewPack } from '../../policies/audit-readiness.policies';
+import { logEvent } from '../../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
-import { NIS2_SOURCE_KIND } from './nis2-readiness';
+import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
+import { NIS2_SOURCE_KIND } from '../nis2-readiness';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
+import { readinessBand } from '@/lib/readiness/bands';
+
+/**
+ * The engine that produces the score owns the bands that read it. The numbers
+ * themselves live in the dependency-free `@/lib/readiness/bands` so client
+ * components can import them without pulling Prisma into the browser bundle;
+ * this re-export is how server callers reach them, and is the reason a
+ * renderer never needs to know what 80 and 50 are.
+ */
+export {
+    readinessBand,
+    readinessVariant,
+    readinessTone,
+    READINESS_BAND_MIN,
+    READINESS_BAND_VARIANT,
+    READINESS_BAND_TONE,
+    READINESS_BAND_COLOR_VAR,
+    type ReadinessBand,
+} from '@/lib/readiness/bands';
 
 
 // ─── Types ───
@@ -223,7 +242,6 @@ export async function computeReadiness(ctx: RequestContext, cycleId: string): Pr
                     frameworkKey: result.frameworkKey,
                     auditCycleId: cycleId,
                     score: result.score,
-                    breakdownJson: result.breakdown as unknown as Prisma.InputJsonValue,
                     gapCount: result.gaps.length,
                     computedByUserId: ctx.userId,
                 },
@@ -728,14 +746,20 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle): Pro
 }
 
 // ─── Recommendations ───
+//
+// The prose bands are the SAME bands the ring and the badges paint, so they
+// go through `readinessBand` rather than re-writing 50 and 80. Before this,
+// a dimension could read "amber" on screen while its recommendation was
+// worded for the red band — the two were separately-maintained copies of one
+// rule.
 
 function generateISO27001Recommendations(coverage: number, impl: number, evidence: number, overdue: number, issues: number): string[] {
     const recs: string[] = [];
-    if (coverage < 50) recs.push('Map more Annex A requirements to controls — coverage is below 50%');
-    else if (coverage < 80) recs.push('Continue mapping requirements — aim for 80%+ coverage before audit');
+    if (readinessBand(coverage) === 'atRisk') recs.push('Map more Annex A requirements to controls — coverage is below 50%');
+    else if (readinessBand(coverage) === 'nearly') recs.push('Continue mapping requirements — aim for 80%+ coverage before audit');
     if (impl < 60) recs.push('Focus on implementing controls — many APPLICABLE controls are not yet IMPLEMENTED');
-    if (evidence < 50) recs.push('Attach evidence to controls — auditors will expect documentation for each control');
-    else if (evidence < 80) recs.push('Strengthen evidence collection — aim for 80%+ controls with evidence');
+    if (readinessBand(evidence) === 'atRisk') recs.push('Attach evidence to controls — auditors will expect documentation for each control');
+    else if (readinessBand(evidence) === 'nearly') recs.push('Strengthen evidence collection — aim for 80%+ controls with evidence');
     if (overdue > 5) recs.push(`Address ${overdue} overdue tasks to improve audit readiness`);
     else if (overdue > 0) recs.push(`Close remaining ${overdue} overdue task(s)`);
     if (issues > 3) recs.push(`Resolve ${issues} open audit findings/control gaps before audit`);
@@ -745,10 +769,10 @@ function generateISO27001Recommendations(coverage: number, impl: number, evidenc
 
 function generateNIS2Recommendations(coverage: number, evidence: number, policies: number, issues: number): string[] {
     const recs: string[] = [];
-    if (coverage < 50) recs.push('Map NIS2 requirements (Art.21 measures) to controls — coverage below 50%');
-    else if (coverage < 80) recs.push('Continue mapping NIS2 requirements — aim for full Art.21 coverage');
-    if (evidence < 50) recs.push('Attach evidence to mapped controls — NIS2 requires demonstrable measures');
-    if (policies < 50) recs.push('Link governing policies to your NIS2 controls — most in-scope controls have no policy attached');
+    if (readinessBand(coverage) === 'atRisk') recs.push('Map NIS2 requirements (Art.21 measures) to controls — coverage below 50%');
+    else if (readinessBand(coverage) === 'nearly') recs.push('Continue mapping NIS2 requirements — aim for full Art.21 coverage');
+    if (readinessBand(evidence) === 'atRisk') recs.push('Attach evidence to mapped controls — NIS2 requires demonstrable measures');
+    if (readinessBand(policies) === 'atRisk') recs.push('Link governing policies to your NIS2 controls — most in-scope controls have no policy attached');
     else if (policies < 100) recs.push('Attach policies to the remaining unlinked NIS2 controls to demonstrate governance');
     if (issues > 3) recs.push(`Address ${issues} open issues to reduce compliance risk`);
     if (recs.length === 0) recs.push('NIS2 readiness is strong — prepare for notification to competent authority');
@@ -835,7 +859,9 @@ export async function exportControlGapsCsv(ctx: RequestContext, cycleId: string)
 export async function addReadinessToPack(ctx: RequestContext, packId: string, cycleId: string) {
     assertCanViewPack(ctx);
     const result = await scoreReadiness(ctx, cycleId);
-    const { addAuditPackItems } = await import('./audit-readiness');
+    // Deferred import: `packs` imports nothing from here, but the barrel does,
+    // so a static import would close the cycle. Now a sibling, not '../'.
+    const { addAuditPackItems } = await import('./packs');
     return addAuditPackItems(ctx, packId, [{
         entityType: 'READINESS_REPORT',
         entityId: cycleId,

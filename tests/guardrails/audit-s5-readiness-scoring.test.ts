@@ -13,7 +13,7 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 describe('Audit S5 — Audit Readiness & Scoring', () => {
     describe('schema', () => {
-        const audit = read('prisma/schema/audit.prisma');
+        const audit = read('prisma/schema/audit-workflow.prisma');
         const auth = read('prisma/schema/auth.prisma');
 
         it('ReadinessSnapshot model exists with required fields', () => {
@@ -21,7 +21,6 @@ describe('Audit S5 — Audit Readiness & Scoring', () => {
             expect(audit).toMatch(/frameworkKey\s+String/);
             expect(audit).toMatch(/auditCycleId\s+String\?/);
             expect(audit).toMatch(/score\s+Int\b/);
-            expect(audit).toMatch(/breakdownJson\s+Json\b/);
             expect(audit).toMatch(/gapCount\s+Int/);
             expect(audit).toMatch(/computedAt\s+DateTime/);
         });
@@ -54,7 +53,7 @@ describe('Audit S5 — Audit Readiness & Scoring', () => {
     });
 
     describe('scoring usecase', () => {
-        const src = read('src/app-layer/usecases/audit-readiness-scoring.ts');
+        const src = read('src/app-layer/usecases/audit-readiness/scoring.ts');
 
         it('computeReadiness no longer throws notFound for unknown frameworks', () => {
             // Pre-this-PR an unknown framework was a `throw notFound`.

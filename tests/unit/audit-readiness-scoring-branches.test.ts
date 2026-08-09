@@ -3,7 +3,7 @@
  * cost/benefit in test files (file-level disable is the codebase norm). */
 /**
  * Branch-coverage companion for
- * src/app-layer/usecases/audit-readiness-scoring.ts
+ * src/app-layer/usecases/audit-readiness/scoring.ts
  *
  * The existing suite (tests/unit/usecases/audit-readiness-scoring.test.ts)
  * covers the weight invariants, the gate, framework dispatch, the
@@ -39,7 +39,10 @@ jest.mock('@/app-layer/policies/audit-readiness.policies', () => ({
     assertCanViewPack: jest.fn(),
 }));
 
-jest.mock('@/app-layer/usecases/audit-readiness', () => ({
+// `addReadinessToPack` lazily imports `addAuditPackItems`. That import used
+// to reach the barrel; now that scoring.ts lives inside the module it is a
+// direct sibling, so the mock follows it to `./packs`.
+jest.mock('@/app-layer/usecases/audit-readiness/packs', () => ({
     addAuditPackItems: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
@@ -47,7 +50,7 @@ import {
     computeReadiness,
     getReadinessHistory,
     addReadinessToPack,
-} from '@/app-layer/usecases/audit-readiness-scoring';
+} from '@/app-layer/usecases/audit-readiness/scoring';
 import { assertCanViewPack } from '@/app-layer/policies/audit-readiness.policies';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -633,7 +636,7 @@ describe('addReadinessToPack', () => {
             controlsApplicable: [],
             controlsWithEvidence: [],
         });
-        const { addAuditPackItems } = await import('@/app-layer/usecases/audit-readiness');
+        const { addAuditPackItems } = await import('@/app-layer/usecases/audit-readiness/packs');
         const res = await addReadinessToPack(ctx, 'pack1', 'c1');
         expect(res).toEqual({ ok: true });
         expect(addAuditPackItems as jest.Mock).toHaveBeenCalledWith(

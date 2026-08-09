@@ -1,117 +1,22 @@
 // ─────────────────────────────────────────────────────────────────
-//  GAP-09 — multi-file schema: AUDIT (cycles, packs, log)
+//  AUDIT WORKFLOW — the compliance-audit domain (external auditors).
 //
 //  Owns:
-//    • AuditCycle + AuditPack + AuditPackItem + AuditPackShare
-//    • AuditorAccess (external auditor RBAC tier)
-//    • AuditLog (hash-chained immutable audit trail — Epic A.1)
-//    • AuditStreamConfig (Epic C.4 — outbound webhook config per tenant)
+//    • Audit + AuditChecklistItem   — a fieldwork audit and its checklist
+//    • AuditCycle                   — the engagement a fieldwork audit sits in
+//    • AuditPack + AuditPackItem    — the evidence bundle handed to an auditor
+//    • AuditPackShare + …Comment    — the share link and its comment thread
+//    • AuditorAccount + AuditorPackAccess — external-auditor RBAC tier
+//    • ReadinessSnapshot            — the readiness trend time-series
 //
-//  Note: this is the EXTERNAL-AUDITOR domain — readiness scoring,
-//  evidence packs shared with auditors, hash-chained event log.
-//  Internal "audit-of-controls" tasks live with `Control*` in
-//  `compliance.prisma` because they're written and read by the
-//  compliance team, not auditors.
+//  THIS IS NOT THE PLATFORM AUDIT TRAIL. The hash-chained immutable
+//  event log (AuditLog / OrgAuditLog) lives in `audit-trail.prisma`.
+//  See that file's header for why the two were separated.
 //
-//  AuditLog policy:
-//    • Append-only at the application layer (`logEvent`). Direct
-//      writes are blocked by guard tests and DB triggers.
-//    • Hash-chained (each row's hash includes the previous row's
-//      hash). Schema changes here MUST preserve the chain layout.
-//
-//  This file is currently empty. Models will land here in a focused
-//  follow-up PR.
+//  Internal "audit-of-controls" tasks live with `Control*` in the
+//  controls schema — they're written and read by the compliance team,
+//  not by auditors.
 // ─────────────────────────────────────────────────────────────────
-
-model AuditLog {
-  id                  String               @id @default(cuid())
-  tenantId            String
-  userId              String?
-  entity              String
-  entityId            String
-  action              String
-  details             String?
-  createdAt           DateTime             @default(now())
-  metadataJson        Json?
-  recordIds           Json?
-  requestId           String?
-  diffJson            Json?
-  actorType           String               @default("USER")
-  detailsJson         Json?
-  entryHash           String?
-  previousHash        String?
-  version             Int                  @default(1)
-  tenant              Tenant               @relation(fields: [tenantId], references: [id])
-  user                User?                @relation(fields: [userId], references: [id])
-  /// Verified agent-action receipts linked to this hash-chained entry (Epic:
-  /// agent-action-receipts). Back-relation only — adds no column to AuditLog.
-  agentActionReceipts AgentActionReceipt[]
-
-  @@index([tenantId])
-  @@index([tenantId, createdAt])
-  @@index([tenantId, entity])
-  @@index([tenantId, action])
-  @@index([tenantId, entryHash])
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Epic B — Org Audit Trail & Compliance Integrity (SOC 2 CC6.1)
-//
-// Immutable, hash-chained ledger for org-level privilege changes.
-// Distinct from AuditLog because:
-//   • org events are NOT tenant-scoped — AuditLog requires tenantId
-//     and uses a per-tenant chain anchored on
-//     pg_advisory_xact_lock(hashtext(tenantId)). Forcing tenantId
-//     nullable to host org events would break the load-bearing
-//     chain semantics, the audit-stream batching, and the tenant
-//     RLS policies on AuditLog.
-//   • org chain is per-organization (one chain per org), keyed
-//     independently from tenant chains.
-//
-// Append-only:
-//   • DB trigger forbids UPDATE/DELETE (mirrors AuditLog).
-//   • REVOKE UPDATE,DELETE FROM app_user; GRANT SELECT,INSERT.
-//
-// Hash chain:
-//   • SHA-256(canonical(actorType, actorUserId, action, detailsJson,
-//     occurredAt, organizationId, previousHash, targetUserId, version))
-//   • previousHash links to entryHash of the prior row in this org's
-//     chain. First entry per org has previousHash = null.
-//
-// Action taxonomy (OrgAuditAction enum):
-//   ORG_MEMBER_ADDED                   — addOrgMember
-//   ORG_MEMBER_REMOVED                 — removeOrgMember
-//   ORG_MEMBER_ROLE_CHANGED            — changeOrgMemberRole
-//   ORG_ADMIN_PROVISIONED_TO_TENANTS   — fan-out summary (one row,
-//                                        not per tenant noise)
-//   ORG_ADMIN_DEPROVISIONED_FROM_TENANTS — fan-in summary
-//
-// Provisioning fan-out is summarized as ONE org audit row carrying
-// `{ tenantCount, tenantIds[], role: 'AUDITOR' }` in detailsJson.
-// Per-tenant rows still land in AuditLog (existing behaviour) so
-// each tenant's own ledger remains complete.
-model OrgAuditLog {
-  id             String         @id @default(cuid())
-  organizationId String
-  actorUserId    String?
-  actorType      String         @default("USER")
-  action         OrgAuditAction
-  targetUserId   String?
-  detailsJson    Json?
-  requestId      String?
-  occurredAt     DateTime       @default(now())
-  entryHash      String
-  previousHash   String?
-  version        Int            @default(1)
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  actor        User?        @relation("OrgAuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
-  target       User?        @relation("OrgAuditLogTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
-
-  @@index([organizationId, occurredAt])
-  @@index([organizationId, action])
-  @@index([organizationId, entryHash])
-}
 
 model Audit {
   id              String               @id @default(cuid())
@@ -281,6 +186,7 @@ model AuditPackShare {
 //   • `status` is OPEN until a tenant user resolves an actionable row
 //     (EVIDENCE_REQUEST / FINDING / QUESTION); `resolvedByUserId` is the
 //     tenant user who did so.
+
 model AuditPackShareComment {
   id               String                  @id @default(cuid())
   tenantId         String
@@ -356,6 +262,7 @@ model AuditorPackAccess {
 /// historic scores existed only inside audit packs (a heavy
 /// artefact, not a chartable time series). This model gives the
 /// dashboard a cheap source for the readiness-over-time chart.
+
 model ReadinessSnapshot {
   id               String   @id @default(cuid())
   tenantId         String
@@ -368,11 +275,18 @@ model ReadinessSnapshot {
   auditCycleId     String?
   /// 0-100 weighted score (rounded to integer to match the API).
   score            Int
-  /// Full ReadinessBreakdown payload as written by the scoring
-  /// engine. Read-side joins this for the trend chart's tooltips.
-  breakdownJson    Json
-  /// Count of gaps at snapshot time — surfaces in the chart's
-  /// per-point tooltip without re-loading the breakdown.
+  /// Count of gaps at snapshot time — the trend chart's per-point tooltip.
+  ///
+  /// This model used to carry a `breakdownJson Json` column too, whose comment
+  /// claimed "Read-side joins this for the trend chart's tooltips". No such
+  /// reader ever existed: both read paths (`getReadinessHistory` and
+  /// `listNis2ReadinessSnapshots`) use an explicit `select` that omitted it.
+  /// Meanwhile two engines wrote it in INCOMPATIBLE shapes — the ISO/generic
+  /// scorer wrote a full ReadinessBreakdown, the NIS2 scorer wrote
+  /// `{ byDomain, fineExposureGaps }` — with no discriminator but
+  /// `frameworkKey`, so nothing could have read it safely anyway. It was the
+  /// heaviest column on the model, written on every score change. Dropped
+  /// 2026-08-10; `score` + `gapCount` are what the tooltip actually shows.
   gapCount         Int      @default(0)
   computedAt       DateTime @default(now())
   /// Caller — NULL for cron-driven sweeps (none today; reserved).

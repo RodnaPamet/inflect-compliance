@@ -8,7 +8,7 @@
  * them together, each unambiguously labelled with a one-line explanation of
  * what it measures, so they read as complementary rather than contradictory:
  *
- *   • Control coverage    — audit-readiness-scoring per cycle (mapping /
+ *   • Control coverage    — audit-readiness/scoring per cycle (mapping /
  *                           implementation / evidence).
  *   • Self-assessment     — nis2-readiness maturity (answers to the gap
  *     maturity              questionnaire).
@@ -26,11 +26,15 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { cardVariants } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { cn } from '@/lib/cn';
+import { readinessTone, readinessVariant } from '@/lib/readiness/bands';
 
 interface Cycle { id: string; name: string; frameworkKey: string; status: string }
 interface TestReadiness { frameworkKey: string; frameworkName: string; testPlanCoverage: number; testRunCoverage: number; passRate: number }
 
-const pctTone = (n: number) => (n >= 80 ? 'success' : n >= 50 ? 'attention' : 'critical');
+// This page's return is what reintroduced four copies of the 80/50
+// thresholds — in TWO vocabularies, one line apart. Both now come from the
+// single definition in `@/lib/readiness/bands`; `readinessTone` speaks the
+// KPI scale, `readinessVariant` the badge scale.
 
 export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) {
     const tx = useTranslations('audits');
@@ -94,7 +98,7 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
                     </div>
                     <div className="flex items-center justify-between">
                         <div className="rounded-lg bg-bg-default/50 px-4 py-3">
-                            <KPIStat value={`${Math.round(maturity)}%`} label={tx('overview.maturityLabel')} tone={pctTone(maturity)} />
+                            <KPIStat value={`${Math.round(maturity)}%`} label={tx('overview.maturityLabel')} tone={readinessTone(maturity)} />
                         </div>
                         <Link href={`/t/${tenantSlug}/audits/nis2-gap`} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
                             {tx('overview.openGapAssessment')}
@@ -122,13 +126,13 @@ export function ReadinessOverviewClient({ tenantSlug }: { tenantSlug: string }) 
                             <div key={t.frameworkKey} className="rounded-lg border border-border-subtle p-3 space-y-tight">
                                 <p className="text-sm font-medium text-content-emphasis">{t.frameworkName}</p>
                                 <div className="flex flex-wrap gap-tight">
-                                    <StatusBadge variant={t.testPlanCoverage >= 80 ? 'success' : t.testPlanCoverage >= 50 ? 'warning' : 'error'}>
+                                    <StatusBadge variant={readinessVariant(t.testPlanCoverage)}>
                                         {tx('overview.planCoverage', { pct: Math.round(t.testPlanCoverage) })}
                                     </StatusBadge>
-                                    <StatusBadge variant={t.testRunCoverage >= 80 ? 'success' : t.testRunCoverage >= 50 ? 'warning' : 'error'}>
+                                    <StatusBadge variant={readinessVariant(t.testRunCoverage)}>
                                         {tx('overview.runCoverage', { pct: Math.round(t.testRunCoverage) })}
                                     </StatusBadge>
-                                    <StatusBadge tone="subtle" variant={t.passRate >= 80 ? 'success' : t.passRate >= 50 ? 'warning' : 'error'}>
+                                    <StatusBadge tone="subtle" variant={readinessVariant(t.passRate)}>
                                         {tx('overview.passRate', { pct: Math.round(t.passRate) })}
                                     </StatusBadge>
                                 </div>

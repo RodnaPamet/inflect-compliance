@@ -139,7 +139,7 @@ const RATCHET_FLOOR: Record<string, Metrics> = {
     // lines, NEVER from `coverage-summary.json`'s total (which
     // overstated usecases by ~loaded-only bias).
     // Wave D batch 1 added branch tests for soa / automation-runner /
-    // risk-report / audit-readiness-scoring / policy-lifecycle-adapter /
+    // risk-report / audit-readiness/scoring / policy-lifecycle-adapter /
     // scim-users / risk-appetite / risk-scenario; gate actual for
     // usecases/ rose to branches 79.97 / fn 82.49 / lines 89.65 /
     // stmts 88.47. Hard floor bumped to the pre-batch enforced level.

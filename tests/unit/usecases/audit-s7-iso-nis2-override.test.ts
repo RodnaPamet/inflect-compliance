@@ -26,7 +26,10 @@ jest.mock("../../../src/app-layer/events/audit", () => ({
     logEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("@/app-layer/usecases/audit-readiness", () => ({
+// `addReadinessToPack` lazily imports `addAuditPackItems`. That import used
+// to reach the barrel; now that scoring.ts lives inside the module it is a
+// direct sibling, so the mock follows it to `./packs`.
+jest.mock("@/app-layer/usecases/audit-readiness/packs", () => ({
     addAuditPackItems: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
@@ -34,7 +37,7 @@ import {
     computeReadiness,
     ISO_WEIGHTS,
     NIS2_WEIGHTS,
-} from "@/app-layer/usecases/audit-readiness-scoring";
+} from "@/app-layer/usecases/audit-readiness/scoring";
 import { runInTenantContext } from "@/lib/db-context";
 import type { RequestContext } from "@/app-layer/types";
 

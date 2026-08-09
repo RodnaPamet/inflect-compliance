@@ -23,7 +23,8 @@
 //    auth.prisma         (User / Tenant / Membership / Session)
 //    compliance.prisma   (Control / Risk / Evidence / Framework)
 //    vendor.prisma       (Vendor / VendorAssessment)
-//    audit.prisma        (AuditCycle / AuditPack / AuditLog)
+//    audit-trail.prisma     (AuditLog / OrgAuditLog — hash-chained)
+//    audit-workflow.prisma  (Audit / AuditCycle / AuditPack / Auditor*)
 //    automation.prisma   (AutomationRule / AutomationExecution / Integration)
 //    schema.prisma       (transitional — holds models not yet
 //                         relocated to a domain file. Will shrink to

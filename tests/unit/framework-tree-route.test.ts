@@ -8,7 +8,7 @@
  *     (`assertCanViewFrameworks` rejects)
  *   - 404 when the underlying framework key is unknown
  *
- * Mirrors the route-test pattern at `tests/unit/org-audit-route.test.ts`.
+ * Mirrors the route-test pattern at `tests/unit/audit-trail-org-route.test.ts`.
  */
 import { NextRequest } from 'next/server';
 

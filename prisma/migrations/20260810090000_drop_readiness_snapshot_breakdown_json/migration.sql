@@ -1,0 +1,12 @@
+-- Drop ReadinessSnapshot.breakdownJson — a write-only column.
+--
+-- Two engines wrote it in incompatible shapes (the ISO/generic scorer wrote a
+-- full ReadinessBreakdown; the NIS2 scorer wrote { byDomain, fineExposureGaps })
+-- with no discriminator beyond frameworkKey. Both read paths
+-- (getReadinessHistory, listNis2ReadinessSnapshots) use an explicit select that
+-- omitted it, so nothing ever read it — despite the schema comment claiming
+-- "Read-side joins this for the trend chart's tooltips".
+--
+-- It was the heaviest column on the model and was written on every score
+-- change. The trend chart renders `score` + `gapCount`, both of which stay.
+ALTER TABLE "ReadinessSnapshot" DROP COLUMN IF EXISTS "breakdownJson";

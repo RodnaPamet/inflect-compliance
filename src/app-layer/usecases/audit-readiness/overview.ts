@@ -33,7 +33,7 @@
  */
 import { RequestContext } from '../../types';
 import { listAuditCycles } from './cycles';
-import { scoreReadiness, type ReadinessResult } from '../audit-readiness-scoring';
+import { scoreReadiness, type ReadinessResult } from './scoring';
 
 export interface ReadinessOverviewPayload {
     cycles: Awaited<ReturnType<typeof listAuditCycles>>;

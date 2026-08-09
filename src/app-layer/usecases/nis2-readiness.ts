@@ -28,7 +28,6 @@
  *
  * NOT a legal compliance determination — a self-assessment maturity aid.
  */
-import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanWrite } from '../policies/common';
@@ -112,10 +111,19 @@ function gapPriority(q: ScoringQuestion, answer: 'NO' | 'PARTIALLY'): number {
     );
 }
 
+/**
+ * Gap-priority cut-offs. NOT the readiness bands — this is an unbounded
+ * weighted priority score (consequence + fine exposure + time-to-fix), not a
+ * 0-100 percentage, and its 50 means something entirely different from the
+ * readiness band's 50. Named so the two can never be confused by a reader or
+ * conflated by a grep.
+ */
+const PRIORITY_TIER_MIN = { URGENT: 50, HIGH: 38, MEDIUM: 26 } as const;
+
 function priorityTier(p: number): Nis2Gap['priorityTier'] {
-    if (p >= 50) return 'URGENT';
-    if (p >= 38) return 'HIGH';
-    if (p >= 26) return 'MEDIUM';
+    if (p >= PRIORITY_TIER_MIN.URGENT) return 'URGENT';
+    if (p >= PRIORITY_TIER_MIN.HIGH) return 'HIGH';
+    if (p >= PRIORITY_TIER_MIN.MEDIUM) return 'MEDIUM';
     return 'LOW';
 }
 
@@ -375,6 +383,14 @@ export async function materializeNis2Gaps(
  * Snapshot the overall readiness score for the trend line. Reuses the
  * ReadinessSnapshot model with a distinct frameworkKey. Called on
  * assessment completion.
+ *
+ * DEDUPE — this used to write unconditionally while the sibling engine
+ * (`audit-readiness/scoring.ts`) skipped the write when the score was
+ * unchanged. Two writers to one model disagreeing about what a snapshot means
+ * makes the trend line mean two things: for ISO a point is a CHANGE, for NIS2
+ * it was an EVENT. They now agree on "a snapshot records a change", which is
+ * what a trend line reads as, and which stops a re-run of the assessment from
+ * flattening the chart with duplicate points.
  */
 export async function snapshotNis2Readiness(ctx: RequestContext): Promise<void> {
     // This WRITES a trend snapshot; it previously borrowed its authorization
@@ -384,15 +400,17 @@ export async function snapshotNis2Readiness(ctx: RequestContext): Promise<void> 
     assertCanManageOnboarding(ctx);
     const readiness = await computeNis2Readiness(ctx);
     await runInTenantContext(ctx, async (db) => {
+        const latest = await db.readinessSnapshot.findFirst({
+            where: { tenantId: ctx.tenantId, frameworkKey: NIS2_SNAPSHOT_FRAMEWORK_KEY },
+            orderBy: { computedAt: 'desc' },
+            select: { score: true },
+        });
+        if (latest && latest.score === readiness.score.overall) return;
         await db.readinessSnapshot.create({
             data: {
                 tenantId: ctx.tenantId,
                 frameworkKey: NIS2_SNAPSHOT_FRAMEWORK_KEY,
                 score: readiness.score.overall,
-                breakdownJson: {
-                    byDomain: readiness.score.byDomain,
-                    fineExposureGaps: readiness.fineExposureGaps,
-                } as Prisma.InputJsonValue,
                 gapCount: readiness.gaps.length,
                 computedByUserId: ctx.userId ?? null,
             },
