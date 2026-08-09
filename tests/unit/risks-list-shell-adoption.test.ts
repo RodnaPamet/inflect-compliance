@@ -89,12 +89,28 @@ describe('Risks list — Epic 44.4 column + matrix wiring', () => {
         expect(clientSrc).toContain("id: 'status'");
         expect(clientSrc).toContain("header: tx('colHeaders.status')");
         expect(EN_RISKS.colHeaders.status).toBe('Status');
-        expect(clientSrc).toContain('STATUS_CLASS');
-        // Every enum member from prisma's RiskStatus must have a
-        // class — drift here would render an unstyled badge.
+        // B2-3: the local STATUS_CLASS map was deleted — it duplicated
+        // RISK_STATUS_VARIANT byte for byte and was declared inside the
+        // component body, so it was rebuilt every render.
+        expect(clientSrc).toContain('RISK_STATUS_VARIANT');
+
+        // Every RiskStatus member must map to a variant, or the badge
+        // renders unstyled. Asserted against the CANONICAL map rather than
+        // against this page's source — that is where the mapping now lives,
+        // and checking it there also covers the detail page and the PDF
+        // exporter, which read the same constant. Strictly stronger than
+        // the old per-file string scan.
+        const mapping = readFileSync(
+            path.resolve(__dirname, '../../src/app-layer/domain/entity-status-mapping.ts'),
+            'utf8',
+        );
+        const variants = mapping.slice(
+            mapping.indexOf('RISK_STATUS_VARIANT'),
+            mapping.indexOf('};', mapping.indexOf('RISK_STATUS_VARIANT')),
+        );
         // Audit S1 (2026-05-24) added MITIGATED to the RiskStatus enum.
         for (const k of ['OPEN', 'MITIGATING', 'MITIGATED', 'ACCEPTED', 'CLOSED']) {
-            expect(clientSrc).toContain(`${k}:`);
+            expect(variants).toContain(`${k}:`);
         }
     });
 
@@ -103,8 +119,14 @@ describe('Risks list — Epic 44.4 column + matrix wiring', () => {
         // styled from the resolved band.
         expect(clientSrc).toContain('resolveBandForScore');
         expect(clientSrc).toContain('matrixConfig.bands');
-        expect(clientSrc).toContain("data-testid={`risk-score-${row.original.id}`}");
-        expect(clientSrc).toMatch(/data-band=\{band\.name\}/);
+        // B2-3: the chip markup moved to <RiskBandChip>, shared with the
+        // residual column and the assessment panel. What stays here is the
+        // WIRING — the score column mounts the chip with a per-row test id.
+        // The chip's own contract (band tint, opaque dot, never colouring
+        // the TEXT by band — the ~2:1 contrast regression) is asserted by
+        // rendering it in tests/rendered/risk-band-chip.test.tsx.
+        expect(clientSrc).toMatch(/<RiskBandChip\b/);
+        expect(clientSrc).toContain('testId={`risk-score-${row.original.id}`}');
     });
 
     it('replaces the inline 5×5 heatmap with the <RiskMatrix> engine', () => {
