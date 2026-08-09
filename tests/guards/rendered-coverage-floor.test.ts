@@ -67,7 +67,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // disagreed in production (a 97% Tasks axis plotted on the outer ring
 // while the list said L4), and only a rendered assertion catches that,
 // since both surfaces are correct in isolation.
-const RENDERED_TEST_FLOOR = 203;
+const RENDERED_TEST_FLOOR = 212;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

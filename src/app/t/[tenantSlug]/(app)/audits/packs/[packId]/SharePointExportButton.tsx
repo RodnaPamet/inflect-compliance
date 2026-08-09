@@ -53,17 +53,41 @@ export function SharePointExportButton({ packId }: { packId: string }) {
                 if (!res.ok) { toast.error(tx('sharepoint.exportFailed')); return; }
                 const data = await res.json();
                 const webUrl: string | null = data.webUrl || null;
-                toast.success(
-                    tx('sharepoint.exported'),
-                    webUrl
-                        ? {
-                              action: {
-                                  label: tx('sharepoint.viewInSharePoint'),
-                                  onClick: () => window.open(webUrl, '_blank', 'noopener,noreferrer'),
-                              },
-                          }
-                        : undefined,
-                );
+                const viewAction = webUrl
+                    ? {
+                          action: {
+                              label: tx('sharepoint.viewInSharePoint'),
+                              onClick: () => window.open(webUrl, '_blank', 'noopener,noreferrer'),
+                          },
+                      }
+                    : undefined;
+
+                // An export that dropped files is NOT a success. The pack may
+                // be handed to an external auditor, so the one moment we can
+                // tell someone it is incomplete is right here — this used to
+                // fire an unconditional success toast off `webUrl` alone.
+                const skipped: Record<string, number> = data.skipped ?? {};
+                const skippedTotal: number = data.skippedTotal ?? 0;
+                if (skippedTotal > 0) {
+                    const reasons = (
+                        [
+                            ['infected', 'sharepoint.skipReasonInfected'],
+                            ['unscanned', 'sharepoint.skipReasonUnscanned'],
+                            ['deleted', 'sharepoint.skipReasonDeleted'],
+                            ['sizeCapped', 'sharepoint.skipReasonSizeCapped'],
+                            ['unreadable', 'sharepoint.skipReasonUnreadable'],
+                        ] as const
+                    )
+                        .filter(([key]) => (skipped[key] ?? 0) > 0)
+                        .map(([key, msg]) => tx(msg, { n: skipped[key] ?? 0 }));
+
+                    toast.warning(
+                        `${tx('sharepoint.exportedPartial', { count: skippedTotal })} ${reasons.join(' · ')}`,
+                        viewAction,
+                    );
+                    return;
+                }
+                toast.success(tx('sharepoint.exported'), viewAction);
             } catch {
                 toast.error(tx('sharepoint.exportFailedNetwork'));
             } finally {

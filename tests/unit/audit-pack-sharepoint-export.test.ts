@@ -25,7 +25,11 @@ jest.mock('@/lib/storage', () => ({
 }));
 jest.mock('@/lib/storage/av-scan', () => ({
     __esModule: true,
-    isDownloadAllowed: (s: string) => s === 'clean',
+    // Mirrors the real predicate's enforcing-mode semantics against the REAL
+    // ScanStatus values ('PENDING' | 'CLEAN' | 'INFECTED' | 'SKIPPED'). The
+    // fixtures below previously used lowercase, which no row ever holds — the
+    // stub `s === 'clean'` was the only reason that passed.
+    isDownloadAllowed: (s: string) => s === 'CLEAN' || s === 'SKIPPED',
 }));
 jest.mock('@/app-layer/usecases/audit-readiness/packs', () => ({
     __esModule: true,
@@ -69,7 +73,10 @@ describe('exportAuditPackToSharePoint', () => {
 
     it('uploads a ZIP + records the export on the pack and an execution', async () => {
         const r = await exportAuditPackToSharePoint(admin, 'p1', { driveId: 'd1' }, { now: () => new Date('2026-06-09T00:00:00Z') });
-        expect(r).toEqual({ spItemId: 'sp-item-1', webUrl: 'https://sp/pack.zip' });
+        // toMatchObject, not toEqual: the result now also carries the
+        // bundled/skipped/bytes counts the UI needs in order to warn when a
+        // pack shipped incomplete.
+        expect(r).toMatchObject({ spItemId: 'sp-item-1', webUrl: 'https://sp/pack.zip' });
 
         // Uploaded a .zip to the drive root with a templated name.
         const [driveId, folderId, name, , contentType] = mockClient.uploadNewFile.mock.calls[0];
@@ -102,8 +109,8 @@ describe('exportAuditPackToSharePoint', () => {
             ],
         });
         mockDb.evidence.findMany.mockResolvedValueOnce([
-            { fileRecord: { pathKey: 'k1', originalName: 'a.pdf', scanStatus: 'clean', status: 'STORED', deletedAt: null } },
-            { fileRecord: { pathKey: 'k2', originalName: 'b.pdf', scanStatus: 'infected', status: 'STORED', deletedAt: null } },
+            { fileRecord: { pathKey: 'k1', originalName: 'a.pdf', scanStatus: 'CLEAN', status: 'STORED', deletedAt: null } },
+            { fileRecord: { pathKey: 'k2', originalName: 'b.pdf', scanStatus: 'INFECTED', status: 'STORED', deletedAt: null } },
         ]);
         mockReadStream.mockImplementation(() => Readable.from([Buffer.from('PDFDATA')]));
 
@@ -115,6 +122,108 @@ describe('exportAuditPackToSharePoint', () => {
         expect(mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson).toMatchObject({
             evidenceBundled: 1,
             evidenceSkipped: 1,
+        });
+    });
+    /**
+     * A pack handed to an external auditor must never be quietly incomplete.
+     *
+     * Every reason a file gets dropped — infected, still unscanned,
+     * soft-deleted, over the 200MB cap, unreadable — used to land in one
+     * `skipped` counter, and then:
+     *   - the usecase returned only { spItemId, webUrl }, discarding it;
+     *   - the IntegrationExecution row hardcoded status 'PASSED';
+     *   - the button read `webUrl` and fired an unconditional success toast.
+     *
+     * So the pack could be missing evidence with all three layers reporting a
+     * clean export. These assert the three of them together, because fixing
+     * any one alone still leaves the auditor holding an incomplete pack.
+     */
+    describe('partial exports are reported, not swallowed', () => {
+        async function exportWith(files: any[], readImpl?: () => any) {
+            const { Readable } = await import('node:stream');
+            mockGetPack.mockResolvedValueOnce({
+                id: 'p1', name: 'Q2', status: 'FROZEN', frozenAt: new Date('2026-01-01'),
+                items: files.map((_, i) => ({ entityType: 'EVIDENCE', entityId: `ev${i}` })),
+            });
+            mockDb.evidence.findMany.mockResolvedValueOnce(files.map((f) => ({ fileRecord: f })));
+            mockReadStream.mockImplementation(
+                readImpl ?? (() => Readable.from([Buffer.from('PDFDATA')])),
+            );
+            return exportAuditPackToSharePoint(
+                admin, 'p1', { driveId: 'd1' }, { now: () => new Date('2026-06-09T00:00:00Z') },
+            );
+        }
+
+        const clean = (k: string) => ({ pathKey: k, originalName: `${k}.pdf`, scanStatus: 'CLEAN', status: 'STORED', deletedAt: null });
+        const infected = (k: string) => ({ pathKey: k, originalName: `${k}.pdf`, scanStatus: 'INFECTED', status: 'STORED', deletedAt: null });
+        const pending = (k: string) => ({ pathKey: k, originalName: `${k}.pdf`, scanStatus: 'PENDING', status: 'STORED', deletedAt: null });
+        const removed = (k: string) => ({ pathKey: k, originalName: `${k}.pdf`, scanStatus: 'CLEAN', status: 'STORED', deletedAt: new Date() });
+
+        it('reports an INFECTED and an oversized file separately, and does not record PASSED', async () => {
+            const { Readable } = await import('node:stream');
+            // 1 clean small, 1 infected, 1 clean but enormous (blows the cap).
+            const huge = Buffer.alloc(210 * 1024 * 1024);
+            let call = 0;
+            const res = await exportWith(
+                [clean('k1'), infected('k2'), clean('k3')],
+                () => Readable.from([call++ === 0 ? Buffer.from('SMALL') : huge]),
+            );
+
+            expect(res.skipped.infected).toBe(1);
+            expect(res.skipped.sizeCapped).toBe(1);
+            expect(res.skippedTotal).toBe(2);
+            expect(res.bundled).toBe(1);
+
+            const row = mockDb.integrationExecution.create.mock.calls[0][0].data;
+            expect(row.status).not.toBe('PASSED');
+            expect(row.status).toBe('PARTIAL');
+            expect(row.resultJson).toMatchObject({
+                evidenceSkipped: 2,
+                evidenceSkippedByReason: expect.objectContaining({ infected: 1, sizeCapped: 1 }),
+            });
+        });
+
+        it('distinguishes unscanned from infected — they are different sentences to an auditor', async () => {
+            const res = await exportWith([infected('k1'), pending('k2')]);
+            expect(res.skipped.infected).toBe(1);
+            expect(res.skipped.unscanned).toBe(1);
+        });
+
+        it('counts a soft-deleted file under deleted, not under scan reasons', async () => {
+            const res = await exportWith([removed('k1')]);
+            expect(res.skipped.deleted).toBe(1);
+            expect(res.skipped.infected + res.skipped.unscanned).toBe(0);
+        });
+
+        it('counts an unreadable file rather than losing it', async () => {
+            const res = await exportWith([clean('k1')], () => { throw new Error('storage down'); });
+            expect(res.skipped.unreadable).toBe(1);
+            expect(res.bundled).toBe(0);
+        });
+
+        it('records PASSED and zero skips when the whole pack bundles', async () => {
+            // The status must still be able to say "clean" — otherwise
+            // PARTIAL means nothing.
+            const res = await exportWith([clean('k1'), clean('k2')]);
+            expect(res.skippedTotal).toBe(0);
+            expect(mockDb.integrationExecution.create.mock.calls[0][0].data.status).toBe('PASSED');
+        });
+
+        it('returns the counts to the caller — the UI cannot warn about what it is not told', async () => {
+            const res = await exportWith([clean('k1'), infected('k2')]);
+            expect(res).toEqual(expect.objectContaining({
+                spItemId: expect.any(String),
+                webUrl: expect.any(String),
+                bundled: expect.any(Number),
+                skippedTotal: expect.any(Number),
+                skipped: expect.objectContaining({
+                    infected: expect.any(Number),
+                    unscanned: expect.any(Number),
+                    deleted: expect.any(Number),
+                    sizeCapped: expect.any(Number),
+                    unreadable: expect.any(Number),
+                }),
+            }));
         });
     });
 });

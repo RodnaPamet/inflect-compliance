@@ -35,6 +35,22 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Cross-entity unlink (TraceabilityPanel)',
         handlers: ['handleUnlink'],
     },
+    // ── Audits ──────────────────────────────────────────────────────
+    // This surface had NO entry here at all, which meant two things went
+    // unnoticed: BiaDetailClient's correct adoption was unprotected (a
+    // future edit could silently drop it), and the auditor-access revoke
+    // sat on a click-through ConfirmDialog instead of the undo toast the
+    // convention requires for a routine, reversible removal.
+    {
+        file: 'src/app/t/[tenantSlug]/(app)/audits/auditors/page.tsx',
+        name: 'Auditor pack-grant revoke (auditors admin)',
+        handlers: ['revokeAccess'],
+    },
+    {
+        file: 'src/app/t/[tenantSlug]/(app)/audits/business-continuity/[id]/BiaDetailClient.tsx',
+        name: 'BIA dependency removal (BIA detail)',
+        handlers: ['removeDependency'],
+    },
     {
         file: 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx',
         name: 'Control evidence unlink (control detail)',

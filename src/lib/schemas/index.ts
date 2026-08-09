@@ -592,9 +592,18 @@ export const UpdateAuditSchema = z.object({
     status: z.enum(['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
     auditors: z.string().optional().nullable(),
     auditees: z.string().optional().nullable(),
+    // These four were accepted on create and then unreachable forever: the
+    // update schema omitted them, `.strip()` discarded them silently (no 400
+    // to notice), and there is no other write path. A typo'd audit date or a
+    // wrong framework meant deleting the audit and starting again. Same
+    // shapes as CreateAuditSchema — the field is the field either way.
+    schedule: z.string().optional().nullable(),
+    departments: z.string().optional().nullable(),
+    frameworkKey: z.string().max(60).optional().nullable(),
+    auditCycleId: z.string().optional().nullable(),
     checklistUpdates: z.array(ChecklistUpdateSchema).optional(),
 }).strip().openapi('AuditUpdateRequest', {
-    description: 'Update an audit cycle including status transitions and checklist-row updates (per-row result + notes via checklistUpdates).',
+    description: 'Update an audit including status transitions, scheduling/scope metadata (schedule, departments, frameworkKey, auditCycleId) and checklist-row updates (per-row result + notes via checklistUpdates). auditCycleId is validated against the tenant; null detaches the audit from its cycle.',
 });
 
 // ─── Tasks (Unified Work Items) ───

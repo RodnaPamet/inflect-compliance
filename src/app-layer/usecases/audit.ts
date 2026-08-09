@@ -230,6 +230,20 @@ export async function updateAudit(ctx: RequestContext, id: string, data: z.infer
     assertCanWrite(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // Same tenant-scoping `createAudit` applies: an audit must never point
+        // at a cycle it cannot see. `undefined` means "not being changed";
+        // an explicit `null` detaches the audit from its cycle, which needs no
+        // lookup.
+        if (data.auditCycleId) {
+            const cycle = await db.auditCycle.findFirst({
+                where: { id: data.auditCycleId, tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            if (!cycle) {
+                throw badRequest('INVALID_AUDIT_CYCLE', 'Audit cycle not found or belongs to a different tenant');
+            }
+        }
+
         const audit = await AuditRepository.update(db, ctx, id, {
             // Epic D.2 — sanitise on update only when the field is
             // actually being written.
@@ -240,6 +254,24 @@ export async function updateAudit(ctx: RequestContext, id: string, data: z.infer
             status: data.status as AuditStatus | undefined,
             auditors: sanitizeOptional(data.auditors),
             auditees: sanitizeOptional(data.auditees),
+            departments: sanitizeOptional(data.departments),
+            // `schedule` is a DateTime column: '' / null both clear it,
+            // undefined leaves it alone.
+            schedule:
+                data.schedule === undefined
+                    ? undefined
+                    : data.schedule
+                        ? new Date(data.schedule)
+                        : null,
+            // Plain-text on both sides, but still sanitised — it reaches
+            // audit-log details and PDF exports (mirrors createAudit).
+            frameworkKey:
+                data.frameworkKey === undefined
+                    ? undefined
+                    : data.frameworkKey
+                        ? sanitizePlainText(data.frameworkKey)
+                        : null,
+            auditCycleId: data.auditCycleId === undefined ? undefined : data.auditCycleId || null,
         });
 
         if (!audit) throw notFound('Audit not found');

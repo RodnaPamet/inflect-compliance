@@ -1012,6 +1012,31 @@ exports[`API contract — per-schema snapshots schema: AuditUpdateRequest 1`] = 
         "null"
       ]
     },
+    "schedule": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "departments": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "frameworkKey": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 60
+    },
+    "auditCycleId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "checklistUpdates": {
       "type": "array",
       "items": {
@@ -1040,7 +1065,7 @@ exports[`API contract — per-schema snapshots schema: AuditUpdateRequest 1`] = 
       }
     }
   },
-  "description": "Update an audit cycle including status transitions and checklist-row updates (per-row result + notes via checklistUpdates)."
+  "description": "Update an audit including status transitions, scheduling/scope metadata (schedule, departments, frameworkKey, auditCycleId) and checklist-row updates (per-row result + notes via checklistUpdates). auditCycleId is validated against the tenant; null detaches the audit from its cycle."
 }"
 `;
 
