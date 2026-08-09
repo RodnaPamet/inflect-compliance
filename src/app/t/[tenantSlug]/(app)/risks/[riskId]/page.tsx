@@ -42,6 +42,7 @@ import { AttachedEvidencePanel } from '@/components/AttachedEvidencePanel';
 import { Heading } from '@/components/ui/typography';
 import { InheritedTestPlansPanel } from '@/components/InheritedTestPlansPanel';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
+import { extractMutationError } from '@/lib/mutations';
 
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
     loading: () => <SkeletonCard lines={3} />,
@@ -275,7 +276,7 @@ export default function RiskDetailPage() {
             riskQuery.mutate(updated, { revalidate: false });
             setEditing(false);
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setError(extractMutationError(err));
         } finally {
             setSaving(false);
         }
@@ -296,7 +297,7 @@ export default function RiskDetailPage() {
             const updated = await res.json();
             riskQuery.mutate(updated, { revalidate: false });
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setError(extractMutationError(err));
         }
     };
 

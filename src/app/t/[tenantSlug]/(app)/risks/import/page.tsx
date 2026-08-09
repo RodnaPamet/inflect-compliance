@@ -12,6 +12,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
 import { cn } from '@/lib/cn';
+import { extractMutationError } from '@/lib/mutations';
 
 type ParsedRow = {
     title: string;
@@ -117,7 +118,7 @@ export default function RiskImportPage() {
                 errors: data.errors.map((e) => `Row ${e.row} "${e.title}": ${e.message}`),
             });
         } catch (err) {
-            setResult({ created: 0, skipped: 0, errors: [err instanceof Error ? err.message : String(err)] });
+            setResult({ created: 0, skipped: 0, errors: [extractMutationError(err)] });
         } finally {
             setImporting(false);
         }

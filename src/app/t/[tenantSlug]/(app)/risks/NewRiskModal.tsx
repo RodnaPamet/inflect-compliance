@@ -67,6 +67,7 @@ import {
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { useTranslations } from 'next-intl';
 import { RISK_CATEGORY_OPTIONS } from './_shared/risk-options';
+import { extractMutationError } from '@/lib/mutations';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -330,7 +331,7 @@ export function NewRiskModal({
         } catch (err) {
             telemetry.trackError(err);
             setError(
-                err instanceof Error ? err.message : tx('new.createFailed'),
+                extractMutationError(err, tx('new.createFailed')),
             );
             setSubmitting(false);
         }
