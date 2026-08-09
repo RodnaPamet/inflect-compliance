@@ -40,6 +40,21 @@
  * presence.
  */
 
+// NavItem prefetches its route on hover/focus (see the `prefetch={false}` +
+// `warmRoute` comment in nav-item.tsx), so it needs an app-router context.
+// These are class/tone assertions, not navigation ones — a stub router keeps
+// them focused on what they actually test.
+jest.mock('next/navigation', () => ({
+    useRouter: () => ({
+        prefetch: jest.fn(),
+        push: jest.fn(),
+        replace: jest.fn(),
+        back: jest.fn(),
+        forward: jest.fn(),
+        refresh: jest.fn(),
+    }),
+}));
+
 import fs from 'node:fs';
 import path from 'node:path';
 

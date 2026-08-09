@@ -3,7 +3,7 @@
 > How the observability stack is secured, isolated per environment,
 > backed up, upgraded, and monitored — and what operators do when a
 > component fails. Companion artifacts: the whole of
-> `infra/observability/`, plus the Caddy config at `deploy/Caddyfile`.
+> `infra/observability/`, plus the Caddy config at `deploy/caddy/Caddyfile`.
 
 # Production Hardening Priorities
 
@@ -93,11 +93,11 @@ transiently and only on localhost.
 
 Grafana is exposed publicly **only** through the existing Caddy
 reverse proxy, which already terminates TLS for the application via
-Let's Encrypt (`deploy/Caddyfile`). Add a site block for Grafana —
+Let's Encrypt (`deploy/caddy/Caddyfile`). Add a site block for Grafana —
 either a subdomain or a path — proxying to the loopback port:
 
 ```caddy
-# deploy/Caddyfile — Grafana behind the existing Caddy, TLS via Let's Encrypt.
+# deploy/caddy/Caddyfile — Grafana behind the existing Caddy, TLS via Let's Encrypt.
 grafana.inflect.<vm-ip-dashes>.sslip.io {
     encode gzip zstd
 

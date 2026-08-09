@@ -24,7 +24,7 @@ import {
   Table as TableType,
   VisibilityState,
 } from "@tanstack/react-table";
-import { Dispatch, MouseEvent, ReactNode, SetStateAction, useRef, useState } from "react";
+import { Dispatch, MouseEvent, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
 import { type BatchAction, renderBatchActions } from "./selection-toolbar";
 import { Table, useTable } from "./table";
 import { cn } from "./table-utils";
@@ -59,6 +59,14 @@ export function createColumns<T>(
 }
 
 // ── DataTable Props ─────────────────────────────────────────────────
+
+/**
+ * How long the pointer must REST on a row before its detail route is
+ * prefetched. Long enough that crossing a table on the way somewhere else
+ * prefetches nothing, short enough that a deliberate hover-then-click has
+ * always cleared it (a click follows a hover by ~250 ms at the very fastest).
+ */
+const ROW_PREFETCH_DWELL_MS = 120;
 
 export interface DataTableProps<T> {
   /** The data array to render. */
@@ -473,21 +481,42 @@ export function DataTable<T>({
   // this is NOT a loose cast.
   const { table, ...rest } = useTable(tableProps as unknown as UseTableProps<T>);
 
-  // Hover-prefetch — fire the consumer's `onRowPrefetch` once per row on the
-  // first pointer-enter so it can warm that row's detail route before the
-  // click. Reuses the standard <Table>'s per-row `rowProps` hook; deduped by
-  // row id via a ref. The router lives in the consumer, NOT here, so a
-  // DataTable can render without an app-router context. Entity lists render
-  // ≤ the windowed row set (well under the virtualization threshold), so they
-  // take the standard <Table> path this attaches to.
+  // Hover-prefetch — fire the consumer's `onRowPrefetch` once per row so it
+  // can warm that row's detail route before the click. Reuses the standard
+  // <Table>'s per-row `rowProps` hook; deduped by row id via a ref. The router
+  // lives in the consumer, NOT here, so a DataTable can render without an
+  // app-router context. Entity lists render ≤ the windowed row set (well under
+  // the virtualization threshold), so they take the standard <Table> path this
+  // attaches to.
+  //
+  // The DWELL is the important part. This used to fire on bare
+  // `onMouseEnter`, so moving the pointer from the filter bar to a row near
+  // the bottom prefetched every row it crossed on the way — fifty route
+  // prefetches for one intended click. Requiring the pointer to REST on a row
+  // first turns "passed over" into "looking at", which is the signal we
+  // actually wanted; a genuine hover-then-click clears 120 ms long before the
+  // click lands.
   const prefetchedRows = useRef<Set<string>>(new Set());
+  const dwellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (dwellTimer.current) clearTimeout(dwellTimer.current);
+    },
+    [],
+  );
   const prefetchRowProps = onRowPrefetch
     ? (row: Row<T>) => ({
         onMouseEnter: () => {
-          if (!prefetchedRows.current.has(row.id)) {
+          if (prefetchedRows.current.has(row.id)) return;
+          if (dwellTimer.current) clearTimeout(dwellTimer.current);
+          dwellTimer.current = setTimeout(() => {
             prefetchedRows.current.add(row.id);
             onRowPrefetch(row);
-          }
+          }, ROW_PREFETCH_DWELL_MS);
+        },
+        onMouseLeave: () => {
+          // Left before the dwell elapsed — the pointer was passing through.
+          if (dwellTimer.current) clearTimeout(dwellTimer.current);
         },
       })
     : undefined;

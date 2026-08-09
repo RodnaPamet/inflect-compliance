@@ -20,7 +20,7 @@ const read = (rel: string) =>
 
 const cdnTf = read('infra/terraform/modules/cdn/main.tf');
 const nextCfg = read('next.config.js');
-const caddy = read('deploy/Caddyfile');
+const caddy = read('deploy/caddy/Caddyfile');
 const deployYml = read('.github/workflows/deploy.yml');
 
 describe('CDN terraform module', () => {
