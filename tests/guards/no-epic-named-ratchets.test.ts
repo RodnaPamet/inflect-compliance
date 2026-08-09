@@ -165,7 +165,7 @@ describe('epic-named ratchets are not added back', () => {
      * only ever goes down.
      */
     it('the rq* family is on a downward ratchet, not a budget', () => {
-        const RQ_CEILING = 36; // 2026-08-06: 41 -> 39 (B3-1) -> 37 (B3-3c, B3-4) -> 36 (B3-4 rendered rewrites).
+        const RQ_CEILING = 35; // 2026-08-06: 41 -> 39 (B3-1) -> 37 (B3-3c, B3-4) -> 36 (B3-4 rendered rewrites). 2026-08-10: -> 35 (B3-5, rq3-ob-f split into a mount guard + the existing rendered test).
         const rqGuards = guardFiles()
             .filter((f) => /^rq\d/.test(f))
             .sort();
