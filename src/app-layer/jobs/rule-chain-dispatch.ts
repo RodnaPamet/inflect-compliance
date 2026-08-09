@@ -14,6 +14,7 @@ import { prisma } from '@/lib/prisma';
 import type { JobRunResult, RuleChainDispatchPayload } from './types';
 import { executeAction } from '../automation/action-executor';
 import { matchesFilter } from '../automation/filters';
+import { readRulesWithTenantDek } from '../automation/tenant-dek-read';
 
 const MAX_CHAIN_DEPTH = 10;
 
@@ -29,9 +30,11 @@ export async function runRuleChainDispatch(
         let chained = false;
 
         if (depth <= MAX_CHAIN_DEPTH) {
-            const rule = await prisma.automationRule.findFirst({
-                where: { id: ruleId, tenantId, status: 'ENABLED', deletedAt: null },
-            });
+            const rule = await readRulesWithTenantDek(tenantId, () =>
+                prisma.automationRule.findFirst({
+                    where: { id: ruleId, tenantId, status: 'ENABLED', deletedAt: null },
+                }),
+            );
 
             if (rule) {
                 const actionStart = Date.now();

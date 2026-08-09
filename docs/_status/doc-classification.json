@@ -3,7 +3,7 @@
     "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\".",
     "counts": {
         "authoritative": 114,
-        "historical": 502,
+        "historical": 503,
         "living": 5,
         "deprecated": 1
     },
@@ -1872,6 +1872,9 @@
             "class": "historical"
         },
         "docs/implementation-notes/2026-08-09-per-risk-results-single-read.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-09-automation-webhook-signing-key.md": {
             "class": "historical"
         }
     }
