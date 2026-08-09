@@ -266,6 +266,16 @@ export const env = createEnv({
         // '0' disables retry (single POST); anything else (or unset) keeps retry on.
         // Kill-switch for debugging a misbehaving SIEM without redeploy.
         AUDIT_STREAM_RETRY_ENABLED: z.string().optional(),
+        /**
+         * Kill-switch for the fail-CLOSED decrypt posture. Set to '0' to make
+         * a genuine decrypt failure (a DEK resolved, AES-GCM still rejected)
+         * fall back to passing the ciphertext through, as it did before.
+         *
+         * Exists because the failure it guards is a whole-page 500 for one
+         * corrupt row: an operator hitting that at 3am needs a lever that is
+         * not a redeploy. Leave unset in normal operation.
+         */
+        ENCRYPTION_DECRYPT_FAIL_CLOSED: z.string().optional(),
 
         // Continuous vendor monitoring (vendor-monitoring job).
         // VENDOR_MONITOR_ENABLED='0' disables the daily sweep. The provider
@@ -417,6 +427,7 @@ export const env = createEnv({
         ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
 
         AUDIT_STREAM_RETRY_ENABLED: process.env.AUDIT_STREAM_RETRY_ENABLED,
+        ENCRYPTION_DECRYPT_FAIL_CLOSED: process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED,
         VENDOR_MONITOR_ENABLED: process.env.VENDOR_MONITOR_ENABLED,
         VENDOR_MONITOR_BREACH_PROVIDER: process.env.VENDOR_MONITOR_BREACH_PROVIDER,
         VENDOR_MONITOR_TLS_PROVIDER: process.env.VENDOR_MONITOR_TLS_PROVIDER,

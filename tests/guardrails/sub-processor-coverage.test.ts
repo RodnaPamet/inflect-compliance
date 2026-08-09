@@ -93,6 +93,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AI_ASSISTANT_ENABLED: 'per-feature AI enable flag (GAP-2) — no external service',
     AI_QUESTIONNAIRE_ENABLED: 'per-feature AI enable flag (GAP-2) — no external service',
     AUDIT_STREAM_RETRY_ENABLED: 'audit-stream retry flag (target SIEM is the customer\'s own per-tenant endpoint, not an env sub-processor)',
+    ENCRYPTION_DECRYPT_FAIL_CLOSED: 'local kill-switch for the fail-closed decrypt posture — no third party, no egress; reverts a genuine decrypt failure to passing ciphertext through',
     NEXT_PUBLIC_NOTIFICATIONS_SSE: 'notifications transport feature flag',
     NOTIFICATIONS_TZ: 'notification timezone config',
     PLATFORM_ADMIN_API_KEY: 'internal platform-admin bootstrap secret',

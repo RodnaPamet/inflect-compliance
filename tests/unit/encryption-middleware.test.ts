@@ -172,18 +172,31 @@ describe('decryptResultNode', () => {
         expect(node.treatmentNotes).toBe('legacy plaintext row');
     });
 
-    it('logs warn + returns raw on malformed ciphertext', () => {
-        // Valid prefix, but payload is gibberish — AES-GCM decrypt
-        // will throw. The middleware swallows, logs, and returns raw.
+    it('logs warn + THROWS on malformed ciphertext', () => {
+        // Valid prefix, gibberish payload — AES-GCM rejects it.
+        //
+        // NOTE THIS IS A v1 ROW: decrypted under the global KEK, so no tenant
+        // DEK is involved and `NO_DEKS` is irrelevant to the outcome. The
+        // fail-closed posture therefore covers v1 corruption too, not just
+        // per-tenant v2 key mismatches — a corrupt legacy row stops the read
+        // wherever it is encountered rather than passing `v1:garbage…` on to
+        // a renderer as if it were content.
         const node: Record<string, unknown> = {
             treatmentNotes: 'v1:garbage-that-is-not-valid-base64-or-ciphertext',
         };
-        expect(() => decryptResultNode(node, 'Risk', NO_DEKS)).not.toThrow();
+        expect(() => decryptResultNode(node, 'Risk', NO_DEKS)).toThrow(
+            /failed to decrypt Risk\.treatmentNotes/,
+        );
         expect(logger.warn).toHaveBeenCalledWith(
             'encryption-middleware.decrypt_failed',
-            expect.objectContaining({ model: 'Risk', field: 'treatmentNotes' }),
+            expect.objectContaining({
+                model: 'Risk',
+                field: 'treatmentNotes',
+                outcome: 'decrypt_failed',
+            }),
         );
-        // Raw value preserved.
+        // The node is left untouched — no partial write of a half-decrypted
+        // row, and nothing that could be mistaken for plaintext.
         expect(node.treatmentNotes).toBe(
             'v1:garbage-that-is-not-valid-base64-or-ciphertext',
         );
