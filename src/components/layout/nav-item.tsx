@@ -32,7 +32,8 @@
  */
 
 import Link from 'next/link';
-import type { CSSProperties } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useRef, type CSSProperties } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -604,18 +605,43 @@ export function NavItem({ href, icon: Icon, label, active, badge, badgeLabel, on
     // provider is mounted, so the expanded path is the default.
     const collapsed = useSidebarCollapsed();
 
+    // Prefetch this route's full RSC payload the first time the pointer (or
+    // keyboard focus) lands on it. Deduped by a ref so a user sweeping the
+    // sidebar warms each route at most once per mount, and so re-renders
+    // (badge updates tick every poll) never re-fire it.
+    const router = useRouter();
+    const warmed = useRef(false);
+    const warmRoute = useCallback(() => {
+        if (warmed.current) return;
+        warmed.current = true;
+        router.prefetch(href);
+    }, [router, href]);
+
     const link = (
         <Link
             href={href}
-            // Force a FULL-RSC prefetch (not just the loading-boundary slice
-            // Next prefetches by default for `force-dynamic` routes). The
-            // sidebar is always in the viewport, so every hot route prefetches
-            // its RSC into the client router cache on mount; combined with the
-            // 30 s `staleTimes.dynamic` (next.config.js) the click then renders
-            // from cache instead of paying the ~276 ms server round-trip — the
-            // "instant nav" lever. Background prefetch render cost is bounded
-            // by the 30 s `cachedSsrPayload` SSR cache.
-            prefetch
+            // FULL-RSC prefetch, but ON INTENT rather than on mount.
+            //
+            // This used to be a bare `prefetch` (Next's "always, fully"
+            // setting). The sidebar is always in the viewport, so every page
+            // load prefetched all fourteen nav routes at once — fourteen RSC
+            // payloads and their whole chunk graphs, for the one route the
+            // user might click. Chrome reported the waste directly: ~1,400
+            // "preloaded using link preload but not used within a few seconds
+            // from the window's load event" warnings per page load, which is
+            // what sent us looking.
+            //
+            // Hovering (or tab-focusing) a nav item is the actual signal that
+            // a click is coming, and it precedes the click by far more than a
+            // prefetch needs — so the "instant nav" lever survives intact for
+            // the route being navigated to, while the other thirteen are
+            // never fetched. `prefetch={false}` turns off Next's automatic
+            // viewport prefetch; `warmRoute` below does the full-RSC fetch
+            // once per item.
+            prefetch={false}
+            onMouseEnter={warmRoute}
+            onFocus={warmRoute}
+            onTouchStart={warmRoute}
             onClick={onClick}
             className={cn(
                 NAV_ITEM_BASE,

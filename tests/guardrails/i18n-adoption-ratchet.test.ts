@@ -86,7 +86,20 @@ function stripComments(src: string): string {
  * shims false-positive as "un-migrated".
  */
 function stripTypeAnnotations(src: string): string {
-    return src.replace(/(:|(?:\bas\b))\s*[A-Za-z_][\w.]*\s*<[\s\S]*?>/g, '$1 _');
+    return (
+        src
+            .replace(/(:|(?:\bas\b))\s*[A-Za-z_][\w.]*\s*<[\s\S]*?>/g, '$1 _')
+            // Explicit type ARGUMENTS on a call — `useRef<Set<string>>(…)`,
+            // `useState<Row[]>(…)`. Without this, two such calls on adjacent
+            // lines leave the first one's closing `>` and the second one's
+            // opening `<` with ordinary code between them, and `JSX_TEXT`
+            // reads that code as a text node. That is not hypothetical: two
+            // neighbouring `useRef<…>` lines in `data-table.tsx` reported the
+            // file as un-migrated UI while it renders no text at all.
+            // Anchored on `>(` so it only ever eats a generic call site, never
+            // JSX (which opens with `<`) or a `a < b` comparison.
+            .replace(/\b([A-Za-z_][\w.]*)\s*<[^<>]*(?:<[^<>]*>[^<>]*)*>\s*\(/g, '$1(')
+    );
 }
 
 const USES_INTL = /\b(useTranslations|getTranslations)\b/;
@@ -160,7 +173,6 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/layout/nav-item.tsx',
     'src/components/layout/org-workspace-switcher.tsx',
     'src/components/layout/tenant-switcher.tsx',
-    'src/components/nav/NavigationTracker.tsx',
     'src/components/onboarding/Nis2SelfAssessmentStep.tsx',
     'src/components/ui/ComplianceStatusIndicator.tsx',
     'src/components/ui/EvidenceGallery.tsx',
@@ -191,15 +203,12 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/ui/charts/funnel-chart.tsx',
     'src/components/ui/charts/gantt-chart.tsx',
     'src/components/ui/charts/line-chart.tsx',
-    'src/components/ui/charts/loss-exceedance-curve.tsx',
     'src/components/ui/charts/time-series-chart.tsx',
-    'src/components/ui/charts/tooltip-sync.tsx',
     'src/components/ui/checkbox.tsx',
     'src/components/ui/checklist-card.tsx',
     'src/components/ui/checklist-gear-button.tsx',
     'src/components/ui/combobox/index.tsx',
     'src/components/ui/combobox/virtualized-options.tsx',
-    'src/components/ui/dashboard-widgets/DashboardGrid.tsx',
     'src/components/ui/date-picker/date-picker.tsx',
     'src/components/ui/date-picker/date-range-picker.tsx',
     'src/components/ui/date-picker/trigger.tsx',
@@ -212,10 +221,8 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/ui/filter/use-filter-card-visibility.tsx',
     'src/components/ui/form.tsx',
     'src/components/ui/hooks/use-copy-to-clipboard.tsx',
-    'src/components/ui/initials-avatar.tsx',
     'src/components/ui/input.tsx',
     'src/components/ui/kpi-filter-card.tsx',
-    'src/components/ui/label.tsx',
     'src/components/ui/meta-strip.tsx',
     'src/components/ui/number-stepper.tsx',
     'src/components/ui/popover.tsx',

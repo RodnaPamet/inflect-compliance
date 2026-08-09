@@ -30,7 +30,7 @@ This doc is the **source of truth for what is cached and for how long.**
 | `/api/*` | 0 / 0 / 0 | forwarded | all | all verbs | every response carries auth context — never cache |
 | `*` (default — HTML shell) | 0 / 0 / 0 | forwarded | all | all verbs | dynamic, tenant-scoped, auth-gated |
 
-The origin (Caddy, `deploy/Caddyfile`) emits matching `Cache-Control` headers so
+The origin (Caddy, `deploy/caddy/Caddyfile`) emits matching `Cache-Control` headers so
 the edge caches with the right TTL on the origin pull:
 `public, max-age=31536000, immutable` for `/_next/static/*` and `/static/*`,
 `public, max-age=2592000` for `/_next/image*`, and `no-store` for everything

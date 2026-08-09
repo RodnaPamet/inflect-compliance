@@ -175,7 +175,14 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # DIRECTORY, not the file. A single-file bind mount binds the INODE,
+      # and every in-place editor (sed -i, vim, most deploy scripts) writes a
+      # temp file and renames — which swaps the inode and silently leaves the
+      # container on the old content. That is not hypothetical: prod ran a
+      # 2026-06-30 Caddyfile until 2026-08-09 while the host file had moved
+      # on, so the `lb_try_duration` retry above was never live and every
+      # deploy 502'd. Mounting the directory makes edits propagate.
+      - ./caddy:/etc/caddy:ro
       - caddy-data:/data
       - caddy-config:/config
 
