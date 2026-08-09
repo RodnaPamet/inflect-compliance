@@ -24,6 +24,7 @@ import {
     resolveScheduleRecipients,
     MAX_EMAIL_ATTACHMENT_BYTES,
 } from './report-recipients';
+import { buildTailByRisk } from '@/lib/risk/per-risk-results';
 
 export type ReportFormat = 'PDF' | 'CSV' | 'PPTX';
 
@@ -62,20 +63,16 @@ export async function assembleReportData(
     ]);
 
     // RQ3-4 — per-risk P90s from the latest run's cached results.
-    const tailByRisk = new Map<string, number>();
-    if (Array.isArray(latestSim?.perRiskResultsJson)) {
-        for (const e of latestSim.perRiskResultsJson as Array<Record<string, unknown>>) {
-            if (typeof e?.riskId === 'string' && typeof e?.aleP90 === 'number') {
-                tailByRisk.set(e.riskId, e.aleP90);
-            }
-        }
-    }
+    // B2-6 — shared parse. This used to accept rows the canonical reader
+    // rejects (no `aleMean` check), so a malformed row could show a tail
+    // figure on the board and none in the report from the SAME run.
+    const tailByRisk = buildTailByRisk(latestSim?.perRiskResultsJson);
 
     let totalAle = 0, quantifiedCount = 0, maxAle = 0, withRto = 0, withRpo = 0, totalRevenueAtRisk = 0;
     const quantified: Array<{ title: string; category: string | null; ale: number; aleP90: number | null }> = [];
     for (const r of risks) {
         const ale = resolveALE({ fairAle: r.fairAle, sleAmount: r.sleAmount, aroAmount: r.aroAmount });
-        if (ale != null) { totalAle += ale; quantifiedCount++; if (ale > maxAle) maxAle = ale; quantified.push({ title: r.title, category: r.category, ale, aleP90: tailByRisk.get(r.id) ?? null }); }
+        if (ale != null) { totalAle += ale; quantifiedCount++; if (ale > maxAle) maxAle = ale; quantified.push({ title: r.title, category: r.category, ale, aleP90: tailByRisk[r.id] ?? null }); }
         if (r.rtoHours != null) withRto++;
         if (r.rpoHours != null) withRpo++;
         if (r.revenueAtRisk != null) totalRevenueAtRisk += r.revenueAtRisk;
