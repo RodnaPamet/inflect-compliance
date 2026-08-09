@@ -16,7 +16,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 
-import { RiskMatrixCell } from '@/components/ui/RiskMatrixCell';
+import { RiskMatrixCell } from '@/components/risks/RiskMatrixCell';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
 

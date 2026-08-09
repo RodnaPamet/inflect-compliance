@@ -33,8 +33,8 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const assessmentPanel = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/RiskAssessmentPanel.tsx');
 const fairPanel = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/FairAnalysisPanel.tsx');
-const matrix = read('src/components/ui/RiskMatrix.tsx');
-const matrixCell = read('src/components/ui/RiskMatrixCell.tsx');
+const matrix = read('src/components/risks/RiskMatrix.tsx');
+const matrixCell = read('src/components/risks/RiskMatrixCell.tsx');
 
 describe('RQ3-OB-E — warnings that announce themselves', () => {
     test('the residual-baseline warning carries role + aria-live', () => {

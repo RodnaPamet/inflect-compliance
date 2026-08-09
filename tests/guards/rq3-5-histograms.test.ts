@@ -24,8 +24,8 @@ const client = read('src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx');
 const chart = read('src/components/ui/charts/ale-histogram.tsx');
 const barrel = read('src/components/ui/charts/index.ts');
 const lib = read('src/lib/risk-collisions.ts');
-const matrix = read('src/components/ui/RiskMatrix.tsx');
-const cell = read('src/components/ui/RiskMatrixCell.tsx');
+const matrix = read('src/components/risks/RiskMatrix.tsx');
+const cell = read('src/components/risks/RiskMatrixCell.tsx');
 
 describe('RQ3-5 — the histogram is a peer view', () => {
     test('three views, persisted per tenant (polish #13 pattern)', () => {

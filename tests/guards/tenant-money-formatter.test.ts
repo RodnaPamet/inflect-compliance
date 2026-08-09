@@ -41,7 +41,7 @@ const SCAN_DIRS = ['src/app/t', 'src/app/org'];
  * reason it cannot use the hook.
  */
 const ALLOWED: Record<string, string> = {
-    'src/components/ui/RiskMatrixCell.tsx':
+    'src/components/risks/RiskMatrixCell.tsx':
         'presentational primitive — takes the formatter via props from its matrix parent',
     'src/components/ui/charts/loss-exceedance-curve.tsx':
         'chart primitive — axis tick formatter supplied by the calling page',

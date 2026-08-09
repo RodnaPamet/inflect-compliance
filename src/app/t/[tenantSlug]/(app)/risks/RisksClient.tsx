@@ -217,7 +217,7 @@ interface RisksClientProps {
 // BY DESIGN — see the import note; this is a view-toggle panel, not a
 // Playwright-first modal, so it doesn't hit the dev JIT race.)
 const RiskMatrix = dynamic(
-    () => import('@/components/ui/RiskMatrix').then((m) => m.RiskMatrix),
+    () => import('@/components/risks/RiskMatrix').then((m) => m.RiskMatrix),
     { ssr: false, loading: () => <Skeleton className="h-64 w-full" /> },
 );
 

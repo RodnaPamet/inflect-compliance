@@ -22,7 +22,7 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
-const matrix = read('src/components/ui/RiskMatrix.tsx');
+const matrix = read('src/components/risks/RiskMatrix.tsx');
 const pureResidual = read('src/lib/risk-residual.ts');
 const acceptUsecase = read('src/app-layer/usecases/risk-residual-suggestion.ts');
 const panel = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/RiskAssessmentPanel.tsx');

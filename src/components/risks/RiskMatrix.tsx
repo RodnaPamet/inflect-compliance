@@ -58,8 +58,8 @@ import { useLocalStorage } from '@/components/ui/hooks';
 import {
     RiskMatrixCell,
     type CellRisk,
-} from '@/components/ui/RiskMatrixCell';
-import { RiskMatrixLegend } from '@/components/ui/RiskMatrixLegend';
+} from '@/components/risks/RiskMatrixCell';
+import { RiskMatrixLegend } from '@/components/risks/RiskMatrixLegend';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
