@@ -43,6 +43,7 @@ import { Heading } from '@/components/ui/typography';
 import { InheritedTestPlansPanel } from '@/components/InheritedTestPlansPanel';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 import { extractMutationError } from '@/lib/mutations';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
     loading: () => <SkeletonCard lines={3} />,
@@ -173,11 +174,11 @@ export default function RiskDetailPage() {
         : null;
     // Mutation-error channel; load errors come from SWR above.
     const [error, setError] = useState<string | null>(null);
+    // Alias kept so the existing disabled/label bindings read unchanged.
     // PR-D — "Where used" (process maps) reverse-lookup modal.
     const tWhereUsed = useTranslations('panels.processWhereUsed');
     const [processWhereUsedOpen, setProcessWhereUsedOpen] = useState(false);
     const [editing, setEditing] = useState(false);
-    const [saving, setSaving] = useState(false);
 
     // RQ2-4 — the 10-tab bar is rationalized to 8. `assessment` is
     // the new guided inherent → controls → residual surface. The
@@ -241,11 +242,23 @@ export default function RiskDetailPage() {
         setEditing(true);
     };
 
-    const handleSave = async (e?: React.FormEvent) => {
-        e?.preventDefault();
-        setSaving(true);
-        setError(null);
-        try {
+    /**
+     * B2-1 — the two detail writes go through `useTenantMutation`.
+     *
+     * Both already did the two things the hook exists to do: POST/PUT, then
+     * `riskQuery.mutate(updated, { revalidate: false })` — which is exactly
+     * `populateCache` + `revalidate: false`. They just spelled it out
+     * alongside their own `saving` / `error` slots.
+     *
+     * `revalidate: false` is preserved deliberately: the response body IS
+     * the updated risk, so a follow-up GET would re-fetch data we already
+     * hold. That is the documented case for turning revalidation off.
+     */
+    const saveMutation = useTenantMutation<Risk, void, { risk: Risk }>({
+        key: `/risks/${riskId}`,
+        revalidate: false,
+        populateCache: (result) => result.risk,
+        mutationFn: async () => {
             const payload: { title: string | undefined; description: string | null; category: string | null; likelihood: number | undefined; impact: number | undefined; treatmentOwner: string | null; ownerUserId: string | null; treatment: string | null; treatmentNotes: string | null; nextReviewAt?: string | null } = {
                 title: editForm.title,
                 description: editForm.description || null,
@@ -257,11 +270,12 @@ export default function RiskDetailPage() {
                 treatment: editForm.treatment || null,
                 treatmentNotes: editForm.treatmentNotes || null,
             };
-            if (editForm.nextReviewAt) {
-                payload.nextReviewAt = new Date(editForm.nextReviewAt as string).toISOString();
-            } else {
-                payload.nextReviewAt = null;
-            }
+            // Explicit null, not omission — `nextReviewAt` must be CLEARABLE.
+            // The three-state contract (undefined = unchanged, null = clear,
+            // value = set) is why B1-1 had to widen UpdateRiskSchema.
+            payload.nextReviewAt = editForm.nextReviewAt
+                ? new Date(editForm.nextReviewAt as string).toISOString()
+                : null;
 
             const res = await fetch(apiUrl(`/risks/${riskId}`), {
                 method: 'PUT',
@@ -272,30 +286,48 @@ export default function RiskDetailPage() {
                 const data = await res.json().catch(() => ({}));
                 throw new Error(data.message || t('detail.saveFailed', { status: res.status }));
             }
-            const { risk: updated } = await res.json();
-            riskQuery.mutate(updated, { revalidate: false });
+            return res.json();
+        },
+    });
+
+    const statusMutation = useTenantMutation<Risk, string, Risk>({
+        key: `/risks/${riskId}`,
+        revalidate: false,
+        populateCache: (result) => result,
+        mutationFn: async (status: string) => {
+            const res = await fetch(apiUrl(`/risks/${riskId}/status`), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(
+                    data.message || t('detail.statusChangeFailed', { status: res.status }),
+                );
+            }
+            return res.json();
+        },
+    });
+
+    // B2-1 — was a local useState; the mutation owns the in-flight flag.
+    const saving = saveMutation.isMutating;
+
+    const handleSave = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        setError(null);
+        try {
+            await saveMutation.trigger();
             setEditing(false);
         } catch (err) {
             setError(extractMutationError(err));
-        } finally {
-            setSaving(false);
         }
     };
 
     const handleStatusChange = async (newStatus: string) => {
         setError(null);
         try {
-            const res = await fetch(apiUrl(`/risks/${riskId}/status`), {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.message || t('detail.statusChangeFailed', { status: res.status }));
-            }
-            const updated = await res.json();
-            riskQuery.mutate(updated, { revalidate: false });
+            await statusMutation.trigger(newStatus);
         } catch (err) {
             setError(extractMutationError(err));
         }
