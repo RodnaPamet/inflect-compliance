@@ -137,9 +137,32 @@ const BYPASS_SOURCES: ReadonlySet<string> = new Set([
 interface TenantDekPair {
     primary: Buffer | null;
     previous: Buffer | null;
+    /**
+     * WHY there is no primary DEK, when there isn't one.
+     *
+     * `by-design` and `resolve-failed` both produced an identical
+     * `NO_DEK_PAIR` before, which meant a real anomaly (the DEK lookup
+     * threw) was indistinguishable from routine cross-tenant work that is
+     * SUPPOSED to have no tenant DEK. They want opposite handling, so the
+     * read path can no longer be written correctly without this.
+     */
+    reason: 'resolved' | 'by-design' | 'resolve-failed';
 }
 
-const NO_DEK_PAIR: TenantDekPair = { primary: null, previous: null };
+const NO_DEK_PAIR: TenantDekPair = { primary: null, previous: null, reason: 'by-design' };
+
+/**
+ * No DEK because the lookup FAILED, not because none was expected. A
+ * tenantId was present and we could not honour it — a transient DB blip, or
+ * a tenant with no `encryptedDek` row. Kept distinct from `NO_DEK_PAIR` so
+ * the read path can fail open here (nulling an entire list page over a DB
+ * blip is its own outage) while failing closed on the by-design case.
+ */
+const DEK_RESOLVE_FAILED: TenantDekPair = {
+    primary: null,
+    previous: null,
+    reason: 'resolve-failed',
+};
 
 /**
  * Resolve the per-tenant DEK pair for the current operation, or the
@@ -188,7 +211,7 @@ async function resolveTenantDekPair(
             tenantId,
             reason: err instanceof Error ? err.message : 'unknown',
         });
-        return NO_DEK_PAIR;
+        return DEK_RESOLVE_FAILED;
     }
 
     // The previous-DEK lookup is cheap in steady state (negative TTL
@@ -208,7 +231,7 @@ async function resolveTenantDekPair(
         });
     }
 
-    return { primary, previous };
+    return { primary, previous, reason: 'resolved' };
 }
 
 // ─── Encrypt traversal (write path) ──────────────────────────────────
@@ -329,6 +352,22 @@ function walkWriteArgument(
  * warning — this function throws in that case so the caller can
  * distinguish "expected pass-through" from "real decrypt failure".
  */
+/**
+ * No tenant DEK was available for a `v2:` ciphertext.
+ *
+ * A distinct class rather than a message match: the read path branches on
+ * it, and branching on `err.message` is exactly the kind of coupling that
+ * survives a refactor as a silent behaviour change.
+ */
+class NoTenantDekError extends Error {
+    constructor(public readonly dekReason: 'by-design' | 'resolve-failed') {
+        super(
+            `encryption-middleware: v2 ciphertext encountered but no tenant DEK is resolvable (${dekReason})`,
+        );
+        this.name = 'NoTenantDekError';
+    }
+}
+
 function decryptValue(ciphertext: string, deks: TenantDekPair): string {
     const version = getCiphertextVersion(ciphertext);
     if (version === 'v1') {
@@ -336,8 +375,12 @@ function decryptValue(ciphertext: string, deks: TenantDekPair): string {
     }
     if (version === 'v2') {
         if (!deks.primary) {
-            throw new Error(
-                'encryption-middleware: v2 ciphertext encountered but no tenant DEK is resolvable',
+            // `resolved` is unreachable here — a resolved pair has a
+            // primary — but the compiler cannot narrow that, and defaulting
+            // to `resolve-failed` is the safe side of the branch (it fails
+            // OPEN rather than nulling a field on an impossible path).
+            throw new NoTenantDekError(
+                deks.reason === 'by-design' ? 'by-design' : 'resolve-failed',
             );
         }
         // Steady state: deks.previous is null and this is a single
@@ -348,6 +391,80 @@ function decryptValue(ciphertext: string, deks: TenantDekPair): string {
     }
     // Shouldn't happen — caller gates on isEncryptedValue.
     throw new Error('encryption-middleware: unknown ciphertext envelope');
+}
+
+/**
+ * What a field becomes when it cannot be decrypted.
+ *
+ * Never throws — a read path that 500s a whole list page over one bad row
+ * is its own outage. But "never throw" is not the same as "always hand back
+ * the ciphertext", which is what this used to do uniformly, and the three
+ * failure classes do not deserve the same answer:
+ *
+ * **No DEK BY DESIGN → `null`.** The operation legitimately has no tenant
+ * DEK: the `Tenant` model itself, no ambient tenantId, or a `BYPASS_SOURCES`
+ * caller. These are cross-tenant by construction and have no business
+ * reading tenant plaintext. Handing them the ciphertext was the worst
+ * available outcome — useless to the caller AND forwardable to every
+ * downstream consumer of the row (UI, PDF export, audit-pack share link,
+ * SDK), which cannot tell it from plaintext. `null` costs a sweep that only
+ * counts or deletes rows nothing, and a sweep that genuinely needed the
+ * value has a bug that now surfaces on the next line instead of shipping a
+ * `v2:`-prefixed blob into an evidence artefact.
+ *
+ * Note the deliberate type lie: eight manifest fields are non-nullable in
+ * Prisma (`Finding.description`, `TaskComment.body`, `Incident.description`,
+ * …), so `null` contradicts their declared `string`. That is the intended
+ * outcome, not an oversight. For a field whose type promises a string, the
+ * honest representation of "this value could not be produced" is `null`, and
+ * a `TypeError` at the first read is strictly better than a ciphertext blob
+ * that reads as a valid string all the way into a customer-facing export.
+ *
+ * **DEK lookup FAILED → unchanged (ciphertext).** A tenantId was present and
+ * we could not honour it. Nulling every encrypted field on a page because of
+ * a transient DB blip is its own outage, and unlike the by-design case there
+ * IS a legitimate reader waiting. Fails open, but now counted separately so
+ * it stops hiding inside the by-design noise.
+ *
+ * **Decrypt FAILED with a DEK → unchanged (ciphertext).** Wrong key, corrupt
+ * row, or a write made under a mismatched tenant context. The genuine
+ * integrity anomaly. Whether this should throw instead is a posture decision
+ * with a real blast radius (one corrupt row would 500 a list page), so it is
+ * deliberately left open here and made observable first: flip it once
+ * `encryption.field.decrypt_failed{outcome="decrypt_failed"}` is zero in
+ * steady state.
+ */
+function onDecryptFailure(
+    err: unknown,
+    ciphertext: string,
+    modelName: string,
+    field: string,
+): string | null {
+    const version = getCiphertextVersion(ciphertext);
+    const byDesign = err instanceof NoTenantDekError && err.dekReason === 'by-design';
+    const outcome =
+        err instanceof NoTenantDekError
+            ? err.dekReason === 'by-design'
+                ? ('no_dek_by_design' as const)
+                : ('dek_resolve_failed' as const)
+            : ('decrypt_failed' as const);
+
+    logger.warn('encryption-middleware.decrypt_failed', {
+        component: 'encryption-middleware',
+        model: modelName,
+        field,
+        version,
+        outcome,
+        reason: err instanceof Error ? err.message : 'unknown',
+    });
+    recordFieldDecryptFailure({
+        model: modelName,
+        field,
+        version: version ?? 'unknown',
+        outcome,
+    });
+
+    return byDesign ? null : ciphertext;
 }
 
 function decryptResultNode(
@@ -366,25 +483,7 @@ function decryptResultNode(
         try {
             node[field] = decryptValue(value, deks);
         } catch (err) {
-            // Never throw on read. A malformed row or a cross-tenant
-            // bypass read that can't resolve the right DEK surfaces
-            // as a warn + ciphertext pass-through, not a 500.
-            //
-            // FAILING OPEN HAS A BLAST RADIUS. The caller gets a string it
-            // cannot tell from plaintext, so the ciphertext flows on to
-            // every consumer of the row — UI, PDF export, audit-pack share
-            // link, SDK. A warn nobody is alerted on is not a control, so
-            // count it too; whether this SHOULD keep failing open is an
-            // open question tracked separately.
-            const version = getCiphertextVersion(value);
-            logger.warn('encryption-middleware.decrypt_failed', {
-                component: 'encryption-middleware',
-                model: modelName,
-                field,
-                version,
-                reason: err instanceof Error ? err.message : 'unknown',
-            });
-            recordFieldDecryptFailure({ model: modelName, field, version: version ?? 'unknown' });
+            node[field] = onDecryptFailure(err, value, modelName, field);
         }
     }
 }
@@ -403,15 +502,7 @@ function decryptResultNodeAllModels(
         try {
             node[key] = decryptValue(value, deks);
         } catch (err) {
-            const version = getCiphertextVersion(value);
-            logger.warn('encryption-middleware.decrypt_failed', {
-                component: 'encryption-middleware',
-                model: '*',
-                field: key,
-                version,
-                reason: err instanceof Error ? err.message : 'unknown',
-            });
-            recordFieldDecryptFailure({ model: '*', field: key, version: version ?? 'unknown' });
+            node[key] = onDecryptFailure(err, value, '*', key);
         }
     }
 }

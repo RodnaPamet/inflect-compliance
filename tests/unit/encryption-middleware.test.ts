@@ -36,7 +36,13 @@ import {
 } from '@/lib/db/encryption-middleware';
 import { logger } from '@/lib/observability/logger';
 
-const NO_DEKS = { primary: null, previous: null } as const;
+/**
+ * A pair with no tenant DEK, BY DESIGN — cross-tenant work that is supposed
+ * to have none. `reason` distinguishes it from a FAILED lookup, which the
+ * read path now handles differently: by-design reads back as `null`, a
+ * failed lookup still falls back to the ciphertext.
+ */
+const NO_DEKS = { primary: null, previous: null, reason: 'by-design' } as const;
 const { walkWriteArgument, walkReadResult, encryptDataNode, decryptResultNode } =
     _internals;
 

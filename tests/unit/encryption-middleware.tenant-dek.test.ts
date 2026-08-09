@@ -76,7 +76,12 @@ const { walkWriteArgument, walkReadResult, resolveTenantDekPair } = _internals;
 // the read path now expects. Most existing tests don't exercise the
 // previous-DEK fallback, so previous is null.
 function pair(primary: Buffer | null, previous: Buffer | null = null) {
-    return { primary, previous };
+    // `reason` carries WHY a pair has no primary — 'by-design' (cross-tenant
+    // work that is supposed to have no DEK, which now reads back as null)
+    // vs 'resolve-failed' (the lookup threw, which still fails open). These
+    // fixtures supply a real DEK, so the resolved case is the honest label.
+    const reason: 'resolved' | 'by-design' = primary ? 'resolved' : 'by-design';
+    return { primary, previous, reason };
 }
 
 // Small helper — run a block with a specific audit context in play,
@@ -303,40 +308,46 @@ describe('read path — per-value dispatch on v1 / v2', () => {
         expect(row.comments[1].body).toBe('comment-2');
     });
 
-    it('v2 with no DEK available — logs warn, returns raw (never throws)', () => {
+    it('v2 with no DEK BY DESIGN — returns NULL, never throws', () => {
         const dek = generateDek();
         const node = {
             treatmentNotes: encryptWithKey(dek, 'should-not-decrypt'),
         };
-        // Pass null — simulates a cross-tenant bypass read.
+        // `pair(null)` is the cross-tenant read: no tenant DEK, by design.
         expect(() => walkReadResult(node, 'Risk', pair(null))).not.toThrow();
-        // Value preserved (still ciphertext).
-        expect(getCiphertextVersion(node.treatmentNotes as string)).toBe('v2');
+        expect(node.treatmentNotes).toBeNull();
         expect(logger.warn).toHaveBeenCalledWith(
             'encryption-middleware.decrypt_failed',
             expect.objectContaining({
                 version: 'v2',
                 field: 'treatmentNotes',
+                outcome: 'no_dek_by_design',
             }),
         );
-        // …and it is COUNTED, not just logged. The middleware fails open —
-        // the caller receives this ciphertext as a string it cannot tell
-        // from plaintext, so it flows on to the UI, PDF exports, audit-pack
-        // share links and SDK consumers. A warn line nobody is alerted on
-        // is not a control; the counter is what makes the failure visible.
+        // Counted, not just logged — a warn nobody is alerted on is not a
+        // control. The `outcome` label is what makes a genuine key mismatch
+        // visible instead of hiding inside routine by-design noise.
         expect(recordFieldDecryptFailure).toHaveBeenCalledWith({
             model: 'Risk',
             field: 'treatmentNotes',
             version: 'v2',
+            outcome: 'no_dek_by_design',
         });
     });
 
-    it('the returned value is the CIPHERTEXT itself — the fail-open contract', () => {
-        // Pinning this deliberately while the fail-open/fail-closed question
-        // is open. If the posture changes to throwing or to a typed
-        // sentinel, this test should fail and be rewritten — it is the
-        // executable record of what the system does today, not an
-        // endorsement of it.
+    it('the ciphertext NEVER reaches the caller on the by-design path', () => {
+        // This replaces a test that pinned the opposite ("the returned value
+        // is the CIPHERTEXT itself — the fail-open contract"), which said in
+        // its own comment that it was the executable record of what the
+        // system did, not an endorsement, and should be rewritten if the
+        // posture changed. It has.
+        //
+        // WHY THIS IS THE CONTRACT THAT MATTERS: the caller received a
+        // `string` it could not distinguish from plaintext, so a `v2:`-
+        // prefixed blob flowed on to every consumer of the row — the UI, PDF
+        // exports, audit-pack share links, SDK readers. For a product whose
+        // rows land in evidence artefacts, an unreadable blob rendered as if
+        // it were content is worse than an absent value.
         const dek = generateDek();
         const secret = 'operator wrote this';
         const node = { treatmentNotes: encryptWithKey(dek, secret) };
@@ -344,8 +355,56 @@ describe('read path — per-value dispatch on v1 / v2', () => {
 
         walkReadResult(node, 'Risk', pair(null));
 
-        expect(node.treatmentNotes).toBe(original);
+        expect(node.treatmentNotes).toBeNull();
+        expect(node.treatmentNotes).not.toBe(original);
         expect(node.treatmentNotes).not.toBe(secret);
+    });
+
+    it('a FAILED DEK lookup still falls open to the ciphertext', () => {
+        // The other half of the split, and the reason it exists. A tenantId
+        // WAS present and the lookup threw — a transient DB blip, or a
+        // tenant with no `encryptedDek` row. Nulling every encrypted field
+        // on a page for that is its own outage, and unlike the by-design
+        // case there is a legitimate reader waiting for the value.
+        const dek = generateDek();
+        const node = { treatmentNotes: encryptWithKey(dek, 'still-needed') };
+        const original = node.treatmentNotes;
+
+        walkReadResult(node, 'Risk', {
+            primary: null,
+            previous: null,
+            reason: 'resolve-failed',
+        });
+
+        expect(node.treatmentNotes).toBe(original);
+        expect(recordFieldDecryptFailure).toHaveBeenCalledWith({
+            model: 'Risk',
+            field: 'treatmentNotes',
+            version: 'v2',
+            outcome: 'dek_resolve_failed',
+        });
+    });
+
+    it('a decrypt failure WITH a DEK still falls open, tagged decrypt_failed', () => {
+        // Wrong key / corrupt row / a write made under a mismatched tenant
+        // context — the genuine integrity anomaly. Deliberately still open:
+        // flipping it to throw would 500 a whole list page over one bad row,
+        // so it is made observable first and flipped once the counter is
+        // zero in steady state.
+        const writtenUnder = generateDek();
+        const readWith = generateDek(); // different key — AES-GCM auth fails
+        const node = { treatmentNotes: encryptWithKey(writtenUnder, 'v') };
+        const original = node.treatmentNotes;
+
+        walkReadResult(node, 'Risk', pair(readWith));
+
+        expect(node.treatmentNotes).toBe(original);
+        expect(recordFieldDecryptFailure).toHaveBeenCalledWith({
+            model: 'Risk',
+            field: 'treatmentNotes',
+            version: 'v2',
+            outcome: 'decrypt_failed',
+        });
     });
 });
 
