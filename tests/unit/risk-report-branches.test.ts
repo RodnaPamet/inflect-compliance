@@ -197,10 +197,19 @@ describe('assembleReportData — populated aggregation', () => {
             portfolioMean: 50,
             portfolioP95: 95,
             portfolioP99: 99,
+            // B2-6 — these rows now go through `parsePerRiskResults`, the
+            // single validated read of this Json column, so `aleMean` is
+            // required. The previous fixture omitted it, encoding a row the
+            // WRITER cannot produce: `monte-carlo.ts` types `perRisk` with
+            // `aleMean: number` and computes it unconditionally from the
+            // sample sum. The old report-local reader accepted such a row
+            // and the canonical reader did not — which is precisely the
+            // divergence B2-6 removed.
             perRiskResultsJson: [
-                { riskId: 'r11', aleP90: 111 }, // valid entry -> mapped (r11 = top ALE, survives slice)
-                { riskId: 'r1', aleP90: 'nope' }, // aleP90 not a number -> skipped
-                { riskId: 42, aleP90: 7 }, // riskId not a string -> skipped
+                { riskId: 'r11', aleMean: 90, aleP90: 111 }, // valid -> mapped (r11 = top ALE, survives slice)
+                { riskId: 'r1', aleMean: 5, aleP90: 'nope' }, // aleP90 not a number -> falls back to the mean
+                { riskId: 42, aleMean: 5, aleP90: 7 }, // riskId not a string -> skipped
+                { riskId: 'r3', aleP90: 7 }, // no aleMean -> skipped (nothing to fall back to)
                 { nope: true }, // missing fields -> skipped
             ],
         });
@@ -227,7 +236,15 @@ describe('assembleReportData — populated aggregation', () => {
         const r11 = data.topRisks.find((t) => t.title === 'Risk 11');
         expect(r11?.aleP90).toBe(111);
         const r2 = data.topRisks.find((t) => t.title === 'Risk 2');
-        expect(r2?.aleP90).toBeNull(); // tailByRisk.get(...) ?? null branch
+        expect(r2?.aleP90).toBeNull(); // absent from the map -> `?? null`
+        // r1 had a non-numeric aleP90: the shared parse degrades it to the
+        // mean rather than dropping the risk, so the report shows a number
+        // and it is the honest one. The old report-local reader dropped it.
+        const r1 = data.topRisks.find((t) => t.title === 'Risk 1');
+        expect(r1?.aleP90).toBe(5);
+        // r3 had no aleMean at all -> no entry, so `?? null`.
+        const r3 = data.topRisks.find((t) => t.title === 'Risk 3');
+        expect(r3?.aleP90).toBeNull();
     });
 
     it('ignores perRiskResultsJson when it is not an array', async () => {

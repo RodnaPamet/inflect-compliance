@@ -77,12 +77,17 @@ describe('RQ3-1 — per-risk tail-percentile cache (the RQ3 data spine)', () => 
         expect(migration).toMatch(/ADD COLUMN "portfolioP80" DOUBLE PRECISION/);
     });
 
-    test('the retrieval helper exists and degrades pre-RQ3-1 runs to mean', () => {
+    test('the retrieval helper exists and delegates to the shared parse', () => {
         expect(engine).toMatch(/export async function getPerRiskPercentiles/);
         expect(engine).toMatch(/export interface PerRiskPercentilesSnapshot/);
-        // Graceful degrade: a missing percentile falls back to the mean.
-        expect(engine).toMatch(/typeof e\.aleP50 === 'number' \? e\.aleP50 : e\.aleMean/);
-        expect(engine).toMatch(/typeof e\.aleP90 === 'number' \? e\.aleP90 : e\.aleMean/);
+        // B2-6 — the mean-fallback used to be inlined here and was pinned by
+        // two source regexes. It now lives in `@/lib/risk/per-risk-results`,
+        // shared with the report + board reads that had their own weaker
+        // copies, and is covered BEHAVIOURALLY by
+        // `tests/unit/risks/per-risk-results.test.ts` (which mutation-testing
+        // confirms fails when the fallback is removed — the source regex
+        // could only ever prove the characters were present).
+        expect(engine).toMatch(/parsePerRiskResults\(run\.perRiskResultsJson\)/);
     });
 });
 

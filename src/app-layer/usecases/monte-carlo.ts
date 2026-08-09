@@ -26,6 +26,7 @@ import {
     type FairDistributions,
     type PertDistribution,
 } from './fair-calculator';
+import { parsePerRiskResults, type RiskTailPercentiles } from '@/lib/risk/per-risk-results';
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
@@ -419,13 +420,7 @@ export async function getLatestSimulation(ctx: RequestContext) {
 
 // ── RQ3-1 — per-risk tail-percentile cache ────────────────────────────
 
-export interface RiskTailPercentiles {
-    aleMean: number;
-    aleP50: number;
-    aleP90: number;
-    aleP95: number;
-    contribution: number;
-}
+export type { RiskTailPercentiles };
 
 export interface PerRiskPercentilesSnapshot {
     runId: string;
@@ -446,19 +441,10 @@ export async function getPerRiskPercentiles(
     ctx: RequestContext,
 ): Promise<PerRiskPercentilesSnapshot | null> {
     const run = await getLatestSimulation(ctx);
-    if (!run || !Array.isArray(run.perRiskResultsJson)) return null;
-    const byRisk: Record<string, RiskTailPercentiles> = {};
-    for (const entry of run.perRiskResultsJson) {
-        if (!entry || typeof entry !== 'object') continue;
-        const e = entry as Record<string, unknown>;
-        if (typeof e.riskId !== 'string' || typeof e.aleMean !== 'number') continue;
-        byRisk[e.riskId] = {
-            aleMean: e.aleMean,
-            aleP50: typeof e.aleP50 === 'number' ? e.aleP50 : e.aleMean,
-            aleP90: typeof e.aleP90 === 'number' ? e.aleP90 : e.aleMean,
-            aleP95: typeof e.aleP95 === 'number' ? e.aleP95 : e.aleMean,
-            contribution: typeof e.contribution === 'number' ? e.contribution : 0,
-        };
-    }
+    if (!run) return null;
+    // B2-6 — the validation this function used to inline now lives in
+    // `@/lib/risk/per-risk-results`, shared with the report + board reads
+    // that each had their own weaker copy.
+    const byRisk = parsePerRiskResults(run.perRiskResultsJson);
     return { runId: run.id, completedAt: run.completedAt, byRisk };
 }

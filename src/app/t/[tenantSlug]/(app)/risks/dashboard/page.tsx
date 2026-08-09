@@ -19,6 +19,7 @@ import { formatTailAwareAle } from '@/lib/tail-language';
 import { MonteCarloPanel, type SimulationRun } from './MonteCarloPanel';
 import { VelocityCard } from './VelocityCard';
 import type { DashboardPayload } from '@/app-layer/usecases/risk-dashboard';
+import { buildTailByRisk } from '@/lib/risk/per-risk-results';
 
 // B10 — Quantitative risk analytics shape. Mirrors the
 // RiskQuantitativeAnalytics interface in
@@ -130,13 +131,7 @@ export default function RiskDashboardPage() {
 
     // RQ3-4 — per-risk P90s from the lifted run (RQ3-1 cache); the
     // top-10 and coherence rows speak the tail register through it.
-    const tailByRisk = useMemo(() => {
-        const map: Record<string, number> = {};
-        for (const e of simRun?.perRiskResultsJson ?? []) {
-            if (e.aleP90 != null) map[e.riskId] = e.aleP90;
-        }
-        return map;
-    }, [simRun]);
+    const tailByRisk = useMemo(() => buildTailByRisk(simRun?.perRiskResultsJson), [simRun]);
 
     // MonteCarloPanel can still trigger a fresh load (the "Re-run"
     // affordance) — surface a callback that re-pulls the whole

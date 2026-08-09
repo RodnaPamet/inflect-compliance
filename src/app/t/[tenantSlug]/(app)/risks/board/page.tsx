@@ -36,6 +36,7 @@ import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { formatTailAwareAle } from '@/lib/tail-language';
 import type { DashboardPayload } from '@/app-layer/usecases/risk-dashboard';
+import { buildTailByRisk } from '@/lib/risk/per-risk-results';
 
 interface BestValueRow {
     controlId: string;
@@ -88,23 +89,21 @@ export default function RiskBoardPage() {
     const headlineLabel = simRun ? t('board.aleP80') : t('board.ale');
 
     // ── Top 5 by tail-aware ALE ─────────────────────────────────────
-    // perRiskResultsJson is a JSON column on the persisted run; the
-    // shape matches `SimulationRun.perRiskResultsJson` from the
-    // MonteCarloPanel — narrow it locally.
-    const perRiskRows = (
-        simRun?.perRiskResultsJson as unknown as
-            | { riskId: string; aleP90?: number }[]
-            | null
-            | undefined
-    ) ?? [];
-    const tailByRisk = new Map<string, number>();
-    for (const e of perRiskRows) {
-        if (e.aleP90 != null) tailByRisk.set(e.riskId, e.aleP90);
-    }
+    // B2-6 — shared with the dashboard, which derives the same lookup from
+    // the same payload field. The local `as unknown as` narrowing is gone:
+    // SimulationRun already declares this shape, so the cast bought nothing
+    // and would have hidden a real change to the column.
+    const tailByRisk = buildTailByRisk(simRun?.perRiskResultsJson);
     const topRisks = (analytics?.topByAle ?? []).slice(0, 5);
 
     // ── Hygiene ─────────────────────────────────────────────────────
-    const totalCount = risks.length;
+    // B2-6 — the denominator comes from the STALENESS slot, not from
+    // `risks.length`. Both count all non-deleted risks today, so the number
+    // is unchanged — but they are different queries, and the dashboard's
+    // `listRisks(ctx)` is an unbounded findMany. The day someone adds a
+    // `take:` to it as a perf fix, a percentage derived from `risks.length`
+    // silently overstates while the slot's own total stays right.
+    const totalCount = staleness?.totalCount ?? risks.length;
     const staleCount = staleness?.staleCount ?? 0;
     const stalePct = totalCount > 0 ? Math.round((staleCount / totalCount) * 100) : 0;
 
@@ -203,7 +202,7 @@ export default function RiskBoardPage() {
                                     {row.title}
                                 </Link>
                                 <span className="shrink-0 tabular-nums text-content-muted">
-                                    {formatTailAwareAle(row.ale, tailByRisk.get(row.id) ?? null, { money, compact: true })}
+                                    {formatTailAwareAle(row.ale, tailByRisk[row.id] ?? null, { money, compact: true })}
                                 </span>
                             </li>
                         ))}
