@@ -2,17 +2,36 @@
 /**
  * Shared readiness score ring + threshold legend.
  *
- * Extracted during the audit-hub unification so the score ring that
- * used to live only on the (now-removed) `/audits/readiness` overview
- * moves into the unified cycle list AND the per-cycle readiness report
- * render the SAME visual with the SAME 80/50 colour bands. The bands
- * were previously undocumented magic numbers duplicated in two files;
- * `<ReadinessLegend>` is the in-context explanation the score never had.
+ * Extracted during the audit-hub unification so the cycle list and the
+ * per-cycle readiness report render the SAME visual with the SAME colour
+ * bands. `<ReadinessLegend>` is the in-context explanation the score never
+ * had.
+ *
+ * HISTORY, because this comment was wrong and the wrongness mattered. It used
+ * to describe `/audits/readiness` as "now-removed". That page is live: it was
+ * a redirect shim to `/audits/cycles`, and it came back (see
+ * `audits/readiness/page.tsx`) as the one surface that answers "how ready am I
+ * across every framework at once" — the cycle list answers per-cycle and
+ * cannot roll up. Its return is also what reintroduced four copies of the
+ * 80/50 thresholds, because the comment said the page it would have copied
+ * from no longer existed.
+ *
+ * The bands themselves now live in `@/lib/readiness/bands` — one definition,
+ * with a per-vocabulary map. This file consumes the CSS-variable vocabulary;
+ * it does not know what 80 and 50 are, which is the point.
  */
+import { readinessBand, READINESS_BAND_COLOR_VAR } from '@/lib/readiness/bands';
 
-/** Colour band for a readiness score. 80+ ready, 50-79 nearly there, <50 at risk. */
+/**
+ * Token, not hex.
+ *
+ * This shipped `#22c55e` / `#eab308` / `#ef4444` — three raw literals in a
+ * file the chart-token ratchet could not see, because that ratchet works off
+ * an explicit file list. The tokens resolve per theme, so a light/dark flip
+ * re-tones the ring instead of leaving it at one hardcoded emerald.
+ */
 function bandColor(score: number): string {
-    return score >= 80 ? '#22c55e' : score >= 50 ? '#eab308' : '#ef4444';
+    return READINESS_BAND_COLOR_VAR[readinessBand(score)];
 }
 
 export function ReadinessScoreRing({
@@ -80,12 +99,14 @@ export interface ReadinessLegendLabels {
     red: string;
 }
 
-/** Legend explaining the 80/50 green/amber/red readiness bands. */
+/** Legend explaining the green/amber/red readiness bands. */
 export function ReadinessLegend({ labels }: { labels: ReadinessLegendLabels }) {
+    // Same three tokens the ring paints — the legend explains the ring, so it
+    // must not be able to disagree with it.
     const rows: { text: string; color: string }[] = [
-        { text: labels.green, color: '#22c55e' },
-        { text: labels.amber, color: '#eab308' },
-        { text: labels.red, color: '#ef4444' },
+        { text: labels.green, color: READINESS_BAND_COLOR_VAR.ready },
+        { text: labels.amber, color: READINESS_BAND_COLOR_VAR.nearly },
+        { text: labels.red, color: READINESS_BAND_COLOR_VAR.atRisk },
     ];
     return (
         <div className="space-y-tight">

@@ -43,7 +43,8 @@ const REQUIRED_DOMAIN_FILES = [
     'auth.prisma',
     'compliance.prisma',
     'vendor.prisma',
-    'audit.prisma',
+    'audit-trail.prisma',
+    'audit-workflow.prisma',
     'automation.prisma',
     'schema.prisma',
 ];

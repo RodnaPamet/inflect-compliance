@@ -26,7 +26,7 @@ const PREDICATE_MODULE = 'src/lib/policy/coverage-predicate.ts';
 const SCORER_FILES: readonly string[] = [
     'src/app-layer/usecases/traceability.ts',
     'src/app-layer/usecases/audit-readiness/packs.ts',
-    // audit-readiness-scoring.ts is intentionally NOT here: the NIS2 policy
+    // audit-readiness/scoring.ts is intentionally NOT here: the NIS2 policy
     // dimension no longer counts policies-by-status — it scores the fraction of
     // in-scope controls carrying a PolicyControlLink (structural linkage), so it
     // is no longer a "policies that count" scorer.

@@ -232,7 +232,7 @@ describe('Readiness Scoring', () => {
 
     describe('Usecase Exports', () => {
         it('exports all scoring usecases', () => {
-            const mod = require('../../src/app-layer/usecases/audit-readiness-scoring');
+            const mod = require('../../src/app-layer/usecases/audit-readiness/scoring');
             expect(typeof mod.computeReadiness).toBe('function');
             expect(typeof mod.exportReadinessJson).toBe('function');
             expect(typeof mod.exportUnmappedCsv).toBe('function');
@@ -241,7 +241,7 @@ describe('Readiness Scoring', () => {
         });
 
         it('exports weights for verification', () => {
-            const mod = require('../../src/app-layer/usecases/audit-readiness-scoring');
+            const mod = require('../../src/app-layer/usecases/audit-readiness/scoring');
             expect(mod.ISO_WEIGHTS.coverage).toBe(0.35);
             expect(mod.ISO_WEIGHTS.implementation).toBe(0.25);
             expect(mod.NIS2_WEIGHTS.coverage).toBe(0.40);
@@ -258,7 +258,7 @@ describe('Readiness Scoring', () => {
             if (!fs.existsSync(file)) return;
             const content = fs.readFileSync(file, 'utf8');
             expect(content).not.toMatch(/from\s+['"]@\/lib\/prisma['"]/);
-            expect(content).toMatch(/from\s+['"]@\/app-layer\/usecases\/audit-readiness-scoring['"]/);
+            expect(content).toMatch(/from\s+['"]@\/app-layer\/usecases\/audit-readiness['"]/);
         });
     });
 });

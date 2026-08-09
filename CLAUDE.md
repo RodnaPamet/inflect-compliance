@@ -141,7 +141,8 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
                             enums.prisma        — every shared enum
                             auth.prisma         — Tenant/User/Membership/Session/SSO/Billing
                             vendor.prisma       — Vendor + assessment graph
-                            audit.prisma        — AuditCycle/Pack/Auditor + AuditLog
+                            audit-trail.prisma  — AuditLog/OrgAuditLog (hash-chained trail)
+                            audit-workflow.prisma — Audit/Cycle/Pack/Auditor + ReadinessSnapshot
                             automation.prisma   — AutomationRule/Execution + Notification + Integration
                             processes.prisma    — Business-process canvas graph
                           compliance.prisma was split (2026-07-10) into domain-cohesive

@@ -24,7 +24,7 @@ jest.mock('../../../src/app-layer/policies/audit-readiness.policies', () => ({
     assertCanViewPack: jest.fn(),
 }));
 
-import { computeReadiness, scoreReadiness } from '@/app-layer/usecases/audit-readiness-scoring';
+import { computeReadiness, scoreReadiness } from '@/app-layer/usecases/audit-readiness/scoring';
 import { runInTenantContext } from '@/lib/db-context';
 import { makeRequestContext } from '../../helpers/make-context';
 

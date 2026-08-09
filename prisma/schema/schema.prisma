@@ -14,7 +14,8 @@
 //    compliance.prisma    — Control / Risk / Evidence / Framework / Policy /
 //                            Asset / Issue / Finding / Task (work-item) / Snapshot
 //    vendor.prisma        — Vendor + assessment graph
-//    audit.prisma         — Audit / AuditCycle / AuditPack / AuditorAccess /
+//    audit-trail.prisma    — AuditLog / OrgAuditLog (hash-chained trail)
+//    audit-workflow.prisma — Audit / AuditCycle / AuditPack / AuditorAccess /
 //                            AuditLog
 //    automation.prisma    — AutomationRule / Execution / Notification /
 //                            Integration / SyncMapping

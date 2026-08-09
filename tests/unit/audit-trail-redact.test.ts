@@ -1,7 +1,7 @@
 /**
  * Unit tests for audit-redact.ts — sensitive field redaction and blob summarization.
  *
- * RUN: npx jest tests/unit/audit-redact.test.ts
+ * RUN: npx jest tests/unit/audit-trail-redact.test.ts
  */
 import {
     isSensitiveField,

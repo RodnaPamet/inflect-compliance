@@ -47,7 +47,7 @@ jest.mock('@/lib/audit', () => ({
 // row through the OrgAuditLog writer. This test focuses on the
 // existing per-tenant fan-out wiring, so we stub the org writer to
 // a successful no-op. Dedicated org-audit emission assertions live
-// in `tests/unit/org-audit-emission.test.ts`.
+// in `tests/unit/audit-trail-org-emission.test.ts`.
 const appendOrgAuditEntryMock = jest.fn().mockResolvedValue({
     id: 'oa-mock',
     entryHash: 'h-mock',

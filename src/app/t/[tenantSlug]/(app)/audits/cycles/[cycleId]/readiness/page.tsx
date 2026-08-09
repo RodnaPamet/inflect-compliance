@@ -13,8 +13,9 @@ import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { LineChart } from '@/components/ui/charts/line-chart';
 import { chartReady, type TimeSeriesPoint } from '@/components/ui/charts/types';
 import { cn } from '@/lib/cn';
+import { readinessVariant } from '@/lib/readiness/bands';
 import { ReadinessScoreRing, ReadinessLegend } from '../../ReadinessScoreRing';
-import type { ReadinessResult } from '@/app-layer/usecases/audit-readiness-scoring';
+import type { ReadinessResult } from '@/app-layer/usecases/audit-readiness';
 
 interface ReadinessSnapshot { id: string; score: number; gapCount: number; computedAt: string }
 
@@ -232,8 +233,12 @@ function BreakdownBar({ label, score, detail, weight }: { label: string; score: 
     // Epic 59 ProgressBar primitive. Variant picks the token-backed
     // colour by score band — light-mode compatible (replaces the
     // earlier hardcoded emerald/amber/red Tailwind classes).
+    //
+    // This file is one of the two the ReadinessScoreRing was extracted FROM,
+    // and the thresholds grew back here anyway. They now come from the single
+    // definition, so a bar and the ring beside it cannot disagree.
     const tx = useTranslations('audits');
-    const variant = score >= 80 ? 'success' : score >= 50 ? 'warning' : 'error';
+    const variant = readinessVariant(score);
     return (
         <div>
             <div className="flex items-center justify-between text-xs mb-1">

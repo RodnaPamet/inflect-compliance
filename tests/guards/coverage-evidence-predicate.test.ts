@@ -32,7 +32,7 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 const SCORER_FILES = [
-    'src/app-layer/usecases/audit-readiness-scoring.ts',
+    'src/app-layer/usecases/audit-readiness/scoring.ts',
     'src/app-layer/usecases/framework/coverage.ts',
     // Widened: each of these counted evidence its own way, so the same
     // control could read as covered on one screen and not another.

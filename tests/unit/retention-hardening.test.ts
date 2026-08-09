@@ -21,7 +21,7 @@ describe('Retention Hardening — Readiness scoring', () => {
         // inlining the literals. Verify (a) the scorer uses the predicate and
         // (b) the predicate still filters isArchived.
         const scorer = fs.readFileSync(
-            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness-scoring.ts'), 'utf-8'
+            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness/scoring.ts'), 'utf-8'
         );
         expect(scorer).toContain('coverageQualifyingEvidenceWhere');
         const predicate = fs.readFileSync(
@@ -39,7 +39,7 @@ describe('Retention Hardening — Readiness scoring', () => {
 
     test('gap details mention archived/expired exclusion', () => {
         const content = fs.readFileSync(
-            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness-scoring.ts'), 'utf-8'
+            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness/scoring.ts'), 'utf-8'
         );
         expect(content).toContain('archived/expired excluded');
     });
@@ -90,7 +90,7 @@ describe('Retention Hardening — Metrics', () => {
 describe('Retention Hardening — CI guardrail', () => {
     test('readiness scoring file does NOT query evidence without isArchived filter', () => {
         const content = fs.readFileSync(
-            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness-scoring.ts'), 'utf-8'
+            path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness/scoring.ts'), 'utf-8'
         );
         // EP-3: Evidence↔Control is a many-to-many join now, so the evidence
         // qualifier is a relation filter on the join — `evidence: <predicate>`.

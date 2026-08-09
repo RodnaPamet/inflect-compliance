@@ -28,14 +28,14 @@ jest.mock('../../../src/app-layer/usecases/audit-readiness/cycles', () => ({
 
 // Mock BOTH: scoreReadiness is the compute-only path the overview must use;
 // computeReadiness is the persist path it must NOT touch.
-jest.mock('../../../src/app-layer/usecases/audit-readiness-scoring', () => ({
+jest.mock('../../../src/app-layer/usecases/audit-readiness/scoring', () => ({
     scoreReadiness: jest.fn(),
     computeReadiness: jest.fn(),
 }));
 
 import { getReadinessOverview } from '@/app-layer/usecases/audit-readiness/overview';
 import { listAuditCycles } from '@/app-layer/usecases/audit-readiness/cycles';
-import { scoreReadiness, computeReadiness } from '@/app-layer/usecases/audit-readiness-scoring';
+import { scoreReadiness, computeReadiness } from '@/app-layer/usecases/audit-readiness';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockList = listAuditCycles as jest.MockedFunction<typeof listAuditCycles>;

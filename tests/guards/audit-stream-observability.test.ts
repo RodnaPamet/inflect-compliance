@@ -17,7 +17,7 @@
  * in-memory-counter — audit delivery failures going silent again.
  *
  * This is a structural scan (no DB, no OTel runtime). The behaviour
- * of the metrics is covered by `tests/unit/audit-stream.test.ts`.
+ * of the metrics is covered by `tests/unit/audit-trail-stream.test.ts`.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';

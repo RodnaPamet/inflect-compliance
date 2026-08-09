@@ -25,7 +25,7 @@ describe('SP-5 SharePoint audit-pack export + health', () => {
     });
 
     it('AuditPack has the SharePoint export columns + migration', () => {
-        const schema = read('prisma/schema/audit.prisma');
+        const schema = read('prisma/schema/audit-workflow.prisma');
         for (const col of ['spExportItemId', 'spExportWebUrl', 'spExportedAt']) {
             expect(schema).toMatch(new RegExp(col));
         }

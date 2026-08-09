@@ -42,7 +42,7 @@ const HASH_FIELDS_EXPECTED_NULLABLE: Array<{
     field: string;
 }> = [
     { file: 'auth.prisma', model: 'User', field: 'emailHash' },
-    { file: 'audit.prisma', model: 'AuditorAccount', field: 'emailHash' },
+    { file: 'audit-workflow.prisma', model: 'AuditorAccount', field: 'emailHash' },
     { file: 'auth.prisma', model: 'UserIdentityLink', field: 'emailAtLinkTimeHash' },
 ];
 
