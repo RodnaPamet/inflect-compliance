@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
@@ -205,16 +206,45 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
         // re-created every render; the ref guard is what makes this run once.
     }, [selectedParam]);
 
+    /**
+     * The audit PUT, once.
+     *
+     * Both writes below hit the same endpoint with a different body, and both
+     * previously hand-rolled the request, the `res.ok` branch, the error toast
+     * and (for status) a manual snapshot/restore. That is the shape the whole
+     * surface repeated thirty times.
+     *
+     * The detail pane is component state, not an SWR entry — the pane holds ONE
+     * audit chosen by click, which is not a cache key. So `useTenantMutation`
+     * owns the request lifecycle and the LIST invalidation, and the pane's own
+     * optimistic flip stays local. Pretending the pane were a cache entry would
+     * buy a rollback we already have and cost a key that nothing reads.
+     */
+    const auditWrite = useTenantMutation<
+        CappedList<AuditListRow>,
+        { auditId: string; body: Record<string, unknown> }
+    >({
+        key: cycleId ? `${CACHE_KEYS.audits.list()}?cycleId=${cycleId}` : CACHE_KEYS.audits.list(),
+        mutationFn: async ({ auditId, body }) => {
+            const res = await fetch(apiUrl(`/audits/${auditId}`), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error('audit_write_failed');
+            return res.json().catch(() => null);
+        },
+    });
+
     // #4 — a failed PUT used to silently drop the result; surface it and
     // only refresh the pane once the write actually succeeded.
     const updateChecklist = async (itemId: string, result: string, notes: string = '') => {
         if (!selected) return;
         try {
-            const res = await fetch(apiUrl(`/audits/${selected.id}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checklistUpdates: [{ id: itemId, result, notes }] }) });
-            if (!res.ok) {
-                toast.error(tx('detail.checklistError'));
-                return;
-            }
+            await auditWrite.trigger({
+                auditId: selected.id,
+                body: { checklistUpdates: [{ id: itemId, result, notes }] },
+            });
             toast.success(tx('detail.checklistSaved'));
             loadAudit(selected.id);
         } catch {
@@ -229,14 +259,8 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
         const prevStatus = selected.status;
         setSelected((s) => (s ? { ...s, status } : s));
         try {
-            const res = await fetch(apiUrl(`/audits/${selected.id}`), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
-            if (!res.ok) {
-                setSelected((s) => (s ? { ...s, status: prevStatus } : s));
-                toast.error(tx('detail.statusError'));
-                return;
-            }
+            await auditWrite.trigger({ auditId: selected.id, body: { status } });
             toast.success(tx('detail.statusChanged', { status: statusLabel(status) }));
-            auditsQuery.mutate();
         } catch {
             setSelected((s) => (s ? { ...s, status: prevStatus } : s));
             toast.error(tx('detail.statusError'));

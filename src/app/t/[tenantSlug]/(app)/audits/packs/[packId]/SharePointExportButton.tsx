@@ -76,6 +76,7 @@ export function SharePointExportButton({ packId }: { packId: string }) {
                             ['deleted', 'sharepoint.skipReasonDeleted'],
                             ['sizeCapped', 'sharepoint.skipReasonSizeCapped'],
                             ['unreadable', 'sharepoint.skipReasonUnreadable'],
+                            ['foreignKey', 'sharepoint.skipReasonForeignKey'],
                         ] as const
                     )
                         .filter(([key]) => (skipped[key] ?? 0) > 0)

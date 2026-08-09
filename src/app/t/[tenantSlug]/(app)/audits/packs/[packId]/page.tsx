@@ -18,6 +18,9 @@ import { FormField } from '@/components/ui/form-field';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { useCelebration, useToast } from '@/components/ui/hooks';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { scopedMilestone } from '@/lib/celebrations';
 import { Package, MessageSquare } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -95,21 +98,12 @@ export default function PackDetailPage() {
     const localizeEnum = (prefix: string, value: string): string =>
         tx.has(`${prefix}.${value}`) ? tx(`${prefix}.${value}`) : humanizeSnakeCase(value);
 
-    const [pack, setPack] = useState<PackDetail | null>(null);
-    const [comments, setComments] = useState<ShareComment[]>([]);
-    const [openCount, setOpenCount] = useState(0);
     const [resolvingId, setResolvingId] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState(false);
-    const [freezing, setFreezing] = useState(false);
     const [freezeConfirmOpen, setFreezeConfirmOpen] = useState(false);
-    const [sharing, setSharing] = useState(false);
     const [shareLink, setShareLink] = useState<string | null>(null);
-    const [cloning, setCloning] = useState(false);
     const router = useRouter();
 
     // Part B — share lifecycle: shares list, expiry-picker modal, revoke.
-    const [shares, setShares] = useState<PackShare[]>([]);
     const [shareModalOpen, setShareModalOpen] = useState(false);
     const [shareExpiry, setShareExpiry] = useState<Date | null>(() => defaultShareExpiry());
     const [revokeShareTarget, setRevokeShareTarget] = useState<string | null>(null);
@@ -120,143 +114,214 @@ export default function PackDetailPage() {
     const [addOptions, setAddOptions] = useState<Array<{ id: string; label: string }>>([]);
     const [addOptionsLoading, setAddOptionsLoading] = useState(false);
     const [addSelected, setAddSelected] = useState('');
-    const [addBusy, setAddBusy] = useState(false);
 
-    const loadPack = useCallback(() => {
-        setLoading(true);
-        setLoadError(false);
-        fetch(apiUrl(`/audits/packs/${packId}`))
-            .then(r => r.ok ? r.json() : null)
-            .then(setPack)
-            // #5 — a network blip must surface as a retryable error, NOT the
-            // "pack not found" empty state (which reads as a genuine 404).
-            .catch(() => setLoadError(true))
-            .finally(() => setLoading(false));
-    }, [apiUrl, packId]);
+    // ─── Reads ───
+    //
+    // Three hand-rolled `fetch` + `useEffect` + `useState` triples became three
+    // SWR keys. The keys are the same strings the mutations below target, which
+    // is the property that makes an optimistic update land: a mutation keyed on
+    // a near-miss string silently updates nothing and the UI just waits for the
+    // revalidation.
+    //
+    // #5 — a network blip must surface as a retryable error, NOT the "pack not
+    // found" empty state (which reads as a genuine 404). SWR's `error` keeps
+    // that distinction: `error` is the blip, `data === null` is the 404.
+    const packQuery = useTenantSWR<PackDetail | null>(CACHE_KEYS.audits.pack(packId));
+    const pack = packQuery.data ?? null;
+    const loading = packQuery.isLoading;
+    const loadError = Boolean(packQuery.error);
 
-    const loadComments = useCallback(() => {
-        fetch(apiUrl(`/audits/packs/${packId}/share-comments`))
-            .then(r => r.ok ? r.json() : null)
-            .then((d) => {
-                if (d) { setComments(d.comments || []); setOpenCount(d.openCount || 0); }
-            })
-            .catch(() => { /* non-fatal — feed is supplementary */ });
-    }, [apiUrl, packId]);
+    // Both sub-feeds are supplementary: a failure leaves the pack usable, so
+    // neither gates the page.
+    const commentsQuery = useTenantSWR<{ comments?: ShareComment[]; openCount?: number }>(
+        CACHE_KEYS.audits.packShareComments(packId),
+    );
+    const comments = commentsQuery.data?.comments ?? [];
+    const openCount = commentsQuery.data?.openCount ?? 0;
 
-    const loadShares = useCallback(() => {
-        fetch(apiUrl(`/audits/packs/${packId}/shares`))
-            .then(r => r.ok ? r.json() : null)
-            .then((d) => { if (Array.isArray(d)) setShares(d); })
-            .catch(() => { /* non-fatal — shares list is supplementary */ });
-    }, [apiUrl, packId]);
+    const sharesQuery = useTenantSWR<PackShare[]>(CACHE_KEYS.audits.packShares(packId));
+    const shares = sharesQuery.data ?? [];
 
-    useEffect(() => { loadPack(); }, [loadPack]);
-    useEffect(() => { loadComments(); }, [loadComments]);
-    useEffect(() => { loadShares(); }, [loadShares]);
+    const loadPack = useCallback(() => { void packQuery.mutate(); }, [packQuery]);
+    const loadComments = useCallback(() => { void commentsQuery.mutate(); }, [commentsQuery]);
+    const loadShares = useCallback(() => { void sharesQuery.mutate(); }, [sharesQuery]);
+
+    // ─── Writes ───
+    //
+    // Seven POSTs that each re-decided their own error handling, cache
+    // invalidation and (absent) rollback. They now share one lifecycle:
+    // optimistic prediction → request → rollback on throw → revalidate. The
+    // freeze/export flows are why this matters most here — a failed freeze that
+    // left the badge reading FROZEN was the worst available outcome, because
+    // FROZEN is the state the whole export path keys off.
+    //
+    // `postJson` is the one place the wire format lives. Every one of these
+    // endpoints is `POST` + JSON + an `{ message }` error envelope, and seven
+    // copies of that is how the error handling drifted apart in the first place.
+    const postJson = useCallback(
+        async (path: string, body: unknown, fallbackMessage: string) => {
+            const res = await fetch(apiUrl(path), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body ?? {}),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => null);
+                throw new Error(err?.message || fallbackMessage);
+            }
+            return res.json().catch(() => null);
+        },
+        [apiUrl],
+    );
+
+    const resolveMutation = useTenantMutation<
+        { comments?: ShareComment[]; openCount?: number },
+        string
+    >({
+        key: CACHE_KEYS.audits.packShareComments(packId),
+        // Resolving is a single-field flip we can predict exactly, and the open
+        // counter has to move with it or the tab badge lies until revalidation.
+        optimisticUpdate: (current, id) =>
+            current && {
+                ...current,
+                comments: (current.comments ?? []).map((c) =>
+                    c.id === id ? { ...c, status: 'RESOLVED' } : c,
+                ),
+                openCount: Math.max(0, (current.openCount ?? 0) - 1),
+            },
+        mutationFn: (id) =>
+            postJson(
+                `/audits/packs/${packId}/share-comments/${id}/resolve`,
+                {},
+                tx('packs.auditorActivity.resolveError'),
+            ),
+    });
 
     const resolveComment = async (id: string) => {
         setResolvingId(id);
         try {
-            const res = await fetch(apiUrl(`/audits/packs/${packId}/share-comments/${id}/resolve`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-            });
-            if (res.ok) loadComments();
-            else toast.error(tx('packs.auditorActivity.resolveError'));
-        } catch {
-            toast.error(tx('packs.auditorActivity.resolveError'));
+            await resolveMutation.trigger(id);
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : tx('packs.auditorActivity.resolveError'));
         } finally { setResolvingId(null); }
     };
 
     // feat/audit-cycle-unify — turn a FINDING / EVIDENCE_REQUEST into a real
     // Finding (+ remediation Task) tied to the cycle, then resolve it.
     const [materializingId, setMaterializingId] = useState<string | null>(null);
+    const materializeMutation = useTenantMutation<
+        { comments?: ShareComment[]; openCount?: number },
+        string
+    >({
+        key: CACHE_KEYS.audits.packShareComments(packId),
+        // No optimistic prediction: the server mints a Finding and a Task, so
+        // the resulting row is not derivable client-side. The honest answer is
+        // to wait rather than paint a guess.
+        mutationFn: (id) =>
+            postJson(
+                `/audits/packs/${packId}/share-comments/${id}/materialize`,
+                {},
+                tx('packs.auditorActivity.materializeError'),
+            ),
+        invalidate: [CACHE_KEYS.findings.list()],
+    });
+
     const materializeComment = async (id: string) => {
         setMaterializingId(id);
         try {
-            const res = await fetch(apiUrl(`/audits/packs/${packId}/share-comments/${id}/materialize`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-            });
-            if (res.ok) { toast.success(tx('packs.auditorActivity.findingCreated')); loadComments(); }
-            else toast.error(tx('packs.auditorActivity.materializeError'));
-        } catch {
-            toast.error(tx('packs.auditorActivity.materializeError'));
+            await materializeMutation.trigger(id);
+            toast.success(tx('packs.auditorActivity.findingCreated'));
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : tx('packs.auditorActivity.materializeError'));
         } finally { setMaterializingId(null); }
     };
 
+    const freezeMutation = useTenantMutation<PackDetail | null, void>({
+        key: CACHE_KEYS.audits.pack(packId),
+        // The optimistic flip is the reason this one is worth predicting: the
+        // whole page re-chromes on FROZEN. Rollback is what makes it safe —
+        // before, a failed freeze left the badge claiming a state the server
+        // had refused.
+        optimisticUpdate: (current) => current && { ...current, status: 'FROZEN' },
+        mutationFn: () =>
+            postJson(`/audits/packs/${packId}?action=freeze`, {}, tx('packs.failedFreeze')),
+        invalidate: [CACHE_KEYS.audits.packs()],
+    });
+    const freezing = freezeMutation.isMutating;
+
     const freeze = async () => {
-        setFreezing(true);
         try {
-            const res = await fetch(apiUrl(`/audits/packs/${packId}?action=freeze`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-            });
-            if (res.ok) loadPack();
-            else {
-                const err = await res.json().catch(() => null);
-                toast.error(err?.message || tx('packs.failedFreeze'));
-            }
-        } catch {
-            toast.error(tx('packs.failedFreeze'));
-        } finally { setFreezing(false); }
+            await freezeMutation.trigger();
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : tx('packs.failedFreeze'));
+        }
     };
+
+    const shareMutation = useTenantMutation<PackShare[], { expiresAt?: string }, { token: string }>({
+        key: CACHE_KEYS.audits.packShares(packId),
+        // The share row's id and token are server-minted, so there is nothing
+        // to predict — the list refreshes when the response lands.
+        mutationFn: (input) =>
+            postJson(`/audits/packs/${packId}?action=share`, input, tx('packs.shareError')),
+    });
+    const sharing = shareMutation.isMutating;
 
     const submitShare = async () => {
-        setSharing(true);
         try {
-            const res = await fetch(apiUrl(`/audits/packs/${packId}?action=share`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ expiresAt: shareExpiry ? shareExpiry.toISOString() : undefined }),
+            const data = await shareMutation.trigger({
+                expiresAt: shareExpiry ? shareExpiry.toISOString() : undefined,
             });
-            if (res.ok) {
-                const data = await res.json();
-                const link = `${window.location.origin}/audit/shared/${data.token}`;
-                setShareLink(link);
-                setShareModalOpen(false);
-                setShareExpiry(defaultShareExpiry());
-                loadShares();
-                toast.success(tx('packs.shareCreated'));
-            } else {
-                const err = await res.json().catch(() => null);
-                toast.error(err?.message || tx('packs.shareError'));
-            }
-        } catch {
-            toast.error(tx('packs.shareError'));
-        } finally { setSharing(false); }
+            setShareLink(`${window.location.origin}/audit/shared/${data.token}`);
+            setShareModalOpen(false);
+            setShareExpiry(defaultShareExpiry());
+            toast.success(tx('packs.shareCreated'));
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : tx('packs.shareError'));
+        }
     };
 
+    const revokeShareMutation = useTenantMutation<PackShare[], string>({
+        key: CACHE_KEYS.audits.packShares(packId),
+        optimisticUpdate: (current, shareId) =>
+            current?.filter((sh) => sh.id !== shareId),
+        mutationFn: (shareId) =>
+            postJson(
+                `/audits/packs/${packId}?action=revoke-share`,
+                { shareId },
+                tx('packs.shareRevokeError'),
+            ),
+    });
+
     const revokeShareById = async (shareId: string) => {
-        const res = await fetch(apiUrl(`/audits/packs/${packId}?action=revoke-share`), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ shareId }),
-        });
-        if (res.ok) {
+        try {
+            await revokeShareMutation.trigger(shareId);
             // #3 — clear the freshly-generated "Share Link Generated" card so it
             // can't keep displaying a live token URL for a share that's now
             // revoked (the raw token is never retrievable again anyway).
             setShareLink(null);
-            loadShares();
             toast.success(tx('packs.shareRevoked'));
-        } else {
-            toast.error(tx('packs.shareRevokeError'));
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : tx('packs.shareRevokeError'));
         }
     };
 
+    const cloneMutation = useTenantMutation<PackDetail | null, void, { id: string }>({
+        // A clone mints a NEW pack, so it belongs to the LIST cache — keying it
+        // on this pack's detail entry would optimistically corrupt the pack the
+        // user is still looking at.
+        key: CACHE_KEYS.audits.packs(),
+        mutationFn: () =>
+            postJson(`/audits/packs/${packId}?action=clone`, {}, tx('packs.cloneError')),
+    });
+    const cloning = cloneMutation.isMutating;
+
     const clone = async () => {
-        setCloning(true);
         try {
-            const res = await fetch(apiUrl(`/audits/packs/${packId}?action=clone`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-            });
-            if (res.ok) {
-                const cloned = await res.json();
-                router.push(`/t/${tenantSlug}/audits/packs/${cloned.id}`);
-            } else {
-                toast.error(tx('packs.cloneError'));
-            }
-        } catch {
-            toast.error(tx('packs.cloneError'));
-        } finally { setCloning(false); }
+            const cloned = await cloneMutation.trigger();
+            router.push(`/t/${tenantSlug}/audits/packs/${cloned.id}`);
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : tx('packs.cloneError'));
+        }
     };
 
     // Part C — add-to-pack: fetch candidate entities for the chosen type.
@@ -288,28 +353,33 @@ export default function PackDetailPage() {
         loadAddOptions('CONTROL');
     };
 
+    const addItemMutation = useTenantMutation<
+        PackDetail | null,
+        { entityType: AddableType; entityId: string; label: string }
+    >({
+        key: CACHE_KEYS.audits.pack(packId),
+        // No optimistic prediction: a pack item carries a server-assigned id and
+        // sortOrder, and inventing them would make the row jump on revalidation.
+        mutationFn: ({ entityType, entityId, label }) =>
+            postJson(
+                `/audits/packs/${packId}?action=items`,
+                { items: [{ entityType, entityId, snapshotJson: JSON.stringify({ title: label }) }] },
+                tx('packs.addPicker.addError'),
+            ),
+    });
+    const addBusy = addItemMutation.isMutating;
+
     const submitAddItem = async () => {
         if (!addSelected) return;
         const label = addOptions.find((o) => o.id === addSelected)?.label ?? addSelected;
-        setAddBusy(true);
         try {
-            const res = await fetch(apiUrl(`/audits/packs/${packId}?action=items`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: [{ entityType: addType, entityId: addSelected, snapshotJson: JSON.stringify({ title: label }) }] }),
-            });
-            if (res.ok) {
-                setAddModalOpen(false);
-                setAddSelected('');
-                loadPack();
-                toast.success(tx('packs.addPicker.added'));
-            } else {
-                const err = await res.json().catch(() => null);
-                toast.error(err?.message || tx('packs.addPicker.addError'));
-            }
-        } catch {
-            toast.error(tx('packs.addPicker.addError'));
-        } finally { setAddBusy(false); }
+            await addItemMutation.trigger({ entityType: addType, entityId: addSelected, label });
+            setAddModalOpen(false);
+            setAddSelected('');
+            toast.success(tx('packs.addPicker.added'));
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : tx('packs.addPicker.addError'));
+        }
     };
 
     // Epic 62 — celebrate when the pack reaches its "complete" state

@@ -20,7 +20,7 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { edgeLogger } from '@/lib/observability/edge-logger';
-import { getStorageProvider } from '@/lib/storage';
+import { getStorageProvider, assertTenantKey } from '@/lib/storage';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { getAuditPack, exportAuditPack } from './audit-readiness/packs';
 import {
@@ -53,16 +53,46 @@ export interface SkippedBreakdown {
     sizeCapped: number;
     /** Storage read threw — the file is referenced but unreadable. */
     unreadable: number;
+    /**
+     * The row's `pathKey` did not carry this tenant's canonical prefix.
+     *
+     * Not reachable through any known code path — both queries that produce
+     * these rows filter `tenantId: ctx.tenantId`. It is the defence-in-depth
+     * assertion's counter, kept separate from `unreadable` because the two
+     * mean opposite things to an operator: unreadable is a storage problem,
+     * this is a data-integrity one, and merging them is exactly the blur that
+     * made a single `skipped` count useless.
+     */
+    foreignKey: number;
 }
 
 /** Total across every reason. */
 export function totalSkipped(s: SkippedBreakdown): number {
-    return s.infected + s.unscanned + s.deleted + s.sizeCapped + s.unreadable;
+    return s.infected + s.unscanned + s.deleted + s.sizeCapped + s.unreadable + s.foreignKey;
 }
 
 const NO_SKIPS: SkippedBreakdown = {
-    infected: 0, unscanned: 0, deleted: 0, sizeCapped: 0, unreadable: 0,
+    infected: 0, unscanned: 0, deleted: 0, sizeCapped: 0, unreadable: 0, foreignKey: 0,
 };
+
+/**
+ * `assertTenantKey` in predicate form.
+ *
+ * The shared helper throws `tenantIsolationViolation`, which is right for a
+ * single-file read (`audit-hardening.ts`) — there is nothing to salvage. Here
+ * one bad row must not abort an export of hundreds of good ones, so the throw
+ * is caught and turned into a counted skip. Reusing the helper rather than
+ * re-implementing the prefix check keeps the two definitions of "belongs to
+ * this tenant" from drifting.
+ */
+function isTenantOwnedKey(pathKey: string, tenantId: string): boolean {
+    try {
+        assertTenantKey(pathKey, tenantId);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 /** Collect a storage Readable into a Buffer. */
 function streamToBuffer(stream: Readable): Promise<Buffer> {
@@ -124,6 +154,19 @@ async function bundleEvidenceBinaries(
         if (!isDownloadAllowed(f.scanStatus)) {
             if (f.scanStatus === 'INFECTED') skipped.infected++;
             else skipped.unscanned++;
+            continue;
+        }
+        // Defence-in-depth, matching `audit-hardening.ts`'s reference
+        // implementation: the pathKey already came from a tenant-filtered
+        // query, but re-assert the canonical `tenants/<tenantId>/` prefix
+        // before touching storage so a corrupt or legacy row can never point
+        // the reader at another tenant's object. The sibling had this and this
+        // path did not — the inconsistency was the finding, not a live hole.
+        if (!isTenantOwnedKey(f.pathKey, ctx.tenantId)) {
+            skipped.foreignKey++;
+            edgeLogger.warn('Audit-pack export: evidence pathKey failed the tenant-prefix check', {
+                component: 'sharepoint',
+            });
             continue;
         }
         try {

@@ -22,6 +22,14 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/lib/storage', () => ({
     __esModule: true,
     getStorageProvider: () => ({ readStream: (...a: unknown[]) => mockReadStream(...a) }),
+    // Mirrors the real `assertTenantKey` rather than stubbing it to a no-op:
+    // the export's tenant-prefix check is one of the things under test here,
+    // and a mock that always passes would assert nothing about it.
+    assertTenantKey: (pathKey: string, tenantId: string) => {
+        if (!pathKey.startsWith(`tenants/${tenantId}/`)) {
+            throw new Error(`Tenant isolation violation: ${pathKey}`);
+        }
+    },
 }));
 jest.mock('@/lib/storage/av-scan', () => ({
     __esModule: true,
@@ -109,8 +117,8 @@ describe('exportAuditPackToSharePoint', () => {
             ],
         });
         mockDb.evidence.findMany.mockResolvedValueOnce([
-            { fileRecord: { pathKey: 'k1', originalName: 'a.pdf', scanStatus: 'CLEAN', status: 'STORED', deletedAt: null } },
-            { fileRecord: { pathKey: 'k2', originalName: 'b.pdf', scanStatus: 'INFECTED', status: 'STORED', deletedAt: null } },
+            { fileRecord: { pathKey: 'tenants/t1/evidence/k1', originalName: 'a.pdf', scanStatus: 'CLEAN', status: 'STORED', deletedAt: null } },
+            { fileRecord: { pathKey: 'tenants/t1/evidence/k2', originalName: 'b.pdf', scanStatus: 'INFECTED', status: 'STORED', deletedAt: null } },
         ]);
         mockReadStream.mockImplementation(() => Readable.from([Buffer.from('PDFDATA')]));
 
@@ -118,7 +126,7 @@ describe('exportAuditPackToSharePoint', () => {
 
         // Only the clean file is read + bundled; the infected one is skipped.
         expect(mockReadStream).toHaveBeenCalledTimes(1);
-        expect(mockReadStream).toHaveBeenCalledWith('k1');
+        expect(mockReadStream).toHaveBeenCalledWith('tenants/t1/evidence/k1');
         expect(mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson).toMatchObject({
             evidenceBundled: 1,
             evidenceSkipped: 1,
@@ -154,10 +162,18 @@ describe('exportAuditPackToSharePoint', () => {
             );
         }
 
-        const clean = (k: string) => ({ pathKey: k, originalName: `${k}.pdf`, scanStatus: 'CLEAN', status: 'STORED', deletedAt: null });
-        const infected = (k: string) => ({ pathKey: k, originalName: `${k}.pdf`, scanStatus: 'INFECTED', status: 'STORED', deletedAt: null });
-        const pending = (k: string) => ({ pathKey: k, originalName: `${k}.pdf`, scanStatus: 'PENDING', status: 'STORED', deletedAt: null });
-        const removed = (k: string) => ({ pathKey: k, originalName: `${k}.pdf`, scanStatus: 'CLEAN', status: 'STORED', deletedAt: new Date() });
+        // Fixture keys carry the canonical `tenants/<tenantId>/` prefix that a
+        // real `FileRecord.pathKey` has. They used to be bare (`k1`), which the
+        // export's tenant-prefix assertion now — correctly — rejects. A test
+        // fixture that could not exist in the database proves nothing about the
+        // code that reads the database.
+        const key = (k: string) => `tenants/t1/evidence/${k}`;
+        const clean = (k: string) => ({ pathKey: key(k), originalName: `${k}.pdf`, scanStatus: 'CLEAN', status: 'STORED', deletedAt: null });
+        const infected = (k: string) => ({ pathKey: key(k), originalName: `${k}.pdf`, scanStatus: 'INFECTED', status: 'STORED', deletedAt: null });
+        const pending = (k: string) => ({ pathKey: key(k), originalName: `${k}.pdf`, scanStatus: 'PENDING', status: 'STORED', deletedAt: null });
+        const removed = (k: string) => ({ pathKey: key(k), originalName: `${k}.pdf`, scanStatus: 'CLEAN', status: 'STORED', deletedAt: new Date() });
+        /** A row whose pathKey points outside this tenant — the case the assertion exists for. */
+        const foreign = (k: string) => ({ pathKey: `tenants/OTHER-TENANT/evidence/${k}`, originalName: `${k}.pdf`, scanStatus: 'CLEAN', status: 'STORED', deletedAt: null });
 
         it('reports an INFECTED and an oversized file separately, and does not record PASSED', async () => {
             const { Readable } = await import('node:stream');
@@ -199,6 +215,24 @@ describe('exportAuditPackToSharePoint', () => {
             const res = await exportWith([clean('k1')], () => { throw new Error('storage down'); });
             expect(res.skipped.unreadable).toBe(1);
             expect(res.bundled).toBe(0);
+        });
+
+        it('never reads a file whose pathKey is outside this tenant', async () => {
+            // Defence-in-depth: both queries that produce these rows already
+            // filter by tenantId, so this is unreachable through any known
+            // path. It is here because `audit-hardening.ts` asserts the same
+            // thing on an identically-sourced key, and a defence that only one
+            // of two siblings applies is a defence that will be dropped.
+            const res = await exportWith([clean('k1'), foreign('k2')]);
+            expect(res.skipped.foreignKey).toBe(1);
+            expect(res.bundled).toBe(1);
+            // Counted under its OWN reason: a corrupt row is a data-integrity
+            // problem, an unreadable one is a storage problem, and an operator
+            // does different things about each.
+            expect(res.skipped.unreadable).toBe(0);
+            expect(mockReadStream).not.toHaveBeenCalledWith(
+                'tenants/OTHER-TENANT/evidence/k2',
+            );
         });
 
         it('records PASSED and zero skips when the whole pack bundles', async () => {
