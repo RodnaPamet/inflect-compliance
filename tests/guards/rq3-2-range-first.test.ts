@@ -34,7 +34,9 @@ const en = JSON.parse(read('messages/en.json')) as {
 const lib = read('src/lib/fair-calibration.ts');
 const usecase = read('src/app-layer/usecases/risk.ts');
 const route = read('src/app/api/t/[tenantSlug]/risks/[id]/fair/route.ts');
-const calculator = read('src/app-layer/usecases/fair-calculator.ts');
+// B2-4 — implementation moved to src/lib/fair-math.ts (the app-layer path
+// is now a re-export shim). See tests/guards/no-usecase-imports-in-client.
+const calculator = read('src/lib/fair-math.ts');
 
 describe('RQ3-2 — ranges replace point floats in the panel', () => {
     test('every factor renders the min/likely/max triple inputs', () => {
