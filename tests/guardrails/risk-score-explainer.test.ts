@@ -24,7 +24,7 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
-const component = read('src/components/RiskScoreExplainer.tsx');
+const component = read('src/components/risks/RiskScoreExplainer.tsx');
 const usecase = read('src/app-layer/usecases/risk-score-explanation.ts');
 const route = read('src/app/api/t/[tenantSlug]/risks/[id]/score-explanation/route.ts');
 const risksClient = read('src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx');
@@ -32,12 +32,12 @@ const riskDetail = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
 
 describe('RQ2-3 — score chips explain themselves', () => {
     test('risks list mounts the explainer around the score chip', () => {
-        expect(risksClient).toMatch(/import \{ RiskScoreExplainer \} from '@\/components\/RiskScoreExplainer'/);
+        expect(risksClient).toMatch(/import \{ RiskScoreExplainer \} from '@\/components\/risks\/RiskScoreExplainer'/);
         expect(risksClient).toMatch(/<RiskScoreExplainer/);
     });
 
     test('risk detail page mounts the explainer', () => {
-        expect(riskDetail).toMatch(/import \{ RiskScoreExplainer \} from '@\/components\/RiskScoreExplainer'/);
+        expect(riskDetail).toMatch(/import \{ RiskScoreExplainer \} from '@\/components\/risks\/RiskScoreExplainer'/);
         expect(riskDetail).toMatch(/<RiskScoreExplainer/);
     });
 

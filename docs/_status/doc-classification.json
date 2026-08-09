@@ -3,7 +3,7 @@
     "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\".",
     "counts": {
         "authoritative": 114,
-        "historical": 505,
+        "historical": 506,
         "living": 5,
         "deprecated": 1
     },
@@ -1881,6 +1881,9 @@
             "class": "historical"
         },
         "docs/implementation-notes/2026-08-09-decrypt-failure-three-outcomes.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-09-risk-stat-tile.md": {
             "class": "historical"
         }
     }

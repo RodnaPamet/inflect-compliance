@@ -56,7 +56,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 // so its modal machinery only loads when the assessment tab is opened.
 const RiskTreatmentPlanCard = dynamic(
     () =>
-        import('@/components/RiskTreatmentPlanCard').then(
+        import('@/components/risks/RiskTreatmentPlanCard').then(
             (m) => m.RiskTreatmentPlanCard,
         ),
     { loading: () => <SkeletonCard lines={2} />, ssr: false },

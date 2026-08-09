@@ -10,7 +10,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
+import { RiskScoreExplainer } from '@/components/risks/RiskScoreExplainer';
 
 const renderExplainer = () =>
     render(

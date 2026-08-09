@@ -13,7 +13,7 @@ import { LinkedVendorsPanel } from '@/components/LinkedVendorsPanel';
 import { Eyebrow } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import { MetaStrip } from '@/components/ui/meta-strip';
-import { RiskScoreExplainer } from '@/components/RiskScoreExplainer';
+import { RiskScoreExplainer } from '@/components/risks/RiskScoreExplainer';
 import {
     RISK_STATUS_VARIANT,
     riskSeverityToBadgeVariant,

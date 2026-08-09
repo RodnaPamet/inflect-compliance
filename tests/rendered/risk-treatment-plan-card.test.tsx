@@ -37,7 +37,7 @@ jest.mock('next/navigation', () => ({
 // assertions on visible text (e.g. the "1/2 milestones" progress label,
 // composed via t('milestonesCount', { done, total })) keep holding.
 
-import { RiskTreatmentPlanCard } from '@/components/RiskTreatmentPlanCard';
+import { RiskTreatmentPlanCard } from '@/components/risks/RiskTreatmentPlanCard';
 
 function withClient(ui: React.ReactNode) {
     // Fresh per-test SWR cache (these panels read via useSWR); a shared

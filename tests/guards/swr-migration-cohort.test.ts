@@ -50,7 +50,7 @@ const MIGRATED_FILES: string[] = [
     'components/TraceabilityPanel.tsx',
     // Wave 5c — ControlExceptionsPanel + RiskTreatmentPlanCard
     'components/ControlExceptionsPanel.tsx',
-    'components/RiskTreatmentPlanCard.tsx',
+    'components/risks/RiskTreatmentPlanCard.tsx',
 ];
 
 // Flipped to true by the final cleanup wave (after @tanstack/react-query is
