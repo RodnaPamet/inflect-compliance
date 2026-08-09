@@ -3,7 +3,7 @@
 /* RQ-7 — Bow-tie analysis: threat → event → consequence with control barriers.
    A read-time projection rendered either as an interactive xyflow canvas
    (default) or the accessible column list. */
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import { ShieldCheck } from '@/components/ui/icons/nucleo/shield-check';
@@ -14,8 +14,9 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { useTenantApiUrl, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 import type { BowTieGraph } from './BowTieCanvas';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 
 // xyflow is client-only + heavy — load the canvas on demand.
 const BowTieCanvas = dynamic(() => import('./BowTieCanvas').then((m) => m.BowTieCanvas), {
@@ -47,34 +48,22 @@ function BarrierChip({ b }: { b: Barrier }) {
 
 export function BowTiePanel({ riskId }: { riskId: string }) {
     const t = useTranslations('risks');
-    const apiUrl = useTenantApiUrl();
     const money = useMoneyFormatter();
-    const [p, setP] = useState<Projection | null>(null);
-    const [graph, setGraph] = useState<BowTieGraph | null>(null);
     const [view, setView] = useState<'canvas' | 'list'>('canvas');
-    // A failed/HTTP-error load used to be swallowed (`.catch(() => {})`),
-    // pinning the panel on its loading copy forever. Track it + offer retry.
-    const [failed, setFailed] = useState(false);
-    const [reloadKey, setReloadKey] = useState(0);
+    // B2-2 — see RiskHistoryPanel: the `reloadKey` counter existed only to
+    // re-run the effect on retry. `mutate()` replaces it.
+    const { data, error, mutate } = useTenantSWR<{
+        projection: Projection;
+        graph?: BowTieGraph | null;
+    }>(`/risks/${riskId}/bowtie`);
+    const p = data?.projection ?? null;
+    const graph = data?.graph ?? null;
 
-    useEffect(() => {
-        let live = true;
-        setFailed(false);
-        fetch(apiUrl(`/risks/${riskId}/bowtie`))
-            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-            .then((d) => {
-                // eslint-disable-next-line react-hooks/set-state-in-effect
-                if (live) { setP(d.projection); setGraph(d.graph ?? null); }
-            })
-            .catch(() => { if (live) setFailed(true); });
-        return () => { live = false; };
-    }, [apiUrl, riskId, reloadKey]);
-
-    if (failed) {
+    if (error) {
         return (
             <Card className="space-y-default p-6" data-testid="risk-bowtie-error">
                 <p className="text-sm text-content-error">{t('bowtie.loadFailed')}</p>
-                <Button size="sm" variant="secondary" onClick={() => setReloadKey((n) => n + 1)}>
+                <Button size="sm" variant="secondary" onClick={() => void mutate()}>
                     {t('bowtie.retry')}
                 </Button>
             </Card>

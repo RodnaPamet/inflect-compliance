@@ -48,6 +48,8 @@ import {
 } from '../_shared/risk-options';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 import type { ResidualSuggestionPayload } from '@/app-layer/usecases/risk-residual-suggestion';
+import { ApiClientError } from '@/lib/api-client';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 
 // Epic G-7 — the structured treatment plan now lives INSIDE the guided
 // assessment (Step 4), not scattered on the Overview tab. Dynamic-imported
@@ -189,13 +191,11 @@ export function RiskAssessmentPanel({
     // Matrix config is supplied by the parent (already fetched there) —
     // no independent re-fetch. Local alias keeps the existing call sites.
     const config = matrixConfig;
-    const [suggestion, setSuggestion] = useState<ResidualSuggestionPayload | null>(null);
     // The panel used to keep ONE `error` state shared by the initial load AND
     // all five save handlers, and returned early on it — so a failed Save on
     // Step 4 unmounted Steps 1–3 and the user lost their place. Load failures
     // (nothing to render without the suggestion) still replace the panel; SAVE
     // failures are scoped to the step that raised them and render inline.
-    const [loadError, setLoadError] = useState<string | null>(null);
     const [stepErrors, setStepErrors] = useState<Partial<Record<AssessmentStep, string>>>({});
     const setStepError = useCallback((step: AssessmentStep, message: string) => {
         setStepErrors((prev) => ({ ...prev, [step]: message }));
@@ -211,7 +211,6 @@ export function RiskAssessmentPanel({
     // RQ3-7 — currently-breached KRIs for this risk. Drives the
     // re-assess nudge: a sensor fired, the conclusion should catch
     // up. Failure-soft — a failed load just hides the nudge.
-    const [kriBreaches, setKriBreaches] = useState<Array<{ kriId: string; name: string; value: number }>>([]);
 
     // Step 1 draft state.
     const [likelihood, setLikelihood] = useState(risk.likelihood);
@@ -244,34 +243,33 @@ export function RiskAssessmentPanel({
     );
     const [savingReview, setSavingReview] = useState(false);
 
-    const loadSuggestion = useCallback(async () => {
-        const res = await fetch(apiUrl(`/risks/${riskId}/residual-suggestion`));
-        if (!res.ok) throw new Error(t('assessment.failedLoadStatus', { status: res.status }));
-        setSuggestion(await res.json());
-    }, [apiUrl, riskId, t]);
+    // B2-2 — the residual suggestion. `mutate` is the same refresh the
+    // retry button and `acceptSuggestion` used `loadSuggestion()` for.
+    const {
+        data: suggestion,
+        error: suggestionError,
+        mutate: reloadSuggestion,
+    } = useTenantSWR<ResidualSuggestionPayload>(`/risks/${riskId}/residual-suggestion`);
 
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            try {
-                await loadSuggestion();
-            } catch (err) {
-                if (!cancelled) setLoadError(err instanceof Error ? err.message : t('assessment.failedLoad'));
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [loadSuggestion, t]);
+    // The status-bearing message is preserved: `ApiClientError` carries the
+    // HTTP status, so the copy stays as specific as the hand-rolled version
+    // was. A non-HTTP failure (network, parse) has no status and falls back
+    // to the generic string, which is what the old `catch` produced too.
+    const loadError = !suggestionError
+        ? null
+        : suggestionError instanceof ApiClientError
+          ? t('assessment.failedLoadStatus', { status: suggestionError.status })
+          : suggestionError.message || t('assessment.failedLoad');
 
-    // RQ3-7 — load the KRI breach signal independently (failure-soft:
-    // never blocks the panel, just hides the nudge on error).
-    useEffect(() => {
-        let cancelled = false;
-        fetch(apiUrl(`/risks/${riskId}/kri-breaches`))
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => { if (!cancelled) setKriBreaches(d?.breaches ?? []); })
-            .catch(() => { if (!cancelled) setKriBreaches([]); });
-        return () => { cancelled = true; };
-    }, [apiUrl, riskId]);
+    // RQ3-7 — the KRI breach signal loads independently and stays
+    // failure-soft: it hides the nudge rather than blocking the panel.
+    // Deliberately keeps that posture — `error` is not surfaced — because
+    // this is a prompt to re-assess, not a control. Note the consequence:
+    // a failed load is indistinguishable from "no breaches".
+    const { data: kriData } = useTenantSWR<{
+        breaches?: Array<{ kriId: string; name: string; value: number }>;
+    }>(`/risks/${riskId}/kri-breaches`);
+    const kriBreaches = kriData?.breaches ?? [];
 
     if (loadError) {
         return (
@@ -281,12 +279,7 @@ export function RiskAssessmentPanel({
                     size="sm"
                     variant="secondary"
                     data-testid="assessment-load-retry"
-                    onClick={() => {
-                        setLoadError(null);
-                        void loadSuggestion().catch((err) =>
-                            setLoadError(err instanceof Error ? err.message : t('assessment.failedLoad')),
-                        );
-                    }}
+                    onClick={() => void reloadSuggestion()}
                 >
                     {t('assessment.retry')}
                 </Button>
@@ -314,7 +307,7 @@ export function RiskAssessmentPanel({
             if (!res.ok) throw new Error(t('assessment.failedSaveStatus', { status: res.status }));
             if (overriding) setResidualBaselineDirty(true);
             onRiskUpdated();
-            await loadSuggestion();
+            await reloadSuggestion();
         } catch (err) {
             setStepError('inherent', err instanceof Error ? err.message : t('assessment.failedSave'));
         } finally {
@@ -343,7 +336,7 @@ export function RiskAssessmentPanel({
             const summary: string | undefined = body?.accepted?.summary;
             toast.success(summary ?? t('assessment.residualAccepted'));
             onRiskUpdated();
-            await loadSuggestion();
+            await reloadSuggestion();
         } catch (err) {
             setStepError('accept', err instanceof Error ? err.message : t('assessment.failedAccept'));
         } finally {
@@ -368,7 +361,7 @@ export function RiskAssessmentPanel({
             setOverriding(false);
             setResidualBaselineDirty(false);
             onRiskUpdated();
-            await loadSuggestion();
+            await reloadSuggestion();
         } catch (err) {
             setStepError('residual', err instanceof Error ? err.message : t('assessment.failedSave'));
         } finally {

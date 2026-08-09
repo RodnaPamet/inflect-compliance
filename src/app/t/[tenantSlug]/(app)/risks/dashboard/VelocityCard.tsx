@@ -1,14 +1,15 @@
 'use client';
 
 /* RQ-9 — Risk velocity card: portfolio direction + fastest rising/falling. */
-import { useState, useEffect } from 'react';
 import { ArrowTrendUp } from '@/components/ui/icons/nucleo/arrow-trend-up';
 import { PercentageArrowDown } from '@/components/ui/icons/nucleo/percentage-arrow-down';
 import { Card } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { useTenantApiUrl, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { useTranslations } from 'next-intl';
+import { Button } from '@/components/ui/button';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 
 interface Vel { riskId: string; title: string; deltaPercent: number }
 interface VelocityResult {
@@ -19,17 +20,32 @@ interface VelocityResult {
 
 export function VelocityCard() {
     const t = useTranslations('risks');
-    const apiUrl = useTenantApiUrl();
     const money = useMoneyFormatter();
-    const [v, setV] = useState<VelocityResult | null>(null);
+    // B2-2 — this used to be a bare fetch whose `.catch(() => {})` left `v`
+    // null forever, and `if (!v) return null` rendered NOTHING. That made a
+    // failed load pixel-identical to the two states below that legitimately
+    // render nothing (still loading; genuinely no movement to report), so a
+    // broken endpoint was indistinguishable from a quiet quarter and nobody
+    // would ever report it.
+    const { data, error, isLoading, mutate } = useTenantSWR<{ velocity: VelocityResult }>(
+        '/risks/velocity',
+    );
+    const v = data?.velocity ?? null;
 
-    useEffect(() => {
-        let live = true;
-        fetch(apiUrl('/risks/velocity')).then((r) => (r.ok ? r.json() : null)).then((d) => { if (live && d) setV(d.velocity); }).catch(() => {});
-        return () => { live = false; };
-    }, [apiUrl]);
-
-    if (!v) return null;
+    if (error) {
+        return (
+            <Card className="space-y-default" data-testid="risk-velocity-error">
+                <p className="text-sm text-content-error">{t('velocity.loadFailed')}</p>
+                <Button size="sm" variant="secondary" onClick={() => void mutate()}>
+                    {t('velocity.retry')}
+                </Button>
+            </Card>
+        );
+    }
+    // Loading and "nothing to report" both stay silent — this card is a
+    // supplementary dashboard slot, and a skeleton for a card that may have
+    // nothing to say is worse than no card. Only the ERROR state is new.
+    if (isLoading || !v) return null;
     const pv = v.portfolioVelocity;
     const improving = pv.trend === 'FALLING'; // falling ALE = improving
     if (v.topRising.length === 0 && v.topFalling.length === 0 && pv.previousTotalAle === 0) return null;
