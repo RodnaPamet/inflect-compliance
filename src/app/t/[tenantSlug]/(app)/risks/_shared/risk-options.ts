@@ -18,6 +18,7 @@ export type {
     TreatmentDecisionValue,
     TreatmentStrategyValue,
 } from '@/lib/risk-treatment-vocabulary';
+import { RISK_CATEGORIES } from '@/lib/risk/categories';
 
 /**
  * Shared risk-treatment decision options in the canonical vocabulary.
@@ -105,18 +106,11 @@ export function canonicalTreatmentLabel(
  * ever need localising, the stored value and the display label have to
  * separate first.
  */
-export const RISK_CATEGORIES = [
-    'Technical',
-    'Operational',
-    'Compliance',
-    'Strategic',
-    'Financial',
-    'Reputational',
-    'Physical',
-    'Human Resources',
-] as const;
-
-export type RiskCategory = (typeof RISK_CATEGORIES)[number];
+// B2-8 — the list itself moved to `@/lib/risk/categories` so the client
+// form schema can validate against it without `lib/` importing from a route
+// module. Re-exported here so every existing UI import keeps resolving, and
+// the options below are still projected from it: one source, one layer down.
+export { RISK_CATEGORIES, type RiskCategory } from '@/lib/risk/categories';
 
 /** `RISK_CATEGORIES` as `<Combobox>` options — value and label are identical. */
 export const RISK_CATEGORY_OPTIONS: ComboboxOption[] = RISK_CATEGORIES.map((c) => ({

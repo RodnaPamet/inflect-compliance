@@ -31,7 +31,17 @@ type TelemetrySurface = { label: string; files: string[] };
 
 const EXPECTED_SURFACES: TelemetrySurface[] = [
     { label: 'controls/NewControlModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/controls/NewControlModal.tsx'] },
-    { label: 'risks/NewRiskModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx'] },
+    {
+        // B2-8 — the submit path moved into the `_form/` hook, so the
+        // trackError call lives there (via `onError`) while trackSubmit /
+        // trackSuccess stay in the modal. Same multi-file shape tasks and
+        // policies already use.
+        label: 'risks (modal + hook)',
+        files: [
+            'src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx',
+            'src/app/t/[tenantSlug]/(app)/risks/_form/useNewRiskForm.ts',
+        ],
+    },
     { label: 'evidence/UploadEvidenceModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx'] },
     { label: 'evidence/NewEvidenceTextModal.tsx', files: ['src/app/t/[tenantSlug]/(app)/evidence/NewEvidenceTextModal.tsx'] },
     {
