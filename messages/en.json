@@ -1338,6 +1338,7 @@
             "psdTitle": "Positive semi-definite",
             "psdHelp": "A valid correlation matrix must be positive semi-definite — otherwise the coefficients are mutually contradictory and the simulation cannot sample from them. Auto-suggest keeps it valid.",
             "loadError": "Couldn't load the correlation matrix.",
+            "saveError": "Couldn't save the scenario. Your entries are still here — try again.",
             "suggestError": "Couldn't suggest correlations.",
             "saveError": "Couldn't save the correlation.",
             "nonPsdWarning": "This matrix is not positive semi-definite, so it will be dropped from Monte Carlo simulations (risks sampled independently). Adjust the coefficients until the matrix is valid.",
