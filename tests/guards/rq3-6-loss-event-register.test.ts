@@ -67,36 +67,36 @@ describe('RQ3-6 — schema + RLS + encryption', () => {
 });
 
 describe('RQ3-6 — usecase contract', () => {
-    test('createLossEvent sanitises free-text + audits + writes the source/amount provenance', () => {
-        expect(usecase).toMatch(/sanitizePlainText/);
-        expect(usecase).toMatch(/sanitizeOptional\(input\.description\)/);
-        expect(usecase).toMatch(/sanitizeOptional\(input\.justification\)/);
-        expect(usecase).toMatch(/action: 'LOSS_EVENT_RECORDED'/);
-        expect(usecase).toMatch(/event: 'loss_event_recorded'/);
-        expect(usecase).toMatch(/source: created\.source/);
-        expect(usecase).toMatch(/amount: created\.amount/);
-    });
-
-    test('aggregate emits per-year + per-risk roll-ups (the spine for the overlay)', () => {
-        expect(usecase).toMatch(/byYear: Array<\{ year: number; total: number; count: number/);
-        expect(usecase).toMatch(/byRisk: Array<\{ riskId: string \| null; total: number; count: number/);
-        // The per-year bucket is the calendar year the actual fell into.
-        expect(usecase).toMatch(/occurredAt\.getUTCFullYear/);
-    });
-
-    test('soft-delete is ADMIN-only — actuals are evidence', () => {
-        expect(usecase).toMatch(/export async function deleteLossEvent[\s\S]*assertCanAdmin\(ctx\)/);
-        expect(usecase).toMatch(/data: \{ deletedAt: new Date\(\) \}/);
-        expect(usecase).toMatch(/action: 'LOSS_EVENT_REMOVED'/);
-    });
-
-    test('list + aggregate filter out the soft-deleted rows', () => {
-        const occurrences = (usecase.match(/deletedAt: null/g) ?? []).length;
-        expect(occurrences).toBeGreaterThanOrEqual(2);
-    });
-});
-
-describe('RQ3-6 — API surface', () => {
+    /**
+     * B3-5 — four cases removed. All are covered by
+     * `tests/integration/loss-event.test.ts`, which exercises the usecases
+     * against a REAL DATABASE:
+     *
+     *   createLossEvent + sanitisation + audit  → "creates a loss event and
+     *     reads it back through the list endpoint", "sanitises free-text
+     *     before persistence", "emits an LOSS_EVENT_RECORDED audit row
+     *     carrying the source + amount"
+     *   aggregate roll-ups                      → "aggregates by year and by
+     *     risk (the predicted-vs-actual spine)"
+     *   ADMIN-only soft delete + hiding         → "soft-delete is ADMIN-only
+     *     and hides the row from list + aggregate"
+     *
+     * The last one is the clearest case for deleting rather than keeping
+     * both. The guard asserted hiding like this:
+     *
+     *     const occurrences = (usecase.match(/deletedAt: null/g) ?? []).length;
+     *     expect(occurrences).toBeGreaterThanOrEqual(2);
+     *
+     * — counting string occurrences in a file. That passes if both
+     * occurrences sit in COMMENTS, and it says nothing about whether a
+     * soft-deleted row actually disappears from the list. The integration
+     * test deletes a row and asserts it is gone from both reads.
+     *
+     * What remains below is what no test of the usecases can see: the
+     * SCHEMA and MIGRATION shape (columns, indexes, RLS policies), the
+     * encryption manifest entry, the ROUTE wiring, and the page/header
+     * links that make the feature reachable.
+     */
     test('list route exposes GET (list) + POST (record) with the validated body', () => {
         expect(listRoute).toMatch(/export const GET = withApiErrorHandling/);
         expect(listRoute).toMatch(/export const POST = withApiErrorHandling/);
