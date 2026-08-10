@@ -41,41 +41,26 @@ describe('RQ2-3 — score chips explain themselves', () => {
         expect(riskDetail).toMatch(/<RiskScoreExplainer/);
     });
 
-    test('the explainer lazy-fetches on open — no eager per-chip fetch', () => {
-        // RQ3-OB-B — the fetch was hoisted into `loadExplanation`
-        // so the Retry affordance can re-fire the same path. The
-        // open-change handler now calls `loadExplanation()` instead
-        // of inlining the fetch.
-        const handler = component.slice(
-            component.indexOf('const onOpenChange'),
-            component.indexOf('return ('),
-        );
-        expect(handler).toMatch(/loadExplanation\(\)/);
-        // The hoisted load fn is the single fetch site.
-        const loadFn = component.slice(
-            component.indexOf('const loadExplanation'),
-            component.indexOf('const onOpenChange'),
-        );
-        expect(loadFn).toMatch(/fetch\(/);
-        // No useEffect-fetch on mount (that would fire once per
-        // rendered chip on a list page).
-        expect(component).not.toMatch(/useEffect/);
-        // Exactly one fetch call in the whole component — the one
-        // inside loadExplanation, reused by both open-change AND
-        // the Retry button.
-        const fetches = component.match(/fetch\(/g) ?? [];
-        expect(fetches).toHaveLength(1);
-    });
-
-    test('MIGRATION provenance is labelled honestly in the popover', () => {
-        // i18n-aware: the label is localised via next-intl. Assert the
-        // MIGRATION branch returns the t('provMigration') key AND that the
-        // en.json value still labels it honestly ("pre-provenance backfill").
-        expect(component).toMatch(/case 'MIGRATION':\s*\n\s*return t\('provMigration'\)/);
-        const en = JSON.parse(read('messages/en.json'));
-        expect(en.panels.scoreExplainer.provMigration).toBe('pre-provenance backfill');
-    });
-
+    /**
+     * B3-5 — two cases removed here, both now covered BEHAVIOURALLY:
+     *
+     *   • "lazy-fetches on open — no eager per-chip fetch" →
+     *     `tests/rendered/risk-score-explainer-lazy-fetch.test.tsx`, which
+     *     mounts 25 chips and counts real requests. The old version sliced
+     *     the component source between two declaration NAMES
+     *     (`indexOf('const onOpenChange')` → `indexOf('return (')`) — a
+     *     shape CLAUDE.md bans, because reordering the declarations yields a
+     *     BACKWARDS, empty slice in which every `not.toMatch` passes while
+     *     checking nothing.
+     *
+     *   • "MIGRATION provenance is labelled honestly" →
+     *     `tests/rendered/risk-score-explainer-provenance.test.tsx`
+     *     ("MIGRATION never claims an actor"), which renders the popover
+     *     rather than grepping for the label string.
+     *
+     * What remains below is the API/aggregator surface — claims about route
+     * shape and query bounding that no component render can see.
+     */
     test('the aggregator stays read-bounded (events take-5, breaches unresolved + bounded)', () => {
         expect(usecase).toMatch(/take:\s*5/);
         expect(usecase).toMatch(/resolvedAt:\s*null/);
