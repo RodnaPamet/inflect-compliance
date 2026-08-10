@@ -14,6 +14,7 @@ import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTranslations } from 'next-intl';
 import { AnalyticsState } from '../_shared/AnalyticsState';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 
 interface Matrix { riskIds: string[]; riskTitles: string[]; matrix: number[][]; isPositiveSemiDefinite: boolean; isPositiveDefinite: boolean; minEigenvalue: number }
 interface Suggestion { riskAId: string; riskBId: string; suggestedCoefficient: number; reason: string }
@@ -39,13 +40,48 @@ export default function CorrelationMatrixPage() {
     const [sel, setSel] = useState<{ i: number; j: number } | null>(null);
     const [coef, setCoef] = useState('');
 
+    /**
+     * B2-1 — both correlation writes go through `useTenantMutation` on the
+     * matrix key.
+     *
+     * This is a BUG FIX, not just a refactor. Both handlers previously did
+     * a bare `await fetch(...)` and never looked at `res.ok`, then closed
+     * the editor and revalidated. A rejected save (a coefficient the server
+     * refuses, a 403, a 500) therefore looked EXACTLY like a successful one:
+     * the editor closed and the matrix redrew with the OLD value. The user
+     * was told nothing and had no reason to believe the edit had not stuck.
+     *
+     * `mutationFn` throws on a non-ok response, so the failure now surfaces
+     * on `saveMutation.error` and the editor stays open with the value in
+     * it — the operator can retry or correct rather than losing the edit.
+     */
+    const saveMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
+        key: '/risks/correlations',
+        mutationFn: async (body) => {
+            const res = await fetch(apiUrl('/risks/correlations'), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error(t('correlations.saveError'));
+            return res.json().catch(() => ({}));
+        },
+    });
+
     const save = async () => {
         if (!m || !sel) return;
-        await fetch(apiUrl('/risks/correlations'), {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ riskAId: m.riskIds[sel.i], riskBId: m.riskIds[sel.j], coefficient: Number(coef) }),
-        });
-        setSel(null); setCoef(''); await matrixQuery.mutate();
+        try {
+            await saveMutation.trigger({
+                riskAId: m.riskIds[sel.i],
+                riskBId: m.riskIds[sel.j],
+                coefficient: Number(coef),
+            });
+            // Only clear the editor once the write actually landed.
+            setSel(null);
+            setCoef('');
+        } catch {
+            // Surfaced via saveMutation.error below; keep the draft on screen.
+        }
     };
 
     const autoSuggest = async () => {
@@ -59,12 +95,22 @@ export default function CorrelationMatrixPage() {
         }
     };
     const applySuggestion = async (s: Suggestion) => {
-        await fetch(apiUrl('/risks/correlations'), {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ riskAId: s.riskAId, riskBId: s.riskBId, coefficient: s.suggestedCoefficient, rationale: s.reason }),
-        });
-        setSuggestions((prev) => prev.filter((x) => !(x.riskAId === s.riskAId && x.riskBId === s.riskBId)));
-        await matrixQuery.mutate();
+        try {
+            await saveMutation.trigger({
+                riskAId: s.riskAId,
+                riskBId: s.riskBId,
+                coefficient: s.suggestedCoefficient,
+                rationale: s.reason,
+            });
+            // Drop the suggestion only after it persisted — otherwise a
+            // failed apply silently removes it from the list and the
+            // operator cannot retry it.
+            setSuggestions((prev) =>
+                prev.filter((x) => !(x.riskAId === s.riskAId && x.riskBId === s.riskBId)),
+            );
+        } catch {
+            // Surfaced via saveMutation.error below.
+        }
     };
 
     return (
@@ -78,6 +124,11 @@ export default function CorrelationMatrixPage() {
                 </div>
                 <div className="flex items-center gap-tight">
                     {suggestError && <span className="text-xs text-content-error" role="alert">{t('correlations.suggestError')}</span>}
+                    {saveMutation.error && (
+                        <span className="text-xs text-content-error" role="alert" data-testid="correlation-save-error">
+                            {t('correlations.saveError')}
+                        </span>
+                    )}
                     <Button variant="secondary" size="sm" onClick={autoSuggest}>{t('correlations.autoSuggest')}</Button>
                 </div>
             </div>
