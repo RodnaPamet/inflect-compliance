@@ -3516,7 +3516,8 @@
             "exportFailedNetwork": "Export failed — network error.",
             "exported": "Exported.",
             "viewInSharePoint": "View in SharePoint ↗",
-            "probingHint": "Checking for a connected SharePoint account…"
+            "probingHint": "Checking for a connected SharePoint account…",
+            "skipReasonForeignKey": "{n} with a tenant-key mismatch"
         },
         "bia": {
             "addBia": "BIA",

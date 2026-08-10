@@ -3516,7 +3516,8 @@
             "exportFailedNetwork": "Експортът е неуспешен — мрежова грешка.",
             "exported": "Експортирано.",
             "viewInSharePoint": "Виж в SharePoint ↗",
-            "probingHint": "Проверка за свързан SharePoint акаунт…"
+            "probingHint": "Проверка за свързан SharePoint акаунт…",
+            "skipReasonForeignKey": "{n} с несъответствие на ключа на клиента"
         },
         "bia": {
             "addBia": "BIA",

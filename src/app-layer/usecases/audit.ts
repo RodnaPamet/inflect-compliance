@@ -7,7 +7,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { AuditStatus } from '@prisma/client';
 import { z } from 'zod';
-import { UpdateAuditSchema } from '@/lib/schemas';
+import { CreateAuditSchema, UpdateAuditSchema } from '@/lib/schemas';
 import { createFinding } from './finding';
 import { createTask } from './task';
 
@@ -111,22 +111,20 @@ export async function getAudit(ctx: RequestContext, id: string) {
     });
 }
 
-export async function createAudit(ctx: RequestContext, data: {
-    title: string;
-    scope?: string | null;
-    criteria?: string | null;
-    schedule?: string | null;
-    auditors?: string | null;
-    auditees?: string | null;
-    departments?: string | null;
-    /** B8 — optional `Framework.key` the audit assesses. Nullable for
-     *  ad-hoc audits that span multiple frameworks. */
-    frameworkKey?: string | null;
-    /** feat/audit-cycle-unify — optional AuditCycle this fieldwork audit
-     *  belongs to. Validated against the tenant. NULL = standalone audit. */
-    auditCycleId?: string | null;
-    generateChecklist?: boolean;
-}) {
+/**
+ * `z.infer<typeof CreateAuditSchema>`, not a hand-written twin.
+ *
+ * This used to re-declare all ten fields inline while `updateAudit` two
+ * hundred lines below already derived its parameter from its schema. A
+ * hand-written twin drifts from the schema silently and in one direction:
+ * the route parses with the schema, so a field the schema accepts but the
+ * twin omits becomes a compile error only if someone happens to pass it —
+ * and a field the twin declares but the schema strips is simply never
+ * populated at runtime, with the types insisting it will be. That four-layer
+ * drift is the confirmed failure mode on Assets, Risk and Controls; the fix
+ * was already present in this very file, applied to the other half of the pair.
+ */
+export async function createAudit(ctx: RequestContext, data: z.infer<typeof CreateAuditSchema>) {
     assertCanWrite(ctx);
 
     return runInTenantContext(ctx, async (db) => {

@@ -194,7 +194,19 @@ export const CACHE_KEYS = {
         ...makeResource('audits'),
         readiness: () => '/audits/readiness' as const,
         cycles: () => '/audits/cycles' as const,
+        cycle: (id: string) => `/audits/cycles/${id}` as const,
         packs: () => '/audits/packs' as const,
+        // Pack detail and its two sub-feeds. Named here rather than spelled
+        // inline at each call site so a mutation's `key` and the read's key
+        // are the same string by construction — an optimistic update that
+        // lands on a near-miss key silently does nothing.
+        pack: (id: string) => `/audits/packs/${id}` as const,
+        packShares: (id: string) => `/audits/packs/${id}/shares` as const,
+        packShareComments: (id: string) => `/audits/packs/${id}/share-comments` as const,
+        auditors: () => '/audits/auditors' as const,
+        businessContinuity: () => '/audits/business-continuity' as const,
+        bia: (id: string) => `/audits/business-continuity/${id}` as const,
+        nis2Gap: () => '/audits/nis2-gap' as const,
     },
 
     // ─── Dashboards & overview surfaces ─────────────────────────
