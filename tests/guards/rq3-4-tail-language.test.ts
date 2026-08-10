@@ -44,14 +44,17 @@ const reportUsecase = read('src/app-layer/usecases/risk-report.ts');
 const route = read('src/app/api/t/[tenantSlug]/risks/tail-percentiles/route.ts');
 
 describe('RQ3-4 — one formatter, two registers', () => {
-    test('the formatter exists and only claims a tail when P90 exceeds the mean', () => {
-        expect(lib).toMatch(/export function formatTailAwareAle/);
-        // The guard that matters: P90 at or below the mean is not tail data,
-        // so the second register must not render. This is a condition, not
-        // copy — the wording around it is free to change.
-        expect(lib).toMatch(/aleP90 > aleMean/);
-    });
-
+    /**
+     * B3-5 — the formatter's behaviour is covered by
+     * `tests/unit/tail-language.test.ts`, which calls it: "speaks both
+     * registers when a real tail exists" and "a P90 at or below the mean is
+     * NOT tail data (pre-RQ3-1 degrade)".
+     *
+     * The case removed here grepped this file for the characters
+     * `aleP90 > aleMean`. That is the same rule, asserted weakly — it would
+     * pass against a formatter whose comparison was right in source and
+     * wrong in effect, and it fails on a refactor that changes nothing.
+     */
     test('the cache endpoint serves the RQ3-1 spine', () => {
         expect(route).toMatch(/getPerRiskPercentiles/);
         expect(route).toMatch(/export const GET = withApiErrorHandling/);

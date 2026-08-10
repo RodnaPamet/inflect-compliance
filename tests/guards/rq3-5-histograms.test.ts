@@ -68,9 +68,18 @@ describe('RQ3-5 — the histogram is a peer view', () => {
 });
 
 describe('RQ3-5 — cell collisions flag on BOTH views', () => {
-    test('the detector is pure and threshold-documented', () => {
-        expect(lib).toMatch(/export function detectCellCollisions/);
-        expect(lib).toMatch(/export const COLLISION_RATIO_THRESHOLD = 10/);
+    test('the detector module stays pure — no DB, no request context', () => {
+        // B3-5 — the detector's BEHAVIOUR (which cells collide, the
+        // exclusive 10x boundary, zero/null ALEs ignored, worst-first
+        // ordering) moved to `tests/unit/risks/cell-collisions.test.ts`,
+        // which calls the function. It previously had NO other coverage:
+        // this guard grepped for the identifier and the literal `10`, so
+        // every actual rule was unverified.
+        //
+        // What remains is the one claim a unit test cannot make — an
+        // architectural statement about the MODULE's dependencies. The
+        // detector runs client-side on the matrix; a `prisma` import here
+        // would drag the DB client into the browser bundle.
         expect(lib).not.toMatch(/prisma|RequestContext|@\/lib\/db/);
     });
 
