@@ -950,6 +950,22 @@ jobs:
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
         run: npx next build --webpack
         env:
+          # The workflow-level 6144 MB was sized for JEST — `--runInBand`
+          # holding one shard's whole module graph in a single process (see
+          # the comment on the top-level NODE_OPTIONS). `next build` is a
+          # different workload and had quietly grown into that ceiling:
+          # measured 2026-08-10, this step OOM'd twice in a row at
+          # Mark-Compact 6097.8 → 6100.4 MB against the 6144 cap, i.e. it
+          # was failing with ~0.7% headroom. That is not a flake to re-run
+          # past — at that margin it is a coin flip per build, which is
+          # exactly how it presented (green on one main commit, red twice on
+          # the next branch).
+          #
+          # Runners have 16 GB, so 8192 restores real headroom without
+          # crowding Postgres + the Next server that share this job. Raised
+          # only HERE rather than at the workflow level so the Jest ceiling
+          # keeps its own rationale and its own tuning history.
+          NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
           NEXT_TEST_MODE: "1"
           # NEXT_PUBLIC_* env vars are inlined at BUILD time, so they
