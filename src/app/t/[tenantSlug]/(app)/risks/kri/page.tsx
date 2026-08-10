@@ -26,6 +26,7 @@ import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
 import { sparkline } from '@/lib/ascii-sparkline';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 
 type Direction = 'HIGHER_IS_WORSE' | 'LOWER_IS_WORSE';
 type Frequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY';
@@ -82,49 +83,84 @@ export default function KriPage() {
     const [editing, setEditing] = useState<Kri | null>(null);
     const [deleting, setDeleting] = useState<Kri | null>(null);
 
+    /**
+     * B2-1 — all five KRI writes go through one mutation on the KRI key.
+     *
+     * Every one of them swallowed failures, and four destroyed state on the
+     * way past. `record` was the subtlest: it read `res.json()` WITHOUT
+     * checking `res.ok`, so a 4xx parsed an error body, found no
+     * `remediationTaskId`, skipped the toast and revalidated — a rejected
+     * reading looked exactly like a reading that simply did not breach.
+     * On a page whose entire job is recording sensor values that drive
+     * remediation, a silently-dropped reading is the worst outcome
+     * available.
+     */
+    const writeMutation = useTenantMutation<unknown, { path: string; method: string; body?: unknown }, unknown>({
+        key: '/risks/kri',
+        mutationFn: async ({ path, method, body }) => {
+            const res = await fetch(apiUrl(path), {
+                method,
+                ...(body === undefined
+                    ? {}
+                    : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+            });
+            if (!res.ok) throw new Error(t('kri.saveError'));
+            return res.json().catch(() => ({}));
+        },
+    });
+
     const create = async () => {
         if (!draft.name.trim()) return;
         setBusy(true);
         try {
-            await fetch(apiUrl('/risks/kri'), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(draftPayload(draft)),
-            });
+            await writeMutation.trigger({ path: '/risks/kri', method: 'POST', body: draftPayload(draft) });
+            // Only after it landed — a failed create used to wipe the draft.
             setDraft(EMPTY_DRAFT);
-            await kriQuery.mutate();
+        } catch {
+            /* visible via writeMutation.error; the draft stays */
         } finally { setBusy(false); }
     };
 
     const record = async (kriId: string, raw: string) => {
         const value = Number(raw);
         if (!isFinite(value)) return;
-        const res = await fetch(apiUrl(`/risks/kri/${kriId}/readings`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value }) });
-        // PR-L — surface the RED→remediation-task spawn so the user sees the
-        // sensor drove real work, not just a chip flip.
-        const data = await res.json().catch(() => null);
-        if (data?.remediationTaskId) toast.success(t('kri.remediationSpawned'));
-        await kriQuery.mutate();
+        try {
+            const data = (await writeMutation.trigger({
+                path: `/risks/kri/${kriId}/readings`,
+                method: 'POST',
+                body: { value },
+            })) as { remediationTaskId?: string } | null;
+            // PR-L — surface the RED→remediation-task spawn so the user sees
+            // the sensor drove real work, not just a chip flip.
+            if (data?.remediationTaskId) toast.success(t('kri.remediationSpawned'));
+        } catch {
+            /* visible via writeMutation.error */
+        }
     };
 
-    const patchKri = async (kriId: string, body: Record<string, unknown>) => {
-        await fetch(apiUrl(`/risks/kri/${kriId}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        await kriQuery.mutate();
-    };
+    const patchKri = (kriId: string, body: Record<string, unknown>) =>
+        writeMutation.trigger({ path: `/risks/kri/${kriId}`, method: 'PATCH', body });
 
     const saveEdit = async () => {
         if (!editing) return;
         setBusy(true);
         try {
             await patchKri(editing.id, draftPayload(draft));
+            // Closing the editor is the confirmation — do it only on success.
             setEditing(null);
+        } catch {
+            /* visible via writeMutation.error; the edit stays open */
         } finally { setBusy(false); }
     };
 
     const doDelete = async () => {
         if (!deleting) return;
-        await fetch(apiUrl(`/risks/kri/${deleting.id}`), { method: 'DELETE' });
-        setDeleting(null);
-        await kriQuery.mutate();
+        try {
+            await writeMutation.trigger({ path: `/risks/kri/${deleting.id}`, method: 'DELETE' });
+            setDeleting(null);
+        } catch {
+            /* visible via writeMutation.error; the dialog stays open */
+        }
     };
 
     return (
@@ -139,7 +175,17 @@ export default function KriPage() {
             <Card className="space-y-default p-6">
                 <Heading level={2}>{t('kri.newKri')}</Heading>
                 <KriFields draft={draft} setDraft={setDraft} tenantSlug={tenantSlug} t={t} idPrefix="kri" />
-                <div className="flex justify-end">
+                <div className="flex items-center justify-end gap-default">
+                    {/* Every write on this page shares one mutation, so one
+                        alert covers create / record / edit / delete. It sits
+                        beside the primary action rather than in a toast
+                        because a dropped SENSOR READING must not scroll away
+                        unnoticed — that reading drives remediation. */}
+                    {writeMutation.error && (
+                        <span className="text-xs text-content-error" role="alert" data-testid="kri-save-error">
+                            {t('kri.saveError')}
+                        </span>
+                    )}
                     <Button variant="primary" onClick={create} disabled={busy || !draft.name.trim()} id="kri-create-btn">{t('kri.create')}</Button>
                 </div>
             </Card>

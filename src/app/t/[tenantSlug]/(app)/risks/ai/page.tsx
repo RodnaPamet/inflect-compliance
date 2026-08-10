@@ -180,11 +180,20 @@ export default function AIRiskAssessmentPage() {
     // ─── Dismiss ───
     const handleDismiss = async () => {
         if (!session) return;
+        // B2-1 — this was `catch { /* ignore */ }` with no res.ok check, and
+        // it reset the session and phase REGARDLESS. A failed dismiss
+        // therefore threw away a generated suggestion set the user would
+        // have to pay to regenerate, while telling them nothing.
+        setError('');
         try {
-            await fetch(apiUrl(`/ai/risk-suggestions/${session.id}/dismiss`), { method: 'POST' });
+            const res = await fetch(apiUrl(`/ai/risk-suggestions/${session.id}/dismiss`), { method: 'POST' });
+            if (!res.ok) throw new Error(tx('ai.dismissFailed'));
+            // Only discard the session once the server agreed.
             setSession(null);
             setPhase('form');
-        } catch { /* ignore */ }
+        } catch (e) {
+            setError(e instanceof Error ? e.message : tx('ai.dismissFailed'));
+        }
     };
 
     // ─── Toggle framework ───

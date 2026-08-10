@@ -1215,6 +1215,7 @@
             "selectOne": "Select at least one suggestion to accept",
             "generationFailed": "Generation failed",
             "applyFailed": "Apply failed",
+            "dismissFailed": "Couldn't dismiss the suggestions. They're still here.",
             "assetsNone": "No assets found. Suggestions will be general."
         },
         "aiSystems": {
@@ -1338,7 +1339,6 @@
             "psdTitle": "Positive semi-definite",
             "psdHelp": "A valid correlation matrix must be positive semi-definite — otherwise the coefficients are mutually contradictory and the simulation cannot sample from them. Auto-suggest keeps it valid.",
             "loadError": "Couldn't load the correlation matrix.",
-            "saveError": "Couldn't save the scenario. Your entries are still here — try again.",
             "suggestError": "Couldn't suggest correlations.",
             "saveError": "Couldn't save the correlation.",
             "nonPsdWarning": "This matrix is not positive semi-definite, so it will be dropped from Monte Carlo simulations (risks sampled independently). Adjust the coefficients until the matrix is valid.",
@@ -1371,6 +1371,7 @@
             "linkRisk": "Attach",
             "linkOk": "Risk attached to node.",
             "linkFailed": "Could not attach the risk.",
+            "nodeSaveError": "Couldn't save the change. Nothing was modified — try again.",
             "conceptTitle": "Hierarchy node",
             "conceptHelp": "A branch of your org tree (business unit, geography, asset class). Attach risks to nodes and their ALE rolls up the tree, so you can see which part of the organisation carries the most quantified loss.",
             "loadError": "Couldn't load the hierarchy.",
@@ -1382,6 +1383,7 @@
             "unlinkOk": "Risk unlinked from the node."
         },
         "kri": {
+            "saveError": "Couldn't save. Nothing was changed — try again.",
             "breadcrumb": "KRIs",
             "title": "Key Risk Indicators",
             "newKri": "New KRI",
@@ -1542,6 +1544,7 @@
             "scheduleUpdated": "Schedule updated."
         },
         "scenarios": {
+            "saveError": "Couldn't save the scenario. Your entries are still here — try again.",
             "breadcrumb": "Scenarios",
             "title": "Risk Scenarios",
             "newScenario": "New scenario",
