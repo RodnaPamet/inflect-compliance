@@ -17,11 +17,24 @@ const P = (rel: string) => `src/app/t/[tenantSlug]/(app)/risks/${rel}`;
 const PAGES = ['scenarios', 'hierarchy', 'kri', 'correlations', 'loss-events', 'reports'];
 
 describe('P3 — honest data fetching', () => {
-    it('the shared AnalyticsState primitive exists', () => {
-        expect(exists(P('_shared/AnalyticsState.tsx'))).toBe(true);
-        const src = read(P('_shared/AnalyticsState.tsx'));
-        expect(src).toMatch(/data-testid="analytics-error"/);
-    });
+    /**
+     * B3-5 — the primitive's BEHAVIOUR is covered by
+     * `tests/rendered/risk-analytics-state.test.tsx`, which renders it.
+     *
+     * The case removed here checked that the file exists and contains the
+     * string `data-testid="analytics-error"`. That proves a testid is
+     * present in a source file — not that the error branch is reachable, and
+     * not the property that actually matters: `error` must beat `isEmpty`.
+     * A failed load almost always arrives with `isEmpty === true` (no rows
+     * came back), so if the empty branch were checked first, every failure
+     * would render as "you have none" — which is exactly the
+     * `.catch(() => {})` bug this primitive replaced. No source scan can see
+     * that ordering; the rendered test asserts it directly.
+     *
+     * The adoption sweep below stays: which PAGES mount the primitive, and
+     * that they no longer carry the swallow, is a whole-file claim.
+     */
+
 
     it.each(PAGES)('%s migrates to useTenantSWR + AnalyticsState (no swallowed load)', (page) => {
         const src = read(P(`${page}/page.tsx`));
