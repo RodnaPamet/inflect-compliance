@@ -16,6 +16,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 
 interface Scenario { id: string; name: string; status: string; investmentCost: number | null; computedRoi: number | null; createdAt: string }
 
@@ -69,44 +70,95 @@ export default function RiskScenariosPage() {
     };
     const removeOverride = (i: number) => setOverrides((prev) => prev.filter((_, idx) => idx !== i));
 
-    const load = () => scenariosQuery.mutate();
+    // B2-1 — the former `load()` helper is gone: every write now goes
+    // through a mutation keyed on this same path, so SWR revalidates it.
+
+    /**
+     * B2-1 — the four scenario writes go through `useTenantMutation` on the
+     * scenarios key.
+     *
+     * A BUG FIX, not only a refactor. Three of the four never checked
+     * `res.ok`, and `create` was the damaging one: it cleared the name, the
+     * investment AND every override regardless of outcome. A rejected POST
+     * therefore wiped a what-if the operator had just assembled, with no
+     * message — the worst possible response to a failed save, because the
+     * input is expensive to rebuild and there was nothing to retry from.
+     *
+     * `mutationFn` throws on a non-ok response, so every handler below now
+     * clears state only AFTER the write lands, and failures surface on
+     * `writeMutation.error`.
+     */
+    const writeMutation = useTenantMutation<unknown, { path: string; method: string; body?: unknown }, unknown>({
+        key: '/risks/scenarios',
+        mutationFn: async ({ path, method, body }) => {
+            const res = await fetch(apiUrl(path), {
+                method,
+                ...(body === undefined
+                    ? {}
+                    : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+            });
+            if (!res.ok) throw new Error(t('scenarios.saveError'));
+            return res.json().catch(() => ({}));
+        },
+    });
 
     const create = async () => {
         if (!name.trim()) return;
         setBusy(true);
         try {
-            await fetch(apiUrl('/risks/scenarios'), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            await writeMutation.trigger({
+                path: '/risks/scenarios',
+                method: 'POST',
+                body: {
                     name: name.trim(),
                     investmentCost: investment.trim() ? Number(investment) : null,
                     overrides: overrides.map((o) => ({ riskId: o.riskId, field: o.field, newValue: o.newValue })),
-                }),
+                },
             });
-            setName(''); setInvestment(''); setOverrides([]); await load();
+            // Only now — a failed create must not discard the operator's
+            // name, investment and overrides.
+            setName(''); setInvestment(''); setOverrides([]);
+        } catch {
+            // Surfaced on writeMutation.error; the draft stays on screen.
         } finally { setBusy(false); }
     };
 
     const simulate = async (id: string) => {
         setBusy(true); setCmp(null);
         try {
-            const r = await fetch(apiUrl(`/risks/scenarios/${id}/simulate`), { method: 'POST' });
-            if (r.ok) { setCmp((await r.json()).comparison); await load(); }
+            // Previously `if (r.ok)` with no else — a failed simulation was
+            // indistinguishable from one that returned nothing.
+            const out = (await writeMutation.trigger({
+                path: `/risks/scenarios/${id}/simulate`,
+                method: 'POST',
+            })) as { comparison?: unknown };
+            setCmp((out?.comparison ?? null) as typeof cmp);
+        } catch {
+            // Surfaced on writeMutation.error.
         } finally { setBusy(false); }
     };
 
-    const archive = async (id: string) => { await fetch(apiUrl(`/risks/scenarios/${id}`), { method: 'DELETE' }); await load(); };
+    const archive = async (id: string) => {
+        try {
+            await writeMutation.trigger({ path: `/risks/scenarios/${id}`, method: 'DELETE' });
+        } catch {
+            // Surfaced on writeMutation.error — an archive that silently
+            // failed left the row on screen with no explanation.
+        }
+    };
 
     // PR-L — clone a scenario (name + overrides) so a mis-created what-if is
     // recoverable without rebuilding it from scratch.
     const clone = async (s: Scenario) => {
         setBusy(true);
         try {
-            await fetch(apiUrl(`/risks/scenarios/${s.id}/clone`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: t('scenarios.cloneName', { name: s.name }) }),
+            await writeMutation.trigger({
+                path: `/risks/scenarios/${s.id}/clone`,
+                method: 'POST',
+                body: { name: t('scenarios.cloneName', { name: s.name }) },
             });
-            await load();
+        } catch {
+            // Surfaced on writeMutation.error.
         } finally { setBusy(false); }
     };
 
@@ -156,7 +208,16 @@ export default function RiskScenariosPage() {
                     )}
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex items-center justify-end gap-default">
+                    {/* The failure has to be VISIBLE here, next to the action
+                        that produced it — a save that silently does nothing
+                        is the defect this migration fixes, and a comment
+                        claiming "surfaced on error" is not a surface. */}
+                    {writeMutation.error && (
+                        <span className="text-xs text-content-error" role="alert" data-testid="scenario-save-error">
+                            {t('scenarios.saveError')}
+                        </span>
+                    )}
                     <Button variant="primary" onClick={create} disabled={busy || !name.trim()}>{t('scenarios.create')}</Button>
                 </div>
             </Card>
