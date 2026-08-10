@@ -18,6 +18,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 
 interface Agg { nodeId: string; nodeName: string; riskCount: number; totalAle: number; children: Agg[] }
 
@@ -97,11 +98,50 @@ export default function RiskHierarchyPage() {
 
     const nodeOptions = flattenNodes(treemap);
 
+    /**
+     * B2-1 — the three NODE writes (add / rename / delete) go through a
+     * mutation on the hierarchy key.
+     *
+     * `linkRisk` and `unlinkRisk` in this same file already check `res.ok`
+     * and render an InlineNotice, which is what makes these three an
+     * inconsistency rather than a convention: the error surface existed and
+     * simply was not wired to them. `addNode` cleared the name and parent
+     * regardless of outcome; `renameNode` and `deleteNode` had no try, no
+     * busy guard and no check at all.
+     *
+     * Reachable, not theoretical: this page has NO permission gate, so the
+     * Add button renders for READER and AUDITOR while `createNode` calls
+     * `assertCanWrite` — a guaranteed 403 that, until now, produced no
+     * feedback whatsoever.
+     */
+    const nodeMutation = useTenantMutation<unknown, { path: string; method: string; body?: unknown }, unknown>({
+        key: '/risks/hierarchy',
+        mutationFn: async ({ path, method, body }) => {
+            const res = await fetch(apiUrl(path), {
+                method,
+                ...(body === undefined
+                    ? {}
+                    : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+            });
+            if (!res.ok) throw new Error(t('hierarchy.nodeSaveError'));
+            return res.json().catch(() => ({}));
+        },
+    });
+
     const addNode = async () => {
         if (!name.trim()) return;
         setBusy(true);
-        try { await fetch(apiUrl('/risks/hierarchy'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), type, parentId }) }); setName(''); setParentId(null); await load(); }
-        finally { setBusy(false); }
+        try {
+            await nodeMutation.trigger({
+                path: '/risks/hierarchy',
+                method: 'POST',
+                body: { name: name.trim(), type, parentId },
+            });
+            // Only after it landed.
+            setName(''); setParentId(null);
+        } catch {
+            /* visible via nodeMutation.error; the draft stays */
+        } finally { setBusy(false); }
     };
 
     const linkRisk = async () => {
@@ -133,15 +173,26 @@ export default function RiskHierarchyPage() {
 
     // PR-L — rename / delete a hierarchy node (updateNode / deleteNode).
     const renameNode = async (nodeId: string, newName: string) => {
-        await fetch(apiUrl(`/risks/hierarchy/${nodeId}`), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
-        await load();
+        try {
+            await nodeMutation.trigger({
+                path: `/risks/hierarchy/${nodeId}`,
+                method: 'PATCH',
+                body: { name: newName },
+            });
+        } catch {
+            /* visible via nodeMutation.error */
+        }
     };
     const [deletingNode, setDeletingNode] = useState<Agg | null>(null);
     const deleteNode = async () => {
         if (!deletingNode) return;
-        await fetch(apiUrl(`/risks/hierarchy/${deletingNode.nodeId}`), { method: 'DELETE' });
-        setDeletingNode(null);
-        await load();
+        try {
+            await nodeMutation.trigger({ path: `/risks/hierarchy/${deletingNode.nodeId}`, method: 'DELETE' });
+            // Close the dialog only once the node is actually gone.
+            setDeletingNode(null);
+        } catch {
+            /* visible via nodeMutation.error; the dialog stays open */
+        }
     };
 
     const max = treemap.reduce((m, n) => Math.max(m, n.totalAle), 0);
@@ -172,6 +223,11 @@ export default function RiskHierarchyPage() {
                             placeholder={t('hierarchy.parentNone')}
                         />
                     </label>
+                    {nodeMutation.error && (
+                        <span className="text-xs text-content-error" role="alert" data-testid="hierarchy-node-error">
+                            {t('hierarchy.nodeSaveError')}
+                        </span>
+                    )}
                     <Button variant="primary" onClick={addNode} disabled={busy || !name.trim()}>{t('hierarchy.addNode')}</Button>
                 </div>
 

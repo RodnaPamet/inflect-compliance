@@ -131,7 +131,21 @@ export default function LossEventsPage() {
     };
 
     const remove = async (id: string) => {
-        await fetch(apiUrl(`/loss-events/${id}`), { method: 'DELETE' });
+        // B2-1 — `record` (above) already reports failures through this same
+        // msg surface; `remove` did not, which made it an inconsistency
+        // inside one component rather than a page-wide convention.
+        //
+        // It matters here more than most: `deleteLossEvent` is ADMIN-only
+        // server-side, but this button renders for every role, so an
+        // EDITOR or READER click was a guaranteed 403 with no feedback at
+        // all — the row simply stayed, indistinguishable from a no-op.
+        setMsg(null);
+        const res = await fetch(apiUrl(`/loss-events/${id}`), { method: 'DELETE' });
+        if (!res.ok) {
+            setMsg(t('lossEvents.saveFailed'));
+            setMsgOk(false);
+            return;
+        }
         await load();
     };
 
