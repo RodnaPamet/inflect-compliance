@@ -116,6 +116,7 @@ jest.mock('next/navigation', () => ({
     redirect: jest.fn(),
 }));
 
+import { SWRConfig } from 'swr';
 import AuditorsPage from '@/app/t/[tenantSlug]/(app)/audits/auditors/page';
 import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast-with-undo';
 import { TenantProvider } from '@/lib/tenant-context-provider';
@@ -151,7 +152,6 @@ function jsonOk(body: unknown) {
 }
 
 beforeEach(() => {
-    jest.useFakeTimers();
     customCalls.length = 0;
     nextSonnerId = 1;
     __resetPendingUndoToastsForTest();
@@ -167,22 +167,50 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    jest.runOnlyPendingTimers();
+    // Only meaningful for the tests that opted into fake timers; harmless
+    // otherwise, and it guarantees one test's clock never leaks into the next.
+    if (jest.isMockFunction(setTimeout)) jest.runOnlyPendingTimers();
     jest.useRealTimers();
 });
+
+/**
+ * Run `body` with the undo window under fake timers.
+ *
+ * THE ORDERING MATTERS. Installing fake timers before the page's first SWR
+ * read means that read never settles: SWR's revalidation is scheduled on
+ * timers, so the cache entry is never populated, and the first `mutate()`
+ * indexes into an undefined internal state — surfacing as
+ * `TypeError: Cannot read properties of undefined (reading '6')` from inside
+ * SWR rather than as anything recognisable.
+ *
+ * So: let the data land on real timers, THEN fake the clock for the 5-second
+ * window only. Same shape as tests/rendered/traceability-panel-undo.test.tsx,
+ * which is the file this recipe comes from.
+ */
+async function withUndoClock(body: () => Promise<void>): Promise<void> {
+    jest.useFakeTimers();
+    try {
+        await body();
+    } finally {
+        jest.useRealTimers();
+    }
+}
 
 /** Render and flush the two load fetches. */
 async function renderPage() {
     const view = render(
-        <TenantProvider value={TENANT_CTX}>
-            <AuditorsPage />
-        </TenantProvider>,
+        // A fresh SWR cache per test. The page reads its auditor list through
+        // SWR, whose cache is module-global — without this, one test's
+        // optimistic removal is still applied when the next one renders and
+        // the row it needs is simply absent.
+        <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
+            <TenantProvider value={TENANT_CTX}>
+                <AuditorsPage />
+            </TenantProvider>
+        </SWRConfig>,
     );
-    await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-        await Promise.resolve();
-    });
+    // Real timers here on purpose — see `withUndoClock`.
+    await waitFor(() => expect(document.getElementById('revoke-account-aud-1')).not.toBeNull());
     return view;
 }
 
@@ -210,27 +238,30 @@ describe('revoking ONE pack grant — undo toast', () => {
 
     it('sends the DELETE once the window elapses', async () => {
         await renderPage();
-        await act(async () => { fireEvent.click(byId('revoke-access-aud-1-pack-1')); });
-        await act(async () => { await jest.advanceTimersByTimeAsync(6000); });
-
-        await waitFor(() => expect(deletesTo('/audits/auditors/access')).toHaveLength(1));
+        await withUndoClock(async () => {
+            await act(async () => { fireEvent.click(byId('revoke-access-aud-1-pack-1')); });
+            await act(async () => { await jest.advanceTimersByTimeAsync(6000); });
+            await waitFor(() => expect(deletesTo('/audits/auditors/access')).toHaveLength(1));
+        });
     });
 
     it('UNDO cancels it — no DELETE is ever sent', async () => {
         // The assertion that matters. Nothing un-revokes an auditor server-side,
         // so "send it, then compensate" is not an acceptable implementation.
         await renderPage();
-        await act(async () => { fireEvent.click(byId('revoke-access-aud-1-pack-1')); });
+        await withUndoClock(async () => {
+            await act(async () => { fireEvent.click(byId('revoke-access-aud-1-pack-1')); });
 
-        const host = document.createElement('div');
-        document.body.appendChild(host);
-        const last = customCalls[customCalls.length - 1];
-        const undoView = render(last.factory(last.id), { container: host });
-        const undo = undoView.getByRole('button', { name: /undo/i });
-        await act(async () => { fireEvent.click(undo); });
+            const host = document.createElement('div');
+            document.body.appendChild(host);
+            const last = customCalls[customCalls.length - 1];
+            const undoView = render(last.factory(last.id), { container: host });
+            const undo = undoView.getByRole('button', { name: /undo/i });
+            await act(async () => { fireEvent.click(undo); });
 
-        await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
-        expect(deletesTo('/audits/auditors/access')).toHaveLength(0);
+            await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+            expect(deletesTo('/audits/auditors/access')).toHaveLength(0);
+        });
     });
 
     it('the grant reappears in the list after Undo', async () => {

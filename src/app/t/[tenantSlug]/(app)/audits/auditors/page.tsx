@@ -16,6 +16,9 @@ import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { cardVariants } from '@/components/ui/card';
 import { Plus, UserPlus, Xmark } from '@/components/ui/icons/nucleo';
 import { RequirePermission } from '@/components/require-permission';
@@ -45,14 +48,9 @@ export default function AuditorsManagementPage() {
     const tx = useTranslations('audits');
     const toast = useToast();
 
-    const [auditors, setAuditors] = useState<AuditorRow[]>([]);
-    const [packs, setPacks] = useState<PackRow[]>([]);
-    const [loading, setLoading] = useState(true);
-
     const [inviteOpen, setInviteOpen] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteName, setInviteName] = useState('');
-    const [inviting, setInviting] = useState(false);
 
     const [selectedPack, setSelectedPack] = useState<Record<string, string>>({});
     const [busyAuditor, setBusyAuditor] = useState<string | null>(null);
@@ -64,60 +62,114 @@ export default function AuditorsManagementPage() {
     const [revokingAccount, setRevokingAccount] = useState(false);
     const triggerUndoToast = useToastWithUndo();
 
-    const loadAuditors = useCallback(() => {
-        return fetch(apiUrl('/audits/auditors'))
-            .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load'))))
-            .then((d: AuditorRow[]) => setAuditors(Array.isArray(d) ? d : []))
-            .catch(() => toast.error(tx('auditorsAdmin.loadError')));
-    }, [apiUrl, toast, tx]);
+    // ─── Reads ───
+    //
+    // Two `fetch` + `useEffect` + `useState` triples became two SWR keys, on
+    // the same strings the mutations below target — a mutation keyed on a
+    // near-miss string updates nothing and reads as a slow network.
+    const auditorsQuery = useTenantSWR<AuditorRow[]>(CACHE_KEYS.audits.auditors());
+    const auditors = auditorsQuery.data ?? [];
+    const loading = auditorsQuery.isLoading;
 
-    useEffect(() => {
-        Promise.all([
-            fetch(apiUrl('/audits/auditors')).then((r) => (r.ok ? r.json() : [])),
-            fetch(apiUrl('/audits/packs')).then((r) => (r.ok ? r.json() : [])),
-        ])
-            .then(([a, p]) => {
-                setAuditors(Array.isArray(a) ? a : []);
-                setPacks(Array.isArray(p) ? p : []);
-            })
-            .catch(() => toast.error(tx('auditorsAdmin.loadError')))
-            .finally(() => setLoading(false));
-    }, [apiUrl, toast, tx]);
+    // The pack list only names grants; a failure degrades to the id fallback
+    // rather than blocking the page, which is what the old `.catch` did.
+    const packsQuery = useTenantSWR<PackRow[]>(CACHE_KEYS.audits.packs());
+    const packs = packsQuery.data ?? [];
+
+    const auditorsData = auditorsQuery.data;
+    const setAuditors = useCallback(
+        (next: AuditorRow[] | ((cur: AuditorRow[]) => AuditorRow[])) => {
+            // The undo flow snapshots the list and restores it on cancel, so
+            // this writes the cache WITHOUT revalidating — a rollback means
+            // "put back exactly what the user saw", not "ask the server".
+            const resolved =
+                typeof next === 'function' ? next(auditorsData ?? []) : next;
+            void auditorsQuery.mutate(resolved, { revalidate: false });
+        },
+        [auditorsQuery, auditorsData],
+    );
+    const loadAuditors = useCallback(() => auditorsQuery.mutate(), [auditorsQuery]);
+
+    /**
+     * One request shape for this page's writes.
+     *
+     * Each used to re-derive `fetch` + the `res.ok` branch + its own error
+     * toast, which is how they drifted apart: three had a try/catch and the
+     * account revoke did not, so a network throw there escaped the `finally`
+     * as an unhandled rejection and left the modal open with no message.
+     */
+    const send = useCallback(
+        async (path: string, init: RequestInit, fallbackMessage: string) => {
+            const res = await fetch(apiUrl(path), init);
+            if (!res.ok) throw new Error(fallbackMessage);
+            return res.json().catch(() => null);
+        },
+        [apiUrl],
+    );
 
     const packName = useCallback(
         (id: string) => packs.find((p) => p.id === id)?.name ?? tx('auditorsAdmin.packFallback'),
         [packs, tx],
     );
 
+    const inviteMutation = useTenantMutation<
+        AuditorRow[],
+        { email: string; name?: string },
+        { reactivated?: boolean } | null
+    >({
+        key: CACHE_KEYS.audits.auditors(),
+        // No optimistic prediction: the server mints the auditor id, and
+        // inviting an existing REVOKED auditor REACTIVATES them rather than
+        // appending — two different list shapes we cannot tell apart here.
+        mutationFn: (input) =>
+            send(
+                '/audits/auditors',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(input),
+                },
+                tx('auditorsAdmin.inviteError'),
+            ),
+    });
+    const inviting = inviteMutation.isMutating;
+
     const submitInvite = async (e: React.FormEvent) => {
         e.preventDefault();
         if (inviting) return;
-        setInviting(true);
         try {
-            const res = await fetch(apiUrl('/audits/auditors'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: inviteEmail, name: inviteName || undefined }),
+            const data = await inviteMutation.trigger({
+                email: inviteEmail,
+                name: inviteName || undefined,
             });
-            if (res.ok) {
-                // PR-O — surface reactivation: inviting an existing/REVOKED
-                // auditor flips them back to ACTIVE. Say so, rather than a
-                // generic "invited" that hides the state change.
-                const data = await res.json().catch(() => null);
-                setInviteOpen(false);
-                setInviteEmail('');
-                setInviteName('');
-                await loadAuditors();
-                toast.success(data?.reactivated ? tx('auditorsAdmin.reactivateSuccess') : tx('auditorsAdmin.inviteSuccess'));
-            } else {
-                toast.error(tx('auditorsAdmin.inviteError'));
-            }
+            setInviteOpen(false);
+            setInviteEmail('');
+            setInviteName('');
+            // PR-O — surface reactivation: inviting an existing/REVOKED
+            // auditor flips them back to ACTIVE. Say so, rather than a
+            // generic "invited" that hides the state change.
+            toast.success(data?.reactivated ? tx('auditorsAdmin.reactivateSuccess') : tx('auditorsAdmin.inviteSuccess'));
         } catch {
             toast.error(tx('auditorsAdmin.inviteError'));
-        } finally {
-            setInviting(false);
         }
     };
+
+    const grantMutation = useTenantMutation<AuditorRow[], { auditorId: string; packId: string }>({
+        key: CACHE_KEYS.audits.auditors(),
+        // The grant row carries a server-set `grantedAt`, so an optimistic
+        // shape would differ from the real one and the badge would shift on
+        // revalidation. The list refreshes when the response lands.
+        mutationFn: (input) =>
+            send(
+                '/audits/auditors/access',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(input),
+                },
+                tx('auditorsAdmin.grantError'),
+            ),
+    });
 
     const grantAccess = async (auditorId: string) => {
         const packId = selectedPack[auditorId];
@@ -132,18 +184,9 @@ export default function AuditorsManagementPage() {
         }
         setBusyAuditor(auditorId);
         try {
-            const res = await fetch(apiUrl('/audits/auditors/access'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ auditorId, packId }),
-            });
-            if (res.ok) {
-                setSelectedPack((s) => ({ ...s, [auditorId]: '' }));
-                await loadAuditors();
-                toast.success(tx('auditorsAdmin.grantSuccess'));
-            } else {
-                toast.error(tx('auditorsAdmin.grantError'));
-            }
+            await grantMutation.trigger({ auditorId, packId });
+            setSelectedPack((s) => ({ ...s, [auditorId]: '' }));
+            toast.success(tx('auditorsAdmin.grantSuccess'));
         } catch {
             toast.error(tx('auditorsAdmin.grantError'));
         } finally {
@@ -170,13 +213,22 @@ export default function AuditorsManagementPage() {
         triggerUndoToast({
             message: tx('auditorsAdmin.revokeSuccess'),
             undoMessage: tx('auditorsAdmin.undo'),
+            // Deliberately NOT a `useTenantMutation`: the undo toast already
+            // owns this lifecycle. It holds the optimistic removal, the
+            // 5-second window and the rollback, and the DELETE must not fire
+            // until that window closes — a mutation hook would send it
+            // immediately, which is the one thing Epic 67 exists to prevent.
+            // The shared `send` still gets one request shape and one error.
             action: async () => {
-                const res = await fetch(apiUrl('/audits/auditors/access'), {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ auditorId, packId }),
-                });
-                if (!res.ok) throw new Error('revoke');
+                await send(
+                    '/audits/auditors/access',
+                    {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ auditorId, packId }),
+                    },
+                    tx('auditorsAdmin.revokeError'),
+                );
                 await loadAuditors();
             },
             // Undo and failure both restore what the user could see.
@@ -188,18 +240,34 @@ export default function AuditorsManagementPage() {
         });
     };
 
+    const revokeAccountMutation = useTenantMutation<AuditorRow[], string>({
+        key: CACHE_KEYS.audits.auditors(),
+        // Cascading revoke: the row flips to REVOKED and every grant drops.
+        // Worth predicting — the typed confirmation means the user has already
+        // committed, so the list should reflect it at once.
+        optimisticUpdate: (current, auditorId) =>
+            current?.map((a) =>
+                a.id === auditorId ? { ...a, status: 'REVOKED', packAccess: [] } : a,
+            ),
+        mutationFn: (auditorId) =>
+            send(
+                `/audits/auditors/${auditorId}`,
+                { method: 'DELETE' },
+                tx('auditorsAdmin.revokeAccountError'),
+            ),
+    });
+
     // PR-O — account-level revoke: flip the whole AuditorAccount to REVOKED and
     // drop every pack grant in one action (distinct from removing a single pack).
     const revokeAccount = async (auditorId: string) => {
         setRevokingAccount(true);
         try {
-            const res = await fetch(apiUrl(`/audits/auditors/${auditorId}`), { method: 'DELETE' });
-            if (res.ok) {
-                await loadAuditors();
-                toast.success(tx('auditorsAdmin.revokeAccountSuccess'));
-            } else {
-                toast.error(tx('auditorsAdmin.revokeAccountError'));
-            }
+            await revokeAccountMutation.trigger(auditorId);
+            toast.success(tx('auditorsAdmin.revokeAccountSuccess'));
+        } catch {
+            // This had NO catch — a network throw escaped the `finally` as an
+            // unhandled rejection, leaving the modal open with no message.
+            toast.error(tx('auditorsAdmin.revokeAccountError'));
         } finally {
             setRevokingAccount(false);
         }
