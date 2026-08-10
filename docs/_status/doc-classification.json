@@ -3,7 +3,7 @@
     "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\".",
     "counts": {
         "authoritative": 115,
-        "historical": 511,
+        "historical": 512,
         "living": 5,
         "deprecated": 1
     },
@@ -1902,6 +1902,9 @@
             "class": "historical"
         },
         "docs/implementation-notes/2026-08-10-audits-data-access.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-10-js-yaml-floor-and-freeze-500.md": {
             "class": "historical"
         }
     }

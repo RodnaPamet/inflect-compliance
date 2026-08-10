@@ -74,9 +74,9 @@
     },
     "js-yaml": {
         "kind": "security",
-        "advisory": "GHSA-52cp-r559-cp3m",
-        "patchedFrom": "4.3.0",
-        "reason": "High-severity advisory (CVE-2026-59869) affecting js-yaml >=4.0.0 <4.3.0, reached transitively through cosmiconfig in the dev tree. Range-KEYED (`js-yaml@>=4.0.0 <4.3.0`) so it moves ONLY the vulnerable 4.x instance up to 4.3.0 and leaves the separate @istanbuljs/load-nyc-config 3.15.0 nested pin (js-yaml 3.x API) untouched. Added 2026-07-25."
+        "advisory": "GHSA-5p4m-2wfm-xmqj",
+        "patchedFrom": "4.3.1",
+        "reason": "Quadratic CPU consumption in `!!omap` resolution (CVE-2026-59870, high), affecting js-yaml >=4.0.0 <4.3.1 and >=3.0.0 <3.15.1. Reached transitively through cosmiconfig and @eslint/eslintrc in the dev tree. Range-KEYED (`js-yaml@>=4.0.0 <4.3.1`) so it moves ONLY the vulnerable 4.x instances and leaves the separate @istanbuljs/load-nyc-config pin on the 3.x API; that pin carries its own floor of ^3.15.1 for the 3.x branch of the SAME advisory. Supersedes GHSA-52cp-r559-cp3m (CVE-2026-59869, fixed at 4.3.0) — that floor was correct when written and stopped patching once this advisory landed, which is the failure `scripts/check-override-freshness.mjs` exists to catch and did catch."
     },
     "sharp": {
         "kind": "security",
