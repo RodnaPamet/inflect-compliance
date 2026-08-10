@@ -107,5 +107,11 @@
         "advisory": "GHSA-2v37-7h3g-55p8",
         "patchedFrom": "3.3.17",
         "reason": "nanoid: a custom generator can loop indefinitely when size is zero (high). It reaches production only transitively, via next -> postcss, which pins the 3.x line — so the floor is ^3.3.17 rather than the 6.x latest; forcing a major here would break postcss's own contract. The lock resolves 3.3.18. Drop this override once postcss ships a release whose own nanoid floor is >=3.3.17."
+    },
+    "postcss": {
+        "kind": "security",
+        "advisory": "GHSA-qx2v-qp2m-jg93",
+        "patchedFrom": "8.5.10",
+        "reason": "PostCSS XSS via an unescaped `</style>` in stringify output (medium), fixed in 8.5.10. next ships postcss@8.4.31 nailed into its own tree, so the direct devDependency alone does not reach it; the `$postcss` self-reference forces next's copy onto the version we depend on directly. Landed in #421 without a registry entry because `$name` overrides were exempt from this guard until 2026-08-10 — the exemption is what let a security override go unrecorded."
     }
 }

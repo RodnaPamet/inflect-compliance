@@ -250,6 +250,44 @@ interface ParsedOverride {
     spec: string;
     /** For a range-keyed override, the targeted (vulnerable) range. */
     targetRange: string | null;
+    /** `$name` pointing at a package that is not a direct dependency. */
+    danglingRef?: boolean;
+}
+
+interface PackageJson {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    overrides?: Record<string, unknown>;
+}
+
+/**
+ * Resolve a `$name` override to the spec of the direct dependency it
+ * points at.
+ *
+ * `$name` means "whatever version I depend on directly". npm requires it
+ * whenever a package is BOTH a direct dependency and an override target:
+ * a duplicated literal range is legal only while the two happen to match
+ * character-for-character, and the moment anything tries to bump one it
+ * breaks. That is not hypothetical — it took Dependabot's whole
+ * `npm_and_yarn` run down on 2026-08-10 with "Override for
+ * undici@8.10.0 conflicts with direct dependency", which also blocked
+ * every OTHER security update batched into that run.
+ *
+ * These used to be skipped here, on the reasoning that `$name` "cannot
+ * go stale independently". True — but it can go stale TOGETHER with the
+ * dependency it tracks. Downgrade `dependencies.undici` to `^6` and the
+ * security floor this guard exists to protect is breached with nothing
+ * to notice, because the override that recorded the floor had quietly
+ * exempted itself. Resolving the reference keeps the floor checkable and
+ * keeps the registry entry (with its advisory) alive.
+ */
+function resolveDollarRef(value: string, pkg: PackageJson): string | null {
+    const target = value.slice(1);
+    return (
+        pkg.dependencies?.[target] ??
+        pkg.devDependencies?.[target] ??
+        null
+    );
 }
 
 /**
@@ -257,16 +295,28 @@ interface ParsedOverride {
  *
  * Skipped deliberately:
  *   • object values (`{ react: '$react' }`) — nested peer pins, which
- *     are scoped to one parent and covered by the peer-bridge docs;
- *   • `$name` values — "same as the root dependency", which cannot go
- *     stale independently.
+ *     are scoped to one parent and covered by the peer-bridge docs.
+ *
+ * `$name` values are NOT skipped — see `resolveDollarRef`.
  */
 function parseOverrides(): ParsedOverride[] {
-    const pkg = readJson('package.json');
+    const pkg = readJson('package.json') as PackageJson;
     const out: ParsedOverride[] = [];
-    for (const [key, value] of Object.entries(pkg.overrides ?? {})) {
-        if (typeof value !== 'string') continue;
-        if (value.startsWith('$')) continue;
+    for (const [key, rawValue] of Object.entries(pkg.overrides ?? {})) {
+        if (typeof rawValue !== 'string') continue;
+        let value = rawValue;
+        if (value.startsWith('$')) {
+            const resolved = resolveDollarRef(value, pkg);
+            // A dangling `$ref` silently disables the override, which is
+            // the same class of failure as an override that never
+            // matched. Surface it as an unresolvable entry rather than
+            // dropping it.
+            if (!resolved) {
+                out.push({ name: key, key, spec: rawValue, targetRange: null, danglingRef: true });
+                continue;
+            }
+            value = resolved;
+        }
         // `name@range` — split on the LAST `@` so scoped names survive.
         const at = key.lastIndexOf('@');
         const scopedOnly = key.startsWith('@') && at === 0;
