@@ -51,6 +51,7 @@ import type { ResidualSuggestionPayload } from '@/app-layer/usecases/risk-residu
 import { ApiClientError } from '@/lib/api-client';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { extractMutationError } from '@/lib/mutations';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 
 // Epic G-7 — the structured treatment plan now lives INSIDE the guided
 // assessment (Step 4), not scattered on the Overview tab. Dynamic-imported
@@ -216,14 +217,12 @@ export function RiskAssessmentPanel({
     // Step 1 draft state.
     const [likelihood, setLikelihood] = useState(risk.likelihood);
     const [impact, setImpact] = useState(risk.impact);
-    const [savingInherent, setSavingInherent] = useState(false);
 
     // Step 3 draft state.
     const [residualLikelihood, setResidualLikelihood] = useState(risk.residualLikelihood ?? risk.likelihood);
     const [residualImpact, setResidualImpact] = useState(risk.residualImpact ?? risk.impact);
     const [justification, setJustification] = useState('');
     const [overriding, setOverriding] = useState(false);
-    const [savingResidual, setSavingResidual] = useState(false);
     const [accepting, setAccepting] = useState(false);
     // polish #15 — when inherent saves while a manual residual draft
     // is open, the draft now applies to a DIFFERENT inherent
@@ -238,11 +237,9 @@ export function RiskAssessmentPanel({
         () => buildRiskTreatmentOptions((k) => t(k as Parameters<typeof t>[0])),
         [t],
     );
-    const [savingTreatment, setSavingTreatment] = useState(false);
     const [reviewDate, setReviewDate] = useState<Date | null>(
         risk.nextReviewAt ? new Date(risk.nextReviewAt) : null,
     );
-    const [savingReview, setSavingReview] = useState(false);
 
     // B2-2 — the residual suggestion. `mutate` is the same refresh the
     // retry button and `acceptSuggestion` used `loadSuggestion()` for.
@@ -272,6 +269,56 @@ export function RiskAssessmentPanel({
     }>(`/risks/${riskId}/kri-breaches`);
     const kriBreaches = kriData?.breaches ?? [];
 
+    /**
+     * B2-1 — the four risk PUTs go through `useTenantMutation` on the risk
+     * detail key, so the cache write and the in-flight flag are the hook's
+     * rather than five hand-rolled booleans plus a parent callback.
+     *
+     * DELIBERATELY ONE HOOK PER STEP, not one shared hook. The B2-1 item
+     * asked for the five `saving*` booleans to "collapse into one
+     * isMutating" — that would be a regression, not a simplification: each
+     * flag today disables ONLY its own button and swaps ONLY its own label,
+     * so a shared flag would grey out all five controls and flip four
+     * unrelated labels to "Saving…" whenever any one step saved.
+     *
+     * `onRiskUpdated()` is still called. The hook revalidates the detail
+     * key, which IS the parent's `useTenantSWR` query — but the callback is
+     * the parent's declared contract, and other consumers may rely on it.
+     */
+    const putRisk = (failKey: 'failedSaveStatus' | 'failedResidualStatus' | 'failedTreatmentStatus' | 'failedReviewStatus') =>
+        async (body: Record<string, unknown>) => {
+            const res = await fetch(apiUrl(`/risks/${riskId}`), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error(t(`assessment.${failKey}`, { status: res.status }));
+            return res.json();
+        };
+
+    const inherentMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
+        key: `/risks/${riskId}`,
+        mutationFn: putRisk('failedSaveStatus'),
+    });
+    const residualMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
+        key: `/risks/${riskId}`,
+        mutationFn: putRisk('failedResidualStatus'),
+    });
+    const treatmentMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
+        key: `/risks/${riskId}`,
+        mutationFn: putRisk('failedTreatmentStatus'),
+    });
+    const reviewMutation = useTenantMutation<unknown, Record<string, unknown>, unknown>({
+        key: `/risks/${riskId}`,
+        mutationFn: putRisk('failedReviewStatus'),
+    });
+
+    const savingInherent = inherentMutation.isMutating;
+    const savingResidual = residualMutation.isMutating;
+    const savingTreatment = treatmentMutation.isMutating;
+    const savingReview = reviewMutation.isMutating;
+
+
     if (loadError) {
         return (
             <div className={cn(cardVariants({ density: 'compact' }), 'space-y-tight border-border-error text-sm')}>
@@ -297,22 +344,14 @@ export function RiskAssessmentPanel({
     const draftResidualScore = calculateRiskScore(residualLikelihood, residualImpact, maxScale);
 
     const saveInherent = async () => {
-        setSavingInherent(true);
         clearStepError('inherent');
         try {
-            const res = await fetch(apiUrl(`/risks/${riskId}`), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ likelihood, impact }),
-            });
-            if (!res.ok) throw new Error(t('assessment.failedSaveStatus', { status: res.status }));
+            await inherentMutation.trigger({ likelihood, impact });
             if (overriding) setResidualBaselineDirty(true);
             onRiskUpdated();
             await reloadSuggestion();
         } catch (err) {
             setStepError('inherent', extractMutationError(err, t('assessment.failedSave')));
-        } finally {
-            setSavingInherent(false);
         }
     };
 
@@ -346,27 +385,19 @@ export function RiskAssessmentPanel({
     };
 
     const saveResidualOverride = async () => {
-        setSavingResidual(true);
         clearStepError('residual');
         try {
-            const res = await fetch(apiUrl(`/risks/${riskId}`), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    residualLikelihood,
-                    residualImpact,
-                    scoreJustification: justification || null,
-                }),
+            await residualMutation.trigger({
+                residualLikelihood,
+                residualImpact,
+                scoreJustification: justification || null,
             });
-            if (!res.ok) throw new Error(t('assessment.failedResidualStatus', { status: res.status }));
             setOverriding(false);
             setResidualBaselineDirty(false);
             onRiskUpdated();
             await reloadSuggestion();
         } catch (err) {
             setStepError('residual', extractMutationError(err, t('assessment.failedSave')));
-        } finally {
-            setSavingResidual(false);
         }
     };
 
@@ -374,41 +405,28 @@ export function RiskAssessmentPanel({
     // TreatmentDecision value; the canonical vocabulary is a label-only
     // concern). A PUT that carries just `treatment` leaves the score alone.
     const saveTreatment = async (decision: string) => {
-        setSavingTreatment(true);
         clearStepError('treatment');
         try {
-            const res = await fetch(apiUrl(`/risks/${riskId}`), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ treatment: decision || null }),
-            });
-            if (!res.ok) throw new Error(t('assessment.failedTreatmentStatus', { status: res.status }));
+            await treatmentMutation.trigger({ treatment: decision || null });
             onRiskUpdated();
         } catch (err) {
             setStepError('treatment', extractMutationError(err, t('assessment.failedSave')));
-        } finally {
-            setSavingTreatment(false);
         }
     };
 
     const saveReviewDate = async () => {
-        setSavingReview(true);
         clearStepError('review');
         try {
-            const res = await fetch(apiUrl(`/risks/${riskId}`), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    nextReviewAt: reviewDate ? reviewDate.toISOString() : null,
-                }),
+            // Explicit null, not omission — the review date must be
+            // CLEARABLE (the three-state contract B1-1 widened the schema
+            // for: undefined = unchanged, null = clear, value = set).
+            await reviewMutation.trigger({
+                nextReviewAt: reviewDate ? reviewDate.toISOString() : null,
             });
-            if (!res.ok) throw new Error(t('assessment.failedReviewStatus', { status: res.status }));
             toast.success(t('assessment.saveReviewDate'));
             onRiskUpdated();
         } catch (err) {
             setStepError('review', extractMutationError(err, t('assessment.failedSave')));
-        } finally {
-            setSavingReview(false);
         }
     };
 
