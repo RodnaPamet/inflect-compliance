@@ -1339,6 +1339,7 @@
             "psdHelp": "A valid correlation matrix must be positive semi-definite — otherwise the coefficients are mutually contradictory and the simulation cannot sample from them. Auto-suggest keeps it valid.",
             "loadError": "Couldn't load the correlation matrix.",
             "suggestError": "Couldn't suggest correlations.",
+            "saveError": "Couldn't save the correlation.",
             "nonPsdWarning": "This matrix is not positive semi-definite, so it will be dropped from Monte Carlo simulations (risks sampled independently). Adjust the coefficients until the matrix is valid.",
             "notPdWarning": "This matrix is positive semi-definite but not strictly positive-definite (smallest eigenvalue ≈ 0 — usually a ±1.0 or otherwise dependent coefficient). The Monte Carlo needs strict positive-definiteness for its Cholesky step, so it will drop these correlations and sample risks independently until you adjust them."
         },
