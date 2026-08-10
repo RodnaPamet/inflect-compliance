@@ -539,6 +539,65 @@ function getFieldDecryptFailures() {
  * version, never tenantId (that would blow up the series count and put a
  * tenant identifier in metrics).
  */
+/**
+ * A write whose row `tenantId` disagrees with the ambient tenant context.
+ *
+ * WHY THIS EXISTS AS ITS OWN SIGNAL
+ * ---------------------------------
+ * Field encryption keys off the AMBIENT tenant context, not off the row being
+ * written. So a write that sets `tenantId: B` while the context says A
+ * encrypts B's row under A's DEK — and nothing notices, because the write
+ * succeeds. The damage surfaces much later, on an unrelated READ, as
+ * `DecryptIntegrityError ... wrong key, corrupt row, or a write made under a
+ * mismatched tenant context`. By then the offending write is long gone: the
+ * read tells you which row is unreadable and nothing about who wrote it.
+ *
+ * That is what happened. E2E runs carry a steady 6-9 of those 500s, on green
+ * runs as well as red, and the read-side error cannot name the writer. This
+ * counter names it at the moment of the write, with the model, the operation
+ * and BOTH tenant ids — which is the only place the information still exists.
+ *
+ * Two distinct outcomes, because they need opposite fixes:
+ *
+ *   `mismatch` — ambient tenant A, row tenant B. The row will be encrypted
+ *     under the wrong DEK and become undecryptable. This is the corruption.
+ *
+ *   `unscoped` — no ambient tenant at all, but the row names one. The value
+ *     is encrypted under the GLOBAL KEK (`v1:`) instead of the tenant's DEK.
+ *     It stays readable, so it is not an outage — but it silently opts that
+ *     row out of per-tenant key isolation, and a tenant-DEK rotation will not
+ *     re-key it. Cross-tenant sweeps that write with the raw client land here
+ *     (`automation-runner`'s all-tenants pass creates Findings this way).
+ *
+ * Deliberately observation-only for now, mirroring the posture this codebase
+ * already took for `decrypt_failed`: make it countable, find the real call
+ * sites, then decide whether to throw. Labels stay low-cardinality — no
+ * tenant ids in metrics; those go to the log line instead.
+ */
+let _tenantContextMismatches: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+function getTenantContextMismatches(): ReturnType<ReturnType<typeof getMeter>['createCounter']> {
+    if (!_tenantContextMismatches) {
+        _tenantContextMismatches = getMeter().createCounter('encryption.write.tenant_context_mismatch', {
+            description:
+                'Writes whose row tenantId disagrees with the ambient tenant context. `mismatch` corrupts (wrong DEK); `unscoped` silently downgrades the row to the global KEK.',
+            unit: '1',
+        });
+    }
+    return _tenantContextMismatches;
+}
+
+export function recordTenantContextMismatch(attrs: {
+    model: string;
+    operation: string;
+    outcome: 'mismatch' | 'unscoped';
+}): void {
+    getTenantContextMismatches().add(1, {
+        model: attrs.model,
+        operation: attrs.operation,
+        outcome: attrs.outcome,
+    });
+}
+
 export function recordFieldDecryptFailure(attrs: {
     model: string;
     field: string;

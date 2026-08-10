@@ -75,7 +75,7 @@ import {
 } from '@/lib/security/encrypted-fields';
 import { getAuditContext } from '@/lib/audit-context';
 import { logger } from '@/lib/observability/logger';
-import { recordFieldDecryptFailure } from '@/lib/observability/metrics';
+import { recordFieldDecryptFailure, recordTenantContextMismatch } from '@/lib/observability/metrics';
 // `import * as` (rather than a top-level named import) keeps the
 // circular-import escape hatch — `tenant-key-manager` imports
 // `@/lib/prisma`, which composes this module — while still exposing
@@ -513,6 +513,80 @@ function onDecryptFailure(
     return ciphertext;
 }
 
+
+/**
+ * Catch a write that is about to be encrypted under the wrong tenant's DEK.
+ *
+ * The middleware picks its key from the AMBIENT tenant context and never looks
+ * at the row. So `create({ data: { tenantId: B, description } })` executed
+ * while the context says A encrypts B's row with A's key, succeeds, and
+ * corrupts silently. The failure appears later, on an unrelated read, as
+ * `DecryptIntegrityError` — which can name the unreadable row but not the
+ * write that produced it. This is the only point where both halves are still
+ * in scope, so it is the only place the question is answerable.
+ *
+ * Observation-only, deliberately: the same posture the read path took for
+ * `decrypt_failed`. Several legitimate-looking cross-tenant writers exist
+ * today (cross-tenant job sweeps, the public share path); throwing before they
+ * are understood would trade a silent corruption for a loud outage. Count
+ * first, find the callers, then decide.
+ *
+ * `tenantId` is read only when it is a plain string — a Prisma filter object
+ * (`{ in: [...] }`) is an updateMany predicate, not a row's identity, and
+ * comparing against it would be noise.
+ */
+function checkWriteTenantContext(
+    data: unknown,
+    model: string,
+    operation: string,
+): void {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    const row = data as Record<string, unknown>;
+    const rowTenantId = row.tenantId;
+    if (typeof rowTenantId !== 'string' || rowTenantId.length === 0) return;
+
+    // Only payloads that will ACTUALLY be encrypted are interesting. Tenant
+    // bootstrap writes `TenantMembership` and `TenantOnboarding` rows before
+    // any context exists — correct, and encrypting nothing, so reporting them
+    // buries the real signal under a constant stream. Mirror the write walk's
+    // own rule: a model in the manifest, or any payload key that is an
+    // encrypted field name under the `*` wildcard.
+    const encryptsSomething =
+        isEncryptedModel(model)
+            ? Object.keys(row).some((k) => getEncryptedFields(model)?.includes(k))
+            : Object.keys(row).some((k) => ALL_ENCRYPTED_FIELD_NAMES.has(k));
+    if (!encryptsSomething) return;
+
+    const ambient = getAuditContext()?.tenantId;
+
+    if (!ambient) {
+        // The row names a tenant; the writer established no context. The value
+        // encrypts under the global KEK, so it stays readable — but it is
+        // outside per-tenant key isolation and a tenant-DEK rotation will skip
+        // it.
+        logger.warn('encryption-middleware.write_unscoped', {
+            component: 'encryption-middleware',
+            model,
+            operation,
+            rowTenantId,
+        });
+        recordTenantContextMismatch({ model, operation, outcome: 'unscoped' });
+        return;
+    }
+
+    if (ambient !== rowTenantId) {
+        // The corruption case. Log BOTH ids — the read-side error has neither.
+        logger.error('encryption-middleware.write_tenant_mismatch', {
+            component: 'encryption-middleware',
+            model,
+            operation,
+            ambientTenantId: ambient,
+            rowTenantId,
+        });
+        recordTenantContextMismatch({ model, operation, outcome: 'mismatch' });
+    }
+}
+
 function decryptResultNode(
     node: Record<string, unknown>,
     modelName: string,
@@ -677,6 +751,7 @@ export function withEncryptionExtension<T extends object>(
                         // solely so reads of stale rows can find
                         // their key during a rotation.
                         if (args?.data) {
+                            checkWriteTenantContext(args.data, model, operation);
                             walkWriteArgument(
                                 args.data,
                                 targetModel,
@@ -731,6 +806,7 @@ export function _resetEncryptionMiddlewareForTests(): void {
 
 /** @internal — exposed for direct unit-testing of the traversal logic. */
 export const _internals = {
+    checkWriteTenantContext,
     walkWriteArgument,
     walkReadResult,
     encryptDataNode,
