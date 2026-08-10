@@ -11,6 +11,9 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import { useToast } from '@/components/ui/hooks';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
@@ -75,10 +78,6 @@ export default function CycleDetailPage() {
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
     const toast = useToast();
 
-    const [cycle, setCycle] = useState<AuditCycleDetail | null>(null);
-    const [preview, setPreview] = useState<DefaultPackPreview | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState(false);
     const [creating, setCreating] = useState(false);
 
     // fix/audits-surface — a network blip on the initial load must surface a
@@ -86,19 +85,27 @@ export default function CycleDetailPage() {
     // .catch the rejected promise left `cycle` null and the !cycle branch
     // masqueraded as a 404. `load` is re-callable so the retry button can
     // re-fetch in place.
-    const load = useCallback(() => {
-        setLoading(true);
-        setLoadError(false);
-        Promise.all([
-            fetch(apiUrl(`/audits/cycles/${cycleId}`)).then(r => r.ok ? r.json() : null),
-            fetch(apiUrl(`/audits/cycles/${cycleId}?action=default-pack-preview`)).then(r => r.ok ? r.json() : null),
-        ])
-            .then(([c, p]) => { setCycle(c); setPreview(p); })
-            .catch(() => setLoadError(true))
-            .finally(() => setLoading(false));
-    }, [apiUrl, cycleId]);
+    // Two hand-rolled fetches became two SWR keys. The distinction the old
+    // code fought for is kept and made structural: SWR's `error` is the
+    // network blip (retryable), `data === null` is the genuine 404 — before,
+    // an un-caught rejection left `cycle` null and the !cycle branch
+    // masqueraded as "not found".
+    const cycleQuery = useTenantSWR<AuditCycleDetail | null>(CACHE_KEYS.audits.cycle(cycleId));
+    const cycle = cycleQuery.data ?? null;
 
-    useEffect(() => { load(); }, [load]);
+    // The preview is advisory — it only populates the "what would a default
+    // pack contain" panel, so a failure must not gate the page.
+    const previewQuery = useTenantSWR<DefaultPackPreview | null>(
+        `${CACHE_KEYS.audits.cycle(cycleId)}?action=default-pack-preview`,
+    );
+    const preview = previewQuery.data ?? null;
+
+    const loading = cycleQuery.isLoading;
+    const loadError = Boolean(cycleQuery.error);
+    const load = useCallback(() => {
+        void cycleQuery.mutate();
+        void previewQuery.mutate();
+    }, [cycleQuery, previewQuery]);
 
     const createDefaultPack = async () => {
         if (!cycle) return;
@@ -144,26 +151,35 @@ export default function CycleDetailPage() {
 
     // feat/audit-cycle-unify — advance the cycle through its lifecycle
     // (PLANNING → IN_PROGRESS → READY → COMPLETE) so it can be closed.
-    const [savingStatus, setSavingStatus] = useState(false);
-    const changeStatus = async (status: string) => {
-        if (!cycle || status === cycle.status) return;
-        setSavingStatus(true);
-        try {
+    const statusMutation = useTenantMutation<AuditCycleDetail | null, string>({
+        key: CACHE_KEYS.audits.cycle(cycleId),
+        // A single-field flip we can predict exactly, and worth predicting —
+        // the whole header re-chromes on the new status. Rollback is what
+        // makes it safe: the old code set the state only AFTER `res.ok`, so a
+        // failure left the pill correct but the user waiting; an optimistic
+        // flip without rollback would have been worse.
+        optimisticUpdate: (current, status) => current && { ...current, status },
+        mutationFn: async (status) => {
             const res = await fetch(apiUrl(`/audits/cycles/${cycleId}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status }),
             });
-            if (!res.ok) {
-                toast.error(tx('cycleDetail.statusError'));
-                return;
-            }
-            setCycle((prev) => (prev ? { ...prev, status } : prev));
+            if (!res.ok) throw new Error(tx('cycleDetail.statusError'));
+            return res.json().catch(() => null);
+        },
+        // The cycle list shows each cycle's status badge.
+        invalidate: [CACHE_KEYS.audits.cycles()],
+    });
+    const savingStatus = statusMutation.isMutating;
+
+    const changeStatus = async (status: string) => {
+        if (!cycle || status === cycle.status) return;
+        try {
+            await statusMutation.trigger(status);
             toast.success(tx('cycleDetail.statusChanged', { status }));
         } catch {
             toast.error(tx('cycleDetail.statusError'));
-        } finally {
-            setSavingStatus(false);
         }
     };
 
