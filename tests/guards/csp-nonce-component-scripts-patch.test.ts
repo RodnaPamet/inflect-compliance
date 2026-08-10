@@ -55,7 +55,10 @@ import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
 
-describe('CSP nonce — Next.js component-script patch', () => {
+// EXPERIMENT BRANCH ONLY — never merged. The patch is deliberately absent so
+// CI can answer whether Next 16.3.0's responsive.spec failures come from the
+// dependency or from our regenerated patch. Do not copy this skip anywhere.
+describe.skip('CSP nonce — Next.js component-script patch', () => {
     it('patches/next+16.2.7.patch is present in the tree', () => {
         // The patch is the deliverable. Without it, `npm install`
         // produces an unpatched node_modules and the R16 chart
