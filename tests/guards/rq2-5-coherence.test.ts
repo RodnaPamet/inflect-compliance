@@ -61,17 +61,26 @@ describe('RQ2-5 — both languages on every surface', () => {
 });
 
 describe('RQ2-5 — detector contract', () => {
-    test('rank-based, not absolute-threshold-based', () => {
-        expect(lib).toMatch(/percentileRanks/);
-        expect(lib).toMatch(/MIN_QUANTIFIED_FOR_COHERENCE = 4/);
-        expect(lib).toMatch(/HIGH_QUARTILE = 0\.75/);
-        expect(lib).toMatch(/LOW_QUARTILE = 0\.25/);
-    });
-
-    test('only quantified risks participate (ale !== null filter)', () => {
-        expect(lib).toMatch(/r\.ale !== null/);
-    });
-
+    /**
+     * B3-5 — two cases removed, both covered behaviourally by
+     * `tests/unit/risk-coherence.test.ts`, which CALLS `detectIncoherence`:
+     *
+     *   "rank-based, not absolute-threshold-based" grepped for the literals
+     *   `MIN_QUANTIFIED_FOR_COHERENCE = 4`, `HIGH_QUARTILE = 0.75`,
+     *   `LOW_QUARTILE = 0.25`. The unit suite proves the RULES those
+     *   constants encode — silence below the minimum count, top-ALE /
+     *   bottom-score flagged, mid-rank never flagged even in a noisy
+     *   portfolio, ties unable to self-flag, worst-disagreement-first
+     *   ordering. A literal can read 0.75 while the comparison uses it
+     *   backwards; only the call catches that.
+     *
+     *   "only quantified risks participate" grepped for `r.ale !== null`.
+     *   Covered by "unquantified risks never participate in the ranking".
+     *
+     * The surface claims below stay: they assert what the LIST, DETAIL,
+     * DASHBOARD and ENDPOINT do with the detector's output, which no unit
+     * test of the pure function can see.
+     */
     test('the usecase routes through resolveALE (FAIR over legacy) and the pure detector', () => {
         expect(usecase).toMatch(/detectIncoherence/);
         const block = usecase.slice(usecase.indexOf('export async function getRiskCoherence'));
