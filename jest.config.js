@@ -66,35 +66,47 @@ const ESM_TRANSFORM_ALLOW_LIST =
 //
 // Single source of truth for the coverage floors. Loaded here so the
 // repo has ONE place where the numbers live; the CI gate reads the
-// SAME file and passes it via `--coverageThreshold` CLI flag because
-// jest 29.7.0's per-project `coverageThreshold` (and even the top-
-// level one in multi-project mode) is silently NOT enforced — the
-// run exits 0 even when observed coverage is 9% against a 99% floor.
-// The CLI flag IS enforced (exit 1 + violation message). See
+// SAME file. Jest itself enforces none of it: a per-project
+// `coverageThreshold` never reaches the globalConfig bucket the
+// enforcement path reads, so the run exits 0 even when observed
+// coverage is 9% against a 99% floor. See
 // docs/implementation-notes/2026-04-27-gap-15-coverage-enforcement.md
-// for the empirical proof + why this layout was chosen.
+// for the empirical proof (measured on jest 29.7.0; re-verified on the
+// installed 30.4.2 — `globalConfig.coverageThreshold` is `undefined`).
 //
-// Writing the values here too gives `npm run test:coverage` (no CLI
-// flag) the same documented thresholds — they print to the summary
-// even though they don't fail the run. The CI gate is the only
-// authoritative enforcement point today.
+// Enforcement is `scripts/check-merged-coverage.ts`, run once over the
+// four merged shard artifacts by the `Coverage (≥60%)` CI job. The
+// shards pass no threshold flag at all. Writing the values here gives
+// `npm run test:coverage` the documented numbers in its summary; they
+// do not fail that run.
 const coverageThresholds = require('./jest.thresholds.json');
 
 // ─── Coverage scope (shared across both projects) ────────────────────
 //
-// `coverageThreshold` MUST live inside a project block, NOT at the
-// top-level `module.exports`. Jest's multi-project handling silently
-// ignores top-level `coverageThreshold` when `projects:` is set —
-// historically this codebase had it at the top, which meant the
-// thresholds were documented but NEVER enforced. The Coverage CI gate
-// passed regardless of observed numbers.
+// Three coverage keys, three different homes. Jest's `groupOptions`
+// splits normalised options into a globalConfig bucket and a
+// projectConfig bucket, and a key written to the wrong bucket is not an
+// error — it is silently ignored. Verified against the installed jest
+// (30.4.2) with `npx jest --showConfig`:
 //
-// The fix (GAP-15 step 3 closure): keep `collectCoverageFrom` at the
-// top level (so both projects' test runs feed the same coverage scope)
-// but move the THRESHOLD into the node project's config below — that
-// project owns the file types in the scope (`*.ts` under `src/app-layer/`
-// and `src/lib/`). The jsdom project covers UI primitives in
-// `src/components/**` which are deliberately out of scope today.
+//   collectCoverageFrom        → global   (top-level `module.exports`)
+//   coverageThreshold          → global   (but see below — it is set on
+//                                          the node project on purpose,
+//                                          where it does NOT enforce)
+//   coveragePathIgnorePatterns → project  (both project blocks)
+//
+// `coverageThreshold` is the one deliberate exception. It sits on the
+// node project as documentation, and `npx jest --showConfig` reports
+// `globalConfig.coverageThreshold === undefined` as a result — so Jest
+// enforces nothing and `scripts/check-merged-coverage.ts` is the gate.
+// That is intentional: the CI shards each hold a quarter of the data,
+// so a per-shard threshold would compare a quarter of the coverage
+// against floors calibrated on all of it. The floors are checked once,
+// on the merged total. `tests/guards/coverage-config-resolution.test.ts`
+// pins all three placements.
+//
+// The scope itself is below, and the top-level `collectCoverageFrom` in
+// `module.exports` carries the full story of why it lives there.
 const sharedCollectCoverageFrom = [
     'src/app-layer/**/*.ts',
     'src/lib/**/*.ts',
@@ -179,9 +191,13 @@ const nodeProject = {
         '^.+\\.m?js$': 'ts-jest',
     },
     transformIgnorePatterns: ['node_modules/(?!(' + ESM_TRANSFORM_ALLOW_LIST + ')/)'],
-    // Inherits the shared collection scope so the node + jsdom projects
-    // emit a comparable merged report.
+    // Documentation only — Jest reads `collectCoverageFrom` from the
+    // global config, never from a project. The load-bearing copy is at
+    // the top level of `module.exports`.
     collectCoverageFrom: sharedCollectCoverageFrom,
+    // A PROJECT option, unlike the two above. At the top level it is
+    // dropped and the project falls back to `['/node_modules/']`.
+    coveragePathIgnorePatterns: ['/node_modules/', '/.next/', '/tests/'],
     // ─── Coverage ratchet (GAP-15) ───────────────────────────────────
     //
     // POLICY: `docs/coverage-policy.md` is the risk-tiered coverage
@@ -247,9 +263,10 @@ const nodeProject = {
     //  comment so the next reader can judge whether a refactor is
     //  weakening a guard.
     // Loaded from jest.thresholds.json (single source of truth shared
-    // with CI). NOT authoritative — see the GAP-15 comment above and
-    // the implementation note. The CI gate's --coverageThreshold flag
-    // is the authoritative enforcement point.
+    // with CI). NOT enforced from here — a project-level
+    // `coverageThreshold` never reaches the globalConfig bucket Jest
+    // checks. `scripts/check-merged-coverage.ts`, run once over the
+    // merged shard artifacts, is the authoritative enforcement point.
     coverageThreshold: coverageThresholds,
 };
 
@@ -367,11 +384,13 @@ const jsdomProject = {
             'next-auth|@auth/[^/]+|oauth4webapi|jose|preact|preact-render-to-string' +
             ')/)',
     ],
-    // Same scope as the node project — jsdom-suite tests of UI
-    // primitives don't typically touch `src/app-layer/` or `src/lib/`
-    // directly, but coverage data from any incidental hits still
-    // contributes to the merged report.
+    // Documentation only, same as the node project's copy — the global
+    // config is what Jest reads. Kept so this block states the scope
+    // its incidental `src/app-layer/` + `src/lib/` hits land in.
     collectCoverageFrom: sharedCollectCoverageFrom,
+    // A PROJECT option. Load-bearing here: without it the jsdom run
+    // instruments `tests/setup/jsdom-shims.ts` and its siblings.
+    coveragePathIgnorePatterns: ['/node_modules/', '/.next/', '/tests/'],
 };
 
 module.exports = {
@@ -396,12 +415,45 @@ module.exports = {
     // and a real future leak will hang CI immediately, surfacing it
     // for diagnosis instead of getting masked.
     forceExit: false,
-    // Path filter applies across both projects.
-    coveragePathIgnorePatterns: ['/node_modules/', '/.next/', '/tests/'],
-    // NOTE: `coverageThreshold` and `collectCoverageFrom` are
-    // INTENTIONALLY on the node project below, not here. Jest silently
-    // ignores top-level `coverageThreshold` when `projects:` is set —
-    // see the comment block on `nodeProject.coverageThreshold` for the
-    // full GAP-15 enforcement-fix history.
+    // ─── The coverage scope, and the only place Jest reads it ────────
+    //
+    // `collectCoverageFrom` is a GLOBAL option. `groupOptions` in
+    // jest-config routes it into `globalConfig`, and both consumers
+    // that matter read it from there:
+    //
+    //   - jest-runner/build/index.js — feeds `shouldInstrument`, which
+    //     filters WHAT gets instrumented. With an empty array there is
+    //     no filter at all: every non-test module a suite loads is
+    //     instrumented, including `src/components/**` and `src/app/**`.
+    //   - @jest/reporters `_addUntestedFiles` — the ZERO-FILL, guarded
+    //     by `if (globalConfig.collectCoverageFrom.length > 0)`. With
+    //     an empty array nothing is zero-filled, so a file no test
+    //     imports is absent from the report rather than counted at 0%.
+    //
+    // A copy on a project block is written and never read — nothing in
+    // `@jest/*` or `jest-*` reads `projectConfig.collectCoverageFrom`.
+    // The two project-level copies below are kept only so a reader of
+    // either block can see the scope; this line is the load-bearing one.
+    //
+    // History: GAP-15 (#48) moved this key OUT of the top level while
+    // fixing the threshold half of the same bug. From then until the
+    // scope fix the gate's denominator was the suite's import graph
+    // rather than a declared scope — the merged report held 1491 files
+    // against 758 declared, ~730 of them React. Writing the first test
+    // for a page enrolled that whole file at partial coverage and
+    // pushed the global ratio DOWN; on 2026-08-11 that took `main` red
+    // (docs/implementation-notes/2026-08-11-coverage-gate-enrolment.md).
+    // `tests/guards/coverage-config-resolution.test.ts` now asserts the
+    // resolved config, so a future relocation fails a test instead of
+    // silently changing what the gate measures.
+    collectCoverageFrom: sharedCollectCoverageFrom,
+    // NOTE: `coverageThreshold` is INTENTIONALLY on the node project
+    // below, not here — see the comment block on
+    // `nodeProject.coverageThreshold` for the full GAP-15 history.
+    // `coveragePathIgnorePatterns` is the mirror image: it is a PROJECT
+    // option, so it lives on both project blocks. At the top level it
+    // resolved to nothing and both projects fell back to the default
+    // `['/node_modules/']`, which is how 17 `tests/**` and 8 `scripts/**`
+    // files ended up inside the gated group.
     coverageReporters: ['text-summary', 'lcov'],
 };
