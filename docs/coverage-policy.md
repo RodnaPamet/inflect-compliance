@@ -36,13 +36,46 @@ Two consequences shape this policy:
 | **A — Highest assurance** | `src/app-layer/policies/` | Authorization decisions (`assertCanRead/Write/Admin/Audit`). A wrong branch is a security hole. Branch-dense and small — a high bar is cheap to hold. | **75 / 75 / 80** |
 | **B — High assurance** | `src/lib/` | Cross-cutting shared code — auth/session, crypto, rate-limit, parsing, config. A bug here ripples app-wide. | **65 / 65 / 75** |
 | **B — High assurance** | `src/app-layer/events/` | The hash-chained audit trail — integrity-critical. | **65 / 65 / 75** |
-| **C — Standard** | Global (everything else) | API route handlers are thin HTTP glue; React components are UI. Real, but a 500 not a compliance breach. | **65 / 65 / 78** |
+| **C — Standard** | Global — the rest of `src/app-layer/` (repositories, jobs, services, integrations, ai, schemas, automation, notifications, domain, reports) | Backend plumbing under the usecase layer: query construction, job orchestration, provider adapters, DTO shapes. A defect is usually a broken query or a dead job rather than a wrong compliance decision — but it is server code that ships. | **79 / 81 / 87** |
 
 `policies/` and `events/` got their dedicated threshold keys in
 **the quality-coverage wave (P3)** — seeded a few points below measured
 coverage so the existing assurance is locked while leaving margin for
 single-test flake. The R3 plan (P4) originally reserved this slot; it was
 filled by the quality-coverage wave (P3).
+
+## What `global` measures
+
+`global` is not "everything". `scripts/check-merged-coverage.ts`
+reproduces Jest's own rule — a path-prefix key REMOVES its files from
+`global` rather than layering a second check over them — so `global` is
+exactly the declared scope minus the four path groups:
+
+| Set | Files |
+|-----|-------|
+| `collectCoverageFrom` — `src/{app-layer,lib}/**/*.ts(x)`, minus `*.d.ts`, `types.ts` and co-located tests | 760 |
+| − `./src/app-layer/usecases/` | 176 |
+| − `./src/app-layer/policies/` | 16 |
+| − `./src/app-layer/events/` | 6 |
+| − `./src/lib/` | 296 |
+| **= `global`** | **266** |
+
+Those 266 are `src/app-layer/` outside the tier-A/B folders: jobs,
+repositories, integrations, services, ai, schemas, automation,
+notifications, domain, reports. Every one is zero-filled — a file no test
+imports counts as 0%, so the number cannot be improved by leaving code
+unimported.
+
+Nothing under `src/app/**` or `src/components/**` is in the scope. React
+pages and components carry their own assurance model
+(`docs/frontend-assurance-model.md`) and their own population floor
+(`RENDERED_TEST_FLOOR`), not a coverage percentage. A rendered test for a
+page is worth writing on its own merits; it moves `global` by zero.
+
+`.tsx` under `src/lib/` IS in scope — the context providers, the
+keyboard-shortcut hook, the canvas context modules. The line is what the
+file is, not what extension it carries: those are shared library code the
+whole app depends on, and `./src/lib/` earned its floor partly on them.
 
 ## Current floors vs. targets
 
@@ -52,28 +85,37 @@ lowered, raised whenever a PR earns it.
 
 | Scope | Branches now → target | Functions now → target | Lines now → target |
 |-------|----------------------|------------------------|--------------------|
-| `usecases/` | **72** → 70 ✅ | **76** → 70 ✅ | **85** → 80 ✅ |
+| `usecases/` | **79** → 70 ✅ | **81** → 70 ✅ | **88** → 80 ✅ |
 | `policies/` | **86** → 75† | **95** → 75 | **93** → 80 |
 | `events/` | **75** → 65† | **60** → 65 | **78** → 75 |
 | `lib/` | **78** → 65† | **81** → 65 | **89** → 75 |
-| global | **65** → 65 ✅ | **64** → 65 | **78** → 78 ✅ |
+| global ‡ | **79** → 79 | **81** → 81 | **87** → 87 |
 
-`usecases/` (Tier A) has now MET and passed its end-state target on
-all three metrics — the floor (72/76/85) sits above the 70/70/80
-target, held by the ratchet. The GLOBAL branch target (≥65) is also
-met (see below): the global branch floor is **65** against an
-enforcement actual of **65.94%**. The remaining global climb is on
-functions (64 against the 65 target).
+`usecases/` (Tier A) has met and passed its end-state target on all three
+metrics — the floor (79/81/88) sits above the 70/70/80 target, held by
+the ratchet.
+
+‡ The `global` floor was re-derived on 2026-08-11, when the gate's scope
+was corrected to the declared `collectCoverageFrom` universe. Figures
+measured before that date were taken over a different population — the
+~1001 files the suite's import graph happened to load, three quarters of
+them React — and are not comparable to these. The wave log below is the
+record of how the per-folder floors were earned, not a trajectory that
+continues into this row.
 
 †`policies/` and `events/` already SURPASS their tier targets on
 branches — the tier target stays as written for parity with the
 other dimensions; the ratchet enforces the higher measured floor.
 
 `usecases/` branch coverage has since passed its end-state target —
-Wave C measured **72.93%** and the floor sits at 72, held by the
-ratchet. From the original "sub-50% branches" framing (the R3 P2
-baseline) that is a climb of more than 20 percentage points across
-stages 3a-3h and Waves C-D.
+Wave C measured **72.93%**, Wave D batch 1 lifted the floor to **79**,
+and it is held there by the ratchet. From the original "sub-50%
+branches" framing (the R3 P2 baseline) that is a climb of more than 20
+percentage points across stages 3a-3h and Waves C-D.
+
+The wave log below records every percentage against the pre-2026-08-11
+`global` population. Those numbers are how each floor was earned; they
+are not comparable to the current `global` row.
 
 ## The staged ratchet plan
 
@@ -106,41 +148,58 @@ the same diff so the gain is locked.
 | Wave B (batch 1) | global 62.13 (branches) | ⚠️ CORRECTED — coverage Wave B batch 1: real branch-exercising tests for 11 previously-zero-coverage files across 4 jobs (`data-lifecycle`, `tenant-dek-rotation`, `retention-notifications`, `retention`), 4 repositories (`SsoConfig`, `Onboarding`, `File`, `Framework`), 2 hash-chained audit writers (`audit-writer`, `org-audit-writer`), and `mailer`. **The original entry cited `coverage-summary.json`'s `total` (B 69.28 / F 72.95 / L 81.90 / S 80.59) as the global — those are LOADED-files-only numbers, NOT the enforcement universe.** The authoritative enforcement-universe global at the end of batch 1 was **branches 62.13** (the gate counts every `collectCoverageFrom` file, including the thousands of never-loaded branches as 0%). See the loaded-vs-enforcement table below. |
 | Wave B (batch 2) | **global branches 62** (enforcement actual 62.54) | ✅ done — batch 2: tests for 13 more never-loaded backend files (`test-hardening`, `stripe`, `compliance-digest`, `library-importer`, `control-taxonomy`, `traceability-graph`, `inherited-control-data`, `org-audit`, `report-delivery-jobs`, `sharepoint-policy-jobs`, `register-schedules`, `processOutbox`, `ClauseRepository`). Enforcement-universe globals (the binding CI gate, read from the `Jest: Coverage for … does not meet` lines): **branches 62.54 / functions 62.09 / lines 77.14 / statements 75.63**. The backend-file pool was largely exhausted — batch 2 moved enforcement branches only 62.13 → 62.54 (the original ≥65 goal was calibrated against the misleading loaded-only ~69%; the remaining 0% mass is **never-loaded `.ts` files inside the coverage universe itself** — `src/app-layer/repositories/*`, `reports/pdf/*`, `lib/hooks/*`, schemas, etc.). ⚠️ The original text here said the remaining mass was "the React UI/page surface (`src/app` + `src/components`)" — that is WRONG and was corrected in Wave C: `collectCoverageFrom` is ONLY `src/app-layer/**/*.ts` + `src/lib/**/*.ts`, so React `.tsx` components and `src/app` pages are not in the gate universe at all and rendering tests for them move the global by zero. `jest.thresholds.json` global set to branches **62**, functions **61**, lines **76**, statements **75** (≤ enforcement actual, up from the original 56/54/70/69). **A true global ≥65 is deferred to a wave that covers the never-loaded backend `.ts` files above.** Per-cohort floors left as set in batch 1 (already passing the gate). See implementation note `2026-06-23-coverage-wave-b.md`. |
 
-### Loaded-files vs enforcement-universe (the Wave B gotcha)
+### Reading the real numbers
 
-The CI gate enforces over the **entire `collectCoverageFrom` universe** —
-every matched file, including ones no test imports (0%). There are two
-numbers; only one is authoritative:
+The gate is `scripts/check-merged-coverage.ts`, run once over the four
+merged shard artifacts. It prints every group's file count and actual on
+every run, pass or fail — no deliberately-high threshold is needed to
+surface a number:
 
-| Source | Branches denom | Branch % | Counts |
-|--------|----------------|----------|--------|
-| `coverage/coverage-summary.json` → `total` | ~21,100 | ~69.3% | LOADED files only — ❌ misleading |
-| The `--coverageThreshold` gate (`Jest: Coverage for … does not meet`) | ~23,400 | **62.54%** | FULL universe — ✅ authoritative |
+```
+ok   global                       NNN files  branches NN.NN% (>=NN)  …
+ok   ./src/app-layer/usecases/    NNN files  …
+```
 
-To read the real global, run the exact gate command and read the
-`Jest: Coverage for branches (X%) does not meet "global" threshold`
-line (it only prints on failure — so temporarily set a deliberately-high
-threshold to surface the true number). NEVER read the global off
-`coverage-summary.json`'s `total`: that file lists only files a test
-loaded, so it overstates the gate's full-universe global by ~7pp.
+To reproduce a CI result locally:
 
-The enforcement global branch trajectory: **56 → 62.13 → 62.54 → 62.54
-(Wave C) → 63.88 (Wave D batch 1) → 65.94 (Wave D batch 2)** — the
-**≥65 target is MET**. The global branch floor is now **65** (enforcement
-actual 65.94). The true gate denominator is ≈**38,800 branches**
-(recalibrated from Wave-D data points; the earlier loaded-only estimate
-of ~22.7k was wrong). Remaining ~0% mass for any FUTURE push lives in the
-still-untested never-loaded backend `.ts` files — `reports/pdf/*`,
-`integrations/*`, `lib/hooks/*`, `lib/processes/*`, schemas (batches 3–4).
-(NOTE: an earlier draft misattributed the remaining mass to the React
-`src/app` / `src/components` surface — those are NOT in
-`collectCoverageFrom`, so they cannot move the gate; corrected in Wave C.)
+1. `gh run download <run-id> -n coverage-shard-1` (and `-2`, `-3`, `-4`).
+2. **Rewrite the `/home/runner/work/...` keys** in each
+   `coverage-final.json` to your local repo path. Skip this and every
+   `./src/...` prefix matches zero files, nothing is subtracted from
+   `global`, and the script reports a confident false pass. This has
+   happened — see
+   `docs/implementation-notes/2026-08-11-coverage-gate-enrolment.md`,
+   where the un-rewritten artifact reported a passing 83.27%. The script
+   now hard-fails a declared group that matches no files, so the same
+   mistake reads as an error rather than a green.
+3. `npx tsx scripts/check-merged-coverage.ts <dir> jest.thresholds.json 4`
+
+Never read the global off `coverage/coverage-summary.json`'s `total`:
+that file summarises only the files a test loaded, so it omits the
+zero-filled remainder the gate counts.
+
+The pre-correction global branch trajectory — **56 → 62.13 → 62.54 →
+62.54 (Wave C) → 63.88 (Wave D batch 1) → 65.94 (Wave D batch 2)** — was
+measured over the old ~1001-file group and is kept as the record of how
+each floor was earned.
+
+The note that used to sit here, that `src/app` and `src/components` "are
+NOT in `collectCoverageFrom`, so they cannot move the gate", was right
+about the declaration and wrong about the behaviour: the key was declared
+where Jest does not read it, so instrumented UI files leaked into the
+report and made up roughly three quarters of the old `global` group. That
+is why a PR whose only change was adding a page's first test could push
+the ratio down and take `main` red (2026-08-11). The scope fix makes the
+declaration and the behaviour agree, and the statement is now true.
+
 Global rises as a *consequence* of A/B-tier gains plus standard-tier
-hygiene — it is not
-chased directly.
+hygiene — it is not chased directly. The largest 0% mass left in it is
+`src/app-layer/jobs/`, followed by `integrations/` and `services/`.
 
-Two rules keep the ratchet honest, both already CI-enforced via
-`jest.config.js` + the `Coverage (≥60%)` job:
+Two rules keep the ratchet honest. The `Coverage (≥60%)` job enforces
+the floors themselves; `tests/guards/coverage-ratchet.test.ts` enforces
+that they only travel one way — and unlike the coverage job, that guard
+runs on every PR:
 
 - **A PR may not lower a floor.** If a change drops observed
   coverage below a floor, CI fails — add the missing test or revert.
@@ -162,17 +221,41 @@ discipline.
   ratchet.
 - **Do not lower a floor to make a red PR green.** That is the
   regression this policy exists to prevent — fix the test gap.
+- **Do not write a rendered test to move `global`.** `src/app/**` and
+  `src/components/**` are outside the coverage scope entirely. Their
+  assurance is the tiers in `docs/frontend-assurance-model.md` and the
+  population floor in `tests/guards/rendered-coverage-floor.test.ts`.
+  Write the rendered test because the page's behaviour needs checking —
+  it moves `global` by zero in either direction.
 
 ## Enforcement
 
 - **Source of truth:** `jest.thresholds.json` (global + per-folder
-  keys), passed to jest via `--coverageThreshold` on the CI
-  `Coverage (≥60%)` job. The CLI flag is load-bearing — jest 29
-  ignores config-level `coverageThreshold` when `projects:` is set
-  (see `docs/implementation-notes/2026-04-27-gap-15-coverage-enforcement.md`).
-- **Per-layer keys** in that file enforce a higher bar on the
-  higher-risk folders independently of the global number.
-- The CI job prints the observed-vs-floor table on every PR.
+  keys). Four `Coverage (shard N/4)` jobs MEASURE — `jest --coverage
+  --coverageReporters=json`, no threshold flag, because a shard holds a
+  quarter of the data and would report most of the scope as uncovered.
+  The `Coverage (≥60%)` job merges the four artifacts and enforces the
+  floors once, via `npx tsx scripts/check-merged-coverage.ts`. Its
+  semantics — including the rule that a path key REMOVES its files from
+  `global` — are pinned by `tests/unit/scripts/check-merged-coverage.test.ts`.
+- **Jest itself enforces nothing.** `jest.config.js` loads the same JSON
+  into the node project's `coverageThreshold` for documentation parity,
+  but a project-level `coverageThreshold` never reaches the global config
+  Jest checks, so the run exits 0 whatever it measures (see
+  `docs/implementation-notes/2026-04-27-gap-15-coverage-enforcement.md`).
+  The mirror-image rule applies to the scope: `collectCoverageFrom` is
+  read ONLY from the global config, which is why it sits at the top level
+  of `jest.config.js`. `tests/guards/coverage-config-resolution.test.ts`
+  resolves the real config and pins all three placements, so a key that
+  drifts into a bucket Jest ignores fails a test instead of silently
+  changing what the gate measures.
+- **Per-layer keys** carve their folders OUT of `global` and hold them to
+  a higher bar. Adding a key therefore SHRINKS `global` — check what is
+  left before adding one.
+- **The gate does not run on pull requests.** It runs on pushes to
+  `main`, the weekly schedule, and `workflow_dispatch`, so a regression
+  otherwise surfaces on the first main push after merge. To check a
+  branch first: `gh workflow run ci.yml --ref <branch>`.
 
 ### The ratchet guard
 
@@ -199,8 +282,16 @@ guard enforces that those numbers can only travel one direction.
   ✅ done in the quality-coverage wave (P3) — keys seeded at the measured values
   (`policies/` 78/88/88/85, `events/` 72/60/78/75) and added to
   `RATCHET_FLOOR`.
-- The `usecases/` branch floor has reached its **stage 4 (70)** end
-  state — Wave C measured 72.93% and the floor sits at 72, held by
-  the ratchet. The **global** branch target (≥65) is also met (Wave D
-  batch 2 measured 65.94%, floor at 65). Further gains are additive
-  cushion, not a staged climb.
+- The `usecases/` branch floor has passed its **stage 4 (70)** end state
+  — Wave D batch 1 lifted it to 79, held by the ratchet. Further gains
+  are additive cushion, not a staged climb.
+- The `global` floor is seeded at the first measurement of the corrected
+  266-file population, ~1.5-2pp under it. Its end-state target is
+  re-derived once two or three runs establish the jitter band; the
+  largest 0% mass in that group is `src/app-layer/jobs/`.
+- `./src/lib/` has the thinnest headroom of the five (branches 78.50
+  against a floor of 78, functions 81.56 against 81). It absorbed the
+  files that the corrected scope newly enrols at 0% — a change in
+  population, not a regression — and the shortfall that created was
+  repaid with tests for `audit/activity-humanize`, `api-error` and
+  `mcp/strict-receipt-guard` rather than by moving the floor.

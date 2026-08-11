@@ -1,9 +1,9 @@
 {
   "global": {
-    "branches": 65,
-    "functions": 64,
-    "lines": 78,
-    "statements": 77
+    "branches": 79,
+    "functions": 81,
+    "lines": 87,
+    "statements": 85
   },
   "./src/app-layer/usecases/": {
     "branches": 79,

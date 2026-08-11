@@ -190,12 +190,20 @@ const ctx = buildRequestContext({
 
 ## Coverage
 
-Coverage thresholds are set in `jest.config.js`:
+The floors live in `jest.thresholds.json` — one file, five keys, read by
+both `jest.config.js` and the CI gate. **[docs/coverage-policy.md](coverage-policy.md)**
+is the reasoning behind the numbers: which layer carries which bar and
+why, what `global` measures, and the rule that a floor only ever moves
+up. The numbers are deliberately not repeated here — a second copy is a
+second thing to get wrong.
 
-| Scope | Lines | Functions | Branches |
-|---|---|---|---|
-| Global | 30% | 30% | 25% |
-| `src/app-layer/usecases/` | 40% | 40% | 20% |
-| `src/lib/` | 35% | 35% | 20% |
+Two things about the mechanism are worth knowing before you read a
+coverage number:
 
-Run `npm run test:coverage` to see the report.
+- **`npm run test:coverage` reports; it does not gate.** Jest reads
+  `coverageThreshold` from its global config, and this repo sets it on a
+  project block, so the run exits 0 whatever it measures. Enforcement is
+  `scripts/check-merged-coverage.ts` in the `Coverage (≥60%)` CI job.
+- **That job does not run on pull requests** — only on pushes to `main`,
+  the weekly schedule, and `workflow_dispatch`. To check a branch before
+  merging, dispatch it: `gh workflow run ci.yml --ref <branch>`.

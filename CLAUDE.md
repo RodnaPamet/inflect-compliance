@@ -792,7 +792,15 @@ duplicating the limits table).
   See `docs/implementation-notes/2026-05-21-e2e-isolation.md` and
   `tests/e2e/fixtures.ts`.
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
-- Coverage thresholds: 60% global (branches, functions, lines, statements); checked on `npm run test:coverage`.
+- Coverage floors live in `jest.thresholds.json` (five keys: `global` +
+  `usecases/` / `policies/` / `events/` / `lib/`), with the reasoning in
+  `docs/coverage-policy.md`. A path key REMOVES its files from `global`,
+  so `global` means "the declared scope minus those four folders", not
+  "everything". `npm run test:coverage` reports but does not gate —
+  enforcement is `scripts/check-merged-coverage.ts` in the
+  `Coverage (≥60%)` CI job, which runs on pushes to `main`, the schedule,
+  and `workflow_dispatch`, **never on a PR**. Check a branch with
+  `gh workflow run ci.yml --ref <branch>`.
 
 ### Index & query-shape guardrails
 
