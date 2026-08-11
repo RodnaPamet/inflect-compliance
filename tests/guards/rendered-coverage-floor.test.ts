@@ -67,7 +67,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // disagreed in production (a 97% Tasks axis plotted on the outer ring
 // while the list said L4), and only a rendered assertion catches that,
 // since both surfaces are correct in isolation.
-const RENDERED_TEST_FLOOR = 212;
+// 221 (2026-08-11): the Risks write surface. Failed-write behaviour
+// (error visible, input survives), the permission gates that mirror
+// `assertCanWrite`/`assertCanAdmin`, and the loss-events + scenarios
+// pages themselves — the latter two written to repay the coverage their
+// first mount enrolled. See
+// docs/implementation-notes/2026-08-11-coverage-gate-enrolment.md.
+const RENDERED_TEST_FLOOR = 221;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
