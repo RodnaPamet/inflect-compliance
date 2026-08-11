@@ -62,6 +62,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // coverage denominator (collectCoverageFrom = src/app-layer + src/lib),
 // so they diluted rather than raised the global gate. Floor restored to
 // 194; backend coverage is the correct lever.
+//   The reasoning was right and the premise was not, which is worth
+//   knowing before anyone re-runs the experiment. `collectCoverageFrom`
+//   was declared on the project blocks, where Jest never reads it, so
+//   the resolved scope was empty and the report was whatever the suite
+//   imported — those UI files WERE in the denominator, which is exactly
+//   why the sweep diluted the gate. Corrected 2026-08-11; the scope now
+//   resolves, so a rendered test moves `global` by zero in either
+//   direction. See docs/implementation-notes/2026-08-11-coverage-scope-restored.md.
 // 203 (2026-08-04): the posture-hero ladder-agreement suite. It locks the
 // dial and the list beneath it to ONE level per axis — the surfaces
 // disagreed in production (a 97% Tasks axis plotted on the outer ring

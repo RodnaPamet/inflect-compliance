@@ -2,7 +2,11 @@
  * Coverage ratchet — the enforced floors are one-way-up.
  *
  * `jest.thresholds.json` holds the per-layer coverage floors that
- * the CI `Coverage (≥60%)` job enforces via `--coverageThreshold`.
+ * the CI `Coverage (≥60%)` job enforces by running
+ * `scripts/check-merged-coverage.ts` over the four merged shard
+ * artifacts. (It is not `--coverageThreshold`: the shards pass no
+ * threshold flag, and Jest's own `coverageThreshold` sits on a project
+ * block where the enforcement path never reads it.)
  * The policy (`docs/coverage-policy.md`) is that a floor is **never
  * lowered** — raised when a PR earns it, never dropped to turn a
  * red PR green. `jest.config.js` documents that rule in prose; this
@@ -38,13 +42,28 @@ type Metrics = { branches: number; functions: number; lines: number; statements:
  * `jest.thresholds.json` may drop below this. Edit UPWARD only.
  */
 const RATCHET_FLOOR: Record<string, Metrics> = {
-    // Coverage Wave D batch 2 (2026-06-24) MET the ≥65 global branch
-    // target: gate actual rose to branches 65.94 / fn 64.53 / lines
-    // 79.12 / stmts 77.70 (batch 2 added mock-db unit tests for 9
-    // repositories). jest.thresholds.json global is 65/64/78/77; the
-    // hard floor below is bumped to the batch-1 enforced level so the
-    // ≥65 milestone can't silently slip.
-    global: { branches: 63, functions: 62, lines: 77, statements: 76 },
+    // 2026-08-11 — `global` measures a different POPULATION now, so the
+    // numbers below are not a continuation of the ones above them.
+    //
+    // Until the coverage scope was repaired, `collectCoverageFrom` was
+    // declared where Jest never reads it, so the report was whatever the
+    // suite's import graph happened to load: 1491 files, ~730 of them
+    // React. `global` was the ~1001 that no path key claimed — three
+    // quarters UI — and it read 77.19 statements / 65.21 branches.
+    //
+    // `global` is now the declared scope minus the four path groups: 266
+    // backend files under `src/app-layer/` (repositories, jobs, services,
+    // integrations, ai, schemas, automation, …), every one of them
+    // zero-filled, so a file no test imports counts as 0%. Measured on
+    // run 31478710093: statements 87.12 / branches 80.90 / functions
+    // 82.85 / lines 88.62.
+    //
+    // jest.thresholds.json is seeded ~1.5-2pp under that (85/79/81/87);
+    // the hard floor here is the PREVIOUS enforced level, so the old
+    // milestone cannot silently slip while the new one settles. Both are
+    // upward moves. See
+    // docs/implementation-notes/2026-08-11-coverage-scope-restored.md.
+    global: { branches: 65, functions: 64, lines: 78, statements: 77 },
     // `usecases/` — quality roadmap + stage-3a/3b/3c/3d waves.
     // Post-Roadmap-3 floor was 42 (branches); measured branch
     // coverage had climbed to ~58 without the floor following.

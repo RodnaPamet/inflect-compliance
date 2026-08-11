@@ -36,13 +36,46 @@ Two consequences shape this policy:
 | **A — Highest assurance** | `src/app-layer/policies/` | Authorization decisions (`assertCanRead/Write/Admin/Audit`). A wrong branch is a security hole. Branch-dense and small — a high bar is cheap to hold. | **75 / 75 / 80** |
 | **B — High assurance** | `src/lib/` | Cross-cutting shared code — auth/session, crypto, rate-limit, parsing, config. A bug here ripples app-wide. | **65 / 65 / 75** |
 | **B — High assurance** | `src/app-layer/events/` | The hash-chained audit trail — integrity-critical. | **65 / 65 / 75** |
-| **C — Standard** | Global (everything else) | API route handlers are thin HTTP glue; React components are UI. Real, but a 500 not a compliance breach. | **65 / 65 / 78** |
+| **C — Standard** | Global — the rest of `src/app-layer/` (repositories, jobs, services, integrations, ai, schemas, automation, notifications, domain, reports) | Backend plumbing under the usecase layer: query construction, job orchestration, provider adapters, DTO shapes. A defect is usually a broken query or a dead job rather than a wrong compliance decision — but it is server code that ships. | **79 / 81 / 87** |
 
 `policies/` and `events/` got their dedicated threshold keys in
 **the quality-coverage wave (P3)** — seeded a few points below measured
 coverage so the existing assurance is locked while leaving margin for
 single-test flake. The R3 plan (P4) originally reserved this slot; it was
 filled by the quality-coverage wave (P3).
+
+## What `global` measures
+
+`global` is not "everything". `scripts/check-merged-coverage.ts`
+reproduces Jest's own rule — a path-prefix key REMOVES its files from
+`global` rather than layering a second check over them — so `global` is
+exactly the declared scope minus the four path groups:
+
+| Set | Files |
+|-----|-------|
+| `collectCoverageFrom` — `src/{app-layer,lib}/**/*.ts(x)`, minus `*.d.ts`, `types.ts` and co-located tests | 760 |
+| − `./src/app-layer/usecases/` | 176 |
+| − `./src/app-layer/policies/` | 16 |
+| − `./src/app-layer/events/` | 6 |
+| − `./src/lib/` | 296 |
+| **= `global`** | **266** |
+
+Those 266 are `src/app-layer/` outside the tier-A/B folders: jobs,
+repositories, integrations, services, ai, schemas, automation,
+notifications, domain, reports. Every one is zero-filled — a file no test
+imports counts as 0%, so the number cannot be improved by leaving code
+unimported.
+
+Nothing under `src/app/**` or `src/components/**` is in the scope. React
+pages and components carry their own assurance model
+(`docs/frontend-assurance-model.md`) and their own population floor
+(`RENDERED_TEST_FLOOR`), not a coverage percentage. A rendered test for a
+page is worth writing on its own merits; it moves `global` by zero.
+
+`.tsx` under `src/lib/` IS in scope — the context providers, the
+keyboard-shortcut hook, the canvas context modules. The line is what the
+file is, not what extension it carries: those are shared library code the
+whole app depends on, and `./src/lib/` earned its floor partly on them.
 
 ## Current floors vs. targets
 
@@ -52,28 +85,37 @@ lowered, raised whenever a PR earns it.
 
 | Scope | Branches now → target | Functions now → target | Lines now → target |
 |-------|----------------------|------------------------|--------------------|
-| `usecases/` | **72** → 70 ✅ | **76** → 70 ✅ | **85** → 80 ✅ |
+| `usecases/` | **79** → 70 ✅ | **81** → 70 ✅ | **88** → 80 ✅ |
 | `policies/` | **86** → 75† | **95** → 75 | **93** → 80 |
 | `events/` | **75** → 65† | **60** → 65 | **78** → 75 |
 | `lib/` | **78** → 65† | **81** → 65 | **89** → 75 |
-| global | **65** → 65 ✅ | **64** → 65 | **78** → 78 ✅ |
+| global ‡ | **79** → 79 | **81** → 81 | **87** → 87 |
 
-`usecases/` (Tier A) has now MET and passed its end-state target on
-all three metrics — the floor (72/76/85) sits above the 70/70/80
-target, held by the ratchet. The GLOBAL branch target (≥65) is also
-met (see below): the global branch floor is **65** against an
-enforcement actual of **65.94%**. The remaining global climb is on
-functions (64 against the 65 target).
+`usecases/` (Tier A) has met and passed its end-state target on all three
+metrics — the floor (79/81/88) sits above the 70/70/80 target, held by
+the ratchet.
+
+‡ The `global` floor was re-derived on 2026-08-11, when the gate's scope
+was corrected to the declared `collectCoverageFrom` universe. Figures
+measured before that date were taken over a different population — the
+~1001 files the suite's import graph happened to load, three quarters of
+them React — and are not comparable to these. The wave log below is the
+record of how the per-folder floors were earned, not a trajectory that
+continues into this row.
 
 †`policies/` and `events/` already SURPASS their tier targets on
 branches — the tier target stays as written for parity with the
 other dimensions; the ratchet enforces the higher measured floor.
 
 `usecases/` branch coverage has since passed its end-state target —
-Wave C measured **72.93%** and the floor sits at 72, held by the
-ratchet. From the original "sub-50% branches" framing (the R3 P2
-baseline) that is a climb of more than 20 percentage points across
-stages 3a-3h and Waves C-D.
+Wave C measured **72.93%**, Wave D batch 1 lifted the floor to **79**,
+and it is held there by the ratchet. From the original "sub-50%
+branches" framing (the R3 P2 baseline) that is a climb of more than 20
+percentage points across stages 3a-3h and Waves C-D.
+
+The wave log below records every percentage against the pre-2026-08-11
+`global` population. Those numbers are how each floor was earned; they
+are not comparable to the current `global` row.
 
 ## The staged ratchet plan
 
@@ -136,20 +178,23 @@ Never read the global off `coverage/coverage-summary.json`'s `total`:
 that file summarises only the files a test loaded, so it omits the
 zero-filled remainder the gate counts.
 
-The enforcement global branch trajectory: **56 → 62.13 → 62.54 → 62.54
-(Wave C) → 63.88 (Wave D batch 1) → 65.94 (Wave D batch 2)** — the
-**≥65 target is MET**. The global branch floor is now **65** (enforcement
-actual 65.94). The true gate denominator is ≈**38,800 branches**
-(recalibrated from Wave-D data points; the earlier loaded-only estimate
-of ~22.7k was wrong). Remaining ~0% mass for any FUTURE push lives in the
-still-untested never-loaded backend `.ts` files — `reports/pdf/*`,
-`integrations/*`, `lib/hooks/*`, `lib/processes/*`, schemas (batches 3–4).
-(NOTE: an earlier draft misattributed the remaining mass to the React
-`src/app` / `src/components` surface — those are NOT in
-`collectCoverageFrom`, so they cannot move the gate; corrected in Wave C.)
+The pre-correction global branch trajectory — **56 → 62.13 → 62.54 →
+62.54 (Wave C) → 63.88 (Wave D batch 1) → 65.94 (Wave D batch 2)** — was
+measured over the old ~1001-file group and is kept as the record of how
+each floor was earned.
+
+The note that used to sit here, that `src/app` and `src/components` "are
+NOT in `collectCoverageFrom`, so they cannot move the gate", was right
+about the declaration and wrong about the behaviour: the key was declared
+where Jest does not read it, so instrumented UI files leaked into the
+report and made up roughly three quarters of the old `global` group. That
+is why a PR whose only change was adding a page's first test could push
+the ratio down and take `main` red (2026-08-11). The scope fix makes the
+declaration and the behaviour agree, and the statement is now true.
+
 Global rises as a *consequence* of A/B-tier gains plus standard-tier
-hygiene — it is not
-chased directly.
+hygiene — it is not chased directly. The largest 0% mass left in it is
+`src/app-layer/jobs/`, followed by `integrations/` and `services/`.
 
 Two rules keep the ratchet honest. The `Coverage (≥60%)` job enforces
 the floors themselves; `tests/guards/coverage-ratchet.test.ts` enforces
@@ -237,8 +282,16 @@ guard enforces that those numbers can only travel one direction.
   ✅ done in the quality-coverage wave (P3) — keys seeded at the measured values
   (`policies/` 78/88/88/85, `events/` 72/60/78/75) and added to
   `RATCHET_FLOOR`.
-- The `usecases/` branch floor has reached its **stage 4 (70)** end
-  state — Wave C measured 72.93% and the floor sits at 72, held by
-  the ratchet. The **global** branch target (≥65) is also met (Wave D
-  batch 2 measured 65.94%, floor at 65). Further gains are additive
-  cushion, not a staged climb.
+- The `usecases/` branch floor has passed its **stage 4 (70)** end state
+  — Wave D batch 1 lifted it to 79, held by the ratchet. Further gains
+  are additive cushion, not a staged climb.
+- The `global` floor is seeded at the first measurement of the corrected
+  266-file population, ~1.5-2pp under it. Its end-state target is
+  re-derived once two or three runs establish the jitter band; the
+  largest 0% mass in that group is `src/app-layer/jobs/`.
+- `./src/lib/` has the thinnest headroom of the five (branches 78.50
+  against a floor of 78, functions 81.56 against 81). It absorbed the
+  files that the corrected scope newly enrols at 0% — a change in
+  population, not a regression — and the shortfall that created was
+  repaid with tests for `audit/activity-humanize`, `api-error` and
+  `mcp/strict-receipt-guard` rather than by moving the floor.
