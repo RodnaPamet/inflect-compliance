@@ -12,6 +12,11 @@
  * Deliberately slim — reuses the finding form's core fields
  * (title / type / severity / description). Assignee, controls, and risk
  * links stay on the full Findings-list create modal.
+ *
+ * P3.1 — the single write runs through `useTenantMutation` keyed on the
+ * findings LIST cache, so the request lifecycle (in-flight flag, error,
+ * reset) is the hook's rather than three pieces of local state that each
+ * had to be moved in step.
  */
 import {
     useEffect,
@@ -27,6 +32,9 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { CACHE_KEYS } from '@/lib/swr-keys';
+import type { CappedList } from '@/lib/list-backfill-cap';
 
 export interface NewFindingModalProps {
     open: boolean;
@@ -44,6 +52,15 @@ const EMPTY = {
     severity: 'MEDIUM',
 };
 
+/** The POST body — the four form fields plus the audit the modal is open on. */
+interface CreateFindingInput {
+    auditId: string;
+    title: string;
+    description: string;
+    type: string;
+    severity: string;
+}
+
 export function NewFindingModal({
     open,
     setOpen,
@@ -53,8 +70,64 @@ export function NewFindingModal({
 }: NewFindingModalProps) {
     const tx = useTranslations('audits');
     const [form, setForm] = useState({ ...EMPTY });
-    const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState('');
+
+    /**
+     * The create write.
+     *
+     * Keyed on the FINDINGS LIST: a POST that mints a new entity belongs to
+     * the list cache it appends to (the findings register reads that exact
+     * key), not to a detail entry that does not exist yet.
+     *
+     * **No optimistic prediction.** The server mints the id, the status and
+     * the created timestamp, and the register's row carries fields this modal
+     * never collects — a painted row would shift on revalidation. Waiting is
+     * the honest answer.
+     *
+     * The audit list's `_count.findings` is stale after this too, but it is
+     * NOT invalidated here: the parent's `onCreated` already revalidates it,
+     * and the parent is the only side that knows whether the live key is
+     * `/audits` or the cycle-scoped `/audits?cycleId=…`. Naming the bare key
+     * here would duplicate one case and miss the other.
+     */
+    const createMutation = useTenantMutation<
+        CappedList<unknown>,
+        CreateFindingInput,
+        unknown
+    >({
+        key: CACHE_KEYS.findings.list(),
+        mutationFn: async (input) => {
+            const res = await fetch(apiUrl('/findings'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(input),
+            });
+            if (!res.ok) {
+                // Prefer the server's own message — a validation failure names
+                // the offending field, which the generic fallback cannot.
+                //
+                // `withApiErrorHandling` sends `{ error: { code, message } }`,
+                // an OBJECT. The previous expression was
+                // `data.message || data.error`, which handed that object to
+                // `new Error(...)` and rendered "[object Object]" in the banner
+                // below. Same intent, now reading the message it was after.
+                const data: {
+                    message?: string;
+                    error?: string | { message?: string };
+                } = await res.json().catch(() => ({}));
+                const serverMessage =
+                    data.message ??
+                    (typeof data.error === 'string' ? data.error : data.error?.message);
+                throw new Error(serverMessage || tx('findingModal.createFailed'));
+            }
+            return res.json().catch(() => null);
+        },
+    });
+
+    const submitting = createMutation.isMutating;
+    // The inline error surface is the hook's `error`, not a second copy of it:
+    // it holds the last failure until `reset()` or the next trigger.
+    const error = createMutation.error?.message ?? '';
+    const resetMutation = createMutation.reset;
 
     const typeOptions = useMemo<ComboboxOption[]>(
         () =>
@@ -77,9 +150,10 @@ export function NewFindingModal({
         if (!open) return;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setForm({ ...EMPTY });
-        setError('');
-        setSubmitting(false);
-    }, [open]);
+        // Clears the hook's `error` (and, with it, the inline banner) — the
+        // in-flight flag is the hook's own and needs no reset here.
+        resetMutation();
+    }, [open, resetMutation]);
 
     const update = <K extends keyof typeof form>(field: K, value: (typeof form)[K]) =>
         setForm((prev) => ({ ...prev, [field]: value }));
@@ -94,29 +168,20 @@ export function NewFindingModal({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!canSubmit) return;
-        setSubmitting(true);
-        setError('');
         try {
-            const res = await fetch(apiUrl('/findings'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    auditId,
-                    title: form.title.trim(),
-                    description: form.description.trim(),
-                    type: form.type,
-                    severity: form.severity,
-                }),
+            await createMutation.trigger({
+                auditId,
+                title: form.title.trim(),
+                description: form.description.trim(),
+                type: form.type,
+                severity: form.severity,
             });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.message || data.error || tx('findingModal.createFailed'));
-            }
             setOpen(false);
             onCreated?.();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : tx('findingModal.createFailed'));
-            setSubmitting(false);
+        } catch {
+            // The message is already on the hook's `error` and renders in the
+            // banner below; the modal deliberately stays open with the form
+            // intact so the user can correct and retry.
         }
     };
 

@@ -1,5 +1,27 @@
 'use client';
 
+/**
+ * Create a Business Impact Analysis — the BIA register's one write.
+ *
+ * **Deliberately NOT on `useTenantMutation`,** and this is the last file in
+ * the audits data-access migration's "Remaining" list, so the reason is
+ * recorded rather than left as an omission.
+ *
+ * The register behind this modal is a SERVER component: `page.tsx` calls
+ * `listBias(ctx)` and hands the rows down as `initialRows`. There is no client
+ * cache entry holding them, so a mutation hook would compute an optimistic
+ * update against an empty entry and change nothing on screen. The create then
+ * navigates straight to the new BIA's detail page — also server-rendered — so
+ * even a correct prediction would never be seen: the list it would paint is
+ * unmounted a tick later.
+ *
+ * Same reasoning that excluded `BiaDetailClient` and the link-control write in
+ * `[id]/BiaLinkControlModal.tsx`; see
+ * docs/implementation-notes/2026-08-10-audits-data-access.md. If the register
+ * ever moves onto `useTenantSWR(CACHE_KEYS.audits.businessContinuity())`, this
+ * POST becomes a genuine target and should migrate with it.
+ */
+
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Controller, useForm } from 'react-hook-form';

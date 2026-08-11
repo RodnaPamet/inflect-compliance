@@ -25,6 +25,9 @@ import {
     RadarChart, chartReady, chartEmpty, type RadarAxisDatum,
 } from '@/components/ui/charts';
 import { formatDate } from '@/lib/format-date';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 
 // CC BY 4.0 attribution — carries everywhere derived NIS2 content renders.
 const NIS2_ATTRIBUTION =
@@ -62,65 +65,140 @@ function kindLabel(k: Suggestion['kind']): string {
     return k === 'RISK' ? 'Risk' : k === 'TASK' ? 'Task' : k === 'CONTROL_LINK' ? 'Link control' : 'New control';
 }
 
+/**
+ * One request shape for every write in this file — the lifecycle page's two
+ * and the delegation panel's one (fired by two buttons). Four hand-rolled
+ * `fetch` + `res.ok` + error blocks is how error handling drifts apart.
+ *
+ * The two surfaces disagree about WHICH message the user sees, and that
+ * disagreement is deliberate rather than drift, so it is an argument instead
+ * of a second copy of the request: the assignments endpoints return an
+ * actionable server message ("run already finalized", "not every respondent
+ * has submitted") that the panel has always surfaced, while the nis2-gap
+ * writes have always shown their own localized fallback.
+ */
+async function send(
+    url: string,
+    init: RequestInit,
+    fallbackMessage: string,
+    opts: { preferServerMessage?: boolean } = {},
+) {
+    const res = await fetch(url, init);
+    if (!res.ok) {
+        if (!opts.preferServerMessage) throw new Error(fallbackMessage);
+        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        throw new Error(body?.error?.message ?? fallbackMessage);
+    }
+    return res.json().catch(() => null);
+}
+
 export function Nis2GapLifecycleClient({ tenantSlug, canWrite }: { tenantSlug: string; canWrite: boolean }) {
     const tx = useTranslations('audits');
     const locale = useLocale();
     const lang = locale === 'de' ? 'de' : 'en';
-    const base = `/api/t/${tenantSlug}/audits/nis2-gap`;
+    // Derived from the SAME registry key the reads use, so a write's URL and
+    // the cache entry it refreshes cannot drift apart.
+    const base = `/api/t/${tenantSlug}${CACHE_KEYS.audits.nis2Gap()}`;
 
-    const [data, setData] = useState<Payload | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
-    const [rerunning, setRerunning] = useState(false);
+    const [actionError, setActionError] = useState<string | null>(null);
 
-    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
     const [approved, setApproved] = useState<Record<string, boolean>>({});
     const [confirmOpen, setConfirmOpen] = useState(false);
-    const [applying, setApplying] = useState(false);
 
-    const load = useCallback(async () => {
-        setLoading(true);
-        try {
-            const [stateRes, remRes] = await Promise.all([
-                fetch(base),
-                fetch(`${base}/remediations?minCriticality=HIGH`),
-            ]);
-            if (!stateRes.ok) throw new Error(tx('nis2Gap.loadFailed'));
-            setData(await stateRes.json());
-            if (remRes.ok) {
-                const r = await remRes.json();
-                setSuggestions(r.suggestions ?? []);
-            }
-        } catch (e) {
-            setError(e instanceof Error ? e.message : tx('nis2Gap.loadFailed'));
-        } finally {
-            setLoading(false);
-        }
-    }, [base, tx]);
+    // ─── Reads ───
+    //
+    // One `Promise.all` + `useEffect` + three `useState`s became two SWR keys,
+    // named in CACHE_KEYS rather than spelled inline: the mutations below
+    // target the same strings, which is the property that makes their
+    // invalidations land. A near-miss string refreshes nothing and reads as a
+    // slow network.
+    const stateQuery = useTenantSWR<Payload>(CACHE_KEYS.audits.nis2Gap());
+    const data = stateQuery.data ?? null;
+    const loading = stateQuery.isLoading;
 
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        load();
-    }, [load]);
+    // The suggestion list is advisory — it only populates the "Create these?"
+    // panel, so a failure leaves the page fully usable with no suggestions,
+    // which is what the old `if (remRes.ok)` guard did. It no longer takes the
+    // whole page down when the request REJECTS rather than 500s (the old
+    // Promise.all made that one case fatal).
+    const remediationsQuery = useTenantSWR<{ suggestions?: Suggestion[] }>(
+        CACHE_KEYS.audits.nis2GapRemediations(),
+    );
+    const suggestions = useMemo(
+        () => remediationsQuery.data?.suggestions ?? [],
+        [remediationsQuery.data],
+    );
+
+    // A network blip on the state read stays distinguishable from an empty
+    // state: SWR's `error` is the blip, `data === null` is "no payload yet"
+    // (renders nothing, exactly as before). Both keep the localized message
+    // the user already saw for the non-network case, and — unlike the old
+    // `error` state — a successful retry clears it.
+    const error = actionError ?? (stateQuery.error ? tx('nis2Gap.loadFailed') : null);
+
+    const load = useCallback(() => {
+        void stateQuery.mutate();
+        void remediationsQuery.mutate();
+    }, [stateQuery, remediationsQuery]);
+
+    const rerunMutation = useTenantMutation<Payload, void>({
+        key: CACHE_KEYS.audits.nis2Gap(),
+        // No optimistic prediction: a re-run mints a whole new assessment row
+        // (server id, createdAt, status) and every number on this page —
+        // history, trend, per-domain score, gaps — is recomputed from it.
+        // None of that is derivable here, so a guess would only make the page
+        // shift when the real run lands.
+        mutationFn: () =>
+            send(`${base}/rerun`, { method: 'POST' }, tx('nis2Gap.rerunFailed')),
+        // The suggestions are derived from the latest run's gaps.
+        invalidate: [CACHE_KEYS.audits.nis2GapRemediations()],
+    });
+    const rerunning = rerunMutation.isMutating;
 
     const handleRerun = useCallback(async () => {
-        setRerunning(true);
         setNotice(null);
         try {
-            const res = await fetch(`${base}/rerun`, { method: 'POST' });
-            if (!res.ok) throw new Error(tx('nis2Gap.rerunFailed'));
+            await rerunMutation.trigger();
             setNotice(tx('nis2Gap.rerunStarted'));
-            await load();
         } catch (e) {
-            setError(e instanceof Error ? e.message : tx('nis2Gap.rerunFailed'));
-        } finally {
-            setRerunning(false);
+            setActionError(e instanceof Error ? e.message : tx('nis2Gap.rerunFailed'));
         }
-    }, [base, load, tx]);
+    }, [rerunMutation, tx]);
+
+    const applyMutation = useTenantMutation<
+        { suggestions?: Suggestion[] },
+        Array<{ questionId: string; kind: Suggestion['kind']; linkControlId?: string }>,
+        { risksCreated: number; controlsCreated: number; tasksCreated: number; skipped: number }
+    >({
+        key: CACHE_KEYS.audits.nis2GapRemediations(),
+        // No optimistic prediction: the server decides what each approval
+        // becomes and which ones it SKIPS as already-existing — the counts in
+        // the success notice are the outcome, not the input. Optimistically
+        // dropping the approved rows would be wrong in exactly the case the
+        // `skipped` count exists to report.
+        mutationFn: (approvals) =>
+            send(
+                `${base}/remediations`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ approvals }),
+                },
+                tx('nis2Gap.applyFailed'),
+            ),
+        // The run's gap payload moves with the created entities, and each
+        // minted entity shows up on its own list page.
+        invalidate: [
+            CACHE_KEYS.audits.nis2Gap(),
+            CACHE_KEYS.risks.list(),
+            CACHE_KEYS.controls.list(),
+            CACHE_KEYS.tasks.list(),
+        ],
+    });
+    const applying = applyMutation.isMutating;
 
     const handleApply = useCallback(async () => {
-        setApplying(true);
         try {
             const approvals = suggestions
                 .filter((s) => approved[s.questionId])
@@ -129,22 +207,13 @@ export function Nis2GapLifecycleClient({ tenantSlug, canWrite }: { tenantSlug: s
                     kind: s.kind,
                     linkControlId: s.kind === 'CONTROL_LINK' ? s.existingControls?.[0]?.id : undefined,
                 }));
-            const res = await fetch(`${base}/remediations`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ approvals }),
-            });
-            if (!res.ok) throw new Error(tx('nis2Gap.applyFailed'));
-            const r = await res.json();
+            const r = await applyMutation.trigger(approvals);
             setNotice(tx('nis2Gap.created', { risks: r.risksCreated, controls: r.controlsCreated, tasks: r.tasksCreated, skipped: r.skipped }));
             setApproved({});
-            await load();
         } catch (e) {
-            setError(e instanceof Error ? e.message : tx('nis2Gap.applyFailed'));
-        } finally {
-            setApplying(false);
+            setActionError(e instanceof Error ? e.message : tx('nis2Gap.applyFailed'));
         }
-    }, [base, suggestions, approved, load, tx]);
+    }, [applyMutation, suggestions, approved, tx]);
 
     const radarState = useMemo(() => {
         const byDomain = data?.latest.score.byDomain ?? [];
@@ -416,40 +485,86 @@ function Nis2AssignmentsPanel({
     onChanged: () => void;
 }) {
     const tx = useTranslations('audits');
-    const base = `/api/t/${tenantSlug}/gap-assessments/${assessmentId}/assignments`;
-    const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+    const assignmentsKey = CACHE_KEYS.gapAssessments.assignments(assessmentId);
+    const base = `/api/t/${tenantSlug}${assignmentsKey}`;
     const [picks, setPicks] = useState<Record<string, string>>({});
-    const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
 
-    const loadAssignments = useCallback(async () => {
-        try {
-            const res = await fetch(base);
-            if (res.ok) {
-                const rows = (await res.json()) as AssignmentRow[];
-                setAssignments(rows);
-                setPicks(Object.fromEntries(rows.filter((r) => r.assigneeUserId).map((r) => [r.respondentRole, r.assigneeUserId as string])));
-            }
-        } catch { /* non-fatal */ }
-    }, [base]);
+    // A failed read is non-fatal, as it was before: the panel still renders its
+    // five roles with no status badges, so the owner can still dispatch.
+    //
+    // `shouldRetryOnError: false` because the expected failure here is a 403,
+    // and an authorization denial is not a transient condition to retry into.
+    // This panel is rendered on `canWrite`, but `GET /gap-assessments/{id}/
+    // assignments` is gated on `admin.manage` — so an EDITOR opening this page
+    // is denied. The old one-shot loader swallowed a single 403 per visit; the
+    // platform hook's default `errorRetryCount: 2` would turn that into three,
+    // and every one of them writes an immutable AUTHZ_DENIED row (Epic C.1).
+    // Focus revalidation stays ON: for the admins this panel is actually FOR,
+    // respondent status changes out-of-band, which is precisely what it is for.
+    //
+    // The mis-gating itself (a panel whose every control 403s for an EDITOR)
+    // predates this migration and is not fixed here — see the implementation
+    // note's Remaining section.
+    const assignmentsQuery = useTenantSWR<AssignmentRow[]>(assignmentsKey, {
+        shouldRetryOnError: false,
+    });
+    const assignments = useMemo(() => assignmentsQuery.data ?? [], [assignmentsQuery.data]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { void loadAssignments(); }, [loadAssignments]);
+    // The saved role→assignee mapping as the server reports it. The old loader
+    // replaced `picks` wholesale on every load, but it only ever loaded on
+    // mount and after a write; SWR also revalidates on focus, so the sync is
+    // keyed on the serialized mapping — an unchanged server answer must not
+    // clobber a pick the owner is in the middle of making.
+    const savedPicks = useMemo<Record<string, string>>(
+        () => Object.fromEntries(
+            assignments
+                .filter((r) => r.assigneeUserId)
+                .map((r) => [r.respondentRole, r.assigneeUserId as string]),
+        ),
+        [assignments],
+    );
+    const savedPicksKey = JSON.stringify(savedPicks);
+    // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+    useEffect(() => { setPicks(savedPicks); }, [savedPicksKey]);
 
     const byRole = useMemo(() => new Map(assignments.map((a) => [a.respondentRole, a])), [assignments]);
     const allSubmitted = assignments.length > 0 && assignments.every((a) => a.status === 'SUBMITTED');
 
+    // One PUT-shaped write, two callers (dispatch and finalize) — same
+    // endpoint family, same cache entry, different body. The mutation owns the
+    // request lifecycle and the assignments-feed revalidation; the caller's
+    // fallback message rides along as input so the two buttons keep their own
+    // wording.
+    const actionMutation = useTenantMutation<
+        AssignmentRow[],
+        { url: string; body: unknown; fallbackMessage: string }
+    >({
+        key: assignmentsKey,
+        // Neither caller is predictable: dispatch MINTS one row per role
+        // (server ids plus the per-role question split) and finalize
+        // recomputes the run server-side. Both buttons are disabled while the
+        // request is in flight, so there is no window a guess would fill.
+        mutationFn: ({ url, body, fallbackMessage }) =>
+            send(
+                url,
+                { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+                fallbackMessage,
+                // These endpoints answer with an actionable message ("run
+                // already finalized", "not every respondent has submitted")
+                // that the panel has always shown over its own fallback.
+                { preferServerMessage: true },
+            ),
+    });
+    const busy = actionMutation.isMutating;
+
     async function act(url: string, body: unknown, ok: string) {
-        setBusy(true); setErr(null);
+        setErr(null);
         try {
-            const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-            if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: { message?: string } })?.error?.message ?? ok);
-            await loadAssignments();
+            await actionMutation.trigger({ url, body, fallbackMessage: ok });
             onChanged();
         } catch (e) {
             setErr(e instanceof Error ? e.message : tx('nis2Gap.actionFailed'));
-        } finally {
-            setBusy(false);
         }
     }
 

@@ -91,8 +91,27 @@ describe('CACHE_KEYS — key construction', () => {
             expect(CACHE_KEYS.audits.list()).toBe('/audits');
             expect(CACHE_KEYS.audits.detail('au1')).toBe('/audits/au1');
             expect(CACHE_KEYS.audits.readiness()).toBe('/audits/readiness');
+            expect(CACHE_KEYS.audits.readinessOverview()).toBe(
+                '/audits/readiness/overview',
+            );
             expect(CACHE_KEYS.audits.cycles()).toBe('/audits/cycles');
             expect(CACHE_KEYS.audits.packs()).toBe('/audits/packs');
+        });
+
+        // Grouped under `audits` because that is where the SCREEN lives, but
+        // the API route is `/api/t/{slug}/business-continuity` — no `/audits`
+        // segment. Both keys used to carry one, pointing at a URL with no
+        // route behind it. Pinned so the navigation path cannot be pasted
+        // back over the API path: the resulting read 404s and the resulting
+        // mutation updates an entry nothing renders, neither of which fails
+        // loudly.
+        it('business continuity keys follow the API path, not the nav path', () => {
+            expect(CACHE_KEYS.audits.businessContinuity()).toBe(
+                '/business-continuity',
+            );
+            expect(CACHE_KEYS.audits.bia('bia1')).toBe(
+                '/business-continuity/bia1',
+            );
         });
     });
 
