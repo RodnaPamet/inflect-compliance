@@ -72,10 +72,26 @@ jest.mock('@/components/require-permission', () => ({
 }));
 
 
+import { SWRConfig } from 'swr';
 import AuditCyclesPage from '@/app/t/[tenantSlug]/(app)/audits/cycles/page';
 
 import { DEFAULT_DATE_RANGE_PRESETS } from '@/components/ui/date-picker/presets-catalogue';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { TenantProvider } from '@/lib/tenant-context-provider';
+import { getPermissionsForRole } from '@/lib/permissions';
+
+// The page reads through `useTenantSWR` / `useTenantMutation`, which resolve
+// `/api/t/{slug}` from the tenant context — so it must be mounted even though
+// the authz gate above is stubbed out.
+const TENANT_CTX = {
+    userId: 'user-1',
+    tenantId: 'tenant-1',
+    tenantSlug: 'acme-corp',
+    tenantName: 'Acme Corp',
+    role: 'OWNER' as const,
+    permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+    appPermissions: getPermissionsForRole('OWNER'),
+};
 
 // ─── Fetch stub ──────────────────────────────────────────────────────
 
@@ -130,9 +146,16 @@ async function mountAndOpenForm() {
     // which requires a TooltipProvider — the real app supplies one at the
     // layout level; the test harness must too.
     const utils = render(
-        <TooltipProvider>
-            <AuditCyclesPage />
-        </TooltipProvider>,
+        // A fresh SWR cache per test — the cache is module-global, so without
+        // a per-test provider one test's populated overview would satisfy the
+        // next test's read and mask a broken fetch.
+        <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
+            <TenantProvider value={TENANT_CTX}>
+                <TooltipProvider>
+                    <AuditCyclesPage />
+                </TooltipProvider>
+            </TenantProvider>
+        </SWRConfig>,
     );
     // Wait for the initial cycles fetch to resolve → component exits the loading state.
     await waitFor(() => {
@@ -288,9 +311,13 @@ describe('Audit Cycles — DateRangePicker integration', () => {
         expect(actualEnd.getUTCMonth()).toBe(expected.to!.getUTCMonth());
         expect(actualEnd.getUTCDate()).toBe(expected.to!.getUTCDate());
 
-        // Post-create navigation mirrors the pre-Epic-58 behaviour.
-        expect(routerMock.push).toHaveBeenCalledWith(
-            '/t/acme-corp/audits/cycles/cyc-1',
+        // Post-create navigation mirrors the pre-Epic-58 behaviour. The push
+        // now happens after the mutation's cache write settles, so wait for
+        // it rather than assuming a single flush was enough.
+        await waitFor(() =>
+            expect(routerMock.push).toHaveBeenCalledWith(
+                '/t/acme-corp/audits/cycles/cyc-1',
+            ),
         );
     });
 

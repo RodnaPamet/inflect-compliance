@@ -2,7 +2,7 @@
 import { formatDate } from '@/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { SkeletonCard } from '@/components/ui/skeleton';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AppIcon, type AppIconName } from '@/components/icons/AppIcon';
@@ -27,6 +27,9 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card';
 import { useToast } from '@/components/ui/hooks';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { AUDIT_CYCLE_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/status-variants';
 import { ReadinessScoreRing, ReadinessLegend } from './ReadinessScoreRing';
 
@@ -85,6 +88,25 @@ interface ScoreEntry {
     score: number;
     recommendations?: string[];
 }
+/** The overview payload — the page's single read. */
+interface ReadinessOverview {
+    cycles: CycleRow[];
+    scoresByCycleId: Record<string, ScoreEntry>;
+}
+/** `/frameworks` rows — the installed-framework catalog behind the picker. */
+interface FrameworkRow {
+    key: string;
+    name: string;
+    version: string | null;
+}
+/** The create-cycle request body. Both period sides are optional. */
+interface CreateCycleInput {
+    frameworkKey: string;
+    frameworkVersion: string;
+    name: string;
+    periodStartAt?: string;
+    periodEndAt?: string;
+}
 
 export default function AuditCyclesPage() {
     const tx = useTranslations('audits');
@@ -94,103 +116,120 @@ export default function AuditCyclesPage() {
     const tenantSlug = params.tenantSlug as string;
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
 
-    const [cycles, setCycles] = useState<CycleRow[]>([]);
-    const [scores, setScores] = useState<Record<string, ScoreEntry>>({});
-    const [loading, setLoading] = useState(true);
-    // A failed load must NOT fall through to the "create your first cycle"
-    // empty state — that misreads an outage as a first-run. Show a real
-    // error + retry instead (mirrors the readiness page's error branch).
-    const [loadError, setLoadError] = useState(false);
     const [showForm, setShowForm] = useState(false);
-    // In-flight guard for the create submit — prevents double-submit and
-    // drives the button's disabled/loading state.
-    const [creating, setCreating] = useState(false);
     const [form, setForm] = useState({ frameworkKey: 'ISO27001', frameworkVersion: '2022', name: '' });
-    // PR-O — installed frameworks drive the picker (custom-framework cycles).
-    const [fwOptions, setFwOptions] = useState<ComboboxOption<{ version: string }>[]>(DEFAULT_FW_OPTIONS);
     // Epic 58 — the period is stored as a nullable DateRangeValue so
     // half-open ranges ("from X, open-ended") are representable. The
     // backend accepts both `periodStartAt` / `periodEndAt` as
     // optional, so we submit whichever side the user has set.
     const [period, setPeriod] = useState<DateRangeValue>({ from: null, to: null });
 
+    // ─── Reads ───
+    //
     // Single call: the overview orchestrator fans out per-cycle
     // readiness server-side (no 1+N waterfall) and returns the
-    // cycle list joined with `scoresByCycleId`. Hoisted into a
-    // callback so the error state can re-invoke it via Retry.
+    // cycle list joined with `scoresByCycleId`. The hand-rolled
+    // fetch + useEffect + useState triple became one SWR key, named
+    // in CACHE_KEYS so the create mutation below targets the same
+    // string by construction.
+    const overviewQuery = useTenantSWR<ReadinessOverview>(
+        CACHE_KEYS.audits.readinessOverview(),
+    );
+    const cycles = overviewQuery.data?.cycles ?? [];
+    const scores = overviewQuery.data?.scoresByCycleId ?? {};
+    const loading = overviewQuery.isLoading;
+    // A failed load must NOT fall through to the "create your first cycle"
+    // empty state — that misreads an outage as a first-run. The two stay
+    // structurally distinct: SWR's `error` is the outage (retryable), an
+    // empty `cycles` on a SUCCESSFUL read is the genuine first-run.
+    //
+    // `&& !data` is load-bearing, not defensive. Unlike the hand-rolled
+    // loader this replaced — which ran once on mount — `useTenantSWR`
+    // revalidates on focus and on reconnect, and SWR keeps the cached data
+    // when a revalidation fails. Without the guard, a tab-away-and-back over
+    // a blip would set `error` while `data` is still good and `isLoading` is
+    // false, and the branch at the bottom of this file would replace a
+    // fully-rendered page — including an open create-cycle modal — with the
+    // Retry empty state. Suppressing the error while there is still something
+    // readable on screen is the repo's idiom (cf. `TasksClient`).
+    const loadError = Boolean(overviewQuery.error) && !overviewQuery.data;
+    // Hoisted so the error state's Retry re-invokes the same read in place.
     const loadCycles = useCallback(() => {
-        setLoading(true);
-        setLoadError(false);
-        fetch(apiUrl('/audits/readiness/overview'))
-            .then(r => r.ok ? r.json() : null)
-            .then((data) => {
-                if (!data) {
-                    setLoadError(true);
-                    return;
-                }
-                setCycles(data.cycles ?? []);
-                setScores(data.scoresByCycleId ?? {});
-            })
-            .catch(() => setLoadError(true))
-            .finally(() => setLoading(false));
-    }, [apiUrl]);
+        void overviewQuery.mutate();
+    }, [overviewQuery]);
 
-    useEffect(() => { loadCycles(); }, [loadCycles]);
+    // PR-O — installed frameworks drive the picker (custom-framework cycles),
+    // not just ISO27001/NIS2. Fail-soft: on error the query yields no data and
+    // the picker keeps the two defaults, exactly as the old `.catch` did.
+    const frameworksQuery = useTenantSWR<FrameworkRow[]>(CACHE_KEYS.frameworks.list());
+    const frameworkRows = frameworksQuery.data;
+    const fwOptions = useMemo<ComboboxOption<{ version: string }>[]>(() => {
+        if (!Array.isArray(frameworkRows) || frameworkRows.length === 0) {
+            return DEFAULT_FW_OPTIONS;
+        }
+        return frameworkRows.map((f) => ({
+            value: f.key,
+            label: f.version ? `${f.name} (${f.version})` : f.name,
+            meta: { version: f.version ?? '' },
+        }));
+    }, [frameworkRows]);
 
-    // PR-O — load the installed frameworks so a cycle can target any of them
-    // (not just ISO27001/NIS2). Fail-soft: the picker keeps the two defaults.
-    useEffect(() => {
-        fetch(apiUrl('/frameworks'))
-            .then((r) => (r.ok ? r.json() : null))
-            .then((rows: Array<{ key: string; name: string; version: string | null }> | null) => {
-                if (!Array.isArray(rows) || rows.length === 0) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
-                setFwOptions(rows.map((f) => ({
-                    value: f.key,
-                    label: f.version ? `${f.name} (${f.version})` : f.name,
-                    meta: { version: f.version ?? '' },
-                })));
-            })
-            .catch(() => { /* keep defaults */ });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [apiUrl]);
+    // ─── Write ───
+    const createMutation = useTenantMutation<ReadinessOverview, CreateCycleInput, { id: string }>({
+        key: CACHE_KEYS.audits.readinessOverview(),
+        // No optimistic prediction, deliberately. The server mints the id and
+        // `createdAt`, and the card's ring reads a `scoresByCycleId` entry
+        // only the server can compute — a guessed card would shift on
+        // revalidation. The flow also navigates to the new cycle on success,
+        // so a predicted row would never be seen.
+        mutationFn: async (input) => {
+            const res = await fetch(apiUrl('/audits/cycles'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(input),
+            });
+            if (!res.ok) throw new Error(tx('cycles.createError'));
+            return res.json();
+        },
+        // The bare cycle list backs the audits hub's cycle picker and the
+        // readiness overview page — a new cycle belongs in both.
+        invalidate: [CACHE_KEYS.audits.cycles()],
+    });
+
+    // The POST's in-flight state comes from the mutation. `navigating` is a
+    // separate latch for the window AFTER it resolves, while the router
+    // transition runs: `isMutating` flips back to false the moment the
+    // response lands, and re-enabling the submit button mid-navigation would
+    // re-open the double-submit the original guard closed.
+    const [navigating, setNavigating] = useState(false);
+    const creating = createMutation.isMutating || navigating;
 
     const create = async (e: React.FormEvent) => {
         e.preventDefault();
         // Guard double-submit + empty required fields (the modal form is
         // rendered with `noValidate`, so native `required` won't block it).
         if (creating || !form.frameworkKey || !form.name.trim()) return;
-        setCreating(true);
         // The version rides the selected framework option (no hardcoded ternary).
-        const body: Record<string, unknown> = {
+        const input: CreateCycleInput = {
             ...form,
             frameworkVersion: form.frameworkVersion,
         };
         // Submit the audit period only when the user picked one.
         // Either side may be open-ended; the backend already accepts
         // both fields as optional and validates them as strings.
-        if (period.from) body.periodStartAt = period.from.toISOString();
-        if (period.to) body.periodEndAt = period.to.toISOString();
+        if (period.from) input.periodStartAt = period.from.toISOString();
+        if (period.to) input.periodEndAt = period.to.toISOString();
         try {
-            const res = await fetch(apiUrl('/audits/cycles'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) {
-                const cycle = await res.json();
-                // Navigating away — leave `creating` set so the button
-                // stays disabled through the transition (no double-submit).
-                router.push(`/t/${tenantSlug}/audits/cycles/${cycle.id}`);
-                return;
-            }
-            // Previously a silent no-op — a failed create left the form
-            // untouched with no signal. Surface the failure and re-enable.
-            toast.error(tx('cycles.createError'));
-            setCreating(false);
+            const cycle = await createMutation.trigger(input);
+            // Navigating away — latch the disabled state through the
+            // transition (no double-submit).
+            setNavigating(true);
+            router.push(`/t/${tenantSlug}/audits/cycles/${cycle.id}`);
         } catch {
+            // Previously a silent no-op — a failed create left the form
+            // untouched with no signal. Surface the failure; the mutation
+            // has already re-enabled the form.
             toast.error(tx('cycles.createError'));
-            setCreating(false);
         }
     };
 

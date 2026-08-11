@@ -6,9 +6,18 @@
  * Pre-B6 this was a hand-rolled `useState` shape; B6 ports it onto
  * `useZodForm` driven by `NewAuditFormSchema`. Return shape stays
  * compatible with `<NewAuditModal>` + `<NewAuditFields>`.
+ *
+ * P3.1 (audits data-access) — the POST underneath is a
+ * `useTenantMutation` keyed off `CACHE_KEYS`, so the create shares the
+ * surface's one write lifecycle (request → error capture → re-throw →
+ * revalidate) instead of re-deciding it here.
  */
+import { z } from 'zod';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { CACHE_KEYS } from '@/lib/swr-keys';
+import type { CappedList } from '@/lib/list-backfill-cap';
 import { useZodForm } from '@/lib/hooks/use-zod-form';
 import {
     NewAuditFormSchema,
@@ -16,6 +25,14 @@ import {
 } from '@/lib/schemas/audit-form';
 
 export type NewAuditFormFields = NewAuditFormValues;
+
+/**
+ * What `useZodForm` hands `onSubmit` — the PARSED payload, so every
+ * `.default()`-ed field is a concrete value by the time it reaches the
+ * wire (`z.input` would leave them `| undefined` and JSON.stringify
+ * would drop them).
+ */
+type NewAuditPayload = z.output<typeof NewAuditFormSchema>;
 
 export interface NewAuditFormReturn {
     fields: NewAuditFormFields;
@@ -64,11 +81,45 @@ export function useNewAuditForm({
 }: UseNewAuditFormOptions): NewAuditFormReturn {
     const apiUrl = useTenantApiUrl();
     const t = useTranslations('audits');
-    const zod = useZodForm({
-        schema: NewAuditFormSchema,
-        // feat/audits-surface — prefill the cycle from the active list filter.
-        initial: { ...INITIAL, auditCycleId: initialCycleId ?? '' },
-        onSubmit: async (payload) => {
+
+    /**
+     * The create POST, as the surface's one write shape.
+     *
+     * Keyed at the audits LIST, not a detail key — the server mints the
+     * id, so there is no detail entry to target yet. The key is
+     * cycle-scoped exactly when the list is: `AuditsClient` reads
+     * `/audits?cycleId=…` under an active cycle filter and the bare
+     * `/audits` key otherwise, and both sides derive it from
+     * `CACHE_KEYS.audits.list()`. A near-miss string here would update
+     * nothing and read as a slow network.
+     *
+     * `TData` is the list envelope (`{ rows, truncated }`, not a bare
+     * array) — the row shape never surfaces, because:
+     *
+     * No `optimisticUpdate`. The server mints the id, the createdAt, the
+     * status and (when `generateChecklist` is set) the whole checklist —
+     * none of it derivable client-side. A guessed row would visibly shift
+     * on revalidation; waiting is the honest answer.
+     *
+     * No `invalidate` either. The cycles LIST (`listAuditCycles`) carries
+     * each cycle's PACKS, not its audits, so it is not stale after a
+     * create. The cycle DETAIL entry (`getAuditCycle`) does carry them —
+     * but `auditCycleId` is a field the user can still change, so the
+     * target cycle is unknown until submit while `invalidate` binds here;
+     * naming a cycle now would be exactly the near-miss key above.
+     * `<NewAuditModal>`'s `onSuccess` keeps the cross-key fan-out — it
+     * revalidates EVERY `/audits` list variant, which one key cannot
+     * express.
+     */
+    const createMutation = useTenantMutation<
+        CappedList<unknown>,
+        NewAuditPayload,
+        { id: string }
+    >({
+        key: initialCycleId
+            ? `${CACHE_KEYS.audits.list()}?cycleId=${initialCycleId}`
+            : CACHE_KEYS.audits.list(),
+        mutationFn: async (payload) => {
             const res = await fetch(apiUrl('/audits'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -92,7 +143,20 @@ export function useNewAuditForm({
                     err.error?.message || t('newModal.createFailed'),
                 );
             }
-            const audit = await res.json();
+            return res.json();
+        },
+    });
+
+    const zod = useZodForm({
+        schema: NewAuditFormSchema,
+        // feat/audits-surface — prefill the cycle from the active list filter.
+        initial: { ...INITIAL, auditCycleId: initialCycleId ?? '' },
+        onSubmit: async (payload) => {
+            // `trigger` re-throws the error built in `mutationFn`, so the
+            // message `useZodForm` surfaces as `error` (rendered in
+            // `#new-audit-error`) is the same string, from the same place,
+            // as before the migration.
+            const audit = await createMutation.trigger(payload);
             onSuccess(audit);
         },
     });

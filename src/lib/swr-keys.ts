@@ -193,6 +193,13 @@ export const CACHE_KEYS = {
     audits: {
         ...makeResource('audits'),
         readiness: () => '/audits/readiness' as const,
+        /**
+         * The cycle list JOINED with per-cycle readiness scores — one
+         * server-side fan-out instead of the old 1+N waterfall, and the
+         * only read the cycles page performs. Named here so the
+         * create-cycle mutation targets the same string the read does.
+         */
+        readinessOverview: () => '/audits/readiness/overview' as const,
         cycles: () => '/audits/cycles' as const,
         cycle: (id: string) => `/audits/cycles/${id}` as const,
         packs: () => '/audits/packs' as const,
@@ -204,9 +211,50 @@ export const CACHE_KEYS = {
         packShares: (id: string) => `/audits/packs/${id}/shares` as const,
         packShareComments: (id: string) => `/audits/packs/${id}/share-comments` as const,
         auditors: () => '/audits/auditors' as const,
-        businessContinuity: () => '/audits/business-continuity' as const,
-        bia: (id: string) => `/audits/business-continuity/${id}` as const,
+        /**
+         * BIA register + one analysis. These two are grouped under `audits`
+         * because that is where the SCREEN lives (`/t/{slug}/audits/
+         * business-continuity`) — but the API route is NOT nested under
+         * `/audits`, it is `/api/t/{slug}/business-continuity`. The keys must
+         * follow the API, not the navigation, so they carry no `/audits`
+         * prefix. They previously did, which made both keys resolve to a URL
+         * with no route behind it: a read would 404 and a mutation would
+         * optimistically update an entry nothing renders — the near-miss
+         * failure this registry exists to prevent. No caller had exercised
+         * them yet, so the correction is behaviour-preserving.
+         */
+        businessContinuity: () => '/business-continuity' as const,
+        bia: (id: string) => `/business-continuity/${id}` as const,
         nis2Gap: () => '/audits/nis2-gap' as const,
+        /**
+         * Propose-not-commit remediation suggestions for the latest NIS2 run.
+         * The criticality floor is a SERVER-side filter, so it belongs in the
+         * key — same reasoning as `dashboard.trends(days)`: a mutation keyed
+         * on the bare path would target a cache entry the page never reads.
+         * Defaults to the lifecycle page's fixed HIGH floor.
+         */
+        nis2GapRemediations: (minCriticality = 'HIGH') =>
+            `/audits/nis2-gap/remediations?minCriticality=${minCriticality}` as const,
+    },
+    /**
+     * NIS2 gap-assessment delegation (assign → respond → review). The feed
+     * hangs off the assessment RUN, not the audits root, so it gets its own
+     * registry entry rather than a method under `audits` whose path would not
+     * start with `/audits`.
+     */
+    gapAssessments: {
+        assignments: (assessmentId: string) =>
+            `/gap-assessments/${assessmentId}/assignments` as const,
+    },
+    /**
+     * The respondent's own side of that delegation — ONE assignee's bucket of
+     * questions plus their current answers. Same reasoning as `gapAssessments`
+     * for living outside `audits`: the route is `/gap-assignments/{id}`, and a
+     * key that lies about its path is the near-miss that makes an optimistic
+     * update silently target nothing.
+     */
+    gapAssignments: {
+        detail: (assignmentId: string) => `/gap-assignments/${assignmentId}` as const,
     },
 
     // ─── Dashboards & overview surfaces ─────────────────────────
@@ -239,6 +287,19 @@ export const CACHE_KEYS = {
         dashboard: (periodDays: number) => `/tests/dashboard?period=${periodDays}` as const,
         readiness: () => '/tests/readiness' as const,
         checks: () => '/tests/checks' as const,
+    },
+
+    // ─── Integrations ───────────────────────────────────────────
+    integrations: {
+        /**
+         * Practitioner-readable SharePoint connection list (id + name) —
+         * `/integrations/sharepoint/connections`, gated by `evidence.upload`.
+         * Three components probe this same path (evidence upload modal,
+         * policy SharePoint section, audit-pack export button); naming it
+         * here keeps them on ONE cache entry as each migrates, instead of
+         * three near-miss strings that never dedupe or invalidate each other.
+         */
+        sharepointConnections: () => '/integrations/sharepoint/connections' as const,
     },
 
     // ─── Cross-cutting ──────────────────────────────────────────
