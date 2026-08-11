@@ -80,13 +80,31 @@ describe('policy review workflow — usecases', () => {
         expect(body).toMatch(/ownerUserId:\s*overrides\?\.ownerUserId\s*\?\?\s*ctx\.userId/);
     });
 
-    it('markPolicyReviewed recomputes nextReviewAt + stamps lastReviewedAt + audits', () => {
-        const start = usecase.indexOf('export async function markPolicyReviewed');
-        expect(start).toBeGreaterThan(-1);
-        const body = usecase.slice(start, usecase.indexOf('\nexport ', start + 1) === -1 ? undefined : usecase.indexOf('\nexport ', start + 1));
-        expect(body).toMatch(/reviewFrequencyDays \* 86_400_000/);
-        expect(body).toMatch(/lastReviewedAt: now/);
-        expect(body).toMatch(/action: 'POLICY_REVIEWED'/);
+    it('the policy-review cadence rule has exactly one implementation, and markPolicyReviewed delegates to it', () => {
+        // `applyPolicyReviewed` is the single implementation of "this policy
+        // was reviewed" — `markPolicyReviewed` and the task→source reconciler
+        // both call it, so they cannot diverge. (The reconciler used to carry
+        // a private copy that wrote `nextReviewAt = null` for a cadence-less
+        // policy, silently dropping it out of the reminder sweep forever.)
+        // The BEHAVIOUR — recompute with a cadence, PRESERVE a manually-set
+        // date without one — is proven end-to-end in
+        // tests/integration/task-source-reconcile-invariants.test.ts.
+        const bodyOf = (name: string) => {
+            const start = usecase.indexOf(`export async function ${name}`);
+            expect(start).toBeGreaterThan(-1);
+            const end = usecase.indexOf('\nexport ', start + 1);
+            return usecase.slice(start, end === -1 ? undefined : end);
+        };
+
+        const shared = bodyOf('applyPolicyReviewed');
+        expect(shared).toMatch(/reviewFrequencyDays \* 86_400_000/);
+        expect(shared).toMatch(/lastReviewedAt: now/);
+        expect(shared).toMatch(/action: 'POLICY_REVIEWED'/);
+
+        const wrapper = bodyOf('markPolicyReviewed');
+        expect(wrapper).toMatch(/applyPolicyReviewed\(db, ctx, policy/);
+        // No second copy of the cadence arithmetic in the wrapper.
+        expect(wrapper).not.toMatch(/86_400_000/);
     });
 
     it('the explicit evidence link/unlink usecases exist', () => {

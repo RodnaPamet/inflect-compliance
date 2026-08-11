@@ -147,7 +147,17 @@ const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
  */
 function reconcileNoopDb() {
     return {
-        task: { findFirst: jest.fn().mockResolvedValue({ id: 't1', type: 'TASK', source: 'MANUAL', controlId: null, findingId: null, metadataJson: null }) },
+        task: {
+            findFirst: jest.fn().mockResolvedValue({ id: 't1', type: 'TASK', source: 'MANUAL', controlId: null, findingId: null, metadataJson: null }),
+            // The bulk status path resolves `type` + `controlId` for the
+            // whole batch in one read, so the shared type-relevance gate
+            // can run there too (it always ran on the single-task path).
+            // Plain TASKs carry no relevance constraint, so the gate
+            // no-ops and this suite keeps testing what it says it does.
+            findMany: jest.fn().mockImplementation(async (args: { where?: { id?: { in?: string[] } } }) =>
+                (args?.where?.id?.in ?? []).map((id: string) => ({ id, type: 'TASK', controlId: null })),
+            ),
+        },
         assetVulnerability: { findFirst: jest.fn().mockResolvedValue(null) },
         // The vuln + risk-appetite + KRI reconcilers run for every terminal
         // task (keyed on remediationTaskId, not task.type), so the mock must

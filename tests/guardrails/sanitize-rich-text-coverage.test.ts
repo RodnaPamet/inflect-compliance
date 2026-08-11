@@ -56,8 +56,13 @@ const RICH_TEXT_COVERAGE: Readonly<
 > = {
     PolicyVersion: { usecases: ['src/app-layer/usecases/policy.ts'], sanitizer: 'sanitizePolicyContent' },
     Task: { usecases: ['src/app-layer/usecases/task.ts'], sanitizer: 'sanitizePlainText' },
+    // `usecases/issue.ts` was the second write path here
+    // (`addIssueComment`). Its `/issues` routes were retired, the
+    // function was deleted with the rest of that parallel work-item
+    // surface, and `usecases/task.ts::addTaskComment` is now the only
+    // way a TaskComment body is written.
     TaskComment: {
-        usecases: ['src/app-layer/usecases/task.ts', 'src/app-layer/usecases/issue.ts'],
+        usecases: ['src/app-layer/usecases/task.ts'],
         sanitizer: 'sanitizePlainText',
     },
     Finding: { usecases: ['src/app-layer/usecases/finding.ts'], sanitizer: 'sanitizePlainText' },

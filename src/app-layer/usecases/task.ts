@@ -41,6 +41,8 @@ async function validateTypeRelevance(
     taskId: string,
     type: TaskType,
     controlId: string | null | undefined,
+    /** Prefix for the refusal message — the bulk path names the offending id. */
+    prefix = '',
 ) {
     if (type === 'TASK' || type === 'IMPROVEMENT') return;
 
@@ -53,7 +55,7 @@ async function validateTypeRelevance(
     if (type === 'AUDIT_FINDING' || type === 'CONTROL_GAP') {
         if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('FRAMEWORK_REQUIREMENT')) {
             throw badRequest(
-                `${type} tasks must have a controlId or a link to CONTROL or FRAMEWORK_REQUIREMENT.`
+                `${prefix}${type} tasks must have a controlId or a link to CONTROL or FRAMEWORK_REQUIREMENT.`
             );
         }
     }
@@ -61,7 +63,7 @@ async function validateTypeRelevance(
     if (type === 'INCIDENT') {
         if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('ASSET')) {
             throw badRequest(
-                'INCIDENT tasks must have a controlId or a link to CONTROL or ASSET.'
+                `${prefix}INCIDENT tasks must have a controlId or a link to CONTROL or ASSET.`
             );
         }
     }
@@ -707,16 +709,157 @@ export function checkReviewerSignOffGate(args: {
     return null;
 }
 
+// ─── The status-change sequence, in ONE place (single + bulk) ───
+//
+// `setTaskStatus` and `bulkSetTaskStatus` spelled the same sequence out
+// twice and the copies drifted: the bulk path had silently lost the
+// type-relevance gate, the automation emission and the watcher fan-out,
+// so `POST /tasks/bulk/status {status:'CLOSED'}` closed an AUDIT_FINDING
+// with no control and no CONTROL/FRAMEWORK_REQUIREMENT link, fired no
+// TASK_STATUS_CHANGED automation event, and told no watcher.
+//
+// Both paths now call the three helpers below, so a step can only be
+// added or removed for BOTH at once. The ORDER is the single-task
+// path's — it was the complete one — and each edge is load-bearing:
+//
+//   pre-write:  transition gate → reviewer sign-off gate → resolution
+//               required → type relevance. Relevance runs LAST because
+//               it is the only gate that reads a second table; the
+//               cheap in-memory refusals go first.
+//
+//   in-transaction, per task (applyTaskStatusPostWrite):
+//     1. audit      — the audit row is the record of the change. It is
+//                     hash-chained under a per-tenant advisory lock, so
+//                     the sequence stays sequential per task. The audit
+//                     PAYLOAD differs per path (`Bulk status changed…` +
+//                     `bulk: true`), so it is passed in as a thunk while
+//                     the ORDER stays owned here.
+//     2. automation — a rule must never observe (and act on) a status
+//                     change that has no audit row behind it, so this
+//                     follows the audit, never precedes it.
+//     3. reconcile  — `reconcileTaskSource` re-reads the task and writes
+//                     the SOURCE row (control / vulnerability / finding /
+//                     …), auditing its own write. It therefore needs the
+//                     post-write row and the same transaction: a
+//                     reconciler failure must roll the status change back
+//                     with it (see task-source-reconcile.ts).
+//
+//   after commit, once per call (afterTaskStatusCommit):
+//     4. cache bump — only correct once the transaction committed; a
+//                     bump inside the tx could publish a version for
+//                     rows a rollback then discards.
+//     5. watchers   — fire-and-forget bell fan-out in its OWN short
+//                     transaction, deliberately last and outside the
+//                     status transaction so a notification failure can
+//                     never roll a committed status change back.
+
+/** Statuses whose write must satisfy the type-relevance rule. */
+const RELEVANCE_GATED_STATUSES = new Set(['RESOLVED', 'CLOSED']);
+
+/** The fields the pre-write relevance gate needs, for one task. */
+interface TaskRelevanceRow {
+    id: string;
+    type: string;
+    controlId: string | null;
+}
+
+/**
+ * Pre-write gate — apply the type-relevance rule to EVERY task the
+ * status change is about to touch. No-ops for non-terminal targets.
+ *
+ * The loop is over rows the caller already resolved, and
+ * `validateTypeRelevance` reads `TaskLink` only for a row that is BOTH
+ * type-constrained (AUDIT_FINDING / CONTROL_GAP / INCIDENT) AND has no
+ * `controlId` — i.e. the read is skipped entirely for the common case.
+ * The bulk batch is bounded by the request payload, and the bulk path
+ * is already per-task downstream (hash-chained audit + per-task source
+ * reconciliation), so this adds no new complexity class.
+ */
+async function assertTypeRelevanceForStatus(
+    db: PrismaTx,
+    ctx: RequestContext,
+    toStatus: string,
+    rows: TaskRelevanceRow[],
+    describeTask?: (taskId: string) => string,
+): Promise<void> {
+    if (!RELEVANCE_GATED_STATUSES.has(toStatus)) return;
+    for (const row of rows) {
+        await validateTypeRelevance(
+            db,
+            ctx,
+            row.id,
+            row.type as TaskType,
+            row.controlId,
+            describeTask ? describeTask(row.id) : '',
+        );
+    }
+}
+
+/** One validated status change, as the shared sequence sees it. */
+interface TaskStatusChange {
+    taskId: string;
+    fromStatus: string;
+    toStatus: string;
+    resolution: string | null;
+}
+
+/**
+ * IN-TRANSACTION post-write sequence: audit → automation → reconcile.
+ * Runs on the caller's `db` so all three commit atomically with the
+ * status write. See the ordering rationale above.
+ */
+async function applyTaskStatusPostWrite(
+    db: PrismaTx,
+    ctx: RequestContext,
+    change: TaskStatusChange,
+    writeAudit: () => Promise<unknown>,
+): Promise<void> {
+    await writeAudit();
+    await emitAutomationEvent(ctx, {
+        event: 'TASK_STATUS_CHANGED',
+        entityType: 'Task',
+        entityId: change.taskId,
+        actorUserId: ctx.userId,
+        stableKey: `${change.taskId}:${change.fromStatus}:${change.toStatus}`,
+        data: {
+            fromStatus: change.fromStatus,
+            toStatus: change.toStatus,
+            resolution: change.resolution,
+        },
+    });
+    await reconcileTaskSource(db, ctx, change.taskId, change.toStatus);
+}
+
+/**
+ * POST-COMMIT sequence: cache bump, then the watcher bell fan-out for
+ * every task the call changed. Batched — one transaction and two reads
+ * for the whole set, not one round trip per task.
+ */
+async function afterTaskStatusCommit(
+    ctx: RequestContext,
+    changes: TaskStatusChange[],
+): Promise<void> {
+    await bumpEntityCacheVersion(ctx, 'task');
+    await emitTaskWatcherActivityBatch(
+        ctx,
+        changes.map((c) => ({
+            taskId: c.taskId,
+            kind: 'status_changed' as const,
+            discriminator: `${c.fromStatus}->${c.toStatus}`,
+            detail: `status changed ${c.fromStatus} → ${c.toStatus}`,
+        })),
+    );
+}
+
 export async function setTaskStatus(ctx: RequestContext, taskId: string, status: string, resolution?: string | null) {
     assertCanWriteTasks(ctx);
-    let capturedFrom = '';
+    let changes: TaskStatusChange[] = [];
     const result = await runInTenantContext(ctx, async (db) => {
         // Pre-fetch once so we can both validate + capture fromStatus
         // for the automation event.
         const existing = await WorkItemRepository.getById(db, ctx, taskId);
         if (!existing) throw notFound('Task not found');
         const fromStatus = existing.status;
-        capturedFrom = fromStatus;
 
         // Audit Coherence S8 (2026-05-24) — state-machine gate runs
         // BEFORE the type-relevance check. Catches no-op + illegal
@@ -753,57 +896,39 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
             resolution = trimmed;
         }
 
-        if (['RESOLVED', 'CLOSED'].includes(status)) {
-            await validateTypeRelevance(db, ctx, taskId, existing.type as TaskType, existing.controlId);
-        }
+        // Shared with the bulk path — see `assertTypeRelevanceForStatus`.
+        await assertTypeRelevanceForStatus(db, ctx, status, [
+            { id: taskId, type: existing.type, controlId: existing.controlId },
+        ]);
 
         const task = await WorkItemRepository.setStatus(db, ctx, taskId, status, resolution);
         if (!task) throw notFound('Task not found');
-        await logEvent(db, ctx, {
-            action: 'TASK_STATUS_CHANGED',
-            entityType: 'Task',
-            entityId: taskId,
-            details: `Status changed to ${status}`,
-            // Audit Coherence S8 — write the REAL fromStatus + toStatus.
-            // Pre-S8 these were hardcoded to (null, 'TASK_STATUS_CHANGED')
-            // which left the audit row useless for "did this row pass
-            // through TRIAGED?" queries that auditors regularly run.
-            detailsJson: {
-                category: 'status_change',
-                entityName: 'Task',
-                fromStatus,
-                toStatus: status,
-            },
-            metadata: { status, resolution },
-        });
-        await emitAutomationEvent(ctx, {
-            event: 'TASK_STATUS_CHANGED',
-            entityType: 'Task',
-            entityId: taskId,
-            actorUserId: ctx.userId,
-            stableKey: `${taskId}:${fromStatus}:${status}`,
-            data: {
-                fromStatus,
-                toStatus: status,
-                resolution: resolution ?? null,
-            },
-        });
-        // TP-3 — reconcile the source that raised this task once it
-        // reaches a terminal RESOLVED/CLOSED state (NOT CANCELED). Runs
-        // AFTER the task's own status write + audit, inside the SAME
-        // tenant transaction so the source mutation commits atomically.
-        await reconcileTaskSource(db, ctx, taskId, status);
+        changes = [{ taskId, fromStatus, toStatus: status, resolution: resolution ?? null }];
+        // Audit → automation → source reconciliation, in that order, on
+        // this transaction. The payload below is the only part that
+        // differs from the bulk path; the sequence itself is shared.
+        await applyTaskStatusPostWrite(db, ctx, changes[0], () =>
+            logEvent(db, ctx, {
+                action: 'TASK_STATUS_CHANGED',
+                entityType: 'Task',
+                entityId: taskId,
+                details: `Status changed to ${status}`,
+                // Audit Coherence S8 — write the REAL fromStatus + toStatus.
+                // Pre-S8 these were hardcoded to (null, 'TASK_STATUS_CHANGED')
+                // which left the audit row useless for "did this row pass
+                // through TRIAGED?" queries that auditors regularly run.
+                detailsJson: {
+                    category: 'status_change',
+                    entityName: 'Task',
+                    fromStatus,
+                    toStatus: status,
+                },
+                metadata: { status, resolution },
+            }),
+        );
         return task;
     });
-    await bumpEntityCacheVersion(ctx, 'task');
-    // TP-2 — notify watchers of the status change (bell).
-    await emitTaskWatcherActivity(
-        ctx,
-        taskId,
-        'status_changed',
-        `${capturedFrom}->${status}`,
-        `status changed ${capturedFrom} → ${status}`,
-    );
+    await afterTaskStatusCommit(ctx, changes);
     return result;
 }
 
@@ -1053,35 +1178,75 @@ async function emitTaskWatcherActivity(
     discriminator: string,
     detail: string,
 ): Promise<void> {
-    if (!ctx.tenantSlug) return;
+    await emitTaskWatcherActivityBatch(ctx, [{ taskId, kind, discriminator, detail }]);
+}
+
+/** One watcher fan-out, for `emitTaskWatcherActivityBatch`. */
+interface TaskWatcherActivityInput {
+    taskId: string;
+    kind: WatcherActivityKind;
+    discriminator: string;
+    detail: string;
+}
+
+/**
+ * Batched form of the fan-out above: ONE transaction and TWO reads for
+ * the whole set, whatever its size. The bulk status path fans out to
+ * every task it changed, so a per-task transaction here would be a
+ * round trip per row; the reads are hoisted out of the loop (only the
+ * `createWatcherNotifications` WRITE stays inside it).
+ */
+async function emitTaskWatcherActivityBatch(
+    ctx: RequestContext,
+    activities: TaskWatcherActivityInput[],
+): Promise<void> {
+    if (!ctx.tenantSlug || activities.length === 0) return;
     const tenantSlug = ctx.tenantSlug;
+    const taskIds = [...new Set(activities.map((a) => a.taskId))];
     try {
         await runInTenantContext(ctx, async (db) => {
-            const task = await db.task.findFirst({
-                where: { id: taskId, tenantId: ctx.tenantId },
+            // Bounded by the caller's batch, which is bounded by the
+            // request payload (see `WorkItemRepository.listByIds`).
+            const tasks = await db.task.findMany({ // guardrail-allow: unbounded
+                where: { id: { in: taskIds }, tenantId: ctx.tenantId },
                 select: { id: true, tenantId: true, title: true, key: true },
             });
-            if (!task) return;
-            const watchers = await TaskWatcherRepository.listByTask(db, ctx, taskId);
-            const targets = watchers
-                .map((w) => w.userId)
-                .filter((uid) => uid !== ctx.userId);
-            if (targets.length === 0) return;
-            await createWatcherNotifications(db, targets, {
-                tenantId: task.tenantId,
-                tenantSlug,
-                taskId: task.id,
-                taskKey: task.key,
-                taskTitle: task.title,
-                kind,
-                discriminator,
-                detail,
+            const taskById = new Map(tasks.map((t) => [t.id, t]));
+
+            const watchers = await db.taskWatcher.findMany({ // guardrail-allow: unbounded
+                where: { taskId: { in: taskIds }, tenantId: ctx.tenantId },
+                select: { taskId: true, userId: true },
             });
+            const targetsByTask = new Map<string, string[]>();
+            for (const w of watchers) {
+                // You are never notified of your own action.
+                if (w.userId === ctx.userId) continue;
+                const list = targetsByTask.get(w.taskId);
+                if (list) list.push(w.userId);
+                else targetsByTask.set(w.taskId, [w.userId]);
+            }
+
+            for (const activity of activities) {
+                const task = taskById.get(activity.taskId);
+                if (!task) continue;
+                const targets = targetsByTask.get(activity.taskId);
+                if (!targets || targets.length === 0) continue;
+                await createWatcherNotifications(db, targets, {
+                    tenantId: task.tenantId,
+                    tenantSlug,
+                    taskId: task.id,
+                    taskKey: task.key,
+                    taskTitle: task.title,
+                    kind: activity.kind,
+                    discriminator: activity.discriminator,
+                    detail: activity.detail,
+                });
+            }
         });
     } catch (err) {
         logger.warn('failed to notify task watchers', {
             component: 'notifications',
-            taskId,
+            taskIds,
             error: err instanceof Error ? err.message : String(err),
         });
     }
@@ -1431,6 +1596,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
         resolution = trimmed;
     }
 
+    let changes: TaskStatusChange[] = [];
     const outcome = await runInTenantContext(ctx, async (db) => {
         // Pre-fetch the current state of every requested task so we
         // can (a) refuse the WHOLE batch if any row is on an illegal
@@ -1439,6 +1605,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
         // hardcoded null.
         const existingRows = await WorkItemRepository.listByIds(db, ctx, taskIds);
         const existingMap = new Map(existingRows.map((r) => [r.id, r]));
+        changes = [];
 
         // First pass — all-or-nothing validation.
         for (const id of taskIds) {
@@ -1474,34 +1641,63 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
                     ? forbidden(detail)
                     : badRequest(detail);
             }
+
+            changes.push({
+                taskId: id,
+                fromStatus,
+                toStatus: status,
+                resolution: resolution ?? null,
+            });
+        }
+
+        // B1-4 — the type-relevance gate the single-task path has always
+        // applied. Without it `POST /tasks/bulk/status {status:'CLOSED'}`
+        // was an escape hatch that closed an AUDIT_FINDING / CONTROL_GAP /
+        // INCIDENT carrying neither a controlId nor a qualifying link.
+        // `RELEVANCE_GATED_STATUSES` gates the READ as well so a
+        // non-terminal bulk move costs no extra query; the RULE itself
+        // lives in `assertTypeRelevanceForStatus` for both paths.
+        if (RELEVANCE_GATED_STATUSES.has(status)) {
+            // ONE batched read for the whole batch — `listByIds` selects
+            // only the transition/reviewer columns. Bounded by the
+            // request payload (same argument as `listByIds` itself).
+            const relevanceRows = await db.task.findMany({ // guardrail-allow: unbounded
+                where: { id: { in: taskIds }, tenantId: ctx.tenantId, deletedAt: null },
+                select: { id: true, type: true, controlId: true },
+            });
+            await assertTypeRelevanceForStatus(
+                db,
+                ctx,
+                status,
+                relevanceRows,
+                (id) => `Cannot bulk-transition task ${id}: `,
+            );
         }
 
         const result = await WorkItemRepository.bulkSetStatus(db, ctx, taskIds, status, resolution);
-        for (const id of taskIds) {
-            // `existingMap` holds the ROW (status + reviewerUserId for the TP-2
-            // gate above) — the audit entry wants just the status string.
-            const fromStatus = existingMap.get(id)?.status ?? null;
-            await logEvent(db, ctx, {
-                action: 'TASK_STATUS_CHANGED',
-                entityType: 'Task',
-                entityId: id,
-                details: `Bulk status changed to ${status}`,
-                detailsJson: {
-                    category: 'status_change',
-                    entityName: 'Task',
-                    fromStatus,
-                    toStatus: status,
-                },
-                metadata: { status, resolution, bulk: true },
-            });
-            // TP-3 — reconcile each task's source on terminal close
-            // (RESOLVED/CLOSED, not CANCELED). Same tenant transaction
-            // as the bulk status write + audit.
-            await reconcileTaskSource(db, ctx, id, status);
+        for (const change of changes) {
+            // Same shared sequence the single-task path runs — audit,
+            // then automation, then source reconciliation. Only the
+            // audit payload differs (`Bulk …` + `bulk: true`).
+            await applyTaskStatusPostWrite(db, ctx, change, () =>
+                logEvent(db, ctx, {
+                    action: 'TASK_STATUS_CHANGED',
+                    entityType: 'Task',
+                    entityId: change.taskId,
+                    details: `Bulk status changed to ${status}`,
+                    detailsJson: {
+                        category: 'status_change',
+                        entityName: 'Task',
+                        fromStatus: change.fromStatus,
+                        toStatus: status,
+                    },
+                    metadata: { status, resolution, bulk: true },
+                }),
+            );
         }
         return result;
     });
-    await bumpEntityCacheVersion(ctx, 'task');
+    await afterTaskStatusCommit(ctx, changes);
     return outcome;
 }
 
