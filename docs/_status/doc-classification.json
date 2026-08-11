@@ -3,7 +3,7 @@
     "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\".",
     "counts": {
         "authoritative": 115,
-        "historical": 519,
+        "historical": 520,
         "living": 5,
         "deprecated": 1
     },
@@ -1926,6 +1926,9 @@
             "class": "historical"
         },
         "docs/implementation-notes/2026-08-11-audits-data-access-final-tranche.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-11-integration-suites-fail-closed.md": {
             "class": "historical"
         }
     }

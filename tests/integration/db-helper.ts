@@ -12,6 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getTestDatabaseUrl } from '../helpers/db';
+import { assertDbAvailableOrSkipAllowed } from './db-availability';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -112,5 +113,32 @@ function checkDbAvailable(url: string | undefined): boolean {
 
 const dbUrl = resolveDbUrl();
 
+const available = checkDbAvailable(dbUrl);
+
+/**
+ * FAIL CLOSED. An unavailable database is a test-infrastructure FAILURE, not a
+ * reason to report success over 169 suites that never ran.
+ *
+ * `DB_AVAILABLE` gates 166 `describe`/`describe.skip` pairs across
+ * tests/integration, tests/unit/jobs and tests/guardrails — including every
+ * cross-tenant isolation suite, `rls-isolation`, `rls-coverage`,
+ * `epic-b-encryption`, `audit-immutability`, `multi-tenant-jwt` and
+ * `last-owner-guard`. When the probe returned `false`, all of them skipped and
+ * the run was GREEN: the strongest behavioural evidence this repo has for
+ * tenant isolation reported success without executing a line.
+ *
+ * That is not hypothetical. The comment on the probe's own timeout records it
+ * happening — 5s was too tight, "EVERY integration suite silently skipped —
+ * tests appeared to pass while never running". The response then was a longer
+ * timeout, which makes the window narrower without closing it: any slow,
+ * misconfigured or briefly-unreachable database still buys a green run.
+ *
+ * So the default is now to throw. Skipping is still available for local work
+ * without Postgres, but it must be ASKED FOR — `ALLOW_DB_SKIP=1`, which CI
+ * never sets. The asymmetry is deliberate: opting into weaker signal should
+ * take an explicit act, and the default should be the safe one.
+ */
+assertDbAvailableOrSkipAllowed(available, process.env.ALLOW_DB_SKIP, dbUrl);
+
 export const DB_URL = dbUrl;
-export const DB_AVAILABLE = checkDbAvailable(dbUrl);
+export const DB_AVAILABLE = available;

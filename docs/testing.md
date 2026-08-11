@@ -43,6 +43,20 @@ npx jest tests/unit/
 npx jest tests/integration/
 ```
 
+These need a live Postgres — `docker-compose up -d`, then `npm run db:push` if
+the schema has moved. **An unavailable database is a hard failure, not a skip.**
+169 files gate on the `DB_AVAILABLE` probe in `tests/integration/db-helper.ts`,
+including every cross-tenant isolation, RLS and encryption suite; letting them
+skip reports green over exactly the evidence that matters most. To run the
+non-DB suites without Postgres, opt out explicitly:
+
+```bash
+ALLOW_DB_SKIP=1 npx jest tests/unit/
+```
+
+CI never sets that flag. See
+[the fail-closed note](implementation-notes/2026-08-11-integration-suites-fail-closed.md).
+
 ### Guard Tests Only
 
 ```bash
