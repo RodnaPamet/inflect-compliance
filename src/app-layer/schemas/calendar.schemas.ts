@@ -190,11 +190,36 @@ export interface CalendarEvent {
     /** Optional extra context for tooltips (assignee, framework, …). */
     detail?: string;
     /**
-     * Optional owner user id (for filtering "my deadlines" + the
-     * deadline monitor's notification routing).
+     * Optional owner user id — the accountable person for this deadline.
+     *
+     * Consumed by the "My deadlines" filter. It does NOT feed the deadline
+     * monitor's notification routing, despite what this comment used to say:
+     * `jobs/calendar-deadlines.ts` and `jobs/deadline-monitor.ts` build their
+     * own `DueItem.ownerUserId` from independent queries and never import this
+     * usecase. Widening a loader here cannot change who gets emailed.
+     *
+     * Sixteen of the seventeen sources populate this. Where an entity has no
+     * user column of its own it inherits its parent's owner (a vendor document
+     * from its vendor, an incident notification from its incident, a treatment
+     * milestone from its plan). The exception is listed below.
      */
     ownerUserId?: string;
 }
+
+/**
+ * Sources that structurally cannot carry an owner, so "My deadlines" can say
+ * so instead of silently hiding them.
+ *
+ * `training` is the only one: a `TrainingAssignment` belongs to an `Employee`,
+ * and the Employee model has no link to a platform `User` — only `workEmail`.
+ * There is no id to compare against the viewer's, and inventing one by matching
+ * on email would be a guess presented as an assignment.
+ *
+ * If an Employee↔User link is ever added, delete this entry and the notice it
+ * drives — do not extend the list to paper over a loader that simply forgot to
+ * select its owner column, which is the bug this list was born from.
+ */
+export const SOURCES_WITHOUT_OWNER = ['training'] as const;
 
 // ─── Zod schemas ─────────────────────────────────────────────────────
 

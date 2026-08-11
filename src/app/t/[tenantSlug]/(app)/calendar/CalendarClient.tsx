@@ -45,6 +45,7 @@ import {
 import { NewTaskModal } from '@/app/t/[tenantSlug]/(app)/tasks/NewTaskModal';
 import {
     CALENDAR_EVENT_CATEGORIES,
+    SOURCES_WITHOUT_OWNER,
     type CalendarEvent,
     type CalendarEventCategory,
     type CalendarResponse,
@@ -178,6 +179,12 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
 
     const truncation = calQuery.data?.truncation;
     const omittedSources = calQuery.data?.omittedSources ?? [];
+    // "My deadlines" drops any event with no `ownerUserId`. Sixteen of the
+    // seventeen sources now carry one; the remainder cannot (see
+    // SOURCES_WITHOUT_OWNER) and would otherwise vanish with no signal — the
+    // same silent under-reporting the permission path already refuses via
+    // `omittedSources`.
+    const ownerlessSources = mineOnly ? SOURCES_WITHOUT_OWNER : [];
 
     // Pending is derived from SWR's key-aware `isLoading` (true while the
     // current key loads with no cached data). With keepPreviousData off, a
@@ -501,6 +508,21 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                 >
                     {t('omittedNotice', {
                         sources: omittedSources.map((s) => sourceLabel(t, s)).join(', '),
+                    })}
+                </div>
+            )}
+
+            {/* "My deadlines" hides sources that carry no owner at all. Say
+                which, rather than letting a whole domain disappear as if it
+                had no deadlines in range. */}
+            {ownerlessSources.length > 0 && (
+                <div
+                    className="rounded-lg border border-border-subtle bg-bg-subtle px-4 py-2 text-xs text-content-muted"
+                    role="status"
+                    id="calendar-ownerless-notice"
+                >
+                    {t('ownerlessNotice', {
+                        sources: ownerlessSources.map((s) => sourceLabel(t, s)).join(', '),
                     })}
                 </div>
             )}

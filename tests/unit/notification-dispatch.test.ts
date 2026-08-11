@@ -262,8 +262,8 @@ describe('Digest Dispatcher', () => {
             makeDueItem({ entityId: 'ctrl-2', ownerUserId: 'user-1', name: 'Access Control' }),
         ];
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-1', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
         ]);
 
         const result = await dispatchDigest({
@@ -287,9 +287,9 @@ describe('Digest Dispatcher', () => {
             makeDueItem({ entityId: 'ctrl-2', ownerUserId: 'user-2' }),
         ];
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
-            { id: 'user-2', email: 'bob@acme.com', name: 'Bob' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-1', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
+            { tenantId: 'tenant-1', user: { id: 'user-2', email: 'bob@acme.com', name: 'Bob' } },
         ]);
 
         const result = await dispatchDigest({
@@ -341,8 +341,8 @@ describe('Digest Dispatcher', () => {
             makeDueItem({ ownerUserId: 'user-1' }),
         ];
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-1', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
         ]);
 
         // First call succeeds, simulating previous enqueue
@@ -364,9 +364,9 @@ describe('Digest Dispatcher', () => {
             makeDueItem({ tenantId: 'tenant-2', ownerUserId: 'user-2', entityId: 'ctrl-2' }),
         ];
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
-            { id: 'user-2', email: 'bob@beta.com', name: 'Bob' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-1', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
+            { tenantId: 'tenant-2', user: { id: 'user-2', email: 'bob@beta.com', name: 'Bob' } },
         ]);
 
         const result = await dispatchDigest({
@@ -388,8 +388,8 @@ describe('Digest Dispatcher', () => {
             makeDueItem({ entityType: 'VENDOR', ownerUserId: 'user-1' }),
         ];
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-1', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
         ]);
 
         await dispatchDigest({
@@ -409,9 +409,9 @@ describe('Digest Dispatcher', () => {
             makeDueItem({ tenantId: 'tenant-2', ownerUserId: 'user-2', entityId: 'ctrl-3' }),
         ];
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
-            { id: 'user-2', email: 'bob@beta.com', name: 'Bob' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-1', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
+            { tenantId: 'tenant-2', user: { id: 'user-2', email: 'bob@beta.com', name: 'Bob' } },
         ]);
 
         const result = await dispatchDigest({

@@ -27,6 +27,7 @@ import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import type { DueItem, DueItemUrgency, JobRunResult } from './types';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { CONTROL_TEST_ELIGIBILITY } from '../domain/control-test-due';
 import { appendAuditEntry } from '@/lib/audit';
 
 // ─── Configuration ──────────────────────────────────────────────────
@@ -95,8 +96,11 @@ async function scanControls(
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
 
     const where: Prisma.ControlWhereInput = {
-        deletedAt: null,
-        applicability: 'APPLICABLE',
+        // Shared with the calendar's `loadControlEvents`. The two surfaces
+        // report on the same rows and used to judge them differently — the
+        // calendar called an IMPLEMENTED control's lapsed test `done` while
+        // this scan emailed it as overdue. See `domain/control-test-due.ts`.
+        ...CONTROL_TEST_ELIGIBILITY,
         nextDueAt: { not: null, lte: horizon },
     };
     if (tenantId) where.tenantId = tenantId;
