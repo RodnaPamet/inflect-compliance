@@ -602,10 +602,18 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                     open={isEditOpen}
                     setOpen={setIsEditOpen}
                     audit={selected}
+                    // The same PUT the checklist and status writes go through.
+                    // The modal owns the form; the request stays here, where it
+                    // is already keyed on the audits list — so the row the edit
+                    // changed revalidates without the modal knowing whether the
+                    // live key is `/audits` or the cycle-scoped variant.
+                    save={(body) => auditWrite.trigger({ auditId: selected.id, body })}
                     onSaved={() => {
-                        // The title can change, so the list row is stale too.
+                        // Only the detail pane needs a nudge: it is component
+                        // state, not a cache entry. The LIST revalidation is the
+                        // mutation's own, so calling `auditsQuery.mutate()` here
+                        // would just be a second request for the same key.
                         loadAudit(selected.id);
-                        auditsQuery.mutate();
                     }}
                 />
             )}

@@ -16,6 +16,8 @@
  * hook would mean parameterising both ends of it for no gain.
  */
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -24,7 +26,6 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
-import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useToast } from '@/components/ui/hooks';
 
 export interface EditableAudit {
@@ -42,7 +43,19 @@ export interface EditAuditModalProps {
     open: boolean;
     setOpen: Dispatch<SetStateAction<boolean>>;
     audit: EditableAudit;
-    /** Called after a successful PUT so the caller can refresh its panes. */
+    /**
+     * Performs the write. The modal owns the FORM — seeding, validation, the
+     * toasts, closing — but not the request: `PUT /audits/{id}` is already
+     * modelled by the caller as its `auditWrite` mutation, keyed on the audits
+     * list so a save revalidates the row that changed. A second hand-rolled
+     * copy of the same request here is how two call sites to one endpoint
+     * drift apart on error handling and cache invalidation.
+     *
+     * Must REJECT on failure — the modal renders its error toast from the
+     * rejection and deliberately stays open with the form intact.
+     */
+    save: (body: Record<string, unknown>) => Promise<unknown>;
+    /** Called after a successful save so the caller can refresh its panes. */
     onSaved: () => void;
 }
 
@@ -52,9 +65,8 @@ function toYMD(d: Date): string {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export function EditAuditModal({ open, setOpen, audit, onSaved }: EditAuditModalProps) {
+export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAuditModalProps) {
     const tx = useTranslations('audits');
-    const apiUrl = useTenantApiUrl();
     const toast = useToast();
 
     const [title, setTitle] = useState(audit.title);
@@ -88,71 +100,64 @@ export function EditAuditModal({ open, setOpen, audit, onSaved }: EditAuditModal
         () => ({ value: '', label: tx('newModal.noCycle') }),
         [tx],
     );
-    const [frameworks, setFrameworks] = useState<ComboboxOption[]>([noFramework]);
-    const [cycles, setCycles] = useState<ComboboxOption[]>([noCycle]);
+    // Both catalogues are shared cache entries, not private fetches: the audits
+    // hub already reads `/audits/cycles` and the cycles page already reads
+    // `/frameworks`, both through these same registry keys — so opening this
+    // modal costs no request at all when either is already warm.
+    //
+    // The null key preserves the old `if (!open) return`: SWR skips a null key
+    // entirely, so a closed modal fetches nothing.
+    //
+    // Both pickers still fail soft. A failed catalogue GET leaves `data`
+    // undefined and the options fall back to the lone placeholder, which keeps
+    // the current value selectable rather than blocking the whole edit —
+    // exactly what the old empty `catch` did.
+    const frameworksQuery = useTenantSWR<Array<{ key: string; name: string }>>(
+        open ? CACHE_KEYS.frameworks.list() : null,
+    );
+    const frameworkRows = frameworksQuery.data;
+    const frameworks = useMemo<ComboboxOption[]>(() => {
+        if (!Array.isArray(frameworkRows)) return [noFramework];
+        return [noFramework, ...frameworkRows.map((f) => ({ value: f.key, label: f.name }))];
+    }, [frameworkRows, noFramework]);
 
-    // Both pickers fail soft: a failed catalogue GET leaves the current value
-    // selectable rather than blocking the whole edit.
-    useEffect(() => {
-        if (!open) return;
-        let cancelled = false;
-        void (async () => {
-            try {
-                const res = await fetch(apiUrl('/frameworks'));
-                if (!res.ok || cancelled) return;
-                const rows = (await res.json()) as Array<{ key: string; name: string }>;
-                if (cancelled) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
-                setFrameworks([noFramework, ...rows.map((f) => ({ value: f.key, label: f.name }))]);
-            } catch { /* fail-soft */ }
-        })();
-        return () => { cancelled = true; };
-    }, [open, apiUrl, noFramework]);
-
-    useEffect(() => {
-        if (!open) return;
-        let cancelled = false;
-        void (async () => {
-            try {
-                const res = await fetch(apiUrl('/audits/cycles'));
-                if (!res.ok || cancelled) return;
-                const rows = (await res.json()) as Array<{ id: string; name: string; frameworkKey: string }>;
-                if (cancelled) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
-                setCycles([noCycle, ...rows.map((c) => ({ value: c.id, label: `${c.name} · ${c.frameworkKey}` }))]);
-            } catch { /* fail-soft */ }
-        })();
-        return () => { cancelled = true; };
-    }, [open, apiUrl, noCycle]);
+    const cyclesQuery = useTenantSWR<Array<{ id: string; name: string; frameworkKey: string }>>(
+        open ? CACHE_KEYS.audits.cycles() : null,
+    );
+    const cycleRows = cyclesQuery.data;
+    const cycles = useMemo<ComboboxOption[]>(() => {
+        if (!Array.isArray(cycleRows)) return [noCycle];
+        return [
+            noCycle,
+            ...cycleRows.map((c) => ({ value: c.id, label: `${c.name} · ${c.frameworkKey}` })),
+        ];
+    }, [cycleRows, noCycle]);
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (saving || !title.trim()) return;
         setSaving(true);
         try {
-            const res = await fetch(apiUrl(`/audits/${audit.id}`), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: title.trim(),
-                    scope,
-                    criteria: criteria.trim() || null,
-                    departments: departments.trim() || null,
-                    // `null` clears the column; a date sends the `YYYY-MM-DD`
-                    // wire format the schema accepts.
-                    schedule: schedule ? toYMD(schedule) : null,
-                    frameworkKey: frameworkKey.trim() || null,
-                    auditCycleId: auditCycleId.trim() || null,
-                }),
+            await save({
+                title: title.trim(),
+                scope,
+                criteria: criteria.trim() || null,
+                departments: departments.trim() || null,
+                // `null` clears the column; a date sends the `YYYY-MM-DD`
+                // wire format the schema accepts.
+                schedule: schedule ? toYMD(schedule) : null,
+                frameworkKey: frameworkKey.trim() || null,
+                auditCycleId: auditCycleId.trim() || null,
             });
-            if (!res.ok) {
-                toast.error(tx('editModal.saveFailed'));
-                return;
-            }
             toast.success(tx('editModal.saved'));
             setOpen(false);
             onSaved();
         } catch {
+            // One catch for both failure shapes now. `save` rejects on a non-2xx
+            // AND on a request that never landed, where the old code had a
+            // `return` for the former and this `catch` for the latter — two
+            // paths to the same toast. The modal stays open with the form
+            // intact either way, so the user can retry without retyping.
             toast.error(tx('editModal.saveFailed'));
         } finally {
             setSaving(false);
