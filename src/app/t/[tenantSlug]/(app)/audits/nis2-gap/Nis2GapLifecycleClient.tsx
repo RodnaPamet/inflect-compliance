@@ -92,7 +92,22 @@ async function send(
     return res.json().catch(() => null);
 }
 
-export function Nis2GapLifecycleClient({ tenantSlug, canWrite }: { tenantSlug: string; canWrite: boolean }) {
+export function Nis2GapLifecycleClient({
+    tenantSlug,
+    canWrite,
+    canManage,
+}: {
+    tenantSlug: string;
+    canWrite: boolean;
+    /**
+     * `admin.manage` — the delegation capability, deliberately separate from
+     * `canWrite`. Assign / dispatch / finalize are all admin-gated at the API,
+     * so an EDITOR (canWrite true, admin.manage false) must not be shown that
+     * surface: every control on it 403s, and merely rendering it fires a denied
+     * read that writes an immutable AUTHZ_DENIED row.
+     */
+    canManage: boolean;
+}) {
     const tx = useTranslations('audits');
     const locale = useLocale();
     const lang = locale === 'de' ? 'de' : 'en';
@@ -368,8 +383,18 @@ export function Nis2GapLifecycleClient({ tenantSlug, canWrite }: { tenantSlug: s
                         silently hide the panel on a baseline (which reads as the
                         feature vanishing), explain WHY and offer the standalone
                         re-assessment that CAN be delegated. STANDALONE runs get the
-                        real panel. */}
-                    {canWrite && data.history[0]?.status !== 'COMPLETED' && (
+                        real panel.
+
+                        Gated on `canManage`, NOT `canWrite`: every endpoint in
+                        this block is `requirePermission('admin.manage')`, so for
+                        an EDITOR the panel rendered a control surface where each
+                        action 403s and the mount-time read wrote a denied-access
+                        audit row. The baseline CTA goes with it — its whole
+                        purpose is to reach delegation. EDITORs keep the
+                        "Re-run assessment" action in the header, which is
+                        separately gated on `canWrite`, so no capability they
+                        actually had is removed here. */}
+                    {canManage && data.history[0]?.status !== 'COMPLETED' && (
                         data.history[0]?.source === 'STANDALONE' ? (
                             <Nis2AssignmentsPanel
                                 tenantSlug={tenantSlug}
@@ -493,19 +518,20 @@ function Nis2AssignmentsPanel({
     // A failed read is non-fatal, as it was before: the panel still renders its
     // five roles with no status badges, so the owner can still dispatch.
     //
-    // `shouldRetryOnError: false` because the expected failure here is a 403,
-    // and an authorization denial is not a transient condition to retry into.
-    // This panel is rendered on `canWrite`, but `GET /gap-assessments/{id}/
-    // assignments` is gated on `admin.manage` — so an EDITOR opening this page
-    // is denied. The old one-shot loader swallowed a single 403 per visit; the
-    // platform hook's default `errorRetryCount: 2` would turn that into three,
-    // and every one of them writes an immutable AUTHZ_DENIED row (Epic C.1).
-    // Focus revalidation stays ON: for the admins this panel is actually FOR,
-    // respondent status changes out-of-band, which is precisely what it is for.
+    // `shouldRetryOnError: false` because the failure this read can still hit
+    // is a 403, and an authorization denial is not a transient condition to
+    // retry into — retrying it only multiplies the immutable AUTHZ_DENIED rows
+    // (Epic C.1) it writes.
     //
-    // The mis-gating itself (a panel whose every control 403s for an EDITOR)
-    // predates this migration and is not fixed here — see the implementation
-    // note's Remaining section.
+    // The caller now gates this panel on `admin.manage`, which is the same
+    // permission `GET /gap-assessments/{id}/assignments` requires, so the
+    // routine denial that motivated this option is gone. It is kept as the
+    // backstop for the case the gate cannot cover: a permission revoked while
+    // the page is open, where the next focus revalidation is denied against a
+    // prop that is still `true`.
+    //
+    // Focus revalidation stays ON: for the admins this panel is for, respondent
+    // status changes out-of-band, which is precisely what it exists to catch.
     const assignmentsQuery = useTenantSWR<AssignmentRow[]>(assignmentsKey, {
         shouldRetryOnError: false,
     });

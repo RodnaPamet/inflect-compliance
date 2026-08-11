@@ -20,5 +20,16 @@ export default async function Nis2GapPage({
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
     const canWrite = ctx.permissions.canWrite;
-    return <Nis2GapLifecycleClient tenantSlug={tenantSlug} canWrite={canWrite} />;
+    // The delegation panel is a SEPARATE capability from writing to the page.
+    // Every endpoint behind it — list assignments, dispatch, finalize — is
+    // `requirePermission('admin.manage')`, so it needs its own flag rather than
+    // riding on `canWrite` (true for EDITOR, for whom `admin.manage` is false).
+    const canManage = ctx.appPermissions.admin.manage;
+    return (
+        <Nis2GapLifecycleClient
+            tenantSlug={tenantSlug}
+            canWrite={canWrite}
+            canManage={canManage}
+        />
+    );
 }
