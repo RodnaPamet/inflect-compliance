@@ -199,7 +199,14 @@ async function fetchCandidates(
             url = `${base}/vendors${qs}`;
             break;
         case 'ISSUE':
-            url = `${base}/issues${qs}`;
+            // `ISSUE` is the link-graph's name for a Task. The `/issues` API
+            // was a parallel surface over the same `Task` rows and has been
+            // retired, so the picker reads the canonical one. The entity-type
+            // token stays `ISSUE` because it is persisted on existing
+            // `EntityLink` rows — and `LINK_ENTITY_HREF.ISSUE` in the vendor
+            // detail page already resolved to `/tasks/${id}`, so the picker
+            // was the only half still pointing at the old path.
+            url = `${base}/tasks${qs}`;
             break;
         case 'POLICY':
             url = `${base}/policies${qs}`;

@@ -54,6 +54,15 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/admin',
         why: 'Tenant admin surface — RBAC management, SCIM, integrations, key rotation.',
     },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/issues',
+        why:
+            'The surviving evidence-bundle routes. The rest of `/issues` was a ' +
+            'parallel write API over the same Task rows with no requirePermission ' +
+            'at all — deleted 2026-08-11. These three had no `/tasks` twin, so they ' +
+            'kept the path and gained the gate; the root is in scope so a future ' +
+            'route added here cannot arrive ungated the way the others did.',
+    },
     // Epic D.3 — billing, SSO, security session-management bulk
     // endpoints, and the MFA-policy PUT all moved off legacy
     // `requireAdminCtx` to `requirePermission(...)`. Their

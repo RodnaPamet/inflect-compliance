@@ -24,9 +24,12 @@ describe('Evidence Bundle Integration', () => {
             expect(existsSync(join(apiBase, '[issueId]/bundles/[bundleId]/items/route.ts'))).toBe(true);
         });
 
-        it('issues-by-control route exists', () => {
-            expect(existsSync(join(apiBase, '../issues/by-control/[controlId]/route.ts'))).toBe(true);
-        });
+        // `issues/by-control` was deleted with the rest of the parallel
+        // `/issues` write surface. It had no `/tasks` twin, but it also had no
+        // caller: the only reference in the repo was this assertion, and the
+        // control detail page reads linked tasks through
+        // `/tasks?linkedEntityType=…` (LinkedTasksPanel). Asserting a route
+        // exists is not the same as asserting anything uses it.
     });
 
     describe('Bundle schemas enforce validation', () => {

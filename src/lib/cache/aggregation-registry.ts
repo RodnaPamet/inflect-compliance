@@ -90,12 +90,6 @@ export const AGGREGATIONS = {
         ttlSeconds: 60,
         scope: 'tenant',
     },
-    'issues-metrics': {
-        // Deprecated alias of tasks/metrics — same compute (getTaskMetrics), same dependency.
-        dependsOn: ['task'],
-        ttlSeconds: 60,
-        scope: 'tenant',
-    },
     'audits-readiness-overview': {
         // getReadinessOverview aggregates control coverage + evidence + audit cycles/packs.
         dependsOn: ['control', 'evidence', 'audit'],
