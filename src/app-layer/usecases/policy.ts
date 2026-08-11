@@ -358,11 +358,67 @@ export async function createPolicyFromTemplate(ctx: RequestContext, templateId: 
 }
 
 /**
+ * The single implementation of "this policy was reviewed". Stamps
+ * `lastReviewedAt = now` and recomputes `nextReviewAt = now +
+ * reviewFrequencyDays`. A policy with NO cadence keeps whatever
+ * `nextReviewAt` it already has — a manually-set review date must survive
+ * a review, not be wiped. Clearing it would drop the policy out of
+ * `processOverdueReminders`' `nextReviewAt: { not: null }` predicate
+ * (`jobs/policyReviewReminder.ts`) permanently: never reminded again.
+ *
+ * Transaction-bound so callers that are ALREADY inside a tenant
+ * transaction (the task→source reconciler) can share it without nesting a
+ * second `runInTenantContext`. `trigger` is the ONLY sanctioned point of
+ * variation between call sites — it selects the audit wording. Any future
+ * caller that needs different *behaviour* adds a parameter here; it does
+ * NOT fork a second copy of the cadence rule.
+ *
+ * Authorization + policy loading are the caller's job.
+ */
+export async function applyPolicyReviewed(
+    db: PrismaTx,
+    ctx: RequestContext,
+    policy: { id: string; reviewFrequencyDays: number | null; nextReviewAt: Date | null },
+    opts: { trigger: 'manual' | 'reminder_task_close'; taskId?: string },
+): Promise<{ lastReviewedAt: Date; nextReviewAt: Date | null }> {
+    const now = new Date();
+    // With a cadence, recompute the next review date. Without one,
+    // PRESERVE any explicitly-set nextReviewAt rather than clearing it.
+    const nextReviewAt = policy.reviewFrequencyDays
+        ? new Date(now.getTime() + policy.reviewFrequencyDays * 86_400_000)
+        : policy.nextReviewAt;
+
+    await PolicyRepository.updateMetadata(db, ctx, policy.id, {
+        lastReviewedAt: now,
+        nextReviewAt,
+    });
+
+    const fromTask = opts.trigger === 'reminder_task_close';
+    await logEvent(db, ctx, {
+        action: 'POLICY_REVIEWED',
+        entityType: 'Policy',
+        entityId: policy.id,
+        details: `${fromTask ? 'Policy review cycle advanced on reminder-task close' : 'Policy reviewed'}${nextReviewAt ? `; next review ${nextReviewAt.toISOString().slice(0, 10)}` : ''}`,
+        detailsJson: {
+            category: 'status_change',
+            entityName: 'Policy',
+            operation: 'reviewed',
+            after: {
+                lastReviewedAt: now.toISOString(),
+                nextReviewAt: nextReviewAt?.toISOString() ?? null,
+            },
+            summary: fromTask ? 'Policy marked reviewed on reminder-task close' : 'Policy marked reviewed',
+        },
+        ...(opts.taskId ? { metadata: { taskId: opts.taskId, policyId: policy.id } } : {}),
+    });
+
+    return { lastReviewedAt: now, nextReviewAt };
+}
+
+/**
  * Mark a policy as reviewed (periodic re-validation — distinct from
- * PolicyApproval's initial sign-off). Stamps lastReviewedAt = now and
- * recomputes nextReviewAt = now + reviewFrequencyDays. A policy with no
- * cadence keeps whatever nextReviewAt it already has — a manually-set
- * review date must survive a "mark reviewed" click, not be wiped. Audited.
+ * PolicyApproval's initial sign-off). Thin authorization + loading wrapper
+ * over {@link applyPolicyReviewed}, which owns the cadence rule. Audited.
  */
 export async function markPolicyReviewed(ctx: RequestContext, policyId: string) {
     assertCanWritePolicies(ctx);
@@ -371,34 +427,7 @@ export async function markPolicyReviewed(ctx: RequestContext, policyId: string) 
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
 
-        const now = new Date();
-        // With a cadence, recompute the next review date. Without one,
-        // PRESERVE any explicitly-set nextReviewAt rather than clearing it.
-        const nextReviewAt = policy.reviewFrequencyDays
-            ? new Date(now.getTime() + policy.reviewFrequencyDays * 86_400_000)
-            : policy.nextReviewAt;
-
-        await PolicyRepository.updateMetadata(db, ctx, policyId, {
-            lastReviewedAt: now,
-            nextReviewAt,
-        });
-
-        await logEvent(db, ctx, {
-            action: 'POLICY_REVIEWED',
-            entityType: 'Policy',
-            entityId: policyId,
-            details: `Policy reviewed${nextReviewAt ? `; next review ${nextReviewAt.toISOString().slice(0, 10)}` : ''}`,
-            detailsJson: {
-                category: 'status_change',
-                entityName: 'Policy',
-                operation: 'reviewed',
-                after: {
-                    lastReviewedAt: now.toISOString(),
-                    nextReviewAt: nextReviewAt?.toISOString() ?? null,
-                },
-                summary: `Policy marked reviewed`,
-            },
-        });
+        await applyPolicyReviewed(db, ctx, policy, { trigger: 'manual' });
 
         return PolicyRepository.getById(db, ctx, policyId);
     });

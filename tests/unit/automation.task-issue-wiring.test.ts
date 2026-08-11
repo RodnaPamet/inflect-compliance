@@ -1,11 +1,18 @@
 /**
- * Unit Test: Task + Issue usecases publish automation events.
+ * Unit Test: the Task usecase publishes automation events.
  *
- * `task.ts` / `issue.ts` are high-value automation sources (incident
- * detection, SLA escalation, cross-entity auto-close). This test
- * proves the emit sites added alongside their existing audit-log
- * writes fire with the right event + payload, without booting the
- * rest of the app or a real DB.
+ * `task.ts` is a high-value automation source (incident detection,
+ * SLA escalation, cross-entity auto-close). This test proves the emit
+ * sites added alongside its existing audit-log writes fire with the
+ * right event + payload, without booting the rest of the app or a
+ * real DB.
+ *
+ * The ISSUE_CREATED / ISSUE_STATUS_CHANGED emitters that used to be
+ * asserted here lived in `usecases/issue.ts`, a parallel work-item
+ * surface whose `/issues` routes were retired. With no HTTP entry
+ * point the emitters were unreachable, so they were deleted along
+ * with the rest of that surface; the events remain declared for the
+ * rule builder but nothing publishes them today.
  */
 
 jest.mock('@/lib/audit', () => ({
@@ -61,7 +68,6 @@ jest.mock('@/app-layer/notifications/enqueue', () => ({
 }));
 
 import { createTask, setTaskStatus } from '@/app-layer/usecases/task';
-import { createIssue, setIssueStatus } from '@/app-layer/usecases/issue';
 import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
 import {
     getAutomationBus,
@@ -88,7 +94,7 @@ function makeCtx(): RequestContext {
     };
 }
 
-describe('Task + Issue usecase emission', () => {
+describe('Task usecase emission', () => {
     beforeEach(() => {
         resetAutomationBus();
         jest.clearAllMocks();
@@ -167,68 +173,6 @@ describe('Task + Issue usecase emission', () => {
             expect(evt.data.fromStatus).toBe('RESOLVED');
             expect(evt.data.toStatus).toBe('CLOSED');
             expect(evt.data.resolution).toBe('fixed in rev 42');
-        }
-    });
-
-    test('createIssue publishes ISSUE_CREATED with ticket metadata', async () => {
-        (WorkItemRepository.create as jest.Mock).mockResolvedValue({
-            id: 'issue-1',
-            key: 'ISS-7',
-            title: 'Backup failure',
-            severity: 'HIGH',
-            status: 'OPEN',
-            assigneeUserId: null,
-        });
-
-        const captured: AutomationDomainEvent[] = [];
-        getAutomationBus().subscribe('ISSUE_CREATED', (e) => {
-            captured.push(e);
-        });
-
-        await createIssue(makeCtx(), {
-            title: 'Backup failure',
-            type: 'INCIDENT',
-            severity: 'HIGH',
-        });
-
-        expect(captured).toHaveLength(1);
-        const evt = captured[0];
-        expect(evt.stableKey).toBe('issue-1');
-        if (evt.event === 'ISSUE_CREATED') {
-            expect(evt.data.key).toBe('ISS-7');
-            expect(evt.data.severity).toBe('HIGH');
-            expect(evt.data.status).toBe('OPEN');
-        }
-    });
-
-    test('setIssueStatus publishes ISSUE_STATUS_CHANGED with from→to', async () => {
-        (WorkItemRepository.getById as jest.Mock).mockResolvedValue({
-            id: 'issue-1',
-            status: 'OPEN',
-        });
-        (WorkItemRepository.setStatus as jest.Mock).mockResolvedValue({
-            id: 'issue-1',
-            status: 'RESOLVED',
-        });
-
-        const captured: AutomationDomainEvent[] = [];
-        getAutomationBus().subscribe('ISSUE_STATUS_CHANGED', (e) => {
-            captured.push(e);
-        });
-
-        // S8 — RESOLVED is a terminal status that requires a non-
-        // empty resolution. OPEN → RESOLVED is the legal short-
-        // circuit transition ("fixed during triage").
-        await setIssueStatus(makeCtx(), 'issue-1', 'RESOLVED', 'backup restored');
-
-        expect(captured).toHaveLength(1);
-        const evt = captured[0];
-        expect(evt.stableKey).toBe('issue-1:OPEN:RESOLVED');
-        if (evt.event === 'ISSUE_STATUS_CHANGED') {
-            expect(evt.data).toEqual({
-                fromStatus: 'OPEN',
-                toStatus: 'RESOLVED',
-            });
         }
     });
 });
