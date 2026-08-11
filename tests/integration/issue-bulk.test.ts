@@ -8,27 +8,15 @@ import { join } from 'path';
 describe('Issue Bulk & Metrics Routes', () => {
     const apiBase = join(process.cwd(), 'src/app/api/t/[tenantSlug]/issues');
 
-    describe('Route modules exist', () => {
-        it('metrics route exists', () => {
-            expect(existsSync(join(apiBase, 'metrics/route.ts'))).toBe(true);
-        });
-
-        it('bulk/assign route exists', () => {
-            expect(existsSync(join(apiBase, 'bulk/assign/route.ts'))).toBe(true);
-        });
-
-        it('bulk/status route exists', () => {
-            expect(existsSync(join(apiBase, 'bulk/status/route.ts'))).toBe(true);
-        });
-
-        it('bulk/due route exists', () => {
-            expect(existsSync(join(apiBase, 'bulk/due/route.ts'))).toBe(true);
-        });
-
-        it('activity route exists', () => {
-            expect(existsSync(join(apiBase, '../issues/[issueId]/activity/route.ts'))).toBe(true);
-        });
-    });
+    // The "Route modules exist" block was deleted with the routes it asserted.
+    // Those five `existsSync` checks certified that a FILE was on disk — not
+    // that anything called it, not that it was gated, not that it behaved like
+    // its `/tasks` twin. All five were green the entire time
+    // `POST /issues/bulk/status` bypassed the four-eyes reviewer gate, which is
+    // the clearest possible statement of what they were worth.
+    //
+    // The schema assertions below are kept: `BulkAssignSchema` and friends are
+    // still exported and still validate the shared `/tasks` bulk bodies.
 
     describe('Bulk schemas enforce tenant isolation via Zod', () => {
         // Schema-level tests ensuring issueIds are required and capped
