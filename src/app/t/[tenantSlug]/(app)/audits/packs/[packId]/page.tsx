@@ -129,7 +129,18 @@ export default function PackDetailPage() {
     const packQuery = useTenantSWR<PackDetail | null>(CACHE_KEYS.audits.pack(packId));
     const pack = packQuery.data ?? null;
     const loading = packQuery.isLoading;
-    const loadError = Boolean(packQuery.error);
+    // The third state, added after #1861: a failed BACKGROUND revalidation must
+    // not tear down a page that is still rendering good data. `useTenantSWR`
+    // revalidates on focus and on reconnect, and SWR keeps the cached value
+    // when one fails — so a bare `Boolean(error)` swaps a fully-loaded pack for
+    // the retry screen when the operator tabs away and back across a blip.
+    //
+    // The guard is `data === undefined`, NOT `!data`. This endpoint answers a
+    // genuine 404 with `null`, which is a SUCCESSFUL read (see the comment
+    // above) — `!data` would treat it as "nothing loaded" and let a later blip
+    // turn a legitimate not-found into a retry screen. `undefined` means no
+    // response has ever landed, which is the case the error branch is for.
+    const loadError = Boolean(packQuery.error) && packQuery.data === undefined;
 
     // Both sub-feeds are supplementary: a failure leaves the pack usable, so
     // neither gates the page.
