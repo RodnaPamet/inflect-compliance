@@ -21,6 +21,12 @@ const mockLogger = {
 };
 
 const mockOutboxCreate = jest.fn();
+// Kept wired but no longer driven by any fixture: `resolveRecipients` used to
+// resolve owners straight off `User`, with no tenant and no membership check,
+// which is how offboarded users kept receiving a tenant's deadline digests.
+// Owned recipients now come from `tenantMembership.findMany` below. The stub
+// stays so an accidental return to `prisma.user.findMany` resolves to [] and
+// fails the assertions loudly rather than throwing "not a function".
 const mockUserFindMany = jest.fn().mockResolvedValue([]);
 const mockMembershipFindMany = jest.fn().mockResolvedValue([]);
 const mockTenantFindUnique = jest.fn().mockResolvedValue({ slug: 'acme' });
@@ -84,8 +90,8 @@ describe('Digest dispatch: tenant notification eligibility', () => {
         // Settings row: disabled
         mockSettingsFindUnique.mockResolvedValue({ enabled: false });
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-disabled', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
         ]);
 
         const items: DueItem[] = [
@@ -109,8 +115,8 @@ describe('Digest dispatch: tenant notification eligibility', () => {
         // Settings row: enabled
         mockSettingsFindUnique.mockResolvedValue({ enabled: true });
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-enabled', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
         ]);
 
         const items: DueItem[] = [
@@ -131,8 +137,8 @@ describe('Digest dispatch: tenant notification eligibility', () => {
         // No settings row = enabled by default
         mockSettingsFindUnique.mockResolvedValue(null);
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'alice@acme.com', name: 'Alice' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-new', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
         ]);
 
         const items: DueItem[] = [
@@ -162,9 +168,9 @@ describe('Digest dispatch: mixed-tenant eligibility', () => {
             return Promise.resolve(null); // default enabled
         });
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-a', email: 'alice@a.com', name: 'Alice' },
-            { id: 'user-b', email: 'bob@b.com', name: 'Bob' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-a', user: { id: 'user-a', email: 'alice@a.com', name: 'Alice' } },
+            { tenantId: 'tenant-b', user: { id: 'user-b', email: 'bob@b.com', name: 'Bob' } },
         ]);
 
         const items: DueItem[] = [
@@ -196,8 +202,8 @@ describe('Digest dispatch: mixed-tenant eligibility', () => {
             return Promise.resolve(null);
         });
 
-        mockUserFindMany.mockResolvedValue([
-            { id: 'user-1', email: 'user@on.com', name: 'User' },
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-on', user: { id: 'user-1', email: 'user@on.com', name: 'User' } },
         ]);
 
         const items: DueItem[] = [

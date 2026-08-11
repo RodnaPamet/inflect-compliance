@@ -57,6 +57,10 @@ import {
     evidenceExpiryScopeWhere,
     EVIDENCE_REVIEWED_STATUS,
 } from '../domain/evidence-expiry';
+import {
+    CONTROL_TEST_ELIGIBILITY,
+    isControlTestSatisfied,
+} from '../domain/control-test-due';
 import { effectiveDueAt } from './due-planning';
 import { urgencyFromDaysUntil, DAY_MS } from '@/lib/urgency';
 import { hasPermission, type PermissionKey } from '@/lib/security/permission-middleware';
@@ -486,6 +490,7 @@ async function loadPolicyEvents(
             title: true,
             nextReviewAt: true,
             status: true,
+            ownerUserId: true,
         },
         orderBy: { nextReviewAt: 'asc' },
         take: limit,
@@ -506,6 +511,7 @@ async function loadPolicyEvents(
                 entityType: 'POLICY',
                 entityId: r.id,
                 href: tenantHrefFromCtx(ctx, `/policies/${r.id}`),
+                ownerUserId: r.ownerUserId ?? undefined,
             };
         });
     return sourceResult(events, rows.length, limit);
@@ -626,7 +632,11 @@ async function loadVendorDocumentEvents(
             type: true,
             validTo: true,
             vendorId: true,
-            vendor: { select: { name: true } },
+            // A document row's only user column is `uploadedByUserId`, which
+            // records who filed it, not who is accountable for renewing it.
+            // Inherit the vendor's owner — the same person `vendor-review` and
+            // `vendor-renewal` already route to.
+            vendor: { select: { name: true, ownerUserId: true } },
         },
         orderBy: { validTo: 'asc' },
         take: limit,
@@ -652,6 +662,7 @@ async function loadVendorDocumentEvents(
                     ctx,
                     `/vendors/${r.vendorId}?tab=documents`,
                 ),
+                ownerUserId: r.vendor.ownerUserId ?? undefined,
             };
         });
     return sourceResult(events, rows.length, limit);
@@ -674,6 +685,10 @@ async function loadAuditCycleEvents(
         periodStartAt: true,
         periodEndAt: true,
         status: true,
+        // A cycle has no owner column; `createdByUserId` (non-null) is the
+        // audit lead who scheduled it, and is what `calendar-deadlines.ts`
+        // already routes cycle reminders to.
+        createdByUserId: true,
     } as const;
     // Cycles are ranges intersecting the window three ways: starting in it,
     // ending in it, or straddling it entirely. Query each and union so a
@@ -742,6 +757,7 @@ async function loadAuditCycleEvents(
                 entityId: r.id,
                 href: tenantHrefFromCtx(ctx, `/audits/cycles/${r.id}`),
                 detail: r.frameworkKey,
+                ownerUserId: r.createdByUserId,
             };
         });
     return { events, capped };
@@ -757,15 +773,18 @@ async function loadControlEvents(
     const rows = await db.control.findMany({
         where: {
             tenantId: ctx.tenantId,
-            deletedAt: null,
-            applicability: 'APPLICABLE',
+            // Shared with `deadline-monitor.ts::scanControls` so the two
+            // surfaces cannot drift on WHICH rows carry a test deadline,
+            // having already drifted on how they judge them.
+            ...CONTROL_TEST_ELIGIBILITY,
             nextDueAt: { not: null, gte: range.from, lte: range.to },
         },
         select: {
             id: true,
             name: true,
             nextDueAt: true,
-            status: true,
+            // `status` is deliberately NOT selected: it used to drive `isDone`
+            // here, which is the defect `control-test-due.ts` exists to state.
             ownerUserId: true,
         },
         orderBy: { nextDueAt: 'asc' },
@@ -775,7 +794,6 @@ async function loadControlEvents(
         .filter((r) => r.nextDueAt)
         .map((r): CalendarEvent => {
             const date = r.nextDueAt as Date;
-            const isDone = r.status === 'IMPLEMENTED';
             return {
                 id: `CONTROL:${r.id}:control-review`,
                 type: 'control-review',
@@ -783,7 +801,14 @@ async function loadControlEvents(
                 title: `Control review: ${r.name}`,
                 entityName: r.name,
                 date: date.toISOString(),
-                status: classifyStatus(date, now, isDone),
+                // `nextDueAt` is the next TEST due date, and no ControlStatus
+                // satisfies it — an IMPLEMENTED control is precisely the one
+                // that must be tested on cadence. This used to pass
+                // `status === 'IMPLEMENTED'`, which short-circuited
+                // `classifyStatus` before any date comparison and rendered a
+                // lapsed test as `done` while deadline-monitor emailed the very
+                // same row as overdue.
+                status: classifyStatus(date, now, isControlTestSatisfied()),
                 entityType: 'CONTROL',
                 entityId: r.id,
                 href: tenantHrefFromCtx(ctx, `/controls/${r.id}`),
@@ -807,12 +832,15 @@ async function loadTestPlanEvents(
     // `nextDueAt` alone renders cron-scheduled plans permanently overdue.
     // Fetch each clock's nearest-`limit` (see `fetchNearest`), then emit at
     // the effective (earliest) date if that date falls in the window.
+    // One shared `select` for both sub-queries — forking it would let the two
+    // clocks emit different fields for the same plan.
     const select = {
         id: true,
         name: true,
         nextDueAt: true,
         nextRunAt: true,
         controlId: true,
+        ownerUserId: true,
         control: { select: { name: true } },
     } as const;
     const { rows, capped } = await fetchNearest(
@@ -861,6 +889,7 @@ async function loadTestPlanEvents(
             entityId: r.id,
             href: tenantHrefFromCtx(ctx, `/controls/${r.controlId}/tests/${r.id}`),
             detail: r.control.name,
+            ownerUserId: r.ownerUserId ?? undefined,
         });
     }
     return { events, capped };
@@ -926,6 +955,7 @@ async function loadRiskEvents(
         nextReviewAt: true,
         targetDate: true,
         status: true,
+        ownerUserId: true,
     } as const;
     // Two date columns — fetch each column's nearest-`limit` and union so a
     // risk whose only in-range date is the mitigation target isn't truncated
@@ -974,6 +1004,7 @@ async function loadRiskEvents(
                 entityType: 'RISK',
                 entityId: r.id,
                 href: tenantHrefFromCtx(ctx, `/risks/${r.id}`),
+                ownerUserId: r.ownerUserId ?? undefined,
             });
         }
         if (
@@ -996,6 +1027,7 @@ async function loadRiskEvents(
                 // where risk-review lands — deep-link so the four risk event
                 // types don't all collapse to the same destination.
                 href: tenantHrefFromCtx(ctx, `/risks/${r.id}?tab=assessment`),
+                ownerUserId: r.ownerUserId ?? undefined,
             });
         }
     }
@@ -1019,7 +1051,9 @@ async function loadFindingEvents(
             title: true,
             dueDate: true,
             status: true,
-            owner: true,
+            // `assigneeUserId`, NOT the legacy free-text `owner`. See the emit
+            // below — this selected `owner` and published it as `ownerUserId`.
+            assigneeUserId: true,
         },
         orderBy: { dueDate: 'asc' },
         take: limit,
@@ -1042,7 +1076,17 @@ async function loadFindingEvents(
                 // Findings have no `/findings/[id]` detail route — land on the
                 // findings list rather than a 404.
                 href: tenantHrefFromCtx(ctx, `/findings`),
-                ownerUserId: r.owner ?? undefined,
+                // `Finding.owner` is a legacy free-text NAME — the schema says
+                // so in the comment directly above `assigneeUserId`, which
+                // supersedes it. Publishing it as `ownerUserId` meant a value
+                // that can never equal a cuid, so "My deadlines" matched no
+                // finding for anyone, including its actual assignee.
+                //
+                // Deliberately no `?? r.owner` fallback: a NAME in this field
+                // is strictly worse than absence. Absent, the digest routes the
+                // item to tenant admins; a name resolves to no user and the
+                // item is dropped as unroutable.
+                ownerUserId: r.assigneeUserId ?? undefined,
             };
         });
     return sourceResult(events, rows.length, limit);
@@ -1160,6 +1204,11 @@ async function loadTreatmentMilestoneEvents(
                 select: {
                     id: true,
                     riskId: true,
+                    // A milestone has no owner column of its own (only
+                    // `completedByUserId`, which is a receipt, not an
+                    // assignment). It inherits the plan's owner — the person
+                    // accountable for the treatment the milestone belongs to.
+                    ownerUserId: true,
                     risk: { select: { title: true } },
                 },
             },
@@ -1191,6 +1240,7 @@ async function loadTreatmentMilestoneEvents(
             // overview root — a milestone is a treatment-plan artefact.
             href: tenantHrefFromCtx(ctx, `/risks/${riskId}?tab=assessment`),
             detail: riskTitle,
+            ownerUserId: r.treatmentPlan?.ownerUserId,
         });
     }
     return sourceResult(events, rows.length, limit);
@@ -1220,6 +1270,8 @@ async function loadTreatmentPlanEvents(
             riskId: true,
             strategy: true,
             targetDate: true,
+            // NON-NULL on this model — every plan has an accountable owner.
+            ownerUserId: true,
             risk: { select: { title: true } },
         },
         orderBy: { targetDate: 'asc' },
@@ -1241,6 +1293,7 @@ async function loadTreatmentPlanEvents(
             // distinct from the risk-review destination.
             href: tenantHrefFromCtx(ctx, `/risks/${r.riskId}?tab=assessment`),
             detail: `${r.strategy} strategy`,
+            ownerUserId: r.ownerUserId,
         };
     });
     return sourceResult(events, rows.length, limit);
@@ -1383,7 +1436,10 @@ async function loadIncidentNotificationEvents(
             dueAt: true,
             status: true,
             incidentId: true,
-            incident: { select: { title: true } },
+            // A notification row carries no user column at all. It inherits the
+            // incident's commander — the person accountable for the incident
+            // whose regulatory clock this is.
+            incident: { select: { title: true, ownerUserId: true } },
         },
         orderBy: { dueAt: 'asc' },
         take: limit,
@@ -1408,6 +1464,7 @@ async function loadIncidentNotificationEvents(
                 ctx,
                 `/incidents/${r.incidentId}#incident-notification-${r.id}`,
             ),
+            ownerUserId: r.incident.ownerUserId ?? undefined,
         };
     });
     return sourceResult(events, rows.length, limit);
@@ -1438,6 +1495,12 @@ async function loadControlExceptionEvents(
             id: true,
             expiresAt: true,
             controlId: true,
+            // `riskAcceptedByUserId` (non-null) rather than `createdByUserId`
+            // or the parent control's owner: it names whoever accepted the risk
+            // this exception carries, and it is the PRIMARY recipient
+            // `exception-expiry-monitor` already emails about this same date.
+            // The calendar and the reminder now agree on whose deadline it is.
+            riskAcceptedByUserId: true,
             control: { select: { name: true } },
         },
         orderBy: { expiresAt: 'asc' },
@@ -1461,6 +1524,7 @@ async function loadControlExceptionEvents(
                 // (default tab) so an expiring exception lands on the exception,
                 // not a control root that shows no sign of it.
                 href: tenantHrefFromCtx(ctx, `/controls/${r.controlId}#control-exceptions`),
+                ownerUserId: r.riskAcceptedByUserId,
             };
         });
     return sourceResult(events, rows.length, limit);
@@ -1489,7 +1553,10 @@ async function loadVendorAssessmentEvents(
             nextReviewAt: true,
             status: true,
             vendorId: true,
-            vendor: { select: { name: true } },
+            // The assessment's own user columns are workflow receipts
+            // (requestedBy / sentBy / reviewedBy / decidedBy / closedBy).
+            // Accountability for redoing it sits with the vendor's owner.
+            vendor: { select: { name: true, ownerUserId: true } },
         },
         orderBy: { nextReviewAt: 'asc' },
         take: limit,
@@ -1512,6 +1579,7 @@ async function loadVendorAssessmentEvents(
                     ctx,
                     `/vendors/${r.vendorId}?tab=assessments`,
                 ),
+                ownerUserId: r.vendor.ownerUserId ?? undefined,
             };
         });
     return sourceResult(events, rows.length, limit);

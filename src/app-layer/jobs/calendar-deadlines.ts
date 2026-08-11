@@ -213,7 +213,8 @@ async function scanFindings(
             tenantId: true,
             title: true,
             dueDate: true,
-            owner: true,
+            // The FK, not the legacy free-text `owner` — see the emit below.
+            assigneeUserId: true,
         },
         orderBy: { dueDate: 'asc' },
         take: SCAN_CAP,
@@ -247,7 +248,18 @@ async function scanFindings(
             urgency: classified.urgency,
             dueDate: r.dueDate.toISOString(),
             daysRemaining: classified.daysRemaining,
-            ownerUserId: r.owner ?? undefined,
+            // `Finding.owner` is legacy free-text (a NAME); `assigneeUserId` is
+            // the FK that supersedes it. Publishing the name here made finding
+            // deadline notifications 100% unroutable — the dispatcher resolves
+            // `ownerUserId` against `User.id`, so every one failed and was
+            // counted as dropped rather than falling back to tenant admins.
+            //
+            // Consequence worth knowing at deploy: legacy findings that carry a
+            // name in `owner` and no assignee now resolve as UNOWNED, so they
+            // reach the admin fallback. Admins will see finding deadlines they
+            // were never emailed before. That is the intended routing — it was
+            // simply unreachable while the name occupied this field.
+            ownerUserId: r.assigneeUserId ?? undefined,
         });
     }
     return items;

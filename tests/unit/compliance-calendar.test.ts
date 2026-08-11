@@ -791,3 +791,189 @@ describe('per-source permission gating', () => {
         );
     });
 });
+
+// ─── Deadline ownership + the control test clock ─────────────────────
+//
+// Two defect classes, both of which made the product state something false
+// about a deadline:
+//
+//   - "My deadlines" (`CalendarClient` filters `ownerUserId === currentUserId`)
+//     silently dropped whole domains, because eleven of the seventeen loaders
+//     never selected an owner column that existed on the model. A source that
+//     emits no `ownerUserId` does not render as "unowned" — it vanishes.
+//   - the control loader called an IMPLEMENTED control's lapsed TEST `done`,
+//     while `deadline-monitor` emailed the very same row as overdue.
+//
+// These assert the emitted event, not the shape of the select, because a
+// select assertion passes while the value never reaches the DTO.
+
+describe('calendar event ownership', () => {
+    /** Pull one event of a given type out of a full aggregation. */
+    async function eventOfType(type: string) {
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const res = await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        return res.events.find((e) => e.type === type);
+    }
+
+    const IN_RANGE = new Date('2026-06-15T00:00:00Z');
+
+    it('a risk owner can see their risk review AND mitigation target', async () => {
+        mockRiskFindMany.mockResolvedValue([
+            {
+                id: 'risk-1',
+                title: 'Vendor concentration',
+                nextReviewAt: IN_RANGE,
+                targetDate: IN_RANGE,
+                status: 'OPEN',
+                ownerUserId: OWNER,
+            },
+        ]);
+        // Both of the risk loader's event types must carry it — the loader
+        // emits two events from one row and only one of them used to be
+        // considered when reasoning about this filter.
+        expect((await eventOfType('risk-review'))?.ownerUserId).toBe(OWNER);
+        expect((await eventOfType('risk-target'))?.ownerUserId).toBe(OWNER);
+    });
+
+    it('a treatment-plan target carries its owner', async () => {
+        mockTreatmentPlanFindMany.mockResolvedValue([
+            {
+                id: 'plan-1',
+                riskId: 'risk-1',
+                strategy: 'MITIGATE',
+                targetDate: IN_RANGE,
+                ownerUserId: OWNER,
+                risk: { title: 'Vendor concentration' },
+            },
+        ]);
+        expect((await eventOfType('treatment-plan-target'))?.ownerUserId).toBe(OWNER);
+    });
+
+    it('a milestone with no owner column of its own inherits the plan owner', async () => {
+        mockTreatmentMilestoneFindMany.mockResolvedValue([
+            {
+                id: 'ms-1',
+                title: 'Sign DPA',
+                dueDate: IN_RANGE,
+                completedAt: null,
+                sortOrder: 0,
+                treatmentPlan: {
+                    id: 'plan-1',
+                    riskId: 'risk-1',
+                    ownerUserId: OWNER,
+                    risk: { title: 'Vendor concentration' },
+                },
+            },
+        ]);
+        expect((await eventOfType('treatment-milestone-due'))?.ownerUserId).toBe(OWNER);
+    });
+
+    it('a policy review carries its owner', async () => {
+        mockPolicyFindMany.mockResolvedValue([
+            {
+                id: 'pol-1',
+                title: 'Access Control Policy',
+                nextReviewAt: IN_RANGE,
+                status: 'PUBLISHED',
+                ownerUserId: OWNER,
+            },
+        ]);
+        expect((await eventOfType('policy-review'))?.ownerUserId).toBe(OWNER);
+    });
+
+    it('a finding routes to its assignee, never to the legacy free-text owner', async () => {
+        mockFindingFindMany.mockResolvedValue([
+            {
+                id: 'find-1',
+                title: 'Missing 2FA',
+                dueDate: IN_RANGE,
+                status: 'OPEN',
+                assigneeUserId: OWNER,
+            },
+        ]);
+        expect((await eventOfType('finding-due'))?.ownerUserId).toBe(OWNER);
+    });
+
+    it('a finding with only the legacy free-text owner reports NO owner', async () => {
+        // `Finding.owner` holds a NAME. Publishing it as `ownerUserId` is worse
+        // than publishing nothing: a name can never match the viewer, and in
+        // the digest it resolves to no user and the item is dropped instead of
+        // falling back to tenant admins.
+        mockFindingFindMany.mockResolvedValue([
+            {
+                id: 'find-2',
+                title: 'Legacy finding',
+                dueDate: IN_RANGE,
+                status: 'OPEN',
+                owner: 'Alice Smith',
+                assigneeUserId: null,
+            },
+        ]);
+        expect((await eventOfType('finding-due'))?.ownerUserId).toBeUndefined();
+    });
+});
+
+describe('control test deadlines vs implementation status', () => {
+    const PAST = new Date('2026-05-15T00:00:00Z'); // inside [FROM, TO], before NOW
+
+    it('an IMPLEMENTED control with a lapsed test is overdue, not done', async () => {
+        mockControlFindMany.mockResolvedValue([
+            {
+                id: 'ctrl-1',
+                name: 'Quarterly access review',
+                nextDueAt: PAST,
+                ownerUserId: OWNER,
+            },
+        ]);
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const res = await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        const ev = res.events.find((e) => e.type === 'control-review');
+        // `nextDueAt` is the next TEST due date; no ControlStatus satisfies it.
+        // This used to short-circuit to 'done' before any date comparison,
+        // while deadline-monitor emailed the same row as overdue.
+        expect(ev?.status).toBe('overdue');
+    });
+
+    it('the calendar and the deadline monitor agree on which controls are eligible', async () => {
+        const { CONTROL_TEST_ELIGIBILITY } = await import(
+            '@/app-layer/domain/control-test-due'
+        );
+        mockControlFindMany.mockResolvedValue([]);
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        // Both surfaces spread the same shared fragment, so agreement is
+        // structural rather than two literals that happen to match today.
+        const where = mockControlFindMany.mock.calls[0][0].where;
+        expect(where).toMatchObject(CONTROL_TEST_ELIGIBILITY);
+    });
+
+    it('no ControlStatus value can mark a test deadline satisfied', async () => {
+        const { isControlTestSatisfied, isControlTestOutstanding } = await import(
+            '@/app-layer/domain/control-test-due'
+        );
+        expect(isControlTestSatisfied()).toBe(false);
+        // The obligation is a pure date question — which is what makes the two
+        // surfaces agree once both ask it here.
+        expect(isControlTestOutstanding(PAST, NOW)).toBe(true);
+        expect(isControlTestOutstanding(new Date('2026-07-15T00:00:00Z'), NOW)).toBe(false);
+        expect(isControlTestOutstanding(null, NOW)).toBe(false);
+    });
+});

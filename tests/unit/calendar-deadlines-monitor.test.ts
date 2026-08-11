@@ -110,14 +110,14 @@ describe('runCalendarDeadlineMonitor', () => {
         expect(r.items[0].ownerUserId).toBe('user-vendor-owner');
     });
 
-    it('routes finding owners through the `owner` field', async () => {
+    it('routes finding owners through `assigneeUserId`', async () => {
         mockFindingFindMany.mockResolvedValue([
             {
                 id: 'find-1',
                 tenantId: TENANT_ID,
                 title: 'Missing 2FA',
                 dueDate: new Date('2026-06-15T00:00:00Z'),
-                owner: 'user-finding-owner',
+                assigneeUserId: 'user-finding-owner',
             },
         ]);
         const { runCalendarDeadlineMonitor } = await import(
@@ -127,6 +127,35 @@ describe('runCalendarDeadlineMonitor', () => {
         expect(r.items).toHaveLength(1);
         expect(r.items[0].entityType).toBe('TASK');
         expect(r.items[0].ownerUserId).toBe('user-finding-owner');
+    });
+
+    // The actual regression lock. This test previously asserted the OPPOSITE —
+    // it named its fixture field `owner` and put a user id in it, which the
+    // schema says that column never holds: `Finding.owner` is legacy FREE TEXT
+    // (a person's name), superseded by `assigneeUserId`. Publishing a name as
+    // `ownerUserId` made every finding deadline unroutable, because the
+    // dispatcher resolves that field against `User.id`.
+    //
+    // A name here must resolve to NOTHING rather than to itself. Absence is
+    // strictly better than a bad value: an absent owner reaches the tenant-admin
+    // fallback, while a name resolves to no user and the item is dropped.
+    it('never publishes the legacy free-text `owner` as a user id', async () => {
+        mockFindingFindMany.mockResolvedValue([
+            {
+                id: 'find-2',
+                tenantId: TENANT_ID,
+                title: 'Legacy finding',
+                dueDate: new Date('2026-06-15T00:00:00Z'),
+                owner: 'Alice Smith',
+                assigneeUserId: null,
+            },
+        ]);
+        const { runCalendarDeadlineMonitor } = await import(
+            '@/app-layer/jobs/calendar-deadlines'
+        );
+        const r = await runCalendarDeadlineMonitor({ now: NOW });
+        expect(r.items).toHaveLength(1);
+        expect(r.items[0].ownerUserId).toBeUndefined();
     });
 
     it('passes `tenantId` through to every per-source query', async () => {

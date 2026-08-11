@@ -7138,6 +7138,7 @@
         "taskForbidden": "Нямате разрешение да променяте тази задача.",
         "rescheduleCancel": "Отказ",
         "omittedNotice": "Някои източници са скрити поради вашите разрешения: {sources}.",
+        "ownerlessNotice": "Тези източници не могат да се филтрират по отговорник и са скрити: {sources}.",
         "timelineBarLabel": "{title} — {category}, {status}, {date}",
         "ganttEmptyMessage": "Няма крайни срокове в този период.",
         "moreEvents": "+{count} още",

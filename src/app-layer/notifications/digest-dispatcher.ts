@@ -67,35 +67,88 @@ export interface RecipientInfo {
 
 // ─── Recipient Resolution ───────────────────────────────────────────
 
+/** Map key for a resolved recipient — a user is only ever a recipient OF a tenant. */
+const recipientKey = (tenantId: string, userId: string) => `${tenantId}:${userId}`;
+
 /**
- * Resolve user IDs to email addresses.
- * Uses batch query to avoid N+1. Returns a Map for O(1) lookup.
+ * Resolve (tenant, user) pairs to email addresses, for users who are STILL
+ * MEMBERS of that tenant.
+ *
+ * The membership join is the whole point. Owner ids reach this function from
+ * entity columns — `Control.ownerUserId`, `Policy.ownerUserId`,
+ * `Task.assigneeUserId`, `Risk.ownerUserId`, … — and NONE of them are cleared
+ * when a membership is deactivated (`deactivateTenantMember` writes only
+ * `status` + `deactivatedAt`). This used to be a bare
+ * `prisma.user.findMany({ where: { id: { in: userIds } } })`, so a departed
+ * employee kept receiving that tenant's compliance deadlines — entity names,
+ * due dates and links — nightly, forever.
+ *
+ * RLS is not a backstop here and cannot be one: `User` is a global model with
+ * no `tenantId` and no row-level policies, and this runs on the unscoped
+ * client outside `runInTenantContext`. The predicate below IS the control —
+ * the same one `resolveTenantAdmins` has always had.
+ *
+ * Keyed per (tenant, user), not per user: the same person can be ACTIVE in one
+ * tenant and DEACTIVATED in another, and a userId-only key would collapse those
+ * into one entry and leak the second tenant's deadlines to them.
+ *
+ * Still ONE query, not one per tenant — a read inside the caller's loop would
+ * trip the N+1 guardrail.
  */
 async function resolveRecipients(
-    userIds: string[],
+    pairs: Array<{ tenantId: string; userId: string }>,
 ): Promise<Map<string, RecipientInfo>> {
-    if (userIds.length === 0) return new Map();
+    if (pairs.length === 0) return new Map();
 
-    const users = await prisma.user.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, email: true, name: true },
+    const memberships = await prisma.tenantMembership.findMany({
+        where: {
+            status: 'ACTIVE',
+            OR: pairs.map(({ tenantId, userId }) => ({ tenantId, userId })),
+        },
+        select: {
+            tenantId: true,
+            user: { select: { id: true, email: true, name: true } },
+        },
     });
 
     const result = new Map<string, RecipientInfo>();
-    for (const u of users) {
-        if (u.email) {
-            result.set(u.id, {
-                userId: u.id,
-                email: u.email,
-                name: u.name ?? u.email.split('@')[0],
+    for (const m of memberships) {
+        if (m.user.email) {
+            result.set(recipientKey(m.tenantId, m.user.id), {
+                userId: m.user.id,
+                email: m.user.email,
+                name: m.user.name ?? m.user.email.split('@')[0],
             });
         }
     }
+
+    // Recipient shrinkage is otherwise silent: the caller counts a dropped
+    // owner as `unroutable`, which is indistinguishable from "this user was
+    // deleted". Log the count so an operator can tell a healthy offboarding
+    // from a broken lookup.
+    const dropped = pairs.length - result.size;
+    if (dropped > 0) {
+        logger.info('digest recipients dropped — no active membership', {
+            component: 'digest-dispatcher',
+            requested: pairs.length,
+            resolved: result.size,
+            dropped,
+        });
+    }
+
     return result;
 }
 
 /**
  * Resolve tenant admins as fallback recipients for unowned items.
+ *
+ * OWNER is included, not just ADMIN. Epic 1 made OWNER strictly superior to
+ * ADMIN — it holds every admin flag plus `tenant_lifecycle` and
+ * `owner_management` — so a role filter of `'ADMIN'` alone excluded the most
+ * privileged member of the tenant. A tenant whose only privileged member is an
+ * OWNER (the shape every tenant starts in: `createTenantWithOwner` mints an
+ * OWNER and nothing else) resolved ZERO fallback recipients, and every unowned
+ * item was counted `unroutable` and silently dropped. No digest at all.
  */
 async function resolveTenantAdmins(
     tenantId: string,
@@ -103,7 +156,7 @@ async function resolveTenantAdmins(
     const memberships = await prisma.tenantMembership.findMany({
         where: {
             tenantId,
-            role: 'ADMIN',
+            role: { in: ['OWNER', 'ADMIN'] },
             status: 'ACTIVE',
         },
         select: {
@@ -245,14 +298,16 @@ export async function dispatchDigest(
     let suppressed = 0;
     const tenants: Record<string, { enqueued: number; skipped: number; suppressed?: boolean }> = {};
 
-    // Collect all unique user IDs for batch resolution
-    const allUserIds = new Set<string>();
-    for (const tenantMap of byOwner.values()) {
+    // Collect (tenant, user) pairs for batch resolution. Iterating `entries`
+    // rather than `values` keeps the tenant, which is what lets the lookup
+    // below require an ACTIVE membership IN THAT TENANT.
+    const ownerPairs: Array<{ tenantId: string; userId: string }> = [];
+    for (const [tenantId, tenantMap] of byOwner) {
         for (const userId of tenantMap.keys()) {
-            allUserIds.add(userId);
+            ownerPairs.push({ tenantId, userId });
         }
     }
-    const recipients = await resolveRecipients(Array.from(allUserIds));
+    const recipients = await resolveRecipients(ownerPairs);
 
     // Collect all unique tenant IDs
     const allTenantIds = new Set<string>();
@@ -293,8 +348,13 @@ export async function dispatchDigest(
         const tenantSlug = slugs.get(tenantId) ?? tenantId;
 
         for (const [userId, userItems] of tenantMap) {
-            const recipient = recipients.get(userId);
+            const recipient = recipients.get(recipientKey(tenantId, userId));
             if (!recipient) {
+                // Either the user is gone, or — the common case — they are no
+                // longer an active member of THIS tenant. Their items are not
+                // re-routed to admins: `groupItems` already classified them as
+                // owned, and an offboarded owner's deadlines becoming admin
+                // mail on the night of deactivation would be its own surprise.
                 unroutable += userItems.length;
                 logger.warn('digest recipient not resolvable', {
                     component: 'digest-dispatcher',

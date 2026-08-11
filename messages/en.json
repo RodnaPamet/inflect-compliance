@@ -7138,6 +7138,7 @@
         "taskForbidden": "You don't have permission to change this task.",
         "rescheduleCancel": "Cancel",
         "omittedNotice": "Some sources are hidden by your permissions: {sources}.",
+        "ownerlessNotice": "These sources can't be filtered by owner and are hidden: {sources}.",
         "timelineBarLabel": "{title} — {category}, {status}, {date}",
         "ganttEmptyMessage": "No deadlines in this window.",
         "moreEvents": "+{count} more",
