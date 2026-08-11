@@ -26,7 +26,14 @@ import { SWRConfig } from 'swr';
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useTenantHref: () => (p: string) => `/t/acme${p}`,
-    useTenantContext: () => ({ tenantName: 'Acme', tenantSlug: 'acme', currencySymbol: '€' }),
+    // kri and hierarchy gate their write controls on `permissions.canWrite`
+    // (every write behind them asserts canWrite server-side). These tests are
+    // about what happens when an ALLOWED write fails, so the context is a
+    // writer; the gate is covered in risk-write-permission-gates.
+    useTenantContext: () => ({
+        tenantName: 'Acme', tenantSlug: 'acme', currencySymbol: '€',
+        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true },
+    }),
     useMoneyFormatter: () => (v: number | null | undefined) => String(v ?? ''),
 }));
 
