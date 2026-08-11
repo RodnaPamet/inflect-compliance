@@ -106,23 +106,35 @@ the same diff so the gain is locked.
 | Wave B (batch 1) | global 62.13 (branches) | ⚠️ CORRECTED — coverage Wave B batch 1: real branch-exercising tests for 11 previously-zero-coverage files across 4 jobs (`data-lifecycle`, `tenant-dek-rotation`, `retention-notifications`, `retention`), 4 repositories (`SsoConfig`, `Onboarding`, `File`, `Framework`), 2 hash-chained audit writers (`audit-writer`, `org-audit-writer`), and `mailer`. **The original entry cited `coverage-summary.json`'s `total` (B 69.28 / F 72.95 / L 81.90 / S 80.59) as the global — those are LOADED-files-only numbers, NOT the enforcement universe.** The authoritative enforcement-universe global at the end of batch 1 was **branches 62.13** (the gate counts every `collectCoverageFrom` file, including the thousands of never-loaded branches as 0%). See the loaded-vs-enforcement table below. |
 | Wave B (batch 2) | **global branches 62** (enforcement actual 62.54) | ✅ done — batch 2: tests for 13 more never-loaded backend files (`test-hardening`, `stripe`, `compliance-digest`, `library-importer`, `control-taxonomy`, `traceability-graph`, `inherited-control-data`, `org-audit`, `report-delivery-jobs`, `sharepoint-policy-jobs`, `register-schedules`, `processOutbox`, `ClauseRepository`). Enforcement-universe globals (the binding CI gate, read from the `Jest: Coverage for … does not meet` lines): **branches 62.54 / functions 62.09 / lines 77.14 / statements 75.63**. The backend-file pool was largely exhausted — batch 2 moved enforcement branches only 62.13 → 62.54 (the original ≥65 goal was calibrated against the misleading loaded-only ~69%; the remaining 0% mass is **never-loaded `.ts` files inside the coverage universe itself** — `src/app-layer/repositories/*`, `reports/pdf/*`, `lib/hooks/*`, schemas, etc.). ⚠️ The original text here said the remaining mass was "the React UI/page surface (`src/app` + `src/components`)" — that is WRONG and was corrected in Wave C: `collectCoverageFrom` is ONLY `src/app-layer/**/*.ts` + `src/lib/**/*.ts`, so React `.tsx` components and `src/app` pages are not in the gate universe at all and rendering tests for them move the global by zero. `jest.thresholds.json` global set to branches **62**, functions **61**, lines **76**, statements **75** (≤ enforcement actual, up from the original 56/54/70/69). **A true global ≥65 is deferred to a wave that covers the never-loaded backend `.ts` files above.** Per-cohort floors left as set in batch 1 (already passing the gate). See implementation note `2026-06-23-coverage-wave-b.md`. |
 
-### Loaded-files vs enforcement-universe (the Wave B gotcha)
+### Reading the real numbers
 
-The CI gate enforces over the **entire `collectCoverageFrom` universe** —
-every matched file, including ones no test imports (0%). There are two
-numbers; only one is authoritative:
+The gate is `scripts/check-merged-coverage.ts`, run once over the four
+merged shard artifacts. It prints every group's file count and actual on
+every run, pass or fail — no deliberately-high threshold is needed to
+surface a number:
 
-| Source | Branches denom | Branch % | Counts |
-|--------|----------------|----------|--------|
-| `coverage/coverage-summary.json` → `total` | ~21,100 | ~69.3% | LOADED files only — ❌ misleading |
-| The `--coverageThreshold` gate (`Jest: Coverage for … does not meet`) | ~23,400 | **62.54%** | FULL universe — ✅ authoritative |
+```
+ok   global                       NNN files  branches NN.NN% (>=NN)  …
+ok   ./src/app-layer/usecases/    NNN files  …
+```
 
-To read the real global, run the exact gate command and read the
-`Jest: Coverage for branches (X%) does not meet "global" threshold`
-line (it only prints on failure — so temporarily set a deliberately-high
-threshold to surface the true number). NEVER read the global off
-`coverage-summary.json`'s `total`: that file lists only files a test
-loaded, so it overstates the gate's full-universe global by ~7pp.
+To reproduce a CI result locally:
+
+1. `gh run download <run-id> -n coverage-shard-1` (and `-2`, `-3`, `-4`).
+2. **Rewrite the `/home/runner/work/...` keys** in each
+   `coverage-final.json` to your local repo path. Skip this and every
+   `./src/...` prefix matches zero files, nothing is subtracted from
+   `global`, and the script reports a confident false pass. This has
+   happened — see
+   `docs/implementation-notes/2026-08-11-coverage-gate-enrolment.md`,
+   where the un-rewritten artifact reported a passing 83.27%. The script
+   now hard-fails a declared group that matches no files, so the same
+   mistake reads as an error rather than a green.
+3. `npx tsx scripts/check-merged-coverage.ts <dir> jest.thresholds.json 4`
+
+Never read the global off `coverage/coverage-summary.json`'s `total`:
+that file summarises only the files a test loaded, so it omits the
+zero-filled remainder the gate counts.
 
 The enforcement global branch trajectory: **56 → 62.13 → 62.54 → 62.54
 (Wave C) → 63.88 (Wave D batch 1) → 65.94 (Wave D batch 2)** — the
@@ -139,8 +151,10 @@ Global rises as a *consequence* of A/B-tier gains plus standard-tier
 hygiene — it is not
 chased directly.
 
-Two rules keep the ratchet honest, both already CI-enforced via
-`jest.config.js` + the `Coverage (≥60%)` job:
+Two rules keep the ratchet honest. The `Coverage (≥60%)` job enforces
+the floors themselves; `tests/guards/coverage-ratchet.test.ts` enforces
+that they only travel one way — and unlike the coverage job, that guard
+runs on every PR:
 
 - **A PR may not lower a floor.** If a change drops observed
   coverage below a floor, CI fails — add the missing test or revert.
@@ -162,17 +176,41 @@ discipline.
   ratchet.
 - **Do not lower a floor to make a red PR green.** That is the
   regression this policy exists to prevent — fix the test gap.
+- **Do not write a rendered test to move `global`.** `src/app/**` and
+  `src/components/**` are outside the coverage scope entirely. Their
+  assurance is the tiers in `docs/frontend-assurance-model.md` and the
+  population floor in `tests/guards/rendered-coverage-floor.test.ts`.
+  Write the rendered test because the page's behaviour needs checking —
+  it moves `global` by zero in either direction.
 
 ## Enforcement
 
 - **Source of truth:** `jest.thresholds.json` (global + per-folder
-  keys), passed to jest via `--coverageThreshold` on the CI
-  `Coverage (≥60%)` job. The CLI flag is load-bearing — jest 29
-  ignores config-level `coverageThreshold` when `projects:` is set
-  (see `docs/implementation-notes/2026-04-27-gap-15-coverage-enforcement.md`).
-- **Per-layer keys** in that file enforce a higher bar on the
-  higher-risk folders independently of the global number.
-- The CI job prints the observed-vs-floor table on every PR.
+  keys). Four `Coverage (shard N/4)` jobs MEASURE — `jest --coverage
+  --coverageReporters=json`, no threshold flag, because a shard holds a
+  quarter of the data and would report most of the scope as uncovered.
+  The `Coverage (≥60%)` job merges the four artifacts and enforces the
+  floors once, via `npx tsx scripts/check-merged-coverage.ts`. Its
+  semantics — including the rule that a path key REMOVES its files from
+  `global` — are pinned by `tests/unit/scripts/check-merged-coverage.test.ts`.
+- **Jest itself enforces nothing.** `jest.config.js` loads the same JSON
+  into the node project's `coverageThreshold` for documentation parity,
+  but a project-level `coverageThreshold` never reaches the global config
+  Jest checks, so the run exits 0 whatever it measures (see
+  `docs/implementation-notes/2026-04-27-gap-15-coverage-enforcement.md`).
+  The mirror-image rule applies to the scope: `collectCoverageFrom` is
+  read ONLY from the global config, which is why it sits at the top level
+  of `jest.config.js`. `tests/guards/coverage-config-resolution.test.ts`
+  resolves the real config and pins all three placements, so a key that
+  drifts into a bucket Jest ignores fails a test instead of silently
+  changing what the gate measures.
+- **Per-layer keys** carve their folders OUT of `global` and hold them to
+  a higher bar. Adding a key therefore SHRINKS `global` — check what is
+  left before adding one.
+- **The gate does not run on pull requests.** It runs on pushes to
+  `main`, the weekly schedule, and `workflow_dispatch`, so a regression
+  otherwise surfaces on the first main push after merge. To check a
+  branch first: `gh workflow run ci.yml --ref <branch>`.
 
 ### The ratchet guard
 

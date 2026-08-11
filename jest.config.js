@@ -110,8 +110,25 @@ const coverageThresholds = require('./jest.thresholds.json');
 const sharedCollectCoverageFrom = [
     'src/app-layer/**/*.ts',
     'src/lib/**/*.ts',
+    // `.tsx` under these two roots is server-adjacent library code, not the
+    // UI surface: context providers (`tenant-context-provider`,
+    // `org-context-provider`), the keyboard-shortcut hook, and the canvas
+    // context/overlay modules. They were inside the measured set before the
+    // scope was declared — `./src/lib/` earned its functions floor partly on
+    // them — so dropping them now would be a silent regression in what the
+    // floor covers. `src/components/**` and `src/app/**` remain out entirely.
+    'src/app-layer/**/*.tsx',
+    'src/lib/**/*.tsx',
     '!src/**/*.d.ts',
     '!src/**/types.ts',
+    // Co-located tests are not production code. The node project excludes
+    // `src/**/__tests__/` from its testMatch, which means Jest does not
+    // recognise them as tests here and would otherwise instrument them as
+    // SOURCE — `src/lib/controls/__tests__/control-taxonomy.test.ts` entered
+    // the report at 0% and dragged `./src/lib/` down by its 63 statements.
+    '!src/**/__tests__/**',
+    '!src/**/*.test.ts',
+    '!src/**/*.test.tsx',
 ];
 
 /** @type {import('jest').Config} */
