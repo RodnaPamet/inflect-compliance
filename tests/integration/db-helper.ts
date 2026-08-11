@@ -12,6 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getTestDatabaseUrl } from '../helpers/db';
+import { assertDbAvailableOrSkipAllowed } from './db-availability';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -112,11 +113,6 @@ function checkDbAvailable(url: string | undefined): boolean {
 
 const dbUrl = resolveDbUrl();
 
-/** Strip the password from a Postgres URL before it reaches a log. */
-function redact(url: string): string {
-    return url.replace(/\/\/([^:/@]+):[^@]*@/, '//$1:***@');
-}
-
 const available = checkDbAvailable(dbUrl);
 
 /**
@@ -142,27 +138,7 @@ const available = checkDbAvailable(dbUrl);
  * never sets. The asymmetry is deliberate: opting into weaker signal should
  * take an explicit act, and the default should be the safe one.
  */
-if (!available && process.env.ALLOW_DB_SKIP !== '1') {
-    throw new Error(
-        [
-            'Integration database is unavailable, and skipping was not explicitly allowed.',
-            '',
-            `  probed: ${redact(dbUrl)}`,
-            '',
-            'These suites are gated on a live database — skipping them reports GREEN',
-            'over the cross-tenant isolation, RLS and encryption tests, which is worse',
-            'than a red build. So this fails instead.',
-            '',
-            'Locally: `docker-compose up -d` (Postgres + Redis), then',
-            '         `npm run db:push` if the schema has moved.',
-            'To run the non-DB suites anyway, opt in explicitly:',
-            '         `ALLOW_DB_SKIP=1 npx jest <pattern>`',
-            '',
-            'In CI this is always a hard failure — ALLOW_DB_SKIP is never set there.',
-            'See docs/implementation-notes/2026-08-11-integration-suites-fail-closed.md',
-        ].join('\n'),
-    );
-}
+assertDbAvailableOrSkipAllowed(available, process.env.ALLOW_DB_SKIP, dbUrl);
 
 export const DB_URL = dbUrl;
 export const DB_AVAILABLE = available;

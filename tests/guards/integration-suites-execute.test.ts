@@ -36,6 +36,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import {
+    assertDbAvailableOrSkipAllowed,
+    unavailableDbMessage,
+} from '../integration/db-availability';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /**
@@ -79,22 +84,49 @@ describe('DB-backed suites execute rather than skip', () => {
         expect(fs.readFileSync(full, 'utf8')).toMatch(/\bDB_AVAILABLE\b/);
     });
 
-    it('runs against a live database unless skipping was explicitly allowed', () => {
-        // Importing the helper is itself the assertion: it throws when the
-        // probe failed and ALLOW_DB_SKIP is unset. Requiring it here turns
-        // that into ONE named failure rather than 166 module-load errors, so
-        // the run says what is wrong in its first line.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { DB_AVAILABLE } = require('../integration/db-helper') as {
-            DB_AVAILABLE: boolean;
-        };
+    /**
+     * The decision itself, exercised in all three states.
+     *
+     * This deliberately does NOT import `db-helper`: that module probes a live
+     * database at import time and throws when it is missing, and the CI
+     * `Ratchets` job — which runs this file — is DB-free by design. A guard
+     * that demanded a database from that job would be asserting the invariant
+     * in the one place it does not apply. So the decision lives in
+     * `db-availability.ts` as a pure function, and the runtime enforcement
+     * stays where it belongs: inside the suites that actually need a database.
+     */
+    describe('the fail-closed decision', () => {
+        const URL = 'postgresql://user:hunter2@localhost:5432/db';
 
-        if (process.env.ALLOW_DB_SKIP === '1') {
-            // Local escape hatch in use — the population assertions above still
-            // hold, but execution cannot be claimed.
-            return;
-        }
-        expect(DB_AVAILABLE).toBe(true);
+        it('throws when the database is unavailable and skipping was not requested', () => {
+            expect(() => assertDbAvailableOrSkipAllowed(false, undefined, URL)).toThrow(
+                /Integration database is unavailable/,
+            );
+        });
+
+        it('allows the skip only for the explicit opt-in', () => {
+            expect(() => assertDbAvailableOrSkipAllowed(false, '1', URL)).not.toThrow();
+            // Anything else is not an opt-in — including the truthy-looking ones.
+            for (const value of ['0', 'true', 'yes', '', undefined]) {
+                expect(() => assertDbAvailableOrSkipAllowed(false, value, URL)).toThrow();
+            }
+        });
+
+        it('says nothing when the database is available', () => {
+            expect(() => assertDbAvailableOrSkipAllowed(true, undefined, URL)).not.toThrow();
+        });
+
+        it('never puts the database password in the message', () => {
+            const message = unavailableDbMessage(URL);
+            expect(message).not.toContain('hunter2');
+            expect(message).toContain('//user:***@');
+        });
+
+        it('tells the reader both ways out', () => {
+            const message = unavailableDbMessage(URL);
+            expect(message).toContain('docker-compose up -d');
+            expect(message).toContain('ALLOW_DB_SKIP=1');
+        });
     });
 
     it('never lets CI take the escape hatch', () => {

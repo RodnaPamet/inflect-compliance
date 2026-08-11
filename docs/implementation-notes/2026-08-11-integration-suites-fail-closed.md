@@ -87,3 +87,17 @@ Not "the tests pass" — the three behaviours were exercised directly:
 - **The floor in the guard is a collapse detector, not a growth ratchet.** It
   sits at 150 against a live 169 so ordinary churn does not force an edit, while
   losing a third of the population stops the build.
+- **The decision is a pure function in its own module, and that was learned the
+  hard way.** The first version had the guard import `db-helper` and assert
+  `DB_AVAILABLE === true`. That turned the CI `Ratchets` job red — a job whose
+  own comment says it is DB-free on purpose ("if a ratchet is ever added that
+  needs one, it belongs in the sharded run instead"). The guard was demanding a
+  database from the one job designed not to have one.
+
+  Splitting `assertDbAvailableOrSkipAllowed` into `db-availability.ts` fixes the
+  cause rather than the symptom. The alternative — setting `ALLOW_DB_SKIP=1` on
+  the Ratchets job — would have made the fail-closed probe inert in CI to
+  silence a failure caused by the fix itself, which is the exact shape of defect
+  this note is about. The guard now exercises all three branches of the decision
+  with no database at all, and runtime enforcement stays inside the suites that
+  genuinely need one.
