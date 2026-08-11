@@ -1,21 +1,30 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
+/**
+ * Items inside an evidence bundle. See the sibling `bundles/route.ts` docblock
+ * for why these three routes survived the retirement of the `/issues` surface
+ * and what the gate is for.
+ */
 import { listBundleItems, addBundleItem } from '@/app-layer/usecases/issue';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { AddBundleItemSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
-export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; issueId: string; bundleId: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const items = await listBundleItems(ctx, params.bundleId);
-    return jsonResponse(items);
-});
+type Params = { tenantSlug: string; issueId: string; bundleId: string };
 
-export const POST = withApiErrorHandling(withValidatedBody(AddBundleItemSchema, async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; issueId: string; bundleId: string }> }, body) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const item = await addBundleItem(ctx, params.bundleId, body);
-    return jsonResponse(item, { status: 201 });
-}));
+export const GET = withApiErrorHandling(
+    requirePermission<Params>('tasks.view', async (_req, routeArgs, ctx) => {
+        const params = await routeArgs.params;
+        const items = await listBundleItems(ctx, params.bundleId);
+        return jsonResponse(items);
+    }),
+);
+
+export const POST = withApiErrorHandling(
+    requirePermission<Params>('tasks.edit', async (req, routeArgs, ctx) => {
+        const params = await routeArgs.params;
+        const body = await parseJsonBody(req, AddBundleItemSchema);
+        const item = await addBundleItem(ctx, params.bundleId, body);
+        return jsonResponse(item, { status: 201 });
+    }),
+);

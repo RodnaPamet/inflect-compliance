@@ -429,6 +429,31 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'GDPR Art.28 sub-processor record, so it sits at the vendor ' +
             'management tier, not the read tier.',
     },
+    // ── Evidence bundles (the surviving `/issues` routes) ────────────
+    // The rest of `/issues` was a parallel write API over the same `Task`
+    // rows with strictly weaker gates, and was deleted. These three carry
+    // behaviour with no `/tasks` twin, so they keep the path and gain the
+    // gate they never had: without `requirePermission` the granular
+    // custom-role `tasks.*` flags were unreachable — the coarse
+    // `ctx.permissions` set is derived from the BASE role and never reads
+    // `permissionsJson` — and a denial wrote no AUTHZ_DENIED row.
+    {
+        path: new RegExp(`^${T}\\/issues\\/[^/]+\\/bundles(\\/.*)?$`),
+        methods: ['GET'],
+        permission: 'tasks.view',
+        note:
+            'Reading a task\'s evidence bundles. Same key as the `/tasks` ' +
+            'read tier, since a bundle is a view onto that task\'s evidence.',
+    },
+    {
+        path: new RegExp(`^${T}\\/issues\\/[^/]+\\/bundles(\\/.*)?$`),
+        methods: ['POST'],
+        permission: 'tasks.edit',
+        note:
+            'Creating a bundle, adding an item, or FREEZING one. Freeze ' +
+            'makes the bundle immutable, so it is an edit rather than a ' +
+            'read even though it takes no body.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

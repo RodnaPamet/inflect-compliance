@@ -24,8 +24,13 @@ function getAllRouteFiles(dir: string): string[] {
 describe('Issue Route Structural Checks', () => {
     const routeFiles = getAllRouteFiles(ISSUE_ROUTES_DIR);
 
-    it('should find at least 6 route files', () => {
-        expect(routeFiles.length).toBeGreaterThanOrEqual(6);
+    // Three, not sixteen: the parallel `/issues` write API was retired on
+    // 2026-08-11 and only the evidence-bundle routes — the ones with no
+    // `/tasks` twin — survived. If this number grows, a route was added to a
+    // surface that is supposed to be closed; check it is not another duplicate
+    // of something `/tasks` already serves.
+    it('is down to the three evidence-bundle routes', () => {
+        expect(routeFiles.length).toBe(3);
     });
 
     routeFiles.forEach((filePath) => {
@@ -49,9 +54,29 @@ describe('Issue Route Structural Checks', () => {
             expect(content).toMatch(/withApiErrorHandling/);
         });
 
-        it(`${relativePath} should use getTenantCtx`, () => {
+        /**
+         * The point of this assertion is that the handler runs with a resolved,
+         * membership-checked `RequestContext` — NOT that it calls one specific
+         * function to get one.
+         *
+         * `requirePermission` resolves the context itself (via `getTenantCtx`)
+         * and hands it to the handler as a third argument, so a gated route
+         * correctly does NOT mention `getTenantCtx`. Asserting the literal call
+         * would now push every route back toward the ungated shape, which is
+         * the defect these three were just fixed for.
+         */
+        it(`${relativePath} resolves a tenant context — gated or explicit`, () => {
             const content = fs.readFileSync(filePath, 'utf-8');
-            expect(content).toMatch(/getTenantCtx/);
+            expect(/requirePermission|getTenantCtx/.test(content)).toBe(true);
+        });
+
+        it(`${relativePath} is permission-gated`, () => {
+            // The whole reason the surrounding surface was deleted: not one of
+            // its sixteen routes used requirePermission, so the granular
+            // custom-role `tasks.*` flags were unreachable and denials wrote no
+            // AUTHZ_DENIED row.
+            const content = fs.readFileSync(filePath, 'utf-8');
+            expect(content).toMatch(/requirePermission/);
         });
     });
 });

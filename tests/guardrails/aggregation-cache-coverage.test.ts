@@ -35,7 +35,9 @@ const ROUTE_FILES: Record<AggregationName, string> = {
     'tests-dashboard': 'src/app/api/t/[tenantSlug]/tests/dashboard/route.ts',
     'vendors-metrics': 'src/app/api/t/[tenantSlug]/vendors/metrics/route.ts',
     'tasks-metrics': 'src/app/api/t/[tenantSlug]/tasks/metrics/route.ts',
-    'issues-metrics': 'src/app/api/t/[tenantSlug]/issues/metrics/route.ts',
+    // `issues-metrics` was the /issues alias of `tasks-metrics` and was deleted
+    // with the rest of the parallel surface — same usecase, same cache key,
+    // second URL.
     'audits-readiness-overview': 'src/app/api/t/[tenantSlug]/audits/readiness/overview/route.ts',
     'loss-events-aggregate': 'src/app/api/t/[tenantSlug]/loss-events/aggregate/route.ts',
     'org-dashboard-widgets': 'src/app/api/org/[orgSlug]/dashboard/widgets/route.ts',
