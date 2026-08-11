@@ -16,6 +16,14 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     // assertions track the one compact-currency voice.
     useMoneyFormatter: () => (v: number | null | undefined) =>
         jest.requireActual('@/lib/risk-coherence').formatCompactCurrency(v),
+    // The panel gates its Save on `permissions.canWrite` (updateRiskFair
+    // asserts canWrite). These tests are about calibration aids, and several
+    // assert the save button stays ENABLED through a warning — so they need a
+    // writer. The gate itself is covered in risk-write-permission-gates.
+    useTenantContext: () => ({
+        tenantSlug: 'acme',
+        permissions: { canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true },
+    }),
 }));
 
 // next-intl is ESM (jest can't parse its export); mock it to resolve real

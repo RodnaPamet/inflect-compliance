@@ -28,7 +28,7 @@ import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { type DateValue } from '@/components/ui/date-picker/types';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { useTenantApiUrl, useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useMoneyFormatter, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { formatDate } from '@/lib/format-date';
 import { useTranslations } from 'next-intl';
@@ -74,6 +74,17 @@ export default function LossEventsPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const money = useMoneyFormatter();
+    /**
+     * The two writes on this page assert DIFFERENT levels server-side:
+     * `createLossEvent` calls assertCanWrite, `deleteLossEvent` calls
+     * assertCanAdmin. Both controls used to render for everyone, so an
+     * EDITOR's Remove click was a guaranteed 403 — and a READER's Record
+     * click was too. Mirror the split exactly rather than gating both on
+     * one flag.
+     */
+    const { permissions } = useTenantContext();
+    const canWrite = permissions.canWrite;
+    const canAdmin = permissions.canAdmin;
     const listQuery = useTenantSWR<{ events: Row[] }>('/loss-events?take=50');
     const aggQuery = useTenantSWR<Aggregate>('/loss-events/aggregate');
     const runQuery = useTenantSWR<{ run: Run | null }>('/risks/simulate');
@@ -309,6 +320,7 @@ export default function LossEventsPage() {
             )}
 
             {/* Record loss form */}
+            {canWrite && (
             <Card className="space-y-default p-6" data-testid="loss-events-form">
                 <Heading level={2}>{t('lossEvents.recordLoss')}</Heading>
                 <div className="flex flex-wrap items-end gap-default">
@@ -360,6 +372,7 @@ export default function LossEventsPage() {
                 </div>
                 {msg && <InlineNotice variant={msgOk ? 'success' : 'error'}>{msg}</InlineNotice>}
             </Card>
+            )}
 
             {/* Register */}
             <Card className="space-y-default p-6" data-testid="loss-events-list">
@@ -384,11 +397,13 @@ export default function LossEventsPage() {
                                 {r.description && (
                                     <span className="truncate text-content-muted">{r.description}</span>
                                 )}
+                                {canAdmin && (
                                 <span className="ml-auto flex gap-tight">
                                     <Button size="sm" variant="ghost" onClick={() => remove(r.id)}>
                                         {t('lossEvents.remove')}
                                     </Button>
                                 </span>
+                                )}
                             </li>
                         ))}
                     </ul>

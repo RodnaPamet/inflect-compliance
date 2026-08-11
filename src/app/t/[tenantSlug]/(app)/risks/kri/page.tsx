@@ -73,7 +73,14 @@ export default function KriPage() {
     const t = useTranslations('risks');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { tenantSlug } = useTenantContext();
+    /**
+     * Every KRI write — create, record a reading, patch, delete — calls
+     * `assertCanWrite`. This page rendered all of them for READER and
+     * AUDITOR, so each click was a guaranteed 403. Gate on the same coarse
+     * flag the usecase asserts so the two cannot drift apart.
+     */
+    const { tenantSlug, permissions } = useTenantContext();
+    const canWrite = permissions.canWrite;
     const toast = useToast();
     const kriQuery = useTenantSWR<{ kris: Kri[] }>('/risks/kri');
     const kris = kriQuery.data?.kris ?? [];
@@ -172,6 +179,7 @@ export default function KriPage() {
                 <InfoTooltip title={t('kri.conceptTitle')} content={t('kri.conceptHelp')} side="right" />
             </div>
 
+            {canWrite && (
             <Card className="space-y-default p-6">
                 <Heading level={2}>{t('kri.newKri')}</Heading>
                 <KriFields draft={draft} setDraft={setDraft} tenantSlug={tenantSlug} t={t} idPrefix="kri" />
@@ -189,6 +197,7 @@ export default function KriPage() {
                     <Button variant="primary" onClick={create} disabled={busy || !draft.name.trim()} id="kri-create-btn">{t('kri.create')}</Button>
                 </div>
             </Card>
+            )}
 
             <AnalyticsState
                 isLoading={kriQuery.isLoading}
@@ -222,8 +231,9 @@ export default function KriPage() {
                                     {t('kri.reassess')}
                                 </Link>
                             )}
-                            <RecordInline onRecord={(v) => record(k.id, v)} />
+                            {canWrite && <RecordInline onRecord={(v) => record(k.id, v)} />}
                             {/* PR-L — KRI lifecycle actions. */}
+                            {canWrite && (
                             <div className="flex items-center gap-tight border-t border-border-subtle pt-tight">
                                 <Button size="sm" variant="ghost" onClick={() => { setDraft(draftFromKri(k)); setEditing(k); }} data-testid={`kri-edit-${k.id}`}>{t('kri.edit')}</Button>
                                 <Button size="sm" variant="ghost" onClick={() => patchKri(k.id, { isActive: !k.isActive })} data-testid={`kri-toggle-${k.id}`}>
@@ -231,6 +241,7 @@ export default function KriPage() {
                                 </Button>
                                 <Button size="sm" variant="ghost" className="ml-auto text-content-error" onClick={() => setDeleting(k)} data-testid={`kri-delete-${k.id}`}>{t('kri.delete')}</Button>
                             </div>
+                            )}
                         </Card>
                     ))}
                 </div>

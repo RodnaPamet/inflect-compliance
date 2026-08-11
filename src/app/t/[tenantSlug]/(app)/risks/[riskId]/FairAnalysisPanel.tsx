@@ -36,7 +36,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
-import { useTenantApiUrl, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useMoneyFormatter, useTenantContext } from '@/lib/tenant-context-provider';
 import {
     computeTEF,
     computeVulnerability,
@@ -155,6 +155,18 @@ export function FairAnalysisPanel({
     const t = useTranslations('risks');
     const apiUrl = useTenantApiUrl();
     const money = useMoneyFormatter();
+    /**
+     * `updateRiskFair` asserts canWrite. The panel mounts on the
+     * quantification tab for every reader, so Save was a guaranteed 403.
+     *
+     * The inputs stay interactive deliberately: exploring what a different
+     * TEF or loss magnitude would do to the distribution is a legitimate
+     * read-only activity, and disabling twenty controls to prevent it would
+     * cost more than it protects. What changes is that we no longer offer a
+     * Save that cannot work — the notice says the exploration is local.
+     */
+    const { permissions } = useTenantContext();
+    const canWrite = permissions.canWrite;
     const [triples, setTriples] = useState<Triples>(() => seedTriples(initial));
     const [conf, setConf] = useState<Conf | null>(initial.fairConfidence);
     // PR-L — secondary-loss monetary estimates (regulatory fine, reputation,
@@ -342,8 +354,12 @@ export function FairAnalysisPanel({
             )}
 
             {msg && <InlineNotice variant={msgOk ? 'success' : 'error'}>{msg}</InlineNotice>}
-            <div className="flex justify-end">
-                <Button variant="primary" onClick={save} disabled={saving}>{saving ? t('saving') : t('fair.save')}</Button>
+            <div className="flex items-center justify-end gap-default">
+                {canWrite ? (
+                    <Button variant="primary" onClick={save} disabled={saving}>{saving ? t('saving') : t('fair.save')}</Button>
+                ) : (
+                    <span className="text-xs text-content-muted">{t('fair.readOnlyNotice')}</span>
+                )}
             </div>
         </Card>
     );
