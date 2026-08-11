@@ -889,6 +889,7 @@
             "emptyDesc": "This risk has no threats or consequences mapped yet, so there is no bow-tie to draw. Switch to the list view to see the barriers on their own."
         },
         "fair": {
+            "readOnlyNotice": "Read-only — changes here are not saved.",
             "title": "FAIR Analysis",
             "intro": "Calibrate each factor as a range — give the interval you're 90% sure contains the true value. The simulation samples the full range; the derived point is the Beta-PERT mean.",
             "derivedApprox": "derived ≈",

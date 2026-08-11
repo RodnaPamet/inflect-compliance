@@ -616,7 +616,16 @@ export default function AIRiskAssessmentPage() {
 
                     {/* Action bar */}
                     <div className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between')} id="ai-action-bar">
-                        <Button variant="secondary" onClick={handleDismiss} id="dismiss-btn">{tx('ai.dismissAll')}</Button>
+                        {/* `dismissSession` asserts ctx.permissions.canWrite,
+                            same as generate and apply — but this button was
+                            the one left ungated. Gate on the coarse flag the
+                            usecase actually reads; the sibling
+                            RequirePermission gates use the granular
+                            `risks.create` key, which agrees for every built-in
+                            role and could diverge only for a custom one. */}
+                        {permissions.canWrite && (
+                            <Button variant="secondary" onClick={handleDismiss} id="dismiss-btn">{tx('ai.dismissAll')}</Button>
+                        )}
                         <RequirePermission resource="risks" action="create">
                             <Button
                                 variant="primary"

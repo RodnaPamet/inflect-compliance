@@ -13,7 +13,7 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { useTenantApiUrl, useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useMoneyFormatter, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
@@ -39,11 +39,13 @@ const TYPES = [
 // RQ3-OB-A — money speaks the tenant's currency (useMoneyFormatter).
 
 function TreeRow({
-    node, depth, max, onRename, onDelete,
+    node, depth, max, onRename, onDelete, canWrite,
 }: {
     node: Agg; depth: number; max: number;
     onRename: (nodeId: string, name: string) => void;
     onDelete: (node: Agg) => void;
+    /** Every node write calls assertCanWrite server-side. */
+    canWrite: boolean;
 }) {
     const money = useMoneyFormatter();
     const t = useTranslations('risks');
@@ -52,7 +54,7 @@ function TreeRow({
     return (
         <>
             <div className="group flex items-center gap-default py-tight text-sm" style={{ paddingLeft: `${depth * 16}px` }}>
-                {renaming ? (
+                {canWrite && renaming ? (
                     <span className="flex w-full sm:w-48 items-center gap-tight">
                         <Input value={draft} onChange={(e) => setDraft(e.target.value)} className="h-7 py-0" />
                         <Button size="sm" variant="ghost" onClick={() => { if (draft.trim()) onRename(node.nodeId, draft.trim()); setRenaming(false); }}>{t('edit.save')}</Button>
@@ -66,12 +68,14 @@ function TreeRow({
                 <span className="w-24 sm:w-28 text-right tabular-nums text-content-muted">{money(node.totalAle)}</span>
                 <span className="w-16 text-right tabular-nums text-content-subtle">{node.riskCount}</span>
                 {/* PR-L — per-node rename / delete so a mis-created node is fixable. */}
+                {canWrite && (
                 <span className="flex w-24 justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
                     <Button size="sm" variant="ghost" onClick={() => { setDraft(node.nodeName); setRenaming((v) => !v); }} data-testid={`node-rename-${node.nodeId}`}>{t('hierarchy.rename')}</Button>
                     <Button size="sm" variant="ghost" className="text-content-error" onClick={() => onDelete(node)} data-testid={`node-delete-${node.nodeId}`}>{t('hierarchy.deleteNode')}</Button>
                 </span>
+                )}
             </div>
-            {node.children.map((c) => <TreeRow key={c.nodeId} node={c} depth={depth + 1} max={max} onRename={onRename} onDelete={onDelete} />)}
+            {node.children.map((c) => <TreeRow key={c.nodeId} node={c} depth={depth + 1} max={max} onRename={onRename} onDelete={onDelete} canWrite={canWrite} />)}
         </>
     );
 }
@@ -81,6 +85,16 @@ export default function RiskHierarchyPage() {
     const apiUrl = useTenantApiUrl();
     const money = useMoneyFormatter();
     const tenantHref = useTenantHref();
+    /**
+     * This page had NO permission gate. Every node write calls
+     * `assertCanWrite` server-side, so for a READER or AUDITOR the Add
+     * button was a guaranteed 403 on every click — and until the write
+     * fixes in #1855, a silent one. Gate on the SAME coarse flag the
+     * usecase asserts rather than an `appPermissions` sub-key, so the two
+     * cannot drift apart.
+     */
+    const { permissions } = useTenantContext();
+    const canWrite = permissions.canWrite;
     const [type, setType] = useState('BUSINESS_UNIT');
     const treeQuery = useTenantSWR<{ treemap: Agg[] }>(`/risks/hierarchy?type=${type}`);
     const treemap = treeQuery.data?.treemap ?? [];
@@ -210,6 +224,7 @@ export default function RiskHierarchyPage() {
                         <Button key={tt.value} size="sm" variant={type === tt.value ? 'primary' : 'secondary'} onClick={() => setType(tt.value)}>{t(tt.labelKey)}</Button>
                     ))}
                 </div>
+                {canWrite && (
                 <div className="flex flex-wrap items-end gap-default">
                     <label className="block flex-1"><span className="text-xs text-content-muted">{t('hierarchy.newNodeName')}</span>
                         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('hierarchy.newNodePlaceholder')} />
@@ -230,8 +245,10 @@ export default function RiskHierarchyPage() {
                     )}
                     <Button variant="primary" onClick={addNode} disabled={busy || !name.trim()}>{t('hierarchy.addNode')}</Button>
                 </div>
+                )}
 
                 {/* P2 — attach a risk to a node so the roll-up is non-empty. */}
+                {canWrite && (
                 <div className="flex flex-wrap items-end gap-default border-t border-border-subtle pt-default">
                     <label className="block flex-1"><span className="text-xs text-content-muted">{t('hierarchy.linkRiskLabel')}</span>
                         <RiskPicker id="hierarchy-link-risk" value={linkRiskId} onChange={setLinkRiskId} placeholder={t('hierarchy.linkRiskPlaceholder')} />
@@ -248,6 +265,7 @@ export default function RiskHierarchyPage() {
                     <Button variant="secondary" onClick={linkRisk} disabled={linkBusy || !linkNodeId || !linkRiskId}>{t('hierarchy.linkRisk')}</Button>
                     <Button variant="ghost" onClick={unlinkRisk} disabled={linkBusy || !linkNodeId || !linkRiskId} data-testid="hierarchy-unlink-risk">{t('hierarchy.unlinkRisk')}</Button>
                 </div>
+                )}
                 {linkMsg && <InlineNotice variant={linkMsg.ok ? 'success' : 'error'}>{linkMsg.text}</InlineNotice>}
             </Card>
 
@@ -270,7 +288,7 @@ export default function RiskHierarchyPage() {
                         <div className="flex items-center gap-default border-b border-border-subtle pb-tight text-xs text-content-subtle">
                             <span className="w-full sm:w-48">{t('hierarchy.colNode')}</span><span className="flex-1">{t('hierarchy.colAleShare')}</span><span className="w-24 sm:w-28 text-right">{t('hierarchy.colTotalAle')}</span><span className="w-16 text-right">{t('hierarchy.colRisks')}</span>
                         </div>
-                        {treemap.map((n) => <TreeRow key={n.nodeId} node={n} depth={0} max={max} onRename={renameNode} onDelete={setDeletingNode} />)}
+                        {treemap.map((n) => <TreeRow key={n.nodeId} node={n} depth={0} max={max} onRename={renameNode} onDelete={setDeletingNode} canWrite={canWrite} />)}
                     </div>
                 </AnalyticsState>
             </Card>

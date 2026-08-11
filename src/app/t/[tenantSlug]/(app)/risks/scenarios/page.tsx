@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { useTenantApiUrl, useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useMoneyFormatter, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
@@ -41,6 +41,14 @@ export default function RiskScenariosPage() {
     const t = useTranslations('risks');
     const apiUrl = useTenantApiUrl();
     const money = useMoneyFormatter();
+    /**
+     * create / clone / archive / simulate all assert canWrite. Simulate is
+     * the surprising one — it LOOKS like a read, but `simulateScenario`
+     * writes the computed result back onto the scenario row, so it is
+     * gated with the rest.
+     */
+    const { permissions } = useTenantContext();
+    const canWrite = permissions.canWrite;
     const signed = (n: number) => `${n < 0 ? '−' : '+'}${money(Math.abs(n))}`;
     const tenantHref = useTenantHref();
     const scenariosQuery = useTenantSWR<{ scenarios: Scenario[] }>('/risks/scenarios');
@@ -168,6 +176,7 @@ export default function RiskScenariosPage() {
             <PageBreadcrumbs items={[{ label: t('breadcrumbRoot'), href: tenantHref('/risks') }, { label: t('scenarios.breadcrumb') }]} />
             <Heading level={1}>{t('scenarios.title')}</Heading>
 
+            {canWrite && (
             <Card className="space-y-default p-6">
                 <Heading level={2}>{t('scenarios.newScenario')}</Heading>
                 <p className="text-sm text-content-muted">{t('scenarios.intro')}</p>
@@ -221,6 +230,7 @@ export default function RiskScenariosPage() {
                     <Button variant="primary" onClick={create} disabled={busy || !name.trim()}>{t('scenarios.create')}</Button>
                 </div>
             </Card>
+            )}
 
             <Card className="space-y-default p-6">
                 <Heading level={2}>{t('scenarios.breadcrumb')}</Heading>
@@ -238,11 +248,13 @@ export default function RiskScenariosPage() {
                                 <span className="font-medium text-content-emphasis">{s.name}</span>
                                 {s.investmentCost != null && <span className="text-content-muted">{t('scenarios.invest', { money: money(s.investmentCost) })}</span>}
                                 {s.computedRoi != null && <span className="text-content-muted">{t('scenarios.roi', { roi: s.computedRoi.toFixed(1) })}</span>}
+                                {canWrite && (
                                 <span className="ml-auto flex gap-tight">
                                     {s.status !== 'ARCHIVED' && <Button size="sm" variant="secondary" onClick={() => simulate(s.id)} disabled={busy}>{t('scenarios.simulate')}</Button>}
                                     <Button size="sm" variant="ghost" onClick={() => clone(s)} disabled={busy} data-testid={`scenario-clone-${s.id}`}>{t('scenarios.clone')}</Button>
                                     {s.status !== 'ARCHIVED' && <Button size="sm" variant="ghost" onClick={() => archive(s.id)}>{t('scenarios.archive')}</Button>}
                                 </span>
+                                )}
                             </li>
                         ))}
                     </ul>

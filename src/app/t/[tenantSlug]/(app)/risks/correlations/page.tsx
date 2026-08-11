@@ -10,7 +10,7 @@ import { Tooltip, InfoTooltip } from '@/components/ui/tooltip';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTranslations } from 'next-intl';
 import { AnalyticsState } from '../_shared/AnalyticsState';
@@ -33,6 +33,14 @@ export default function CorrelationMatrixPage() {
     const t = useTranslations('risks');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    /**
+     * `setCorrelation` asserts canWrite; `suggestCorrelations` only asserts
+     * canRead. So Auto-suggest stays available to every member — it is a
+     * read that produces advice — while the cells stop being clickable and
+     * Apply disappears for anyone who cannot persist the result.
+     */
+    const { permissions } = useTenantContext();
+    const canWrite = permissions.canWrite;
     const matrixQuery = useTenantSWR<{ matrix: Matrix }>('/risks/correlations');
     const m = matrixQuery.data?.matrix ?? null;
     const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -164,7 +172,9 @@ export default function CorrelationMatrixPage() {
                                     : t('correlations.notPsd')}
                         </StatusBadge>
                         <InfoTooltip title={t('correlations.psdTitle')} content={t('correlations.psdHelp')} />
-                        <span className="text-xs text-content-subtle">{t('correlations.clickHint')}</span>
+                        {/* The hint tells you to click a cell. Don't say that
+                            to someone whose cells are inert. */}
+                        {canWrite && <span className="text-xs text-content-subtle">{t('correlations.clickHint')}</span>}
                     </div>
                     {/* PR-L — a non-PSD matrix is silently dropped from the
                         Monte Carlo (Cholesky fails → independent sampling).
@@ -213,8 +223,8 @@ export default function CorrelationMatrixPage() {
                                         {row.map((v, j) => (
                                             <td
                                                 key={j}
-                                                className={`border border-border-subtle p-1 text-center tabular-nums ${cellClass(v)} ${j > i ? 'cursor-pointer' : ''}`}
-                                                onClick={j > i ? () => { setSel({ i, j }); setCoef(String(v)); } : undefined}
+                                                className={`border border-border-subtle p-1 text-center tabular-nums ${cellClass(v)} ${canWrite && j > i ? 'cursor-pointer' : ''}`}
+                                                onClick={canWrite && j > i ? () => { setSel({ i, j }); setCoef(String(v)); } : undefined}
                                             >
                                                 {v.toFixed(1)}
                                             </td>
@@ -248,7 +258,9 @@ export default function CorrelationMatrixPage() {
                             <li key={`${s.riskAId}-${s.riskBId}`} className="flex items-center gap-default py-default text-sm">
                                 <span className="text-content-muted">{s.reason}</span>
                                 <span className="tabular-nums text-content-emphasis">{s.suggestedCoefficient.toFixed(2)}</span>
-                                <Button size="sm" variant="secondary" className="ml-auto" onClick={() => applySuggestion(s)}>{t('correlations.apply')}</Button>
+                                {canWrite && (
+                                    <Button size="sm" variant="secondary" className="ml-auto" onClick={() => applySuggestion(s)}>{t('correlations.apply')}</Button>
+                                )}
                             </li>
                         ))}
                     </ul>
