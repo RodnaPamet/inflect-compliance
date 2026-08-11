@@ -101,7 +101,11 @@ export default function CycleDetailPage() {
     const preview = previewQuery.data ?? null;
 
     const loading = cycleQuery.isLoading;
-    const loadError = Boolean(cycleQuery.error);
+    // See the sibling comment in `packs/[packId]/page.tsx`: a failed BACKGROUND
+    // revalidation (focus / reconnect) must not replace a page that still holds
+    // good data, and the guard is `data === undefined` rather than `!data`
+    // because `null` is this endpoint's SUCCESSFUL "no such cycle" answer.
+    const loadError = Boolean(cycleQuery.error) && cycleQuery.data === undefined;
     const load = useCallback(() => {
         void cycleQuery.mutate();
         void previewQuery.mutate();

@@ -26,8 +26,10 @@ import React from 'react';
 import { render, act, waitFor, fireEvent, screen } from '@testing-library/react';
 
 const routerMock = { push: jest.fn(), refresh: jest.fn(), replace: jest.fn() };
+// One params object covers every page mounted here — each reads only its own
+// key, and an unused extra is invisible to it.
 jest.mock('next/navigation', () => ({
-    useParams: () => ({ tenantSlug: 'acme-corp' }),
+    useParams: () => ({ tenantSlug: 'acme-corp', packId: 'pack-1', cycleId: 'cyc-1' }),
     useRouter: () => routerMock,
     usePathname: () => '/t/acme-corp/audits/cycles',
     useSearchParams: () => new URLSearchParams(),
@@ -39,22 +41,38 @@ jest.mock('next/navigation', () => ({
 // test into a timeout rather than a failure.
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json');
-    const cache = new Map<string, (key: string, params?: Record<string, unknown>) => string>();
-    const make = (ns: string) => (key: string, params?: Record<string, unknown>) => {
-        let v = key
+    type Translator = ((key: string, params?: Record<string, unknown>) => string) & {
+        has: (key: string) => boolean;
+        raw: (key: string) => unknown;
+    };
+    const cache = new Map<string, Translator>();
+    const lookup = (ns: string, key: string) =>
+        key
             .split('.')
             .reduce(
                 (o: unknown, k) =>
                     o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined,
                 (en as Record<string, unknown>)[ns],
             );
-        if (typeof v !== 'string') return key;
-        if (params) {
-            for (const [p, val] of Object.entries(params)) {
-                v = (v as string).replace(new RegExp(`\\{${p}\\}`, 'g'), String(val));
+    const make = (ns: string): Translator => {
+        const t = ((key: string, params?: Record<string, unknown>) => {
+            let v = lookup(ns, key);
+            if (typeof v !== 'string') return key;
+            if (params) {
+                for (const [p, val] of Object.entries(params)) {
+                    v = (v as string).replace(new RegExp(`\\{${p}\\}`, 'g'), String(val));
+                }
             }
-        }
-        return v as string;
+            return v as string;
+        }) as Translator;
+        // The real `useTranslations` returns a callable carrying `.has` / `.raw`;
+        // the pack detail page calls `tx.has(...)` to decide whether an enum has
+        // a localized label. A bare function throws there and the whole page
+        // renders as an empty container — which reads like an assertion failure
+        // about content rather than a missing mock method.
+        t.has = (key: string) => typeof lookup(ns, key) === 'string';
+        t.raw = (key: string) => lookup(ns, key);
+        return t;
     };
     return {
         useTranslations: (ns: string) => {
@@ -79,6 +97,8 @@ jest.mock('@/components/integrations/sharepoint/SharePointFilePicker', () => ({
 
 import { SWRConfig, useSWRConfig } from 'swr';
 import AuditCyclesPage from '@/app/t/[tenantSlug]/(app)/audits/cycles/page';
+import PackDetailPage from '@/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page';
+import CycleDetailPage from '@/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page';
 import { SharePointExportButton } from '@/app/t/[tenantSlug]/(app)/audits/packs/[packId]/SharePointExportButton';
 import { RespondClient } from '@/app/t/[tenantSlug]/(app)/audits/nis2-gap/respond/[assignmentId]/RespondClient';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -345,5 +365,115 @@ describe('NIS2 respond form — a revalidation does not clobber in-progress answ
         // Seeding `answers` from the payload in an effect would wipe this.
         // The saved+edits merge is what keeps it.
         expect(yes.getAttribute('aria-checked')).toBe('true');
+    });
+});
+
+// ─── Detail pages (the prior tranche's two files) ───────────────────────
+//
+// Both shipped before the guard above existed and carried the same bare
+// `Boolean(query.error)`. They differ from the cycles LIST in one way that
+// matters: their payload is `T | null`, and `null` is a SUCCESSFUL "no such
+// record" answer. So the guard is `data === undefined`, and each page needs
+// a third case — a real 404 must survive a later blip as "not found", not
+// decay into a retry screen.
+
+describe('Pack detail — a failed revalidation does not discard the pack', () => {
+    const KEY = '/api/t/acme-corp/audits/packs/pack-1';
+    const pack = {
+        id: 'pack-1',
+        name: 'Q1 Evidence Pack',
+        status: 'DRAFT',
+        items: [] as unknown[],
+        createdAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    it('keeps the rendered pack when a background revalidation fails', async () => {
+        routes = { '/audits/packs/pack-1': () => ({ ok: true, json: async () => pack }) };
+
+        const { container } = mount(<PackDetailPage />, KEY);
+        await waitFor(() => expect(container.textContent).toContain('Q1 Evidence Pack'));
+
+        await forceFailedRevalidation(container);
+
+        expect(container.textContent).toContain('Q1 Evidence Pack');
+        expect(container.textContent).not.toContain("Couldn't load this pack");
+    });
+
+    it('still shows the retry screen when the FIRST load fails', async () => {
+        breakEverything();
+        const { container } = mount(<PackDetailPage />, KEY);
+
+        await waitFor(
+            () => expect(container.textContent).toContain("Couldn't load this pack"),
+            { timeout: 10_000 },
+        );
+        // A blip must never read as a genuine 404.
+        expect(container.textContent).not.toContain('Pack not found.');
+    });
+
+    it('keeps a genuine 404 as not-found when a later revalidation fails', async () => {
+        // `null` is a successful answer meaning "no such pack". `!data` would
+        // have treated it as "nothing loaded" and let the blip below turn a
+        // legitimate not-found into a retry screen.
+        routes = { '/audits/packs/pack-1': () => ({ ok: true, json: async () => null }) };
+
+        const { container } = mount(<PackDetailPage />, KEY);
+        await waitFor(() => expect(container.textContent).toContain('Pack not found.'));
+
+        await forceFailedRevalidation(container);
+
+        expect(container.textContent).toContain('Pack not found.');
+        expect(container.textContent).not.toContain("Couldn't load this pack");
+    });
+});
+
+describe('Cycle detail — a failed revalidation does not discard the cycle', () => {
+    const KEY = '/api/t/acme-corp/audits/cycles/cyc-1';
+    const cycle = {
+        id: 'cyc-1',
+        name: 'ISO 27001 Surveillance 2026',
+        frameworkKey: 'ISO27001',
+        frameworkVersion: '2022',
+        status: 'PLANNING',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        packs: [] as unknown[],
+        audits: [] as unknown[],
+    };
+
+    it('keeps the rendered cycle when a background revalidation fails', async () => {
+        routes = { '/audits/cycles/cyc-1': () => ({ ok: true, json: async () => cycle }) };
+
+        const { container } = mount(<CycleDetailPage />, KEY);
+        await waitFor(() =>
+            expect(container.textContent).toContain('ISO 27001 Surveillance 2026'),
+        );
+
+        await forceFailedRevalidation(container);
+
+        expect(container.textContent).toContain('ISO 27001 Surveillance 2026');
+        expect(container.querySelector('[data-testid="cycle-load-error"]')).toBeNull();
+    });
+
+    it('still shows the retry screen when the FIRST load fails', async () => {
+        breakEverything();
+        const { container } = mount(<CycleDetailPage />, KEY);
+
+        await waitFor(
+            () => expect(container.querySelector('[data-testid="cycle-load-error"]')).toBeTruthy(),
+            { timeout: 10_000 },
+        );
+        expect(container.textContent).not.toContain('Audit cycle not found.');
+    });
+
+    it('keeps a genuine 404 as not-found when a later revalidation fails', async () => {
+        routes = { '/audits/cycles/cyc-1': () => ({ ok: true, json: async () => null }) };
+
+        const { container } = mount(<CycleDetailPage />, KEY);
+        await waitFor(() => expect(container.textContent).toContain('Audit cycle not found.'));
+
+        await forceFailedRevalidation(container);
+
+        expect(container.textContent).toContain('Audit cycle not found.');
+        expect(container.querySelector('[data-testid="cycle-load-error"]')).toBeNull();
     });
 });
