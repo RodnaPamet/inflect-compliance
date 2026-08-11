@@ -726,6 +726,21 @@ export class TaskLinkRepository {
     }
 
     /**
+     * Batch form of `listByTask` — every link of MANY tasks in ONE read,
+     * so a bulk gate never loops a per-task query. Selects only
+     * `(taskId, entityType)`: its caller (the task type-relevance gate)
+     * buckets by task and asks which entity types are present. Served by
+     * the `@@index([tenantId, taskId])` on TaskLink.
+     */
+    static async listByTaskIds(db: PrismaTx, ctx: RequestContext, taskIds: string[]) {
+        if (taskIds.length === 0) return [];
+        return db.taskLink.findMany({ // guardrail-allow: unbounded (bounded by primary-key `in:` list — the caller's batch)
+            where: { taskId: { in: taskIds }, tenantId: ctx.tenantId },
+            select: { taskId: true, entityType: true },
+        });
+    }
+
+    /**
      * TP-4 — list a task's links AND resolve each linked entity's
      * display name + detail path. One bounded query PER entity type
      * (`id: { in: [...] }`), never per row — no N+1. Entities that no

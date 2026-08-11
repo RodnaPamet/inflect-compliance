@@ -29,28 +29,36 @@ import { restoreEntity } from './soft-delete-operations';
 
 type TaskType = 'AUDIT_FINDING' | 'CONTROL_GAP' | 'INCIDENT' | 'IMPROVEMENT' | 'TASK';
 
+/** The types whose relevance rule is not satisfied by the type alone. */
+const LINK_QUALIFIED_TYPES = new Set<TaskType>(['AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT']);
+
 /**
- * Validate type-specific relevance rules.
+ * Does deciding this row's rule require reading its `TaskLink` rows?
+ * False for an unconstrained type and false when `controlId` already
+ * satisfies the rule — the two cases that need no read at all.
+ */
+function needsLinkLookup(type: TaskType, controlId: string | null | undefined): boolean {
+    return LINK_QUALIFIED_TYPES.has(type) && !controlId;
+}
+
+/**
+ * The relevance rule itself, decided from data ALREADY in memory:
  * - AUDIT_FINDING / CONTROL_GAP: must have controlId OR a link to CONTROL/FRAMEWORK_REQUIREMENT
  * - INCIDENT: must have controlId OR a link to CONTROL/ASSET
  * - TASK / IMPROVEMENT: no additional requirement
+ *
+ * Pure and synchronous so the batch gate can resolve every task's
+ * links in ONE query and still throw exactly what the single-task
+ * path throws, message for message.
  */
-async function validateTypeRelevance(
-    db: PrismaTx,
-    ctx: RequestContext,
-    taskId: string,
+function assertTypeRelevance(
     type: TaskType,
     controlId: string | null | undefined,
+    linkEntityTypes: string[],
     /** Prefix for the refusal message — the bulk path names the offending id. */
     prefix = '',
-) {
-    if (type === 'TASK' || type === 'IMPROVEMENT') return;
-
-    if (controlId) return; // controlId satisfies all type constraints
-
-    // Check links
-    const links = await TaskLinkRepository.listByTask(db, ctx, taskId);
-    const linkEntityTypes = links.map(l => l.entityType);
+): void {
+    if (!needsLinkLookup(type, controlId)) return;
 
     if (type === 'AUDIT_FINDING' || type === 'CONTROL_GAP') {
         if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('FRAMEWORK_REQUIREMENT')) {
@@ -67,6 +75,20 @@ async function validateTypeRelevance(
             );
         }
     }
+}
+
+/** Single-task form: read this task's links (only when needed), then apply the rule. */
+async function validateTypeRelevance(
+    db: PrismaTx,
+    ctx: RequestContext,
+    taskId: string,
+    type: TaskType,
+    controlId: string | null | undefined,
+    prefix = '',
+) {
+    if (!needsLinkLookup(type, controlId)) return;
+    const links = await TaskLinkRepository.listByTask(db, ctx, taskId);
+    assertTypeRelevance(type, controlId, links.map((l) => l.entityType), prefix);
 }
 
 // ─── Reference validation (tenancy + membership) ───
@@ -734,17 +756,43 @@ export function checkReviewerSignOffGate(args: {
 //                     PAYLOAD differs per path (`Bulk status changed…` +
 //                     `bulk: true`), so it is passed in as a thunk while
 //                     the ORDER stays owned here.
-//     2. automation — a rule must never observe (and act on) a status
-//                     change that has no audit row behind it, so this
-//                     follows the audit, never precedes it.
-//     3. reconcile  — `reconcileTaskSource` re-reads the task and writes
+//     2. reconcile  — `reconcileTaskSource` re-reads the task and writes
 //                     the SOURCE row (control / vulnerability / finding /
 //                     …), auditing its own write. It therefore needs the
 //                     post-write row and the same transaction: a
-//                     reconciler failure must roll the status change back
+//                     reconciler failure rolls the status change back
 //                     with it (see task-source-reconcile.ts).
 //
+//   Both in-transaction steps take the caller's `db`, so both really do
+//   commit — or roll back — with the status write. A throw anywhere in
+//   the transaction undoes the status write, the audit row AND the
+//   reconciler's writes. It undoes NOTHING in the post-commit stage
+//   below, which by construction only runs once the commit succeeded.
+//
 //   after commit, once per call (afterTaskStatusCommit):
+//     3. automation — `emitAutomationEvent` takes no `db` and never
+//                     could: it calls the module-singleton bus, which
+//                     runs in-process subscribers and then hands the
+//                     event to a dispatcher that ENQUEUES a BullMQ job,
+//                     picked up by a worker on its own connection. The
+//                     emission is therefore OUTSIDE this transaction
+//                     however it is ordered, which is why it now runs
+//                     after the commit rather than between steps 1 and 2
+//                     where it used to sit. In-transaction it produced
+//                     two real hazards: a reconciler failure rolled the
+//                     status change back while the event had already
+//                     been dispatched, and a worker racing the commit
+//                     read the pre-change row with no audit row behind
+//                     the event it was acting on. The price of moving it
+//                     out is that a crash in the window between commit
+//                     and emit drops the event — acceptable because the
+//                     bus has no outbox and swallows both subscriber and
+//                     dispatcher errors, so the emission was never
+//                     guaranteed; a dropped event is strictly safer than
+//                     a phantom one. Making it genuinely transactional
+//                     needs a transactional outbox (write an outbox row
+//                     on `db`, dispatch after commit) — a bus-level
+//                     change, not something this helper can fake.
 //     4. cache bump — only correct once the transaction committed; a
 //                     bump inside the tx could publish a version for
 //                     rows a rollback then discards.
@@ -767,13 +815,18 @@ interface TaskRelevanceRow {
  * Pre-write gate — apply the type-relevance rule to EVERY task the
  * status change is about to touch. No-ops for non-terminal targets.
  *
- * The loop is over rows the caller already resolved, and
- * `validateTypeRelevance` reads `TaskLink` only for a row that is BOTH
- * type-constrained (AUDIT_FINDING / CONTROL_GAP / INCIDENT) AND has no
- * `controlId` — i.e. the read is skipped entirely for the common case.
- * The bulk batch is bounded by the request payload, and the bulk path
- * is already per-task downstream (hash-chained audit + per-task source
- * reconciliation), so this adds no new complexity class.
+ * ONE read for the whole batch, never one per row. A row needs its
+ * links read only when it is BOTH type-constrained (AUDIT_FINDING /
+ * CONTROL_GAP / INCIDENT) AND has no `controlId`; those rows are
+ * collected first and resolved in a single `taskId IN (…)` query, then
+ * the rule is applied in memory. The naive shape — calling the
+ * single-task `validateTypeRelevance` in the loop — was 200 sequential
+ * `TaskLink` reads for a 200-task bulk close of link-qualified tasks,
+ * and the D1 (no-read-in-a-loop) guardrail could not see it because
+ * the read sat one call deeper than the loop.
+ *
+ * The refusal is identical to the single-task path's, message for
+ * message: both end in `assertTypeRelevance`.
  */
 async function assertTypeRelevanceForStatus(
     db: PrismaTx,
@@ -783,13 +836,27 @@ async function assertTypeRelevanceForStatus(
     describeTask?: (taskId: string) => string,
 ): Promise<void> {
     if (!RELEVANCE_GATED_STATUSES.has(toStatus)) return;
-    for (const row of rows) {
-        await validateTypeRelevance(
+
+    const needLinks = rows.filter((r) => needsLinkLookup(r.type as TaskType, r.controlId));
+    const linkTypesByTask = new Map<string, string[]>();
+    if (needLinks.length > 0) {
+        const links = await TaskLinkRepository.listByTaskIds(
             db,
             ctx,
-            row.id,
+            needLinks.map((r) => r.id),
+        );
+        for (const link of links) {
+            const bucket = linkTypesByTask.get(link.taskId);
+            if (bucket) bucket.push(link.entityType);
+            else linkTypesByTask.set(link.taskId, [link.entityType]);
+        }
+    }
+
+    for (const row of rows) {
+        assertTypeRelevance(
             row.type as TaskType,
             row.controlId,
+            linkTypesByTask.get(row.id) ?? [],
             describeTask ? describeTask(row.id) : '',
         );
     }
@@ -804,9 +871,11 @@ interface TaskStatusChange {
 }
 
 /**
- * IN-TRANSACTION post-write sequence: audit → automation → reconcile.
- * Runs on the caller's `db` so all three commit atomically with the
- * status write. See the ordering rationale above.
+ * IN-TRANSACTION post-write sequence: audit → reconcile. Both take the
+ * caller's `db`, so both commit — or roll back — with the status write.
+ * The automation emission is NOT here: it has no `db` to take and runs
+ * post-commit instead (see the rationale above). See also the ordering
+ * rationale above.
  */
 async function applyTaskStatusPostWrite(
     db: PrismaTx,
@@ -815,30 +884,34 @@ async function applyTaskStatusPostWrite(
     writeAudit: () => Promise<unknown>,
 ): Promise<void> {
     await writeAudit();
-    await emitAutomationEvent(ctx, {
-        event: 'TASK_STATUS_CHANGED',
-        entityType: 'Task',
-        entityId: change.taskId,
-        actorUserId: ctx.userId,
-        stableKey: `${change.taskId}:${change.fromStatus}:${change.toStatus}`,
-        data: {
-            fromStatus: change.fromStatus,
-            toStatus: change.toStatus,
-            resolution: change.resolution,
-        },
-    });
     await reconcileTaskSource(db, ctx, change.taskId, change.toStatus);
 }
 
 /**
- * POST-COMMIT sequence: cache bump, then the watcher bell fan-out for
- * every task the call changed. Batched — one transaction and two reads
- * for the whole set, not one round trip per task.
+ * POST-COMMIT sequence: the automation emission for every changed task,
+ * then the cache bump, then the watcher bell fan-out. None of it is in
+ * the status transaction, and none of it runs at all if that
+ * transaction threw. The bells are batched — one transaction and two
+ * reads for the whole set, not one round trip per task.
  */
 async function afterTaskStatusCommit(
     ctx: RequestContext,
     changes: TaskStatusChange[],
 ): Promise<void> {
+    for (const change of changes) {
+        await emitAutomationEvent(ctx, {
+            event: 'TASK_STATUS_CHANGED',
+            entityType: 'Task',
+            entityId: change.taskId,
+            actorUserId: ctx.userId,
+            stableKey: `${change.taskId}:${change.fromStatus}:${change.toStatus}`,
+            data: {
+                fromStatus: change.fromStatus,
+                toStatus: change.toStatus,
+                resolution: change.resolution,
+            },
+        });
+    }
     await bumpEntityCacheVersion(ctx, 'task');
     await emitTaskWatcherActivityBatch(
         ctx,
@@ -904,9 +977,10 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         const task = await WorkItemRepository.setStatus(db, ctx, taskId, status, resolution);
         if (!task) throw notFound('Task not found');
         changes = [{ taskId, fromStatus, toStatus: status, resolution: resolution ?? null }];
-        // Audit → automation → source reconciliation, in that order, on
-        // this transaction. The payload below is the only part that
-        // differs from the bulk path; the sequence itself is shared.
+        // Audit → source reconciliation, in that order, on this
+        // transaction (the automation emission is post-commit — see the
+        // sequence comment above). The payload below is the only part
+        // that differs from the bulk path; the sequence itself is shared.
         await applyTaskStatusPostWrite(db, ctx, changes[0], () =>
             logEvent(db, ctx, {
                 action: 'TASK_STATUS_CHANGED',
@@ -1677,8 +1751,9 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
         const result = await WorkItemRepository.bulkSetStatus(db, ctx, taskIds, status, resolution);
         for (const change of changes) {
             // Same shared sequence the single-task path runs — audit,
-            // then automation, then source reconciliation. Only the
-            // audit payload differs (`Bulk …` + `bulk: true`).
+            // then source reconciliation, on this transaction; the
+            // automation emission follows the commit for both paths.
+            // Only the audit payload differs (`Bulk …` + `bulk: true`).
             await applyTaskStatusPostWrite(db, ctx, change, () =>
                 logEvent(db, ctx, {
                     action: 'TASK_STATUS_CHANGED',

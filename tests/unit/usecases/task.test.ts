@@ -50,6 +50,7 @@ jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     },
     TaskLinkRepository: {
         listByTask: jest.fn().mockResolvedValue([]),
+        listByTaskIds: jest.fn().mockResolvedValue([]),
         link: jest.fn(),
         unlink: jest.fn(),
     },
@@ -132,7 +133,11 @@ const mockSetStatus = WorkItemRepository.setStatus as jest.MockedFunction<typeof
 const mockAssign = WorkItemRepository.assign as jest.MockedFunction<typeof WorkItemRepository.assign>;
 const mockBulkSetStatus = WorkItemRepository.bulkSetStatus as jest.MockedFunction<typeof WorkItemRepository.bulkSetStatus>;
 const mockListByIds = WorkItemRepository.listByIds as jest.MockedFunction<typeof WorkItemRepository.listByIds>;
+// The status-change relevance gate resolves the WHOLE batch's links in
+// one read (`listByTaskIds`); the edit-time re-check still uses the
+// single-task `listByTask`.
 const mockLinkList = TaskLinkRepository.listByTask as jest.MockedFunction<typeof TaskLinkRepository.listByTask>;
+const mockLinkListByIds = TaskLinkRepository.listByTaskIds as jest.MockedFunction<typeof TaskLinkRepository.listByTaskIds>;
 const mockCommentAdd = TaskCommentRepository.add as jest.MockedFunction<typeof TaskCommentRepository.add>;
 const mockSanitize = sanitizePlainText as jest.MockedFunction<typeof sanitizePlainText>;
 const mockEmitEvent = emitAutomationEvent as jest.MockedFunction<typeof emitAutomationEvent>;
@@ -283,8 +288,8 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'AUDIT_FINDING', controlId: null,
         } as never);
-        mockLinkList.mockResolvedValueOnce([
-            { entityType: 'POLICY' }, // wrong type — not CONTROL / FRAMEWORK_REQUIREMENT
+        mockLinkListByIds.mockResolvedValueOnce([
+            { taskId: 't1', entityType: 'POLICY' }, // wrong type — not CONTROL / FRAMEWORK_REQUIREMENT
         ] as never);
 
         await expect(
@@ -307,13 +312,17 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'INCIDENT', controlId: null,
         } as never);
-        mockLinkList.mockResolvedValueOnce([
-            { entityType: 'ASSET' },
+        mockLinkListByIds.mockResolvedValueOnce([
+            { taskId: 't1', entityType: 'ASSET' },
         ] as never);
 
         await expect(
             setTaskStatus(makeRequestContext('EDITOR'), 't1', 'RESOLVED', 'fix shipped'),
         ).resolves.toBeDefined();
+        // The status gate resolves links through the BATCH read, never
+        // the per-task one — the single-task path is the batch path
+        // with a batch of one.
+        expect(mockLinkList).not.toHaveBeenCalled();
     });
 });
 
