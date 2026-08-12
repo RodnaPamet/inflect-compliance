@@ -1397,7 +1397,24 @@ async function loadFindingEvents(
  */
 const MAX_BADGE_COUNT = 99;
 
-export async function getUpcomingDeadlineCount(
+/**
+ * The nav badge's number: **the caller's own open TASKS**, overdue plus a
+ * forward horizon.
+ *
+ * Renamed from `getUpcomingDeadlineCount`, which was a lie of scope. The
+ * calendar page beside it aggregates NINETEEN sources tenant-wide; this counts
+ * one model, filtered to `assigneeUserId === ctx.userId`. Those are different
+ * questions and the divergence is INTENTIONAL — the badge answers "what do I
+ * personally owe?", the page answers "what does the org owe?" — but the old
+ * name promised the page's answer, so the two numbers looked like a bug every
+ * time someone compared them.
+ *
+ * If the badge should ever mirror the page, that is a product decision and a
+ * behaviour change to the most-glanced-at number in the app; it is not a
+ * rename. `tests/unit/compliance-calendar.test.ts` pins the divergence
+ * deliberately so a future reader finds an assertion rather than a discrepancy.
+ */
+export async function getMyUpcomingTaskCount(
     ctx: RequestContext,
     options: { now?: Date; horizonDays?: number } = {},
 ): Promise<number> {

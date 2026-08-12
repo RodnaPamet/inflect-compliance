@@ -27,7 +27,8 @@ import {
 } from '@/app-layer/usecases/compliance-calendar';
 import { CalendarQuerySchema } from '@/app-layer/schemas/calendar.schemas';
 
-// The calendar aggregates 17 domains. Authorization is PER-SOURCE inside the
+// The calendar aggregates 19 sources (17 at Epic 49; asset-vulnerability and
+// audit were added when the projection-completeness guard found them missing). Authorization is PER-SOURCE inside the
 // usecase (each loader gates on its domain `.view`); this baseline denies a
 // caller who holds NONE of those view permissions — notably a scopeless API
 // key (e.g. `mcp:read`, which maps to no PermissionSet flags) that would
