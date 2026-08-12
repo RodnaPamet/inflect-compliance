@@ -17,9 +17,12 @@ import { enqueue } from '../jobs/queue';
 import { UPDATE_STATUS_TARGETS } from '@/lib/automation/status-allowlist';
 import { safeFetch, SsrfBlockedError, RedirectNotAllowedError } from './webhook-safety';
 import { isNotificationsEnabled } from '../notifications/settings';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
-import { createTask as createTaskUsecase } from '../usecases/task';
+import { TERMINAL_WORK_ITEM_STATUSES, isTerminalStatus } from '../domain/work-item-status';
+import { createTask as createTaskUsecase, setTaskStatus } from '../usecases/task';
+import { setControlStatus } from '../usecases/control/mutations';
+import { bulkSetRiskStatus } from '../usecases/risk';
 import { assertCanCreateTask } from '../policies/task.policies';
+import { AppError } from '@/lib/errors/types';
 import { getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
 import { computePermissions } from '@/lib/tenant-context';
 import type { RequestContext } from '../types';
@@ -270,6 +273,78 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     return { ok: true, summary: `Created task ${task.key}`, detail: { taskId: task.id, key: task.key } };
 }
 
+/**
+ * The status-changed event each UPDATE_STATUS target emits once its write
+ * lands. Read by the self-trigger guard in `updateStatus`.
+ *
+ * Cross-entity pairings are absent deliberately: UPDATE_STATUS only ever
+ * writes `event.entityId`, so a rule triggered by `RISK_STATUS_CHANGED` whose
+ * action targets `Task` would be addressing a Task table with a Risk id and
+ * match nothing. The only reachable loop is entity-type-with-itself.
+ */
+const SELF_TRIGGER_EVENT: Record<string, string> = {
+    Risk: 'RISK_STATUS_CHANGED',
+    Task: 'TASK_STATUS_CHANGED',
+    Control: 'CONTROL_STATUS_CHANGED',
+};
+
+/**
+ * Render a refused status change as an execution summary.
+ *
+ * The reason is the gate's OWN message (`AppError.message`) — the four-eyes
+ * refusal reads "Only the assigned reviewer can sign off and complete this
+ * task.", the relevance refusal names the missing link. It lands verbatim on
+ * `AutomationExecution.errorMessage`, so an operator staring at a FAILED row
+ * learns which gate refused and why without opening the code.
+ */
+function refusedSummary(
+    entityType: string,
+    toStatus: string,
+    ctx: RequestContext,
+    err: unknown,
+): string {
+    const reason = err instanceof AppError || err instanceof Error ? err.message : String(err);
+    return `Refused ${entityType} status change to ${toStatus} for rule actor ${ctx.userId} (role ${ctx.role}): ${reason}`;
+}
+
+/**
+ * UPDATE_STATUS — route every target through its canonical status usecase.
+ *
+ * This handler used to write `db.{risk,task,control}.updateMany` directly. For
+ * Task that was a bypass of SIX steps the HTTP path cannot skip: the
+ * state-machine transition gate, the FOUR-EYES REVIEWER SIGN-OFF GATE, the
+ * required-resolution rule, the type-relevance gate, the `TASK_STATUS_CHANGED`
+ * audit row, and `reconcileTaskSource`. Since the allowlist permits
+ * `Task.status → RESOLVED`/`CLOSED`, any rule author could close a
+ * reviewer-gated task with nobody reviewing it and nothing in the audit
+ * trail — the third bypass of that gate after `/issues/bulk/status` and
+ * `/issues/bulk/assign`.
+ *
+ * Each target now goes through the usecase that owns its gates:
+ *
+ *   • Task    → `setTaskStatus` — the full sequence, single-path ordering,
+ *               shared with the bulk path since #1868.
+ *   • Control → `setControlStatus` — `assertCanUpdateControl` (coarse +
+ *               granular), the global-library refusal, the
+ *               `CONTROL_STATUS_CHANGED` audit row, and the cache bump.
+ *   • Risk    → `bulkSetRiskStatus` with a one-element array. Risk has NO
+ *               state machine and NO reviewer gate to inherit, so the
+ *               available gain is authority + audit, and `bulkSetRiskStatus`
+ *               is the usecase that writes a `status_change`-categorised
+ *               audit row carrying real from/to. (`updateRisk` also accepts
+ *               `status`, but it is a whole-entity patch whose audit row does
+ *               not describe a status transition.) What Risk still LACKS —
+ *               and would need before automation can be trusted to close a
+ *               risk — is a transition state machine and an
+ *               acceptance-authority check on `ACCEPTED`/`CLOSED`; neither
+ *               exists on the HTTP path either, so this handler is now no
+ *               weaker than a human clicking the same button.
+ *
+ * The write is authorised as the RULE AUTHOR (see `resolveActorCtx`), so a
+ * reviewer-gated task can only be closed by a rule whose author IS the named
+ * reviewer. Everything else FAILS the execution with the gate's own reason on
+ * `errorMessage` — never a silent no-op.
+ */
 async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): Promise<ActionResult> {
     const cfg = rule.actionConfigJson as UpdateStatusActionConfig;
     if (!event.entityId) return { ok: false, summary: 'Event carries no entityId to update' };
@@ -282,33 +357,101 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
     if (!allow.values.has(cfg.toStatus)) {
         return { ok: false, summary: `Illegal ${cfg.entityType} status: ${cfg.toStatus}` };
     }
-    const where = { id: event.entityId, tenantId: event.tenantId };
-    const data = { [allow.field]: cfg.toStatus };
+
+    // ── Recursion guard ──
+    //
+    // Routing through the usecases buys the audit row and the gates; it also
+    // makes this handler EMIT. `setTaskStatus` fires `TASK_STATUS_CHANGED`
+    // post-commit and `setControlStatus` fires `CONTROL_STATUS_CHANGED` — both
+    // are automation triggers, which the old `updateMany` never produced. So a
+    // rule `on TASK_STATUS_CHANGED → set this Task's status` now feeds itself.
+    //
+    // It does not run forever by accident: the second hop's target status
+    // equals the current one, `checkWorkItemTransition` refuses the no-op, and
+    // the loop dies at depth 2. But that is the state machine catching a
+    // mistake, not a decision — and it does not hold for a PAIR of rules that
+    // drive a task A → B → A, where every hop is a legal transition, every hop
+    // has a distinct `stableKey`, and the dispatcher's `(ruleId, event,
+    // stableKey)` idempotency key is therefore fresh each time. That loop is
+    // unbounded.
+    //
+    // The guard is a refusal rather than a depth budget because a budget would
+    // need the hop count carried through the event, and `emitAutomationEvent`
+    // in `setTaskStatus` carries no such field (unlike `__subflowDepth`, which
+    // subflow-dispatcher stamps for exactly this reason). Refusing costs
+    // nothing that worked before — the old handler emitted no event, so no
+    // existing rule can be relying on the loop — and the one shape it forbids
+    // (auto-advance a task on its own status change) is precisely what the
+    // four-eyes gate exists to prevent. If a legitimate use appears, the fix is
+    // to carry a depth on the status event and bound it, not to drop this.
+    if (event.event === SELF_TRIGGER_EVENT[cfg.entityType]) {
+        return {
+            ok: false,
+            summary:
+                `Refused: an UPDATE_STATUS action on ${cfg.entityType} cannot be driven by ` +
+                `${event.event} — it writes the entity that fired it, so the rule would re-trigger itself`,
+        };
+    }
+
+    // Authority BEFORE any write, so an unauthorised rule leaves no trace
+    // beyond the FAILED execution row carrying the reason (the #1874 pattern).
+    const principalUserId = rule.createdByUserId ?? event.actorUserId;
+    if (!principalUserId) return { ok: false, summary: 'No actor to authorise the status change' };
+    const resolved = await resolveActorCtx(db, event.tenantId, principalUserId);
+    if (!resolved.ok) return { ok: false, summary: resolved.summary };
+    const ctx = resolved.ctx;
+    const entityId = event.entityId;
+
     // Explicit per-model dispatch (no dynamic index) so the model name can
     // never be attacker-influenced and the call stays type-checked.
-    let updated: number;
-    switch (cfg?.entityType) {
-        case 'Risk':
-            updated = (await db.risk.updateMany({ where, data })).count;
-            break;
-        case 'Task':
-            updated = (await db.task.updateMany({ where, data })).count;
-            break;
-        case 'Control':
-            updated = (await db.control.updateMany({ where, data })).count;
-            break;
-        default:
-            // 'Issue' has no standalone model (issues are Tasks via WorkItemType)
-            // — unsupported here rather than guessing the backing table.
-            return { ok: false, summary: `Unsupported entityType: ${cfg?.entityType}` };
+    try {
+        switch (cfg.entityType) {
+            case 'Task':
+                // A terminal write needs a non-empty resolution ("closed
+                // without why" was a recurring SOC 2 finding), and
+                // `UpdateStatusActionConfig` has no field for one. The rule is
+                // the reason, so the rule names itself — the audit row and the
+                // task body both end up pointing at the accountable
+                // configuration rather than at an empty string.
+                await setTaskStatus(
+                    ctx,
+                    entityId,
+                    cfg.toStatus,
+                    isTerminalStatus(cfg.toStatus)
+                        ? `Set to ${cfg.toStatus} by automation rule "${rule.name}" (${rule.id}).`
+                        : null,
+                );
+                break;
+            case 'Control':
+                await setControlStatus(ctx, entityId, cfg.toStatus);
+                break;
+            case 'Risk': {
+                const { updated } = await bulkSetRiskStatus(
+                    ctx,
+                    [entityId],
+                    // Membership was proven by the allowlist check above; the
+                    // cast only re-states it for the compiler.
+                    cfg.toStatus as Parameters<typeof bulkSetRiskStatus>[2],
+                );
+                if (updated === 0) {
+                    return { ok: false, summary: `No Risk matched ${entityId}` };
+                }
+                break;
+            }
+            default:
+                // 'Issue' has no standalone model (issues are Tasks via
+                // WorkItemType) — unsupported here rather than guessing the
+                // backing table. Unreachable: STATUS_ALLOWLIST has no entry.
+                return { ok: false, summary: `Unsupported entityType: ${cfg?.entityType}` };
+        }
+    } catch (err) {
+        return { ok: false, summary: refusedSummary(cfg.entityType, cfg.toStatus, ctx, err) };
     }
+
     return {
-        ok: updated > 0,
-        summary:
-            updated > 0
-                ? `Set ${cfg.entityType}.${cfg.field} = ${cfg.toStatus}`
-                : `No ${cfg.entityType} matched ${event.entityId}`,
-        detail: { updated },
+        ok: true,
+        summary: `Set ${cfg.entityType}.${cfg.field} = ${cfg.toStatus}`,
+        detail: { updated: 1, entityId, actorUserId: ctx.userId, actorRole: ctx.role },
     };
 }
 
