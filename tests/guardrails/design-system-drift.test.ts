@@ -227,8 +227,15 @@ describe('New page token discipline', () => {
         // Cap history:
         //   - 85: pre-Epic-49 baseline.
         //   - 87 (+2): Epic 49 added /calendar/page.tsx +
-        //     /calendar/CalendarClient.tsx, both leaning on legacy
-        //     `btn btn-*` + `glass-card` classes for header chrome.
+        //     /calendar/CalendarClient.tsx. The original reason recorded here
+        //     was "both leaning on legacy `btn btn-*` + `glass-card` classes
+        //     for header chrome" — that is NO LONGER TRUE (verified 2026-08-12:
+        //     zero occurrences in either file). They still count because this
+        //     check is an ALLOWLIST — `allPages` minus `MIGRATED_PAGES` — so a
+        //     page counts until someone asserts it meets the full migration
+        //     bar, not merely that it dropped two class names. Reclaiming the
+        //     2 means adding them to MIGRATED_PAGES, which is a judgement
+        //     about the whole page and belongs to whoever makes it.
         //   - 88 (+1): Epic 66 added the frameworks client island
         //     `frameworks/FrameworksClient.tsx` for the table/cards
         //     view toggle. Uses one `glass-card` class for the empty

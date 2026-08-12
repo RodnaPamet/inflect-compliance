@@ -35,6 +35,8 @@ import type {
 } from '@/app-layer/schemas/calendar.schemas';
 import { getCategoryTone } from '@/lib/design/status-tone';
 import { formatDate, formatMonthYear, formatWeekdayShort } from '@/lib/format-date';
+import { WEEK_STARTS_ON } from '@/components/ui/date-picker/week-start';
+import { toYMD as toUtcYMD } from '@/components/ui/date-picker/date-utils';
 import { categoryLabel } from '@/lib/calendar-labels';
 import { Tooltip, TooltipProvider } from '@/components/ui/tooltip';
 
@@ -104,10 +106,6 @@ function startOfUtcMonth(d: Date): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
-function toYMD(d: Date): string {
-    return d.toISOString().slice(0, 10);
-}
-
 /**
  * The viewer's LOCAL calendar day as `YYYY-MM-DD`.
  *
@@ -123,10 +121,20 @@ function toLocalYMD(d: Date): string {
     return `${y}-${m}-${day}`;
 }
 
-// Weekday column headers, Sun→Sat, localized + SSR-safe via the shared
-// formatter. 2023-01-01 is a Sunday, so indices 0..6 land on Sun..Sat.
+/**
+ * Which weekday the grid starts on, shared with the date picker.
+ *
+ * These two render on the SAME page and disagreed: `date-picker/calendar.tsx`
+ * defaults `weekStartsOn = 1` (Monday) while this grid hardcoded Sunday via a
+ * bare `getUTCDay()`. Clicking a date in the picker and finding it in a
+ * differently-aligned month grid is a small thing that makes a product feel
+ * untrustworthy. One constant now, imported by both.
+ */
+// Weekday column headers, localized + SSR-safe via the shared formatter.
+// 2023-01-01 (UTC) is a Sunday, so offsetting by WEEK_STARTS_ON walks the
+// labels to the configured first day.
 const WEEKDAY_HEADERS = Array.from({ length: 7 }, (_, i) =>
-    formatWeekdayShort(new Date(Date.UTC(2023, 0, 1 + i))),
+    formatWeekdayShort(new Date(Date.UTC(2023, 0, 1 + ((i + WEEK_STARTS_ON) % 7)))),
 );
 
 // ─── Component ───────────────────────────────────────────────────────
@@ -176,14 +184,21 @@ export function CalendarMonth({
     // Build the fixed 6×7 grid. Pad with leading days from the previous
     // month and trailing days from the next so every month renders as a
     // full 42-cell (6-row) rectangle — the height never jumps.
-    const padStart = monthStart.getUTCDay();
+    // Days of blank padding before the 1st, relative to the configured week
+    // start. `getUTCDay()` alone assumes Sunday and silently mis-aligns every
+    // cell for any other start day.
+    const padStart = (monthStart.getUTCDay() - WEEK_STARTS_ON + 7) % 7;
     const gridStartMs = monthStart.getTime() - padStart * DAY_MS;
     const cells: { date: Date; ymd: string; inMonth: boolean }[] = [];
     for (let i = 0; i < TOTAL_CELLS; i++) {
         const d = new Date(gridStartMs + i * DAY_MS);
         cells.push({
             date: d,
-            ymd: toYMD(d),
+            // The shared helper is nullable (it validates its input); every
+            // date here is arithmetic on a known-good month start, so the
+            // fallback is unreachable — it exists so this stays total rather
+            // than asserting non-null.
+            ymd: toUtcYMD(d) ?? '',
             inMonth: d.getUTCMonth() === monthStart.getUTCMonth(),
         });
     }

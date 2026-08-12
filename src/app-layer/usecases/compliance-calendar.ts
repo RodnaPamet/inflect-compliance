@@ -1190,10 +1190,14 @@ async function loadTaskEvents(
         .filter((r) => r.dueAt)
         .map((r): CalendarEvent => {
             const date = r.dueAt as Date;
-            const isDone =
-                r.status === 'RESOLVED' ||
-                r.status === 'CLOSED' ||
-                r.status === 'CANCELED';
+            // The imported constant, not a third copy of the same three
+            // strings. This file already imports it and uses it correctly 240
+            // lines below; a hand-written twin drifts silently — add a
+            // terminal status to the enum and this list keeps calling those
+            // tasks open, on the surface that reports what is due.
+            const isDone = (TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(
+                r.status,
+            );
             return {
                 id: `TASK:${r.id}:task-due`,
                 type: 'task-due',

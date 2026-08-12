@@ -33,6 +33,7 @@
  */
 
 import { cn } from '@/lib/cn';
+import { WEEK_STARTS_ON } from './week-start';
 import { addMonths, addYears, format } from 'date-fns';
 import type { Locale as DateFnsLocale } from 'date-fns/locale';
 import {
@@ -101,7 +102,7 @@ export type CalendarProps = DayPickerProps & {
 
 export function Calendar({
     mode = 'single',
-    weekStartsOn = 1,
+    weekStartsOn = WEEK_STARTS_ON,
     numberOfMonths = 1,
     showYearNavigation = false,
     disabled: disabledDays,

@@ -32,9 +32,9 @@ jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
 
-import { CalendarHeatmap } from '@/components/ui/CalendarHeatmap';
-import { CalendarMonth } from '@/components/ui/CalendarMonth';
-import { GanttTimeline } from '@/components/ui/GanttTimeline';
+import { CalendarHeatmap } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap';
+import { CalendarMonth } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarMonth';
+import { GanttTimeline } from '@/app/t/[tenantSlug]/(app)/calendar/_components/GanttTimeline';
 import type { CalendarEvent } from '@/app-layer/schemas/calendar.schemas';
 
 function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {

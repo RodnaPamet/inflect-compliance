@@ -95,7 +95,19 @@ describe('Epic 60 — legacy pattern ratchet', () => {
         const hits = countMatches(appFiles, /e\.key === ['"]Enter['"]/g);
         const total = hits.reduce((s, h) => s + h.matches, 0);
         // Post-rollout floor: 1 (MFA OTP page, precondition-guarded).
-        const CAP = 1;
+        //
+        // 2 (+1, 2026-08-12): `calendar/_components/CalendarMonth.tsx` MOVED
+        // into src/app/** from src/components/ui/ (it had exactly one consumer
+        // and bound to the calendar route's i18n + app-layer). No handler was
+        // written — the count rose because the file crossed the scan boundary.
+        //
+        // It is deliberately NOT migrated to `useEnterSubmit`. That hook is for
+        // submitting a form on Enter; this is an ARIA grid's roving-tabindex
+        // navigation — Enter/Space select the focused cell and the arrow keys
+        // move focus, in one `switch` that must own the whole key set. Routing
+        // half of it through a submit hook would split one keyboard contract
+        // across two mechanisms.
+        const CAP = 2;
         if (total > CAP) {
             throw new Error(
                 `Inline \`e.key === "Enter"\` handler count in src/app/** rose to ${total} (cap ${CAP}). ` +
