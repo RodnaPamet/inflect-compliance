@@ -86,7 +86,11 @@ const RENDERED_TEST_FLOOR = 221;
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
 // NIS2 self-assessment spec — locks the gains in as the new minimum.
-const E2E_SPEC_FLOOR = 42;
+// Raised 42 → 47 (2026-08-12): absorbs the five specs added since, incl.
+// calendar.spec.ts — the compliance calendar's first browser-level
+// coverage, which proves its query-string state survives a real
+// navigation (jsdom can only prove the params get written).
+const E2E_SPEC_FLOOR = 47;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

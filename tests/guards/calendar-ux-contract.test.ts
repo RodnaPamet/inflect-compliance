@@ -51,7 +51,7 @@ describe('2 — loading is distinguishable from empty', () => {
         // `!data && !error` form was permanently false under keepPreviousData,
         // so no spinner ever showed on a range switch).
         expect(src).toMatch(/const pending = calQuery\.isLoading/);
-        expect(src).toMatch(/data-testid="calendar-loading"/);
+        expect(src).toMatch(/id="calendar-loading"/);
         expect(src).toMatch(/aria-busy=\{pending/);
     });
 });
@@ -259,7 +259,7 @@ describe('7 — off-screen deadlines are signposted', () => {
     it('probes for the next deadline when the range is empty', () => {
         const src = read(CLIENT);
         expect(src).toMatch(/nextOffscreenDeadline/);
-        expect(src).toMatch(/data-testid="calendar-offscreen-hint"/);
+        expect(src).toMatch(/id="calendar-offscreen-hint"/);
         expect(src).toMatch(/calendar-jump-to-next/);
         // The probe must be conditional — it costs nothing on the normal
         // (non-empty) path.
