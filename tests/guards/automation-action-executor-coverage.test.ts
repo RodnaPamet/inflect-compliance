@@ -48,7 +48,13 @@ describe('action-executor coverage', () => {
         // so the spawned task carries a TSK-N key + audit + automation event
         // + bell, instead of a raw keyless db.task.create.
         expect(src).toMatch(/createTaskUsecase\(/); // CREATE_TASK
-        expect(src).toMatch(/updateMany/); // UPDATE_STATUS
+        // UPDATE_STATUS routes each target through its canonical status
+        // usecase (B2-1b) rather than a raw `updateMany`, so the write
+        // inherits that entity's gates + audit row. The raw shape is
+        // explicitly banned below.
+        expect(src).toMatch(/setTaskStatus\(/); // UPDATE_STATUS → Task
+        expect(src).toMatch(/setControlStatus\(/); // UPDATE_STATUS → Control
+        expect(src).toMatch(/bulkSetRiskStatus\(/); // UPDATE_STATUS → Risk
         expect(src).toMatch(/safeFetch\(/); // WEBHOOK (SSRF-guarded outbound)
     });
 });

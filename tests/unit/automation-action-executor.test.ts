@@ -17,7 +17,24 @@ jest.mock('node:dns', () => ({ promises: { lookup: (...a: unknown[]) => lookupMo
 // the spawned task carries a TSK-N key + audit + automation event + bell.
 // Mock it to assert the executor calls it with the right shape.
 const createTaskMock = jest.fn().mockResolvedValue({ id: 'task-1', key: 'TSK-1' });
-jest.mock('@/app-layer/usecases/task', () => ({ createTask: (...a: unknown[]) => createTaskMock(...a) }));
+// UPDATE_STATUS likewise delegates (B2-1b) — each target goes through the
+// usecase that owns its gates instead of a raw `updateMany`, which skipped
+// the transition gate, the four-eyes reviewer gate, the audit row and the
+// source reconciler. The gates are proven for real in
+// tests/integration/automation-update-status-gates.test.ts.
+const setTaskStatusMock = jest.fn().mockResolvedValue({ id: 'task-1' });
+jest.mock('@/app-layer/usecases/task', () => ({
+    createTask: (...a: unknown[]) => createTaskMock(...a),
+    setTaskStatus: (...a: unknown[]) => setTaskStatusMock(...a),
+}));
+const setControlStatusMock = jest.fn().mockResolvedValue({ id: 'control-1' });
+jest.mock('@/app-layer/usecases/control/mutations', () => ({
+    setControlStatus: (...a: unknown[]) => setControlStatusMock(...a),
+}));
+const bulkSetRiskStatusMock = jest.fn().mockResolvedValue({ updated: 1 });
+jest.mock('@/app-layer/usecases/risk', () => ({
+    bulkSetRiskStatus: (...a: unknown[]) => bulkSetRiskStatusMock(...a),
+}));
 
 import { executeAction } from '@/app-layer/automation/action-executor';
 
@@ -93,17 +110,20 @@ describe('executeAction', () => {
         expect(inputArg.metadataJson).toMatchObject({ automationDedupeKey: 'auto:r1:risk-1', ruleId: 'r1' });
     });
 
-    it('UPDATE_STATUS writes the field on the event entity', async () => {
+    it('UPDATE_STATUS moves the event entity through its canonical usecase', async () => {
         const db = makeDb();
         const res = await executeAction(db, {
             id: 'r1', name: 'Close', actionType: 'UPDATE_STATUS', createdByUserId: 'u1',
             actionConfigJson: { entityType: 'Risk', field: 'status', toStatus: 'MITIGATED' },
         }, baseEvent);
         expect(res.ok).toBe(true);
-        expect(db.risk.updateMany).toHaveBeenCalledWith({
-            where: { id: 'risk-1', tenantId: 't1' },
-            data: { status: 'MITIGATED' },
-        });
+        expect(bulkSetRiskStatusMock).toHaveBeenCalledWith(
+            expect.objectContaining({ tenantId: 't1', userId: 'u1' }),
+            ['risk-1'],
+            'MITIGATED',
+        );
+        // The raw-table write is the bug, not an implementation detail.
+        expect(db.risk.updateMany).not.toHaveBeenCalled();
     });
 
     it('WEBHOOK fires a real signed HTTP POST', async () => {

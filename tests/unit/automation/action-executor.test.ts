@@ -39,8 +39,24 @@ jest.mock('@/app-layer/jobs/queue', () => ({
 }));
 
 const createTaskUsecase = jest.fn();
+const setTaskStatusUsecase = jest.fn();
 jest.mock('@/app-layer/usecases/task', () => ({
     createTask: (...a: unknown[]) => createTaskUsecase(...a),
+    setTaskStatus: (...a: unknown[]) => setTaskStatusUsecase(...a),
+}));
+
+// UPDATE_STATUS routes each target through the usecase that owns its gates
+// (B2-1b), so those usecases are the seam this suite asserts against. The
+// gates themselves are proven end-to-end, against a real DB, in
+// tests/integration/automation-update-status-gates.test.ts — a mock cannot
+// prove a reviewer gate refused anything.
+const setControlStatusUsecase = jest.fn();
+jest.mock('@/app-layer/usecases/control/mutations', () => ({
+    setControlStatus: (...a: unknown[]) => setControlStatusUsecase(...a),
+}));
+const bulkSetRiskStatusUsecase = jest.fn();
+jest.mock('@/app-layer/usecases/risk', () => ({
+    bulkSetRiskStatus: (...a: unknown[]) => bulkSetRiskStatusUsecase(...a),
 }));
 
 import { executeAction } from '@/app-layer/automation/action-executor';
@@ -91,6 +107,9 @@ beforeEach(() => {
     db.task.updateMany.mockResolvedValue({ count: 1 });
     db.risk.updateMany.mockResolvedValue({ count: 1 });
     db.control.updateMany.mockResolvedValue({ count: 1 });
+    setTaskStatusUsecase.mockResolvedValue({ id: 'e-1' });
+    setControlStatusUsecase.mockResolvedValue({ id: 'e-1' });
+    bulkSetRiskStatusUsecase.mockResolvedValue({ updated: 1 });
 });
 
 describe('executeAction — dispatch', () => {
@@ -464,9 +483,9 @@ describe('UPDATE_STATUS — allowlist enforcement', () => {
     });
 });
 
-describe('UPDATE_STATUS — per-model dispatch', () => {
-    const update = (cfg: Record<string, unknown>) =>
-        run({ actionType: 'UPDATE_STATUS', actionConfigJson: cfg }, {});
+describe('UPDATE_STATUS — per-usecase dispatch', () => {
+    const update = (cfg: Record<string, unknown>, e: Record<string, unknown> = {}) =>
+        run({ actionType: 'UPDATE_STATUS', actionConfigJson: cfg }, e);
 
     /** Discover a legal status for an entity so the test tracks the allowlist. */
     const legalFor = async (entityType: 'Risk' | 'Task' | 'Control') => {
@@ -477,34 +496,138 @@ describe('UPDATE_STATUS — per-model dispatch', () => {
         return { field: spec.field, value: [...spec.values][0] };
     };
 
-    it.each(['Risk', 'Task', 'Control'] as const)(
-        'updates a %s through its own model, scoped by tenant',
-        async (entityType) => {
-            const { field, value } = await legalFor(entityType);
-            const model = { Risk: db.risk, Task: db.task, Control: db.control }[
-                entityType
-            ];
+    /**
+     * The raw-table write is the bug this handler had, not an implementation
+     * detail: `db.task.updateMany({ status })` skipped the transition gate,
+     * the four-eyes reviewer gate, the audit row and the source reconciler.
+     * Asserting the tables stay untouched is what keeps a future "simplify"
+     * from quietly restoring it.
+     */
+    const expectNoRawTableWrite = () => {
+        expect(db.risk.updateMany).not.toHaveBeenCalled();
+        expect(db.task.updateMany).not.toHaveBeenCalled();
+        expect(db.control.updateMany).not.toHaveBeenCalled();
+    };
 
-            const res = await update({ entityType, field, toStatus: value });
+    it('routes a Task through setTaskStatus, never a raw updateMany', async () => {
+        const res = await update({ entityType: 'Task', field: 'status', toStatus: 'IN_PROGRESS' });
 
-            expect(res.ok).toBe(true);
-            expect(model.updateMany).toHaveBeenCalledWith({
-                where: { id: 'e-1', tenantId: 't-1' },
-                data: { [field]: value },
-            });
-        },
-    );
+        expect(res.ok).toBe(true);
+        const [ctx, taskId, status, resolution] = setTaskStatusUsecase.mock.calls[0];
+        expect(ctx).toMatchObject({ tenantId: 't-1', userId: 'author-1', role: 'ADMIN' });
+        expect(taskId).toBe('e-1');
+        expect(status).toBe('IN_PROGRESS');
+        // Non-terminal: no synthesised resolution, so a mid-flight move does
+        // not stamp a "why" onto a task that has not finished.
+        expect(resolution).toBeNull();
+        expectNoRawTableWrite();
+    });
+
+    it('synthesises a resolution naming the rule on a terminal Task close', async () => {
+        const res = await update({ entityType: 'Task', field: 'status', toStatus: 'CLOSED' });
+
+        expect(res.ok).toBe(true);
+        const resolution = setTaskStatusUsecase.mock.calls[0][3];
+        // `setTaskStatus` refuses a terminal move with an empty resolution and
+        // UpdateStatusActionConfig has no field for one, so the rule names
+        // itself rather than the executor inventing a blank.
+        expect(resolution).toContain('My rule');
+        expect(resolution).toContain('r-1');
+        expect(resolution).toContain('CLOSED');
+    });
+
+    it('routes a Control through setControlStatus', async () => {
+        const { field, value } = await legalFor('Control');
+        const res = await update({ entityType: 'Control', field, toStatus: value });
+
+        expect(res.ok).toBe(true);
+        expect(setControlStatusUsecase).toHaveBeenCalledWith(
+            expect.objectContaining({ tenantId: 't-1', userId: 'author-1' }),
+            'e-1',
+            value,
+        );
+        expectNoRawTableWrite();
+    });
+
+    it('routes a Risk through bulkSetRiskStatus', async () => {
+        const { field, value } = await legalFor('Risk');
+        const res = await update({ entityType: 'Risk', field, toStatus: value });
+
+        expect(res.ok).toBe(true);
+        expect(bulkSetRiskStatusUsecase).toHaveBeenCalledWith(
+            expect.objectContaining({ tenantId: 't-1', userId: 'author-1' }),
+            ['e-1'],
+            value,
+        );
+        expectNoRawTableWrite();
+    });
 
     it('reports a miss when nothing matched, without claiming success', async () => {
         const { field, value } = await legalFor('Risk');
-        db.risk.updateMany.mockResolvedValue({ count: 0 });
+        bulkSetRiskStatusUsecase.mockResolvedValue({ updated: 0 });
 
         const res = await update({ entityType: 'Risk', field, toStatus: value });
 
         expect(res.ok).toBe(false);
         expect(res.summary).toBe('No Risk matched e-1');
-        expect(res.detail).toEqual({ updated: 0 });
     });
+
+    it('settles FAILED with the gate\'s own reason when a usecase refuses', async () => {
+        const { ForbiddenError } = await import('@/lib/errors/types');
+        setTaskStatusUsecase.mockRejectedValue(
+            new ForbiddenError('Only the assigned reviewer can sign off and complete this task.'),
+        );
+
+        const res = await update({ entityType: 'Task', field: 'status', toStatus: 'CLOSED' });
+
+        expect(res.ok).toBe(false);
+        // The operator reading errorMessage must learn WHICH gate refused.
+        expect(res.summary).toContain('Only the assigned reviewer can sign off');
+        expect(res.summary).toContain('author-1');
+        expect(res.summary).toContain('ADMIN');
+        expectNoRawTableWrite();
+    });
+
+    it('refuses an actor whose membership is not ACTIVE, before any write', async () => {
+        db.tenantMembership.findUnique.mockResolvedValue({
+            role: 'ADMIN',
+            status: 'REMOVED',
+            customRole: null,
+            tenant: { slug: 'acme' },
+        });
+
+        const res = await update({ entityType: 'Task', field: 'status', toStatus: 'CLOSED' });
+
+        expect(res.ok).toBe(false);
+        expect(res.summary).toContain('REMOVED');
+        expect(setTaskStatusUsecase).not.toHaveBeenCalled();
+        expectNoRawTableWrite();
+    });
+
+    it.each([
+        ['Task', 'TASK_STATUS_CHANGED'],
+        ['Risk', 'RISK_STATUS_CHANGED'],
+        ['Control', 'CONTROL_STATUS_CHANGED'],
+    ] as const)(
+        'refuses a %s UPDATE_STATUS driven by %s — the rule would re-trigger itself',
+        async (entityType, triggerEvent) => {
+            const { field, value } = await legalFor(entityType);
+
+            const res = await update(
+                { entityType, field, toStatus: value },
+                { event: triggerEvent },
+            );
+
+            expect(res.ok).toBe(false);
+            expect(res.summary).toContain('re-trigger itself');
+            // Refused BEFORE the actor lookup, so nothing at all was touched.
+            expect(db.tenantMembership.findUnique).not.toHaveBeenCalled();
+            expect(setTaskStatusUsecase).not.toHaveBeenCalled();
+            expect(setControlStatusUsecase).not.toHaveBeenCalled();
+            expect(bulkSetRiskStatusUsecase).not.toHaveBeenCalled();
+            expectNoRawTableWrite();
+        },
+    );
 });
 
 describe('WEBHOOK', () => {
