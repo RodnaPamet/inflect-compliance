@@ -16,6 +16,7 @@
  * omission.
  */
 import * as fs from 'node:fs';
+import { readCalendarUsecase } from '../helpers/calendar-usecase-source';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -23,7 +24,6 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const CLIENT = 'src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx';
 const MONTH = 'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarMonth.tsx';
-const USECASE = 'src/app-layer/usecases/compliance-calendar.ts';
 const DASHBOARD_REPO = 'src/app-layer/repositories/DashboardRepository.ts';
 
 describe('1 — the Timeline shows every deadline', () => {
@@ -64,7 +64,7 @@ describe('3 — one urgency threshold set', () => {
     });
 
     it('the calendar classifier reads the shared scale, not a literal', () => {
-        const src = read(USECASE);
+        const src = readCalendarUsecase();
         // `urgencyFromDaysUntil` (day-granularity, tenant-tz) or the older
         // `urgencyFromDate` (instant) — either is the shared `URGENCY_DAYS`
         // scale. What matters is it is NOT a local literal window.
@@ -132,7 +132,7 @@ describe('4 — the heatmap includes the future', () => {
 
 describe('5 — deep-links land on the relevant section', () => {
     it('vendor documents + assessments deep-link to their tab', () => {
-        const src = read(USECASE);
+        const src = readCalendarUsecase();
         expect(src).toMatch(/\/vendors\/\$\{r\.vendorId\}\?tab=documents/);
         expect(src).toMatch(/\/vendors\/\$\{r\.vendorId\}\?tab=assessments/);
     });
@@ -152,7 +152,7 @@ describe('5 — deep-links land on the relevant section', () => {
         // the gap survived. This resolves EVERY `tenantHrefFromCtx(ctx, …)`
         // path against the actual App Router tree.
         const APP = path.join(ROOT, 'src/app/t/[tenantSlug]/(app)');
-        const src = read(USECASE);
+        const src = readCalendarUsecase();
         const hrefs = [
             ...src.matchAll(/tenantHrefFromCtx\(\s*ctx,\s*`([^`]+)`/g),
         ].map((m) => m[1]);
@@ -200,7 +200,7 @@ describe('5 — deep-links land on the relevant section', () => {
         // Four risk event types and two vendor types used to collapse to the
         // same entity root, and control-exception / incident-notification
         // landed on a root that showed no sign of the thing that was due.
-        const src = read(USECASE);
+        const src = readCalendarUsecase();
         // Risk mitigation target + both treatment types → the treatment plan
         // (assessment tab), distinct from risk-review's overview root. Each
         // href expression is unique to its event type (`${r.id}` = risk-target,
@@ -267,11 +267,14 @@ describe('7 — off-screen deadlines are signposted', () => {
     });
 
     it('the stale "Time" naming is gone from the badge surfaces', () => {
-        for (const rel of [
-            USECASE,
-            'src/app/api/t/[tenantSlug]/calendar/upcoming-count/route.ts',
-        ]) {
-            expect(read(rel)).not.toMatch(/"Time" nav badge/);
+        // The usecase is a directory, so it comes from the helper rather than
+        // a path in this list.
+        const sources = [
+            readCalendarUsecase(),
+            read('src/app/api/t/[tenantSlug]/calendar/upcoming-count/route.ts'),
+        ];
+        for (const src of sources) {
+            expect(src).not.toMatch(/"Time" nav badge/);
         }
     });
 });
