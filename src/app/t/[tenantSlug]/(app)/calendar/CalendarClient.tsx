@@ -19,6 +19,7 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { ChevronLeft, ChevronRight, Calendar as CalIcon } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 
@@ -32,6 +33,7 @@ import { CalendarHeatmap } from '@/components/ui/CalendarHeatmap';
 import { CalendarMonth } from '@/components/ui/CalendarMonth';
 import { GanttTimeline } from '@/components/ui/GanttTimeline';
 import { ToggleGroup } from '@/components/ui/toggle-group';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { formatDate, formatMonthYear } from '@/lib/format-date';
 import { getCategoryTone } from '@/lib/design/status-tone';
@@ -117,9 +119,51 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     const canEditTask = perms.tasks.edit;
     const canCreateTask = perms.tasks.create;
 
-    const [view, setView] = React.useState<View>('month');
-    const [monthCursor, setMonthCursor] = React.useState<Date>(
-        () => startOfUtcMonth(new Date()),
+    // ── URL as the source of truth for view + month + filters ──
+    //
+    // None of this state was in the URL, on a page whose entire purpose is
+    // "what is due" and whose links get pasted into chat. A shared calendar
+    // link carried the recipient to the current month with no filters,
+    // whatever the sender was looking at.
+    //
+    // Hand-rolled rather than via `FilterProvider`: see the note on the filter
+    // group below. `replace` (not `push`) so toggling a category does not
+    // stack history entries the back button has to chew through.
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+
+    const viewParam = searchParams.get('view');
+    const view: View =
+        viewParam === 'heatmap' || viewParam === 'gantt' || viewParam === 'month'
+            ? viewParam
+            : 'month';
+    const monthParam = searchParams.get('month');
+    const monthCursor = React.useMemo(() => {
+        const parsed = monthParam ? parseYMD(`${monthParam}-01`) : null;
+        return parsed ? startOfUtcMonth(parsed) : startOfUtcMonth(new Date());
+    }, [monthParam]);
+
+    const setParams = React.useCallback(
+        (next: Record<string, string | null>) => {
+            const params = new URLSearchParams(searchParams.toString());
+            for (const [k, v] of Object.entries(next)) {
+                if (v === null || v === '') params.delete(k);
+                else params.set(k, v);
+            }
+            const qs = params.toString();
+            router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+        },
+        [router, pathname, searchParams],
+    );
+
+    const setView = React.useCallback(
+        (v: View) => setParams({ view: v === 'month' ? null : v }),
+        [setParams],
+    );
+    const setMonthCursor = React.useCallback(
+        (d: Date) => setParams({ month: d.toISOString().slice(0, 7) }),
+        [setParams],
     );
     const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
     const [taskCreateDate, setTaskCreateDate] = React.useState<string | null>(
@@ -128,10 +172,25 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     // Filters. `categoryFilter` is server-side (it rides the SWR key so a
     // filtered view fetches only its slice); `mineOnly` is client-side (it
     // filters the fetched events by ownerUserId, no refetch).
-    const [categoryFilter, setCategoryFilter] = React.useState<
-        Set<CalendarEventCategory>
-    >(() => new Set());
-    const [mineOnly, setMineOnly] = React.useState(false);
+    const categoryFilter = React.useMemo<Set<CalendarEventCategory>>(() => {
+        const raw = searchParams.get('categories');
+        if (!raw) return new Set();
+        const valid = new Set<string>(CALENDAR_EVENT_CATEGORIES);
+        return new Set(
+            raw.split(',').filter((c): c is CalendarEventCategory => valid.has(c)),
+        );
+    }, [searchParams]);
+    const setCategoryFilter = React.useCallback(
+        (next: Set<CalendarEventCategory>) =>
+            setParams({ categories: [...next].sort().join(',') || null }),
+        [setParams],
+    );
+    const mineOnly = searchParams.get('mine') === '1';
+    const setMineOnly = React.useCallback(
+        (updater: (v: boolean) => boolean) =>
+            setParams({ mine: updater(searchParams.get('mine') === '1') ? '1' : null }),
+        [setParams, searchParams],
+    );
 
     // Stable "today" anchor — see rangeForView.
     const [todayMs] = React.useState(() => startOfUtcDay(new Date()).getTime());
@@ -260,34 +319,34 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     // Month nav + view switch must clear the stale day selection: the panel
     // header otherwise keeps a date the new month/view no longer shows, and
     // the seed-task button would create for the wrong day.
-    const handlePrev = () => {
+    // The setters take a VALUE, not an updater — the state lives in the URL,
+    // and reading the current month from `monthCursor` (itself derived from the
+    // URL) is the same thing a functional update would have read.
+    const shiftMonth = (delta: number) => {
         if (view !== 'month') return;
         setSelectedDate(null);
         setMonthCursor(
-            (prev) =>
-                new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1)),
+            new Date(
+                Date.UTC(
+                    monthCursor.getUTCFullYear(),
+                    monthCursor.getUTCMonth() + delta,
+                    1,
+                ),
+            ),
         );
     };
-    const handleNext = () => {
-        if (view !== 'month') return;
-        setSelectedDate(null);
-        setMonthCursor(
-            (prev) =>
-                new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1)),
-        );
-    };
+    const handlePrev = () => shiftMonth(-1);
+    const handleNext = () => shiftMonth(1);
     const changeView = (next: View) => {
         setSelectedDate(null);
         setView(next);
     };
 
     const toggleCategory = (cat: CalendarEventCategory) => {
-        setCategoryFilter((prev) => {
-            const nextSet = new Set(prev);
-            if (nextSet.has(cat)) nextSet.delete(cat);
-            else nextSet.add(cat);
-            return nextSet;
-        });
+        const nextSet = new Set(categoryFilter);
+        if (nextSet.has(cat)) nextSet.delete(cat);
+        else nextSet.add(cat);
+        setCategoryFilter(nextSet);
     };
 
     // ─── Inline actions for task-backed events ───────────────────────
@@ -415,67 +474,36 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                 </div>
             </header>
 
-            {/* Filter + legend bar. The category chips double as the colour
-                legend (each carries its category tone) AND the filter — the
-                backend already accepts a category filter, it just had no UI. */}
+            {/* Colour legend ONLY — the interactive filter moved into the side
+                panel (see `#calendar-filter-group`).
+
+                These used to be the same control: chips that were both the key
+                to the dot colours AND the filter. Splitting them keeps the key
+                beside the grid it explains — a grid of coloured events with no
+                key anywhere would be a regression, whatever the filter gained.
+                Both halves render from `CATEGORY_TONES` so the swatch here and
+                the checkbox there cannot drift to different colours. */}
             <div
                 className={cn(cardVariants({ density: 'none' }), 'flex flex-wrap items-center gap-compact px-4 py-2')}
                 role="group"
-                aria-label={t('filterAria')}
+                aria-label={t('legendAria')}
+                id="calendar-legend"
             >
                 <span className="text-xs font-medium text-content-muted">
                     {t('filterLegendLabel')}
                 </span>
-                {CALENDAR_EVENT_CATEGORIES.map((cat) => {
-                    const active = categoryFilter.has(cat);
-                    const tone = getCategoryTone(cat);
-                    return (
-                        <button
-                            key={cat}
-                            type="button"
-                            onClick={() => toggleCategory(cat)}
-                            aria-pressed={active}
-                            className={cn(
-                                'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs transition-colors',
-                                active
-                                    ? 'border-border-emphasis bg-bg-muted text-content-emphasis'
-                                    : 'border-border-subtle text-content-muted hover:text-content-emphasis',
-                            )}
-                        >
-                            <span
-                                className={cn('size-2 rounded-full', tone.bg)}
-                                aria-hidden="true"
-                            />
-                            {categoryLabel(t, cat)}
-                        </button>
-                    );
-                })}
-                <span aria-hidden="true" className="mx-1 h-4 w-px bg-border-subtle" />
-                <button
-                    type="button"
-                    onClick={() => setMineOnly((v) => !v)}
-                    aria-pressed={mineOnly}
-                    className={cn(
-                        'inline-flex items-center rounded-full border px-2 py-0.5 text-xs transition-colors',
-                        mineOnly
-                            ? 'border-border-emphasis bg-bg-muted text-content-emphasis'
-                            : 'border-border-subtle text-content-muted hover:text-content-emphasis',
-                    )}
-                >
-                    {t('myDeadlines')}
-                </button>
-                {categoryFilter.size > 0 && (
-                    <button
-                        type="button"
-                        onClick={() => setCategoryFilter(new Set())}
-                        className="text-xs text-content-muted underline underline-offset-2 hover:text-content-emphasis"
+                {CALENDAR_EVENT_CATEGORIES.map((cat) => (
+                    <span
+                        key={cat}
+                        className="inline-flex items-center gap-1.5 text-xs text-content-muted"
                     >
-                        {t('filterClear')}
-                    </button>
-                )}
-                <span className="ml-auto text-xs text-content-muted" data-testid="calendar-count-total">
-                    {t('countTotal', { count: events.length })}
-                </span>
+                        <span
+                            className={cn('size-2 rounded-full', getCategoryTone(cat).bg)}
+                            aria-hidden="true"
+                        />
+                        {categoryLabel(t, cat)}
+                    </span>
+                ))}
             </div>
 
             {/* Range navigation. Month has working prev/next; the fixed
@@ -662,8 +690,97 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     )}
                 </div>
 
-                {/* Side panel — selected day's events */}
-                <aside className={cardVariants({ density: 'compact' })} data-testid="calendar-side-panel">
+                {/* Side panel — filter, then the selected day's events.
+                    `order-first lg:order-none` hoists it ABOVE the grid on
+                    mobile: below `lg` the two-column grid collapses to one
+                    column and the aside would otherwise render after a full
+                    42-cell month, putting the filter behind a scroll. */}
+                <aside
+                    className={cn(
+                        cardVariants({ density: 'compact' }),
+                        'order-first lg:order-none',
+                        // The panel must not grow past the viewport and push the
+                        // filter off-screen on a busy day — the events list gets
+                        // its own scroll region below instead.
+                        'lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] flex flex-col',
+                    )}
+                    data-testid="calendar-side-panel"
+                >
+                    {/* ── Filter ── its own labelled group, because putting
+                        interactive controls inside <aside> changes the a11y
+                        tree: without this they would read as loose widgets in
+                        a complementary landmark. */}
+                    <div
+                        role="group"
+                        aria-label={t('filterAria')}
+                        id="calendar-filter-group"
+                        className="mb-3 border-b border-border-subtle pb-3"
+                    >
+                        <div className="mb-2 flex items-center justify-between">
+                            <span className="text-xs font-medium text-content-muted">
+                                {t('filterAria')}
+                            </span>
+                            {categoryFilter.size > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setCategoryFilter(new Set())}
+                                    className="text-xs text-content-muted underline underline-offset-2 hover:text-content-emphasis"
+                                >
+                                    {t('filterClear')}
+                                </button>
+                            )}
+                        </div>
+                        {/* Two columns: eight categories stacked one-per-row
+                            would push the day's events below the fold at a
+                            900px viewport, which is the whole point of the
+                            panel. */}
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                            {CALENDAR_EVENT_CATEGORIES.map((cat) => {
+                                const active = categoryFilter.has(cat);
+                                const tone = getCategoryTone(cat);
+                                return (
+                                    <label
+                                        key={cat}
+                                        className="flex min-w-0 cursor-pointer items-center gap-1.5 text-xs text-content-muted hover:text-content-emphasis"
+                                    >
+                                        <Checkbox
+                                            size="sm"
+                                            checked={active}
+                                            onCheckedChange={() => toggleCategory(cat)}
+                                            aria-label={categoryLabel(t, cat)}
+                                        />
+                                        <span
+                                            className={cn('size-2 shrink-0 rounded-full', tone.bg)}
+                                            aria-hidden="true"
+                                        />
+                                        <span className="truncate">{categoryLabel(t, cat)}</span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                        <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-xs text-content-muted hover:text-content-emphasis">
+                            <Checkbox
+                                size="sm"
+                                checked={mineOnly}
+                                onCheckedChange={() => setMineOnly((v) => !v)}
+                                aria-label={t('myDeadlines')}
+                            />
+                            {t('myDeadlines')}
+                        </label>
+                        {/* The count is the filter's feedback, so it moved with
+                            it — it is the only thing that says a filter did
+                            anything. */}
+                        <p
+                            className="mt-2 text-xs text-content-muted"
+                            data-testid="calendar-count-total"
+                        >
+                            {t('countTotal', { count: events.length })}
+                        </p>
+                    </div>
+
+                    {/* ── The selected day's events ── own scroll region so a
+                        busy day cannot push the filter above it out of reach. */}
+                    <div className="min-h-0 flex-1 overflow-y-auto">
                     {selectedDate ? (
                         <>
                             <Heading level={3} className="mb-2">
@@ -771,6 +888,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                     ) : (
                         <p className="text-xs text-content-muted">{t('clickDay')}</p>
                     )}
+                    </div>
                 </aside>
             </div>
 
