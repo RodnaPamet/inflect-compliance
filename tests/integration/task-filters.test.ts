@@ -5,7 +5,7 @@
  * match:
  *
  *   1. `status=TRIAGED` returns EXACTLY the TRIAGED rows (TRIAGED is a
- *      real WorkItemStatus — the filter must not silently drop it).
+ *      real TaskStatus — the filter must not silently drop it).
  *   2. The linked-control filter (`controlId`) returns the
  *      control-linked task AND the returned row carries a populated
  *      `control` object — the TP-6 `taskListSelect` fix. Before TP-6

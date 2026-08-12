@@ -72,7 +72,7 @@ describeFn('RQ-2 — appetite monitor (integration)', () => {
         });
 
         // Before the fix this threw a 500 (source:'risk_appetite_breach' is
-        // not a WorkItemSource member, and the call was unguarded).
+        // not a TaskSource member, and the call was unguarded).
         const out = await createBreachRemediationTask(ctx, breach.id);
         expect(out.taskId).toBeTruthy();
 

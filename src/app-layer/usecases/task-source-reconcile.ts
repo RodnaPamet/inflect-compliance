@@ -22,7 +22,7 @@
  *
  * ─── Dispatch model: POINTER-DRIVEN, not provenance-driven ──────────
  *
- * `Task.source` (WorkItemSource) is NOT the discriminator, and this file
+ * `Task.source` (TaskSource) is NOT the discriminator, and this file
  * deliberately does not pretend otherwise. It CANNOT be, as the schema
  * stands:
  *

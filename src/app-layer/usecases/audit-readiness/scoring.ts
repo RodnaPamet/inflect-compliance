@@ -22,7 +22,7 @@
  * readiness score. Approval is load-bearing: a DRAFT / SUBMITTED /
  * expired row no longer satisfies a control's evidence dimension.
  */
-import { type AuditCycle, type Applicability, type WorkItemStatus } from '@prisma/client';
+import { type AuditCycle, type Applicability, type TaskStatus } from '@prisma/client';
 import { RequestContext } from '../../types';
 import { assertCanViewPack } from '../../policies/audit-readiness.policies';
 import { logEvent } from '../../events/audit';
@@ -407,7 +407,7 @@ async function computeGenericReadiness(
                 tenantId: ctx.tenantId,
                 type: { in: ['CONTROL_GAP', 'AUDIT_FINDING'] },
                 status: {
-                    notIn: TERMINAL_WORK_ITEM_STATUSES as readonly WorkItemStatus[] as WorkItemStatus[],
+                    notIn: TERMINAL_WORK_ITEM_STATUSES as readonly TaskStatus[] as TaskStatus[],
                 },
                 deletedAt: null,
             },

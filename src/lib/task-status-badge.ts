@@ -1,11 +1,11 @@
 /**
  * Tasks roadmap TP-1 — the single source of truth for how a task
- * (`WorkItemStatus`) renders as a `<StatusBadge>`.
+ * (`TaskStatus`) renders as a `<StatusBadge>`.
  *
  * Before this module, status → colour/label was duplicated and
  * *divergent* across every task renderer: some used `OPEN: 'warning'`,
  * others `OPEN: 'neutral'`; some carried a phantom `DONE` variant or the
- * two-L `CANCELLED` spelling that the `WorkItemStatus` enum never had.
+ * two-L `CANCELLED` spelling that the `TaskStatus` enum never had.
  * This map is now the ONE place that decision lives — every task
  * renderer imports it, so a tone change happens once.
  *
@@ -13,7 +13,7 @@
  * *type* and the plain-constant `WorkItemStatusValue` union, so it can be
  * pulled into client components without dragging server-only code.
  *
- * The canonical enum is `WorkItemStatus`
+ * The canonical enum is `TaskStatus`
  * (prisma/schema/enums.prisma): OPEN, TRIAGED, IN_PROGRESS, IN_REVIEW,
  * BLOCKED, RESOLVED, CLOSED, CANCELED — eight values, spelling CANCELED
  * (one L), and there is NO "DONE".
@@ -34,7 +34,7 @@ export interface TaskStatusBadgeSpec {
 
 /**
  * The one status → badge map. Keyed by exactly the seven
- * `WorkItemStatus` values. `OPEN` is neutral everywhere (the single
+ * `TaskStatus` values. `OPEN` is neutral everywhere (the single
  * consistent open tone); `BLOCKED` is the only error tone.
  */
 export const TASK_STATUS_BADGE: Record<WorkItemStatusValue, TaskStatusBadgeSpec> = {

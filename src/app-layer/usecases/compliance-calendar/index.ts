@@ -68,7 +68,7 @@ import { effectiveDueAt } from '../due-planning';
 import { urgencyFromDaysUntil, DAY_MS } from '@/lib/urgency';
 import { hasPermission, type PermissionKey } from '@/lib/security/permission-middleware';
 import { env } from '@/env';
-import type { WorkItemStatus } from '@prisma/client';
+import type { TaskStatus } from '@prisma/client';
 import type { RequestContext } from '../../types';
 import {
     type CalendarEvent,
@@ -417,12 +417,12 @@ export async function getMyUpcomingTaskCount(
                 assigneeUserId: ctx.userId,
                 dueAt,
                 status: {
-                    // Cast through readonly → mutable WorkItemStatus[]
+                    // Cast through readonly → mutable TaskStatus[]
                     // because Prisma's `notIn` rejects the `as const`
                     // literal type, and the shared ACTIVE_STATUS_FILTER
                     // constant types its payload as `string[]` which
                     // Prisma's newer generated client also rejects.
-                    notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[],
+                    notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[],
                 },
             },
             take: MAX_BADGE_COUNT + 1,

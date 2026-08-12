@@ -221,7 +221,7 @@ describe('list filters are validated, never `as`-cast onto a Prisma column', () 
             scan('        // This used to be `filters.status as Prisma.EnumControlStatusFilter` — an'),
         ).toHaveLength(0);
         expect(
-            scan('/**\n * (`where.status = filters.status as WorkItemStatus`), so two selected\n */'),
+            scan('/**\n * (`where.status = filters.status as TaskStatus`), so two selected\n */'),
         ).toHaveLength(0);
     });
 });

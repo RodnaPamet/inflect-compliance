@@ -4,7 +4,7 @@
  * Locks three invariants that used to drift across the codebase:
  *
  *   (a) The shared status→badge map (`src/lib/task-status-badge.ts`)
- *       has EXACTLY the eight `WorkItemStatus` enum values — no phantom
+ *       has EXACTLY the eight `TaskStatus` enum values — no phantom
  *       "DONE", the spelling is "CANCELED" (one L), and every entry
  *       carries a valid `<StatusBadge>` variant + a `labelKey`.
  *
@@ -28,21 +28,30 @@ import { TASK_STATUS_BADGE } from '@/lib/task-status-badge';
 
 const ROOT = join(__dirname, '..', '..');
 
-/** Canonical enum values, parsed from the live Prisma schema. */
-function parseWorkItemStatusEnum(): string[] {
+/**
+ * Canonical enum values, parsed from the live Prisma schema.
+ *
+ * Members are matched positively (`SCREAMING_SNAKE` only) rather than by
+ * subtracting the things that are not members. B3-6 put an
+ * `@@map("WorkItemStatus")` block attribute inside this enum — pinning
+ * the physical Postgres type so the rename needed no migration — and a
+ * blank-and-comment-subtracting parser read that attribute line as a
+ * ninth status value.
+ */
+function parseTaskStatusEnum(): string[] {
     const schema = readFileSync(
         join(ROOT, 'prisma', 'schema', 'enums.prisma'),
         'utf8',
     );
-    const match = schema.match(/enum\s+WorkItemStatus\s*\{([^}]*)\}/);
-    if (!match) throw new Error('WorkItemStatus enum not found in enums.prisma');
+    const match = schema.match(/enum\s+TaskStatus\s*\{([^}]*)\}/);
+    if (!match) throw new Error('TaskStatus enum not found in enums.prisma');
     return match[1]
         .split('\n')
         .map((l) => l.trim())
-        .filter((l) => l.length > 0 && !l.startsWith('//'));
+        .filter((l) => /^[A-Z][A-Z0-9_]*$/.test(l));
 }
 
-const ENUM_VALUES = parseWorkItemStatusEnum();
+const ENUM_VALUES = parseTaskStatusEnum();
 const ALLOWED_VARIANTS = new Set([
     'success',
     'info',
@@ -65,7 +74,7 @@ function read(rel: string): string {
 }
 
 describe('TP-1 (a) — the shared TASK_STATUS_BADGE map', () => {
-    test('has exactly the eight WorkItemStatus keys', () => {
+    test('has exactly the eight TaskStatus keys', () => {
         expect(new Set(Object.keys(TASK_STATUS_BADGE))).toEqual(
             new Set(ENUM_VALUES),
         );
@@ -125,7 +134,7 @@ describe('TP-1 (b) — renderers consume the shared map, no inline status→vari
 });
 
 describe('TP-1 (c) — the Tasks list STATUS filter equals the enum set', () => {
-    test('filter-defs status options are exactly the WorkItemStatus values', () => {
+    test('filter-defs status options are exactly the TaskStatus values', () => {
         const src = read('src/app/t/[tenantSlug]/(app)/tasks/filter-defs.ts');
         const filterStatuses = new Set(
             [...src.matchAll(/filterEnums\.status\.(\w+)/g)].map((m) => m[1]),

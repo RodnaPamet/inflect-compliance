@@ -59,7 +59,8 @@ import {
     startOfUtcDay,
     toYMD,
 } from '@/components/ui/date-picker/date-utils';
-import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { TASK_SEVERITY_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import { taskStatusVariant, TASK_STATUS_BADGE } from '@/lib/task-status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
@@ -75,10 +76,10 @@ const buildStatusLabels = (t: (k: string) => string): Record<string, string> =>
     Object.fromEntries(
         Object.entries(TASK_STATUS_BADGE).map(([status, spec]) => [status, t(spec.labelKey)]),
     );
-const SEVERITY_BADGE: Record<string, StatusBadgeVariant> = {
-    INFO: 'neutral', LOW: 'neutral', MEDIUM: 'warning',
-    HIGH: 'error', CRITICAL: 'error',
-};
+// Severity → badge tone comes from the shared `TASK_SEVERITY_VARIANT`
+// (B2-6), the same map the task detail page reads. This file used to
+// keep its own copy that disagreed on LOW and HIGH, so one task looked
+// like two different severities depending on which page you were on.
 const buildTypeLabels = (t: (k: string) => string): Record<string, string> => ({
     AUDIT_FINDING: t('typeLabels.AUDIT_FINDING'), CONTROL_GAP: t('typeLabels.CONTROL_GAP'),
     INCIDENT: t('typeLabels.INCIDENT'), IMPROVEMENT: t('typeLabels.IMPROVEMENT'), TASK: t('typeLabels.TASK'),
@@ -897,7 +898,7 @@ function TasksPageInner({
                 accessorKey: 'severity',
                 header: t('colHeaders.severity'),
                 cell: ({ row }) => (
-                    <StatusBadge variant={SEVERITY_BADGE[row.original.severity] || 'neutral'} size="sm">
+                    <StatusBadge variant={TASK_SEVERITY_VARIANT[row.original.severity] || 'neutral'} size="sm">
                         {SEVERITY_LABELS[row.original.severity] || row.original.severity}
                     </StatusBadge>
                 ),

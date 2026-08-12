@@ -968,6 +968,39 @@ stands for that PR only — not as a precedent.
   long-standing "(shared)" label here was wrong. The split is benign — nothing
   is duplicated across the two — so this is a doc correction, not a refactor
   brief. See `docs/calendar-surface-do-not-touch.md` §5.
+- **Task subsystem is named `Task`, never `WorkItem`.** The aggregate at
+  `prisma/schema/tasks.prisma` has always been `Task` (+ `TaskLink`,
+  `TaskComment`, `TaskWatcher`, `TaskKeySequence`), but a parallel
+  `WorkItem*` vocabulary grew up around it in the enums, the status
+  machine and the repository. `Task` wins on measured cost: the
+  Task-side vocabulary is ~1,532 occurrences against ~155 for the five
+  enums — a 10× difference, and renaming the *model* would also change
+  every Prisma accessor (`db.task` → `db.workItem`) and the physical
+  table name in the RLS policies.
+
+  New code uses `Task*` for everything in this subsystem. The five
+  enums were renamed on 2026-08-12 (`WorkItemStatus` → `TaskStatus`,
+  and likewise Type / Severity / Priority / Source), joining the
+  already-`Task*` `TaskLinkEntityType` / `TaskLinkRelation`.
+
+  **The enums carry `@@map("WorkItem*")` and that pin is load-bearing.**
+  It keeps the physical Postgres type names unchanged, so the rename
+  emitted **no migration**. Do not "tidy" the `@@map` away: Prisma emits
+  explicit enum casts (`$1::"WorkItemStatus"`) in generated SQL, so an
+  `ALTER TYPE … RENAME` would make every still-running old container in
+  a rolling deploy fail task reads with SQLSTATE 42704.
+  `tests/integration/task-enum-db-mapping.test.ts` fails if either half
+  of the pin breaks.
+
+  Two `WorkItem*` surfaces deliberately survive, both because the rename
+  is blocked on a file owned by concurrent work, not on cost:
+  `WorkItemRepository` (243 occurrences / 43 files — the target name
+  `TaskRepository.ts` is currently a dead 5-line re-export being deleted
+  separately) and `src/app-layer/domain/work-item-status.ts` (27
+  importers, exporting `checkWorkItemTransition` /
+  `WorkItemStatusValue` / `WORK_ITEM_TRANSITIONS`). Both are pure
+  `sed` + file move once those files are free — finish them, don't add
+  to them.
 - **Audit trail**: Call `logEvent()` from `src/app-layer/events/audit.ts` after mutating state. Entries are hash-chained — never write directly to the `AuditLog` table.
 - **Error classes**: Use typed errors from `src/lib/errors/` rather than throwing raw `Error`.
 - **i18n**: UI strings go through `next-intl`. Message files are in `messages/`. Server components use `getTranslations()`, client components use `useTranslations()`.

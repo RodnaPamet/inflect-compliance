@@ -9,12 +9,27 @@
  * server-side (the assign snapped back; the create-form dropped a
  * link, leaving an AUDIT_FINDING task later un-closable).
  *
- * This guard locks the fix structurally: every mutation handler in
- * these two files MUST inspect the response (`res.ok` / an equivalent
- * ok-check) AND surface a failure (a `toast.error(...)` or a `throw`)
- * — never a silent swallow. A future handler that regresses to
- * fire-and-forget, or a re-introduced empty `.catch(() => {})`, fails
- * CI.
+ * B3-3 — the detail page's half of this guard was RETIRED. It listed
+ * eight handler NAMES and asserted each body matched
+ * `if (!<name>Res.ok)` plus a `toast.error`/`throw`. Two problems:
+ *
+ *   • It pinned a spelling, not a behaviour. B3-4 moved the ok-check
+ *     into `okOrThrow` + `useTenantMutation`'s `mutationFn` — the
+ *     failure is surfaced strictly better, and seven of the sixteen
+ *     assertions went red for a refactor that fixed nothing.
+ *   • It never executed the page, so it stayed green through a handler
+ *     that read `res.ok` and then did nothing useful with it.
+ *
+ * Its replacement is `tests/rendered/task-detail-mutation-failures.test.tsx`,
+ * which mounts the real page and asserts the user-visible contract: a
+ * rejected write surfaces the SERVER'S reason, a rejected comment does
+ * not clear the box, and a successful write reaches the list + KPI
+ * caches this page never reads.
+ *
+ * What survives here is the part that is genuinely structural and that
+ * no rendered test can cover cheaply: the empty-`.catch` swallow scan
+ * (a whole-file check, immune to the handler-shape churn above) and the
+ * create-form's pending-link contract, whose file B3-4 did not touch.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -33,60 +48,8 @@ function read(file: string): string {
     return fs.readFileSync(file, 'utf8');
 }
 
-/**
- * Return the brace-matched body `{ ... }` that follows the first
- * occurrence of `anchor` in `src`. Empty string if not found.
- */
-function bodyAfter(src: string, anchor: string): string {
-    const i = src.indexOf(anchor);
-    if (i < 0) return '';
-    const open = src.indexOf('{', i);
-    if (open < 0) return '';
-    let depth = 0;
-    for (let k = open; k < src.length; k++) {
-        if (src[k] === '{') depth++;
-        else if (src[k] === '}') {
-            depth--;
-            if (depth === 0) return src.slice(open, k + 1);
-        }
-    }
-    return src.slice(open);
-}
-
-describe('TP-6 — task detail mutation handlers surface failures', () => {
+describe('TP-6 — task detail mutations are never silently swallowed', () => {
     const src = read(DETAIL_PAGE);
-
-    // Curated list of the page's fetch-driven mutation handlers. A NEW
-    // handler that mutates via fetch MUST be added here (and satisfy the
-    // ok-check + surface-error contract) — that's the ratchet.
-    const HANDLERS = [
-        'const handleAssign = async',
-        'const handleAssignReviewer = async',
-        'const addLink = async',
-        'const addComment = async',
-        'const commitStatus = async',
-        'const toggleWatch = async',
-        // Not `= async`: Epic 67 moved the destructive removes onto the
-        // undo-toast, whose `action:` callback owns the await. The
-        // ok-check + throw contract below is unchanged — it is now
-        // satisfied inside that callback, which `bodyAfter` still
-        // captures since it brace-matches the whole handler.
-        'const removeWatcher =',
-        'const handleDeleteTask =',
-    ];
-
-    it.each(HANDLERS)('handler `%s` inspects res.ok', (anchor) => {
-        const body = bodyAfter(src, anchor);
-        expect(body).not.toBe('');
-        // Accept `res.ok`, `linkRes.ok`, or any `<name>Res.ok` / `.ok` check.
-        expect(body).toMatch(/\bif\s*\(\s*!\s*\w*[rR]es\.ok\s*\)/);
-    });
-
-    it.each(HANDLERS)('handler `%s` surfaces a failure (toast.error or throw)', (anchor) => {
-        const body = bodyAfter(src, anchor);
-        expect(body).not.toBe('');
-        expect(/toast\.error\(|throw\s+new\s+Error/.test(body)).toBe(true);
-    });
 
     it('has no empty fire-and-forget .catch swallow', () => {
         // `res.json().catch(() => ({}))` is a legitimate parse fallback;

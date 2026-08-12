@@ -38,7 +38,7 @@ type TLabel = (key: string) => string;
 
 // ─── Labels (resolved at render) ─────────────────────────────────────
 
-// The status filter offers EXACTLY the eight WorkItemStatus values.
+// The status filter offers EXACTLY the eight TaskStatus values.
 // IN_REVIEW (TP-2) is a real reviewer-sign-off state now, so a reviewed
 // task awaiting sign-off is filterable.
 function taskStatusLabels(t: T): Record<string, string> {
@@ -51,7 +51,7 @@ function taskStatusLabels(t: T): Record<string, string> {
         // RESOLVED is retired from the two status PICKERS (the detail
         // page's SELECTABLE_STATUSES and the bulk bar) because CLOSED
         // made it a redundant intermediate. It is NOT retired from the
-        // model: it is still a live WorkItemStatus, WORK_ITEM_TRANSITIONS
+        // model: it is still a live TaskStatus, WORK_ITEM_TRANSITIONS
         // still permits moving into it, the API still accepts it, and
         // the repository's metrics still count it as done. Rows in this
         // state therefore exist — legacy ones, plus anything set through
@@ -75,11 +75,11 @@ function taskTypeLabels(t: T): Record<string, string> {
 }
 
 // TP-5 — the work SOURCE that raised the task. Values are EXACTLY the
-// `WorkItemSource` enum members; the universal-inbox filter lets you slice
+// `TaskSource` enum members; the universal-inbox filter lets you slice
 // /tasks by where the work came from (manual entry vs the automated sweeps
 // that route audit findings, policy reviews, and expiring evidence in).
 /**
- * The full `WorkItemSource` enum, labelled. Exported because the table
+ * The full `TaskSource` enum, labelled. Exported because the table
  * renders the same enum in its Source column — it used to keep a private
  * copy that had drifted (RISK_MONITOR missing), so a risk-monitor task's
  * filter chip read "Risk Monitor" while its row showed the raw
@@ -104,7 +104,7 @@ export function taskSourceLabels(t: TLabel): Record<string, string> {
  */
 export function taskSeverityLabels(t: TLabel): Record<string, string> {
     return {
-        // INFO is a real WorkItemSeverity (automation can raise INFO tasks);
+        // INFO is a real TaskSeverity (automation can raise INFO tasks);
         // offered here so those tasks are filterable, matching the create form.
         INFO: t('filterEnums.severity.INFO'),
         LOW: t('filterEnums.severity.LOW'),

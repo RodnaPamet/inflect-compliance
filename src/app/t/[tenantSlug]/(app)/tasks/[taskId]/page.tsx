@@ -2,11 +2,14 @@
 
 import { formatDate, formatDateTime } from '@/lib/format-date';
 import { useTranslations } from 'next-intl';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
@@ -57,7 +60,7 @@ import { taskSeverityLabels } from '../filter-defs';
 // (TP-1) — tone via `taskStatusVariant`, copy via the map's `labelKey`.
 // Deriving the label record from that map (rather than hand-listing the
 // statuses) is what keeps IN_REVIEW — the reviewer-gate linchpin — from
-// silently going missing: adding a WorkItemStatus now populates every
+// silently going missing: adding a TaskStatus now populates every
 // surface automatically. Severity tone stays `TASK_SEVERITY_VARIANT`.
 const buildStatusLabels = (t: (k: string) => string): Record<string, string> =>
     Object.fromEntries(
@@ -144,6 +147,32 @@ const buildTaskStatusCbOptions = (
  */
 function errorMessage(e: unknown, fallback: string): string {
     return e instanceof Error && e.message.trim() ? e.message : fallback;
+}
+
+/**
+ * Single `res.ok` gate for every mutation on this page.
+ *
+ * Each `useTenantMutation` `mutationFn` funnels through here: a non-2xx
+ * response becomes a `throw`, which is what drives BOTH halves of the
+ * contract — SWR rolls the optimistic cache write back (`rollbackOnError`,
+ * the hook default) and `trigger()` re-throws so the caller can surface
+ * the reason (toast or inline banner). A `mutationFn` that resolves on a
+ * 4xx would paint success over a write that never happened, which is the
+ * exact regression `tests/rendered/task-detail-mutation-failures.test.tsx`
+ * fails on.
+ *
+ * The server's own message is preferred over `fallback` so a reviewer-gate
+ * 403 or a missing-resolution 400 reaches the user verbatim.
+ */
+async function okOrThrow(res: Response, fallback: string): Promise<Response> {
+    if (res.ok) return res;
+    const data: unknown = await res.json().catch(() => ({}));
+    const body = (data ?? {}) as { error?: unknown; message?: unknown };
+    throw new Error(
+        (typeof body.error === 'string' && body.error) ||
+            (typeof body.message === 'string' && body.message) ||
+            fallback,
+    );
 }
 
 const TERMINAL_STATUS_VERB_KEY: Record<string, string> = {
@@ -322,6 +351,202 @@ export default function TaskDetailPage() {
     const activity = activityQuery.data ?? [];
     const activityLoading = activityQuery.isLoading;
 
+    // B3-4 — reach the LIST + KPI caches, not just this page's four keys.
+    //
+    // Every mutation here used to write only `taskQuery` / `linksQuery` /
+    // `evidenceQuery` / `commentsQuery`. Change a status or an assignee,
+    // press Back, and the table row AND the KPI strip above it still showed
+    // the old values until a hard reload — the list is a SEPARATE SWR key
+    // per filter variant, and `/tasks/metrics` is a third key computed
+    // server-side over the whole register.
+    //
+    // A predicate (not `useTenantMutation`'s `invalidate:` array) is
+    // required: that array does an EXACT key match, and the list cache holds
+    // one entry per filter combination (`/tasks?status=OPEN`, …). Only a
+    // prefix predicate reaches them all. This mirrors `invalidateAllTasks`
+    // in `TasksClient` — which is a component-local `useCallback` there, so
+    // it cannot be imported (the audit's claim that it is exported is
+    // wrong). Hoisting the two into one shared hook is the follow-up; it
+    // touches `TasksClient`, which is out of this change's scope.
+    const { mutate: swrMutate } = useSWRConfig();
+    const invalidateTaskLists = useCallback(() => {
+        const listPrefix = apiUrl(CACHE_KEYS.tasks.list());
+        const metricsUrl = apiUrl(CACHE_KEYS.tasks.metrics());
+        return swrMutate(
+            (key) =>
+                typeof key === 'string' &&
+                (key === listPrefix ||
+                    key.startsWith(`${listPrefix}?`) ||
+                    key === metricsUrl ||
+                    key.startsWith(`${metricsUrl}?`)),
+            undefined,
+            { revalidate: true },
+        );
+    }, [apiUrl, swrMutate]);
+
+    // ─── Mutations (B3-4 — useTenantMutation) ────────────────────────
+    //
+    // Seven of the page's eleven fetch mutations are one round trip:
+    // predict → POST → reconcile. Those are exactly the shape the hook
+    // owns, so the hand-rolled `mutate(patch, {revalidate:false})` +
+    // `try/catch/finally { mutate() }` dance is gone — `optimisticUpdate`
+    // paints, `rollbackOnError` (default) reverts on throw, and the
+    // post-success revalidation picks up server-derived fields.
+    //
+    // The other four (`removeWatcher`, `removeLink`, `removeEvidence`,
+    // `handleDeleteTask`) are Epic 67 DELAYED-commit flows and deliberately
+    // stay hand-rolled. The hook snapshots the cache when `trigger()` runs;
+    // in an undo-toast flow that is 5 s AFTER the optimistic removal, so
+    // `rollbackOnError` would "restore" the already-filtered list and the
+    // row would stay gone on a failed commit. Their snapshots are taken
+    // before the paint, which is why they are correct today.
+    const statusMutation = useTenantMutation<
+        TaskDetail,
+        { status: string; resolution: string | null },
+        Response
+    >({
+        key: `/tasks/${taskId}`,
+        mutationFn: async ({ status, resolution }) =>
+            okOrThrow(
+                await fetch(apiUrl(`/tasks/${taskId}/status`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(
+                        resolution ? { status, resolution } : { status },
+                    ),
+                }),
+                t('detail.failedStatus'),
+            ),
+        optimisticUpdate: (cur, { status }) => (cur ? { ...cur, status } : cur),
+    });
+
+    const assignMutation = useTenantMutation<TaskDetail, string | null, Response>({
+        key: `/tasks/${taskId}`,
+        mutationFn: async (assigneeUserId) =>
+            okOrThrow(
+                await fetch(apiUrl(`/tasks/${taskId}/assign`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ assigneeUserId }),
+                }),
+                t('detail.assignFailed'),
+            ),
+        optimisticUpdate: (cur, assigneeUserId) =>
+            cur ? { ...cur, assigneeUserId } : cur,
+    });
+
+    const reviewerMutation = useTenantMutation<TaskDetail, string | null, Response>({
+        key: `/tasks/${taskId}`,
+        mutationFn: async (reviewerUserId) =>
+            okOrThrow(
+                await fetch(apiUrl(`/tasks/${taskId}`), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reviewerUserId }),
+                }),
+                t('detail.reviewerFailed'),
+            ),
+        optimisticUpdate: (cur, reviewerUserId) =>
+            cur ? { ...cur, reviewerUserId } : cur,
+    });
+
+    // No `optimisticUpdate`: the watchers array is server-shaped (it carries
+    // the display name the POST response resolves), so predicting it would
+    // paint a row the reconcile immediately replaces.
+    const watchMutation = useTenantMutation<
+        TaskDetail,
+        { watching: boolean },
+        Response
+    >({
+        key: `/tasks/${taskId}`,
+        mutationFn: async ({ watching }) =>
+            okOrThrow(
+                watching
+                    ? await fetch(
+                          apiUrl(
+                              `/tasks/${taskId}/watchers?userId=${encodeURIComponent(userId)}`,
+                          ),
+                          { method: 'DELETE' },
+                      )
+                    : await fetch(apiUrl(`/tasks/${taskId}/watchers`), {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: '{}',
+                      }),
+                t('detail.watchFailed'),
+            ),
+    });
+
+    // `invalidate` carries the TASK key here (exact match, no query string)
+    // because the Links tab badge reads `task._count.links`, not `links`.
+    const addLinkMutation = useTenantMutation<
+        TaskLinkRow[],
+        { entityType: string; entityId: string; relation: string },
+        Response
+    >({
+        key: `/tasks/${taskId}/links`,
+        mutationFn: async (input) =>
+            okOrThrow(
+                await fetch(apiUrl(`/tasks/${taskId}/links`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(input),
+                }),
+                t('detail.addLinkFailed'),
+            ),
+        invalidate: [`/tasks/${taskId}`],
+    });
+
+    const addEvidenceMutation = useTenantMutation<
+        EvidenceTabData,
+        { file: File; title: string } | { url: string; note?: string },
+        Response
+    >({
+        key: `/tasks/${taskId}/evidence`,
+        mutationFn: async (input) => {
+            if ('file' in input) {
+                const formData = new FormData();
+                formData.append('file', input.file);
+                if (input.title) formData.append('title', input.title);
+                formData.append('taskId', taskId);
+                return okOrThrow(
+                    await fetch(apiUrl('/evidence/uploads'), {
+                        method: 'POST',
+                        body: formData,
+                    }),
+                    t('detail.uploadFailed'),
+                );
+            }
+            return okOrThrow(
+                await fetch(apiUrl(`/tasks/${taskId}/evidence`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: input.url, note: input.note }),
+                }),
+                t('detail.linkEvidenceFailed'),
+            );
+        },
+        invalidate: [`/tasks/${taskId}`],
+    });
+
+    const addCommentMutation = useTenantMutation<
+        TaskCommentRow[],
+        string,
+        Response
+    >({
+        key: `/tasks/${taskId}/comments`,
+        mutationFn: async (body) =>
+            okOrThrow(
+                await fetch(apiUrl(`/tasks/${taskId}/comments`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ body }),
+                }),
+                t('detail.addCommentFailed'),
+            ),
+        invalidate: [`/tasks/${taskId}`],
+    });
+
     // Effective assignee for the picker — the draft if the user has
     // touched it, otherwise the task's persisted assignee.
     const assigneeValue: string | null =
@@ -350,86 +575,43 @@ export default function TaskDetailPage() {
         setChangingStatus(true);
         setStatusError('');
         try {
-            // Optimistic — the new status shows instantly, no spinner.
-            await taskQuery.mutate(
-                (cur: TaskDetail | undefined) => (cur ? { ...cur, status } : cur),
-                { revalidate: false },
-            );
-            const res = await fetch(apiUrl(`/tasks/${taskId}/status`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(
-                    resolution ? { status, resolution } : { status },
-                ),
-            });
-            if (!res.ok) {
-                // Surface the reason instead of silently reverting — the
-                // old flow swallowed the 4xx and the optimistic patch
-                // snapped back, so "nothing happened" on close.
-                const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    (typeof data?.error === 'string' && data.error) ||
-                        data?.message ||
-                        t('detail.failedStatus'),
-                );
-            }
+            await statusMutation.trigger({ status, resolution });
             setPendingTerminalStatus(null);
+            // The list row AND the KPI strip both key off status.
+            await invalidateTaskLists();
         } catch (e) {
-            const message =
-                errorMessage(e, t('detail.failedStatus'));
+            const message = errorMessage(e, t('detail.failedStatus'));
             setStatusError(message);
             // `statusError` only renders inside the terminal-status modal.
             // A non-terminal change (OPEN → IN_PROGRESS, a reviewer-gate
             // 403, …) has no modal open, so the banner had nowhere to
-            // show: the optimistic patch just snapped back and the user
-            // saw nothing. Toast covers that path; the modal keeps its
-            // inline banner, which stays visible next to the note field.
+            // show. Toast covers that path; the modal keeps its inline
+            // banner, which stays visible next to the note field.
             if (pendingTerminalStatus === null) {
                 toast.error(message);
             }
         } finally {
             setChangingStatus(false);
-            // Reconcile — pick up server-derived fields (completedAt,
-            // resolution) the optimistic patch can't know (and revert
-            // the optimistic status if the write failed).
-            await taskQuery.mutate();
         }
     };
 
     const handleAssign = async () => {
         setAssigning(true);
-        const assigneeUserId = assigneeValue || null;
         try {
-            await taskQuery.mutate(
-                (cur: TaskDetail | undefined) => (cur ? { ...cur, assigneeUserId } : cur),
-                { revalidate: false },
-            );
-            const res = await fetch(apiUrl(`/tasks/${taskId}/assign`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ assigneeUserId }),
-            });
-            // TP-6 — surface the failure instead of swallowing it. The
-            // optimistic patch reverts on the reconcile mutate() below.
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    (typeof data?.error === 'string' && data.error) ||
-                        data?.message ||
-                        t('detail.assignFailed'),
-                );
-            }
+            await assignMutation.trigger(assigneeValue || null);
+            await invalidateTaskLists();
         } catch (e) {
             toast.error(errorMessage(e, t('detail.assignFailed')));
             // Drop the rejected pick. `assigneeValue` prefers the draft
             // over the server value, so leaving it set would keep showing
-            // the assignee the server just refused — while the reconcile
-            // below reverts `task.assigneeUserId` to the real one. The
-            // label and the picker would name two different people until
-            // the page remounts. `undefined` (not null) is the reset:
-            // null is a real value meaning "unassigned".
+            // the assignee the server just refused — while the rollback
+            // reverts `task.assigneeUserId` to the real one. The label and
+            // the picker would name two different people until the page
+            // remounts. `undefined` (not null) is the reset: null is a
+            // real value meaning "unassigned".
             setAssigneeDraft(undefined);
         } finally {
             setAssigning(false);
-            await taskQuery.mutate();
         }
     };
 
@@ -441,31 +623,15 @@ export default function TaskDetailPage() {
             : (task?.reviewerUserId ?? null);
     const handleAssignReviewer = async () => {
         setSavingReviewer(true);
-        const reviewerUserId = reviewerValue || null;
         try {
-            await taskQuery.mutate(
-                (cur: TaskDetail | undefined) => (cur ? { ...cur, reviewerUserId } : cur),
-                { revalidate: false },
-            );
-            const res = await fetch(apiUrl(`/tasks/${taskId}`), {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reviewerUserId }),
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    (typeof data?.error === 'string' && data.error) ||
-                        data?.message ||
-                        t('detail.reviewerFailed'),
-                );
-            }
+            await reviewerMutation.trigger(reviewerValue || null);
+            await invalidateTaskLists();
         } catch (e) {
             toast.error(errorMessage(e, t('detail.reviewerFailed')));
             // Same reset as handleAssign — see the note there.
             setReviewerDraft(undefined);
         } finally {
             setSavingReviewer(false);
-            await taskQuery.mutate();
         }
     };
 
@@ -476,19 +642,14 @@ export default function TaskDetailPage() {
     const toggleWatch = async () => {
         setWatchPending(true);
         try {
-            const res = isWatching
-                ? await fetch(apiUrl(`/tasks/${taskId}/watchers?userId=${encodeURIComponent(userId)}`), { method: 'DELETE' })
-                : await fetch(apiUrl(`/tasks/${taskId}/watchers`), {
-                      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-                  });
-            if (!res.ok) throw new Error(t('detail.watchFailed'));
+            await watchMutation.trigger({ watching: isWatching });
         } catch (e) {
             toast.error(errorMessage(e, t('detail.watchFailed')));
         } finally {
             setWatchPending(false);
-            await taskQuery.mutate();
         }
     };
+
     // Epic 67 — delayed-commit watcher removal, matching `removeLink` and
     // `removeEvidence`. This was a bare fire-and-forget DELETE: one click
     // and the watcher was gone with no confirm and no way back, even
@@ -550,13 +711,10 @@ export default function TaskDetailPage() {
                 const res = await fetch(apiUrl(`/tasks/${taskId}`), {
                     method: 'DELETE',
                 });
-                if (!res.ok) {
-                    const data = await res.json().catch(() => ({}));
-                    throw new Error(
-                        (typeof data?.error === 'string' && data.error) ||
-                            t('detail.deleteFailed'),
-                    );
-                }
+                await okOrThrow(res, t('detail.deleteFailed'));
+                // The row must leave the list and the KPI counters must
+                // drop — neither is this page's SWR key.
+                await invalidateTaskLists();
             },
             onError: (err: unknown) => {
                 toast.error(
@@ -571,29 +729,19 @@ export default function TaskDetailPage() {
         if (!linkEntityId.trim()) return;
         setSavingLink(true);
         try {
-            const res = await fetch(apiUrl(`/tasks/${taskId}/links`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entityType: linkEntityType, entityId: linkEntityId, relation: linkRelation }),
+            await addLinkMutation.trigger({
+                entityType: linkEntityType,
+                entityId: linkEntityId,
+                relation: linkRelation,
             });
-            // TP-6 — a failed link add used to be swallowed, leaving the
-            // form "succeeding" with nothing linked. Surface it.
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    (typeof data?.error === 'string' && data.error) ||
-                        data?.message ||
-                        t('detail.addLinkFailed'),
-                );
-            }
             setLinkEntityId('');
             setShowLinkForm(false);
         } catch (e) {
+            // A failed link add used to be swallowed, leaving the form
+            // "succeeding" with nothing linked. Surface it.
             toast.error(errorMessage(e, t('detail.addLinkFailed')));
         } finally {
             setSavingLink(false);
-            // Refresh the links list + the task (its _count.links
-            // drives the Links tab badge).
-            await Promise.all([linksQuery.mutate(), taskQuery.mutate()]);
         }
     };
 
@@ -648,51 +796,28 @@ export default function TaskDetailPage() {
     const addEvidence = async (e: React.FormEvent) => {
         e.preventDefault();
         setEvidenceError('');
-
-        if (fileToUpload) {
-            setSavingEvidence(true);
-            try {
-                const formData = new FormData();
-                formData.append('file', fileToUpload);
-                if (fileUploadTitle) formData.append('title', fileUploadTitle);
-                formData.append('taskId', taskId);
-                const res = await fetch(apiUrl('/evidence/uploads'), {
-                    method: 'POST',
-                    body: formData,
-                });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({ error: t('detail.uploadFailed') }));
-                    throw new Error(err.error || err.message || t('detail.uploadFailed'));
-                }
-                resetEvidenceForm();
-                await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
-            } catch (err: unknown) {
-                setEvidenceError(errorMessage(err, t('detail.uploadFailed')));
-            } finally {
-                setSavingEvidence(false);
-            }
-            return;
-        }
-
-        if (!evidenceUrl.trim()) {
+        const input = fileToUpload
+            ? { file: fileToUpload, title: fileUploadTitle }
+            : { url: evidenceUrl.trim(), note: evidenceNote || undefined };
+        if (!('file' in input) && !input.url) {
             setEvidenceError(t('detail.chooseFileOrUrl'));
             return;
         }
         setSavingEvidence(true);
         try {
-            const res = await fetch(apiUrl(`/tasks/${taskId}/evidence`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: evidenceUrl.trim(), note: evidenceNote || undefined }),
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.error || err.message || t('detail.linkEvidenceFailed'));
-            }
+            await addEvidenceMutation.trigger(input);
             resetEvidenceForm();
-            await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
         } catch (err: unknown) {
-            setEvidenceError(errorMessage(err, t('detail.linkEvidenceFailed')));
+            // Inline (not toast): the form stays open with the user's
+            // URL/file still in it, so the reason belongs next to it.
+            setEvidenceError(
+                errorMessage(
+                    err,
+                    'file' in input
+                        ? t('detail.uploadFailed')
+                        : t('detail.linkEvidenceFailed'),
+                ),
+            );
         } finally {
             setSavingEvidence(false);
         }
@@ -734,26 +859,14 @@ export default function TaskDetailPage() {
         if (!commentBody.trim()) return;
         setSavingComment(true);
         try {
-            const res = await fetch(apiUrl(`/tasks/${taskId}/comments`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ body: commentBody }),
-            });
-            // TP-6 — surface a failed comment post instead of clearing
-            // the box as if it succeeded.
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(
-                    (typeof data?.error === 'string' && data.error) ||
-                        data?.message ||
-                        t('detail.addCommentFailed'),
-                );
-            }
+            await addCommentMutation.trigger(commentBody);
             setCommentBody('');
         } catch (e) {
+            // Surface a failed comment post instead of clearing the box
+            // as if it succeeded.
             toast.error(errorMessage(e, t('detail.addCommentFailed')));
         } finally {
             setSavingComment(false);
-            await Promise.all([commentsQuery.mutate(), taskQuery.mutate()]);
         }
     };
 

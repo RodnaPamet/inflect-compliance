@@ -10,7 +10,7 @@
  *
  * Three invariants:
  *
- *   1. Every WORK `WorkItemSource` value has a task-creation call that
+ *   1. Every WORK `TaskSource` value has a task-creation call that
  *      stamps that source somewhere in `src/app-layer`. MANUAL + TEMPLATE
  *      are user-/template-initiated (not autonomous sweeps) and are
  *      explicitly exempt with a reason. A NEW enum value that is neither
@@ -20,11 +20,11 @@
  *      field the list needs to render + filter by origin.
  *
  *   3. The Tasks filter config exposes a `source` filter whose option
- *      values are EXACTLY the `WorkItemSource` enum set.
+ *      values are EXACTLY the `TaskSource` enum set.
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { WorkItemSource } from '@prisma/client';
+import { TaskSource } from '@prisma/client';
 
 import { buildTaskFilterDefs } from '../../src/app/t/[tenantSlug]/(app)/tasks/filter-defs';
 
@@ -42,7 +42,7 @@ const EXEMPT_SOURCES: Record<string, string> = {
     TEMPLATE: 'Instantiated from a task template by an explicit user action, not an autonomous sweep.',
 };
 
-const REQUIRED_SOURCES = Object.values(WorkItemSource).filter(
+const REQUIRED_SOURCES = Object.values(TaskSource).filter(
     (s) => !(s in EXEMPT_SOURCES),
 );
 
@@ -67,10 +67,10 @@ const APP_LAYER_FILES = collectTsFiles(APP_LAYER_DIR).map((f) => ({
 const TASK_CREATE_TOKEN = /createTask\s*\(|\.task\.create\s*\(/;
 
 describe('inbox completeness — work sources route into Tasks', () => {
-    it('exempt + required sources together cover the whole WorkItemSource enum', () => {
+    it('exempt + required sources together cover the whole TaskSource enum', () => {
         // Forces triage of any NEW enum value: it must either be wired to a
         // create path (REQUIRED) or documented as exempt.
-        const all = Object.values(WorkItemSource).sort();
+        const all = Object.values(TaskSource).sort();
         const covered = [...REQUIRED_SOURCES, ...Object.keys(EXEMPT_SOURCES)].sort();
         expect(covered).toEqual(all);
     });
@@ -106,6 +106,6 @@ describe('inbox completeness — source is selectable + filterable', () => {
         const sourceFilter = defs.getFilter('source');
         expect(sourceFilter).toBeDefined();
         const values = (sourceFilter?.options ?? []).map((o) => o.value).sort();
-        expect(values).toEqual(Object.values(WorkItemSource).sort());
+        expect(values).toEqual(Object.values(TaskSource).sort());
     });
 });

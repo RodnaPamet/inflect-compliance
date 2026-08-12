@@ -80,11 +80,29 @@ export const TASK_STATUS_VARIANT: Record<string, StatusBadgeVariant> =
         Object.entries(TASK_STATUS_BADGE).map(([status, spec]) => [status, spec.variant]),
     );
 
+/**
+ * B2-6 — the ONE severity → tone map for tasks. The list
+ * (`TasksClient`) and the linked-tasks panel each kept a byte-identical
+ * inline copy that disagreed with this one on two levels, so the same
+ * task showed HIGH red in the list and amber on its own detail page,
+ * and LOW grey in the list and blue on detail. Both copies now import
+ * this map — do NOT re-inline it.
+ *
+ * `HIGH: 'error'` (not `'warning'`) is the repo-wide convention: it is
+ * what `FindingsClient`, `VulnerabilitiesClient`, `SecurityTestingClient`
+ * and `VENDOR_CRITICALITY_VARIANT` (six lines below, in this file) all
+ * use. Findings matter most — `TaskType.AUDIT_FINDING` tasks
+ * materialise FROM findings (`Task.findingId`), so a finding and its
+ * remediation task must not disagree about what HIGH looks like. The
+ * old value collapsed MEDIUM and HIGH into one tone, which is the
+ * boundary users actually triage on; collapsing HIGH/CRITICAL instead
+ * groups the two that share a response ("escalate now").
+ */
 export const TASK_SEVERITY_VARIANT: Record<string, StatusBadgeVariant> = {
     INFO: 'neutral',
     LOW: 'info',
     MEDIUM: 'warning',
-    HIGH: 'warning',
+    HIGH: 'error',
     CRITICAL: 'error',
 };
 

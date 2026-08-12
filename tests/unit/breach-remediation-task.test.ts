@@ -69,7 +69,7 @@ describe('createBreachRemediationTask', () => {
 
         expect(result).toEqual({ taskId: 'task-1', created: true });
         const input = (createTask as jest.Mock).mock.calls[0][1];
-        // P1 (a valid WorkItemPriority) — was 'HIGH', which is a severity,
+        // P1 (a valid TaskPriority) — was 'HIGH', which is a severity,
         // not a priority; the invalid-source 500 used to mask that bug.
         expect(input.priority).toBe('P1');
         // RISK_MONITOR — was the invalid free string 'risk_appetite_breach'.

@@ -81,8 +81,30 @@ describe('status-variant lookup tables', () => {
         expect(TASK_SEVERITY_VARIANT.INFO).toBe('neutral');
         expect(TASK_SEVERITY_VARIANT.LOW).toBe('info');
         expect(TASK_SEVERITY_VARIANT.MEDIUM).toBe('warning');
-        expect(TASK_SEVERITY_VARIANT.HIGH).toBe('warning');
+        // B2-6 — HIGH is `error`, not `warning`. See the note on the map.
+        expect(TASK_SEVERITY_VARIANT.HIGH).toBe('error');
         expect(TASK_SEVERITY_VARIANT.CRITICAL).toBe('error');
+    });
+
+    /**
+     * B2-6 — the top of the scale is where this file used to contradict
+     * itself: `TASK_SEVERITY_VARIANT.HIGH` was `warning` while
+     * `VENDOR_CRITICALITY_VARIANT.HIGH`, fifty lines below it, was
+     * `error`. The two maps rank the same words, and the badge a user
+     * learns to read as "act on this now" has to mean the same thing on
+     * both. Pinning the AGREEMENT rather than the literal means a
+     * deliberate future re-tone has to move both maps together.
+     *
+     * LOW is excluded on purpose: vendor criticality has no INFO level,
+     * so its LOW carries the quiet tone that tasks give INFO.
+     */
+    test('task severity agrees with vendor criticality from MEDIUM up', () => {
+        for (const level of ['MEDIUM', 'HIGH', 'CRITICAL']) {
+            expect([level, TASK_SEVERITY_VARIANT[level]]).toEqual([
+                level,
+                VENDOR_CRITICALITY_VARIANT[level],
+            ]);
+        }
     });
 
     test('policy status: PUBLISHED is success, ARCHIVED warns', () => {
