@@ -14,8 +14,8 @@
  * only — NO risks are auto-created (a follow-on can propose-not-commit).
  */
 import type { RequestContext } from '../types';
+import { buildSystemContext } from '../context';
 import { runInTenantContext } from '@/lib/db-context';
-import { getPermissionsForRole } from '@/lib/permissions';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -30,14 +30,7 @@ const AWS_POSTURE_PROVIDER = 'aws-posture';
 const EVIDENCE_FRESHNESS_DAYS = 30;
 
 function makeSystemCtx(tenantId: string): RequestContext {
-    return {
-        requestId: `aws-posture-${tenantId}`,
-        userId: 'system',
-        tenantId,
-        role: 'ADMIN',
-        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: false },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+    return buildSystemContext({ tenantId, job: 'aws-posture' });
 }
 
 export interface AwsPostureCollectResult {

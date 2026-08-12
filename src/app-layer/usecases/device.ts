@@ -10,8 +10,8 @@
  */
 import { z } from 'zod';
 import type { RequestContext } from '../types';
+import { buildSystemContext } from '../context';
 import { runInTenantContext } from '@/lib/db-context';
-import { getPermissionsForRole } from '@/lib/permissions';
 import { forbidden, badRequest } from '@/lib/errors/types';
 import { recordDeviceReport } from '@/lib/observability/integration-metrics';
 
@@ -34,14 +34,7 @@ export const DeviceReportSchema = z.object({
 });
 
 function systemCtx(tenantId: string): RequestContext {
-    return {
-        requestId: `device-report-${tenantId}`,
-        userId: 'system',
-        tenantId,
-        role: 'ADMIN',
-        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: false },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+    return buildSystemContext({ tenantId, job: 'device-report' });
 }
 
 export async function listDevices(ctx: RequestContext) {

@@ -14,22 +14,15 @@
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { prisma } from '@/lib/prisma';
-import { getPermissionsForRole } from '@/lib/permissions';
 import { runVendorMonitor } from '../usecases/vendor-monitoring';
 import { runVendorReassessmentReminder } from '../usecases/vendor-reassessment-reminder';
 import { env } from '@/env';
 import type { RequestContext } from '../types';
+import { buildSystemContext } from '../context';
 import type { JobRunResult } from './types';
 
 function makeSystemCtx(tenantId: string): RequestContext {
-    return {
-        requestId: `vendor-monitoring-${tenantId}-${Date.now()}`,
-        userId: 'system',
-        tenantId,
-        role: 'ADMIN',
-        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: false },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+    return buildSystemContext({ tenantId, job: 'vendor-monitoring', discriminator: String(Date.now()) });
 }
 
 export async function runVendorMonitoringJob(options?: {

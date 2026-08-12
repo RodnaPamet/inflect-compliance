@@ -529,17 +529,23 @@ describe('runControlTestRunner — system actor context', () => {
 
         await runControlTestRunner(PAYLOAD_BASE);
 
-        // The 2nd arg to TestRunRepository.create is the ctx — the
-        // synthetic system context. We expect plan.createdByUserId
-        // to be the userId field so audit log entries attribute
-        // automated runs to the plan author rather than a missing
-        // / impersonated actor.
+        // The 2nd arg to TestRunRepository.create is the ctx. The plan
+        // author stays the userId so audit entries attribute automated
+        // runs to the person whose plan it is rather than a missing /
+        // impersonated actor — that part is unchanged and deliberate.
+        //
+        // B2-1c added the half that was missing: `actorType: 'JOB'`, so
+        // the row says the SCHEDULER ran the test attributed to the
+        // author, instead of reading as though the author ran it. Both
+        // halves are asserted together — dropping either one puts the
+        // trail back to naming a person for machine work.
         const ctxArg = mockTestRunCreate.mock.calls[0][1];
         expect(ctxArg).toMatchObject({
             tenantId: 'tenant-1',
             userId: 'user-creator',
             requestId: 'sched-job-1',
             role: 'ADMIN',
+            actorType: 'JOB',
         });
     });
 });

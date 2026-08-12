@@ -23,8 +23,8 @@ import { prisma } from '@/lib/prisma';
 import { DashboardRepository } from '../repositories/DashboardRepository';
 import { withTenantDb } from '@/lib/db-context';
 import type { RequestContext } from '../types';
+import { buildSystemContext } from '../context';
 import type { JobRunResult } from './types';
-import { getPermissionsForRole } from '@/lib/permissions';
 
 /**
  * Get UTC midnight for a given date — the canonical snapshot date key.
@@ -40,14 +40,14 @@ export function toSnapshotDate(d: Date = new Date()): Date {
  * dashboard repository methods.
  */
 function makeSystemCtx(tenantId: string): RequestContext {
-    return {
-        requestId: `snapshot-${tenantId}-${Date.now()}`,
-        userId: 'system',
+    // Read-only coarse flags, exactly as before this builder existed —
+    // the job reads the register and writes only its own snapshot rows.
+    return buildSystemContext({
         tenantId,
-        role: 'ADMIN',
+        job: 'snapshot',
+        discriminator: String(Date.now()),
         permissions: { canRead: true, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+    });
 }
 
 /**

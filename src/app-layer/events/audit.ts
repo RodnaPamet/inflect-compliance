@@ -35,7 +35,11 @@ export async function logEvent(_db: PrismaTx, ctx: RequestContext, payload: Audi
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
-        actorType: 'USER',
+        // Was hardcoded `'USER'`, which made every background sweep's
+        // audit row claim a person acted. `appendAuditEntry` already
+        // defaults an absent value to `'USER'`, so HTTP-borne contexts —
+        // which never set `actorType` — are unchanged.
+        actorType: ctx.actorType,
         entity: payload.entityType,
         entityId: payload.entityId,
         action: payload.action,

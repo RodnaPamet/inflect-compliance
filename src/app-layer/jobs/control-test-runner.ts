@@ -95,6 +95,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { prisma } from '@/lib/prisma';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
+import { buildDelegatedJobContext } from '../context';
 import { TestRunRepository } from '../repositories/TestRunRepository';
 import { TestEvidenceRepository } from '../repositories/TestEvidenceRepository';
 import { TestPlanRepository } from '../repositories/TestPlanRepository';
@@ -263,7 +264,7 @@ export async function runControlTestRunner(
                 };
             }
 
-            const ctx = buildSystemContext(plan, jobRunId);
+            const ctx = buildRunnerCtx(plan, jobRunId);
 
             return runInTenantContext(ctx, async (db) => {
                 // 1. Create the run (PLANNED for both branches; SCRIPT
@@ -499,19 +500,29 @@ async function handleAutomatedPlan(
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
-function buildSystemContext(
+/**
+ * Context for a SCHEDULED control-test run.
+ *
+ * The plan author stays the `userId`. That was a deliberate earlier
+ * decision — attribute an automated run to the person whose plan it is,
+ * "rather than a missing / impersonated actor" — and it is right: a
+ * synthetic principal here would leave the run pointing at nobody.
+ *
+ * What was wrong is that the row then read as if that person ran the
+ * test. `actorType: 'JOB'` says the scheduler did, attributed to the
+ * author. The coarse flags stay exactly as they were — write, but
+ * neither admin nor auditor — and `requestId` stays the scheduler's
+ * `jobRunId` so the trail is reconstructible end to end.
+ */
+function buildRunnerCtx(
     plan: { tenantId: string; createdByUserId: string },
     jobRunId: string,
 ): RequestContext {
-    return {
-        requestId: jobRunId,
-        userId: plan.createdByUserId,
+    return buildDelegatedJobContext({
         tenantId: plan.tenantId,
-        // ADMIN gives the synthetic actor write access to every
-        // surface this runner touches. The audit log records the
-        // plan author as the userId; the requestId carries the
-        // scheduler's job-run id so the trail is reconstructible.
-        role: 'ADMIN',
+        job: 'control-test-runner',
+        onBehalfOf: plan.createdByUserId,
+        requestId: jobRunId,
         permissions: {
             canRead: true,
             canWrite: true,
@@ -519,8 +530,7 @@ function buildSystemContext(
             canAudit: false,
             canExport: false,
         },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+    });
 }
 
 async function createScheduledRunEvidence(

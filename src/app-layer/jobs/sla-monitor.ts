@@ -22,21 +22,14 @@ import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { prisma } from '@/lib/prisma';
 import { withTenantDb } from '@/lib/db-context';
-import { getPermissionsForRole } from '@/lib/permissions';
 import { AutomationExecutionRepository } from '../automation';
 import { logEvent } from '../events/audit';
 import type { RequestContext } from '../types';
+import { buildSystemContext } from '../context';
 import type { JobRunResult } from './types';
 
 function makeSystemCtx(tenantId: string): RequestContext {
-    return {
-        requestId: `sla-monitor-${tenantId}-${Date.now()}`,
-        userId: 'system',
-        tenantId,
-        role: 'ADMIN',
-        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: false },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+    return buildSystemContext({ tenantId, job: 'sla-monitor', discriminator: String(Date.now()) });
 }
 
 export async function runSlaMonitorJob(options?: {
