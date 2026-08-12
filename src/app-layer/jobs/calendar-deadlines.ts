@@ -30,6 +30,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { DEFAULT_REMINDER_WINDOWS } from '@/lib/urgency';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import type { DueItem, JobRunResult } from './types';
@@ -290,7 +291,7 @@ export async function runCalendarDeadlineMonitor(
     options: CalendarDeadlineMonitorOptions = {},
 ): Promise<CalendarDeadlineMonitorResult> {
     const now = options.now ?? new Date();
-    const windows = options.windows ?? [30, 7, 1];
+    const windows = options.windows ?? [...DEFAULT_REMINDER_WINDOWS];
     const maxWindow = Math.max(...windows);
 
     const [auditCycles, vendorDocs, findings] = await Promise.all([

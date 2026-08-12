@@ -22,6 +22,7 @@
  * @module app-layer/jobs/deadline-monitor
  */
 import { prisma } from '@/lib/prisma';
+import { DEFAULT_REMINDER_WINDOWS } from '@/lib/urgency';
 import { Prisma } from '@prisma/client';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
@@ -59,7 +60,7 @@ export interface DeadlineMonitorResult {
 export function classifyUrgency(
     dueDate: Date,
     now: Date,
-    windows: number[] = [30, 7, 1],
+    windows: number[] = [...DEFAULT_REMINDER_WINDOWS],
 ): { urgency: DueItemUrgency; daysRemaining: number } | null {
     const diffMs = dueDate.getTime() - now.getTime();
     const daysRemaining = Math.ceil(diffMs / 86_400_000);
@@ -565,7 +566,7 @@ export async function runDeadlineMonitor(
 
     return runJob('deadline-monitor', async () => {
         const now = options.now ?? new Date();
-        const windows = options.windows ?? [30, 7, 1];
+        const windows = options.windows ?? [...DEFAULT_REMINDER_WINDOWS];
         const maxWindow = Math.max(...windows);
 
         // Phase 0 — flip past-due treatment plans before scanning so

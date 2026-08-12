@@ -44,16 +44,13 @@ const mockIncidentNotificationFindMany = jest.fn();
 const mockControlExceptionFindMany = jest.fn();
 const mockVendorAssessmentFindMany = jest.fn();
 
-const mockTaskCount = jest.fn().mockResolvedValue(0);
-const mockControlCount = jest.fn().mockResolvedValue(0);
-const mockEvidenceCount = jest.fn().mockResolvedValue(0);
-const mockPolicyCount = jest.fn().mockResolvedValue(0);
-const mockVendorCount = jest.fn().mockResolvedValue(0);
+// Projection-completeness sources: `AssetVulnerability.remediationDueAt` and
+// `Audit.schedule` were deadline columns the calendar never showed.
+const mockAssetVulnerabilityFindMany = jest.fn();
+const mockAuditFindMany = jest.fn();
 
-beforeEach(() => {
-    jest.resetModules();
-    jest.clearAllMocks();
-    [
+/** Every per-source `findMany` the aggregation fans out to. */
+const ALL_SOURCE_MOCKS = [
         mockEvidenceFindMany,
         mockPolicyFindMany,
         mockVendorFindMany,
@@ -71,7 +68,20 @@ beforeEach(() => {
         mockIncidentNotificationFindMany,
         mockControlExceptionFindMany,
         mockVendorAssessmentFindMany,
-    ].forEach((m) => m.mockReset().mockResolvedValue([]));
+        mockAssetVulnerabilityFindMany,
+        mockAuditFindMany,
+];
+
+const mockTaskCount = jest.fn().mockResolvedValue(0);
+const mockControlCount = jest.fn().mockResolvedValue(0);
+const mockEvidenceCount = jest.fn().mockResolvedValue(0);
+const mockPolicyCount = jest.fn().mockResolvedValue(0);
+const mockVendorCount = jest.fn().mockResolvedValue(0);
+
+beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    ALL_SOURCE_MOCKS.forEach((m) => m.mockReset().mockResolvedValue([]));
     [
         mockTaskCount,
         mockControlCount,
@@ -141,6 +151,12 @@ beforeEach(() => {
         },
         vendorAssessment: {
             findMany: (...a: unknown[]) => mockVendorAssessmentFindMany(...a),
+        },
+        assetVulnerability: {
+            findMany: (...a: unknown[]) => mockAssetVulnerabilityFindMany(...a),
+        },
+        audit: {
+            findMany: (...a: unknown[]) => mockAuditFindMany(...a),
         },
     };
     const invokeWithDb = async (
@@ -1034,15 +1050,11 @@ describe('per-source error isolation', () => {
         // An empty grid plus a notice reads as "nothing is due". On a deadline
         // product that is the most dangerous sentence this surface can say.
         const boom = () => Promise.reject(new Error('down'));
-        for (const m of [
-            mockEvidenceFindMany, mockPolicyFindMany, mockVendorFindMany,
-            mockVendorDocFindMany, mockAuditCycleFindMany, mockControlFindMany,
-            mockTestPlanFindMany, mockTaskFindMany, mockRiskFindMany,
-            mockFindingFindMany, mockTreatmentMilestoneFindMany,
-            mockTreatmentPlanFindMany, mockAccessReviewFindMany,
-            mockTrainingFindMany, mockIncidentNotificationFindMany,
-            mockControlExceptionFindMany, mockVendorAssessmentFindMany,
-        ]) {
+        // Derived from the same list `beforeEach` resets, NOT re-enumerated:
+        // a hand-written copy silently stops covering "every source" the day a
+        // new loader lands, which is exactly what happened when the two
+        // projection-completeness sources were added.
+        for (const m of ALL_SOURCE_MOCKS) {
             m.mockImplementation(boom);
         }
         await expect(aggregate()).rejects.toThrow(/every source failed/);

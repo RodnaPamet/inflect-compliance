@@ -1,16 +1,19 @@
 /**
- * Calendar UX-completeness ratchet.
+ * The calendar's UX contract — the chrome and navigation guarantees.
  *
- * Locks the seven gaps closed in the calendar UX PR. Each is a
- * regression a plausible "tidy-up" PR would reintroduce:
+ * RENAMED from `calendar-ux-completeness`. The old name promised projection
+ * completeness ("does the calendar show every deadline?") and never checked
+ * it: every assertion below is about UI chrome — the Gantt not pre-filtering,
+ * loading being distinguishable from empty, one urgency threshold set, the
+ * heatmap including the future, deep-links resolving to real routes, and
+ * create-from-calendar being discoverable.
  *
- *   1. The Timeline pre-filtering itself back down to audit cycles.
- *   2. Loading collapsing back into "looks empty".
- *   3. A surface re-growing its own private "due soon" number.
- *   4. The heatmap going retrospective-only again.
- *   5. Deep-links flattening back to the entity root.
- *   6. Create-from-calendar going back to an undiscoverable dblclick.
- *   7. Off-screen deadlines rendering as an empty view.
+ * A name that promises a stronger invariant than the file enforces is worse
+ * than no name: it makes the gap look covered. Actual projection completeness
+ * now lives in `tests/guardrails/calendar-projection-completeness.test.ts`,
+ * which enumerates deadline columns from the Prisma DMMF and requires each to
+ * be projected or explicitly excluded — the direction that can catch an
+ * omission.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -82,6 +85,39 @@ describe('3 — one urgency threshold set', () => {
         const src = read(DASHBOARD_REPO);
         expect(src).toMatch(/URGENCY_MS\.URGENT/);
         expect(src).toMatch(/URGENCY_MS\.UPCOMING/);
+    });
+
+    // The gap this describe had: it asserted the calendar and the dashboard,
+    // and never the JOB path — where the same numbers lived as a bare
+    // `[30, 7, 1]` literal duplicated across five files. "One urgency
+    // threshold set" was true of the two surfaces it checked and false of the
+    // system, and the guard could not tell.
+    it('the reminder jobs read the shared scale, not a duplicated literal', () => {
+        const JOBS = [
+            'src/app-layer/jobs/deadline-monitor.ts',
+            'src/app-layer/jobs/calendar-deadlines.ts',
+            'src/app-layer/jobs/evidence-expiry-monitor.ts',
+        ];
+        for (const job of JOBS) {
+            const src = read(job);
+            expect(src).toMatch(/DEFAULT_REMINDER_WINDOWS/);
+            // The literal must be gone from executable code. Prose that NAMES
+            // the default is fine — a docstring saying "Default: [30, 7, 1]"
+            // is documentation, not a second source of truth — so only
+            // non-comment lines are checked.
+            const code = src
+                .replace(/\/\*[\s\S]*?\*\//g, '')  // block comments
+                .replace(/^\s*\/\/.*$/gm, '');       // line comments
+            expect(code).not.toMatch(/\[\s*30\s*,\s*7\s*,\s*1\s*\]/);
+        }
+    });
+
+    it('the shared windows are DERIVED from the threshold set', () => {
+        const urgency = read('src/lib/urgency.ts');
+        // Written out as literals it would be one more copy, just centrally
+        // located — the point is that changing URGENT moves the reminder too.
+        expect(urgency).toMatch(/URGENCY_DAYS\.UPCOMING/);
+        expect(urgency).toMatch(/URGENCY_DAYS\.URGENT/);
     });
 });
 

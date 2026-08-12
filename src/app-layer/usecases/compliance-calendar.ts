@@ -208,6 +208,122 @@ interface CalendarSourceDef {
     load: CalendarLoader;
 }
 
+/**
+ * Vulnerability remediation deadlines (`AssetVulnerability.remediationDueAt`).
+ *
+ * A projection gap, not a new feature: the column is written by
+ * `vulnerability.ts` and EDITED BY USERS through an inline DatePicker on the
+ * asset's vulnerability list. Someone set a remediation date and then could not
+ * see it on the one surface whose job is "what is due".
+ *
+ * The parent asset is soft-deletable and this model is not, so the nested
+ * predicate is mandatory (see `loadVendorDocumentEvents`).
+ */
+async function loadAssetVulnerabilityEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<CalendarSourceResult> {
+    const rows = await db.assetVulnerability.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            remediationDueAt: { not: null, gte: range.from, lte: range.to },
+            asset: { deletedAt: null },
+        },
+        select: {
+            id: true,
+            cveId: true,
+            status: true,
+            remediationDueAt: true,
+            ownerUserId: true,
+            assetId: true,
+            asset: { select: { name: true } },
+        },
+        orderBy: { remediationDueAt: 'asc' },
+        take: limit,
+    });
+    const events = rows
+        .filter((r) => r.remediationDueAt)
+        .map((r): CalendarEvent => {
+            const date = r.remediationDueAt as Date;
+            return {
+                id: `ASSET_VULNERABILITY:${r.id}:vulnerability-remediation-due`,
+                type: 'vulnerability-remediation-due',
+                category: 'control',
+                title: `Remediation due: ${r.cveId}`,
+                entityName: r.cveId,
+                detail: r.asset.name,
+                date: date.toISOString(),
+                // RESOLVED/ACCEPTED extinguish the remediation obligation the
+                // date encodes — unlike a control's status, which does not.
+                status: classifyStatus(
+                    date,
+                    now,
+                    r.status === 'RESOLVED' || r.status === 'ACCEPTED',
+                ),
+                entityType: 'ASSET_VULNERABILITY',
+                entityId: r.id,
+                href: tenantHrefFromCtx(ctx, `/assets/${r.assetId}`),
+                ownerUserId: r.ownerUserId ?? undefined,
+            };
+        });
+    return sourceResult(events, rows.length, limit);
+}
+
+/**
+ * Scheduled audit dates (`Audit.schedule`).
+ *
+ * Distinct from `audit-cycle`, which spans months — this is the day fieldwork
+ * on one audit begins. The cycle being on the calendar made the omission easy
+ * to miss: the surface looked like it covered audits already.
+ */
+async function loadAuditEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<CalendarSourceResult> {
+    const rows = await db.audit.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+            schedule: { not: null, gte: range.from, lte: range.to },
+        },
+        select: {
+            id: true,
+            title: true,
+            schedule: true,
+            status: true,
+        },
+        orderBy: { schedule: 'asc' },
+        take: limit,
+    });
+    const events = rows
+        .filter((r) => r.schedule)
+        .map((r): CalendarEvent => {
+            const date = r.schedule as Date;
+            return {
+                id: `AUDIT:${r.id}:audit-scheduled`,
+                type: 'audit-scheduled',
+                category: 'audit',
+                title: `Audit: ${r.title}`,
+                entityName: r.title,
+                date: date.toISOString(),
+                // A completed audit has no scheduled start left to meet.
+                status: classifyStatus(date, now, r.status === 'COMPLETED'),
+                entityType: 'AUDIT',
+                entityId: r.id,
+                // The hub is a master-detail page with a ?selected= deep link;
+                // there is no /audits/[id] route.
+                href: tenantHrefFromCtx(ctx, `/audits?selected=${r.id}`),
+            };
+        });
+    return sourceResult(events, rows.length, limit);
+}
+
 const CALENDAR_SOURCES: readonly CalendarSourceDef[] = [
     { name: 'evidence', permission: 'evidence.view', category: 'evidence', types: ['evidence-review'], load: loadEvidenceEvents },
     { name: 'policy', permission: 'policies.view', category: 'policy', types: ['policy-review'], load: loadPolicyEvents },
@@ -218,6 +334,8 @@ const CALENDAR_SOURCES: readonly CalendarSourceDef[] = [
     { name: 'control', permission: 'controls.view', category: 'control', types: ['control-review'], load: loadControlEvents },
     { name: 'control-test-plan', permission: 'tests.view', category: 'control', types: ['control-test-due'], load: loadTestPlanEvents },
     { name: 'control-exception', permission: 'controls.view', category: 'control', types: ['control-exception-expiry'], load: loadControlExceptionEvents },
+    { name: 'asset-vulnerability', permission: 'assets.view', category: 'control', types: ['vulnerability-remediation-due'], load: loadAssetVulnerabilityEvents },
+    { name: 'audit', permission: 'audits.view', category: 'audit', types: ['audit-scheduled'], load: loadAuditEvents },
     { name: 'access-review', permission: 'audits.view', category: 'audit', types: ['access-review-due'], load: loadAccessReviewEvents },
     { name: 'training', permission: 'personnel.view', category: 'task', types: ['training-due'], load: loadTrainingEvents },
     { name: 'incident-notification', permission: 'incidents.view', category: 'finding', types: ['incident-notification-due'], load: loadIncidentNotificationEvents },

@@ -22,6 +22,7 @@
  * @module app-layer/jobs/evidence-expiry-monitor
  */
 import { Prisma } from '@prisma/client';
+import { DEFAULT_REMINDER_WINDOWS } from '@/lib/urgency';
 import { prisma } from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
@@ -197,7 +198,7 @@ export async function runEvidenceExpiryMonitor(
 
     return runJob('evidence-expiry-monitor', async () => {
         const now = options.now ?? new Date();
-        const windows = options.windows ?? [30, 7, 1];
+        const windows = options.windows ?? [...DEFAULT_REMINDER_WINDOWS];
         const maxWindow = Math.max(...windows);
 
         const items = await scanExpiringEvidence(now, maxWindow, options.tenantId);
