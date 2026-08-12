@@ -69,3 +69,29 @@ export function taskStatusLabel(
     const spec = TASK_STATUS_BADGE[status as WorkItemStatusValue];
     return spec ? t(spec.labelKey) : status;
 }
+
+/**
+ * Severity → localized label, keyed by every `TaskSeverity` member.
+ *
+ * Lives here rather than in the Tasks route's `filter-defs` because
+ * three surfaces need it and one of them is `src/components/`
+ * (`LinkedTasksPanel`, mounted from control / asset / risk detail).
+ * A shared component importing a page's module inverts the layering —
+ * the shared layer becomes downstream of one route — which is what
+ * `tests/guards/route-import-boundaries.test.ts` refuses.
+ *
+ * `t` must be a `tasks`-namespaced translator. INFO is included
+ * deliberately: automation raises INFO tasks, so they must be
+ * filterable and renderable like any other severity.
+ */
+export function taskSeverityLabels(
+    t: (key: string) => string,
+): Record<string, string> {
+    return {
+        INFO: t('filterEnums.severity.INFO'),
+        LOW: t('filterEnums.severity.LOW'),
+        MEDIUM: t('filterEnums.severity.MEDIUM'),
+        HIGH: t('filterEnums.severity.HIGH'),
+        CRITICAL: t('filterEnums.severity.CRITICAL'),
+    };
+}

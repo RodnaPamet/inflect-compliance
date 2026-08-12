@@ -20,6 +20,7 @@ import {
     optionsFromEnum,
 } from '@/components/ui/filter/filter-definitions';
 import type { FilterOption } from '@/components/ui/filter/types';
+import { taskSeverityLabels } from '@/lib/task-status-badge';
 import { AlertCircle, CircleDot, Clock, Flag, Inbox, Layers, UserCheck, UserCircle2 } from 'lucide-react';
 
 /** Surface-namespace resolver (`useTranslations('tasks')`). */
@@ -98,21 +99,17 @@ export function taskSourceLabels(t: TLabel): Record<string, string> {
 }
 
 /**
- * Exported for the same reason as `taskSourceLabels` — the Severity
- * column rendered the raw enum (`CRITICAL`) while the filter chip
- * rendered "Critical". Sharing one map keeps the two in step.
+ * Severity labels moved to `@/lib/task-status-badge` (B2-6) and are
+ * re-exported here so the Tasks-route call sites keep one import.
+ *
+ * They cannot live in this file: `LinkedTasksPanel` lives in
+ * `src/components/` and needs the same map, and a shared component
+ * importing a route's module inverts the layering —
+ * `tests/guards/route-import-boundaries.test.ts` refuses it. The
+ * severity column rendered the raw enum (`CRITICAL`) while the filter
+ * chip rendered "Critical"; one map keeps every surface in step.
  */
-export function taskSeverityLabels(t: TLabel): Record<string, string> {
-    return {
-        // INFO is a real TaskSeverity (automation can raise INFO tasks);
-        // offered here so those tasks are filterable, matching the create form.
-        INFO: t('filterEnums.severity.INFO'),
-        LOW: t('filterEnums.severity.LOW'),
-        MEDIUM: t('filterEnums.severity.MEDIUM'),
-        HIGH: t('filterEnums.severity.HIGH'),
-        CRITICAL: t('filterEnums.severity.CRITICAL'),
-    };
-}
+export { taskSeverityLabels } from '@/lib/task-status-badge';
 
 function taskDueLabels(t: T): Record<string, string> {
     return {

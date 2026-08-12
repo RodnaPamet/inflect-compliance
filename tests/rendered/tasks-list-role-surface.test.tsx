@@ -310,17 +310,49 @@ describe('Tasks list — the write surface each role actually gets', () => {
     );
 });
 
+/**
+ * Resolve a task's `<tr>` — re-querying until it is ATTACHED.
+ *
+ * A node captured from `findByText` goes stale: the list paints from
+ * `initialTasks`, then the SWR read resolves and re-renders, and the row
+ * DOM node the query returned is detached from the tree it was found in.
+ * `.closest('tr')` on that orphan returns null, and `fireEvent` against it
+ * dispatches into nothing — the assertion fails for a reason that has
+ * nothing to do with the behaviour under test.
+ *
+ * So every row lookup goes through here: `waitFor` re-runs the query each
+ * attempt, so what comes back is a live node in the current tree.
+ */
+async function rowFor(task: TaskRow): Promise<HTMLElement> {
+    return waitFor(() => {
+        const cell = screen.getByTestId(`task-title-${task.id}`);
+        const tr = cell.closest('tr');
+        expect(tr).not.toBeNull();
+        return tr as HTMLElement;
+    });
+}
+
+/**
+ * The quick-view panel's presence signal.
+ *
+ * NOT `getByText(LIST.quickViewTitle)` — that string is "Task", which is
+ * also `typeLabels.TASK`, rendered in the Type column of every row, so the
+ * query matches three nodes and throws before it can assert anything. The
+ * collapse control's accessible name is unique to the open panel.
+ */
+const panelCloseName = `Collapse ${LIST.quickViewTitle} panel`;
+
 describe('Tasks list — quick-view panel', () => {
     it('opens from a title click, switches task→task in place, and closes', async () => {
         mountAs('EDITOR');
         await screen.findByText(HIGH_TASK.title);
 
         // Nothing open yet.
-        expect(screen.queryByText(LIST.quickViewTitle)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: panelCloseName })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByTestId(`task-title-${HIGH_TASK.id}`));
 
-        const panel = await screen.findByText(LIST.quickViewTitle);
+        const panel = await screen.findByRole('button', { name: panelCloseName });
         expect(panel).toBeInTheDocument();
         // The panel is showing THIS task…
         await waitFor(() =>
@@ -340,7 +372,7 @@ describe('Tasks list — quick-view panel', () => {
         expect(screen.queryByDisplayValue(HIGH_TASK.title)).not.toBeInTheDocument();
 
         // And it closes.
-        fireEvent.click(screen.getByRole('button', { name: `Collapse ${LIST.quickViewTitle} panel` }));
+        fireEvent.click(screen.getByRole('button', { name: panelCloseName }));
         await waitFor(() =>
             expect(screen.queryByDisplayValue(LOW_TASK.title)).not.toBeInTheDocument(),
         );
@@ -352,7 +384,7 @@ describe('Tasks list — quick-view panel', () => {
 
         fireEvent.click(screen.getByTestId(`task-quick-edit-${HIGH_TASK.id}`));
 
-        await screen.findByText(LIST.quickViewTitle);
+        await screen.findByRole('button', { name: panelCloseName });
         // The pencil stops propagation, so the row's navigate handler
         // must not have fired — losing the list here is the regression.
         expect(routerPush).not.toHaveBeenCalled();
@@ -360,11 +392,10 @@ describe('Tasks list — quick-view panel', () => {
 
     it('row double-click still navigates to the full detail page', async () => {
         mountAs('EDITOR');
-        const title = await screen.findByText(HIGH_TASK.title);
-        const row = title.closest('tr');
-        expect(row).not.toBeNull();
+        await screen.findByText(HIGH_TASK.title);
+        const row = await rowFor(HIGH_TASK);
 
-        fireEvent.doubleClick(row as HTMLElement);
+        fireEvent.doubleClick(row);
 
         await waitFor(() =>
             expect(routerPush).toHaveBeenCalledWith(`/t/acme/tasks/${HIGH_TASK.id}`),
@@ -384,10 +415,10 @@ describe('Tasks list — severity tone (B2-6)', () => {
     it.each([
         [HIGH_TASK, 'HIGH'],
         [LOW_TASK, 'LOW'],
-    ])('renders $1 with the shared map’s tone', async (task, level) => {
+    ])('renders %s with the shared map’s tone', async (task, level) => {
         mountAs('EDITOR');
-        const title = await screen.findByText(task.title);
-        const rowEl = title.closest('tr') as HTMLElement;
+        await screen.findByText(task.title);
+        const rowEl = await rowFor(task);
 
         const expectedTone = TASK_SEVERITY_VARIANT[level];
         // StatusBadge paints its tone through `text-content-<variant>`.

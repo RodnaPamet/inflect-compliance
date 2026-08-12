@@ -105,6 +105,16 @@ const TASK = {
     _count: { links: 0, comments: 0, evidence: 0 },
 };
 
+/**
+ * Exact button labels from the real message catalogue. Exact beats a
+ * regex here: `/assign/i` also matches the assignee picker's trigger and
+ * `/comment/i` matches the Comments TAB, and either extra match makes the
+ * query throw rather than click.
+ */
+const EN = (require('../../messages/en.json') as {
+    tasks: { detail: Record<string, string> };
+}).tasks.detail;
+
 /** Fetch stub: GETs succeed from a fixture map; writes are per-test. */
 const fetchMock = jest.fn();
 function json(body: unknown, status = 200): Response {
@@ -136,6 +146,44 @@ function renderPage() {
     );
 }
 
+/**
+ * Wait for the task read to resolve, keyed on the page's own
+ * `#task-title` element.
+ *
+ * NOT `findByText(TASK.title)`: the page paints the title twice — once in
+ * the breadcrumb trail and once as the heading — so a bare text query
+ * matches two nodes and throws. `findBy*` treats that throw as
+ * not-settled-yet and retries it to the timeout, so the suite reports a
+ * slow, shapeless failure for what is really an ambiguous selector.
+ */
+async function waitForTaskLoaded(): Promise<HTMLElement> {
+    return waitFor(() => {
+        const el = document.getElementById('task-title');
+        expect(el).not.toBeNull();
+        expect(el).toHaveTextContent(TASK.title);
+        return el as HTMLElement;
+    });
+}
+
+/**
+ * The GET half of the stub, shared by every test.
+ *
+ * Ordering matters and is the reason this is one function rather than a
+ * per-test chain of `startsWith`: the task key `/tasks/task_1` is a
+ * PREFIX of every tab key (`/tasks/task_1/comments`, `/links`,
+ * `/evidence`, `/activity`). A prefix test written first answers the
+ * comments read with the task OBJECT, and the page dies on
+ * `comments.map is not a function` — a crash that looks like a missing
+ * button three assertions later. Exact-match the task, then the tabs.
+ */
+function baseGet(url: string): Response {
+    const path = url.split('?')[0];
+    if (path === '/api/t/acme/tasks/task_1') return json(TASK);
+    if (path.startsWith('/api/t/acme/tasks/task_1/')) return json([]);
+    if (path.startsWith('/api/t/acme/tasks/metrics')) return json({});
+    return json([]);
+}
+
 /** How many GETs have been issued against a given URL prefix. */
 function getCount(prefix: string): number {
     return fetchMock.mock.calls.filter(
@@ -158,15 +206,13 @@ describe('task detail — mutation failures are surfaced, successes reach the li
             if (init?.method === 'POST' && url.endsWith('/tasks/task_1/assign')) {
                 return json({ error: 'Reviewer gate: assignee cannot be the reviewer' }, 403);
             }
-            if (url.startsWith('/api/t/acme/tasks/task_1')) return json(TASK);
-            if (url.startsWith('/api/t/acme/tasks/metrics')) return json({});
-            return json([]);
+            return baseGet(url);
         });
 
         renderPage();
-        await screen.findByText('Rotate the admin keys');
+        await waitForTaskLoaded();
 
-        fireEvent.click(await screen.findByRole('button', { name: /assign/i }));
+        fireEvent.click(await screen.findByRole('button', { name: EN.assign }));
 
         await waitFor(() =>
             expect(toastError).toHaveBeenCalledWith(
@@ -180,18 +226,16 @@ describe('task detail — mutation failures are surfaced, successes reach the li
             if (init?.method === 'POST' && url.endsWith('/tasks/task_1/comments')) {
                 return json({ error: 'Comment rejected' }, 400);
             }
-            if (url.startsWith('/api/t/acme/tasks/task_1')) return json(TASK);
-            if (url.startsWith('/api/t/acme/tasks/metrics')) return json({});
-            return json([]);
+            return baseGet(url);
         });
 
         renderPage();
-        await screen.findByText('Rotate the admin keys');
+        await waitForTaskLoaded();
         fireEvent.click(screen.getByRole('tab', { name: /comment/i }));
 
         const box = await screen.findByRole('textbox');
         fireEvent.change(box, { target: { value: 'needs a second reviewer' } });
-        fireEvent.click(screen.getByRole('button', { name: /comment/i }));
+        fireEvent.click(screen.getByRole('button', { name: EN.comment }));
 
         await waitFor(() => expect(toastError).toHaveBeenCalledWith('Comment rejected'));
         // The box must NOT have been cleared — clearing it is the
@@ -204,19 +248,17 @@ describe('task detail — mutation failures are surfaced, successes reach the li
             if (init?.method === 'POST' && url.endsWith('/tasks/task_1/assign')) {
                 return json({ ok: true });
             }
-            if (url.startsWith('/api/t/acme/tasks/task_1')) return json(TASK);
-            if (url.startsWith('/api/t/acme/tasks/metrics')) return json({});
-            return json([]);
+            return baseGet(url);
         });
 
         renderPage();
-        await screen.findByText('Rotate the admin keys');
+        await waitForTaskLoaded();
         await waitFor(() => expect(getCount('/api/t/acme/tasks/metrics')).toBeGreaterThan(0));
 
         const listBefore = getCount('/api/t/acme/tasks?') + getCountExactList();
         const metricsBefore = getCount('/api/t/acme/tasks/metrics');
 
-        fireEvent.click(await screen.findByRole('button', { name: /assign/i }));
+        fireEvent.click(await screen.findByRole('button', { name: EN.assign }));
 
         await waitFor(() => {
             expect(getCount('/api/t/acme/tasks?') + getCountExactList()).toBeGreaterThan(
