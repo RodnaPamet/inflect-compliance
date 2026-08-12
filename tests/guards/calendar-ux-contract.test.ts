@@ -22,7 +22,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const CLIENT = 'src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx';
-const MONTH = 'src/components/ui/CalendarMonth.tsx';
+const MONTH = 'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarMonth.tsx';
 const USECASE = 'src/app-layer/usecases/compliance-calendar.ts';
 const DASHBOARD_REPO = 'src/app-layer/repositories/DashboardRepository.ts';
 
@@ -37,7 +37,7 @@ describe('1 — the Timeline shows every deadline', () => {
     });
 
     it('relies on the GanttTimeline point-in-time fallback that already exists', () => {
-        const gantt = read('src/components/ui/GanttTimeline.tsx');
+        const gantt = read('src/app/t/[tenantSlug]/(app)/calendar/_components/GanttTimeline.tsx');
         // A dateless-end event renders as a 1-day marker; without this the
         // unfiltered feed would collapse to zero-width bars.
         expect(gantt).toMatch(/ev\.end[\s\S]{0,80}startMs \+ DAY_MS/);

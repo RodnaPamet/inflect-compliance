@@ -29,9 +29,9 @@ import { Plus } from '@/components/ui/icons/nucleo';
 import { useToast } from '@/components/ui/hooks/use-toast';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { parseYMD, toYMD, startOfUtcDay } from '@/components/ui/date-picker/date-utils';
-import { CalendarHeatmap } from '@/components/ui/CalendarHeatmap';
-import { CalendarMonth } from '@/components/ui/CalendarMonth';
-import { GanttTimeline } from '@/components/ui/GanttTimeline';
+import { CalendarHeatmap } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap';
+import { CalendarMonth } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarMonth';
+import { GanttTimeline } from '@/app/t/[tenantSlug]/(app)/calendar/_components/GanttTimeline';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -412,6 +412,25 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
         [apiBase, calQuery, optimisticPatch, t, toast, canEditTask, actionErrorMessage],
     );
 
+    /**
+     * READ-AFTER-WRITE against a possible replica — a known, bounded window.
+     *
+     * These handlers PATCH a task and then `calQuery.mutate()`, which re-reads
+     * `GET /calendar`. That read runs through `prismaRead`, which IS the
+     * replica whenever `DATABASE_READ_URL` is set (`src/lib/prisma.ts`), and
+     * that module explicitly warns against reading your own write from it.
+     *
+     * What makes it survivable rather than a data bug: `optimisticPatch` has
+     * already applied the change locally, so the user sees the new value
+     * immediately. A stale replica therefore shows up as a brief REVERT — the
+     * reconciliation paints the old value until the next revalidation — not as
+     * a lost write. The write itself landed on the primary.
+     *
+     * Not fixed here because the fix is an API-shape change (the route needs
+     * to be told to read the primary for this one request) rather than a
+     * client change, and it wants its own diff. Documented instead of left as
+     * a silent property of the deployment.
+     */
     const rescheduleTask = React.useCallback(
         async (ev: CalendarEvent, ymd: string) => {
             if (ev.entityType !== 'TASK' || !canEditTask) return;
