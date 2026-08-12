@@ -249,21 +249,13 @@ describe('getComplianceCalendarEvents — aggregation', () => {
             to: TO,
             now: NOW,
         });
-        for (const m of [
-            mockEvidenceFindMany,
-            mockPolicyFindMany,
-            mockVendorFindMany,
-            mockVendorDocFindMany,
-            mockAuditCycleFindMany,
-            mockControlFindMany,
-            mockTestPlanFindMany,
-            mockTaskFindMany,
-            mockRiskFindMany,
-            mockFindingFindMany,
-            mockTreatmentMilestoneFindMany,
-            mockTreatmentPlanFindMany,
-        ]) {
-            expect(m).toHaveBeenCalled();
+        // EVERY source, derived from the shared list — this used to hand-list
+        // twelve of them, so each new loader silently left the sweep. A
+        // tenant-isolation assertion that covers most sources is not one.
+        const called = ALL_SOURCE_MOCKS.filter((x) => x.mock.calls.length > 0);
+        // Guard against the filter above emptying the loop and passing vacuously.
+        expect(called.length).toBeGreaterThanOrEqual(15);
+        for (const m of called) {
             const call = m.mock.calls[0][0] as { where: { tenantId: string } };
             expect(call.where.tenantId).toBe(TENANT_ID);
         }
@@ -474,16 +466,16 @@ describe('getComplianceCalendarEvents — aggregation', () => {
     });
 });
 
-describe('getUpcomingDeadlineCount — sidebar "Time" badge', () => {
+describe('getMyUpcomingTaskCount — sidebar "Time" badge', () => {
     it('counts only the caller\'s future tasks and caps at 99+', async () => {
         // Non-task sources must NOT contribute — the badge is tasks-only now.
         mockTaskCount.mockResolvedValue(120);
         mockControlCount.mockResolvedValue(40);
         mockEvidenceCount.mockResolvedValue(20);
-        const { getUpcomingDeadlineCount } = await import(
+        const { getMyUpcomingTaskCount } = await import(
             '@/app-layer/usecases/compliance-calendar'
         );
-        const count = await getUpcomingDeadlineCount(makeCtx() as never);
+        const count = await getMyUpcomingTaskCount(makeCtx() as never);
         // 120 tasks → capped at 100 (MAX_BADGE_COUNT + 1); controls/evidence ignored.
         expect(count).toBe(100);
     });
@@ -492,10 +484,10 @@ describe('getUpcomingDeadlineCount — sidebar "Time" badge', () => {
         mockTaskCount.mockResolvedValue(3);
         mockControlCount.mockResolvedValue(2); // ignored
         mockEvidenceCount.mockResolvedValue(1); // ignored
-        const { getUpcomingDeadlineCount } = await import(
+        const { getMyUpcomingTaskCount } = await import(
             '@/app-layer/usecases/compliance-calendar'
         );
-        const count = await getUpcomingDeadlineCount(makeCtx() as never);
+        const count = await getMyUpcomingTaskCount(makeCtx() as never);
         expect(count).toBe(3);
     });
 
@@ -504,10 +496,10 @@ describe('getUpcomingDeadlineCount — sidebar "Time" badge', () => {
         // whose work was ENTIRELY late saw an empty badge — the worst
         // state rendered as the calmest. There must be no lower bound.
         mockTaskCount.mockResolvedValue(5);
-        const { getUpcomingDeadlineCount } = await import(
+        const { getMyUpcomingTaskCount } = await import(
             '@/app-layer/usecases/compliance-calendar'
         );
-        await getUpcomingDeadlineCount(makeCtx() as never, { now: NOW });
+        await getMyUpcomingTaskCount(makeCtx() as never, { now: NOW });
         const where = mockTaskCount.mock.calls[0][0].where;
         expect(where.assigneeUserId).toBe('user-1');
         expect(where.dueAt).toEqual({ not: null });
@@ -524,10 +516,10 @@ describe('getUpcomingDeadlineCount — sidebar "Time" badge', () => {
 
     it('horizonDays caps the FUTURE side only, still counting overdue', async () => {
         mockTaskCount.mockResolvedValue(2);
-        const { getUpcomingDeadlineCount } = await import(
+        const { getMyUpcomingTaskCount } = await import(
             '@/app-layer/usecases/compliance-calendar'
         );
-        await getUpcomingDeadlineCount(makeCtx() as never, { now: NOW, horizonDays: 7 });
+        await getMyUpcomingTaskCount(makeCtx() as never, { now: NOW, horizonDays: 7 });
         const horizon = new Date(NOW.getTime() + 7 * 86_400_000);
         const where = mockTaskCount.mock.calls[0][0].where;
         expect(where.dueAt.lte).toEqual(horizon);
@@ -1101,5 +1093,86 @@ describe('one definition of "day"', () => {
         const ev = res.events.find((e) => e.type === 'policy-review');
         expect(ev?.date.slice(0, 10)).toBe(res.todayYmd);
         expect(ev?.status).toBe('due_soon');
+    });
+});
+
+// ─── The nav badge counts something DIFFERENT from the page ──────────
+//
+// `getMyUpcomingTaskCount` counts ONE model, filtered to the caller. The page
+// beside it aggregates nineteen sources tenant-wide. That divergence is
+// intentional — the badge answers "what do I personally owe?", the page
+// answers "what does the org owe?" — but nothing asserted it, and the old
+// name (`getUpcomingDeadlineCount`) promised the page's answer.
+//
+// These pin the divergence deliberately, so the next person to notice the two
+// numbers disagree finds an assertion rather than a discrepancy.
+
+describe('nav badge vs calendar page', () => {
+    const IN_RANGE = new Date('2026-06-15T00:00:00Z');
+
+    it('counts only the CALLER’s tasks, not the tenant’s', async () => {
+        const { getMyUpcomingTaskCount } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        mockTaskCount.mockResolvedValue(3);
+        await getMyUpcomingTaskCount(makeCtx() as never, { now: NOW });
+
+        const where = mockTaskCount.mock.calls[0][0].where;
+        // The scope that makes it "my deadlines" rather than "all deadlines".
+        expect(where.assigneeUserId).toBe('user-1');
+        expect(where.tenantId).toBe(TENANT_ID);
+    });
+
+    it('counts TASKS only — not the other eighteen sources', async () => {
+        const { getMyUpcomingTaskCount } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        mockTaskCount.mockResolvedValue(1);
+        await getMyUpcomingTaskCount(makeCtx() as never, { now: NOW });
+
+        // If the badge ever needs to mirror the page, that is a product
+        // decision and a behaviour change — not a rename. It would show up
+        // here first.
+        expect(mockTaskCount).toHaveBeenCalled();
+        for (const m of [
+            mockRiskFindMany,
+            mockPolicyFindMany,
+            mockControlFindMany,
+            mockEvidenceFindMany,
+            mockFindingFindMany,
+        ]) {
+            expect(m).not.toHaveBeenCalled();
+        }
+    });
+
+    it('the page and the badge deliberately disagree', async () => {
+        const {
+            getComplianceCalendarEvents,
+            getMyUpcomingTaskCount,
+        } = await import('@/app-layer/usecases/compliance-calendar');
+
+        // One risk owned by someone else, no tasks at all: the page has work
+        // to show, the badge has nothing to claim.
+        mockRiskFindMany.mockResolvedValue([
+            {
+                id: 'risk-1',
+                title: 'Someone else’s risk',
+                nextReviewAt: IN_RANGE,
+                targetDate: null,
+                status: 'OPEN',
+                ownerUserId: 'another-user',
+            },
+        ]);
+        mockTaskCount.mockResolvedValue(0);
+
+        const page = await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        const badge = await getMyUpcomingTaskCount(makeCtx() as never, { now: NOW });
+
+        expect(page.events.length).toBeGreaterThan(0);
+        expect(badge).toBe(0);
     });
 });

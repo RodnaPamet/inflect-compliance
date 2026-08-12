@@ -2,8 +2,8 @@
     "$schema": "internal: docs classification source of truth",
     "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\".",
     "counts": {
-        "authoritative": 115,
-        "historical": 525,
+        "authoritative": 116,
+        "historical": 526,
         "living": 5,
         "deprecated": 1
     },
@@ -12,6 +12,9 @@
             "class": "authoritative"
         },
         "docs/audits-surface-do-not-touch.md": {
+            "class": "authoritative"
+        },
+        "docs/calendar-surface-do-not-touch.md": {
             "class": "authoritative"
         },
         "docs/adr/0001-ui-primitive-stack.md": {
@@ -1944,6 +1947,9 @@
             "class": "historical"
         },
         "docs/implementation-notes/2026-08-12-calendar-primitive-ownership.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-12-calendar-test-integrity.md": {
             "class": "historical"
         }
     }

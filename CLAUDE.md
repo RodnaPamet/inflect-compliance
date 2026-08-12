@@ -962,7 +962,12 @@ stands for that PR only — not as a precedent.
 
 ## Key Conventions
 
-- **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
+- **Zod schemas** for all API input validation live in `src/app-layer/schemas/`
+  and `src/lib/schemas/`. Both are **backend**: `src/lib/schemas/index.ts` is
+  ~1,135 lines of pure API request bodies with ZERO client importers, so the
+  long-standing "(shared)" label here was wrong. The split is benign — nothing
+  is duplicated across the two — so this is a doc correction, not a refactor
+  brief. See `docs/calendar-surface-do-not-touch.md` §5.
 - **Audit trail**: Call `logEvent()` from `src/app-layer/events/audit.ts` after mutating state. Entries are hash-chained — never write directly to the `AuditLog` table.
 - **Error classes**: Use typed errors from `src/lib/errors/` rather than throwing raw `Error`.
 - **i18n**: UI strings go through `next-intl`. Message files are in `messages/`. Server components use `getTranslations()`, client components use `useTranslations()`.

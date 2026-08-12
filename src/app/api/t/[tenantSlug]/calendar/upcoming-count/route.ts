@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
-import { getUpcomingDeadlineCount } from '@/app-layer/usecases/compliance-calendar';
+import { getMyUpcomingTaskCount } from '@/app-layer/usecases/compliance-calendar';
 
 const QuerySchema = z.object({
     days: z.coerce.number().int().min(1).max(60).optional(),
@@ -33,7 +33,7 @@ export const GET = withApiErrorHandling(
     requirePermission('tasks.view', async (req: NextRequest, _routeArgs, ctx) => {
         const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
         const { days } = QuerySchema.parse(sp);
-        const count = await getUpcomingDeadlineCount(ctx, {
+        const count = await getMyUpcomingTaskCount(ctx, {
             horizonDays: days,
         });
         // Return the window + scope so the badge and the tenant-wide calendar
