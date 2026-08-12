@@ -125,7 +125,7 @@ describe('calendar filter panel placement', () => {
         await waitFor(() =>
             expect(container.querySelector('#calendar-filter-group')).toBeTruthy(),
         );
-        const panel = container.querySelector('[data-testid="calendar-side-panel"]');
+        const panel = container.querySelector('#calendar-side-panel');
         expect(panel).toBeTruthy();
         // Containment, not mere co-existence: the whole point of the move.
         expect(panel!.querySelector('#calendar-filter-group')).toBeTruthy();
@@ -134,7 +134,7 @@ describe('calendar filter panel placement', () => {
     it('keeps a colour key with the grid, OUTSIDE the panel', async () => {
         const { container } = mount();
         await waitFor(() => expect(container.querySelector('#calendar-legend')).toBeTruthy());
-        const panel = container.querySelector('[data-testid="calendar-side-panel"]');
+        const panel = container.querySelector('#calendar-side-panel');
         // Moving the chips wholesale would have taken the key away from the
         // grid it explains.
         expect(panel!.querySelector('#calendar-legend')).toBeNull();
@@ -154,12 +154,12 @@ describe('calendar filter panel placement', () => {
     it('moves the total count with the filter it reports on', async () => {
         const { container } = mount();
         await waitFor(() =>
-            expect(container.querySelector('[data-testid="calendar-count-total"]')).toBeTruthy(),
+            expect(container.querySelector('#calendar-count-total')).toBeTruthy(),
         );
         const group = container.querySelector('#calendar-filter-group')!;
         // The count is the only feedback that a filter did anything, so it has
         // to travel with it.
-        expect(group.querySelector('[data-testid="calendar-count-total"]')).toBeTruthy();
+        expect(group.querySelector('#calendar-count-total')).toBeTruthy();
     });
 });
 

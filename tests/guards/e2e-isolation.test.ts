@@ -363,6 +363,7 @@ const SHARED_SEED_ALLOWLIST: ReadonlyArray<{ file: string; reason: string }> = [
     { file: 'admin-regression.spec.ts', reason: 'read-only admin-page regression assertions' },
     { file: 'admin-sso.spec.ts', reason: 'read-only: asserts SSO config UI; no save' },
     { file: 'auth.spec.ts', reason: 'auth/login flows on dedicated users; no shared-seed DATA mutation (rate-limit disabled in E2E)' },
+    { file: 'calendar.spec.ts', reason: 'read-only: view/month/category state lives in the query string, so toggling a filter writes to the URL and never to the DB. Needs the shared seed — an empty isolated tenant has no deadlines, so the grid, the count and the filter round-trip would have nothing to assert on' },
     { file: 'credentials-hardening.spec.ts', reason: 'login-throttle/credential hardening on dedicated attempts; no shared-seed data write' },
     { file: 'controls-filter-epic53.spec.ts', reason: 'read-only filter chrome — the FilterSelect command-palette listbox only renders when the controls list has seeded rows; needs the shared seed (empty isolated tenant → no rows → no palette)' },
     { file: 'data-table-platform.spec.ts', reason: 'read-only cross-page table chrome; needs the rich seed (rows on 10 surfaces)' },

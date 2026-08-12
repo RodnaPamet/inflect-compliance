@@ -530,14 +530,14 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
             {view === 'month' ? (
                 <div
                     className={cn(cardVariants({ density: 'none' }), 'flex items-center justify-between px-4 py-2')}
-                    data-testid="calendar-month-nav"
+                    id="calendar-month-nav"
                 >
                     <Button type="button" variant="ghost" onClick={handlePrev} aria-label={t('prevMonth')}>
                         <ChevronLeft className="size-4" />
                     </Button>
                     <span
                         className="text-sm font-semibold text-content-emphasis"
-                        data-testid="calendar-current-month"
+                        id="calendar-current-month"
                     >
                         {formatMonthYear(monthCursor)}
                     </span>
@@ -548,7 +548,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
             ) : (
                 <div
                     className={cn(cardVariants({ density: 'none' }), 'flex items-center justify-center px-4 py-2')}
-                    data-testid="calendar-fixed-window-label"
+                    id="calendar-fixed-window-label"
                 >
                     <span className="text-sm font-medium text-content-muted">
                         {view === 'heatmap' ? t('heatmapWindowLabel') : t('ganttWindowLabel')}
@@ -572,7 +572,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                 <div
                     className="rounded-lg border border-border-subtle bg-bg-subtle px-4 py-2 text-xs text-content-muted"
                     role="status"
-                    data-testid="calendar-omitted-notice"
+                    id="calendar-omitted-notice"
                 >
                     {t('omittedNotice', {
                         sources: omittedSources.map((s) => sourceLabel(t, s)).join(', '),
@@ -618,7 +618,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                 <div
                     className="rounded-lg border border-border-warning bg-bg-warning px-4 py-3 text-sm text-content-warning"
                     role="status"
-                    data-testid="calendar-truncation-notice"
+                    id="calendar-truncation-notice"
                 >
                     {t('truncationNotice', {
                         limit: truncation.perSourceLimit,
@@ -632,7 +632,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
             {isEmptyView && nextOffscreenDeadline && (
                 <div
                     className="flex flex-wrap items-center justify-between gap-compact rounded-lg border border-border-subtle bg-bg-subtle px-4 py-2 text-sm"
-                    data-testid="calendar-offscreen-hint"
+                    id="calendar-offscreen-hint"
                 >
                     <span className="text-content-muted">
                         {t('offscreenHint', { date: formatDate(nextOffscreenDeadline.date) })}
@@ -664,7 +664,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                         <div
                             className="flex items-center gap-tight pb-2 text-xs text-content-muted"
                             role="status"
-                            data-testid="calendar-loading"
+                            id="calendar-loading"
                         >
                             <LoadingSpinner className="h-3.5 w-3.5" />
                             {t('loading')}
@@ -723,7 +723,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                         // its own scroll region below instead.
                         'lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] flex flex-col',
                     )}
-                    data-testid="calendar-side-panel"
+                    id="calendar-side-panel"
                 >
                     {/* ── Filter ── its own labelled group, because putting
                         interactive controls inside <aside> changes the a11y
@@ -791,7 +791,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                             anything. */}
                         <p
                             className="mt-2 text-xs text-content-muted"
-                            data-testid="calendar-count-total"
+                            id="calendar-count-total"
                         >
                             {t('countTotal', { count: events.length })}
                         </p>
