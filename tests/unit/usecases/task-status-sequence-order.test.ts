@@ -86,8 +86,8 @@ jest.mock('@/lib/db-context', () => {
     };
 });
 
-jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
-    WorkItemRepository: {
+jest.mock('@/app-layer/repositories/TaskRepository', () => ({
+    TaskRepository: {
         getById: jest.fn(),
         setStatus: jest.fn(),
         listByIds: jest.fn(),
@@ -102,7 +102,7 @@ jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
 }));
 
 import { setTaskStatus, bulkSetTaskStatus } from '@/app-layer/usecases/task';
-import { WorkItemRepository, TaskLinkRepository } from '@/app-layer/repositories/WorkItemRepository';
+import { TaskRepository, TaskLinkRepository } from '@/app-layer/repositories/TaskRepository';
 import { getAutomationBus, resetAutomationBus } from '@/app-layer/automation';
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -132,18 +132,18 @@ beforeEach(() => {
     getAutomationBus().subscribe('TASK_STATUS_CHANGED', () => {
         trace.push('automation');
     });
-    (WorkItemRepository.getById as jest.Mock).mockResolvedValue({
+    (TaskRepository.getById as jest.Mock).mockResolvedValue({
         id: 'task-1',
         status: 'RESOLVED',
         type: 'TASK',
         controlId: null,
         reviewerUserId: null,
     });
-    (WorkItemRepository.setStatus as jest.Mock).mockResolvedValue({ id: 'task-1', status: 'CLOSED' });
-    (WorkItemRepository.listByIds as jest.Mock).mockResolvedValue([
+    (TaskRepository.setStatus as jest.Mock).mockResolvedValue({ id: 'task-1', status: 'CLOSED' });
+    (TaskRepository.listByIds as jest.Mock).mockResolvedValue([
         { id: 'task-1', status: 'RESOLVED', type: 'TASK', controlId: null, reviewerUserId: null },
     ]);
-    (WorkItemRepository.bulkSetStatus as jest.Mock).mockResolvedValue({ count: 1 });
+    (TaskRepository.bulkSetStatus as jest.Mock).mockResolvedValue({ count: 1 });
 });
 
 afterEach(() => {
@@ -198,7 +198,7 @@ describe('task status change — the sequence, not just the effects', () => {
             controlId: null,
         }));
         mockDbRows.watchers = [];
-        (WorkItemRepository.listByIds as jest.Mock).mockResolvedValue(
+        (TaskRepository.listByIds as jest.Mock).mockResolvedValue(
             ids.map((id) => ({ id, status: 'RESOLVED', type: 'AUDIT_FINDING', controlId: null, reviewerUserId: null })),
         );
         (TaskLinkRepository.listByTaskIds as jest.Mock).mockResolvedValue(
@@ -220,7 +220,7 @@ describe('task status change — the sequence, not just the effects', () => {
         mockDbRows.tasks = [
             { id: 'task-9', tenantId: 'tenant-A', title: 't', key: 'k', type: 'AUDIT_FINDING', controlId: null },
         ];
-        (WorkItemRepository.listByIds as jest.Mock).mockResolvedValue([
+        (TaskRepository.listByIds as jest.Mock).mockResolvedValue([
             { id: 'task-9', status: 'RESOLVED', type: 'AUDIT_FINDING', controlId: null, reviewerUserId: null },
         ]);
         (TaskLinkRepository.listByTaskIds as jest.Mock).mockResolvedValue([

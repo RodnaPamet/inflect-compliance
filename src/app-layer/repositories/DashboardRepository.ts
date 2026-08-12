@@ -1,6 +1,6 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { URGENCY_MS } from '@/lib/urgency';
 import {
     evidenceExpiryScopeWhere,
@@ -299,7 +299,7 @@ const ACTIVITY_TITLE_RESOLVERS: Record<string, TitleResolver> = {
     TASK: (db, ids) =>
         db.task.findMany({ where: { id: { in: ids } }, select: { id: true, title: true }, take: ids.length }),
     // Issues are the same `Task` rows surfaced under the issue lens
-    // (WorkItemRepository) — resolve their title from `task`.
+    // (TaskRepository) — resolve their title from `task`.
     ISSUE: (db, ids) =>
         db.task.findMany({ where: { id: { in: ids } }, select: { id: true, title: true }, take: ids.length }),
     FINDING: (db, ids) =>
@@ -346,7 +346,7 @@ export class DashboardRepository {
             db.risk.count({ where: { tenantId } }),
             db.control.count({ where: { OR: [{ tenantId }, { tenantId: null }] } }),
             db.evidence.count({ where: { tenantId } }),
-            db.task.count({ where: { tenantId, status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] } } }),
+            db.task.count({ where: { tenantId, status: { notIn: [...TERMINAL_TASK_STATUSES] } } }),
             db.finding.count({ where: { tenantId, status: { not: 'CLOSED' } } }),
             db.risk.count({ where: { tenantId, inherentScore: { gte: 15 } } }),
             db.evidence.count({ where: { tenantId, status: 'SUBMITTED' } }),
@@ -604,7 +604,7 @@ export class DashboardRepository {
                     tenantId,
                     deletedAt: null,
                     dueAt: { lt: new Date() },
-                    status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+                    status: { notIn: [...TERMINAL_TASK_STATUSES] },
                 },
             }),
         ]);
@@ -622,7 +622,7 @@ export class DashboardRepository {
             inProgress: counts['IN_PROGRESS'] ?? 0,
             blocked: counts['BLOCKED'] ?? 0,
             // Sum all terminal statuses using the shared constant
-            resolved: TERMINAL_WORK_ITEM_STATUSES.reduce(
+            resolved: TERMINAL_TASK_STATUSES.reduce(
                 (sum, s) => sum + (counts[s] ?? 0), 0
             ),
             overdue,

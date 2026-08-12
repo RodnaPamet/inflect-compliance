@@ -1,7 +1,7 @@
 import { RequestContext } from '../../types';
 import { ControlRepository, type ControlListFilters } from '../../repositories/ControlRepository';
 import { getControlHealthVerdicts } from './health';
-import { WorkItemRepository } from '../../repositories/WorkItemRepository';
+import { TaskRepository } from '../../repositories/TaskRepository';
 import { assertCanReadControls } from '../../policies/control.policies';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -106,7 +106,7 @@ export async function listControls(
                 // link OR the controlId FK) so the list-page Tasks column
                 // matches the control's Tasks tab — the legacy
                 // `_count.controlTasks` read 0/0 for unified tasks.
-                const counts = await WorkItemRepository.countLinkedToControls(
+                const counts = await TaskRepository.countLinkedToControls(
                     db,
                     ctx,
                     controls.map((c) => c.id),
@@ -180,7 +180,7 @@ export async function getControlHeader(ctx: RequestContext, id: string) {
         // legacy `ControlTask` relation — which `_count.controlTasks`
         // and the old `controlTask.count` measured. Those diverged from
         // the table after the work-item unification (#806).
-        const linkedTasks = await WorkItemRepository.countLinkedToControl(
+        const linkedTasks = await TaskRepository.countLinkedToControl(
             db,
             ctx,
             id,

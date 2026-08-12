@@ -16,7 +16,7 @@
  *      explicitly exempt with a reason. A NEW enum value that is neither
  *      wired to a create path nor exempted fails the coverage check below.
  *
- *   2. `WorkItemRepository.taskListSelect` returns `source: true` — the
+ *   2. `TaskRepository.taskListSelect` returns `source: true` — the
  *      field the list needs to render + filter by origin.
  *
  *   3. The Tasks filter config exposes a `source` filter whose option
@@ -90,7 +90,7 @@ describe('inbox completeness — work sources route into Tasks', () => {
 describe('inbox completeness — source is selectable + filterable', () => {
     it('taskListSelect returns source: true', () => {
         const repo = fs.readFileSync(
-            path.join(APP_LAYER_DIR, 'repositories/WorkItemRepository.ts'),
+            path.join(APP_LAYER_DIR, 'repositories/TaskRepository.ts'),
             'utf8',
         );
         const selectBlock = repo.slice(

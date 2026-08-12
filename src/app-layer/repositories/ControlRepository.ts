@@ -118,7 +118,7 @@ export class ControlRepository {
      * it rejects with a validation error. The route returned 500 and the
      * whole section fell over with a Server Components render error.
      *
-     * Same shape as `parseListFilter` in WorkItemRepository: dedupe, validate
+     * Same shape as `parseListFilter` in TaskRepository: dedupe, validate
      * every member against the real enum, and collapse to a scalar or `{ in }`.
      * An unknown value is a 400, not a 500 — the caller sent something wrong.
      */
@@ -126,7 +126,7 @@ export class ControlRepository {
         raw: string,
     ): Prisma.EnumControlStatusFilter | ControlStatus | undefined {
         // Delegates to the shared parser in `../domain/list-filter`, which
-        // this method (and its WorkItemRepository twin) was extracted into.
+        // this method (and its TaskRepository twin) was extracted into.
         // Behaviour — including the 400 message — is unchanged.
         return parseEnumListFilter<ControlStatus>(
             raw,

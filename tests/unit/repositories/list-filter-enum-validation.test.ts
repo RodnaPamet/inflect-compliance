@@ -21,7 +21,7 @@
  *
  * These tests assert the two halves of the fix at the repository
  * boundary, mirroring the fake-`db` style of
- * `tests/unit/repositories/WorkItemRepository.test.ts`:
+ * `tests/unit/repositories/TaskRepository.test.ts`:
  *
  *   1. a valid multi-select reaches Prisma as `{ in: [...] }` — the
  *      shape Prisma accepts — never as one comma-joined literal;

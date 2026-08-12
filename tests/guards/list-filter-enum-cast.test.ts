@@ -146,7 +146,7 @@ describe('list filters are validated, never `as`-cast onto a Prisma column', () 
                 // repositories
                 'RiskRepository.ts',
                 'ControlRepository.ts',
-                'WorkItemRepository.ts',
+                'TaskRepository.ts',
                 // usecases — the D3 sites, each of which built its own `where`
                 'due-planning.ts',
                 'agent-proposals.ts',

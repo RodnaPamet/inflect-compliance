@@ -12,7 +12,7 @@
  *     linked entity no longer exists (UI shows the raw id).
  */
 
-import { TaskLinkRepository } from '@/app-layer/repositories/WorkItemRepository';
+import { TaskLinkRepository } from '@/app-layer/repositories/TaskRepository';
 import type { RequestContext } from '@/app-layer/types';
 
 const ctx = { tenantId: 'tenant-1' } as RequestContext;

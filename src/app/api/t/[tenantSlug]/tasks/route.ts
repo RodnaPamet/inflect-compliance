@@ -15,7 +15,7 @@ import { recordListPageRowCount } from '@/lib/observability/list-page-metrics';
  * `multiple: true` and the shared filter helper comma-joins the selection
  * into `?status=OPEN,BLOCKED`. Narrowing any of them to `z.enum()` would
  * 400 every multi-select. The individual members ARE validated, in
- * `WorkItemRepository._buildWhere` via `parseListFilter`, which splits the
+ * `TaskRepository._buildWhere` via `parseListFilter`, which splits the
  * list and rejects an unknown member with a 400.
  */
 const TaskQuerySchema = z.object({

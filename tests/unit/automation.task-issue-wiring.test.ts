@@ -51,8 +51,8 @@ jest.mock('@/lib/db-context', () => {
     };
 });
 
-jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
-    WorkItemRepository: {
+jest.mock('@/app-layer/repositories/TaskRepository', () => ({
+    TaskRepository: {
         create: jest.fn(),
         update: jest.fn(),
         getById: jest.fn(),
@@ -68,7 +68,7 @@ jest.mock('@/app-layer/notifications/enqueue', () => ({
 }));
 
 import { createTask, setTaskStatus } from '@/app-layer/usecases/task';
-import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
+import { TaskRepository } from '@/app-layer/repositories/TaskRepository';
 import {
     getAutomationBus,
     resetAutomationBus,
@@ -101,7 +101,7 @@ describe('Task usecase emission', () => {
     });
 
     test('createTask publishes TASK_CREATED with key + severity + priority', async () => {
-        (WorkItemRepository.create as jest.Mock).mockResolvedValue({
+        (TaskRepository.create as jest.Mock).mockResolvedValue({
             id: 'task-1',
             key: 'TSK-42',
             title: 'Patch SQLi',
@@ -148,13 +148,13 @@ describe('Task usecase emission', () => {
     test('setTaskStatus publishes TASK_STATUS_CHANGED with fromStatus→toStatus', async () => {
         // S8 — IN_PROGRESS → CLOSED is now illegal under the work-
         // item state machine; CLOSED must be reached via RESOLVED.
-        (WorkItemRepository.getById as jest.Mock).mockResolvedValue({
+        (TaskRepository.getById as jest.Mock).mockResolvedValue({
             id: 'task-1',
             status: 'RESOLVED',
             type: 'TASK',
             controlId: null,
         });
-        (WorkItemRepository.setStatus as jest.Mock).mockResolvedValue({
+        (TaskRepository.setStatus as jest.Mock).mockResolvedValue({
             id: 'task-1',
             status: 'CLOSED',
         });

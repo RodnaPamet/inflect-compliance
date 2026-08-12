@@ -12,7 +12,7 @@ import { Prisma } from '@prisma/client';
 import { formatDate } from '@/lib/format-date';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { emitAutomationEvent } from '../automation';
 import { createTask, addTaskLink } from '../usecases/task';
@@ -141,7 +141,7 @@ export async function runEvidenceRetentionNotifications(
             where: {
                 tenantId: ev.tenantId,
                 source: 'EVIDENCE_EXPIRY',
-                status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+                status: { notIn: [...TERMINAL_TASK_STATUSES] },
                 links: {
                     some: {
                         entityType: 'EVIDENCE',

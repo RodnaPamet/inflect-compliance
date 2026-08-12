@@ -36,7 +36,7 @@ const mockDb = {
         create: jest.fn(),
         delete: jest.fn(),
     },
-    // B7 — listAssets now folds in WorkItemRepository.countLinkedToEntities
+    // B7 — listAssets now folds in TaskRepository.countLinkedToEntities
     // (TaskLink count). Default to no links → taskTotal/taskDone = 0.
     taskLink: { findMany: jest.fn().mockResolvedValue([]) },
     // 360° Overview roll-ups (getAsset) — default to zero aggregates.

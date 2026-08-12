@@ -11,13 +11,13 @@
 import { RequestContext } from '../../types';
 import { assertCanReadControls } from '../../policies/control.policies';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import type { TaskStatus } from '@prisma/client';
 
 // Non-terminal (active) work-item statuses — the unified-Task equivalent of
 // the legacy `status != 'DONE'` predicate the ControlTask dashboard used.
 const OPEN_TASK_STATUS_FILTER = {
-    notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[],
+    notIn: [...TERMINAL_TASK_STATUSES] as TaskStatus[],
 } as const;
 
 // Safety cap on the tenant-wide scans below. These are aggregate/admin reads

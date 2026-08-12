@@ -17,7 +17,7 @@ import { enqueue } from '../jobs/queue';
 import { UPDATE_STATUS_TARGETS } from '@/lib/automation/status-allowlist';
 import { safeFetch, SsrfBlockedError, RedirectNotAllowedError } from './webhook-safety';
 import { isNotificationsEnabled } from '../notifications/settings';
-import { TERMINAL_WORK_ITEM_STATUSES, isTerminalStatus } from '../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES, isTerminalStatus } from '../domain/task-status';
 import { createTask as createTaskUsecase, setTaskStatus } from '../usecases/task';
 import { setControlStatus } from '../usecases/control/mutations';
 import { bulkSetRiskStatus } from '../usecases/risk';
@@ -246,7 +246,7 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     const existing = await db.task.findFirst({
         where: {
             tenantId: event.tenantId,
-            status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+            status: { notIn: [...TERMINAL_TASK_STATUSES] },
             deletedAt: null,
             metadataJson: { path: ['automationDedupeKey'], equals: dedupeKey },
         },
@@ -367,7 +367,7 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
     // rule `on TASK_STATUS_CHANGED → set this Task's status` now feeds itself.
     //
     // It does not run forever by accident: the second hop's target status
-    // equals the current one, `checkWorkItemTransition` refuses the no-op, and
+    // equals the current one, `checkTaskTransition` refuses the no-op, and
     // the loop dies at depth 2. But that is the state machine catching a
     // mistake, not a decision — and it does not hold for a PAIR of rules that
     // drive a task A → B → A, where every hop is a legal transition, every hop

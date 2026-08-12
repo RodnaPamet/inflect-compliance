@@ -29,7 +29,7 @@
  */
 import type { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import {
     MS_PER_DAY,
     startOfUtcDay,
@@ -112,7 +112,7 @@ export async function processTaskDueNotifications(
     const where: Prisma.TaskWhereInput = {
         deletedAt: null,
         assigneeUserId: { not: null },
-        status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+        status: { notIn: [...TERMINAL_TASK_STATUSES] },
         dueAt: { gte: horizonStart, lt: horizonEnd },
     };
     if (tenantId) where.tenantId = tenantId;

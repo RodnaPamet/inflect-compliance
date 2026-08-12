@@ -6,7 +6,7 @@
  * ─── Scope, stated honestly ─────────────────────────────────────────
  *
  * This file checks the **transition** gate from
- * `domain/work-item-status.ts` (`checkWorkItemTransition` — is
+ * `domain/task-status.ts` (`checkTaskTransition` — is
  * `from → to` a legal edge?) and the audit `detailsJson` shape. It
  * says NOTHING about the four-eyes reviewer sign-off gate, the
  * assignee≠reviewer SoD guard, `assertActiveMembers`, or source
@@ -30,7 +30,7 @@
  * failure points at the honest owner:
  *
  *   • legal/illegal transitions + terminal sets →
- *     `tests/unit/work-item-status.test.ts`
+ *     `tests/unit/task-status.test.ts`
  *   • `setTaskStatus` / `bulkSetTaskStatus` rejecting an illegal
  *     transition and a terminal move with no resolution →
  *     `tests/integration/task-usecase-branches.test.ts`
@@ -112,26 +112,26 @@ function functionBodyOf(src: string, name: string): string {
     throw new Error(`unterminated function body: ${name}`);
 }
 
-describe('work-item status machine — wiring + audit shape', () => {
+describe('task status machine — wiring + audit shape', () => {
     describe('the transition gate is wired into the task usecase', () => {
         const src = read('src/app-layer/usecases/task.ts');
 
         it('imports the shared checker/formatter pair', () => {
             expect(src).toMatch(
-                /import\s*\{[\s\S]*?checkWorkItemTransition[\s\S]*?\}\s*from\s*['"]\.\.\/domain\/work-item-status['"]/,
+                /import\s*\{[\s\S]*?checkTaskTransition[\s\S]*?\}\s*from\s*['"]\.\.\/domain\/task-status['"]/,
             );
         });
 
         it('setTaskStatus checks the transition and rejects with the formatted error', () => {
             const body = functionBodyOf(src, 'setTaskStatus');
-            expect(body).toMatch(/checkWorkItemTransition\(fromStatus,\s*status\)/);
+            expect(body).toMatch(/checkTaskTransition\(fromStatus,\s*status\)/);
             expect(body).toMatch(/throw badRequest\(formatTransitionError/);
         });
 
         it('bulkSetTaskStatus pre-fetches every row and checks each transition', () => {
             const body = functionBodyOf(src, 'bulkSetTaskStatus');
-            expect(body).toMatch(/WorkItemRepository\.listByIds/);
-            expect(body).toMatch(/checkWorkItemTransition\(/);
+            expect(body).toMatch(/TaskRepository\.listByIds/);
+            expect(body).toMatch(/checkTaskTransition\(/);
         });
 
         /**
@@ -146,19 +146,19 @@ describe('work-item status machine — wiring + audit shape', () => {
                 '    return null;',
                 '}',
                 'export async function somethingElse(ctx) {',
-                '    const rows = await WorkItemRepository.listByIds(db, ctx, ids);',
-                '    return checkWorkItemTransition(a, b);',
+                '    const rows = await TaskRepository.listByIds(db, ctx, ids);',
+                '    return checkTaskTransition(a, b);',
                 '}',
             ].join('\n');
 
             // The old, unbounded shape passes on this gutted input …
             const unbounded = fake.slice(fake.indexOf('export async function bulkSetTaskStatus'));
-            expect(unbounded).toMatch(/WorkItemRepository\.listByIds/);
+            expect(unbounded).toMatch(/TaskRepository\.listByIds/);
 
             // … the bounded one does not.
             const bounded = functionBodyOf(fake, 'bulkSetTaskStatus');
-            expect(bounded).not.toMatch(/WorkItemRepository\.listByIds/);
-            expect(bounded).not.toMatch(/checkWorkItemTransition\(/);
+            expect(bounded).not.toMatch(/TaskRepository\.listByIds/);
+            expect(bounded).not.toMatch(/checkTaskTransition\(/);
         });
     });
 

@@ -17,28 +17,28 @@
  *                              ↘ BLOCKED ↗              → CANCELED
  *   (IN_REVIEW gates close when a reviewerUserId is set — see setTaskStatus)
  *
- * @module app-layer/domain/work-item-status
+ * @module app-layer/domain/task-status
  */
 
 /**
  * Terminal/completed statuses — items that are done and should be excluded
  * from active views, overdue calculations, and notification triggers.
  */
-export const TERMINAL_WORK_ITEM_STATUSES = ['RESOLVED', 'CLOSED', 'CANCELED'] as const;
+export const TERMINAL_TASK_STATUSES = ['RESOLVED', 'CLOSED', 'CANCELED'] as const;
 
 /**
  * Active/open statuses — items that are still in progress and should appear
  * in active views, overdue checks, dashboard counts, and notifications.
  *
- * This is the inverse of TERMINAL_WORK_ITEM_STATUSES.
+ * This is the inverse of TERMINAL_TASK_STATUSES.
  * Includes: OPEN, TRIAGED, IN_PROGRESS, BLOCKED
  */
-export const ACTIVE_WORK_ITEM_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED'] as const;
+export const ACTIVE_TASK_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED'] as const;
 
 /**
  * All valid work item statuses.
  */
-export const ALL_WORK_ITEM_STATUSES = [
+export const ALL_TASK_STATUSES = [
     'OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED',
     'RESOLVED', 'CLOSED', 'CANCELED',
 ] as const;
@@ -52,37 +52,37 @@ export const ALL_WORK_ITEM_STATUSES = [
  * reviewer acquires work), and the "awaiting review by <user>" list
  * filter (which selects the tasks parked in it).
  */
-export const REVIEW_WORK_ITEM_STATUS = 'IN_REVIEW';
+export const REVIEW_TASK_STATUS = 'IN_REVIEW';
 
-export type WorkItemStatusValue = (typeof ALL_WORK_ITEM_STATUSES)[number];
-export type TerminalWorkItemStatus = (typeof TERMINAL_WORK_ITEM_STATUSES)[number];
-export type ActiveWorkItemStatus = (typeof ACTIVE_WORK_ITEM_STATUSES)[number];
+export type TaskStatusValue = (typeof ALL_TASK_STATUSES)[number];
+export type TerminalTaskStatus = (typeof TERMINAL_TASK_STATUSES)[number];
+export type ActiveTaskStatus = (typeof ACTIVE_TASK_STATUSES)[number];
 
 /**
  * Prisma-compatible filter for active/open items.
  * Usage: `where: { status: ACTIVE_STATUS_FILTER }`
  *
- * Prefer this over `{ in: ACTIVE_WORK_ITEM_STATUSES }` because
+ * Prefer this over `{ in: ACTIVE_TASK_STATUSES }` because
  * the notIn pattern is future-proof — new statuses added to
  * TaskStatus will automatically be included in active views
  * unless they are explicitly terminal.
  */
 export const ACTIVE_STATUS_FILTER = {
-    notIn: TERMINAL_WORK_ITEM_STATUSES as unknown as string[],
+    notIn: TERMINAL_TASK_STATUSES as unknown as string[],
 } as const;
 
 /**
  * Check if a status string represents a terminal/completed state.
  */
-export function isTerminalStatus(status: string): status is TerminalWorkItemStatus {
-    return (TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(status);
+export function isTerminalStatus(status: string): status is TerminalTaskStatus {
+    return (TERMINAL_TASK_STATUSES as readonly string[]).includes(status);
 }
 
 /**
  * Check if a status string represents an active/in-progress state.
  */
-export function isActiveStatus(status: string): status is ActiveWorkItemStatus {
-    return (ACTIVE_WORK_ITEM_STATUSES as readonly string[]).includes(status);
+export function isActiveStatus(status: string): status is ActiveTaskStatus {
+    return (ACTIVE_TASK_STATUSES as readonly string[]).includes(status);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -113,9 +113,9 @@ export function isActiveStatus(status: string): status is ActiveWorkItemStatus {
 //   CLOSED → (terminal — no transitions out)
 //   CANCELED → (terminal — no transitions out)
 // ─────────────────────────────────────────────────────────────────────
-export const WORK_ITEM_TRANSITIONS: Record<
-    WorkItemStatusValue,
-    ReadonlySet<WorkItemStatusValue>
+export const TASK_TRANSITIONS: Record<
+    TaskStatusValue,
+    ReadonlySet<TaskStatusValue>
 > = {
     // CLOSED is now reachable directly from every active status. The
     // UI retired RESOLVED as a redundant intermediate (it stays in the
@@ -137,7 +137,7 @@ export const WORK_ITEM_TRANSITIONS: Record<
     CANCELED: new Set(),
 };
 
-export type WorkItemTransitionError =
+export type TaskTransitionError =
     | { kind: 'unknown_from'; from: string }
     | { kind: 'unknown_to'; to: string }
     | { kind: 'no_op'; status: string }
@@ -148,21 +148,21 @@ export type WorkItemTransitionError =
  * transition, or a discriminated error variant the caller can
  * forward to `badRequest()` with a precise message.
  */
-export function checkWorkItemTransition(
+export function checkTaskTransition(
     from: string,
     to: string,
-): WorkItemTransitionError | null {
-    if (!(from in WORK_ITEM_TRANSITIONS)) {
+): TaskTransitionError | null {
+    if (!(from in TASK_TRANSITIONS)) {
         return { kind: 'unknown_from', from };
     }
-    if (!(to in WORK_ITEM_TRANSITIONS)) {
+    if (!(to in TASK_TRANSITIONS)) {
         return { kind: 'unknown_to', to };
     }
     if (from === to) {
         return { kind: 'no_op', status: from };
     }
-    const allowed = WORK_ITEM_TRANSITIONS[from as WorkItemStatusValue];
-    if (!allowed.has(to as WorkItemStatusValue)) {
+    const allowed = TASK_TRANSITIONS[from as TaskStatusValue];
+    if (!allowed.has(to as TaskStatusValue)) {
         return { kind: 'illegal', from, to };
     }
     return null;
@@ -174,7 +174,7 @@ export function checkWorkItemTransition(
  * task + issue setStatus paths.
  */
 export function formatTransitionError(
-    err: WorkItemTransitionError,
+    err: TaskTransitionError,
 ): string {
     switch (err.kind) {
         case 'unknown_from':

@@ -51,7 +51,7 @@ const ROOT = path.resolve(__dirname, '../..');
  * route directory are the entity name unchanged; the repo file is the
  * Pascal-cased model with `Repository.ts` suffix (which doesn't always
  * line up — `Audits` page → `AuditRepository`, `Tasks` page →
- * `WorkItemRepository`, etc.).
+ * `TaskRepository`, etc.).
  *
  * PR-9 added Tasks to the set; the Tasks list page already had the
  * SSR cap from PR #146 but was missing the SELECT trim, backfill cap,
@@ -65,7 +65,7 @@ const LIST_PAGE_ENTITIES: ReadonlyArray<{ entity: string; repo: string }> = [
     { entity: 'policies', repo: 'PolicyRepository' },
     { entity: 'vendors', repo: 'VendorRepository' },
     { entity: 'findings', repo: 'FindingRepository' },
-    { entity: 'tasks', repo: 'WorkItemRepository' },
+    { entity: 'tasks', repo: 'TaskRepository' },
 ];
 
 function readFile(rel: string): string {

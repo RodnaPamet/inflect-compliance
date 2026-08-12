@@ -73,8 +73,8 @@ jest.mock('@/lib/db-context', () => {
 
 // getControlHeader now derives the Tasks-tab badge + progress from the
 // unified-task count (matching LinkedTasksPanel) via this repo method.
-jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
-    WorkItemRepository: {
+jest.mock('@/app-layer/repositories/TaskRepository', () => ({
+    TaskRepository: {
         countLinkedToControl: jest.fn(),
         countLinkedToControls: jest.fn(),
     },
@@ -93,7 +93,7 @@ import {
 // pulls in mutations.ts and with it the Prisma audit-extension stack.
 import { getControlDashboard, runConsistencyCheck } from '@/app-layer/usecases/control/dashboard';
 import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
-import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
+import { TaskRepository } from '@/app-layer/repositories/TaskRepository';
 import { assertCanReadControls } from '@/app-layer/policies/control.policies';
 import { assertCanAdmin } from '@/app-layer/policies/common';
 import { makeRequestContext } from '../../helpers/make-context';
@@ -106,8 +106,8 @@ beforeEach(() => {
         tenantDb.control.findMany, tenantDb.control.count, tenantDb.control.groupBy,
         tenantDb.task.count, tenantDb.task.groupBy, tenantDb.task.findMany,
         tenantDb.auditLog.findMany,
-        WorkItemRepository.countLinkedToControl as jest.Mock,
-        WorkItemRepository.countLinkedToControls as jest.Mock,
+        TaskRepository.countLinkedToControl as jest.Mock,
+        TaskRepository.countLinkedToControls as jest.Mock,
         assertCanReadControls as jest.Mock,
         assertCanAdmin as jest.Mock,
     ].forEach((m: any) => m.mockReset && m.mockReset());
@@ -121,7 +121,7 @@ beforeEach(() => {
 // on the merge.
 beforeEach(() => {
     tenantDb.task.count.mockResolvedValue(0);
-    (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(
+    (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(
         new Map(),
     );
 });
@@ -144,7 +144,7 @@ describe('listControls', () => {
             { id: 'c-2' },
         ]);
         (
-            WorkItemRepository.countLinkedToControls as jest.Mock
+            TaskRepository.countLinkedToControls as jest.Mock
         ).mockResolvedValueOnce(
             new Map([['c-1', { total: 4, done: 1 }]]),
         );
@@ -154,7 +154,7 @@ describe('listControls', () => {
             { id: 'c-1', taskTotal: 4, taskDone: 1 },
             { id: 'c-2', taskTotal: 0, taskDone: 0 },
         ]);
-        expect(WorkItemRepository.countLinkedToControls).toHaveBeenCalledWith(
+        expect(TaskRepository.countLinkedToControls).toHaveBeenCalledWith(
             tenantDb,
             ctx,
             ['c-1', 'c-2'],
@@ -200,7 +200,7 @@ describe('getControlHeader', () => {
             // (not the legacy frameworkMappings relation).
             _count: { controlTasks: 0, evidenceLinks: 1, evidence: 2, requirementLinks: 3 },
         });
-        (WorkItemRepository.countLinkedToControl as jest.Mock).mockResolvedValueOnce({
+        (TaskRepository.countLinkedToControl as jest.Mock).mockResolvedValueOnce({
             total: 5,
             done: 2,
         });
@@ -217,7 +217,7 @@ describe('getControlHeader', () => {
             _count: { controlTasks: 5, evidenceLinks: 1, evidence: 2, requirementLinks: 3, frameworkMappings: 3 },
             doneControlTasks: 2,
         });
-        expect(WorkItemRepository.countLinkedToControl).toHaveBeenCalledWith(
+        expect(TaskRepository.countLinkedToControl).toHaveBeenCalledWith(
             tenantDb,
             ctx,
             'c-1',

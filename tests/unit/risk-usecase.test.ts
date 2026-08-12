@@ -41,7 +41,7 @@ const mockDb = {
     // GLOBAL User table, so the DB alone can't enforce tenancy). Default the
     // membership lookup to a hit so owner-bearing writes proceed.
     tenantMembership: { findFirst: jest.fn().mockResolvedValue({ userId: 'u-owner' }) },
-    // B7 — listRisks now folds in WorkItemRepository.countLinkedToEntities
+    // B7 — listRisks now folds in TaskRepository.countLinkedToEntities
     // (TaskLink count). Default to no links → taskTotal/taskDone = 0.
     taskLink: { findMany: jest.fn().mockResolvedValue([]) },
 } as any;

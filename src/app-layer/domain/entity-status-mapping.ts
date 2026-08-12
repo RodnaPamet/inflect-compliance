@@ -69,7 +69,7 @@ export const CONTROL_APPLICABILITY_VARIANT: Record<string, StatusBadgeVariant> =
     EXCLUDED: 'neutral',
 };
 
-// ─── Task / WorkItem status ──────────────────────────────────────────
+// ─── Task status ──────────────────────────────────────────
 
 // Derived from the single source of truth in `@/lib/task-status-badge`
 // (Tasks roadmap TP-1) — kept as a thin compat alias so existing

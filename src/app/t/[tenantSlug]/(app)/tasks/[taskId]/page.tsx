@@ -29,10 +29,10 @@ import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { CopyText } from '@/components/ui/copy-text';
 import {
-    TERMINAL_WORK_ITEM_STATUSES,
-    WORK_ITEM_TRANSITIONS,
-    type WorkItemStatusValue,
-} from '@/app-layer/domain/work-item-status';
+    TERMINAL_TASK_STATUSES,
+    TASK_TRANSITIONS,
+    type TaskStatusValue,
+} from '@/app-layer/domain/task-status';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { MetaStrip } from '@/components/ui/meta-strip';
@@ -106,7 +106,7 @@ const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLO
  * where the task actually was, so it advertised moves the server rejects:
  * a CLOSED task (terminal — no legal transitions out) still offered all
  * seven, and picking one 400'd. Filtering against the same
- * WORK_ITEM_TRANSITIONS graph the usecase enforces means the menu can
+ * TASK_TRANSITIONS graph the usecase enforces means the menu can
  * only ever contain moves that will be accepted.
  *
  * `current` itself is always retained: the Combobox resolves its
@@ -120,11 +120,11 @@ const buildTaskStatusCbOptions = (
     current?: string,
 ): ComboboxOption[] => {
     const reachable =
-        current && current in WORK_ITEM_TRANSITIONS
-            ? WORK_ITEM_TRANSITIONS[current as WorkItemStatusValue]
+        current && current in TASK_TRANSITIONS
+            ? TASK_TRANSITIONS[current as TaskStatusValue]
             : null;
     return SELECTABLE_STATUSES.filter(
-        (val) => !reachable || val === current || reachable.has(val as WorkItemStatusValue),
+        (val) => !reachable || val === current || reachable.has(val as TaskStatusValue),
     ).map((val) => ({ value: val, label: statusLabels[val] || val }));
 };
 
@@ -190,7 +190,7 @@ const buildGapTypeLabels = (t: (k: string) => string): Record<string, string> =>
 });
 
 
-// getTask → WorkItemRepository.getById (full Task + relations + _count).
+// getTask → TaskRepository.getById (full Task + relations + _count).
 interface TaskDetail {
     id: string;
     title: string;
@@ -563,7 +563,7 @@ export default function TaskDetailPage() {
         // server rejects (`from === to`). The option is only in the list
         // so the Combobox can display the current selection.
         if (status === taskQuery.data?.status) return;
-        if ((TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(status)) {
+        if ((TERMINAL_TASK_STATUSES as readonly string[]).includes(status)) {
             setResolutionDraft('');
             setPendingTerminalStatus(status);
             return;
@@ -926,7 +926,7 @@ export default function TaskDetailPage() {
         task.status,
     );
 
-    const isOverdue = task.dueAt && new Date(task.dueAt) < new Date() && !(TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(task.status);
+    const isOverdue = task.dueAt && new Date(task.dueAt) < new Date() && !(TERMINAL_TASK_STATUSES as readonly string[]).includes(task.status);
     const metadata = task.metadataJson || {};
 
     // TP-4 — resolve the task's provenance into a single prominent

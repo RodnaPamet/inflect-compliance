@@ -9,7 +9,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability';
 import { internal } from '@/lib/errors/types';
 import { assertCanRead } from '../../policies/common';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import {
     evidenceExpiryScopeWhere,
     EVIDENCE_REVIEWED_STATUS,
@@ -566,7 +566,7 @@ export async function loadTaskEvents(
             // lines below; a hand-written twin drifts silently — add a
             // terminal status to the enum and this list keeps calling those
             // tasks open, on the surface that reports what is due.
-            const isDone = (TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(
+            const isDone = (TERMINAL_TASK_STATUSES as readonly string[]).includes(
                 r.status,
             );
             return {

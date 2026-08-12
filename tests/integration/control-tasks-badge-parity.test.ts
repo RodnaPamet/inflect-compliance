@@ -6,7 +6,7 @@
  * SAME dual-linkage rule (a TaskLink with entityType=CONTROL OR the direct
  * `Task.controlId` FK, deduped by task id):
  *   • badge = `getControlHeader(ctx, id)._count.controlTasks`
- *             (→ WorkItemRepository.countLinkedToControl)
+ *             (→ TaskRepository.countLinkedToControl)
  *   • body  = `listTasks(ctx, { linkedEntityType: 'CONTROL', linkedEntityId })`
  *             (the exact query `/tasks?linkedEntityType=CONTROL&linkedEntityId=`
  *             runs — what LinkedTasksPanel fetches)

@@ -5,7 +5,7 @@
  * strings (`'kri_breach'` / `'risk_appetite_breach'`) that are not
  * `TaskSource` enum members: one was swallowed in a try/catch (task
  * silently never created), the other threw a 500. The repo now validates
- * `source` at the write boundary (`normalizeWorkItemSource`), and this
+ * `source` at the write boundary (`normalizeTaskSource`), and this
  * structural ratchet stops a new caller from re-introducing a bogus
  * literal — a `source: '<literal>'` on any `createTask(...)` /
  * `db.task.create(...)` / `prisma.task.create(...)` call must be a real
@@ -13,7 +13,7 @@
  *
  * String-literal sources only: a `source:` bound to a variable/expression
  * can't be checked statically and is validated at runtime by
- * `normalizeWorkItemSource` instead.
+ * `normalizeTaskSource` instead.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';

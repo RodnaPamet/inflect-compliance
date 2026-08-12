@@ -13,7 +13,7 @@
  *     `bumpEntityCacheVersion`.
  *   • **Issue** used to carry a PARALLEL work-item surface here
  *     (list/get/create/update/status/assign/link/comment/watch/bulk)
- *     that delegated to the same `WorkItemRepository` rows while
+ *     that delegated to the same `TaskRepository` rows while
  *     skipping several of those steps. Its `/issues` routes were
  *     retired, leaving the functions with no HTTP entry point, so
  *     they were deleted rather than left as a second implementation
@@ -78,7 +78,7 @@ export async function freezeBundle(ctx: RequestContext, bundleId: string) {
             // bundle freeze is a one-shot entity_lifecycle event on
             // the bundle (not a status transition on the issue).
             // Re-categorising so SIEM filters on `status_change`
-            // see only real WorkItem transitions.
+            // see only real Task transitions.
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'EvidenceBundle',

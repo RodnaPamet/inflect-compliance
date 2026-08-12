@@ -9,7 +9,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability';
 import { internal } from '@/lib/errors/types';
 import { assertCanRead } from '../../policies/common';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import {
     evidenceExpiryScopeWhere,
     EVIDENCE_REVIEWED_STATUS,

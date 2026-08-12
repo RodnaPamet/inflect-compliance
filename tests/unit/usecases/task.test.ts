@@ -32,8 +32,8 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(),
 }));
 
-jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
-    WorkItemRepository: {
+jest.mock('@/app-layer/repositories/TaskRepository', () => ({
+    TaskRepository: {
         list: jest.fn(),
         listPaginated: jest.fn(),
         getById: jest.fn(),
@@ -95,10 +95,10 @@ import {
 } from '@/app-layer/usecases/task';
 import { runInTenantContext } from '@/lib/db-context';
 import {
-    WorkItemRepository,
+    TaskRepository,
     TaskLinkRepository,
     TaskCommentRepository,
-} from '@/app-layer/repositories/WorkItemRepository';
+} from '@/app-layer/repositories/TaskRepository';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { emitAutomationEvent } from '@/app-layer/automation';
 import { enqueueEmail } from '@/app-layer/notifications/enqueue';
@@ -127,12 +127,12 @@ const txStub = () =>
     }) as never;
 
 
-const mockGetById = WorkItemRepository.getById as jest.MockedFunction<typeof WorkItemRepository.getById>;
-const mockCreate = WorkItemRepository.create as jest.MockedFunction<typeof WorkItemRepository.create>;
-const mockSetStatus = WorkItemRepository.setStatus as jest.MockedFunction<typeof WorkItemRepository.setStatus>;
-const mockAssign = WorkItemRepository.assign as jest.MockedFunction<typeof WorkItemRepository.assign>;
-const mockBulkSetStatus = WorkItemRepository.bulkSetStatus as jest.MockedFunction<typeof WorkItemRepository.bulkSetStatus>;
-const mockListByIds = WorkItemRepository.listByIds as jest.MockedFunction<typeof WorkItemRepository.listByIds>;
+const mockGetById = TaskRepository.getById as jest.MockedFunction<typeof TaskRepository.getById>;
+const mockCreate = TaskRepository.create as jest.MockedFunction<typeof TaskRepository.create>;
+const mockSetStatus = TaskRepository.setStatus as jest.MockedFunction<typeof TaskRepository.setStatus>;
+const mockAssign = TaskRepository.assign as jest.MockedFunction<typeof TaskRepository.assign>;
+const mockBulkSetStatus = TaskRepository.bulkSetStatus as jest.MockedFunction<typeof TaskRepository.bulkSetStatus>;
+const mockListByIds = TaskRepository.listByIds as jest.MockedFunction<typeof TaskRepository.listByIds>;
 // The status-change relevance gate resolves the WHOLE batch's links in
 // one read (`listByTaskIds`); the edit-time re-check still uses the
 // single-task `listByTask`.

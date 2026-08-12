@@ -52,7 +52,7 @@ function taskStatusLabels(t: T): Record<string, string> {
         // RESOLVED is retired from the two status PICKERS (the detail
         // page's SELECTABLE_STATUSES and the bulk bar) because CLOSED
         // made it a redundant intermediate. It is NOT retired from the
-        // model: it is still a live TaskStatus, WORK_ITEM_TRANSITIONS
+        // model: it is still a live TaskStatus, TASK_TRANSITIONS
         // still permits moving into it, the API still accepts it, and
         // the repository's metrics still count it as done. Rows in this
         // state therefore exist — legacy ones, plus anything set through

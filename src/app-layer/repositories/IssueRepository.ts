@@ -1,13 +1,13 @@
 /**
- * @deprecated Use WorkItemRepository instead. This file re-exports for backward compatibility.
+ * @deprecated Use TaskRepository instead. This file re-exports for backward compatibility.
  */
-import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository } from './WorkItemRepository';
-import type { TaskFilters } from './WorkItemRepository';
+import { TaskRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository } from './TaskRepository';
+import type { TaskFilters } from './TaskRepository';
 
 /** @deprecated Use TaskFilters */
 export type IssueFilters = TaskFilters;
-/** @deprecated Use WorkItemRepository */
-export const IssueRepository = WorkItemRepository;
+/** @deprecated Use TaskRepository */
+export const IssueRepository = TaskRepository;
 /** @deprecated Use TaskLinkRepository */
 export const IssueLinkRepository = TaskLinkRepository;
 /** @deprecated Use TaskCommentRepository */

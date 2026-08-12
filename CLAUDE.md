@@ -992,15 +992,23 @@ stands for that PR only — not as a precedent.
   `tests/integration/task-enum-db-mapping.test.ts` fails if either half
   of the pin breaks.
 
-  Two `WorkItem*` surfaces deliberately survive, both because the rename
-  is blocked on a file owned by concurrent work, not on cost:
-  `WorkItemRepository` (243 occurrences / 43 files — the target name
-  `TaskRepository.ts` is currently a dead 5-line re-export being deleted
-  separately) and `src/app-layer/domain/work-item-status.ts` (27
-  importers, exporting `checkWorkItemTransition` /
-  `WorkItemStatusValue` / `WORK_ITEM_TRANSITIONS`). Both are pure
-  `sed` + file move once those files are free — finish them, don't add
-  to them.
+  The rename is now COMPLETE. `WorkItemRepository` became
+  `TaskRepository` (the target filename was freed when its dead 5-line
+  re-export was deleted), and `domain/work-item-status.ts` became
+  `domain/task-status.ts` — `checkWorkItemTransition` →
+  `checkTaskTransition`, `WorkItemStatusValue` → `TaskStatusValue`,
+  `WORK_ITEM_TRANSITIONS` → `TASK_TRANSITIONS`, and the
+  `*_WORK_ITEM_STATUSES` constants → `*_TASK_STATUSES`. There is no
+  `WorkItem*` identifier left in `src/` or `tests/`; the only surviving
+  occurrences are the five `@@map` pins above and prose in historical
+  implementation notes.
+
+  `tests/unit/task-repository-seam.test.ts` refuses a re-introduced
+  `WorkItemRepository` export and, more generally, any two exported
+  classes in the repositories layer that share one object identity —
+  so a compatibility shim cannot quietly restore the two-names state.
+  The `Issue*` re-exports in `IssueRepository.ts` are the one remaining
+  alias set, listed there as a downward ratchet.
 - **Audit trail**: Call `logEvent()` from `src/app-layer/events/audit.ts` after mutating state. Entries are hash-chained — never write directly to the `AuditLog` table.
 - **Error classes**: Use typed errors from `src/lib/errors/` rather than throwing raw `Error`.
 - **i18n**: UI strings go through `next-intl`. Message files are in `messages/`. Server components use `getTranslations()`, client components use `useTranslations()`.

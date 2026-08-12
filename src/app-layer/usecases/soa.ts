@@ -26,7 +26,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
 import { TaskStatus } from '@prisma/client';
 import { isImplemented, rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-rollup';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
 import type {
     SoAReportDTO,
@@ -416,7 +416,7 @@ async function loadOpenTaskCounts(ctx: RequestContext, controlIds: string[]): Pr
             where: {
                 tenantId: ctx.tenantId,
                 controlId: { in: controlIds },
-                status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[] },
+                status: { notIn: [...TERMINAL_TASK_STATUSES] as TaskStatus[] },
             },
             _count: { id: true },
         })

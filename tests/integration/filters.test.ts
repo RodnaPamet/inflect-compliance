@@ -7,7 +7,7 @@
  * 3. EvidenceRepository._buildWhere handles type/controlId/archived/expiring/q filters
  * 4. RiskRepository._buildWhere searches title + description + category
  * 5. AssetRepository._buildWhere searches name + classification + owner
- * 6. WorkItemRepository._buildWhere handles status/type/severity/priority/due/q
+ * 6. TaskRepository._buildWhere handles status/type/severity/priority/due/q
  * 7. VendorRepository._buildWhere handles status/criticality/reviewDue/q
  * 8. PolicyRepository._buildWhere handles status/category/q
  * 9. Zod schemas strip unknown fields and normalize q
@@ -242,14 +242,14 @@ describe('EvidenceRepository._buildWhere', () => {
     });
 });
 
-describe('WorkItemRepository._buildWhere', () => {
+describe('TaskRepository._buildWhere', () => {
     it('searches title + key with q', async () => {
-        const { WorkItemRepository } = await import('@/app-layer/repositories/WorkItemRepository');
+        const { TaskRepository } = await import('@/app-layer/repositories/TaskRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { q: 'TSK-42' });
+        await TaskRepository.list(mockDb, ctx, { q: 'TSK-42' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.AND).toEqual([{
@@ -261,12 +261,12 @@ describe('WorkItemRepository._buildWhere', () => {
     });
 
     it('filters by overdue due date', async () => {
-        const { WorkItemRepository } = await import('@/app-layer/repositories/WorkItemRepository');
+        const { TaskRepository } = await import('@/app-layer/repositories/TaskRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { due: 'overdue' });
+        await TaskRepository.list(mockDb, ctx, { due: 'overdue' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.dueAt).toBeDefined();
@@ -275,12 +275,12 @@ describe('WorkItemRepository._buildWhere', () => {
     });
 
     it('combines status + priority + assignee', async () => {
-        const { WorkItemRepository } = await import('@/app-layer/repositories/WorkItemRepository');
+        const { TaskRepository } = await import('@/app-layer/repositories/TaskRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: 'IN_PROGRESS', priority: 'P0', assigneeUserId: 'user-5' });
+        await TaskRepository.list(mockDb, ctx, { status: 'IN_PROGRESS', priority: 'P0', assigneeUserId: 'user-5' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('IN_PROGRESS');
@@ -289,12 +289,12 @@ describe('WorkItemRepository._buildWhere', () => {
     });
 
     it('preserves explicit status when combined with due filter', async () => {
-        const { WorkItemRepository } = await import('@/app-layer/repositories/WorkItemRepository');
+        const { TaskRepository } = await import('@/app-layer/repositories/TaskRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: 'OPEN', due: 'overdue' });
+        await TaskRepository.list(mockDb, ctx, { status: 'OPEN', due: 'overdue' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('OPEN');
@@ -303,12 +303,12 @@ describe('WorkItemRepository._buildWhere', () => {
     });
 
     it('combines status + due:next7d + search query', async () => {
-        const { WorkItemRepository } = await import('@/app-layer/repositories/WorkItemRepository');
+        const { TaskRepository } = await import('@/app-layer/repositories/TaskRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
         const mockDb = { task: { findMany: mockFindMany } } as unknown as PrismaTx;
         const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
 
-        await WorkItemRepository.list(mockDb, ctx, { status: 'IN_PROGRESS', due: 'next7d', q: 'urgent' });
+        await TaskRepository.list(mockDb, ctx, { status: 'IN_PROGRESS', due: 'next7d', q: 'urgent' });
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.status).toBe('IN_PROGRESS');
