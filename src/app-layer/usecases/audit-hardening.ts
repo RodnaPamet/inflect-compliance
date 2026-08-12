@@ -6,7 +6,7 @@
  * - Pack cloning for retest workflows
  * - Events: AUDIT_PACK_CLONED, RETEST_REQUESTED
  */
-import { WorkItemStatus, Prisma } from '@prisma/client';
+import { TaskStatus, Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
 import {
     assertCanManageAuditPacks, assertCanFreezePack, assertCanViewPack,
@@ -200,7 +200,7 @@ export async function clonePackForRetest(
         tdb.task.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                status: WorkItemStatus.IN_PROGRESS,
+                status: TaskStatus.IN_PROGRESS,
             },
             select: { id: true },
             take: 50,

@@ -685,7 +685,7 @@ export const CreateTaskSchema = z.object({
     description: z.string().max(10000).nullable().optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
-    // All SEVEN WorkItemSource members. EVIDENCE_EXPIRY and RISK_MONITOR
+    // All SEVEN TaskSource members. EVIDENCE_EXPIRY and RISK_MONITOR
     // were missing, so the schema rejected two sources the usecase and the
     // repository both accept — the evidence-expiry sweep and the
     // risk-monitor sensors could not name their own provenance through the

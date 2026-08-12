@@ -5,13 +5,13 @@
 model Task {
   id                        String               @id @default(cuid())
   tenantId                  String
-  type                      WorkItemType         @default(TASK)
+  type                      TaskType             @default(TASK)
   title                     String
   description               String?
-  severity                  WorkItemSeverity     @default(MEDIUM)
-  priority                  WorkItemPriority     @default(P2)
-  status                    WorkItemStatus       @default(OPEN)
-  source                    WorkItemSource?      @default(MANUAL)
+  severity                  TaskSeverity         @default(MEDIUM)
+  priority                  TaskPriority         @default(P2)
+  status                    TaskStatus           @default(OPEN)
+  source                    TaskSource?          @default(MANUAL)
   key                       String?
   resolution                String?
   dueAt                     DateTime?

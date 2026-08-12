@@ -9,7 +9,7 @@
  *   - audit/readiness scoring
  *   - notification processing
  *
- * The WorkItemStatus enum values are:
+ * The TaskStatus enum values are:
  *   OPEN | TRIAGED | IN_PROGRESS | IN_REVIEW | BLOCKED | RESOLVED | CLOSED | CANCELED
  *
  * Status lifecycle:
@@ -64,7 +64,7 @@ export type ActiveWorkItemStatus = (typeof ACTIVE_WORK_ITEM_STATUSES)[number];
  *
  * Prefer this over `{ in: ACTIVE_WORK_ITEM_STATUSES }` because
  * the notIn pattern is future-proof — new statuses added to
- * WorkItemStatus will automatically be included in active views
+ * TaskStatus will automatically be included in active views
  * unless they are explicitly terminal.
  */
 export const ACTIVE_STATUS_FILTER = {

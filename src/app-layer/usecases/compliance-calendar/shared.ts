@@ -24,7 +24,7 @@ import { effectiveDueAt } from '../due-planning';
 import { urgencyFromDaysUntil, DAY_MS } from '@/lib/urgency';
 import { hasPermission, type PermissionKey } from '@/lib/security/permission-middleware';
 import { env } from '@/env';
-import type { WorkItemStatus } from '@prisma/client';
+import type { TaskStatus } from '@prisma/client';
 import type { RequestContext } from '../../types';
 import {
     type CalendarEvent,

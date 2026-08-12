@@ -245,11 +245,20 @@ describe('TaskDetailPage — inline assign UserCombobox', () => {
 
 describe('Epic 55 Prompt 5 — payload contracts preserved', () => {
     it('TaskDetailPage still PATCHes assigneeUserId via /assign endpoint', () => {
-        // #102 item 5 — `handleAssign` derives `assigneeUserId` from
-        // the picker's effective value (`assigneeValue || null`) and
-        // POSTs it to the /assign endpoint.
+        // #102 item 5 — the picker's effective value reaches the /assign
+        // endpoint as an `assigneeUserId` payload.
+        //
+        // B3-4 note: this used to pin `assigneeUserId = assigneeValue ||
+        // null`, a LOCAL VARIABLE that the `useTenantMutation` migration
+        // dissolved — the same value now flows straight into
+        // `assignMutation.trigger(...)` and is named by the mutation's
+        // parameter instead. The contract this sentinel is named for is
+        // the WIRE payload and the endpoint, so it asserts those; the
+        // variable's spelling was never the thing worth protecting.
+        // The round trip itself is executed in
+        // `tests/rendered/task-detail-mutation-failures.test.tsx`.
         expect(TASK_DETAIL_SRC).toMatch(
-            /assigneeUserId\s*=\s*assigneeValue\s*\|\|\s*null/,
+            /JSON\.stringify\(\{\s*assigneeUserId\s*\}\)/,
         );
         expect(TASK_DETAIL_SRC).toMatch(/\/tasks\/\$\{taskId\}\/assign/);
     });

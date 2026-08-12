@@ -24,7 +24,7 @@ import { RequestContext } from '../types';
 import { assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
-import { WorkItemStatus } from '@prisma/client';
+import { TaskStatus } from '@prisma/client';
 import { isImplemented, rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-rollup';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
@@ -407,7 +407,7 @@ async function loadOpenTaskCounts(ctx: RequestContext, controlIds: string[]): Pr
     const result = new Map<string, number>();
     // Unified Task model (not legacy controlTask) — the discoverable install
     // paths now write Task rows, so the SoA open-task rollup must read them.
-    // "Open" = every non-terminal WorkItemStatus (notIn the shared terminal
+    // "Open" = every non-terminal TaskStatus (notIn the shared terminal
     // set) so TRIAGED / BLOCKED tasks are counted too — a positive
     // [OPEN, IN_PROGRESS] allowlist would silently miss them.
     const counts = await runInTenantContext(ctx, (db) =>
@@ -416,7 +416,7 @@ async function loadOpenTaskCounts(ctx: RequestContext, controlIds: string[]): Pr
             where: {
                 tenantId: ctx.tenantId,
                 controlId: { in: controlIds },
-                status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] },
+                status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[] },
             },
             _count: { id: true },
         })

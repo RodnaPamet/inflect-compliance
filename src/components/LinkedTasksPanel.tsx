@@ -9,11 +9,9 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { Button } from '@/components/ui/button';
-import {
-    StatusBadge,
-    type StatusBadgeVariant,
-} from '@/components/ui/status-badge';
-import { taskStatusVariant, taskStatusLabel } from '@/lib/task-status-badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { taskStatusVariant, taskStatusLabel, taskSeverityLabels } from '@/lib/task-status-badge';
+import { TASK_SEVERITY_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
@@ -26,12 +24,11 @@ import { NewTaskModal } from '@/app/t/[tenantSlug]/(app)/tasks/NewTaskModal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-// Status → badge is the shared `TASK_STATUS_BADGE` map (TP-1); only
-// the severity tones stay local (out of TP-1 scope).
-const SEVERITY_BADGE: Record<string, StatusBadgeVariant> = {
-    INFO: 'neutral', LOW: 'neutral', MEDIUM: 'warning',
-    HIGH: 'error', CRITICAL: 'error',
-};
+// Status → badge is the shared `TASK_STATUS_BADGE` map (TP-1); severity
+// → badge is the shared `TASK_SEVERITY_VARIANT` (B2-6). Neither is
+// local any more: this panel's private severity copy disagreed with the
+// task detail page on LOW and HIGH, so a control's linked task and that
+// same task's own page showed different tones.
 
 interface LinkedTask {
     id: string;
@@ -78,11 +75,9 @@ export default function LinkedTasksPanel({
         INCIDENT: tr('tasks.typeLabels.INCIDENT'), IMPROVEMENT: tr('tasks.typeLabels.IMPROVEMENT'),
         TASK: tr('tasks.typeLabels.TASK'),
     }), [tr]);
-    const SEVERITY_LABELS = useMemo<Record<string, string>>(() => ({
-        INFO: tr('tasks.severityLabels.INFO'), LOW: tr('tasks.severityLabels.LOW'),
-        MEDIUM: tr('tasks.severityLabels.MEDIUM'), HIGH: tr('tasks.severityLabels.HIGH'),
-        CRITICAL: tr('tasks.severityLabels.CRITICAL'),
-    }), [tr]);
+    // The same helper the Tasks list and the task detail page use, so all
+    // three read one set of strings (`tasks.filterEnums.severity.*`).
+    const SEVERITY_LABELS = useMemo<Record<string, string>>(() => taskSeverityLabels(tTasks), [tTasks]);
     const [tasks, setTasks] = useState<LinkedTask[]>([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
@@ -161,7 +156,7 @@ export default function LinkedTasksPanel({
                     cell: ({ row }) =>
                         row.original.severity ? (
                             <StatusBadge
-                                variant={SEVERITY_BADGE[row.original.severity] || 'neutral'}
+                                variant={TASK_SEVERITY_VARIANT[row.original.severity] || 'neutral'}
                             >
                                 {SEVERITY_LABELS[row.original.severity] ?? row.original.severity}
                             </StatusBadge>

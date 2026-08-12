@@ -16,7 +16,7 @@ import {
 } from '@/app-layer/domain/work-item-status';
 
 describe('WORK_ITEM_TRANSITIONS — legal graph', () => {
-    it('exposes a key per WorkItemStatus value', () => {
+    it('exposes a key per TaskStatus value', () => {
         for (const s of ALL_WORK_ITEM_STATUSES) {
             expect(WORK_ITEM_TRANSITIONS).toHaveProperty(s);
         }

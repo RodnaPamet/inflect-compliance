@@ -1,6 +1,6 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { Prisma, WorkItemStatus, WorkItemType, WorkItemSeverity, WorkItemPriority, WorkItemSource, TaskLinkEntityType, TaskLinkRelation } from '@prisma/client';
+import { Prisma, TaskStatus, TaskType, TaskSeverity, TaskPriority, TaskSource, TaskLinkEntityType, TaskLinkRelation } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { TERMINAL_WORK_ITEM_STATUSES, REVIEW_WORK_ITEM_STATUS, isTerminalStatus } from '../domain/work-item-status';
@@ -16,28 +16,28 @@ import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 const DELETED_LIST_CAP = 200;
 
 /**
- * The set of valid `WorkItemSource` enum members, materialised once from
+ * The set of valid `TaskSource` enum members, materialised once from
  * the Prisma-generated enum so validation stays in lock-step with the
  * schema without a hand-maintained list.
  */
-const VALID_WORK_ITEM_SOURCES = new Set<string>(Object.values(WorkItemSource));
+const VALID_WORK_ITEM_SOURCES = new Set<string>(Object.values(TaskSource));
 
 /**
  * Validate/normalise a caller-supplied task `source` at the write
  * boundary. A missing source defaults to MANUAL; an invalid one fails
  * LOUDLY with a 400 (never a silent Postgres enum rejection swallowed in
- * a try/catch, and never a blind `as WorkItemSource` cast that lets a
+ * a try/catch, and never a blind `as TaskSource` cast that lets a
  * bogus value reach the DB). Every `createTask` path funnels through the
  * repo, so this is the single choke point that keeps the invariant true.
  */
-export function normalizeWorkItemSource(source: string | null | undefined): WorkItemSource {
-    if (source == null || source === '') return WorkItemSource.MANUAL;
+export function normalizeWorkItemSource(source: string | null | undefined): TaskSource {
+    if (source == null || source === '') return TaskSource.MANUAL;
     if (!VALID_WORK_ITEM_SOURCES.has(source)) {
         throw badRequest(
             `Invalid task source "${source}". Must be one of: ${[...VALID_WORK_ITEM_SOURCES].join(', ')}.`,
         );
     }
-    return source as WorkItemSource;
+    return source as TaskSource;
 }
 
 /**
@@ -46,7 +46,7 @@ export function normalizeWorkItemSource(source: string | null | undefined): Work
  * (`?status=OPEN,BLOCKED`).
  *
  * Before this, the value was cast straight onto a Prisma enum scalar
- * (`where.status = filters.status as WorkItemStatus`), so two selected
+ * (`where.status = filters.status as TaskStatus`), so two selected
  * values produced the literal string "OPEN,BLOCKED" — which matches no row
  * and, on some columns, fails Prisma enum validation outright. The list
  * page, its SSR path and any bookmarked URL all went through that cast, so
@@ -69,10 +69,10 @@ function parseListFilter<T extends string>(
     return parseEnumListFilter<T>(raw, valid, label);
 }
 
-const VALID_WORK_ITEM_STATUSES = new Set<string>(Object.values(WorkItemStatus));
-const VALID_WORK_ITEM_TYPES = new Set<string>(Object.values(WorkItemType));
-const VALID_WORK_ITEM_SEVERITIES = new Set<string>(Object.values(WorkItemSeverity));
-const VALID_WORK_ITEM_PRIORITIES = new Set<string>(Object.values(WorkItemPriority));
+const VALID_WORK_ITEM_STATUSES = new Set<string>(Object.values(TaskStatus));
+const VALID_WORK_ITEM_TYPES = new Set<string>(Object.values(TaskType));
+const VALID_WORK_ITEM_SEVERITIES = new Set<string>(Object.values(TaskSeverity));
+const VALID_WORK_ITEM_PRIORITIES = new Set<string>(Object.values(TaskPriority));
 
 // ─── Filters ───
 
@@ -394,11 +394,11 @@ export class WorkItemRepository {
 
         // Each of these facets is declared `multiple: true` in the UI's
         // filter-defs, so the value can arrive comma-joined.
-        const status = parseListFilter<WorkItemStatus>(filters.status, VALID_WORK_ITEM_STATUSES, 'status');
-        const type = parseListFilter<WorkItemType>(filters.type, VALID_WORK_ITEM_TYPES, 'type');
-        const severity = parseListFilter<WorkItemSeverity>(filters.severity, VALID_WORK_ITEM_SEVERITIES, 'severity');
-        const priority = parseListFilter<WorkItemPriority>(filters.priority, VALID_WORK_ITEM_PRIORITIES, 'priority');
-        const source = parseListFilter<WorkItemSource>(filters.source, VALID_WORK_ITEM_SOURCES, 'source');
+        const status = parseListFilter<TaskStatus>(filters.status, VALID_WORK_ITEM_STATUSES, 'status');
+        const type = parseListFilter<TaskType>(filters.type, VALID_WORK_ITEM_TYPES, 'type');
+        const severity = parseListFilter<TaskSeverity>(filters.severity, VALID_WORK_ITEM_SEVERITIES, 'severity');
+        const priority = parseListFilter<TaskPriority>(filters.priority, VALID_WORK_ITEM_PRIORITIES, 'priority');
+        const source = parseListFilter<TaskSource>(filters.source, VALID_WORK_ITEM_SOURCES, 'source');
         const assignee = parseIdListFilter(filters.assigneeUserId);
         if (status !== undefined) where.status = status;
         if (type !== undefined) where.type = type;
@@ -419,12 +419,12 @@ export class WorkItemRepository {
         if (filters.controlId) where.controlId = filters.controlId;
         if (filters.due === 'overdue') {
             where.dueAt = { lt: new Date() };
-            if (!filters.status) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] };
+            if (!filters.status) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[] };
         } else if (filters.due === 'next7d') {
             const now = new Date();
             const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
             where.dueAt = { gte: now, lte: in7 };
-            if (!filters.status) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] };
+            if (!filters.status) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[] };
         }
         if (filters.q) {
             and.push({
@@ -556,9 +556,9 @@ export class WorkItemRepository {
                 key,
                 title: data.title,
                 description: data.description || null,
-                type: (data.type as WorkItemType) ?? WorkItemType.TASK,
-                severity: (data.severity as WorkItemSeverity) ?? WorkItemSeverity.MEDIUM,
-                priority: (data.priority as WorkItemPriority) ?? WorkItemPriority.P2,
+                type: (data.type as TaskType) ?? TaskType.TASK,
+                severity: (data.severity as TaskSeverity) ?? TaskSeverity.MEDIUM,
+                priority: (data.priority as TaskPriority) ?? TaskPriority.P2,
                 source: normalizeWorkItemSource(data.source),
                 dueAt: data.dueAt ? new Date(data.dueAt) : null,
                 assigneeUserId: data.assigneeUserId || null,
@@ -592,9 +592,9 @@ export class WorkItemRepository {
         const updateData: Prisma.TaskUncheckedUpdateInput = {
             ...(data.title !== undefined && { title: data.title }),
             ...(data.description !== undefined && { description: data.description }),
-            ...(data.type !== undefined && { type: data.type as WorkItemType }),
-            ...(data.severity !== undefined && { severity: data.severity as WorkItemSeverity }),
-            ...(data.priority !== undefined && { priority: data.priority as WorkItemPriority }),
+            ...(data.type !== undefined && { type: data.type as TaskType }),
+            ...(data.severity !== undefined && { severity: data.severity as TaskSeverity }),
+            ...(data.priority !== undefined && { priority: data.priority as TaskPriority }),
             ...(data.dueAt !== undefined && { dueAt: data.dueAt ? new Date(data.dueAt) : null }),
             ...(data.controlId !== undefined && { controlId: data.controlId }),
             ...(data.reviewerUserId !== undefined && { reviewerUserId: data.reviewerUserId }),
@@ -607,7 +607,7 @@ export class WorkItemRepository {
         const existing = await db.task.findFirst({ where: { id, tenantId: ctx.tenantId } });
         if (!existing) return null;
 
-        const updateData: Prisma.TaskUncheckedUpdateInput = { status: status as WorkItemStatus };
+        const updateData: Prisma.TaskUncheckedUpdateInput = { status: status as TaskStatus };
         if (isTerminalStatus(status)) {
             updateData.completedAt = new Date();
             if (resolution !== undefined) updateData.resolution = resolution;
@@ -636,7 +636,7 @@ export class WorkItemRepository {
         const now = new Date();
         const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-        const openFilter = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as WorkItemStatus[] };
+        const openFilter = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[] };
 
         const [byStatus, overdueCount, due7dCount, total] = await Promise.all([
             db.task.groupBy({ by: ['status'], where: { tenantId }, _count: true }),
@@ -704,7 +704,7 @@ export class WorkItemRepository {
     }
 
     static async bulkSetStatus(db: PrismaTx, ctx: RequestContext, taskIds: string[], status: string, resolution?: string | null) {
-        const updateData: Prisma.TaskUncheckedUpdateManyInput = { status: status as WorkItemStatus };
+        const updateData: Prisma.TaskUncheckedUpdateManyInput = { status: status as TaskStatus };
         if (isTerminalStatus(status)) {
             updateData.completedAt = new Date();
             if (resolution !== undefined) updateData.resolution = resolution;

@@ -333,30 +333,45 @@ enum ReviewAction {
   REJECTED
 }
 
-enum WorkItemType {
+enum TaskType {
   AUDIT_FINDING
   CONTROL_GAP
   INCIDENT
   IMPROVEMENT
   TASK
+
+  // Prisma-level rename (Task* is the canonical subsystem name).
+  // @@map pins the physical Postgres type so no ALTER TYPE migration
+  // is emitted and a rolling deploy never sees a missing enum type.
+  @@map("WorkItemType")
 }
 
-enum WorkItemSeverity {
+enum TaskSeverity {
   INFO
   LOW
   MEDIUM
   HIGH
   CRITICAL
+
+  // Prisma-level rename (Task* is the canonical subsystem name).
+  // @@map pins the physical Postgres type so no ALTER TYPE migration
+  // is emitted and a rolling deploy never sees a missing enum type.
+  @@map("WorkItemSeverity")
 }
 
-enum WorkItemPriority {
+enum TaskPriority {
   P0
   P1
   P2
   P3
+
+  // Prisma-level rename (Task* is the canonical subsystem name).
+  // @@map pins the physical Postgres type so no ALTER TYPE migration
+  // is emitted and a rolling deploy never sees a missing enum type.
+  @@map("WorkItemPriority")
 }
 
-enum WorkItemStatus {
+enum TaskStatus {
   OPEN
   TRIAGED
   IN_PROGRESS
@@ -368,9 +383,14 @@ enum WorkItemStatus {
   RESOLVED
   CLOSED
   CANCELED
+
+  // Prisma-level rename (Task* is the canonical subsystem name).
+  // @@map pins the physical Postgres type so no ALTER TYPE migration
+  // is emitted and a rolling deploy never sees a missing enum type.
+  @@map("WorkItemStatus")
 }
 
-enum WorkItemSource {
+enum TaskSource {
   MANUAL
   TEMPLATE
   POLICY_REVIEW
@@ -382,6 +402,11 @@ enum WorkItemSource {
   // this provenance (previously mis-typed as the invalid free
   // strings 'kri_breach' / 'risk_appetite_breach').
   RISK_MONITOR
+
+  // Prisma-level rename (Task* is the canonical subsystem name).
+  // @@map pins the physical Postgres type so no ALTER TYPE migration
+  // is emitted and a rolling deploy never sees a missing enum type.
+  @@map("WorkItemSource")
 }
 
 enum TaskLinkEntityType {

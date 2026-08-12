@@ -16,7 +16,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { OnboardingRepository } from '../repositories/OnboardingRepository';
 import { RiskRepository } from '../repositories/RiskRepository';
-import type { AssetType, WorkItemType } from '@prisma/client';
+import type { AssetType, TaskType } from '@prisma/client';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StepData = Record<string, any>;
@@ -354,7 +354,7 @@ async function executeTeamSetup(ctx: RequestContext, allData: StepData): Promise
                     tenantId: ctx.tenantId,
                     title: task.title,
                     description: task.description,
-                    type: task.type as WorkItemType,
+                    type: task.type as TaskType,
                     status: 'OPEN',
                     createdByUserId: ctx.userId,
                     assigneeUserId: ctx.userId,

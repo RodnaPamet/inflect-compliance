@@ -1,4 +1,4 @@
-﻿import { Prisma, WorkItemStatus } from '@prisma/client';
+﻿import { Prisma, TaskStatus } from '@prisma/client';
 import { RequestContext } from '../../types';
 import { assertCanViewFrameworks } from '../../policies/framework.policies';
 import { runInTenantContext } from '@/lib/db-context';
@@ -318,7 +318,7 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     const overdueTasks: Array<{ taskTitle: string; taskStatus: string; dueDate: Date; controlCode: string | null; controlName: string }> = [];
     for (const ctrl of controls) {
         for (const task of (ctrl.tasks || [])) {
-            if (task.dueAt && new Date(task.dueAt) < now && task.status !== WorkItemStatus.RESOLVED && task.status !== WorkItemStatus.CLOSED && task.status !== WorkItemStatus.CANCELED) {
+            if (task.dueAt && new Date(task.dueAt) < now && task.status !== TaskStatus.RESOLVED && task.status !== TaskStatus.CLOSED && task.status !== TaskStatus.CANCELED) {
                 overdueTasks.push({
                     taskTitle: task.title,
                     taskStatus: task.status,

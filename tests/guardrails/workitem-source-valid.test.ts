@@ -1,9 +1,9 @@
 /**
- * Guardrail — every task-creation call site passes a VALID WorkItemSource.
+ * Guardrail — every task-creation call site passes a VALID TaskSource.
  *
  * The KRI-breach + risk-appetite spawners shipped with invalid free
  * strings (`'kri_breach'` / `'risk_appetite_breach'`) that are not
- * `WorkItemSource` enum members: one was swallowed in a try/catch (task
+ * `TaskSource` enum members: one was swallowed in a try/catch (task
  * silently never created), the other threw a 500. The repo now validates
  * `source` at the write boundary (`normalizeWorkItemSource`), and this
  * structural ratchet stops a new caller from re-introducing a bogus
@@ -20,11 +20,11 @@ import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
 
-/** Parse the WorkItemSource enum members from the live Prisma schema. */
+/** Parse the TaskSource enum members from the live Prisma schema. */
 function validSources(): Set<string> {
     const enums = fs.readFileSync(path.join(ROOT, 'prisma/schema/enums.prisma'), 'utf8');
-    const m = enums.match(/enum WorkItemSource\s*\{([^}]+)\}/);
-    if (!m) throw new Error('WorkItemSource enum not found in enums.prisma');
+    const m = enums.match(/enum TaskSource\s*\{([^}]+)\}/);
+    if (!m) throw new Error('TaskSource enum not found in enums.prisma');
     const members = m[1]
         .split('\n')
         .map((l) => l.replace(/\/\/.*$/, '').trim())
@@ -49,11 +49,11 @@ function walk(dir: string, acc: string[] = []): string[] {
 // A task-creation call: the canonical usecase or a raw Prisma create.
 const CREATE_CALL = /(?:createTask\s*\(|\.task\.create(?:Many)?\s*\()/g;
 
-describe('Guardrail: valid WorkItemSource at every task-creation call site', () => {
+describe('Guardrail: valid TaskSource at every task-creation call site', () => {
     const valid = validSources();
     const files = walk(path.join(ROOT, 'src/app-layer'));
 
-    it('parses a non-trivial WorkItemSource enum', () => {
+    it('parses a non-trivial TaskSource enum', () => {
         expect(valid.size).toBeGreaterThanOrEqual(6);
         expect(valid.has('MANUAL')).toBe(true);
         expect(valid.has('RISK_MONITOR')).toBe(true);
@@ -74,14 +74,14 @@ describe('Guardrail: valid WorkItemSource at every task-creation call site', () 
                 if (!valid.has(literal)) {
                     const line = src.slice(0, call.index).split('\n').length;
                     violations.push(
-                        `${path.relative(ROOT, file)}:${line} — source: '${literal}' is not a WorkItemSource member`,
+                        `${path.relative(ROOT, file)}:${line} — source: '${literal}' is not a TaskSource member`,
                     );
                 }
             }
         }
         if (violations.length) {
             throw new Error(
-                `Invalid WorkItemSource literal(s) at task-creation call site(s):\n${violations.join('\n')}\n\n` +
+                `Invalid TaskSource literal(s) at task-creation call site(s):\n${violations.join('\n')}\n\n` +
                     `Valid members: ${[...valid].join(', ')}. Map the spawn to a real member ` +
                     `(add one to enums.prisma if a distinct provenance is warranted).`,
             );

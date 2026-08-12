@@ -58,15 +58,15 @@ const tVendors = resolver('vendors');
 const tGroup = (k: string) => resolver('common')(`filterGroups.${k}`);
 
 // Enum VALUE sets (the URL/API contract — unchanged by i18n).
-// The eight WorkItemStatus values — IN_REVIEW (TP-2) is a real
+// The eight TaskStatus values — IN_REVIEW (TP-2) is a real
 // reviewer-sign-off state alongside TRIAGED + BLOCKED.
 const TASK_STATUS = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED', 'RESOLVED', 'CLOSED', 'CANCELED'];
 const TASK_TYPE = ['TASK', 'AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT'];
-// INFO is a real WorkItemSeverity (automation raises INFO tasks) and is
+// INFO is a real TaskSeverity (automation raises INFO tasks) and is
 // now filterable, matching the create form.
 const TASK_SEVERITY = ['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 // TP-5 — the universal-inbox source filter offers EXACTLY the
-// WorkItemSource enum members (RISK_MONITOR added for KRI-breach +
+// TaskSource enum members (RISK_MONITOR added for KRI-breach +
 // risk-appetite-breach spawned tasks).
 const TASK_SOURCE = ['MANUAL', 'TEMPLATE', 'POLICY_REVIEW', 'AUDIT', 'INTEGRATION', 'EVIDENCE_EXPIRY', 'RISK_MONITOR'];
 const ASSET_TYPE = ['INFORMATION', 'SYSTEM', 'SERVICE', 'DATA_STORE', 'VENDOR', 'PEOPLE_PROCESS', 'APPLICATION', 'INFRASTRUCTURE', 'PROCESS', 'OTHER'];

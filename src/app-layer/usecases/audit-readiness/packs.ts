@@ -1,7 +1,7 @@
 ﻿/**
  * Audit Readiness — Pack CRUD, Freeze, Snapshots, Export, Default Pack Preview
  */
-import { AuditPackItemEntityType, WorkItemStatus, ControlStatus } from '@prisma/client';
+import { AuditPackItemEntityType, TaskStatus, ControlStatus } from '@prisma/client';
 import { RequestContext } from '../../types';
 import { policyCountsWhere } from '@/lib/policy/coverage-predicate';
 import {
@@ -303,7 +303,7 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
                             code: rec.code, name: rec.name, status: rec.status,
                             objective: rec.objective,
                             owner: rec.ownerUserId,
-                            taskCompletion: { total: rec.tasks.length, done: rec.tasks.filter((t) => t.status === WorkItemStatus.RESOLVED || t.status === WorkItemStatus.CLOSED).length },
+                            taskCompletion: { total: rec.tasks.length, done: rec.tasks.filter((t) => t.status === TaskStatus.RESOLVED || t.status === TaskStatus.CLOSED).length },
                             evidenceCount: rec.evidenceControlLinks.length,
                             mappedRequirements: (rec.requirementLinks || []).map((l) => ({ code: l.requirement.code, title: l.requirement.title })),
                             snapshotAt: new Date().toISOString(),

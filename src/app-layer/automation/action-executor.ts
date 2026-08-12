@@ -440,7 +440,7 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
             }
             default:
                 // 'Issue' has no standalone model (issues are Tasks via
-                // WorkItemType) — unsupported here rather than guessing the
+                // TaskType) — unsupported here rather than guessing the
                 // backing table. Unreachable: STATUS_ALLOWLIST has no entry.
                 return { ok: false, summary: `Unsupported entityType: ${cfg?.entityType}` };
         }

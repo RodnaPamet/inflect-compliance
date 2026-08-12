@@ -20,6 +20,7 @@ import {
     optionsFromEnum,
 } from '@/components/ui/filter/filter-definitions';
 import type { FilterOption } from '@/components/ui/filter/types';
+import { taskSeverityLabels } from '@/lib/task-status-badge';
 import { AlertCircle, CircleDot, Clock, Flag, Inbox, Layers, UserCheck, UserCircle2 } from 'lucide-react';
 
 /** Surface-namespace resolver (`useTranslations('tasks')`). */
@@ -38,7 +39,7 @@ type TLabel = (key: string) => string;
 
 // ─── Labels (resolved at render) ─────────────────────────────────────
 
-// The status filter offers EXACTLY the eight WorkItemStatus values.
+// The status filter offers EXACTLY the eight TaskStatus values.
 // IN_REVIEW (TP-2) is a real reviewer-sign-off state now, so a reviewed
 // task awaiting sign-off is filterable.
 function taskStatusLabels(t: T): Record<string, string> {
@@ -51,7 +52,7 @@ function taskStatusLabels(t: T): Record<string, string> {
         // RESOLVED is retired from the two status PICKERS (the detail
         // page's SELECTABLE_STATUSES and the bulk bar) because CLOSED
         // made it a redundant intermediate. It is NOT retired from the
-        // model: it is still a live WorkItemStatus, WORK_ITEM_TRANSITIONS
+        // model: it is still a live TaskStatus, WORK_ITEM_TRANSITIONS
         // still permits moving into it, the API still accepts it, and
         // the repository's metrics still count it as done. Rows in this
         // state therefore exist — legacy ones, plus anything set through
@@ -75,11 +76,11 @@ function taskTypeLabels(t: T): Record<string, string> {
 }
 
 // TP-5 — the work SOURCE that raised the task. Values are EXACTLY the
-// `WorkItemSource` enum members; the universal-inbox filter lets you slice
+// `TaskSource` enum members; the universal-inbox filter lets you slice
 // /tasks by where the work came from (manual entry vs the automated sweeps
 // that route audit findings, policy reviews, and expiring evidence in).
 /**
- * The full `WorkItemSource` enum, labelled. Exported because the table
+ * The full `TaskSource` enum, labelled. Exported because the table
  * renders the same enum in its Source column — it used to keep a private
  * copy that had drifted (RISK_MONITOR missing), so a risk-monitor task's
  * filter chip read "Risk Monitor" while its row showed the raw
@@ -98,21 +99,17 @@ export function taskSourceLabels(t: TLabel): Record<string, string> {
 }
 
 /**
- * Exported for the same reason as `taskSourceLabels` — the Severity
- * column rendered the raw enum (`CRITICAL`) while the filter chip
- * rendered "Critical". Sharing one map keeps the two in step.
+ * Severity labels moved to `@/lib/task-status-badge` (B2-6) and are
+ * re-exported here so the Tasks-route call sites keep one import.
+ *
+ * They cannot live in this file: `LinkedTasksPanel` lives in
+ * `src/components/` and needs the same map, and a shared component
+ * importing a route's module inverts the layering —
+ * `tests/guards/route-import-boundaries.test.ts` refuses it. The
+ * severity column rendered the raw enum (`CRITICAL`) while the filter
+ * chip rendered "Critical"; one map keeps every surface in step.
  */
-export function taskSeverityLabels(t: TLabel): Record<string, string> {
-    return {
-        // INFO is a real WorkItemSeverity (automation can raise INFO tasks);
-        // offered here so those tasks are filterable, matching the create form.
-        INFO: t('filterEnums.severity.INFO'),
-        LOW: t('filterEnums.severity.LOW'),
-        MEDIUM: t('filterEnums.severity.MEDIUM'),
-        HIGH: t('filterEnums.severity.HIGH'),
-        CRITICAL: t('filterEnums.severity.CRITICAL'),
-    };
-}
+export { taskSeverityLabels } from '@/lib/task-status-badge';
 
 function taskDueLabels(t: T): Record<string, string> {
     return {

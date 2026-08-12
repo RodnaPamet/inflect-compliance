@@ -1,11 +1,11 @@
 /**
  * Tasks roadmap TP-1 — the single source of truth for how a task
- * (`WorkItemStatus`) renders as a `<StatusBadge>`.
+ * (`TaskStatus`) renders as a `<StatusBadge>`.
  *
  * Before this module, status → colour/label was duplicated and
  * *divergent* across every task renderer: some used `OPEN: 'warning'`,
  * others `OPEN: 'neutral'`; some carried a phantom `DONE` variant or the
- * two-L `CANCELLED` spelling that the `WorkItemStatus` enum never had.
+ * two-L `CANCELLED` spelling that the `TaskStatus` enum never had.
  * This map is now the ONE place that decision lives — every task
  * renderer imports it, so a tone change happens once.
  *
@@ -13,7 +13,7 @@
  * *type* and the plain-constant `WorkItemStatusValue` union, so it can be
  * pulled into client components without dragging server-only code.
  *
- * The canonical enum is `WorkItemStatus`
+ * The canonical enum is `TaskStatus`
  * (prisma/schema/enums.prisma): OPEN, TRIAGED, IN_PROGRESS, IN_REVIEW,
  * BLOCKED, RESOLVED, CLOSED, CANCELED — eight values, spelling CANCELED
  * (one L), and there is NO "DONE".
@@ -34,7 +34,7 @@ export interface TaskStatusBadgeSpec {
 
 /**
  * The one status → badge map. Keyed by exactly the seven
- * `WorkItemStatus` values. `OPEN` is neutral everywhere (the single
+ * `TaskStatus` values. `OPEN` is neutral everywhere (the single
  * consistent open tone); `BLOCKED` is the only error tone.
  */
 export const TASK_STATUS_BADGE: Record<WorkItemStatusValue, TaskStatusBadgeSpec> = {
@@ -68,4 +68,30 @@ export function taskStatusLabel(
 ): string {
     const spec = TASK_STATUS_BADGE[status as WorkItemStatusValue];
     return spec ? t(spec.labelKey) : status;
+}
+
+/**
+ * Severity → localized label, keyed by every `TaskSeverity` member.
+ *
+ * Lives here rather than in the Tasks route's `filter-defs` because
+ * three surfaces need it and one of them is `src/components/`
+ * (`LinkedTasksPanel`, mounted from control / asset / risk detail).
+ * A shared component importing a page's module inverts the layering —
+ * the shared layer becomes downstream of one route — which is what
+ * `tests/guards/route-import-boundaries.test.ts` refuses.
+ *
+ * `t` must be a `tasks`-namespaced translator. INFO is included
+ * deliberately: automation raises INFO tasks, so they must be
+ * filterable and renderable like any other severity.
+ */
+export function taskSeverityLabels(
+    t: (key: string) => string,
+): Record<string, string> {
+    return {
+        INFO: t('filterEnums.severity.INFO'),
+        LOW: t('filterEnums.severity.LOW'),
+        MEDIUM: t('filterEnums.severity.MEDIUM'),
+        HIGH: t('filterEnums.severity.HIGH'),
+        CRITICAL: t('filterEnums.severity.CRITICAL'),
+    };
 }

@@ -215,17 +215,17 @@ describe('Deadline Monitor — TRIAGED tasks', () => {
 
 describe('Enum Drift Guard', () => {
     /**
-     * This test reads the Prisma schema and compares the WorkItemStatus
+     * This test reads the Prisma schema and compares the TaskStatus
      * enum values against our domain constants. If someone adds a new
      * status to the schema without updating ALL_WORK_ITEM_STATUSES,
      * this test fails LOUDLY.
      */
-    test('ALL_WORK_ITEM_STATUSES matches Prisma WorkItemStatus enum', () => {
+    test('ALL_WORK_ITEM_STATUSES matches Prisma TaskStatus enum', () => {
         // Read the schema file and extract enum values
         const schema = readPrismaSchema();
 
-        // Extract WorkItemStatus enum block
-        const enumMatch = schema.match(/enum\s+WorkItemStatus\s*\{([^}]+)\}/);
+        // Extract TaskStatus enum block
+        const enumMatch = schema.match(/enum\s+TaskStatus\s*\{([^}]+)\}/);
         expect(enumMatch).not.toBeNull();
 
         const enumValues = enumMatch![1]
