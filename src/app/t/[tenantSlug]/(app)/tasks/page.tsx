@@ -39,7 +39,7 @@ export default async function TasksPage({
     // (`priority` is intentionally absent — it's in TaskQuerySchema but is not
     // an actual filter chip, so there's nothing to restore.)
     const filters: Record<string, string> = {};
-    for (const key of ['q', 'status', 'type', 'severity', 'source', 'due', 'assigneeUserId', 'controlId']) {
+    for (const key of ['q', 'status', 'type', 'severity', 'source', 'due', 'assigneeUserId', 'awaitingReviewBy', 'controlId']) {
         const val = sp[key];
         if (typeof val === 'string' && val) filters[key] = val;
     }

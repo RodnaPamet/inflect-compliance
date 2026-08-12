@@ -19,7 +19,9 @@ import { safeFetch, SsrfBlockedError, RedirectNotAllowedError } from './webhook-
 import { isNotificationsEnabled } from '../notifications/settings';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import { createTask as createTaskUsecase } from '../usecases/task';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { assertCanCreateTask } from '../policies/task.policies';
+import { getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
+import { computePermissions } from '@/lib/tenant-context';
 import type { RequestContext } from '../types';
 import type {
     NotifyUserActionConfig,
@@ -28,20 +30,64 @@ import type {
     WebhookActionConfig,
 } from './types';
 
+type ActorResolution =
+    | { ok: true; ctx: RequestContext }
+    | { ok: false; summary: string };
+
 /**
- * A system RequestContext for an automation-spawned task. The rule's
- * resolved actor (event actor, else rule author) owns the task; ADMIN
- * permissions clear `assertCanWriteTasks`. Mirrors the makeSystemCtx
- * pattern used by the background-job monitors.
+ * Build the RequestContext an automation action executes under.
+ *
+ * The principal is the RULE AUTHOR — authoring a rule requires `canAdmin`
+ * (`assertCanManageAutomation`), so the author is the accountable party for
+ * everything the rule does. The member whose action happened to FIRE the
+ * trigger is provenance, not authority: they may be a READER who merely
+ * created a risk, and borrowing their identity to run an admin-shaped action
+ * would be an escalation in both directions. Only an author-less (legacy /
+ * seeded) rule falls back to the firing actor, and that actor is resolved
+ * through the same real-membership path.
+ *
+ * The role is re-resolved from `TenantMembership` on EVERY execution and
+ * never fabricated, so:
+ *   • a demoted or removed author loses the authority their rule carried;
+ *   • a custom role that withholds a granular flag keeps withholding it here;
+ *   • an INVITED / DEACTIVATED / REMOVED membership cannot execute at all.
+ *
+ * Mirrors `resolveTenantContext` (src/lib/tenant-context.ts) — same
+ * customRole-aware resolution, same membership-status refusal — reusing its
+ * `computePermissions` so the two can never drift.
  */
-function buildAutomationCtx(tenantId: string, userId: string): RequestContext {
+async function resolveActorCtx(db: Db, tenantId: string, userId: string): Promise<ActorResolution> {
+    const membership = await db.tenantMembership.findUnique({
+        where: { tenantId_userId: { tenantId, userId } },
+        include: { customRole: true, tenant: { select: { slug: true } } },
+    });
+    if (!membership) {
+        return { ok: false, summary: `Rule actor ${userId} is not a member of this tenant` };
+    }
+    if (membership.status !== 'ACTIVE') {
+        return {
+            ok: false,
+            summary: `Rule actor ${userId} has a ${membership.status} membership — execution refused`,
+        };
+    }
+    const effectiveRole = membership.customRole?.baseRole ?? membership.role;
     return {
-        requestId: `automation-${tenantId}`,
-        userId,
-        tenantId,
-        role: 'ADMIN',
-        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: false },
-        appPermissions: getPermissionsForRole('ADMIN'),
+        ok: true,
+        ctx: {
+            requestId: `automation-${tenantId}`,
+            userId,
+            tenantId,
+            // Without a slug the usecase's assignee bell/email short-circuits
+            // (`emitTaskAssignedNotification` opens on `!ctx.tenantSlug`), so
+            // the docblock below would be promising a notification that never
+            // fires.
+            tenantSlug: membership.tenant?.slug,
+            role: effectiveRole,
+            permissions: computePermissions(effectiveRole),
+            appPermissions: membership.customRole
+                ? parsePermissionsJson(membership.customRole.permissionsJson, membership.customRole.baseRole)
+                : getPermissionsForRole(membership.role),
+        },
     };
 }
 
@@ -162,8 +208,27 @@ async function notifyUser(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
 
 async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Promise<ActionResult> {
     const cfg = rule.actionConfigJson as CreateTaskActionConfig;
-    const createdByUserId = event.actorUserId ?? rule.createdByUserId;
-    if (!createdByUserId) return { ok: false, summary: 'No actor to own the created task' };
+    // Author first, firing actor only as the author-less fallback — see
+    // `resolveActorCtx`.
+    const principalUserId = rule.createdByUserId ?? event.actorUserId;
+    if (!principalUserId) return { ok: false, summary: 'No actor to own the created task' };
+    // Resolve real authority BEFORE any read or write, so an unauthorised rule
+    // leaves no trace beyond the FAILED execution row carrying the reason.
+    const resolved = await resolveActorCtx(db, event.tenantId, principalUserId);
+    if (!resolved.ok) return { ok: false, summary: resolved.summary };
+    const ctx = resolved.ctx;
+    try {
+        // The canonical predicate, not a copy of it: `assertCanCreateTask`
+        // reads both the coarse `canWrite` and the granular `tasks.create`
+        // flag, so a custom role withholding either is refused here exactly as
+        // it would be on the HTTP path.
+        assertCanCreateTask(ctx);
+    } catch {
+        return {
+            ok: false,
+            summary: `Rule actor ${principalUserId} (role ${ctx.role}) lacks permission to create tasks`,
+        };
+    }
     // Resolve an optional linked control from the event payload.
     const controlId =
         cfg.linkEntityType === 'Control' && cfg.linkEntityIdField
@@ -192,7 +257,6 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     // and assignee bell/email as every other task. The executor runs on the
     // Prisma singleton (not inside a tx), so opening a fresh tenant context
     // here does not nest transactions.
-    const ctx = buildAutomationCtx(event.tenantId, createdByUserId);
     const task = await createTaskUsecase(ctx, {
         type: 'TASK',
         title: cfg.title ?? rule.name,

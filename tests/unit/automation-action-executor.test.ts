@@ -37,6 +37,14 @@ function makeDb() {
             findMany: jest.fn(async (args: any) =>
                 (args.where.userId.in as string[]).map((userId: string) => ({ userId })),
             ),
+            // CREATE_TASK resolves the principal's REAL role from the
+            // membership row before it will run the action.
+            findUnique: jest.fn().mockResolvedValue({
+                role: 'ADMIN',
+                status: 'ACTIVE',
+                customRole: null,
+                tenant: { slug: 't1-slug' },
+            }),
         },
         tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue({ enabled: true }) },
         notification: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
@@ -66,7 +74,7 @@ describe('executeAction', () => {
         expect(arg.data[0]).toMatchObject({ tenantId: 't1', userId: 'a', message: 'heads up' });
     });
 
-    it('CREATE_TASK delegates to the canonical createTask, owned by the actor', async () => {
+    it('CREATE_TASK delegates to the canonical createTask, owned by the rule author', async () => {
         const db = makeDb();
         const res = await executeAction(db, {
             id: 'r1', name: 'Remediate', actionType: 'CREATE_TASK', createdByUserId: 'u9',
@@ -76,10 +84,11 @@ describe('executeAction', () => {
         // The canonical createTask returns a TSK-N key that now surfaces.
         expect(res.detail).toEqual({ taskId: 'task-1', key: 'TSK-1' });
         // Routed through the usecase (NOT a raw db.task.create) with a
-        // valid source + the event actor owning the task.
+        // valid source + the RULE AUTHOR (u9), not the firing member (u1),
+        // owning the task and supplying the authority.
         expect(db.task.create).not.toHaveBeenCalled();
         const [ctxArg, inputArg] = createTaskMock.mock.calls[0];
-        expect(ctxArg).toMatchObject({ tenantId: 't1', userId: 'u1' });
+        expect(ctxArg).toMatchObject({ tenantId: 't1', userId: 'u9' });
         expect(inputArg).toMatchObject({ title: 'Fix it', severity: 'HIGH', source: 'INTEGRATION' });
         expect(inputArg.metadataJson).toMatchObject({ automationDedupeKey: 'auto:r1:risk-1', ruleId: 'r1' });
     });

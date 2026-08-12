@@ -39,6 +39,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
+    AWAITING_REVIEW_FILTER_KEY,
     buildTaskFilters,
     TASK_FILTER_KEYS,
     taskSeverityLabels,
@@ -256,6 +257,23 @@ function TasksPageInner({
         else filterCtx.set('assigneeUserId', currentUserId);
     }, [assignedToMe, currentUserId, filterCtx]);
 
+    // B2-4 — "Awaiting my review". The four-eyes gate means a
+    // reviewer-gated task in IN_REVIEW can be completed by exactly one
+    // person; until now nothing showed that person which tasks those
+    // were. Same mechanism as "Assigned to me" — one filter key pinned
+    // to the current user, flowing through the same filter state, URL
+    // sync and query — so the two toggles cannot drift apart. The key
+    // means "IN_REVIEW *and* reviewer is this user" server-side, so the
+    // status half needs no second chip here.
+    const awaitingMyReview =
+        !!currentUserId
+        && (state[AWAITING_REVIEW_FILTER_KEY] ?? []).includes(currentUserId);
+    const toggleAwaitingMyReview = useCallback(() => {
+        if (!currentUserId) return;
+        if (awaitingMyReview) filterCtx.removeAll(AWAITING_REVIEW_FILTER_KEY);
+        else filterCtx.set(AWAITING_REVIEW_FILTER_KEY, currentUserId);
+    }, [awaitingMyReview, currentUserId, filterCtx]);
+
     // Bulk selection — the <BulkActionBar> owns the action/value form state;
     // this client only tracks which rows are selected.
     const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -385,8 +403,10 @@ function TasksPageInner({
                 tasks,
                 (k, v) => t(k as Parameters<typeof t>[0], v as Parameters<typeof t>[1]),
                 (k) => tGroup(k as Parameters<typeof tGroup>[0]),
+                // B2-4 — the awaiting-review facet's only option is you.
+                currentUserId,
             ),
-        [tasks, t, tGroup],
+        [tasks, t, tGroup, currentUserId],
     );
     const filterCards = useMemo(() => filtersToCards(liveFilters), [liveFilters]);
     const { visibleCards, dropdown: filtersDropdown } = useFilterCardVisibility({
@@ -1164,6 +1184,30 @@ function TasksPageInner({
                                     id="assigned-to-me-toggle"
                                 >
                                     {t('list.assignedToMe')}
+                                </Button>
+                            </Tooltip>
+                            {/* B2-4 — "Awaiting my review": the queue the
+                                four-eyes sign-off gate creates. Sits beside
+                                "Assigned to me" because it answers the other
+                                half of "what is mine" — work you must sign
+                                off, not work you must do. Same disabled-until-
+                                `currentUserId` handling for the same reason. */}
+                            <Tooltip
+                                content={
+                                    currentUserId
+                                        ? t('list.awaitingMyReviewHint')
+                                        : t('list.assignedToMeUnavailable')
+                                }
+                            >
+                                <Button
+                                    variant={awaitingMyReview ? 'primary' : 'secondary'}
+                                    size="sm"
+                                    onClick={toggleAwaitingMyReview}
+                                    aria-pressed={awaitingMyReview}
+                                    disabled={!currentUserId}
+                                    id="awaiting-my-review-toggle"
+                                >
+                                    {t('list.awaitingMyReview')}
                                 </Button>
                             </Tooltip>
                             {/* TP-7 — the standalone Tasks dashboard was

@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { Prisma, WorkItemStatus, WorkItemType, WorkItemSeverity, WorkItemPriority, WorkItemSource, TaskLinkEntityType, TaskLinkRelation } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
-import { TERMINAL_WORK_ITEM_STATUSES, isTerminalStatus } from '../domain/work-item-status';
+import { TERMINAL_WORK_ITEM_STATUSES, REVIEW_WORK_ITEM_STATUS, isTerminalStatus } from '../domain/work-item-status';
 import { badRequest } from '@/lib/errors/types';
 import { withDeleted } from '@/lib/soft-delete';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
@@ -83,6 +83,21 @@ export interface TaskFilters {
     priority?: string;
     source?: string;
     assigneeUserId?: string;
+    /**
+     * B2-4 — "awaiting review by <userId>": the task is parked in
+     * IN_REVIEW AND that user is its named reviewer, i.e. the four-eyes
+     * gate will refuse everyone else. Compound on purpose — a bare
+     * `reviewerUserId` facet would also return tasks the reviewer has
+     * nothing to do with yet (still IN_PROGRESS) or has already signed
+     * off (CLOSED), which is not the queue anyone means.
+     *
+     * The id is explicit rather than implied from `ctx.userId` because
+     * `listTasks` caches on the filter params alone (see
+     * `cachedListRead`) — a "me" filter resolved server-side would give
+     * two users in one tenant the same cache key and different correct
+     * answers.
+     */
+    awaitingReviewBy?: string;
     controlId?: string;
     due?: 'overdue' | 'next7d';
     q?: string;
@@ -391,6 +406,16 @@ export class WorkItemRepository {
         if (priority !== undefined) where.priority = priority;
         if (source !== undefined) where.source = source;
         if (assignee !== undefined) where.assigneeUserId = assignee;
+        // B2-4 — pushed onto AND rather than assigned to `where.status`
+        // so it composes with an explicit status selection instead of
+        // clobbering it: "awaiting my review" + "status: OPEN" is an
+        // empty result, which is the truth, not a silently widened one.
+        if (filters.awaitingReviewBy) {
+            and.push({
+                reviewerUserId: filters.awaitingReviewBy,
+                status: REVIEW_WORK_ITEM_STATUS,
+            });
+        }
         if (filters.controlId) where.controlId = filters.controlId;
         if (filters.due === 'overdue') {
             where.dueAt = { lt: new Date() };

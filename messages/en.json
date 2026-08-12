@@ -5885,6 +5885,9 @@
             "assignedToMe": "Assigned to me",
             "loadError": "Couldn't load tasks. Check your connection and try again.",
             "assignedToMeUnavailable": "Sign-in details are still loading — this filter will be available in a moment.",
+            "awaitingMyReview": "Awaiting my review",
+            "awaitingMyReviewHint": "Tasks in review where you are the named reviewer — only you can sign these off.",
+            "awaitingMyReviewOption": "Me",
             "showDeleted": "Deleted",
             "showLive": "Active",
             "deletedEmptyTitle": "Nothing in the recycle bin",
@@ -6140,6 +6143,8 @@
             "assignee": "Assignee",
             "assigneePlural": "Assignees",
             "assigneeDesc": "Only show tasks assigned to this person.",
+            "awaitingReview": "Awaiting review",
+            "awaitingReviewDesc": "Tasks in review, by the reviewer whose sign-off they are waiting on",
             "linkedControl": "Linked control",
             "linkedControlDesc": "Only show tasks attached to this control."
         },
