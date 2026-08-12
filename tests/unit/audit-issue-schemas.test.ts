@@ -36,7 +36,9 @@ describe('Audit Issue Schemas', () => {
             });
             expect(result.success).toBe(true);
             if (result.success) {
-                expect(result.data.metadataJson.findingSource).toBe('EXTERNAL_AUDITOR');
+                // `metadataJson` is optional, and since B3-5 it is a bounded
+                // record rather than `any` — narrow instead of assuming.
+                expect(result.data.metadataJson?.findingSource).toBe('EXTERNAL_AUDITOR');
             }
         });
 

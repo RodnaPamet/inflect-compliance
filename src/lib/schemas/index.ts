@@ -628,6 +628,57 @@ const isoDateOrDateTime = z
         { message: 'Must be a YYYY-MM-DD date or an ISO-8601 date-time' },
     );
 
+/**
+ * `Task.metadataJson` — the subtype-attribute bag for the unified work-item
+ * model. **This is a deliberate open extension point, not accidental sprawl.**
+ *
+ * `Task` unifies five `WorkItemType` values (TASK / AUDIT_FINDING /
+ * CONTROL_GAP / INCIDENT / IMPROVEMENT). Attributes that apply to only some of
+ * them live here rather than as columns that would be NULL on every other row.
+ * Migration `20260310191803_unified_task_model` established this: it folded
+ * `Issue` into `Task` and demoted six Issue-only columns
+ * (`findingSource`, `controlGapType`, `remediationPlan`, `reporterUserId`,
+ * `remediationOwnerUserId`, `remediationDueAt`) into this bag, dropping the
+ * `FindingSource` / `ControlGapType` enum types outright.
+ *
+ * **Promotion criterion — when a key EARNS a real column.** The bar is
+ * *relational integrity*, not mere popularity. `findingId` was promoted (TP-3)
+ * because it needed a foreign key with `onDelete: SetNull`, a
+ * `[tenantId, findingId]` index, and a reconciliation lookup that closes the
+ * finding when the task terminates. A key that is only ever displayed —
+ * never a `where`, `orderBy`, `select` target or join — does NOT qualify;
+ * promoting it re-litigates the 2026-03-10 demotion and adds a mostly-NULL
+ * column to a hot table. `findingSource` / `controlGapType` are exactly that
+ * case: their sole consumer is a display block on the task detail page.
+ *
+ * **What is enforced here.** The bag stays open, but bounded. Values are
+ * scalars only — a nested object or array is rejected — so an untrusted
+ * client cannot persist an arbitrarily deep or large blob into a tenant row
+ * through the public task API. Key count, key length and string length are all
+ * capped. Server-side materializers (audit checklist, NIS2 readiness/gap,
+ * gap assignment) call `createTask` directly and are not bound by this
+ * boundary schema; it governs request bodies.
+ */
+export const TASK_METADATA_MAX_KEYS = 32;
+export const TASK_METADATA_MAX_KEY_LENGTH = 64;
+export const TASK_METADATA_MAX_VALUE_LENGTH = 2048;
+
+const TaskMetadataValueSchema = z.union([
+    z.string().max(TASK_METADATA_MAX_VALUE_LENGTH),
+    z.number(),
+    z.boolean(),
+    z.null(),
+]);
+
+export const TaskMetadataSchema = z
+    .record(
+        z.string().min(1).max(TASK_METADATA_MAX_KEY_LENGTH),
+        TaskMetadataValueSchema,
+    )
+    .refine((m) => Object.keys(m).length <= TASK_METADATA_MAX_KEYS, {
+        message: `metadataJson accepts at most ${TASK_METADATA_MAX_KEYS} keys`,
+    });
+
 export const CreateTaskSchema = z.object({
     title: z.string().min(1).max(500),
     type: z.enum(['AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT', 'IMPROVEMENT', 'TASK']).optional().default('TASK'),
@@ -659,7 +710,7 @@ export const CreateTaskSchema = z.object({
     // and the repository writes it. Tenant-validated in the usecase
     // (`assertRefInTenant`) now that a request body can set it.
     findingId: z.string().nullable().optional(),
-    metadataJson: z.any().optional(),
+    metadataJson: TaskMetadataSchema.optional(),
 }).strip().openapi('TaskCreateRequest', {
     description: 'Create a task (unified work-item type covering audit findings, control gaps, incidents, improvements, and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in.',
 });
@@ -673,7 +724,7 @@ export const UpdateTaskSchema = z.object({
     dueAt: isoDateOrDateTime.nullable().optional(),
     controlId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
-    metadataJson: z.any().optional(),
+    metadataJson: TaskMetadataSchema.optional(),
 }).strip().openapi('TaskUpdateRequest', {
     description: 'Partial update for a task. Status changes and assignment go through their own focused endpoints.',
 });
