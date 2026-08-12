@@ -36,26 +36,46 @@ export const DEFAULT_SOFT_DELETE_GRACE_DAYS = 90;
 /** Default: archived evidence older than 365 days is eligible for hard purge */
 export const DEFAULT_EVIDENCE_PURGE_DAYS = 365;
 
-/** Models that support retentionUntil-based sweep */
 /**
  * Models whose `retentionUntil` the sweep enforces.
  *
- * `Control` was removed on 2026-08-06. It has a `retentionUntil` column and
- * was queried on every sweep, but NOTHING in src/ ever set it — no Zod
- * schema, no DTO, no UI, no job. (The only writer of that column anywhere is
- * the evidence importer, which writes Evidence.) So the sweep was a
- * guaranteed-empty query run forever, backed by a retention policy doc that
- * claimed the column was enforced "where set".
+ * MEMBERSHIP RULE: a model belongs here only if something in `src/` can
+ * actually WRITE its `retentionUntil`. A swept column with no writer is
+ * worse than no sweep, because it reads as a control that exists.
  *
- * Controls are still purged via the soft-delete path, which is what
- * docs/data-retention.md now says. If controls ever need a real retention
- * date, put it back here AND expose it on UpdateControlSchema + the edit UI
- * in the same change — a swept column with no writer is worse than no sweep,
- * because it reads as a control that exists.
+ * Eight Prisma models carry a `retentionUntil` column; only two have a
+ * writer:
+ *   - `Asset`    — `CreateAssetSchema` / `UpdateAssetSchema` /
+ *                  `BulkImportAssetsSchema` (`src/lib/schemas/index.ts`),
+ *                  persisted by `usecases/asset.ts`, exposed on the asset
+ *                  create + edit forms and the CSV importer, and published
+ *                  in `public/openapi.json`.
+ *   - `Evidence` — `usecases/evidence-retention.ts` (the retention route)
+ *                  and the evidence importer. Swept by the specialised
+ *                  `runEvidenceRetentionSweep`, so the loop below skips it.
+ *
+ * The other six were removed after a full census of every `retentionUntil`
+ * occurrence in `src/`, `scripts/`, `prisma/` and the published OpenAPI
+ * document:
+ *   - `Control` (2026-08-06) — no writer.
+ *   - `Risk`, `Policy`, `Vendor`, `FileRecord`, `Task` (2026-08-12) — no
+ *     writer either: no Zod schema field, no DTO field, no API field, no UI
+ *     control, no job. The one place in the task domain that considered the
+ *     column is `usecases/task-source-reconcile.ts`, which documents that it
+ *     deliberately does NOT write it. The only writes anywhere were raw-SQL
+ *     UPDATEs inside this job's own tests — which is exactly why the gap
+ *     survived: the sole thing populating the column was a test.
+ *
+ * So those six branches were guaranteed-empty queries run daily, forever,
+ * backed by a retention policy doc that claimed the dates were enforced
+ * "where set". All eight models are still purged via the soft-delete path
+ * (`SOFT_DELETE_MODELS`), which is what docs/data-retention.md now says.
+ *
+ * To put a model back: add it here AND expose `retentionUntil` on its
+ * update schema + its edit UI in the SAME change.
  */
 const RETENTION_MODELS = [
-    'Asset', 'Risk', 'Evidence', 'Policy',
-    'Vendor', 'FileRecord', 'Task',
+    'Asset', 'Evidence',
 ] as const;
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -261,8 +281,9 @@ export async function purgeExpiredEvidenceOlderThan(
  *
  * Lifecycle: active → retention expired → soft-deleted (by this job) → purged (by purge job)
  *
- * For Evidence specifically, this delegates to the existing
- * runEvidenceRetentionSweep which handles archival.
+ * Evidence is NOT swept here: the loop skips it, and the dedicated
+ * `retention-sweep` cron runs runEvidenceRetentionSweep, which handles
+ * archival. "Delegates" would imply this job calls it; it does not.
  */
 export async function runRetentionSweep(
     options: PurgeOptions = {},
