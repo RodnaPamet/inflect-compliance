@@ -166,6 +166,32 @@ beforeEach(() => {
     installFetch();
 });
 
+/**
+ * The `awaitingReviewBy` value of every list request recorded so far.
+ *
+ * PRESENCE, not position. SWR (2.5.0, `use-swr` initial-revalidation
+ * branch) fires the mount revalidation SYNCHRONOUSLY when the key has
+ * no cached data, but defers it one animation frame — `rAF` — when it
+ * does. This page hits both branches in one interaction: the pre-filter
+ * key carries `fallbackData` (the SSR rows) so it is deferred, and the
+ * post-click key has nothing cached so it fires at once. On a machine
+ * fast enough to click inside that first frame — CI is, this box is
+ * not — the filtered request is issued FIRST and the unfiltered mount
+ * revalidation lands after it. Reading `listRequests.at(-1)` then
+ * interrogates the background revalidation of a key the page is no
+ * longer showing, and the assertion fails on a page that is behaving
+ * correctly. Which request is LAST is SWR's scheduling; that a request
+ * carrying the signed-in user was made at all is the product claim.
+ */
+const awaitingReviewParams = () =>
+    listRequests.map((search) => new URLSearchParams(search).get('awaitingReviewBy'));
+
+/** Every non-null `assigneeUserId` any list request carried. */
+const assigneeParams = () =>
+    listRequests
+        .map((search) => new URLSearchParams(search).get('assigneeUserId'))
+        .filter((v): v is string => v !== null);
+
 const mount = () =>
     render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
@@ -230,11 +256,10 @@ describe('Tasks list — awaiting-my-review discovery filter', () => {
 
         // The narrowing happened on the SERVER request, bound to the
         // signed-in user — not by hiding rows client-side.
-        const last = new URLSearchParams(listRequests[listRequests.length - 1]);
-        expect(last.get('awaitingReviewBy')).toBe(CURRENT_USER);
+        expect(awaitingReviewParams()).toContain(CURRENT_USER);
         // …and it did NOT borrow the assignee facet to do it: "assigned
         // to me" and "awaiting my review" are different questions.
-        expect(last.get('assigneeUserId')).toBeNull();
+        expect(assigneeParams()).toEqual([]);
         expect(screen.getByRole('button', { name: LIST.assignedToMe }))
             .toHaveAttribute('aria-pressed', 'false');
 
@@ -270,9 +295,48 @@ describe('Tasks list — awaiting-my-review discovery filter', () => {
         // …and the queue it names is what the page asks the server for.
         // (Which rows that returns is the first test's assertion; this one
         // is about the key surviving the round trip through the URL.)
-        await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
-        expect(
-            new URLSearchParams(listRequests[listRequests.length - 1]).get('awaitingReviewBy'),
-        ).toBe(CURRENT_USER);
+        await waitFor(() => expect(awaitingReviewParams()).toContain(CURRENT_USER));
+    });
+
+    /**
+     * The interleaving CI hits and a loaded dev box does not, forced to
+     * happen every run: the pre-filter mount revalidation is held past
+     * the click (SWR defers it through `rAF`; here that frame is 400 ms
+     * wide), so it lands AFTER the filtered request.
+     *
+     * Two things must survive it. The queue on screen must stay the
+     * reviewer's — a response for the key the page has moved off must
+     * not repaint the table with the whole register. And the assertions
+     * above must not depend on which request happened to be last, which
+     * is what made this file green here and red on CI.
+     */
+    it('holds the queue when the pre-filter revalidation lands after the click', async () => {
+        const realRaf = window.requestAnimationFrame;
+        window.requestAnimationFrame = ((cb: FrameRequestCallback) =>
+            setTimeout(() => cb(0), 400) as unknown as number) as typeof window.requestAnimationFrame;
+        try {
+            mount();
+            await waitFor(() => expect(toggle()).toHaveAttribute('aria-pressed', 'false'));
+
+            fireEvent.click(toggle());
+            await waitFor(() => {
+                expect(screen.queryByText(MY_OWN_WORK.title)).not.toBeInTheDocument();
+            });
+
+            // The deferred revalidation of the PRE-filter key now lands…
+            await waitFor(() => expect(listRequests).toContain(''));
+            // …after the filtered one, which is exactly the ordering that
+            // makes a position-based assertion read the wrong request.
+            expect(listRequests[listRequests.length - 1]).toBe('');
+
+            // …and the reviewer's queue is still what is on screen.
+            expect(screen.getByText(MINE_TO_REVIEW.title)).toBeInTheDocument();
+            expect(screen.queryByText(MY_OWN_WORK.title)).not.toBeInTheDocument();
+            expect(screen.queryByText(THEIRS_TO_REVIEW.title)).not.toBeInTheDocument();
+            expect(toggle()).toHaveAttribute('aria-pressed', 'true');
+            expect(awaitingReviewParams()).toContain(CURRENT_USER);
+        } finally {
+            window.requestAnimationFrame = realRaf;
+        }
     });
 });
