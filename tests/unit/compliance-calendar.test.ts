@@ -79,6 +79,18 @@ const mockPolicyCount = jest.fn().mockResolvedValue(0);
 const mockVendorCount = jest.fn().mockResolvedValue(0);
 
 beforeEach(() => {
+    // LOAD-BEARING, despite the churn it causes (~35 re-instantiations of the
+    // usecase's import graph across this file's 33 dynamic imports).
+    //
+    // Hoisting to one static import was tried and reverted: without a fresh
+    // module registry per test the mocked `@/lib/db-context` never reaches the
+    // usecase, every loader is skipped, and the suite fails with zero mock
+    // calls rather than a wrong answer. The wiring depends on the usecase
+    // binding the mocked helper at import time, which only happens once per
+    // registry.
+    //
+    // Removing it therefore needs the db-context mock reworked first — not a
+    // find-and-replace of the dynamic imports.
     jest.resetModules();
     jest.clearAllMocks();
     ALL_SOURCE_MOCKS.forEach((m) => m.mockReset().mockResolvedValue([]));
