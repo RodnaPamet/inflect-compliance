@@ -43,6 +43,17 @@ export const ALL_WORK_ITEM_STATUSES = [
     'RESOLVED', 'CLOSED', 'CANCELED',
 ] as const;
 
+/**
+ * The status that hands a reviewer-gated work item to its reviewer.
+ *
+ * Named because three surfaces key off the same value and must not
+ * drift: the four-eyes gate (a completion must come FROM it), the
+ * review-request notification (the transition INTO it is the moment the
+ * reviewer acquires work), and the "awaiting review by <user>" list
+ * filter (which selects the tasks parked in it).
+ */
+export const REVIEW_WORK_ITEM_STATUS = 'IN_REVIEW';
+
 export type WorkItemStatusValue = (typeof ALL_WORK_ITEM_STATUSES)[number];
 export type TerminalWorkItemStatus = (typeof TERMINAL_WORK_ITEM_STATUSES)[number];
 export type ActiveWorkItemStatus = (typeof ACTIVE_WORK_ITEM_STATUSES)[number];

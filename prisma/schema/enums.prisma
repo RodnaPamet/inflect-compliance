@@ -540,6 +540,13 @@ enum NotificationType {
   // event discriminator). In-app only — watched-task activity is
   // high-frequency, so it deliberately does NOT blast per-event email.
   TASK_WATCH_UPDATE
+  // The four-eyes counterpart of TASK_ASSIGNED. Fired when a task with a
+  // `reviewerUserId` enters IN_REVIEW — from either the single-task or
+  // the bulk status path — and routed to that reviewer ONLY. Without it
+  // the reviewer sign-off gate created work nobody was told about: only
+  // the named reviewer can move the task on, and nothing said so.
+  // Deduped per (task, reviewer, day) like the other assignment bells.
+  TASK_REVIEW_REQUESTED
   GENERAL
 }
 

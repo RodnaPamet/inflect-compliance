@@ -20,6 +20,7 @@ import {
     checkWorkItemTransition,
     formatTransitionError,
     isTerminalStatus,
+    REVIEW_WORK_ITEM_STATUS,
 } from '../domain/work-item-status';
 import { getSlaStatus } from '../services/sla';
 import { reconcileTaskSource } from './task-source-reconcile';
@@ -868,6 +869,14 @@ interface TaskStatusChange {
     fromStatus: string;
     toStatus: string;
     resolution: string | null;
+    /**
+     * The task's reviewer at the moment of the transition — read by the
+     * post-commit review-request bell (B2-4). Both paths already hold it:
+     * the single path from its pre-fetch, the bulk path from the batched
+     * `listByIds` read the sign-off gate needs anyway. Carrying it here
+     * rather than re-reading keeps the bell free of extra queries.
+     */
+    reviewerUserId: string | null;
 }
 
 /**
@@ -889,10 +898,11 @@ async function applyTaskStatusPostWrite(
 
 /**
  * POST-COMMIT sequence: the automation emission for every changed task,
- * then the cache bump, then the watcher bell fan-out. None of it is in
- * the status transaction, and none of it runs at all if that
- * transaction threw. The bells are batched — one transaction and two
- * reads for the whole set, not one round trip per task.
+ * then the cache bump, then the watcher bell fan-out, then the reviewer
+ * review-request bell. None of it is in the status transaction, and none
+ * of it runs at all if that transaction threw. The bells are batched —
+ * one transaction and two reads for the whole set, not one round trip
+ * per task.
  */
 async function afterTaskStatusCommit(
     ctx: RequestContext,
@@ -922,6 +932,76 @@ async function afterTaskStatusCommit(
             detail: `status changed ${c.fromStatus} → ${c.toStatus}`,
         })),
     );
+    await emitTaskReviewRequestedNotifications(ctx, changes);
+}
+
+/**
+ * B2-4 — tell the reviewer their sign-off is what the task is now
+ * waiting on.
+ *
+ * `checkReviewerSignOffGate` means a reviewer-gated task can only be
+ * completed by the one named reviewer. Nothing told that person the work
+ * existed: watcher fan-out reaches TaskWatcher rows only, and nothing
+ * auto-subscribes a reviewer. So the gate created work that was
+ * discoverable by luck.
+ *
+ * Fires on the transition INTO IN_REVIEW, from either status path (this
+ * runs inside the shared post-commit sequence, so a step can't exist for
+ * one path and not the other). Post-commit and fire-and-forget for the
+ * same reason as every other bell here: a notification failure must not
+ * roll a committed status change back, and a rollback must not leave a
+ * bell pointing at a transition that never happened.
+ *
+ * The actor is excluded — a reviewer who moves the task into review
+ * themselves already knows. Everyone else gets nothing: this is a
+ * point-to-point message to one person, not a fan-out.
+ */
+async function emitTaskReviewRequestedNotifications(
+    ctx: RequestContext,
+    changes: TaskStatusChange[],
+): Promise<void> {
+    if (!ctx.tenantSlug) return;
+    const tenantSlug = ctx.tenantSlug;
+    const pending: Array<{ taskId: string; reviewerUserId: string }> = [];
+    for (const change of changes) {
+        const reviewerUserId = change.reviewerUserId;
+        if (change.toStatus !== REVIEW_WORK_ITEM_STATUS) continue;
+        if (!reviewerUserId || reviewerUserId === ctx.userId) continue;
+        pending.push({ taskId: change.taskId, reviewerUserId });
+    }
+    if (pending.length === 0) return;
+
+    const taskIds = [...new Set(pending.map((c) => c.taskId))];
+    try {
+        await runInTenantContext(ctx, async (db) => {
+            // ONE read for the batch — the notification body needs the
+            // title/key, which the status paths don't carry. Bounded by
+            // the caller's batch (see `WorkItemRepository.listByIds`).
+            const tasks = await db.task.findMany({ // guardrail-allow: unbounded
+                where: { id: { in: taskIds }, tenantId: ctx.tenantId },
+                select: { id: true, tenantId: true, title: true, key: true },
+            });
+            const taskById = new Map(tasks.map((t) => [t.id, t]));
+            for (const { taskId, reviewerUserId } of pending) {
+                const task = taskById.get(taskId);
+                if (!task) continue;
+                await createAssignmentNotification(db, 'TASK_REVIEW_REQUESTED', {
+                    tenantId: task.tenantId,
+                    assigneeUserId: reviewerUserId,
+                    entityId: task.id,
+                    entityLabel: task.title,
+                    entityKey: task.key,
+                    tenantSlug,
+                });
+            }
+        });
+    } catch (err) {
+        logger.warn('failed to notify task reviewer', {
+            component: 'notifications',
+            taskIds,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
 }
 
 export async function setTaskStatus(ctx: RequestContext, taskId: string, status: string, resolution?: string | null) {
@@ -976,7 +1056,13 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
 
         const task = await WorkItemRepository.setStatus(db, ctx, taskId, status, resolution);
         if (!task) throw notFound('Task not found');
-        changes = [{ taskId, fromStatus, toStatus: status, resolution: resolution ?? null }];
+        changes = [{
+            taskId,
+            fromStatus,
+            toStatus: status,
+            resolution: resolution ?? null,
+            reviewerUserId: existing.reviewerUserId ?? null,
+        }];
         // Audit → source reconciliation, in that order, on this
         // transaction (the automation emission is post-commit — see the
         // sequence comment above). The payload below is the only part
@@ -1721,6 +1807,9 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
                 fromStatus,
                 toStatus: status,
                 resolution: resolution ?? null,
+                // Already read for the sign-off gate above — the bell
+                // costs no extra query on this path either.
+                reviewerUserId: existing.reviewerUserId ?? null,
             });
         }
 

@@ -46,7 +46,7 @@ jest.mock('@/app-layer/usecases/task', () => ({
 import { executeAction } from '@/app-layer/automation/action-executor';
 
 const db = {
-    tenantMembership: { findMany: jest.fn() },
+    tenantMembership: { findMany: jest.fn(), findUnique: jest.fn() },
     notification: { createMany: jest.fn() },
     task: { findFirst: jest.fn(), updateMany: jest.fn() },
     risk: { updateMany: jest.fn() },
@@ -78,6 +78,14 @@ beforeEach(() => {
     jest.clearAllMocks();
     isNotificationsEnabled.mockResolvedValue(true);
     db.tenantMembership.findMany.mockResolvedValue([]);
+    // Default principal: an ACTIVE ADMIN member. Every CREATE_TASK case that
+    // cares about authority overrides this.
+    db.tenantMembership.findUnique.mockResolvedValue({
+        role: 'ADMIN',
+        status: 'ACTIVE',
+        customRole: null,
+        tenant: { slug: 'acme' },
+    });
     db.notification.createMany.mockResolvedValue({ count: 0 });
     db.task.findFirst.mockResolvedValue(null);
     db.task.updateMany.mockResolvedValue({ count: 1 });
@@ -158,6 +166,14 @@ describe('NOTIFY_USER', () => {
 
     it('no-ops when none of the requested ids are members', async () => {
         db.tenantMembership.findMany.mockResolvedValue([]);
+    // Default principal: an ACTIVE ADMIN member. Every CREATE_TASK case that
+    // cares about authority overrides this.
+    db.tenantMembership.findUnique.mockResolvedValue({
+        role: 'ADMIN',
+        status: 'ACTIVE',
+        customRole: null,
+        tenant: { slug: 'acme' },
+    });
         expect(await notify({ userIds: ['ghost'] })).toEqual({
             ok: true,
             summary: 'No valid recipients',
@@ -215,15 +231,25 @@ describe('CREATE_TASK', () => {
         expect(res).toEqual({ ok: false, summary: 'No actor to own the created task' });
     });
 
-    it('prefers the event actor over the rule author', async () => {
+    it('runs as the rule AUTHOR, not the member who fired the trigger', async () => {
+        // Authoring a rule requires canAdmin; the firing member may be a
+        // READER. Borrowing the firing identity is the escalation this
+        // ordering exists to prevent.
         await create({}, { actorUserId: 'actor-1' });
-        expect(createTaskUsecase.mock.calls[0][0].userId).toBe('actor-1');
-
-        jest.clearAllMocks();
-        createTaskUsecase.mockResolvedValue({ id: 't', key: 'K' });
-        db.task.findFirst.mockResolvedValue(null);
-        await create({});
         expect(createTaskUsecase.mock.calls[0][0].userId).toBe('author-1');
+        expect(db.tenantMembership.findUnique).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { tenantId_userId: { tenantId: 't-1', userId: 'author-1' } },
+            }),
+        );
+    });
+
+    it('falls back to the firing actor only for an author-less rule', async () => {
+        await run(
+            { actionType: 'CREATE_TASK', actionConfigJson: {}, createdByUserId: null },
+            { actorUserId: 'actor-1' },
+        );
+        expect(createTaskUsecase.mock.calls[0][0].userId).toBe('actor-1');
     });
 
     it('dedupes against an existing open automation task', async () => {
@@ -318,13 +344,76 @@ describe('CREATE_TASK', () => {
         expect(createTaskUsecase.mock.calls[0][1].controlId).toBeNull();
     });
 
-    it('grants the automation context admin write permission', async () => {
-        await create({}, { actorUserId: 'actor-1' });
+    it('executes under the principal\'s REAL role, never a fabricated ADMIN', async () => {
+        db.tenantMembership.findUnique.mockResolvedValue({
+            role: 'EDITOR',
+            status: 'ACTIVE',
+            customRole: null,
+            tenant: { slug: 'acme' },
+        });
+        await create({});
         const ctx = createTaskUsecase.mock.calls[0][0];
         expect(ctx.tenantId).toBe('t-1');
-        expect(ctx.role).toBe('ADMIN');
+        expect(ctx.tenantSlug).toBe('acme');
+        expect(ctx.role).toBe('EDITOR');
+        // EDITOR is below the canAdmin threshold — the old fabricated context
+        // asserted true here.
+        expect(ctx.permissions.canAdmin).toBe(false);
         expect(ctx.permissions.canWrite).toBe(true);
-        expect(ctx.permissions.canExport).toBe(false);
+        expect(ctx.appPermissions.tasks.create).toBe(true);
+    });
+
+    it('refuses when the principal\'s role cannot create tasks', async () => {
+        db.tenantMembership.findUnique.mockResolvedValue({
+            role: 'READER',
+            status: 'ACTIVE',
+            customRole: null,
+            tenant: { slug: 'acme' },
+        });
+        const res = await create({});
+        expect(res.ok).toBe(false);
+        expect(res.summary).toContain('lacks permission to create tasks');
+        expect(res.summary).toContain('READER');
+        expect(createTaskUsecase).not.toHaveBeenCalled();
+        // Refused BEFORE any task read/write — no trace beyond the failure.
+        expect(db.task.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('refuses when a custom role withholds the granular tasks.create flag', async () => {
+        db.tenantMembership.findUnique.mockResolvedValue({
+            role: 'ADMIN',
+            status: 'ACTIVE',
+            customRole: {
+                baseRole: 'ADMIN',
+                permissionsJson: { tasks: { view: true, create: false, edit: true, assign: true } },
+            },
+            tenant: { slug: 'acme' },
+        });
+        const res = await create({});
+        expect(res.ok).toBe(false);
+        expect(res.summary).toContain('lacks permission to create tasks');
+        expect(createTaskUsecase).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the principal has been removed from the tenant', async () => {
+        db.tenantMembership.findUnique.mockResolvedValue(null);
+        const res = await create({});
+        expect(res.ok).toBe(false);
+        expect(res.summary).toContain('not a member of this tenant');
+        expect(createTaskUsecase).not.toHaveBeenCalled();
+    });
+
+    it('refuses a non-ACTIVE membership', async () => {
+        db.tenantMembership.findUnique.mockResolvedValue({
+            role: 'ADMIN',
+            status: 'DEACTIVATED',
+            customRole: null,
+            tenant: { slug: 'acme' },
+        });
+        const res = await create({});
+        expect(res.ok).toBe(false);
+        expect(res.summary).toContain('DEACTIVATED');
+        expect(createTaskUsecase).not.toHaveBeenCalled();
     });
 });
 

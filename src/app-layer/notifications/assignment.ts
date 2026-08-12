@@ -29,7 +29,7 @@ import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 export interface AssignmentTarget {
     /** Tenant the entity belongs to. */
     tenantId: string;
-    /** Recipient — the new assignee/owner. */
+    /** Recipient — the new assignee/owner (or, for a review request, the reviewer). */
     assigneeUserId: string;
     /** Entity being assigned. */
     entityId: string;
@@ -45,7 +45,12 @@ export type AssignmentNotificationKind =
     | 'TASK_ASSIGNED'
     | 'CONTROL_ASSIGNED'
     | 'RISK_ASSIGNED'
-    | 'ASSET_ASSIGNED';
+    | 'ASSET_ASSIGNED'
+    // B2-4 — the four-eyes counterpart of TASK_ASSIGNED. Same "this is
+    // now your responsibility" shape and the same per-(entity, user,
+    // day) dedupe, so it belongs on this emitter rather than a parallel
+    // one; only the recipient's ROLE differs (reviewer, not assignee).
+    | 'TASK_REVIEW_REQUESTED';
 
 interface AssignmentCopy {
     title: string;
@@ -73,6 +78,13 @@ const COPY: Record<AssignmentNotificationKind, AssignmentCopy> = {
         title: 'You were assigned an asset',
         body: (label) => `${label} is now yours.`,
         linkPath: (slug, id) => `/t/${slug}/assets/${id}`,
+    },
+    TASK_REVIEW_REQUESTED: {
+        title: 'A task is awaiting your review',
+        // Says WHY it is theirs: the sign-off gate refuses everyone else,
+        // so the reviewer is the only person who can move this task on.
+        body: (label) => `${label} is ready for your sign-off — only you can complete it.`,
+        linkPath: (slug, id) => `/t/${slug}/tasks/${id}`,
     },
 };
 

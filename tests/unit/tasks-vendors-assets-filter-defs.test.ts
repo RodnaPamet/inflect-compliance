@@ -80,7 +80,19 @@ describe('Tasks filter config', () => {
 
     it('manages the documented key set', () => {
         expect([...TASK_FILTER_KEYS].sort()).toEqual(
-            ['assigneeUserId', 'controlId', 'due', 'severity', 'source', 'status', 'type'].sort(),
+            [
+                'assigneeUserId',
+                // B2-4 — "whose sign-off is this waiting on": IN_REVIEW
+                // *and* that user is the named reviewer. Server-side key,
+                // driven by the "Awaiting my review" quick toggle.
+                'awaitingReviewBy',
+                'controlId',
+                'due',
+                'severity',
+                'source',
+                'status',
+                'type',
+            ].sort(),
         );
     });
 

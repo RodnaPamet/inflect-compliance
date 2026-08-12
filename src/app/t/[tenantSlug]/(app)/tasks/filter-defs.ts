@@ -20,7 +20,7 @@ import {
     optionsFromEnum,
 } from '@/components/ui/filter/filter-definitions';
 import type { FilterOption } from '@/components/ui/filter/types';
-import { AlertCircle, CircleDot, Clock, Flag, Inbox, Layers, UserCircle2 } from 'lucide-react';
+import { AlertCircle, CircleDot, Clock, Flag, Inbox, Layers, UserCheck, UserCircle2 } from 'lucide-react';
 
 /** Surface-namespace resolver (`useTranslations('tasks')`). */
 type T = (key: string, values?: Record<string, unknown>) => string;
@@ -168,6 +168,21 @@ function taskFilterDefsInput(t: T, tGroup: TGroup) {
             // Single-select — the chip semantics are mutually exclusive.
             resetBehavior: 'clearable',
         },
+        // B2-4 — "whose sign-off is this waiting on". A people facet, but
+        // a compound predicate server-side: IN_REVIEW *and* that user is
+        // the named reviewer. Its options are supplied at render (there
+        // is exactly one that matters — the signed-in user), the same way
+        // assignee/control options are derived rather than enumerated
+        // here. It needs a def, not just a registered key: an active
+        // value with no def is a chip the toolbar cannot render.
+        awaitingReviewBy: {
+            label: t('filters.awaitingReview'),
+            description: t('filters.awaitingReviewDesc'),
+            group: tGroup('people'),
+            icon: UserCheck,
+            options: null, // derived at render time (the signed-in user)
+            resetBehavior: 'clearable',
+        },
         assigneeUserId: {
             label: t('filters.assignee'),
             labelPlural: t('filters.assigneePlural'),
@@ -196,6 +211,14 @@ function taskFilterDefsInput(t: T, tGroup: TGroup) {
 export function buildTaskFilterDefs(t: T, tGroup: TGroup) {
     return createTypedFilterDefs()(taskFilterDefsInput(t, tGroup));
 }
+
+/**
+ * B2-4 — the key behind both the "Awaiting my review" quick toggle and
+ * the matching filter card. It carries a userId, exactly like
+ * `assigneeUserId` behind "Assigned to me", and rides the same
+ * `FilterProvider` state → URL → `toApiSearchParams` pipeline.
+ */
+export const AWAITING_REVIEW_FILTER_KEY = 'awaitingReviewBy';
 
 // The URL-sync KEYS are label-independent — derive them once with an identity
 // resolver so callers keep importing a stable `TASK_FILTER_KEYS` constant.
@@ -251,12 +274,27 @@ export function buildTaskFilters(
     tasks: ReadonlyArray<TaskAssigneeLike & TaskControlLike>,
     t: T,
     tGroup: TGroup,
+    /**
+     * B2-4 — the signed-in user, when known. The awaiting-review facet
+     * offers exactly one option: yourself. Another person's sign-off
+     * queue is not a view this product has a reason to browse, and
+     * leaving the option list empty would render a card that cannot be
+     * used and a chip that cannot be labelled.
+     */
+    currentUserId?: string | null,
 ) {
     const assigneeOpts = assigneeOptionsFromTasks(tasks);
     const controlOpts = controlOptionsFromTasks(tasks);
+    // "Me" — the card is already labelled "Awaiting review", so the chip
+    // reads "Awaiting review: Me". Repeating the whole phrase here would
+    // also collide with the quick toggle's own accessible name.
+    const reviewOpts: FilterOption[] = currentUserId
+        ? [{ value: currentUserId, label: t('list.awaitingMyReviewOption') }]
+        : [];
     return buildTaskFilterDefs(t, tGroup).filters.map((f) => {
         if (f.key === 'assigneeUserId') return { ...f, options: assigneeOpts };
         if (f.key === 'controlId') return { ...f, options: controlOpts };
+        if (f.key === AWAITING_REVIEW_FILTER_KEY) return { ...f, options: reviewOpts };
         return f;
     });
 }

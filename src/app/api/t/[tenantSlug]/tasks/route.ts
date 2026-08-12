@@ -27,6 +27,11 @@ const TaskQuerySchema = z.object({
     priority: z.string().optional(),
     source: z.string().optional(),
     assigneeUserId: z.string().optional(),
+    // B2-4 — "awaiting review by <userId>": IN_REVIEW *and* that user is
+    // the named reviewer. A single id, not a comma list — the facet
+    // answers "whose sign-off is this waiting on", and the list page
+    // pins it to the signed-in user.
+    awaitingReviewBy: z.string().optional(),
     controlId: z.string().optional(),
     due: z.enum(['overdue', 'next7d']).optional(),
     q: z.string().optional().transform(normalizeQ),
@@ -51,6 +56,7 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
             priority: query.priority,
             source: query.source,
             assigneeUserId: query.assigneeUserId,
+            awaitingReviewBy: query.awaitingReviewBy,
             controlId: query.controlId,
             due: query.due,
             q: query.q,
@@ -74,6 +80,7 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
                 priority: query.priority,
                 source: query.source,
                 assigneeUserId: query.assigneeUserId,
+                awaitingReviewBy: query.awaitingReviewBy,
                 controlId: query.controlId,
                 due: query.due,
                 q: query.q,
@@ -97,6 +104,7 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
             priority: query.priority,
             source: query.source,
             assigneeUserId: query.assigneeUserId,
+            awaitingReviewBy: query.awaitingReviewBy,
             controlId: query.controlId,
             due: query.due,
             q: query.q,
