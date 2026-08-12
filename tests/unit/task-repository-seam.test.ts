@@ -1,21 +1,27 @@
 /**
- * B3-5 (a) — the work-item repository layer exposes ONE seam.
+ * B3-5 (a) / B3-6 — the task repository layer exposes ONE seam, under the
+ * canonical name.
  *
- * `TaskRepository.ts` used to be a five-line `@deprecated` re-export
- * (`export { WorkItemRepository as TaskRepository }`) with zero importers
- * anywhere in the tree. A second name bound to the same class is not free:
- * it lets two call sites believe they are talking to different repositories,
- * and it keeps the `Task` → `WorkItem` rename half-finished indefinitely.
+ * B3-5 deleted a five-line `@deprecated` re-export that bound a second name
+ * to the same class. A second name is not free: it lets two call sites
+ * believe they are talking to different repositories, and it kept the
+ * `WorkItem` → `Task` rename half-finished indefinitely.
+ *
+ * B3-6 then finished that rename, which INVERTS which name is the smell.
+ * `TaskRepository` is now the class and the filename; the name that must
+ * not come back is `WorkItemRepository`. Re-introducing it — as a
+ * compatibility shim, or by a partial revert — puts the layer back in the
+ * two-names state this pair of changes exists to end.
  *
  * This test loads every module in the repositories layer and inspects the
  * RUNTIME exports — not the source text. It fails if either regression
  * returns:
  *
- *   1. an export literally named `TaskRepository`, or
+ *   1. an export literally named `WorkItemRepository`, or
  *   2. any two exported classes across the layer that are the SAME object
  *      identity under two different names (the general aliasing case).
  *
- * Note the second assertion is what makes this durable: re-adding the alias
+ * The second assertion is what makes this durable: re-adding the alias
  * under some other name (`WorkItemRepo`, `IssueRepository`, …) still fails.
  */
 import fs from 'node:fs';
@@ -23,7 +29,7 @@ import path from 'node:path';
 
 const REPO_DIR = path.resolve(__dirname, '../../src/app-layer/repositories');
 
-describe('work-item repository seam', () => {
+describe('task repository seam', () => {
     /** Every exported binding in the layer: module file → export name → value. */
     let exportsByModule: Array<{ file: string; name: string; value: unknown }>;
 
@@ -48,9 +54,9 @@ describe('work-item repository seam', () => {
         expect(exportsByModule.length).toBeGreaterThan(10);
     });
 
-    it('exports no binding named TaskRepository', () => {
+    it('exports no binding named WorkItemRepository', () => {
         const offenders = exportsByModule
-            .filter((e) => e.name === 'TaskRepository')
+            .filter((e) => e.name === 'WorkItemRepository')
             .map((e) => `${e.file} exports '${e.name}'`);
 
         expect(offenders).toEqual([]);
@@ -60,17 +66,17 @@ describe('work-item repository seam', () => {
      * Aliases that exist today and are NOT part of this change.
      *
      * `src/app-layer/repositories/IssueRepository.ts` re-exports four
-     * `WorkItem*` classes under `Issue*` names. Unlike the deleted
-     * `TaskRepository`, that file is load-bearing for the `/issues` API
-     * surface and is asserted by `tests/unit/issue-guardrails.test.ts`, so
-     * removing it is a separate decision from this one.
+     * task classes under `Issue*` names. Unlike the re-export B3-5 deleted,
+     * that file is load-bearing for the `/issues` API surface and is
+     * asserted by `tests/unit/issue-guardrails.test.ts`, so removing it is
+     * a separate decision from this one.
      *
      * This is a DOWNWARD ratchet: entries come off as the `Issue*` naming
-     * is retired, and nothing new goes on. `TaskRepository` is deliberately
-     * absent — re-adding it fails this test.
+     * is retired, and nothing new goes on. A `WorkItemRepository` alias is
+     * deliberately absent — re-adding it fails this test.
      */
     const KNOWN_ALIASES: Record<string, string> = {
-        'IssueRepository === WorkItemRepository':
+        'IssueRepository === TaskRepository':
             'IssueRepository.ts backs the /issues API surface; retiring the Issue* naming is tracked separately.',
         'IssueLinkRepository === TaskLinkRepository':
             'Same file as IssueRepository — retired together with the Issue* naming.',
@@ -120,8 +126,8 @@ describe('work-item repository seam', () => {
         }
     });
 
-    it('WorkItemRepository is present and is the work-item seam', async () => {
-        const mod = await import('@/app-layer/repositories/WorkItemRepository');
-        expect(typeof mod.WorkItemRepository).toBe('function');
+    it('TaskRepository is present and is the task seam', async () => {
+        const mod = await import('@/app-layer/repositories/TaskRepository');
+        expect(typeof mod.TaskRepository).toBe('function');
     });
 });

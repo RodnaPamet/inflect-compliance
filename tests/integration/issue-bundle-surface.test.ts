@@ -6,7 +6,7 @@
  *
  *   1. **One work-item implementation.** `usecases/issue.ts` used to
  *      carry a parallel bulk surface (`bulkSetStatus`, `bulkAssign`,
- *      `bulkSetDueDate`) that hit the same `WorkItemRepository` rows
+ *      `bulkSetDueDate`) that hit the same `TaskRepository` rows
  *      while skipping the four-eyes reviewer gate, the
  *      assignee≠reviewer SoD guard, `assertActiveMembers`, source
  *      reconciliation and `bumpEntityCacheVersion`. Its routes are

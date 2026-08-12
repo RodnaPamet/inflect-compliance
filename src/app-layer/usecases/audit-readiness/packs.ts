@@ -10,7 +10,7 @@ import {
 import { logEvent } from '../../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
 
@@ -485,7 +485,7 @@ async function buildCuratedDefaultPack(ctx: RequestContext, frameworkKey: string
     // Open (non-terminal) findings / tasks — the live remediation backlog.
     const issues = await runInTenantContext(ctx, (tdb) =>
         tdb.task.findMany({
-            where: { tenantId: ctx.tenantId, status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] } },
+            where: { tenantId: ctx.tenantId, status: { notIn: [...TERMINAL_TASK_STATUSES] } },
             select: { id: true },
             take: 2000,
         })

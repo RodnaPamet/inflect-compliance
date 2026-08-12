@@ -2,7 +2,7 @@
  * Integration tests for the TaskKeySequence atomic key counter
  * (#102 item 2).
  *
- * The previous `WorkItemRepository.create` derived `TSK-N` keys from
+ * The previous `TaskRepository.create` derived `TSK-N` keys from
  * `db.task.count()` — which raced the unique `[tenantId, key]` index
  * under concurrent creates. The replacement is an `upsert` with an
  * atomic `increment`. This proves 20 fully-concurrent creates produce
@@ -18,7 +18,7 @@ import {
     createUser,
     buildRequestContext,
 } from '../helpers/factories';
-import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
+import { TaskRepository } from '@/app-layer/repositories/TaskRepository';
 
 // The `beforeEach` resets ~30 tables via `resetDatabase` + a raw
 // TRUNCATE. Under a loaded CI run that reset can transiently block
@@ -60,7 +60,7 @@ describeFn('TaskKeySequence — atomic TSK-N key generation (#102 item 2)', () =
 
         const results = await Promise.all(
             Array.from({ length: 20 }, (_, i) =>
-                WorkItemRepository.create(prisma, ctx, { title: `Task ${i + 1}` }),
+                TaskRepository.create(prisma, ctx, { title: `Task ${i + 1}` }),
             ),
         );
 
@@ -85,7 +85,7 @@ describeFn('TaskKeySequence — atomic TSK-N key generation (#102 item 2)', () =
             data: { tenantId: tenant.id, lastValue: 7 },
         });
 
-        const task = await WorkItemRepository.create(prisma, ctx, {
+        const task = await TaskRepository.create(prisma, ctx, {
             title: 'next',
         });
 
@@ -94,7 +94,7 @@ describeFn('TaskKeySequence — atomic TSK-N key generation (#102 item 2)', () =
 
     test('a fresh tenant starts its sequence at TSK-1', async () => {
         const { ctx } = await seed();
-        const task = await WorkItemRepository.create(prisma, ctx, {
+        const task = await TaskRepository.create(prisma, ctx, {
             title: 'first',
         });
         expect(task.key).toBe('TSK-1');

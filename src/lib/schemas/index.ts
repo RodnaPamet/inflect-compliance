@@ -632,7 +632,7 @@ const isoDateOrDateTime = z
  * `Task.metadataJson` — the subtype-attribute bag for the unified work-item
  * model. **This is a deliberate open extension point, not accidental sprawl.**
  *
- * `Task` unifies five `WorkItemType` values (TASK / AUDIT_FINDING /
+ * `Task` unifies five `TaskType` values (TASK / AUDIT_FINDING /
  * CONTROL_GAP / INCIDENT / IMPROVEMENT). Attributes that apply to only some of
  * them live here rather than as columns that would be NULL on every other row.
  * Migration `20260310191803_unified_task_model` established this: it folded

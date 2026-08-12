@@ -7,14 +7,14 @@
  */
 
 import {
-    TERMINAL_WORK_ITEM_STATUSES,
-    ACTIVE_WORK_ITEM_STATUSES,
-    ALL_WORK_ITEM_STATUSES,
+    TERMINAL_TASK_STATUSES,
+    ACTIVE_TASK_STATUSES,
+    ALL_TASK_STATUSES,
     ACTIVE_STATUS_FILTER,
     isTerminalStatus,
     isActiveStatus,
-    checkWorkItemTransition,
-} from '../../src/app-layer/domain/work-item-status';
+    checkTaskTransition,
+} from '../../src/app-layer/domain/task-status';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
 // ═════════════════════════════════════════════════════════════════════
@@ -23,13 +23,13 @@ import { readPrismaSchema } from '../helpers/prisma-schema';
 
 describe('Work Item Status Constants', () => {
     test('TERMINAL statuses are exactly RESOLVED, CLOSED, CANCELED', () => {
-        expect([...TERMINAL_WORK_ITEM_STATUSES].sort()).toEqual(
+        expect([...TERMINAL_TASK_STATUSES].sort()).toEqual(
             ['CANCELED', 'CLOSED', 'RESOLVED'],
         );
     });
 
     test('ACTIVE statuses include OPEN, TRIAGED, IN_PROGRESS, IN_REVIEW, BLOCKED', () => {
-        const active = [...ACTIVE_WORK_ITEM_STATUSES].sort();
+        const active = [...ACTIVE_TASK_STATUSES].sort();
         expect(active).toEqual(['BLOCKED', 'IN_PROGRESS', 'IN_REVIEW', 'OPEN', 'TRIAGED']);
     });
 
@@ -39,22 +39,22 @@ describe('Work Item Status Constants', () => {
     });
 
     test('TRIAGED is in ACTIVE statuses (the bug fix)', () => {
-        expect(ACTIVE_WORK_ITEM_STATUSES).toContain('TRIAGED');
+        expect(ACTIVE_TASK_STATUSES).toContain('TRIAGED');
     });
 
     test('TRIAGED is NOT in TERMINAL statuses', () => {
-        expect(TERMINAL_WORK_ITEM_STATUSES).not.toContain('TRIAGED');
+        expect(TERMINAL_TASK_STATUSES).not.toContain('TRIAGED');
     });
 
     test('ALL statuses is the union of ACTIVE + TERMINAL', () => {
-        const union = [...ACTIVE_WORK_ITEM_STATUSES, ...TERMINAL_WORK_ITEM_STATUSES].sort();
-        const all = [...ALL_WORK_ITEM_STATUSES].sort();
+        const union = [...ACTIVE_TASK_STATUSES, ...TERMINAL_TASK_STATUSES].sort();
+        const all = [...ALL_TASK_STATUSES].sort();
         expect(union).toEqual(all);
     });
 
     test('no overlap between ACTIVE and TERMINAL', () => {
-        const overlap = ACTIVE_WORK_ITEM_STATUSES.filter(s =>
-            (TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(s),
+        const overlap = ACTIVE_TASK_STATUSES.filter(s =>
+            (TERMINAL_TASK_STATUSES as readonly string[]).includes(s),
         );
         expect(overlap).toEqual([]);
     });
@@ -103,22 +103,22 @@ describe('isActiveStatus', () => {
 // 2b. Transitions — CLOSED reachable directly (RESOLVED retired in UI)
 // ═════════════════════════════════════════════════════════════════════
 
-describe('checkWorkItemTransition — direct close', () => {
+describe('checkTaskTransition — direct close', () => {
     // RESOLVED was retired as a redundant intermediate; every active
     // status can now go straight to CLOSED in one step.
     test.each(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED'])(
         '%s → CLOSED is legal',
         (from) => {
-            expect(checkWorkItemTransition(from, 'CLOSED')).toBeNull();
+            expect(checkTaskTransition(from, 'CLOSED')).toBeNull();
         },
     );
 
     test('a legacy RESOLVED task can still advance to CLOSED', () => {
-        expect(checkWorkItemTransition('RESOLVED', 'CLOSED')).toBeNull();
+        expect(checkTaskTransition('RESOLVED', 'CLOSED')).toBeNull();
     });
 
     test('CLOSED stays terminal (no transitions out)', () => {
-        expect(checkWorkItemTransition('CLOSED', 'OPEN')).not.toBeNull();
+        expect(checkTaskTransition('CLOSED', 'OPEN')).not.toBeNull();
     });
 });
 
@@ -217,10 +217,10 @@ describe('Enum Drift Guard', () => {
     /**
      * This test reads the Prisma schema and compares the TaskStatus
      * enum values against our domain constants. If someone adds a new
-     * status to the schema without updating ALL_WORK_ITEM_STATUSES,
+     * status to the schema without updating ALL_TASK_STATUSES,
      * this test fails LOUDLY.
      */
-    test('ALL_WORK_ITEM_STATUSES matches Prisma TaskStatus enum', () => {
+    test('ALL_TASK_STATUSES matches Prisma TaskStatus enum', () => {
         // Read the schema file and extract enum values
         const schema = readPrismaSchema();
 
@@ -234,7 +234,7 @@ describe('Enum Drift Guard', () => {
             .filter((line: string) => line && !line.startsWith('//') && !line.startsWith('@@'));
 
         const schemaStatuses = new Set(enumValues);
-        const domainStatuses = new Set([...ALL_WORK_ITEM_STATUSES]);
+        const domainStatuses = new Set([...ALL_TASK_STATUSES]);
 
         // Every schema status must be in our domain constants
         for (const status of schemaStatuses) {
@@ -251,9 +251,9 @@ describe('Enum Drift Guard', () => {
     });
 
     test('every status is classified as either ACTIVE or TERMINAL (no orphans)', () => {
-        for (const status of ALL_WORK_ITEM_STATUSES) {
-            const inActive = (ACTIVE_WORK_ITEM_STATUSES as readonly string[]).includes(status);
-            const inTerminal = (TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(status);
+        for (const status of ALL_TASK_STATUSES) {
+            const inActive = (ACTIVE_TASK_STATUSES as readonly string[]).includes(status);
+            const inTerminal = (TERMINAL_TASK_STATUSES as readonly string[]).includes(status);
             // Must be in exactly one group
             expect(inActive || inTerminal).toBe(true);
             expect(inActive && inTerminal).toBe(false);
@@ -261,8 +261,8 @@ describe('Enum Drift Guard', () => {
     });
 
     test('ACTIVE + TERMINAL covers ALL (no gaps, no extras)', () => {
-        const combined = new Set([...ACTIVE_WORK_ITEM_STATUSES, ...TERMINAL_WORK_ITEM_STATUSES]);
-        const all = new Set([...ALL_WORK_ITEM_STATUSES]);
+        const combined = new Set([...ACTIVE_TASK_STATUSES, ...TERMINAL_TASK_STATUSES]);
+        const all = new Set([...ALL_TASK_STATUSES]);
         expect(combined).toEqual(all);
     });
 });
@@ -284,7 +284,7 @@ describe('Codebase Scan — inline status array detection', () => {
     test('no inline terminal status arrays in app-layer (except shared constant)', () => {
         const srcDir = path.resolve(__dirname, '../../src/app-layer');
         const pattern = /\['RESOLVED'.*?'CLOSED'.*?'CANCELED'\]/g;
-        const sharedFile = 'domain/work-item-status.ts';
+        const sharedFile = 'domain/task-status.ts';
 
         let files: string[];
         try {

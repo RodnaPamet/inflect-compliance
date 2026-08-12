@@ -83,13 +83,13 @@ jest.mock('@/app-layer/repositories/PolicyVersionRepository', () => ({
     },
 }));
 
-jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
+jest.mock('@/app-layer/repositories/TaskRepository', () => ({
     TaskCommentRepository: {
         add: (...args: unknown[]) => mockTaskCommentAdd(...args),
     },
     // Re-export the rest as no-op stubs the usecases pull in via the
     // same barrel.
-    WorkItemRepository: {},
+    TaskRepository: {},
     TaskLinkRepository: {},
     TaskWatcherRepository: {},
 }));

@@ -25,7 +25,7 @@ import type { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { emitAutomationEvent } from '../automation';
 import { isNotificationsEnabled } from '../notifications/settings';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { createTask, addTaskLink } from '../usecases/task';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
@@ -210,7 +210,7 @@ export async function processOverdueReminders(
                 entityId: { in: policyIds },
                 task: {
                     source: 'POLICY_REVIEW',
-                    status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+                    status: { notIn: [...TERMINAL_TASK_STATUSES] },
                 },
             },
             select: { entityId: true },

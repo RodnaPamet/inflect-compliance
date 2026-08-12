@@ -1,7 +1,7 @@
 /**
  * DSAR workflow state machine — pure, dependency-free.
  *
- * Mirrors the shape of `work-item-status.ts`: a transition graph plus a pure
+ * Mirrors the shape of `task-status.ts`: a transition graph plus a pure
  * checker returning `null` on success and a discriminated error otherwise, so
  * the wording stays identical across every caller.
  *

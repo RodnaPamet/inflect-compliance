@@ -2,7 +2,7 @@
  * SLA computation service.
  * Pure functions — no DB, no side effects. Derives triage/resolve deadlines from severity + createdAt.
  */
-import { isTerminalStatus } from '../domain/work-item-status';
+import { isTerminalStatus } from '../domain/task-status';
 
 export interface SLADates {
     triageDueAt: Date | null;

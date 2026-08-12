@@ -1,5 +1,5 @@
 import { RequestContext } from '../types';
-import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
+import { TaskRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository, TaskFilters, TaskListParams } from '../repositories/TaskRepository';
 import { assertCanReadTasks, assertCanWriteTasks, assertCanCreateTask, assertCanAssignTasks, assertCanCommentOnTasks } from '../policies/task.policies';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -17,11 +17,11 @@ import { logger } from '@/lib/observability/logger';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import type { PrismaTx } from '@/lib/db-context';
 import {
-    checkWorkItemTransition,
+    checkTaskTransition,
     formatTransitionError,
     isTerminalStatus,
-    REVIEW_WORK_ITEM_STATUS,
-} from '../domain/work-item-status';
+    REVIEW_TASK_STATUS,
+} from '../domain/task-status';
 import { getSlaStatus } from '../services/sla';
 import { reconcileTaskSource } from './task-source-reconcile';
 import { restoreEntity } from './soft-delete-operations';
@@ -246,7 +246,7 @@ export async function listTasks(
         params: options.take ? { ...filters, _take: options.take } : filters,
         loader: () =>
             runInTenantContext(ctx, (db) =>
-                WorkItemRepository.list(db, ctx, filters, options),
+                TaskRepository.list(db, ctx, filters, options),
             ),
     });
 }
@@ -270,7 +270,7 @@ export async function listTasksWithDeleted(
 ) {
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, (db) =>
-        WorkItemRepository.listDeleted(db, ctx, filters),
+        TaskRepository.listDeleted(db, ctx, filters),
     );
 }
 
@@ -283,7 +283,7 @@ export async function listTasksPaginated(ctx: RequestContext, params: TaskListPa
         params,
         loader: () =>
             runInTenantContext(ctx, (db) =>
-                WorkItemRepository.listPaginated(db, ctx, params),
+                TaskRepository.listPaginated(db, ctx, params),
             ),
     });
 }
@@ -291,7 +291,7 @@ export async function listTasksPaginated(ctx: RequestContext, params: TaskListPa
 export async function getTask(ctx: RequestContext, taskId: string) {
     assertCanReadTasks(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const task = await WorkItemRepository.getById(db, ctx, taskId);
+        const task = await TaskRepository.getById(db, ctx, taskId);
         if (!task) throw notFound('Task not found');
         // Audit Coherence S8 (2026-05-24) — attach the derived SLA
         // status alongside the raw row. The service is pure (severity
@@ -353,7 +353,7 @@ export async function createTask(ctx: RequestContext, input: {
         await assertRefInTenant(db, ctx, 'control', input.controlId);
         await assertRefInTenant(db, ctx, 'finding', input.findingId);
 
-        const task = await WorkItemRepository.create(db, ctx, input);
+        const task = await TaskRepository.create(db, ctx, input);
 
         // Type-specific validation (deferred: allow creation, then check after links can be added)
         // For create, we validate immediately since controlId is already set
@@ -479,7 +479,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 
         // TP-2 (hole 2) — the reviewer field itself is part of the four-eyes
         // control, so changing it is gated too. Read the before-state.
-        const existing = await WorkItemRepository.getById(db, ctx, taskId);
+        const existing = await TaskRepository.getById(db, ctx, taskId);
         if (!existing) throw notFound('Task not found');
         const beforeDueAt = existing.dueAt;
         const beforeReviewerUserId = existing.reviewerUserId;
@@ -538,7 +538,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
             );
         }
 
-        const task = await WorkItemRepository.update(db, ctx, taskId, patch);
+        const task = await TaskRepository.update(db, ctx, taskId, patch);
         if (!task) throw notFound('Task not found');
         await logEvent(db, ctx, {
             action: 'TASK_UPDATED',
@@ -614,7 +614,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 export async function bulkDeleteTask(ctx: RequestContext, taskIds: string[]) {
     assertCanAdmin(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
-        const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
+        const rows = await TaskRepository.listByIds(db, ctx, taskIds);
         // A payload where NOTHING resolves is a client error, not a
         // successful no-op — previously this returned {deleted: 0} and the
         // caller could not tell "already gone" from "wrong tenant/ids".
@@ -658,7 +658,7 @@ export async function bulkDeleteTask(ctx: RequestContext, taskIds: string[]) {
 export async function deleteTask(ctx: RequestContext, taskId: string) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
-        const existing = await WorkItemRepository.getById(db, ctx, taskId);
+        const existing = await TaskRepository.getById(db, ctx, taskId);
         if (!existing) throw notFound('Task not found');
         await db.task.delete({ where: { id: taskId } });
         await logEvent(db, ctx, {
@@ -965,7 +965,7 @@ async function emitTaskReviewRequestedNotifications(
     const pending: Array<{ taskId: string; reviewerUserId: string }> = [];
     for (const change of changes) {
         const reviewerUserId = change.reviewerUserId;
-        if (change.toStatus !== REVIEW_WORK_ITEM_STATUS) continue;
+        if (change.toStatus !== REVIEW_TASK_STATUS) continue;
         if (!reviewerUserId || reviewerUserId === ctx.userId) continue;
         pending.push({ taskId: change.taskId, reviewerUserId });
     }
@@ -976,7 +976,7 @@ async function emitTaskReviewRequestedNotifications(
         await runInTenantContext(ctx, async (db) => {
             // ONE read for the batch — the notification body needs the
             // title/key, which the status paths don't carry. Bounded by
-            // the caller's batch (see `WorkItemRepository.listByIds`).
+            // the caller's batch (see `TaskRepository.listByIds`).
             const tasks = await db.task.findMany({ // guardrail-allow: unbounded
                 where: { id: { in: taskIds }, tenantId: ctx.tenantId },
                 select: { id: true, tenantId: true, title: true, key: true },
@@ -1010,7 +1010,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
     const result = await runInTenantContext(ctx, async (db) => {
         // Pre-fetch once so we can both validate + capture fromStatus
         // for the automation event.
-        const existing = await WorkItemRepository.getById(db, ctx, taskId);
+        const existing = await TaskRepository.getById(db, ctx, taskId);
         if (!existing) throw notFound('Task not found');
         const fromStatus = existing.status;
 
@@ -1019,7 +1019,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         // shapes (e.g. CLOSED → OPEN re-open, CANCELED → IN_PROGRESS,
         // OPEN → CLOSED skipping RESOLVED) so the only paths that
         // reach the repository write are documented transitions.
-        const transitionErr = checkWorkItemTransition(fromStatus, status);
+        const transitionErr = checkTaskTransition(fromStatus, status);
         if (transitionErr) throw badRequest(formatTransitionError(transitionErr));
 
         // TP-2 — reviewer sign-off gate (shared with the bulk path).
@@ -1054,7 +1054,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
             { id: taskId, type: existing.type, controlId: existing.controlId },
         ]);
 
-        const task = await WorkItemRepository.setStatus(db, ctx, taskId, status, resolution);
+        const task = await TaskRepository.setStatus(db, ctx, taskId, status, resolution);
         if (!task) throw notFound('Task not found');
         changes = [{
             taskId,
@@ -1104,12 +1104,12 @@ export async function assignTask(ctx: RequestContext, taskId: string, assigneeUs
         // person who is already its reviewer would collapse four eyes into two
         // just as surely as setting reviewer = assignee does.
         if (assigneeUserId) {
-            const existing = await WorkItemRepository.getById(db, ctx, taskId);
+            const existing = await TaskRepository.getById(db, ctx, taskId);
             if (!existing) throw notFound('Task not found');
             assertReviewerIsNotAssignee(existing.reviewerUserId, assigneeUserId);
         }
 
-        const task = await WorkItemRepository.assign(db, ctx, taskId, assigneeUserId);
+        const task = await TaskRepository.assign(db, ctx, taskId, assigneeUserId);
         if (!task) throw notFound('Task not found');
         await logEvent(db, ctx, {
             action: 'TASK_ASSIGNED',
@@ -1366,7 +1366,7 @@ async function emitTaskWatcherActivityBatch(
     try {
         await runInTenantContext(ctx, async (db) => {
             // Bounded by the caller's batch, which is bounded by the
-            // request payload (see `WorkItemRepository.listByIds`).
+            // request payload (see `TaskRepository.listByIds`).
             const tasks = await db.task.findMany({ // guardrail-allow: unbounded
                 where: { id: { in: taskIds }, tenantId: ctx.tenantId },
                 select: { id: true, tenantId: true, title: true, key: true },
@@ -1673,7 +1673,7 @@ export async function removeTaskWatcher(ctx: RequestContext, taskId: string, use
 
 export async function getTaskMetrics(ctx: RequestContext) {
     assertCanReadTasks(ctx);
-    return runInTenantReadContext(ctx, (db) => WorkItemRepository.metrics(db, ctx));
+    return runInTenantReadContext(ctx, (db) => TaskRepository.metrics(db, ctx));
 }
 
 // ─── Activity Feed ───
@@ -1717,11 +1717,11 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
             }
         }
 
-        const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
+        const rows = await TaskRepository.listByIds(db, ctx, taskIds);
         if (rows.length === 0) throw notFound('No matching tasks found');
         const applied = new Set(rows.map((r) => r.id));
 
-        const result = await WorkItemRepository.bulkAssign(db, ctx, [...applied], assigneeUserId);
+        const result = await TaskRepository.bulkAssign(db, ctx, [...applied], assigneeUserId);
         // Audit only ids that actually resolved. Sequential by design —
         // audit rows are hash-chained under a per-tenant advisory lock.
         for (const id of applied) {
@@ -1763,7 +1763,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
         // transition (no partial writes), and (b) emit a per-row
         // audit entry with the REAL fromStatus instead of the prior
         // hardcoded null.
-        const existingRows = await WorkItemRepository.listByIds(db, ctx, taskIds);
+        const existingRows = await TaskRepository.listByIds(db, ctx, taskIds);
         const existingMap = new Map(existingRows.map((r) => [r.id, r]));
         changes = [];
 
@@ -1774,7 +1774,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
                 throw notFound(`Task ${id} not found`);
             }
             const fromStatus = existing.status;
-            const err = checkWorkItemTransition(fromStatus, status);
+            const err = checkTaskTransition(fromStatus, status);
             if (err) {
                 throw badRequest(
                     `Cannot bulk-transition task ${id}: ${formatTransitionError(err)}`,
@@ -1837,7 +1837,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
             );
         }
 
-        const result = await WorkItemRepository.bulkSetStatus(db, ctx, taskIds, status, resolution);
+        const result = await TaskRepository.bulkSetStatus(db, ctx, taskIds, status, resolution);
         for (const change of changes) {
             // Same shared sequence the single-task path runs — audit,
             // then source reconciliation, on this transaction; the
@@ -1868,11 +1868,11 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
 export async function bulkSetTaskDueDate(ctx: RequestContext, taskIds: string[], dueAt: string | null) {
     assertCanWriteTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
-        const rows = await WorkItemRepository.listByIds(db, ctx, taskIds);
+        const rows = await TaskRepository.listByIds(db, ctx, taskIds);
         if (rows.length === 0) throw notFound('No matching tasks found');
         const applied = new Set(rows.map((r) => r.id));
 
-        const result = await WorkItemRepository.bulkSetDueDate(db, ctx, [...applied], dueAt);
+        const result = await TaskRepository.bulkSetDueDate(db, ctx, [...applied], dueAt);
         for (const id of applied) {
             await logEvent(db, ctx, {
                 action: 'TASK_UPDATED',
@@ -1900,7 +1900,7 @@ export async function listTasksByControl(ctx: RequestContext, controlId: string)
         params: { controlId },
         loader: () =>
             runInTenantContext(ctx, (db) =>
-                WorkItemRepository.list(db, ctx, { controlId }),
+                TaskRepository.list(db, ctx, { controlId }),
             ),
     });
 }

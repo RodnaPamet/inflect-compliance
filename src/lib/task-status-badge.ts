@@ -10,7 +10,7 @@
  * renderer imports it, so a tone change happens once.
  *
  * Client-safe by construction: it imports only the `StatusBadgeVariant`
- * *type* and the plain-constant `WorkItemStatusValue` union, so it can be
+ * *type* and the plain-constant `TaskStatusValue` union, so it can be
  * pulled into client components without dragging server-only code.
  *
  * The canonical enum is `TaskStatus`
@@ -20,7 +20,7 @@
  */
 
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
-import type { WorkItemStatusValue } from '@/app-layer/domain/work-item-status';
+import type { TaskStatusValue } from '@/app-layer/domain/task-status';
 
 export interface TaskStatusBadgeSpec {
     /** Platform `<StatusBadge>` tone. */
@@ -37,7 +37,7 @@ export interface TaskStatusBadgeSpec {
  * `TaskStatus` values. `OPEN` is neutral everywhere (the single
  * consistent open tone); `BLOCKED` is the only error tone.
  */
-export const TASK_STATUS_BADGE: Record<WorkItemStatusValue, TaskStatusBadgeSpec> = {
+export const TASK_STATUS_BADGE: Record<TaskStatusValue, TaskStatusBadgeSpec> = {
     OPEN: { variant: 'neutral', labelKey: 'statusLabels.OPEN' },
     TRIAGED: { variant: 'info', labelKey: 'statusLabels.TRIAGED' },
     IN_PROGRESS: { variant: 'info', labelKey: 'statusLabels.IN_PROGRESS' },
@@ -54,7 +54,7 @@ export const TASK_STATUS_BADGE: Record<WorkItemStatusValue, TaskStatusBadgeSpec>
  * spell the default.
  */
 export function taskStatusVariant(status: string): StatusBadgeVariant {
-    return TASK_STATUS_BADGE[status as WorkItemStatusValue]?.variant ?? 'neutral';
+    return TASK_STATUS_BADGE[status as TaskStatusValue]?.variant ?? 'neutral';
 }
 
 /**
@@ -66,7 +66,7 @@ export function taskStatusLabel(
     status: string,
     t: (key: string) => string,
 ): string {
-    const spec = TASK_STATUS_BADGE[status as WorkItemStatusValue];
+    const spec = TASK_STATUS_BADGE[status as TaskStatusValue];
     return spec ? t(spec.labelKey) : status;
 }
 

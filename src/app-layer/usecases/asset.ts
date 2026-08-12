@@ -1,6 +1,6 @@
 import { RequestContext } from '../types';
 import { AssetRepository, AssetListParams, AssetFilters } from '../repositories/AssetRepository';
-import { WorkItemRepository } from '../repositories/WorkItemRepository';
+import { TaskRepository } from '../repositories/TaskRepository';
 import type { TaskLinkEntityType, AssetType, AssetStatus, Prisma } from '@prisma/client';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -41,7 +41,7 @@ async function enrichAssetRows<T extends { id: string }>(db: PrismaTx, ctx: Requ
         return rows.map((r) => ({ ...r, taskTotal: 0, taskDone: 0, openVulnCount: 0, maxVulnSeverity: null as string | null }));
     }
     const [counts, cveGroups, cveTop, scanGroups, scanSevs] = await Promise.all([
-        WorkItemRepository.countLinkedToEntities(db, ctx, 'ASSET' as TaskLinkEntityType, ids),
+        TaskRepository.countLinkedToEntities(db, ctx, 'ASSET' as TaskLinkEntityType, ids),
         db.assetVulnerability.groupBy({
             by: ['assetId'],
             where: { tenantId: ctx.tenantId, assetId: { in: ids }, status: 'OPEN' },
@@ -144,7 +144,7 @@ async function computeAssetRollups(
             distinct: ['severity'],
             select: { severity: true },
         }),
-        WorkItemRepository.countLinkedToEntities(db, ctx, 'ASSET' as TaskLinkEntityType, [assetId]),
+        TaskRepository.countLinkedToEntities(db, ctx, 'ASSET' as TaskLinkEntityType, [assetId]),
     ]);
     const tc = taskCounts.get(assetId) ?? { total: 0, done: 0 };
     // Fold the worst scanner-finding severity into the CVE max so the detail

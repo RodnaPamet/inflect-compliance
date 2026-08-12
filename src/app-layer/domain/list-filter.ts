@@ -39,7 +39,7 @@
  * matching zero rows (which reads as "you have no risks").
  *
  * Extracted from the two independent copies that had grown in
- * `WorkItemRepository` and `ControlRepository`; every list repository now
+ * `TaskRepository` and `ControlRepository`; every list repository now
  * shares this one. Enforced by
  * `tests/guards/list-filter-enum-cast.test.ts`.
  */

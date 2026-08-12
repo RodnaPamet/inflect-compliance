@@ -31,7 +31,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { computeNextDueAt } from '../../utils/cadence';
 import { computeNextRunFromCron } from '../../jobs/control-test-scheduler';
 import { createTask } from '../task';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 
 /**
@@ -54,7 +54,7 @@ async function hasOpenGapTask(
             tenantId: ctx.tenantId,
             type: 'CONTROL_GAP',
             controlId,
-            status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+            status: { notIn: [...TERMINAL_TASK_STATUSES] },
             deletedAt: null,
             metadataJson: { path: ['testPlanId'], equals: testPlanId },
         },

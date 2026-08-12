@@ -55,7 +55,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability';
 import { internal } from '@/lib/errors/types';
 import { assertCanRead } from '../../policies/common';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import {
     evidenceExpiryScopeWhere,
     EVIDENCE_REVIEWED_STATUS,
@@ -422,7 +422,7 @@ export async function getMyUpcomingTaskCount(
                     // literal type, and the shared ACTIVE_STATUS_FILTER
                     // constant types its payload as `string[]` which
                     // Prisma's newer generated client also rejects.
-                    notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[],
+                    notIn: [...TERMINAL_TASK_STATUSES] as TaskStatus[],
                 },
             },
             take: MAX_BADGE_COUNT + 1,

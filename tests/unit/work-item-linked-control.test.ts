@@ -14,7 +14,7 @@
  * to a control").
  */
 
-import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
+import { TaskRepository } from '@/app-layer/repositories/TaskRepository';
 import type { RequestContext } from '@/app-layer/types';
 
 const ctx = { tenantId: 'tenant-1' } as RequestContext;
@@ -28,10 +28,10 @@ function whereOf(findMany: jest.Mock) {
     return findMany.mock.calls[0][0].where;
 }
 
-describe('WorkItemRepository — control-linked tasks', () => {
+describe('TaskRepository — control-linked tasks', () => {
     it('CONTROL link matches via TaskLink OR the controlId FK', async () => {
         const { db, findMany } = mockDb();
-        await WorkItemRepository.list(db, ctx, {
+        await TaskRepository.list(db, ctx, {
             linkedEntityType: 'CONTROL',
             linkedEntityId: 'ctrl-1',
         });
@@ -53,7 +53,7 @@ describe('WorkItemRepository — control-linked tasks', () => {
 
     it('non-control links stay TaskLink-only (no controlId branch)', async () => {
         const { db, findMany } = mockDb();
-        await WorkItemRepository.list(db, ctx, {
+        await TaskRepository.list(db, ctx, {
             linkedEntityType: 'ASSET',
             linkedEntityId: 'asset-1',
         });
@@ -65,7 +65,7 @@ describe('WorkItemRepository — control-linked tasks', () => {
     });
 });
 
-describe('WorkItemRepository.countLinkedToControl', () => {
+describe('TaskRepository.countLinkedToControl', () => {
     function mockCountDb() {
         // Promise.all order: total query first, done query second.
         const count = jest
@@ -77,7 +77,7 @@ describe('WorkItemRepository.countLinkedToControl', () => {
 
     it('counts via the SAME TaskLink-OR-controlId where the panel lists', async () => {
         const { db, count } = mockCountDb();
-        const result = await WorkItemRepository.countLinkedToControl(
+        const result = await TaskRepository.countLinkedToControl(
             db,
             ctx,
             'ctrl-1',
@@ -105,7 +105,7 @@ describe('WorkItemRepository.countLinkedToControl', () => {
     });
 });
 
-describe('WorkItemRepository.countLinkedToControls (batched)', () => {
+describe('TaskRepository.countLinkedToControls (batched)', () => {
     it('dedupes a task linked via BOTH the FK and a TaskLink, per control', async () => {
         const taskFindMany = jest.fn().mockResolvedValue([
             // ctrl-1: two direct-FK tasks (one RESOLVED → done)
@@ -123,7 +123,7 @@ describe('WorkItemRepository.countLinkedToControls (batched)', () => {
             taskLink: { findMany: taskLinkFindMany },
         } as never;
 
-        const result = await WorkItemRepository.countLinkedToControls(db, ctx, [
+        const result = await TaskRepository.countLinkedToControls(db, ctx, [
             'ctrl-1',
             'ctrl-2',
         ]);
@@ -141,7 +141,7 @@ describe('WorkItemRepository.countLinkedToControls (batched)', () => {
             task: { findMany: taskFindMany },
             taskLink: { findMany: taskLinkFindMany },
         } as never;
-        const result = await WorkItemRepository.countLinkedToControls(db, ctx, []);
+        const result = await TaskRepository.countLinkedToControls(db, ctx, []);
         expect(result.size).toBe(0);
         expect(taskFindMany).not.toHaveBeenCalled();
         expect(taskLinkFindMany).not.toHaveBeenCalled();

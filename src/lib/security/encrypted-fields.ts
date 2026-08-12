@@ -191,7 +191,7 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     VendorEvidenceBundle: ['description'],
 
     // ─── Tasks + comments ──────────────────────────────
-    //  WorkItemRepository searches `title` + `key` only — `description`
+    //  TaskRepository searches `title` + `key` only — `description`
     //  is safe to encrypt.
     Task: ['description', 'resolution'],
     TaskComment: ['body'],

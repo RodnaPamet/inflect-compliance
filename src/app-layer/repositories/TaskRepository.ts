@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { Prisma, TaskStatus, TaskType, TaskSeverity, TaskPriority, TaskSource, TaskLinkEntityType, TaskLinkRelation } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
-import { TERMINAL_WORK_ITEM_STATUSES, REVIEW_WORK_ITEM_STATUS, isTerminalStatus } from '../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES, REVIEW_TASK_STATUS, isTerminalStatus } from '../domain/task-status';
 import { badRequest } from '@/lib/errors/types';
 import { withDeleted } from '@/lib/soft-delete';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
@@ -30,7 +30,7 @@ const VALID_WORK_ITEM_SOURCES = new Set<string>(Object.values(TaskSource));
  * bogus value reach the DB). Every `createTask` path funnels through the
  * repo, so this is the single choke point that keeps the invariant true.
  */
-export function normalizeWorkItemSource(source: string | null | undefined): TaskSource {
+export function normalizeTaskSource(source: string | null | undefined): TaskSource {
     if (source == null || source === '') return TaskSource.MANUAL;
     if (!VALID_WORK_ITEM_SOURCES.has(source)) {
         throw badRequest(
@@ -53,7 +53,7 @@ export function normalizeWorkItemSource(source: string | null | undefined): Task
  * a multi-select simply returned nothing.
  *
  * Invalid members fail LOUDLY with a 400 rather than silently matching zero
- * rows — same philosophy as `normalizeWorkItemSource`.
+ * rows — same philosophy as `normalizeTaskSource`.
  *
  * @returns `undefined` (no filter), the bare value (single), or `{ in: [...] }`.
  */
@@ -166,14 +166,14 @@ const DETAIL_RELATION_TAKE = 200;
 
 // ─── Task Repository ───
 
-export class WorkItemRepository {
+export class TaskRepository {
     static async list(
         db: PrismaTx,
         ctx: RequestContext,
         filters: TaskFilters = {},
         options: { take?: number } = {},
     ) {
-        const where = WorkItemRepository._buildWhere(ctx, filters);
+        const where = TaskRepository._buildWhere(ctx, filters);
         return db.task.findMany({
             where,
             orderBy: [{ priority: 'asc' }, { createdAt: 'desc' }],
@@ -198,7 +198,7 @@ export class WorkItemRepository {
         ctx: RequestContext,
         filters: TaskFilters = {},
     ) {
-        const where = WorkItemRepository._buildWhere(ctx, filters);
+        const where = TaskRepository._buildWhere(ctx, filters);
         where.deletedAt = { not: null };
         return db.task.findMany(
             withDeleted({
@@ -234,7 +234,7 @@ export class WorkItemRepository {
         ctx: RequestContext,
         controlId: string,
     ): Promise<{ total: number; done: number }> {
-        const where = WorkItemRepository._buildWhere(ctx, {
+        const where = TaskRepository._buildWhere(ctx, {
             linkedEntityType: 'CONTROL',
             linkedEntityId: controlId,
         });
@@ -366,7 +366,7 @@ export class WorkItemRepository {
 
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: TaskListParams): Promise<PaginatedResponse<unknown>> {
         const limit = clampLimit(params.limit);
-        const where = WorkItemRepository._buildWhere(ctx, params.filters);
+        const where = TaskRepository._buildWhere(ctx, params.filters);
 
         const cursorWhere = buildCursorWhere(params.cursor);
         if (cursorWhere) {
@@ -413,18 +413,18 @@ export class WorkItemRepository {
         if (filters.awaitingReviewBy) {
             and.push({
                 reviewerUserId: filters.awaitingReviewBy,
-                status: REVIEW_WORK_ITEM_STATUS,
+                status: REVIEW_TASK_STATUS,
             });
         }
         if (filters.controlId) where.controlId = filters.controlId;
         if (filters.due === 'overdue') {
             where.dueAt = { lt: new Date() };
-            if (!filters.status) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[] };
+            if (!filters.status) where.status = { notIn: [...TERMINAL_TASK_STATUSES] as TaskStatus[] };
         } else if (filters.due === 'next7d') {
             const now = new Date();
             const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
             where.dueAt = { gte: now, lte: in7 };
-            if (!filters.status) where.status = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[] };
+            if (!filters.status) where.status = { notIn: [...TERMINAL_TASK_STATUSES] as TaskStatus[] };
         }
         if (filters.q) {
             and.push({
@@ -559,7 +559,7 @@ export class WorkItemRepository {
                 type: (data.type as TaskType) ?? TaskType.TASK,
                 severity: (data.severity as TaskSeverity) ?? TaskSeverity.MEDIUM,
                 priority: (data.priority as TaskPriority) ?? TaskPriority.P2,
-                source: normalizeWorkItemSource(data.source),
+                source: normalizeTaskSource(data.source),
                 dueAt: data.dueAt ? new Date(data.dueAt) : null,
                 assigneeUserId: data.assigneeUserId || null,
                 reviewerUserId: data.reviewerUserId || null,
@@ -636,7 +636,7 @@ export class WorkItemRepository {
         const now = new Date();
         const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-        const openFilter = { notIn: [...TERMINAL_WORK_ITEM_STATUSES] as TaskStatus[] };
+        const openFilter = { notIn: [...TERMINAL_TASK_STATUSES] as TaskStatus[] };
 
         const [byStatus, overdueCount, due7dCount, total] = await Promise.all([
             db.task.groupBy({ by: ['status'], where: { tenantId }, _count: true }),

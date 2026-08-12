@@ -1,6 +1,6 @@
 import { RequestContext } from '../types';
 import { RiskRepository, RiskFilters, RiskListParams } from '../repositories/RiskRepository';
-import { WorkItemRepository } from '../repositories/WorkItemRepository';
+import { TaskRepository } from '../repositories/TaskRepository';
 import { RiskTemplateRepository } from '../repositories/RiskTemplateRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -79,7 +79,7 @@ export async function listRisks(
                         options,
                     );
                     const counts =
-                        await WorkItemRepository.countLinkedToEntities(
+                        await TaskRepository.countLinkedToEntities(
                             db,
                             ctx,
                             'RISK' as TaskLinkEntityType,

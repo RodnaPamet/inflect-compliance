@@ -291,7 +291,7 @@ const CAPS: Record<string, number> = {
     // any-paydown wave PR28 (2026-06-22) — `: any` cont. (app-layer, clean pair).
     // vendor-scoring: `riskPointsJson`/`answerJson` (Prisma Json columns, read only
     // under `typeof` guards / an existing `as Record<string,number>` cast) → `unknown`.
-    // WorkItemRepository: the two `metadataJson?: any` write-input fields → `unknown`
+    // TaskRepository: the two `metadataJson?: any` write-input fields → `unknown`
     // + an `as Prisma.InputJsonValue` cast at the local write site (typing them
     // `InputJsonValue` directly would cascade to the task.ts callers). 4 cleared.
     // (asset.ts + soa-checks deferred — schema-string-vs-Prisma-enum casts + test

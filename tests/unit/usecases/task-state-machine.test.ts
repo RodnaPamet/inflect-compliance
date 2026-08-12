@@ -7,38 +7,38 @@
  * without an explicit assertion change.
  */
 import {
-    WORK_ITEM_TRANSITIONS,
-    checkWorkItemTransition,
+    TASK_TRANSITIONS,
+    checkTaskTransition,
     formatTransitionError,
     isTerminalStatus,
     isActiveStatus,
-    ALL_WORK_ITEM_STATUSES,
-} from '@/app-layer/domain/work-item-status';
+    ALL_TASK_STATUSES,
+} from '@/app-layer/domain/task-status';
 
-describe('WORK_ITEM_TRANSITIONS — legal graph', () => {
+describe('TASK_TRANSITIONS — legal graph', () => {
     it('exposes a key per TaskStatus value', () => {
-        for (const s of ALL_WORK_ITEM_STATUSES) {
-            expect(WORK_ITEM_TRANSITIONS).toHaveProperty(s);
+        for (const s of ALL_TASK_STATUSES) {
+            expect(TASK_TRANSITIONS).toHaveProperty(s);
         }
-        expect(Object.keys(WORK_ITEM_TRANSITIONS).length).toBe(
-            ALL_WORK_ITEM_STATUSES.length,
+        expect(Object.keys(TASK_TRANSITIONS).length).toBe(
+            ALL_TASK_STATUSES.length,
         );
     });
 
     it('terminal statuses (CLOSED, CANCELED) have an empty out-set', () => {
-        expect(WORK_ITEM_TRANSITIONS.CLOSED.size).toBe(0);
-        expect(WORK_ITEM_TRANSITIONS.CANCELED.size).toBe(0);
+        expect(TASK_TRANSITIONS.CLOSED.size).toBe(0);
+        expect(TASK_TRANSITIONS.CANCELED.size).toBe(0);
     });
 
     it('OPEN can short-circuit to RESOLVED or CANCELED', () => {
-        const out = WORK_ITEM_TRANSITIONS.OPEN;
+        const out = TASK_TRANSITIONS.OPEN;
         expect(out.has('RESOLVED')).toBe(true);
         expect(out.has('CANCELED')).toBe(true);
         expect(out.has('TRIAGED')).toBe(true);
     });
 
     it('RESOLVED can go to CLOSED or re-open to IN_PROGRESS', () => {
-        const out = WORK_ITEM_TRANSITIONS.RESOLVED;
+        const out = TASK_TRANSITIONS.RESOLVED;
         expect(out.has('CLOSED')).toBe(true);
         expect(out.has('IN_PROGRESS')).toBe(true);
         // RESOLVED → OPEN is intentionally illegal — re-opening goes
@@ -47,38 +47,38 @@ describe('WORK_ITEM_TRANSITIONS — legal graph', () => {
     });
 });
 
-describe('checkWorkItemTransition', () => {
+describe('checkTaskTransition', () => {
     it('returns null on a legal transition', () => {
-        expect(checkWorkItemTransition('OPEN', 'TRIAGED')).toBeNull();
-        expect(checkWorkItemTransition('IN_PROGRESS', 'RESOLVED')).toBeNull();
-        expect(checkWorkItemTransition('RESOLVED', 'CLOSED')).toBeNull();
+        expect(checkTaskTransition('OPEN', 'TRIAGED')).toBeNull();
+        expect(checkTaskTransition('IN_PROGRESS', 'RESOLVED')).toBeNull();
+        expect(checkTaskTransition('RESOLVED', 'CLOSED')).toBeNull();
     });
 
     it('flags a no-op (same status) as a precise error variant', () => {
-        const err = checkWorkItemTransition('IN_PROGRESS', 'IN_PROGRESS');
+        const err = checkTaskTransition('IN_PROGRESS', 'IN_PROGRESS');
         expect(err).toEqual({ kind: 'no_op', status: 'IN_PROGRESS' });
     });
 
     it('flags an illegal transition between two known statuses', () => {
-        const err = checkWorkItemTransition('CLOSED', 'OPEN');
+        const err = checkTaskTransition('CLOSED', 'OPEN');
         expect(err).toEqual({ kind: 'illegal', from: 'CLOSED', to: 'OPEN' });
     });
 
     it('flags CANCELED as a hard terminal — no transitions out', () => {
-        for (const s of ALL_WORK_ITEM_STATUSES) {
+        for (const s of ALL_TASK_STATUSES) {
             if (s === 'CANCELED') continue;
-            const err = checkWorkItemTransition('CANCELED', s);
+            const err = checkTaskTransition('CANCELED', s);
             expect(err?.kind).toBe('illegal');
         }
     });
 
     it('flags an unknown from-status', () => {
-        const err = checkWorkItemTransition('NEW', 'OPEN');
+        const err = checkTaskTransition('NEW', 'OPEN');
         expect(err).toEqual({ kind: 'unknown_from', from: 'NEW' });
     });
 
     it('flags an unknown to-status', () => {
-        const err = checkWorkItemTransition('OPEN', 'DONE_DONE');
+        const err = checkTaskTransition('OPEN', 'DONE_DONE');
         expect(err).toEqual({ kind: 'unknown_to', to: 'DONE_DONE' });
     });
 });
@@ -101,8 +101,8 @@ describe('formatTransitionError', () => {
 });
 
 describe('isTerminalStatus / isActiveStatus — terminal/active partitioning', () => {
-    it('partitions ALL_WORK_ITEM_STATUSES cleanly', () => {
-        for (const s of ALL_WORK_ITEM_STATUSES) {
+    it('partitions ALL_TASK_STATUSES cleanly', () => {
+        for (const s of ALL_TASK_STATUSES) {
             // Every status is exactly one of terminal or active —
             // never both, never neither.
             const t = isTerminalStatus(s);

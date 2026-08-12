@@ -323,7 +323,7 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         model: 'Task',
         fields: ['tenantId', 'priority', 'createdAt'],
         justification:
-            "WorkItemRepository.list() default sort: [{ priority: 'asc' }, { createdAt: 'desc' }]",
+            "TaskRepository.list() default sort: [{ priority: 'asc' }, { createdAt: 'desc' }]",
     },
     {
         model: 'Task',
@@ -336,7 +336,7 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         model: 'TaskLink',
         fields: ['tenantId', 'entityType', 'entityId'],
         justification:
-            'WorkItemRepository.list() linkedEntityType+linkedEntityId reverse-lookup',
+            'TaskRepository.list() linkedEntityType+linkedEntityId reverse-lookup',
     },
     // ── NIS2 gap-assessment (Nis2GapAssessmentRepository) ───────────
     {

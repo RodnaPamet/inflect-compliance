@@ -27,7 +27,7 @@ import { DatePicker } from "@/components/ui/date-picker/date-picker";
 import { parseYMD, startOfUtcDay, toYMD } from "@/components/ui/date-picker/date-utils";
 import { PanelActivityFeed } from "./PanelActivityFeed";
 import { EvidenceUploadSection } from "@/components/evidence/EvidenceUploadSection";
-import { TERMINAL_WORK_ITEM_STATUSES } from "@/app-layer/domain/work-item-status";
+import { TERMINAL_TASK_STATUSES } from "@/app-layer/domain/task-status";
 import { Button } from "@/components/ui/button";
 import type { ControlTask } from "./ControlTaskRows";
 
@@ -268,7 +268,7 @@ export function TaskEditPanel({
     const handleStatusChange = useCallback(
         (next: string) => {
             if (!next || next === status) return;
-            if ((TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(next)) {
+            if ((TERMINAL_TASK_STATUSES as readonly string[]).includes(next)) {
                 setResolutionDraft("");
                 setPendingTerminalStatus(next);
                 return;

@@ -248,7 +248,7 @@ export class RiskRepository {
     static async create(db: PrismaTx, ctx: RequestContext, data: Omit<Prisma.RiskUncheckedCreateInput, 'tenantId'>) {
         return traceRepository('risk.create', ctx, async () => {
             // PR-B — mint a per-tenant `RSK-N` key from an atomic
-            // counter. Mirrors `WorkItemRepository.create` / the
+            // counter. Mirrors `TaskRepository.create` / the
             // `TaskKeySequence` pattern: the upsert compiles to a
             // native `INSERT … ON CONFLICT DO UPDATE`, so the
             // increment is race-free under concurrent imports.

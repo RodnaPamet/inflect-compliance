@@ -94,17 +94,14 @@ describe('RBAC Guardrail Scans', () => {
         });
     });
 
-    describe('Tasks page RBAC', () => {
-        test('task create button uses appPerms', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx');
-            expect(content).toMatch(/appPermissions\.tasks\.create/);
-        });
-
-        test('task bulk actions use appPerms', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx');
-            expect(content).toMatch(/appPermissions\.tasks\.edit/);
-        });
-    });
+    // Tasks page RBAC was two regexes over TasksClient.tsx source
+    // (`appPermissions.tasks.create` / `.edit`). B3-2 replaced them with
+    // `tests/rendered/tasks-list-role-surface.test.tsx`, which mounts the
+    // page as each of the five roles and asserts the write surface a user
+    // actually gets — the create button, the quick-edit pencil and the
+    // bulk bar are absent for READER and AUDITOR, not merely disabled.
+    // A regex could not tell "reads the flag" from "reads the flag and
+    // then renders the button anyway".
 
     describe('Vendors page RBAC', () => {
         test('vendor create button uses appPerms', () => {

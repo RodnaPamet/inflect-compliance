@@ -28,7 +28,7 @@ import { assertCanViewPack } from '../../policies/audit-readiness.policies';
 import { logEvent } from '../../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
-import { TERMINAL_WORK_ITEM_STATUSES } from '../../domain/work-item-status';
+import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import { NIS2_SOURCE_KIND } from '../nis2-readiness';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
 import { readinessBand } from '@/lib/readiness/bands';
@@ -407,7 +407,7 @@ async function computeGenericReadiness(
                 tenantId: ctx.tenantId,
                 type: { in: ['CONTROL_GAP', 'AUDIT_FINDING'] },
                 status: {
-                    notIn: TERMINAL_WORK_ITEM_STATUSES as readonly TaskStatus[] as TaskStatus[],
+                    notIn: TERMINAL_TASK_STATUSES as readonly TaskStatus[] as TaskStatus[],
                 },
                 deletedAt: null,
             },
@@ -528,7 +528,7 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle):
         tdb.task.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+                status: { notIn: [...TERMINAL_TASK_STATUSES] },
                 dueAt: { lt: new Date() },
             },
             select: { id: true, title: true, dueAt: true },
@@ -547,7 +547,7 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle):
         tdb.task.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+                status: { notIn: [...TERMINAL_TASK_STATUSES] },
                 type: { in: ['CONTROL_GAP', 'AUDIT_FINDING'] },
             },
             select: { id: true, title: true, severity: true },
@@ -700,7 +700,7 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle): Pro
         tdb.task.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
+                status: { notIn: [...TERMINAL_TASK_STATUSES] },
             },
             select: { id: true, title: true, severity: true, type: true },
             take: 20,

@@ -115,7 +115,7 @@ interface TaskListItem {
     updatedAt: string;
     /**
      * The FULL shape the server sends (`assignee: { select: { id, name,
-     * email } }` in WorkItemRepository's list select), not just the field
+     * email } }` in TaskRepository's list select), not just the field
      * the table column happens to render.
      *
      * This was declared as `{ name: string } | null`, which was a lie in

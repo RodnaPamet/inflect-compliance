@@ -6,7 +6,7 @@
  * Unit tests for `src/app-layer/usecases/control/queries.ts`.
  *
  * Roadmap Q1 — Compliance core. Mocks ControlRepository +
- * WorkItemRepository + runInTenantContext + cachedListRead +
+ * TaskRepository + runInTenantContext + cachedListRead +
  * withDeleted. Exercises:
  *
  *   - listControls — assertCanReadControls gate, cachedListRead
@@ -15,7 +15,7 @@
  *   - listControlsPaginated — delegation + cache wiring.
  *   - getControl — happy path + notFound.
  *   - getControlHeader — happy + notFound + the `_count.controlTasks`
- *     OVERRIDE with the unified WorkItem count (so the badge matches
+ *     OVERRIDE with the unified Task count (so the badge matches
  *     LinkedTasksPanel after #806 unification).
  *   - getControlActivity — pre-check on existence + audit log query.
  *   - getControlDashboard — the dashboard fan-out (`Promise.all` of 7
@@ -60,8 +60,8 @@ jest.mock('@/app-layer/repositories/ControlRepository', () => ({
     },
 }));
 
-jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
-    WorkItemRepository: {
+jest.mock('@/app-layer/repositories/TaskRepository', () => ({
+    TaskRepository: {
         countLinkedToControls: jest.fn(),
         countLinkedToControl: jest.fn(),
     },
@@ -78,7 +78,7 @@ jest.mock('@/app-layer/usecases/control/health', () => ({
 }));
 
 import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
-import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
+import { TaskRepository } from '@/app-layer/repositories/TaskRepository';
 import { getControlHealthVerdicts } from '@/app-layer/usecases/control/health';
 import { cachedListRead } from '@/lib/cache/list-cache';
 // Direct import from queries.ts to skip the barrel — the barrel pulls
@@ -118,7 +118,7 @@ describe('listControls', () => {
             { id: 'c-1', name: 'A' },
             { id: 'c-2', name: 'B' },
         ]);
-        (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(
             new Map([
                 ['c-1', { total: 3, done: 1 }],
                 ['c-2', { total: 0, done: 0 }],
@@ -135,7 +135,7 @@ describe('listControls', () => {
 
     it('defaults missing counts to zero when a control has no link rows', async () => {
         (ControlRepository.list as jest.Mock).mockResolvedValue([{ id: 'c-1' }]);
-        (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
 
         const rows = await listControls(readerCtx);
         expect(rows[0]).toMatchObject({ taskTotal: 0, taskDone: 0 });
@@ -143,7 +143,7 @@ describe('listControls', () => {
 
     it('puts `take` into the cache key when supplied', async () => {
         (ControlRepository.list as jest.Mock).mockResolvedValue([]);
-        (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
         await listControls(readerCtx, undefined, { take: 25 });
         const cacheArgs = (cachedListRead as jest.Mock).mock.calls[0][0];
         expect(cacheArgs.params).toEqual({ _take: 25 });
@@ -151,7 +151,7 @@ describe('listControls', () => {
 
     it('resolves the `?ids=` deep-link to a server-side id restriction', async () => {
         (ControlRepository.list as jest.Mock).mockResolvedValue([]);
-        (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
         await listControls(readerCtx, { ids: 'c-1, c-2 ,c-3' });
         // The comma-separated deep-link string is parsed into the repo `ids`
         // array (trimmed) so the DB applies `id: { in }` — not a client filter.
@@ -175,7 +175,7 @@ describe('listControls', () => {
             counts: {},
         });
         (ControlRepository.list as jest.Mock).mockResolvedValue([]);
-        (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
         await listControls(readerCtx, { health: 'DEGRADED' });
         expect(ControlRepository.list).toHaveBeenCalledWith(
             expect.anything(),
@@ -191,7 +191,7 @@ describe('listControls', () => {
             counts: {},
         });
         (ControlRepository.list as jest.Mock).mockResolvedValue([]);
-        (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
         await listControls(readerCtx, { health: 'AT_RISK' });
         // Empty array → repo applies `id: { in: [] }` → zero rows (NOT undefined).
         expect(ControlRepository.list).toHaveBeenCalledWith(
@@ -211,7 +211,7 @@ describe('listControls', () => {
             counts: {},
         });
         (ControlRepository.list as jest.Mock).mockResolvedValue([]);
-        (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
         await listControls(readerCtx, { ids: 'c-1,c-9', health: 'DEGRADED' });
         // c-1 is in both the deep-link AND degraded; c-9 isn't degraded, c-2 isn't in the link.
         expect(ControlRepository.list).toHaveBeenCalledWith(
@@ -224,7 +224,7 @@ describe('listControls', () => {
 
     it('forwards filters into the cache key', async () => {
         (ControlRepository.list as jest.Mock).mockResolvedValue([]);
-        (WorkItemRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
         await listControls(readerCtx, { status: 'IMPLEMENTED', q: 'access' });
         const cacheArgs = (cachedListRead as jest.Mock).mock.calls[0][0];
         expect(cacheArgs.params).toEqual({ status: 'IMPLEMENTED', q: 'access' });
@@ -266,12 +266,12 @@ describe('getControl', () => {
 // ─── getControlHeader ──────────────────────────────────────────────
 
 describe('getControlHeader', () => {
-    it('overrides _count.controlTasks with the unified WorkItem total', async () => {
+    it('overrides _count.controlTasks with the unified Task total', async () => {
         (ControlRepository.getHeaderById as jest.Mock).mockResolvedValue({
             id: 'c-1',
             _count: { controlTasks: 0, evidenceLinks: 7 }, // legacy "0" — must be overridden
         });
-        (WorkItemRepository.countLinkedToControl as jest.Mock).mockResolvedValue({ total: 4, done: 2 });
+        (TaskRepository.countLinkedToControl as jest.Mock).mockResolvedValue({ total: 4, done: 2 });
 
         const header = await getControlHeader(readerCtx, 'c-1');
 

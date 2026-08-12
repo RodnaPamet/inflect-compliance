@@ -29,7 +29,7 @@ describe('C1 — control status filter accepts a comma-joined list', () => {
         'utf8',
     );
     // The parse itself now lives in ONE shared module. It had grown a
-    // second independent copy in WorkItemRepository, and then the same
+    // second independent copy in TaskRepository, and then the same
     // bug shipped again on /risks?status=ACTIVE — three copies of the
     // same fifteen lines is how a fixed bug comes back. Both prior
     // copies delegate here, so the behavioural assertions below follow
