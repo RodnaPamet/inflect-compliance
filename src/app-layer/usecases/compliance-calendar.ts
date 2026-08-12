@@ -51,6 +51,8 @@
 
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
+import { logger } from '@/lib/observability';
+import { internal } from '@/lib/errors/types';
 import { assertCanRead } from '../policies/common';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import {
@@ -161,7 +163,16 @@ const DEFAULT_TOTAL_CAP = 5000;
  * which is the bug this replaces.
  */
 const SOURCE_CONCURRENCY = 6;
-/** Per-source read timeout. One slow source fails alone, not the whole calendar. */
+/**
+ * Per-source read timeout, passed as the Prisma interactive-transaction budget.
+ *
+ * Breaching it REJECTS (P2028) — the timeout bounds one source's work, it does
+ * not make the failure survivable on its own. Isolation comes from the
+ * try/catch at the fan-out below, which converts a rejected source into a
+ * reported `failedSources` entry. This comment used to claim "one slow source
+ * fails alone, not the whole calendar", which was false: there was no catch
+ * anywhere in the file, so any rejection took all seventeen domains with it.
+ */
 const PER_SOURCE_TIMEOUT_MS = 8_000;
 
 /** A calendar source loader's call signature. */
@@ -286,12 +297,57 @@ export async function getComplianceCalendarEvents(
     }
 
     // Each loader runs in its OWN read-only context so the fan-out genuinely
-    // parallelises across pooled connections and a single slow source can't
-    // 500 the whole calendar under a shared transaction timeout.
-    const results = await mapWithConcurrency(eligible, SOURCE_CONCURRENCY, (src) =>
-        runInTenantReadContext(ctx, (db) => src.load(db, ctx, range, now, limit), {
-            timeout: PER_SOURCE_TIMEOUT_MS,
-        }),
+    // parallelises across pooled connections rather than serialising behind one
+    // pinned connection.
+    //
+    // The catch is what makes a per-source failure survivable. Without it, one
+    // loader breaching its 8s budget (P2028) — or exhausting the pool (P2024),
+    // or throwing for any reason at all — rejected the whole `Promise.all` and
+    // 500'd the entire calendar: seventeen domains, all three views, for a
+    // fault in one.
+    //
+    // The sentinel is index-aligned deliberately. `cappedSources` below reads
+    // `results[i]` positionally against `eligible`, so a filtered (shorter)
+    // array would leave `results[i]` undefined for the tail and turn a
+    // partial-data problem into a TypeError — a worse outage than the one being
+    // fixed.
+    const settled = await mapWithConcurrency(eligible, SOURCE_CONCURRENCY, async (src) => {
+        try {
+            return await runInTenantReadContext(
+                ctx,
+                (db) => src.load(db, ctx, range, now, limit),
+                { timeout: PER_SOURCE_TIMEOUT_MS },
+            );
+        } catch (err: unknown) {
+            // Never silent: this trades a loud 500 for a quiet degradation, so
+            // a chronically-broken source has to remain visible to operators.
+            // The user-facing half is `failedSources` in the response.
+            logger.warn('calendar source failed — omitted from this response', {
+                component: 'compliance-calendar',
+                source: src.name,
+                tenantId: ctx.tenantId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+            return null;
+        }
+    });
+
+    const failedSources = eligible
+        .map((src, i) => (settled[i] === null ? src.name : null))
+        .filter((n): n is CalendarSourceName => n !== null);
+
+    // Every source failing is not a partial result — it is an outage wearing
+    // the costume of an empty calendar. An empty grid plus a notice reads as
+    // "nothing is due"; on a deadline product that is the most dangerous thing
+    // this surface can say. Fail loudly instead.
+    if (eligible.length > 0 && failedSources.length === eligible.length) {
+        throw internal(
+            `compliance-calendar: every source failed (${failedSources.join(', ')})`,
+        );
+    }
+
+    const results: CalendarSourceResult[] = settled.map(
+        (r) => r ?? { events: [], capped: false },
     );
 
     const cappedSources = eligible
@@ -321,7 +377,9 @@ export async function getComplianceCalendarEvents(
         // never presents a post-truncation undercount as authoritative.
         counts: {
             ...countSummaries(all),
-            partial: cappedSources.length > 0 || totalCapped,
+            // A failed source is a partial result in exactly the sense this
+            // flag exists for — the summary is an undercount.
+            partial: cappedSources.length > 0 || totalCapped || failedSources.length > 0,
         },
         truncation: {
             capped: cappedSources.length > 0 || totalCapped,
@@ -333,6 +391,15 @@ export async function getComplianceCalendarEvents(
         // Sources the caller lacks permission to see. The UI says "some
         // sources hidden by your permissions" rather than under-reporting.
         omittedSources,
+        // Sources that ERRORED. Deliberately distinct from `omittedSources`:
+        // "you cannot see this" and "this failed to load" are different facts,
+        // and only one of them is worth retrying.
+        failedSources,
+        // The day every `status` above was judged against. Published so the
+        // client's "today" marker uses the SAME day the dots do, instead of the
+        // viewer's browser day — which made an event sit in one cell, be ringed
+        // as today in another, and be classified against a third.
+        todayYmd: todayYmdInTz(now, env.NOTIFICATIONS_TZ),
         range: {
             from: range.from.toISOString(),
             to: range.to.toISOString(),
@@ -348,24 +415,91 @@ interface DateRange {
 }
 
 /**
+ * Formatters are cached per timezone.
+ *
+ * `civilDayInTz` used to construct a fresh `Intl.DateTimeFormat` on every
+ * call, and it is called once per non-done event — the single most expensive
+ * thing the aggregation did per row, and pure waste: an `Intl.DateTimeFormat`
+ * is stateless with respect to the instant it formats (the UTC offset is
+ * resolved per `formatToParts` call), so caching it is DST-correct and correct
+ * across day boundaries.
+ *
+ * Keyed on `tz`, which in production is one env-derived value and never user
+ * input — there is no unbounded-growth path. A Map rather than a single slot so
+ * a test that flips zone mid-run stays correct.
+ */
+const CIVIL_DAY_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+function civilDayFormatter(tz: string): Intl.DateTimeFormat {
+    let fmt = CIVIL_DAY_FORMATTERS.get(tz);
+    if (!fmt) {
+        fmt = new Intl.DateTimeFormat('en-CA', {
+            timeZone: tz,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        });
+        CIVIL_DAY_FORMATTERS.set(tz, fmt);
+    }
+    return fmt;
+}
+
+/**
  * The civil calendar day of an instant in `tz`, expressed as whole days
  * since the Unix epoch. Two instants on the same wall-clock date in `tz`
  * return the same integer regardless of time-of-day.
  */
 function civilDayInTz(d: Date, tz: string): number {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).formatToParts(d);
+    const parts = civilDayFormatter(tz).formatToParts(d);
     const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
     return Math.floor(Date.UTC(get('year'), get('month') - 1, get('day')) / DAY_MS);
 }
 
-/** Whole calendar-day distance from `now` to `target` in `tz` (0 = same day). */
+/**
+ * The UTC day of a stored deadline, as whole days since the epoch.
+ *
+ * This is deliberately NOT zoned. Day-resolution deadlines are stored at UTC
+ * midnight, and the whole client renders their day identity as
+ * `event.date.slice(0, 10)` — a UTC date string. Re-dating the target into
+ * another zone made the status disagree with the cell the event is drawn in:
+ * for a negative-offset zone, an event could sit in one grid cell and be
+ * classified against the previous day. Reading the target's day the same way
+ * the grid does makes them agree by construction.
+ */
+function utcDayOf(d: Date): number {
+    return Math.floor(d.getTime() / DAY_MS);
+}
+
+/**
+ * Memoised civil day for `now`.
+ *
+ * Half of every `daysUntilInTz` call recomputed an identical value — the zone's
+ * today — once per event. Keyed on BOTH inputs so it stays a pure-function
+ * memo: dropping `tz` from the key would break any caller that classifies the
+ * same instant under two zones, which is exactly what the timezone tests do.
+ */
+let nowDayMemo: { ms: number; tz: string; day: number } | null = null;
+function civilDayForNow(now: Date, tz: string): number {
+    const ms = now.getTime();
+    if (nowDayMemo && nowDayMemo.ms === ms && nowDayMemo.tz === tz) return nowDayMemo.day;
+    const day = civilDayInTz(now, tz);
+    nowDayMemo = { ms, tz, day };
+    return day;
+}
+
+/**
+ * Whole calendar-day distance from `now` to `target` (0 = same day).
+ *
+ * ONE definition of "day" for the whole surface: the target's day is its UTC
+ * day (what the grid draws), and `now`'s day is civil in `tz` (what "today"
+ * means operationally). The zone applies to the observer, not to the deadline.
+ */
 function daysUntilInTz(target: Date, now: Date, tz: string): number {
-    return civilDayInTz(target, tz) - civilDayInTz(now, tz);
+    return utcDayOf(target) - civilDayForNow(now, tz);
+}
+
+/** The civil day in `tz`, as `YYYY-MM-DD` — the day statuses were judged against. */
+export function todayYmdInTz(now: Date, tz: string): string {
+    return new Date(civilDayForNow(now, tz) * DAY_MS).toISOString().slice(0, 10);
 }
 
 /**
@@ -626,6 +760,14 @@ async function loadVendorDocumentEvents(
         where: {
             tenantId: ctx.tenantId,
             validTo: { not: null, gte: range.from, lte: range.to },
+            // The soft-delete extension injects `deletedAt: null` into the
+            // TOP-LEVEL where only — it never descends into a relation. This
+            // model has no `deletedAt` of its own (correctly: it is not
+            // independently deletable), and its parent's soft delete is an
+            // UPDATE, so the schema's `onDelete: Cascade` never fires either.
+            // Without this predicate a deleted vendor's document expiries stay
+            // on the calendar, attributed to a vendor that no longer exists.
+            vendor: { deletedAt: null },
         },
         select: {
             id: true,
@@ -843,13 +985,23 @@ async function loadTestPlanEvents(
         ownerUserId: true,
         control: { select: { name: true } },
     } as const;
+    // Shared for the same reason as `select` above — the two clocks must agree
+    // on which plans exist, not just on which fields they carry. The plan's own
+    // `deletedAt` is auto-injected (ControlTestPlan is in SOFT_DELETE_MODELS);
+    // the parent's is not, because the extension never descends into relations.
+    // Deleting a control does not touch its plans, so without this a deleted
+    // control's test deadlines keep appearing.
+    const baseWhere = {
+        tenantId: ctx.tenantId,
+        status: 'ACTIVE',
+        control: { deletedAt: null },
+    } as const;
     const { rows, capped } = await fetchNearest(
         [
             () =>
                 db.controlTestPlan.findMany({
                     where: {
-                        tenantId: ctx.tenantId,
-                        status: 'ACTIVE',
+                        ...baseWhere,
                         nextDueAt: { not: null, gte: range.from, lte: range.to },
                     },
                     select,
@@ -859,8 +1011,7 @@ async function loadTestPlanEvents(
             () =>
                 db.controlTestPlan.findMany({
                     where: {
-                        tenantId: ctx.tenantId,
-                        status: 'ACTIVE',
+                        ...baseWhere,
                         nextRunAt: { not: null, gte: range.from, lte: range.to },
                     },
                     select,
@@ -1189,10 +1340,16 @@ async function loadTreatmentMilestoneEvents(
         where: {
             tenantId: ctx.tenantId,
             dueDate: { gte: range.from, lte: range.to },
-            // Skip milestones whose parent plan was soft-deleted. (The
-            // linked risk's own lifecycle is NOT filtered here — a milestone
-            // under a live plan surfaces regardless of the risk's status.)
-            treatmentPlan: { deletedAt: null },
+            // Skip milestones whose parent plan was soft-deleted, AND those
+            // whose grandparent risk was. The plan predicate alone was a
+            // half-filter: a milestone's click-through lands on
+            // `/risks/{riskId}`, so a live plan under a deleted risk produced a
+            // calendar entry pointing at a page the user cannot open.
+            //
+            // (Note this filters DELETION only, not the risk's status — a
+            // milestone under a live plan still surfaces for an open risk in
+            // any state, which is the original intent.)
+            treatmentPlan: { deletedAt: null, risk: { deletedAt: null } },
         },
         select: {
             id: true,
@@ -1262,6 +1419,9 @@ async function loadTreatmentPlanEvents(
         where: {
             tenantId: ctx.tenantId,
             deletedAt: null,
+            // The plan outlives a soft-deleted risk; without this its target
+            // date keeps surfacing under a risk nobody can open.
+            risk: { deletedAt: null },
             status: { in: ['DRAFT', 'ACTIVE', 'OVERDUE'] },
             targetDate: { gte: range.from, lte: range.to },
         },
@@ -1487,7 +1647,13 @@ async function loadControlExceptionEvents(
     const rows = await db.controlException.findMany({
         where: {
             tenantId: ctx.tenantId,
+            // Hand-written because ControlException is NOT in
+            // SOFT_DELETE_MODELS despite having the column…
             deletedAt: null,
+            // …and this one is needed because the extension would not have
+            // reached it even if it were: relations are never filtered.
+            // A deleted control's exceptions are not deleted with it.
+            control: { deletedAt: null },
             status: 'APPROVED',
             expiresAt: { not: null, gte: range.from, lte: range.to },
         },
@@ -1547,6 +1713,9 @@ async function loadVendorAssessmentEvents(
         where: {
             tenantId: ctx.tenantId,
             nextReviewAt: { not: null, gte: range.from, lte: range.to },
+            // See `loadVendorDocumentEvents`: nested relations are outside the
+            // soft-delete extension's reach, and this model has no `deletedAt`.
+            vendor: { deletedAt: null },
         },
         select: {
             id: true,

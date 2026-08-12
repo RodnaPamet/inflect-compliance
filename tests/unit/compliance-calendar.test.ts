@@ -977,3 +977,117 @@ describe('control test deadlines vs implementation status', () => {
         expect(isControlTestOutstanding(null, NOW)).toBe(false);
     });
 });
+
+// ─── Second-order correctness ────────────────────────────────────────
+//
+// Each of these is a place the calendar reported confidently and was wrong.
+
+describe('per-source error isolation', () => {
+    const IN_RANGE = new Date('2026-06-15T00:00:00Z');
+
+    async function aggregate() {
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        return getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+    }
+
+    it('one failing source does not blank the other sixteen', async () => {
+        // A Prisma interactive-transaction timeout is the expected failure:
+        // the 8s per-source budget REJECTS on breach.
+        mockRiskFindMany.mockRejectedValue(
+            Object.assign(new Error('Transaction already closed'), { code: 'P2028' }),
+        );
+        mockPolicyFindMany.mockResolvedValue([
+            {
+                id: 'pol-1',
+                title: 'Access Control Policy',
+                nextReviewAt: IN_RANGE,
+                status: 'PUBLISHED',
+                ownerUserId: OWNER,
+            },
+        ]);
+
+        const res = await aggregate();
+
+        // Before isolation existed, this rejected the whole Promise.all and
+        // 500'd the calendar — seventeen domains for a fault in one.
+        expect(res.events.some((e) => e.type === 'policy-review')).toBe(true);
+        expect(res.failedSources).toContain('risk');
+        // The failure is REPORTED, not swallowed: a missing domain must not
+        // read as a domain with nothing due.
+        expect(res.counts.partial).toBe(true);
+    });
+
+    it('names only the sources that actually failed', async () => {
+        mockRiskFindMany.mockRejectedValue(new Error('boom'));
+        const res = await aggregate();
+        expect(res.failedSources).toEqual(['risk']);
+        expect(res.omittedSources).not.toContain('risk'); // not a permission problem
+    });
+
+    it('throws when EVERY source fails rather than reporting an empty calendar', async () => {
+        // An empty grid plus a notice reads as "nothing is due". On a deadline
+        // product that is the most dangerous sentence this surface can say.
+        const boom = () => Promise.reject(new Error('down'));
+        for (const m of [
+            mockEvidenceFindMany, mockPolicyFindMany, mockVendorFindMany,
+            mockVendorDocFindMany, mockAuditCycleFindMany, mockControlFindMany,
+            mockTestPlanFindMany, mockTaskFindMany, mockRiskFindMany,
+            mockFindingFindMany, mockTreatmentMilestoneFindMany,
+            mockTreatmentPlanFindMany, mockAccessReviewFindMany,
+            mockTrainingFindMany, mockIncidentNotificationFindMany,
+            mockControlExceptionFindMany, mockVendorAssessmentFindMany,
+        ]) {
+            m.mockImplementation(boom);
+        }
+        await expect(aggregate()).rejects.toThrow(/every source failed/);
+    });
+});
+
+describe('one definition of "day"', () => {
+    it('publishes the civil day statuses were judged against', async () => {
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        const res = await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        // The client rings this day rather than deriving its own from the
+        // browser clock — which is how an event ended up in one cell, ringed
+        // in another, and coloured against a third.
+        expect(res.todayYmd).toBe('2026-06-01');
+    });
+
+    it('classifies a deadline against the day the grid draws it in', async () => {
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        // Stored at UTC midnight, which is how day-resolution deadlines land.
+        // The grid buckets it by `date.slice(0,10)` = 2026-06-01 — the same
+        // day as `now`. Same day is due_soon, never overdue.
+        mockPolicyFindMany.mockResolvedValue([
+            {
+                id: 'pol-1',
+                title: 'Same-day review',
+                nextReviewAt: new Date('2026-06-01T00:00:00Z'),
+                status: 'PUBLISHED',
+                ownerUserId: OWNER,
+            },
+        ]);
+        const res = await getComplianceCalendarEvents(makeCtx() as never, {
+            from: FROM,
+            to: TO,
+            now: NOW,
+        });
+        const ev = res.events.find((e) => e.type === 'policy-review');
+        expect(ev?.date.slice(0, 10)).toBe(res.todayYmd);
+        expect(ev?.status).toBe('due_soon');
+    });
+});

@@ -45,6 +45,20 @@ export interface CalendarDeadlineMonitorOptions {
     now?: Date;
 }
 
+/**
+ * What one scanner actually did — not just what it produced.
+ *
+ * `scanned` is rows READ; `items` is rows that survived urgency
+ * classification. The run record used to report the produced count as
+ * `itemsScanned` and hardcode `itemsSkipped: 0`, so a scan that hit its cap or
+ * filtered thousands of rows looked identical to one with nothing to do.
+ */
+interface ScanOutcome {
+    items: DueItem[];
+    scanned: number;
+    capped: boolean;
+}
+
 export interface CalendarDeadlineMonitorResult {
     items: DueItem[];
     counts: {
@@ -57,6 +71,12 @@ export interface CalendarDeadlineMonitorResult {
         VENDOR_DOCUMENT: number;
         FINDING: number;
     };
+    /** Rows READ across all scanners. */
+    scanned: number;
+    /** Rows read but not emitted (outside every reminder window). */
+    skipped: number;
+    /** Scanners that hit SCAN_CAP — later deadlines were dropped this tick. */
+    cappedSources: string[];
 }
 
 // ─── Per-source scanners ─────────────────────────────────────────────
@@ -74,7 +94,7 @@ async function scanAuditCycles(
     maxWindow: number,
     windows: number[],
     tenantId?: string,
-): Promise<DueItem[]> {
+): Promise<ScanOutcome> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
     const rows = await prisma.auditCycle.findMany({
         where: {
@@ -111,10 +131,7 @@ async function scanAuditCycles(
         const classified = classifyUrgency(r.periodEndAt, now, windows);
         if (!classified) continue;
         items.push({
-            entityType: 'CONTROL', // No CALENDAR-native entity type;
-            // re-use CONTROL bucket so the digest template renders. The
-            // entity type is informational only — the email shows
-            // `name` + `reason` + `dueDate`.
+            entityType: 'AUDIT_CYCLE',
             entityId: r.id,
             tenantId: r.tenantId,
             name: `Audit cycle: ${r.name} (${r.frameworkKey})`,
@@ -128,7 +145,7 @@ async function scanAuditCycles(
             ownerUserId: r.createdByUserId,
         });
     }
-    return items;
+    return { items, scanned: rows.length, capped: rows.length === SCAN_CAP };
 }
 
 async function scanVendorDocuments(
@@ -136,7 +153,7 @@ async function scanVendorDocuments(
     maxWindow: number,
     windows: number[],
     tenantId?: string,
-): Promise<DueItem[]> {
+): Promise<ScanOutcome> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
     const rows = await prisma.vendorDocument.findMany({
         where: {
@@ -191,7 +208,7 @@ async function scanVendorDocuments(
             ownerUserId: r.vendor.ownerUserId ?? undefined,
         });
     }
-    return items;
+    return { items, scanned: rows.length, capped: rows.length === SCAN_CAP };
 }
 
 async function scanFindings(
@@ -199,7 +216,7 @@ async function scanFindings(
     maxWindow: number,
     windows: number[],
     tenantId?: string,
-): Promise<DueItem[]> {
+): Promise<ScanOutcome> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
     const rows = await prisma.finding.findMany({
         where: {
@@ -234,10 +251,7 @@ async function scanFindings(
         const classified = classifyUrgency(r.dueDate, now, windows);
         if (!classified) continue;
         items.push({
-            entityType: 'TASK', // Findings are work-items in the digest;
-            // use TASK bucket so the existing template renders without
-            // a parallel branch. This is purely a presentation choice;
-            // `name` + `reason` carry the real semantics.
+            entityType: 'FINDING',
             entityId: r.id,
             tenantId: r.tenantId,
             name: `Finding: ${r.title}`,
@@ -262,7 +276,7 @@ async function scanFindings(
             ownerUserId: r.assigneeUserId ?? undefined,
         });
     }
-    return items;
+    return { items, scanned: rows.length, capped: rows.length === SCAN_CAP };
 }
 
 // ─── Public entry point ──────────────────────────────────────────────
@@ -285,16 +299,26 @@ export async function runCalendarDeadlineMonitor(
         scanFindings(now, maxWindow, windows, options.tenantId),
     ]);
 
-    const items = [...auditCycles, ...vendorDocs, ...findings];
+    const items = [...auditCycles.items, ...vendorDocs.items, ...findings.items];
+    const scanned = auditCycles.scanned + vendorDocs.scanned + findings.scanned;
+    const cappedSources = (
+        [
+            ['AUDIT_CYCLE', auditCycles],
+            ['VENDOR_DOCUMENT', vendorDocs],
+            ['FINDING', findings],
+        ] as const
+    )
+        .filter(([, o]) => o.capped)
+        .map(([name]) => name as string);
     const counts = {
         overdue: items.filter((i) => i.urgency === 'OVERDUE').length,
         urgent: items.filter((i) => i.urgency === 'URGENT').length,
         upcoming: items.filter((i) => i.urgency === 'UPCOMING').length,
     };
     const byEntity = {
-        AUDIT_CYCLE: auditCycles.length,
-        VENDOR_DOCUMENT: vendorDocs.length,
-        FINDING: findings.length,
+        AUDIT_CYCLE: auditCycles.items.length,
+        VENDOR_DOCUMENT: vendorDocs.items.length,
+        FINDING: findings.items.length,
     };
 
     logger.info('calendar deadline monitor scan complete', {
@@ -304,7 +328,15 @@ export async function runCalendarDeadlineMonitor(
         tenantId: options.tenantId ?? 'all',
     });
 
-    return { items, counts, byEntity };
+    return {
+        items,
+        counts,
+        byEntity,
+        scanned,
+        // Read but not emitted: outside every reminder window, or a null date.
+        skipped: scanned - items.length,
+        cappedSources,
+    };
 }
 
 /**
@@ -334,15 +366,19 @@ export async function runCalendarDeadlineJob(
             startedAt,
             completedAt: new Date().toISOString(),
             durationMs,
-            itemsScanned:
-                monitor.byEntity.AUDIT_CYCLE +
-                monitor.byEntity.VENDOR_DOCUMENT +
-                monitor.byEntity.FINDING,
+            // Rows READ, not rows produced. This used to sum `byEntity`,
+            // which counts emitted items — making `itemsScanned` and
+            // `itemsActioned` identical by construction and `itemsSkipped: 0`
+            // true only by definition.
+            itemsScanned: monitor.scanned,
             itemsActioned: monitor.items.length,
-            itemsSkipped: 0,
+            itemsSkipped: monitor.skipped,
             details: {
                 counts: monitor.counts,
                 byEntity: monitor.byEntity,
+                // A capped scan silently dropped later deadlines this tick —
+                // the one fact an operator needs and the run record never had.
+                cappedSources: monitor.cappedSources,
             },
         };
         return { result, monitor };

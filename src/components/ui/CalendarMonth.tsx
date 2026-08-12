@@ -70,7 +70,17 @@ export interface CalendarMonthProps {
      * state; the cell itself didn't change.
      */
     selectedYmd?: string | null;
-    /** Today override (for tests). Default: new Date(). */
+    /**
+     * The day to ring as "today", as `YYYY-MM-DD`.
+     *
+     * Supplied by the server (`CalendarResponse.todayYmd`) — the same civil day
+     * the event statuses were classified against. It is NOT derived from the
+     * browser clock: doing that gave the grid one definition of "today" and the
+     * dot colours another, so a viewer west of the deployment zone could see an
+     * event ringed on one cell and coloured overdue against a different day.
+     */
+    todayYmd?: string;
+    /** Today override (for tests / stories) when `todayYmd` is not supplied. */
     today?: Date;
     className?: string;
     'data-testid'?: string;
@@ -99,11 +109,12 @@ function toYMD(d: Date): string {
 }
 
 /**
- * The viewer's LOCAL calendar day as `YYYY-MM-DD`. Used only for the
- * "is this cell today" ring — the month cells themselves are UTC-derived
- * (the grid is a UTC month). Comparing local Y-M-D to each cell's UTC
- * Y-M-D means a UTC−8 user late in the evening still sees today ringed,
- * not tomorrow.
+ * The viewer's LOCAL calendar day as `YYYY-MM-DD`.
+ *
+ * FALLBACK ONLY, for a caller that supplies neither `todayYmd` nor `today`.
+ * The grid's cells are UTC-derived, so comparing a browser-local Y-M-D against
+ * them is a second definition of "day" — which is the defect `todayYmd` exists
+ * to remove. Prefer the server's day; this keeps a standalone render sane.
  */
 function toLocalYMD(d: Date): string {
     const y = d.getFullYear();
@@ -128,13 +139,16 @@ export function CalendarMonth({
     onDoubleClickDate,
     newTaskLabel = 'New task on this day',
     selectedYmd,
+    todayYmd,
     today,
     className,
     'data-testid': dataTestId = 'calendar-month',
 }: CalendarMonthProps) {
     const t = useTranslations('calendar');
     const todayDate = today ?? new Date();
-    const todayLocalYmd = toLocalYMD(todayDate);
+    // Server day first — it is the day the dot colours mean. The local
+    // derivation is only the standalone-render fallback.
+    const todayLocalYmd = todayYmd ?? toLocalYMD(todayDate);
     const monthStart = startOfUtcMonth(month);
     const monthLabel = formatMonthYear(monthStart);
 

@@ -84,7 +84,9 @@ describe('runCalendarDeadlineMonitor', () => {
         const r = await runCalendarDeadlineMonitor({ now: NOW });
         expect(r.items).toHaveLength(1);
         expect(r.items[0].urgency).toBe('OVERDUE');
-        expect(r.items[0].entityType).toBe('CONTROL'); // re-uses CONTROL bucket
+        // Its OWN type. Borrowing 'CONTROL' made the digest label the row
+        // "Control" and link it to /controls — entityType drives both.
+        expect(r.items[0].entityType).toBe('AUDIT_CYCLE');
         expect(r.items[0].name).toContain('Q2 Audit');
         expect(r.items[0].ownerUserId).toBe('user-owner');
         expect(r.byEntity.AUDIT_CYCLE).toBe(1);
@@ -125,7 +127,7 @@ describe('runCalendarDeadlineMonitor', () => {
         );
         const r = await runCalendarDeadlineMonitor({ now: NOW });
         expect(r.items).toHaveLength(1);
-        expect(r.items[0].entityType).toBe('TASK');
+        expect(r.items[0].entityType).toBe('FINDING');
         expect(r.items[0].ownerUserId).toBe('user-finding-owner');
     });
 
@@ -223,5 +225,47 @@ describe('notification-dispatch wires the calendar-deadlines monitor', () => {
             /(import\(['"]\.\/calendar-deadlines['"]\)|from\s+['"]\.\/calendar-deadlines['"])/,
         );
         expect(src).toMatch(/runCalendarDeadlineMonitor/);
+    });
+});
+
+// ─── Run reporting + entity identity ─────────────────────────────────
+
+describe('the run record reports what actually happened', () => {
+    it('counts rows READ, not rows produced, and reports what it skipped', async () => {
+        // Two cycles read; only one falls inside a reminder window. The old
+        // record summed `byEntity` — the PRODUCED count — as `itemsScanned`
+        // and hardcoded `itemsSkipped: 0`, so scanning 2 and emitting 1 was
+        // indistinguishable from scanning 1 and emitting 1.
+        mockAuditCycleFindMany.mockResolvedValue([
+            {
+                id: 'ac-1',
+                tenantId: TENANT_ID,
+                name: 'Due soon',
+                frameworkKey: 'SOC2',
+                periodEndAt: new Date('2026-06-15T00:00:00Z'),
+                createdByUserId: 'user-owner',
+            },
+            {
+                id: 'ac-2',
+                tenantId: TENANT_ID,
+                name: 'Far future',
+                frameworkKey: 'SOC2',
+                // Well outside the widest (30-day) window.
+                periodEndAt: new Date('2027-06-15T00:00:00Z'),
+                createdByUserId: 'user-owner',
+            },
+        ]);
+
+        const { runCalendarDeadlineJob } = await import(
+            '@/app-layer/jobs/calendar-deadlines'
+        );
+        const { result, monitor } = await runCalendarDeadlineJob({});
+
+        expect(monitor.scanned).toBe(2);
+        expect(monitor.items).toHaveLength(1);
+        expect(result.itemsScanned).toBe(2);
+        expect(result.itemsActioned).toBe(1);
+        // The one the old record could never show.
+        expect(result.itemsSkipped).toBe(1);
     });
 });

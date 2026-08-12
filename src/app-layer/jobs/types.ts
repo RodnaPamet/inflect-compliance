@@ -74,7 +74,14 @@ export type MonitoredEntityType =
     // both flow through the deadline monitor so the digest pipeline
     // groups them by owner alongside other deadlines.
     | 'TREATMENT_PLAN'
-    | 'TREATMENT_MILESTONE';
+    | 'TREATMENT_MILESTONE'
+    // Both used to be filed under a borrowed bucket ('CONTROL' for cycles,
+    // 'TASK' for findings) on the belief that entityType was "informational
+    // only". It is not: the digest template drives BOTH the visible type label
+    // AND the link href from it, so those reminders arrived labelled as the
+    // wrong entity and linked to the wrong list page.
+    | 'AUDIT_CYCLE'
+    | 'FINDING';
 
 /**
  * Urgency classification for due items.

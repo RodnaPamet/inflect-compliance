@@ -55,6 +55,15 @@ export interface CalendarHeatmapProps {
     from?: Date;
     /** Inclusive range end (defaults to today). */
     to?: Date;
+    /**
+     * The day to treat as "today", as `YYYY-MM-DD` — the server's
+     * `CalendarResponse.todayYmd`, the same day the event statuses were
+     * classified against. Falls back to the UTC day when absent.
+     *
+     * This view previously derived its own UTC today, so switching the view
+     * toggle from Month to Heatmap could change which cell counted as today.
+     */
+    todayYmd?: string;
     /** Click handler — fires with the YYYY-MM-DD of the clicked cell. */
     onSelectDate?: (date: string) => void;
     /** ARIA label for the wrapping <figure>. */
@@ -103,6 +112,7 @@ export function CalendarHeatmap({
     events,
     from,
     to,
+    todayYmd,
     onSelectDate,
     className,
     'aria-label': ariaLabel = 'Compliance activity heatmap',
@@ -159,10 +169,10 @@ export function CalendarHeatmap({
     // focus + the roving index. Default the roving cell to today when
     // it's in range, else the first day.
     const defaultFocusIndex = React.useMemo(() => {
-        const todayYmd = toYMD(startOfUtcDay(new Date()));
-        const i = days.findIndex((d) => toYMD(d) === todayYmd);
+        const anchor = todayYmd ?? toYMD(startOfUtcDay(new Date()));
+        const i = days.findIndex((d) => toYMD(d) === anchor);
         return i >= 0 ? i : 0;
-    }, [days]);
+    }, [days, todayYmd]);
 
     const [focusedIndex, setFocusedIndex] = React.useState(defaultFocusIndex);
     const gridRef = React.useRef<HTMLDivElement>(null);

@@ -96,6 +96,10 @@ describe('OWNERSHIP_RULES — completeness', () => {
     const ALL_ENTITY_TYPES: MonitoredEntityType[] = [
         'CONTROL', 'EVIDENCE', 'POLICY', 'VENDOR', 'TASK', 'RISK', 'TEST_PLAN',
         'TREATMENT_PLAN', 'TREATMENT_MILESTONE',
+        // Both previously borrowed another type's bucket ('CONTROL' for
+        // cycles, 'TASK' for findings), which the digest template turned into
+        // a wrong label and a wrong link.
+        'AUDIT_CYCLE', 'FINDING',
     ];
 
     test('every MonitoredEntityType has an ownership rule', () => {
