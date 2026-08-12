@@ -4858,7 +4858,26 @@ exports[`API contract — per-schema snapshots schema: TaskCreateRequest 1`] = `
         "null"
       ]
     },
-    "metadataJson": {}
+    "metadataJson": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 2048
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
   },
   "required": [
     "title"
@@ -5050,7 +5069,26 @@ exports[`API contract — per-schema snapshots schema: TaskUpdateRequest 1`] = `
         "null"
       ]
     },
-    "metadataJson": {}
+    "metadataJson": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 2048
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
   },
   "description": "Partial update for a task. Status changes and assignment go through their own focused endpoints."
 }"

@@ -52,7 +52,11 @@ model Task {
   evidence                  Evidence[]
 
   @@unique([tenantId, key])
-  @@index([tenantId])
+  // B3-5 — the bare `@@index([tenantId])` was dropped: it is a strict
+  // prefix of `@@unique([tenantId, key])` and of all eleven composites
+  // below, so the planner can always serve a `tenantId`-only predicate
+  // from one of those leading columns. Same reasoning as the
+  // `[tenantId, dueAt]` drop recorded further down.
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
   @@index([tenantId, type])

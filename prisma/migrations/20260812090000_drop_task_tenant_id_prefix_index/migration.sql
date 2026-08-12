@@ -1,0 +1,24 @@
+-- B3-5 (b) — drop `Task_tenantId_idx`, a strict prefix of eleven composites.
+--
+-- `Task` carries `@@index([tenantId])` PLUS eleven `[tenantId, …]` composites
+-- (createdAt / status / type / severity / assigneeUserId / controlId /
+-- findingId / [controlId, status] / deletedAt / [priority, createdAt] /
+-- [dueAt, status]) and `@@unique([tenantId, key])`. Postgres serves a
+-- `WHERE tenantId = $1` predicate from the leading column of ANY of those, so
+-- the single-column index is never the only viable path — it is pure write
+-- amplification (twelve index maintenance operations per Task INSERT/UPDATE
+-- instead of eleven) plus its own heap footprint.
+--
+-- This is the same reasoning recorded inline in `tasks.prisma` when
+-- `[tenantId, dueAt]` was dropped for being a strict prefix of
+-- `[tenantId, dueAt, status]` (#102 item 4). It generalises: a bare
+-- `@@index([tenantId])` on a model that already has a tenantId-leading
+-- composite is always redundant.
+--
+-- Guardrail note: Layer A of `tests/guardrails/schema-index-coverage.test.ts`
+-- requires tenantId to LEAD an `@@index`/`@@unique`/`@@id`. It stays green via
+-- `@@unique([tenantId, key])` (and the eleven composites) — the requirement is
+-- "tenantId is the first element of some index", not "a dedicated one exists".
+--
+-- Reversal: `CREATE INDEX "Task_tenantId_idx" ON "Task"("tenantId");`
+DROP INDEX IF EXISTS "Task_tenantId_idx";
