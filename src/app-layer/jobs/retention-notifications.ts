@@ -18,6 +18,7 @@ import { emitAutomationEvent } from '../automation';
 import { createTask, addTaskLink } from '../usecases/task';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
+import { buildDelegatedJobContext } from '../context';
 
 /**
  * System context for an evidence-expiry reminder task, owned by the
@@ -25,15 +26,19 @@ import type { RequestContext } from '../types';
  * ADMIN permissions clear `assertCanWriteTasks`; the canonical createTask
  * then mints the TSK-N key + audit + automation event + assignee bell.
  */
+/**
+ * `Evidence` owner's id has to stay: `Task.createdByUserId` is NOT NULL
+ * with a foreign key to `User`, so a synthetic principal makes the insert
+ * die on `Task_createdByUserId_fkey`. `actorType: 'JOB'` is the half that
+ * IS fixable — the row now says a job raised the reminder rather than
+ * claiming the owner did. See `buildDelegatedJobContext`.
+ */
 function buildRetentionCtx(tenantId: string, actorUserId: string): RequestContext {
-    return {
-        requestId: `retention-notifications-${tenantId}`,
-        userId: actorUserId,
+    return buildDelegatedJobContext({
         tenantId,
-        role: 'ADMIN',
-        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: false },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+        job: 'retention-notifications',
+        onBehalfOf: actorUserId,
+    });
 }
 
 /** Fire-and-forget automation trigger — never blocks the notification job. */

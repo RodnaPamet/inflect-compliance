@@ -29,6 +29,7 @@ import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 import { getPermissionsForRole } from '@/lib/permissions';
 import crypto from 'crypto';
+import { buildSystemContext } from '../context';
 
 /** Dedup window: ignore duplicate payloads within this period */
 const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
@@ -359,15 +360,19 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
         return { status: 'ignored', eventId: duplicateEvent.id, reason: 'duplicate_payload' };
     }
 
-    // 7. Establish tenant execution context
-    const ctx = {
+    // 7. Establish tenant execution context.
+    //
+    // Inbound webhook — no user is on the other end, so the actor is the
+    // platform. `principal` keeps the existing `system:webhook` id (rows
+    // already carry it) and `requestId` keeps the delivery's own id, which
+    // is what ties the trail back to the provider's payload.
+    const ctx = buildSystemContext({
         tenantId: matchedConnection.tenantId,
-        userId: 'system:webhook',
+        job: 'webhook',
+        principal: 'system:webhook',
         requestId,
-        role: 'ADMIN' as const,
         permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+    });
 
     // 8. Dispatch to provider handler if it supports webhooks
     let processResult: WebhookProcessResult = { status: 'ignored' };

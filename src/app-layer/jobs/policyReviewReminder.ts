@@ -29,22 +29,29 @@ import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { createTask, addTaskLink } from '../usecases/task';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
+import { buildDelegatedJobContext } from '../context';
 
 /**
- * System context for a policy-review reminder task, owned by the policy
- * owner (the reminder is only raised when an owner exists). ADMIN
- * permissions clear `assertCanWriteTasks`; the canonical createTask then
- * mints the TSK-N key + audit + automation event + owner bell/email.
+ * Context for a policy-review reminder task.
+ *
+ * This used to borrow the POLICY OWNER's `userId` and pin `role: 'ADMIN'`
+ * with the docblock saying so plainly: "ADMIN permissions clear
+ * `assertCanWriteTasks`". The owner's id has to stay — `Task.createdByUserId`
+ * is NOT NULL with a foreign key to `User`, so a synthetic principal makes
+ * the insert die on `Task_createdByUserId_fkey`.
+ *
+ * What changes is that the row now says `actorType: 'JOB'`, so the trail
+ * reads "a job raised this, attributed to the owner" rather than claiming
+ * the owner raised a reminder for themselves. The ADMIN role is a known
+ * remaining gap — see `buildDelegatedJobContext` for why closing it needs
+ * a real SYSTEM user row rather than dropping reminders for READER owners.
  */
 function buildReminderCtx(tenantId: string, ownerUserId: string): RequestContext {
-    return {
-        requestId: `policy-review-reminder-${tenantId}`,
-        userId: ownerUserId,
+    return buildDelegatedJobContext({
         tenantId,
-        role: 'ADMIN',
-        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: false },
-        appPermissions: getPermissionsForRole('ADMIN'),
-    };
+        job: 'policy-review-reminder',
+        onBehalfOf: ownerUserId,
+    });
 }
 
 export interface OverduePolicy {

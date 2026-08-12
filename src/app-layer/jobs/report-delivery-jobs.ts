@@ -57,6 +57,12 @@ function buildSystemCtx(tenantId: string): RequestContext {
     return {
         requestId: `report-delivery-${tenantId}`,
         userId: REPORT_DELIVERY_PRINCIPAL,
+        // Machine actor. This job does NOT go through `buildSystemContext`:
+        // it already has a synthetic principal AND a deliberately narrowed
+        // `appPermissions` (below), so routing it through the shared builder
+        // would WIDEN it back to plain ADMIN. It was the best-behaved of the
+        // thirteen fabricated contexts; all it lacked was saying so.
+        actorType: 'JOB',
         tenantId,
         role: 'ADMIN',
         permissions: {

@@ -1,5 +1,6 @@
 import type { Role, OrgRole } from '@prisma/client';
 import type { PermissionSet, OrgPermissionSet } from '@/lib/permissions';
+import type { ActorType } from '@/lib/audit/types';
 
 export interface RequestContext {
     /** Unique request identifier for log correlation */
@@ -7,6 +8,23 @@ export interface RequestContext {
 
     /** The authenticated user ID */
     userId: string;
+
+    /**
+     * What KIND of actor this context represents. Absent means `'USER'`,
+     * which is what every HTTP-borne context is.
+     *
+     * Background jobs and platform sweeps have no signed-in user. They
+     * used to satisfy `userId: string` with the literal `'system'` and
+     * their audit rows were then written as `actorType: 'USER'` — so the
+     * trail claimed a person did something no person did, and there was
+     * no way to filter machine activity out of a review.
+     *
+     * `logEvent` forwards this to `appendAuditEntry`, which already
+     * accepts the three-value `ActorType` and defaults to `'USER'`. Set
+     * `'JOB'` for scheduled work and `'SYSTEM'` for middleware-driven
+     * writes; leave it unset for anything a user asked for.
+     */
+    actorType?: ActorType;
 
     /** The resolved tenant ID */
     tenantId: string;
