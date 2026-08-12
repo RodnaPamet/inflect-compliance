@@ -6,7 +6,8 @@
  *   2. Recently deleted records are NOT purged
  *   3. Active records are NOT purged
  *   4. purgeExpiredEvidenceOlderThan only purges long-archived evidence
- *   5. runRetentionSweep soft-deletes records with elapsed retentionUntil
+ *   5. runRetentionSweep soft-deletes records with elapsed retentionUntil —
+ *      and sweeps ONLY models whose retentionUntil something in src/ writes
  *   6. Audit events are emitted (DATA_PURGED, DATA_EXPIRED)
  *   7. dryRun does not mutate anything
  */
@@ -51,6 +52,7 @@ if (DB_AVAILABLE) {
         await prisma.$executeRawUnsafe('DELETE FROM "Risk" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Control" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await prisma.$executeRawUnsafe('DELETE FROM "Asset" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "User" WHERE "id" = $1', testUserId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Tenant" WHERE "id" = $1', testTenantId).catch(() => {});
         await prisma.$disconnect();
@@ -192,135 +194,135 @@ describeFn('Data Lifecycle', () => {
     // ─── runRetentionSweep ───
 
     describe('runRetentionSweep', () => {
-        it('soft-deletes records with elapsed retentionUntil', async () => {
-            const vendor = await prisma.vendor.create({
-                data: {
-                    tenantId: testTenantId,
-                    name: `Retention vendor ${Date.now()}`,
-                },
+        // `Asset` is the only model the cross-model sweep acts on: it is the
+        // only one whose `retentionUntil` anything in `src/` can write
+        // (CreateAssetSchema / UpdateAssetSchema / BulkImportAssetsSchema →
+        // usecases/asset.ts → the asset forms, CSV importer and public API).
+        // `Evidence` has a writer too but is delegated to
+        // runEvidenceRetentionSweep. Every other model with the column was
+        // removed from RETENTION_MODELS — see the tests below.
+        it('soft-deletes an Asset with an elapsed retentionUntil', async () => {
+            const asset = await prisma.asset.create({
+                data: { tenantId: testTenantId, type: 'SYSTEM', name: `Retention asset ${Date.now()}` },
             });
-
-            // Set retentionUntil to the past
             const pastDate = new Date(Date.now() - 10 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Vendor" SET "retentionUntil" = $1 WHERE "id" = $2',
-                pastDate, vendor.id,
+                'UPDATE "Asset" SET "retentionUntil" = $1 WHERE "id" = $2',
+                pastDate, asset.id,
             );
 
-            const results = await runRetentionSweep({
-                tenantId: testTenantId,
-                db: prisma,
-            });
+            const results = await runRetentionSweep({ tenantId: testTenantId, db: prisma });
 
-            const vendorResult = results.find(r => r.model === 'Vendor');
-            expect(vendorResult).toBeDefined();
-            expect(vendorResult!.expired).toBeGreaterThanOrEqual(1);
+            const assetResult = results.find(r => r.model === 'Asset');
+            expect(assetResult).toBeDefined();
+            expect(assetResult!.expired).toBeGreaterThanOrEqual(1);
 
-            // Verify vendor is now soft-deleted
-            const found = await prisma.vendor.findUnique({ where: { id: vendor.id } });
-            expect(found).toBeNull(); // excluded by soft-delete filter
-
-            // But raw SQL still has it
+            // Excluded by the soft-delete filter…
+            expect(await prisma.asset.findUnique({ where: { id: asset.id } })).toBeNull();
+            // …but raw SQL still has it, stamped.
             const [raw] = await prisma.$queryRawUnsafe<Array<{ deletedAt: Date | null }>>(
-                'SELECT "deletedAt" FROM "Vendor" WHERE "id" = $1', vendor.id,
+                'SELECT "deletedAt" FROM "Asset" WHERE "id" = $1', asset.id,
             );
             expect(raw).toBeDefined();
             expect(raw.deletedAt).not.toBeNull();
         });
 
-        it('does NOT soft-delete records with future retentionUntil', async () => {
-            const vendor = await prisma.vendor.create({
-                data: {
-                    tenantId: testTenantId,
-                    name: `Future vendor ${Date.now()}`,
-                },
+        it('does NOT soft-delete an Asset with a future retentionUntil', async () => {
+            const asset = await prisma.asset.create({
+                data: { tenantId: testTenantId, type: 'SYSTEM', name: `Future asset ${Date.now()}` },
             });
-
-            // Set retentionUntil to the future
             const futureDate = new Date(Date.now() + 365 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Vendor" SET "retentionUntil" = $1 WHERE "id" = $2',
-                futureDate, vendor.id,
+                'UPDATE "Asset" SET "retentionUntil" = $1 WHERE "id" = $2',
+                futureDate, asset.id,
             );
 
             await runRetentionSweep({ tenantId: testTenantId, db: prisma });
 
-            const found = await prisma.vendor.findUnique({ where: { id: vendor.id } });
-            expect(found).not.toBeNull();
+            expect(await prisma.asset.findUnique({ where: { id: asset.id } })).not.toBeNull();
         });
 
         it('emits DATA_EXPIRED audit events', async () => {
-            const risk = await prisma.risk.create({
-                data: {
-                    tenantId: testTenantId,
-                    title: 'Retention audit test',
-                    category: 'OPERATIONAL',
-                },
+            const asset = await prisma.asset.create({
+                data: { tenantId: testTenantId, type: 'SYSTEM', name: `Retention audit ${Date.now()}` },
             });
-
             const pastDate = new Date(Date.now() - 5 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Risk" SET "retentionUntil" = $1 WHERE "id" = $2',
-                pastDate, risk.id,
+                'UPDATE "Asset" SET "retentionUntil" = $1 WHERE "id" = $2',
+                pastDate, asset.id,
             );
 
             await runRetentionSweep({ tenantId: testTenantId, db: prisma });
 
             const auditLogs = await prisma.auditLog.findMany({
-                where: {
-                    tenantId: testTenantId,
-                    entityId: risk.id,
-                    action: 'DATA_EXPIRED',
-                },
+                where: { tenantId: testTenantId, entityId: asset.id, action: 'DATA_EXPIRED' },
             });
-
             expect(auditLogs.length).toBeGreaterThanOrEqual(1);
             expect(auditLogs[0].details).toContain('retention_period_elapsed');
         });
 
-        it('dryRun does not soft-delete', async () => {
+        it('does not sweep models whose retentionUntil nothing in src/ can write', async () => {
+            // Control was removed from RETENTION_MODELS on 2026-08-06; Risk,
+            // Policy, Vendor, FileRecord and Task on 2026-08-12. Each has the
+            // column, none has a writer — no Zod schema field, no DTO, no API
+            // field, no UI, no job. Sweeping them was a guaranteed-empty query
+            // run daily, backed by a retention doc claiming the dates were
+            // enforced. The only thing that ever populated the column is the
+            // raw SQL below — which is precisely why the gap survived.
             const control = await prisma.control.create({
-                data: {
-                    tenantId: testTenantId,
-                    code: `DRY-${Date.now()}`,
-                    name: 'DryRun retention',
+                data: { tenantId: testTenantId, code: `WL-${Date.now()}`, name: 'Writer-less control' },
+            });
+            const vendor = await prisma.vendor.create({
+                data: { tenantId: testTenantId, name: `Writer-less vendor ${Date.now()}` },
+            });
+            const risk = await prisma.risk.create({
+                data: { tenantId: testTenantId, title: 'Writer-less risk', category: 'OPERATIONAL' },
+            });
+            const pastDate = new Date(Date.now() - 5 * 86_400_000);
+            for (const [table, id] of [['Control', control.id], ['Vendor', vendor.id], ['Risk', risk.id]] as const) {
+                await prisma.$executeRawUnsafe(
+                    `UPDATE "${table}" SET "retentionUntil" = $1 WHERE "id" = $2`, pastDate, id,
+                );
+            }
+
+            const results = await runRetentionSweep({ tenantId: testTenantId, db: prisma });
+
+            // Not scanned at all — no result entry for any of them.
+            for (const model of ['Control', 'Vendor', 'Risk', 'Policy', 'FileRecord', 'Task']) {
+                expect(results.find(r => r.model === model)).toBeUndefined();
+            }
+            // …and the rows are untouched: not soft-deleted, not audited.
+            for (const [table, id] of [['Control', control.id], ['Vendor', vendor.id], ['Risk', risk.id]] as const) {
+                const [raw] = await prisma.$queryRawUnsafe<Array<{ deletedAt: Date | null }>>(
+                    `SELECT "deletedAt" FROM "${table}" WHERE "id" = $1`, id,
+                );
+                expect(raw.deletedAt).toBeNull();
+            }
+            const audits = await prisma.auditLog.findMany({
+                where: {
+                    tenantId: testTenantId, action: 'DATA_EXPIRED',
+                    entityId: { in: [control.id, vendor.id, risk.id] },
                 },
             });
+            expect(audits).toHaveLength(0);
+        });
 
+        it('dryRun does not soft-delete', async () => {
+            const asset = await prisma.asset.create({
+                data: { tenantId: testTenantId, type: 'SYSTEM', name: `DryRun retention ${Date.now()}` },
+            });
             const pastDate = new Date(Date.now() - 5 * 86_400_000);
             await prisma.$executeRawUnsafe(
-                'UPDATE "Control" SET "retentionUntil" = $1 WHERE "id" = $2',
-                pastDate, control.id,
+                'UPDATE "Asset" SET "retentionUntil" = $1 WHERE "id" = $2',
+                pastDate, asset.id,
             );
 
             const results = await runRetentionSweep({
-                tenantId: testTenantId,
-                dryRun: true,
-                db: prisma,
+                tenantId: testTenantId, dryRun: true, db: prisma,
             });
 
-            // Control is NOT swept any more (2026-08-06). It has a
-            // retentionUntil column and was queried on every run, but NOTHING
-            // in src/ ever set it — no schema, no DTO, no UI, no job — so the
-            // sweep could never match and the retention doc claimed a
-            // guarantee the product did not provide. Controls are purged via
-            // the soft-delete path instead.
-            //
-            // This test wrote the column by raw SQL, which is precisely why
-            // the gap survived: the only thing that ever populated it was a
-            // test.
-            expect(results.find(r => r.model === 'Control')).toBeUndefined();
-
-            // …and the sweep still does its job for the models that DO have
-            // writers, so removing Control did not disable the feature.
-            expect(results.length).toBeGreaterThan(0);
-            for (const r of results) {
-                expect(r.model).not.toBe('Control');
-            }
-
-            // dryRun must not mutate.
-            const found = await prisma.control.findUnique({ where: { id: control.id } });
-            expect(found).not.toBeNull();
+            expect(results.map(r => r.model)).toEqual(['Asset']);
+            expect(await prisma.asset.findUnique({ where: { id: asset.id } })).not.toBeNull();
         });
     });
 });

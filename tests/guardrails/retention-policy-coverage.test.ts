@@ -9,12 +9,24 @@
  *   - the "Open questions" section is non-empty (honesty guard — the doc
  *     must not pretend every retention number is decided),
  *   - the cleanup-job inventory names every retention function exported
- *     from jobs/retention*.ts and jobs/data-lifecycle.ts.
+ *     from jobs/retention*.ts and jobs/data-lifecycle.ts,
+ *   - and — the accuracy check — a model's row cites `runRetentionSweep`
+ *     IF AND ONLY IF the sweep, when RUN, actually queries that model.
+ *
+ * That last one exists because the four checks above verify MENTION, not
+ * accuracy: five rows claimed a `runRetentionSweep` guarantee for models
+ * nothing in `src/` could write, and stayed green for months. The cross-walk
+ * drives the claim off observed behaviour (`observedSweptModels`, a DB-free
+ * probe that injects an in-memory client) instead of prose.
  *
  * See docs/data-retention.md.
  */
 import fs from 'fs';
 import path from 'path';
+import {
+    RETENTION_COLUMN_MODELS,
+    observedSweptModels,
+} from '../helpers/retention-sweep-probe';
 
 const ROOT = path.resolve(__dirname, '../..');
 const DOC = path.join(ROOT, 'docs/data-retention.md');
@@ -88,4 +100,34 @@ describe('data-retention policy doc', () => {
         const missing = fns.filter((fn) => !doc.includes(fn));
         expect(missing).toEqual([]);
     });
+
+    it('cites runRetentionSweep on a model row iff the sweep actually queries that model', async () => {
+        const swept = await observedSweptModels();
+
+        // Sanity: the probe observed a real sweep, not an empty run.
+        expect(swept.size).toBeGreaterThan(0);
+
+        const wrong: string[] = [];
+        for (const model of RETENTION_COLUMN_MODELS) {
+            const row = docRow(model);
+            expect(row).not.toBeNull();
+            const claims = row!.includes('runRetentionSweep');
+            if (claims !== swept.has(model)) {
+                wrong.push(
+                    `${model}: doc ${claims ? 'claims' : 'does not claim'} runRetentionSweep, ` +
+                    `sweep ${swept.has(model) ? 'does' : 'does not'} query it`,
+                );
+            }
+        }
+        expect(wrong).toEqual([]);
+    });
 });
+
+/** The inventory-table row for a model, or null if absent. */
+function docRow(model: string): string | null {
+    const anchor = `| \`${model}\` |`;
+    const at = doc.indexOf(anchor);
+    if (at === -1) return null;
+    const end = doc.indexOf('\n', at);
+    return doc.slice(at, end === -1 ? undefined : end);
+}

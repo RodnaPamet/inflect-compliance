@@ -29,7 +29,7 @@ covers confidentiality *at rest*; this one covers *lifecycle*.
 
 | Category | Count | One-line posture |
 |----------|-------|------------------|
-| Business record | 66 | Compliance domain (Risk/Control/Policy/Audit/Vendor/…). Retained indefinitely while the tenant is active; soft-delete + 90-day purge on the 12 `SOFT_DELETE_MODELS`; `retentionUntil` sweep on 8. |
+| Business record | 66 | Compliance domain (Risk/Control/Policy/Audit/Vendor/…). Retained indefinitely while the tenant is active; soft-delete + 90-day purge on the 12 `SOFT_DELETE_MODELS`; `retentionUntil` sweep on 2 (`Asset`, `Evidence`) — the only two with a writer. |
 | Configuration | 40 | Tenant/org structure, templates, framework reference data, integration + security settings. Lives with the tenant; purged on tenant deletion. |
 | Operational | 24 | Notifications, executions, snapshots, key-sequences, onboarding. No TTL today — prime candidates for time-boxed pruning. |
 | Security ephemeral | 13 | Tokens / sessions / credentials. `expiresAt`-driven; security lifetime, **not** a data-retention conversation. |
@@ -99,13 +99,13 @@ a `userId` but stores no contact PII).
 | `ControlTestStep` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `Cve` | Configuration | No | Global reference catalog — upserted daily by `nvd-cve-sync`; never tenant-deleted (no tenantId) | Indefinite global reference data (refreshed, not retained per-tenant) |
 | `DataSubjectRequest` | Regulatory artefact | ind. | None — retained indefinitely (DSAR compliance record) | DEFINED — retained as Art. 17 compliance evidence (see docs/dsar.md) |
-| `Evidence` | Business record | No | retentionUntil sweep (data-lifecycle `runRetentionSweep`) + soft-delete | DEFINED — template for the rest |
+| `Evidence` | Business record | No | retentionUntil sweep (`runEvidenceRetentionSweep`, the dedicated 04:00 `retention-sweep` cron — the cross-model sweep SKIPS Evidence rather than calling it) + archive → 365-day hard purge + soft-delete | DEFINED — template for the rest |
 | `EvidenceControlLink` | Business record | No | None today — cascade on parent/tenant delete only (Evidence or Control delete) | Indefinite while tenant active — review w/ compliance |
 | `EvidenceRiskLink` | Business record | No | None today — cascade on parent/tenant delete only (Evidence or Risk delete) | Indefinite while tenant active — review w/ compliance |
 | `EvidenceAssetLink` | Business record | No | None today — cascade on parent/tenant delete only (Evidence or Asset delete) | Indefinite while tenant active — review w/ compliance |
 | `EvidenceTag` | Business record | No | None today — cascade on parent/tenant delete only (Evidence delete) | Indefinite while tenant active — review w/ compliance |
 | `EvidenceReview` | Business record | maybe | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
-| `FileRecord` | Business record | No | retentionUntil sweep (data-lifecycle `runRetentionSweep`) + soft-delete | DEFINED (retentionUntil) where set; else indefinite |
+| `FileRecord` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
 | `Finding` | Business record | No | Soft-delete (`deletedAt`); 90-day purge via `data-lifecycle` | Active: indefinite. Soft-deleted: 90-day purge |
 | `FindingAsset` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `FindingEvidence` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
@@ -161,7 +161,7 @@ a `userId` but stores no contact PII).
 | `Organization` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `PackTemplateLink` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `PasswordResetToken` | Security ephemeral | No | `expiresAt` expiry (security) | DEFINED — expiry-driven |
-| `Policy` | Business record | No | retentionUntil sweep (data-lifecycle `runRetentionSweep`) + soft-delete | DEFINED (retentionUntil) where set; else indefinite |
+| `Policy` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
 | `PolicyAcknowledgement` | Business record | maybe | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `PolicyAcknowledgementAssignment` | Business record | maybe | None today — cascade on parent policy-version/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `PolicyApproval` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
@@ -184,7 +184,7 @@ a `userId` but stores no contact PII).
 | `ReportTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `RequirementMapping` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `RequirementMappingSet` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `Risk` | Business record | No | retentionUntil sweep (data-lifecycle `runRetentionSweep`) + soft-delete | DEFINED (retentionUntil) where set; else indefinite |
+| `Risk` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
 | `RiskAppetiteBreach` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `RiskAppetiteConfig` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `RiskControl` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
@@ -207,7 +207,7 @@ a `userId` but stores no contact PII).
 | `RiskTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `RiskTreatmentPlan` | Business record | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | Soft-deleted rows **not auto-purged** — gap |
 | `ScimGroup` | Configuration | maybe | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `Task` | Business record | No | retentionUntil sweep (data-lifecycle `runRetentionSweep`) + soft-delete | DEFINED (retentionUntil) where set; else indefinite |
+| `Task` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
 | `TaskComment` | Business record | maybe | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `TaskKeySequence` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `TaskLink` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
@@ -230,7 +230,7 @@ a `userId` but stores no contact PII).
 | `UserMfaEnrollment` | Security ephemeral | No | None today — cascade on parent/tenant delete only | DEFINED — expiry-driven |
 | `UserNotificationPreference` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `UserSession` | Security ephemeral | maybe | `expiresAt` expiry (security) | DEFINED — expiry-driven |
-| `Vendor` | Business record | No | retentionUntil sweep (data-lifecycle `runRetentionSweep`) + soft-delete | DEFINED (retentionUntil) where set; else indefinite |
+| `Vendor` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
 | `VendorAssessment` | Business record | maybe | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `VendorAssessmentAnswer` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `VendorAssessmentTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
@@ -266,11 +266,18 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 - **Mechanism:** soft-delete (`deletedAt`) on 12 models in `SOFT_DELETE_MODELS`
   (`Asset, Risk, Control, Evidence, Policy, Vendor, FileRecord, Task, Finding,
   Audit, AuditCycle, AuditPack`). Soft-deleted rows on **those** models are
-  hard-purged after a 90-day grace by `data-lifecycle`. 8 models carry
-  `retentionUntil` (`Asset, Risk, Control, Evidence, Policy, Vendor, FileRecord,
-  Task`) and are swept by `runRetentionSweep`. **Evidence is the only one with an
-  end-to-end, exercised retention flow** (set date → reminder → archive → hard
-  purge) and is the template for extending the rest.
+  hard-purged after a 90-day grace by `data-lifecycle`. 8 models carry a
+  `retentionUntil` column (`Asset, Risk, Control, Evidence, Policy, Vendor,
+  FileRecord, Task`) but only **2** are swept by `runRetentionSweep` —
+  `Asset` and `Evidence`, the only two anything in `src/` can actually write.
+  The other 6 were removed from `RETENTION_MODELS` (`Control` 2026-08-06;
+  `Risk, Policy, Vendor, FileRecord, Task` 2026-08-12) because a swept column
+  with no writer is a guaranteed-empty query that reads as a control the
+  product does not provide. **Evidence is the only one with an end-to-end,
+  exercised retention flow** (set date → reminder → archive → hard purge) and
+  is the template for extending the rest: to sweep a model, expose
+  `retentionUntil` on its update schema + edit UI in the same change that
+  adds it back to `RETENTION_MODELS`.
 - **Gap — soft-deleted rows that are never purged:** 7 models carry `deletedAt`
   but are **not** in `SOFT_DELETE_MODELS`, so their soft-deletes live forever:
   `AccessReview, AutomationRule, ControlException, LossEvent, ProcessMap,
@@ -377,7 +384,7 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 |----------------|----------|--------------|----------|
 | `retention-sweep` (daily 04:00 UTC) | `runEvidenceRetentionSweep` (`jobs/retention.ts`) | Archives `Evidence` where `retentionUntil < now`, not already archived, not soft-deleted. Idempotent. | Evidence only |
 | `daily-evidence-expiry` (daily 06:00 UTC) | `runDailyEvidenceExpiryNotifications` (`jobs/dailyEvidenceExpiry.ts`); reminder generation also in `runEvidenceRetentionNotifications` (`jobs/retention-notifications.ts`) | N-day-before (30/7/1) reminder tasks for expiring evidence, gated by `Tenant.reminderDaysBefore` (default 14). | Evidence only |
-| `data-lifecycle` (daily 03:00 UTC) | `purgeSoftDeletedOlderThan` (90-day grace, 12 `SOFT_DELETE_MODELS`) · `purgeExpiredEvidenceOlderThan` (hard-delete archived evidence > 365 days) · `runRetentionSweep` (cross-model `retentionUntil` sweep over 8 `RETENTION_MODELS`) — all in `jobs/data-lifecycle.ts` | The actual purge engine: hard-deletes aged soft-deletes + aged archived evidence; sweeps `retentionUntil` across the retention models. | 12 soft-delete + 8 retention models |
+| `data-lifecycle` (daily 03:00 UTC) | `purgeSoftDeletedOlderThan` (90-day grace, 12 `SOFT_DELETE_MODELS`) · `purgeExpiredEvidenceOlderThan` (hard-delete archived evidence > 365 days) · `runRetentionSweep` (cross-model `retentionUntil` sweep over the 2 `RETENTION_MODELS` that have a writer — `Asset`; `Evidence` is skipped by that loop and handled by the separate `retention-sweep` cron) — all in `jobs/data-lifecycle.ts` | The actual purge engine: hard-deletes aged soft-deletes + aged archived evidence; sweeps `retentionUntil` across the retention models. | 12 soft-delete + 2 retention models |
 
 `src/lib/retention-purge.ts::purgeSoftDeletedOlderThan(days)` is a manual/CLI raw-SQL
 variant of the same purge (writes a hash-chained audit row), for operator-run cleanups.
