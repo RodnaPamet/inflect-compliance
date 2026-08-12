@@ -37,6 +37,25 @@ export const URGENCY_DAYS = {
 
 export const DAY_MS = 86_400_000;
 
+/**
+ * Default reminder windows, in days before a deadline, descending.
+ *
+ * Derived from `URGENCY_DAYS` rather than written out, because the literal
+ * `[30, 7, 1]` was duplicated across five job files and the ratchet that
+ * claimed "one urgency threshold set" only checked the calendar and the
+ * dashboard — the job path was never covered, so the two could drift and the
+ * guard would stay green.
+ *
+ * The trailing `1` is the day-before nudge. It has no urgency tier of its own:
+ * anything inside `URGENT` is already urgent, and this is a second reminder at
+ * the same tier rather than a third threshold.
+ */
+export const DEFAULT_REMINDER_WINDOWS: readonly number[] = [
+    URGENCY_DAYS.UPCOMING,
+    URGENCY_DAYS.URGENT,
+    1,
+] as const;
+
 /** Millisecond equivalents, for date arithmetic on the server. */
 export const URGENCY_MS = {
     URGENT: URGENCY_DAYS.URGENT * DAY_MS,

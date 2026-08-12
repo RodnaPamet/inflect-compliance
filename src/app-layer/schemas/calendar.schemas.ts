@@ -87,10 +87,17 @@ export const CALENDAR_EVENT_TYPES = [
     // audit
     'audit-cycle',
     'access-review-due',
+    // The scheduled date of an individual audit, distinct from the CYCLE it
+    // belongs to — a cycle spans months; this is the day fieldwork starts.
+    'audit-scheduled',
     // control
     'control-review',
     'control-test-due',
     'control-exception-expiry',
+    // asset — a vulnerability's remediation deadline. User-editable via an
+    // inline DatePicker on the asset's vulnerability list, so it is a
+    // deadline someone deliberately set and then could not see anywhere.
+    'vulnerability-remediation-due',
     // personnel
     'training-due',
     // incident
@@ -179,7 +186,9 @@ export interface CalendarEvent {
         | 'RISK'
         | 'RISK_TREATMENT_PLAN'
         | 'TREATMENT_MILESTONE'
-        | 'FINDING';
+        | 'FINDING'
+        | 'ASSET_VULNERABILITY'
+        | 'AUDIT';
     entityId: string;
     /**
      * Tenant-relative href for click-through. The route handler builds
@@ -352,6 +361,8 @@ export const CALENDAR_SOURCE_NAMES = [
     'control',
     'control-test-plan',
     'control-exception',
+    'asset-vulnerability',
+    'audit',
     'access-review',
     'training',
     'incident-notification',
