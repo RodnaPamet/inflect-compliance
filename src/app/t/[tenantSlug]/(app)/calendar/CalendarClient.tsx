@@ -179,6 +179,19 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
 
     const truncation = calQuery.data?.truncation;
     const omittedSources = calQuery.data?.omittedSources ?? [];
+    const failedSources = calQuery.data?.failedSources ?? [];
+    // ONE definition of "today" for all three views: the civil day the server
+    // classified statuses against. The month ring used the browser's day, the
+    // heatmap derived its own UTC day, and the Gantt marker used a raw instant
+    // — so switching views could move which cell counted as today.
+    const todayYmd = calQuery.data?.todayYmd;
+    // The Gantt marker is positional (a percentage across the range), so it
+    // needs an instant rather than a day label — anchor it to noon of the
+    // server's day so it sits inside the cell it marks instead of on its edge.
+    const todayDate = React.useMemo(
+        () => (todayYmd ? new Date(`${todayYmd}T12:00:00.000Z`) : undefined),
+        [todayYmd],
+    );
     // "My deadlines" drops any event with no `ownerUserId`. Sixteen of the
     // seventeen sources now carry one; the remainder cannot (see
     // SOURCES_WITHOUT_OWNER) and would otherwise vanish with no signal — the
@@ -195,7 +208,15 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     // ─── Off-screen deadline probe ───────────────────────────────────
     // Only when the current window is genuinely empty (not loading, not
     // errored). Points at the nearest deadline outside the visible window.
-    const isEmptyView = !pending && !calQuery.error && events.length === 0;
+    // Gated on the SERVER's result being empty, not the post-filter `events`.
+    // `events` has already had the client-side mineOnly filter applied, so
+    // toggling "My deadlines" into an empty result used to fire a SECOND full
+    // 17-source aggregation over a 730-day window — the most expensive request
+    // the surface makes, triggered by a checkbox. A window with deadlines that
+    // simply aren't yours is not an empty window, and pointing at the "nearest
+    // deadline outside this range" would be answering a question nobody asked.
+    const isEmptyView =
+        !pending && !calQuery.error && (calQuery.data?.events.length ?? 0) === 0;
     const probeRange = React.useMemo(
         () => ({
             from: new Date(todayMs).toISOString(),
@@ -512,6 +533,23 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                 </div>
             )}
 
+            {/* Sources whose read FAILED. Deliberately a warning, not the same
+                quiet grey as the permission notice: "you can't see these" is a
+                settled fact, "these failed to load" is a transient one worth
+                retrying — and a missing compliance domain must not read as an
+                empty one. */}
+            {failedSources.length > 0 && (
+                <div
+                    className="rounded-lg border border-border-warning bg-bg-warning px-4 py-3 text-sm text-content-warning"
+                    role="status"
+                    id="calendar-failed-notice"
+                >
+                    {t('failedNotice', {
+                        sources: failedSources.map((s) => sourceLabel(t, s)).join(', '),
+                    })}
+                </div>
+            )}
+
             {/* "My deadlines" hides sources that carry no owner at all. Say
                 which, rather than letting a whole domain disappear as if it
                 had no deadlines in range. */}
@@ -590,6 +628,7 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                             events={events}
                             from={range.from}
                             to={range.to}
+                            todayYmd={todayYmd}
                             onSelectDate={setSelectedDate}
                         />
                     ) : view === 'month' ? (
@@ -610,12 +649,14 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                             }
                             newTaskLabel={canCreateTask ? t('newTaskOnDay') : undefined}
                             selectedYmd={selectedDate}
+                            todayYmd={todayYmd}
                         />
                     ) : (
                         <GanttTimeline
                             from={range.from}
                             to={range.to}
                             events={ganttEvents}
+                            today={todayDate}
                             emptyMessage={t('ganttEmpty')}
                         />
                     )}

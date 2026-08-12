@@ -59,6 +59,8 @@ const ENTITY_LABEL: Record<MonitoredEntityType, string> = {
     TEST_PLAN: 'Test Plan',
     TREATMENT_PLAN: 'Treatment Plan',
     TREATMENT_MILESTONE: 'Treatment Milestone',
+    AUDIT_CYCLE: 'Audit Cycle',
+    FINDING: 'Finding',
 };
 
 const ENTITY_PATH: Record<MonitoredEntityType, string> = {
@@ -73,6 +75,10 @@ const ENTITY_PATH: Record<MonitoredEntityType, string> = {
     // detail page where the treatment-plan card surfaces them.
     TREATMENT_PLAN: 'risks',
     TREATMENT_MILESTONE: 'risks',
+    AUDIT_CYCLE: 'audits/cycles',
+    // Findings have no detail route; the list page is the honest destination
+    // (the calendar loader makes the same call for the same reason).
+    FINDING: 'findings',
 };
 
 // ─── Text Rendering Helpers ─────────────────────────────────────────

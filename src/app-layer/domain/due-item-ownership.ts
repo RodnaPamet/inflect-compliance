@@ -93,6 +93,21 @@ export const OWNERSHIP_RULES: Record<MonitoredEntityType, {
         adminFallbackIntended: true,
         description: 'Treatment milestone — inherits owner from parent plan',
     },
+    AUDIT_CYCLE: {
+        // A cycle has no owner column; `createdByUserId` is the audit lead who
+        // scheduled it, and is what `scanAuditCycles` already selects.
+        ownerField: 'createdByUserId',
+        adminFallbackIntended: true,
+        description: 'Audit cycle — the lead who scheduled it',
+    },
+    FINDING: {
+        // `assigneeUserId`, NOT the legacy free-text `owner` column. Reading
+        // `owner` published a person's NAME as a user id, which made every
+        // finding deadline unroutable.
+        ownerField: 'assigneeUserId',
+        adminFallbackIntended: true,
+        description: 'Finding assignee (supersedes the legacy free-text owner)',
+    },
 };
 
 /**

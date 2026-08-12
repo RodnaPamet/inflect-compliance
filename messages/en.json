@@ -7139,6 +7139,7 @@
         "rescheduleCancel": "Cancel",
         "omittedNotice": "Some sources are hidden by your permissions: {sources}.",
         "ownerlessNotice": "These sources can't be filtered by owner and are hidden: {sources}.",
+        "failedNotice": "Some sources couldn't be loaded and are missing from this view: {sources}. Refresh to try again.",
         "timelineBarLabel": "{title} — {category}, {status}, {date}",
         "ganttEmptyMessage": "No deadlines in this window.",
         "moreEvents": "+{count} more",

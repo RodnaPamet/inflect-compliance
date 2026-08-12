@@ -7139,6 +7139,7 @@
         "rescheduleCancel": "Отказ",
         "omittedNotice": "Някои източници са скрити поради вашите разрешения: {sources}.",
         "ownerlessNotice": "Тези източници не могат да се филтрират по отговорник и са скрити: {sources}.",
+        "failedNotice": "Някои източници не можаха да се заредят и липсват в изгледа: {sources}. Опреснете, за да опитате отново.",
         "timelineBarLabel": "{title} — {category}, {status}, {date}",
         "ganttEmptyMessage": "Няма крайни срокове в този период.",
         "moreEvents": "+{count} още",

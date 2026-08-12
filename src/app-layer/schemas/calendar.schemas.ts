@@ -398,6 +398,31 @@ export interface CalendarResponse {
      * presenting a permission-filtered result as the complete picture.
      */
     omittedSources: CalendarSourceName[];
+    /**
+     * Sources whose read ERRORED and were omitted from `events`.
+     *
+     * Distinct from `omittedSources` on purpose: "you cannot see this" and
+     * "this failed to load" are different facts, and only the second is worth
+     * retrying. Before per-source isolation existed, a single failing loader
+     * rejected the whole fan-out and 500'd the calendar — there was nothing to
+     * report because there was no response.
+     *
+     * A non-empty value also sets `counts.partial`: the summary is an
+     * undercount whenever a source is missing.
+     */
+    failedSources: CalendarSourceName[];
+    /**
+     * The civil day (`YYYY-MM-DD`) that every `status` in this response was
+     * classified against, in the deployment's notification timezone.
+     *
+     * The client renders its "today" marker from this rather than from the
+     * browser's clock. Before it existed there were five different notions of
+     * "day" on one screen — UTC grid cells, a browser-local month ring, a
+     * server-zone status, a UTC heatmap ring, and a raw-instant Gantt marker —
+     * so an event could sit in one cell, be ringed in another, and be coloured
+     * against a third. On a deadline product an off-by-one day is a real defect.
+     */
+    todayYmd: string;
     range: {
         from: string;
         to: string;
