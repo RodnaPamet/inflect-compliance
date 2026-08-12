@@ -19,14 +19,13 @@
  * Excluding is fine — most `expiresAt` columns are credential lifetimes, not
  * compliance obligations. Excluding SILENTLY is not.
  */
-import * as fs from 'fs';
-import * as path from 'path';
+import {
+    readCalendarUsecase,
+    calendarLoaderBlocks,
+} from '../helpers/calendar-usecase-source';
 import { Prisma } from '@prisma/client';
 
-const SRC = path.join(
-    process.cwd(),
-    'src/app-layer/usecases/compliance-calendar.ts',
-);
+
 
 /**
  * Column names that denote a forward-looking deadline.
@@ -120,21 +119,7 @@ const EXCLUSIONS: Record<string, string> = {
         'Appetite-config review cadence — a governance setting reviewed with the risk policy itself; no owner column exists to route it to.',
 };
 
-interface LoaderBlock {
-    name: string;
-    body: string;
-}
 
-function loaderBlocks(src: string): LoaderBlock[] {
-    const re = /^async function (load\w+)\(/gm;
-    const starts: Array<{ name: string; index: number }> = [];
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(src)) !== null) starts.push({ name: m[1], index: m.index });
-    return starts.map((s, i) => ({
-        name: s.name,
-        body: src.slice(s.index, i + 1 < starts.length ? starts[i + 1].index : src.length),
-    }));
-}
 
 function modelOfAccessor(accessor: string): string | undefined {
     return Prisma.dmmf.datamodel.models.find(
@@ -143,8 +128,7 @@ function modelOfAccessor(accessor: string): string | undefined {
 }
 
 describe('calendar projection completeness', () => {
-    const src = fs.readFileSync(SRC, 'utf8');
-    const blocks = loaderBlocks(src);
+    const blocks = calendarLoaderBlocks(readCalendarUsecase());
 
     /** `Model.field` for every deadline column a loader reads. */
     const projected = new Set<string>();

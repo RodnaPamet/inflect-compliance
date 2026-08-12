@@ -62,7 +62,7 @@ const NON_SCORER_EVIDENCE_FILES: ReadonlyArray<readonly [string, string]> = [
      'Write path: scanner-sourced evidence.'],
     ['src/app-layer/usecases/questionnaire.ts',
      'Answer-library picker — suggests prior evidence, does not score coverage.'],
-    ['src/app-layer/usecases/compliance-calendar.ts',
+    ['src/app-layer/usecases/compliance-calendar/loaders-core.ts',
      'Deadline surface — uses the evidence-EXPIRY predicate (app-layer/domain/evidence-expiry), a different question.'],
     ['src/app-layer/repositories/DashboardRepository.ts',
      'Freshness/retention KPI buckets — overdue/dueSoon semantics, not coverage.'],

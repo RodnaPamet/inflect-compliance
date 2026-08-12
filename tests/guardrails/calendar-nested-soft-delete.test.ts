@@ -19,14 +19,13 @@
  * companion (soft-delete a vendor, assert its document expiry disappears) lives
  * in the calendar's usecase tests.
  */
-import * as fs from 'fs';
-import * as path from 'path';
+import {
+    readCalendarUsecase,
+    calendarLoaderBlocks,
+} from '../helpers/calendar-usecase-source';
 import { Prisma } from '@prisma/client';
 
-const SRC = path.join(
-    process.cwd(),
-    'src/app-layer/usecases/compliance-calendar.ts',
-);
+
 
 /** Models carrying a `deletedAt` column, straight from the datamodel. */
 const SOFT_DELETABLE = new Set(
@@ -55,31 +54,9 @@ function modelOfAccessor(accessor: string): string | undefined {
     )?.name;
 }
 
-interface LoaderBlock {
-    name: string;
-    body: string;
-}
-
-/** Split the file into `async function load*` blocks, bounded by the next one. */
-function loaderBlocks(src: string): LoaderBlock[] {
-    const re = /^async function (load\w+)\(/gm;
-    const starts: Array<{ name: string; index: number }> = [];
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(src)) !== null) {
-        starts.push({ name: m[1], index: m.index });
-    }
-    return starts.map((s, i) => ({
-        name: s.name,
-        // Bounded by the NEXT declaration, never by a byte offset or a second
-        // declaration name — a reorder must not silently yield an empty slice
-        // in which every assertion vacuously passes.
-        body: src.slice(s.index, i + 1 < starts.length ? starts[i + 1].index : src.length),
-    }));
-}
 
 describe('calendar loaders — nested soft-delete predicates', () => {
-    const src = fs.readFileSync(SRC, 'utf8');
-    const blocks = loaderBlocks(src);
+    const blocks = calendarLoaderBlocks(readCalendarUsecase());
 
     it('finds the loader blocks at all', () => {
         // If this regresses to 0 the whole suite would pass vacuously.
