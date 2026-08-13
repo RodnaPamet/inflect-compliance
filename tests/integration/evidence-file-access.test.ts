@@ -134,6 +134,14 @@ describeFn('downloadEvidenceFile (integration)', () => {
         const ev = await uploadEvidenceFile(adminCtx(), txtFile(`dl-admin-${randomUUID()}`), {
             title: 'dl admin', controlId: CONTROL_ID,
         });
+        // Mark the scan CLEAN, exactly as the INFECTED/CLEAN tests below do.
+        // `uploadEvidenceFile` leaves scanStatus at its PENDING default, and
+        // under AV_SCAN_MODE=strict (the real default, now honoured by the env
+        // mock) PENDING is deliberately not servable. This test asserts the
+        // happy path — a file that HAS been scanned — so it has to say so.
+        await globalPrisma.fileRecord.update({
+            where: { id: ev.fileRecord.id }, data: { scanStatus: 'CLEAN' },
+        });
         const res = await downloadEvidenceFile(adminCtx(), ev.fileRecord.id);
         expect(res.mode).toBe('stream');
         expect(res.originalName).toBe('doc.txt');
