@@ -110,6 +110,8 @@ export function EditEvidenceModal({
     const [content, setContent] = useState('');
     // Comma-separated in the input; normalised to an array on submit.
     const [tagsInput, setTagsInput] = useState('');
+    /** Did the caller seed `initial.tags`? See the reset effect below. */
+    const [tagsSeeded, setTagsSeeded] = useState(false);
     // FILE evidence stores its object-storage pathKey in `content`, so the
     // body field is hidden AND withheld from the PUT for that type.
     const contentEditable = isEvidenceContentEditable(initial?.type);
@@ -152,6 +154,17 @@ export function EditEvidenceModal({
             setTitle(initial.title);
             setContent(initial.content ?? '');
             setTagsInput((initial.tags ?? []).join(', '));
+            // Whether the CALLER told us the current tags at all. `tags` is
+            // optional on `EditEvidenceInitial`, so a seed site that omits it
+            // type-checks — and this field then renders empty, which is
+            // indistinguishable from "this evidence has no tags".
+            //
+            // The payload reconciles tags to exactly what it sends, so an
+            // unseeded modal used to submit `[]` and delete every tag on the
+            // row. Tracking seeded-ness lets the submit omit the field
+            // entirely when we were never told, which the usecase treats as
+            // "leave tags alone" (`if (data.tags !== undefined)`).
+            setTagsSeeded(initial.tags !== undefined);
             setOwnerUserId(initial.ownerUserId);
             // Prefer the shared option (stable label) but fall back to a
             // synthesised option so a control missing from the loaded
@@ -197,11 +210,18 @@ export function EditEvidenceModal({
                     // the (hidden, empty) field would detach the file.
                     ...(contentEditable ? { content: content || null } : {}),
                     // Reconciled server-side to exactly this set; the
-                    // repository normalises (trim + lower-case).
-                    tags: tagsInput
-                        .split(',')
-                        .map((t) => t.trim())
-                        .filter(Boolean),
+                    // repository normalises (trim + lower-case). Sent ONLY
+                    // when the caller seeded the current tags — omitting the
+                    // key leaves them untouched, whereas sending `[]` from a
+                    // modal that was never told the current set deletes them.
+                    ...(tagsSeeded
+                        ? {
+                              tags: tagsInput
+                                  .split(',')
+                                  .map((t) => t.trim())
+                                  .filter(Boolean),
+                          }
+                        : {}),
                     ownerUserId: ownerUserId || null,
                     // EP-3 — reconcile the whole link set. Never send the
                     // legacy singular `controlId`.

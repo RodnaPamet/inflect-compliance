@@ -157,6 +157,17 @@ interface EvidenceRow {
         };
     }>;
     fileRecord: { id: string; mimeType: string | null; scanStatus?: string | null } | null;
+    /**
+     * Tags on the row. The list select has always returned these
+     * (`evidenceListSelect` in EvidenceRepository), but this interface did not
+     * declare them, so nothing here could see them — and the row's Edit button
+     * seeded `EditEvidenceModal` without them. `tags` is optional on
+     * `EditEvidenceInitial`, so that omission type-checked, the field rendered
+     * empty, and saving reconciled the row's tags to the empty set: every tag
+     * silently deleted. The detail sheet's edit button always passed them,
+     * which is why the same modal behaved correctly from there.
+     */
+    tags?: Array<{ tag: string }>;
 }
 
 /** EP-3 — condensed label for the linked-controls table cell. */
@@ -1110,6 +1121,10 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                     ),
                                     category: ev.category ?? null,
                                     folder: ev.folder ?? null,
+                                    // Seeded so the modal shows the row's real
+                                    // tags and reconciles against them. Matches
+                                    // what the detail sheet passes.
+                                    tags: (ev.tags ?? []).map((tg) => tg.tag),
                                     retentionUntil: ev.retentionUntil ?? null,
                                     type: ev.type,
                                     fileRecordId: ev.fileRecordId ?? null,
