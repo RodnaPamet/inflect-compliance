@@ -32,7 +32,13 @@ const TEST_FREQUENCY_KEYS = ['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY'
 // Single computed toggle. "Overdue" = an ACTIVE plan whose EARLIEST due clock
 // is in the past — min(nextDueAt, nextRunAt) <= now (the reconciled signal, not
 // nextDueAt alone). PAUSED/ARCHIVED plans are excluded by design.
-const TEST_DUE_KEYS = ['overdue'] as const;
+// `next7d` mirrors `getDueQueue`'s predicate exactly (due-planning.ts): an
+// ACTIVE plan whose earliest due clock is at-or-before now + 7 days. It is a
+// SUPERSET of `overdue`, not a sibling bucket — the queue has always shown
+// overdue and due-soon work together, because "what do I have to run this
+// week" is one question. Keeping `multiple: false` reflects that nesting:
+// selecting both would be the same set as selecting `next7d` alone.
+const TEST_DUE_KEYS = ['overdue', 'next7d'] as const;
 
 const fromKeys = (keys: readonly string[], t: T, group: string): Record<string, string> =>
     Object.fromEntries(keys.map((k) => [k, t(`filterEnums.${group}.${k}`)]));
