@@ -127,6 +127,10 @@ export async function scheduleTestPlan(
                 scheduleTimezone: true,
                 nextRunAt: true,
                 frequency: true,
+                // Both needed to PRESERVE the review cadence rather than
+                // restart it — see the nextDueAt note below.
+                nextDueAt: true,
+                createdAt: true,
             },
         });
         if (!plan) throw notFound('Test plan not found');
@@ -145,7 +149,27 @@ export async function scheduleTestPlan(
         // the due/overdue surfaces reconcile the pair via effectiveDueAt =
         // min(nextDueAt, nextRunAt), so whichever fires first still wins.
         const method = deriveMethodFromAutomationType(input.automationType);
-        const nextDueAt = computeNextDueAt(plan.frequency, new Date());
+
+        // PRESERVE the human cadence — do not restart it.
+        //
+        // `ScheduleTestPlanInput` carries no `frequency`, so the review cadence
+        // cannot have changed here. This used to re-anchor the computation to
+        // the current instant, and wrote the result UNCONDITIONALLY below —
+        // so every schedule edit, including merely turning automation OFF,
+        // recomputed the due date from now and forgave whatever backlog the
+        // plan had. A plan four months overdue became "due in a month" because
+        // someone adjusted its cron.
+        //
+        // Same defect as the one fixed on `updateTestPlan`, reached by an
+        // easier path: that one at least required a cadence change, this fired
+        // on any schedule write.
+        //
+        // The value stays FREQUENCY-derived (never cron-derived) — that is the
+        // two-clocks invariant the note above protects, and it is unchanged.
+        // What changes is that an existing frequency-derived date is kept
+        // rather than recomputed; only a plan that has never had one gets it
+        // seeded, anchored to creation rather than to now.
+        const nextDueAt = plan.nextDueAt ?? computeNextDueAt(plan.frequency, plan.createdAt);
 
         const updated = await db.controlTestPlan.update({
             where: { id: planId },

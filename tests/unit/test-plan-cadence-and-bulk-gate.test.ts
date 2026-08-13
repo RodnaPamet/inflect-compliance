@@ -38,6 +38,8 @@ const mockTx = {
     controlTestPlan: {
         findMany: jest.fn(),
         deleteMany: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
     },
 } as any;
 
@@ -87,6 +89,7 @@ jest.mock('@/lib/cache/list-cache', () => ({
 }));
 
 import { updateTestPlan, bulkDeleteTestPlan } from '@/app-layer/usecases/control/test-plans';
+import { scheduleTestPlan } from '@/app-layer/usecases/test-scheduling';
 import { makeRequestContext } from '../helpers/make-context';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -252,5 +255,99 @@ describe('bulkDeleteTestPlan — the admin gate is real', () => {
         await expect(
             bulkDeleteTestPlan(makeRequestContext('ADMIN'), ['plan_1']),
         ).resolves.toEqual({ deleted: 1 });
+    });
+});
+
+/**
+ * The same defect one function over, reached by an easier path.
+ *
+ * `scheduleTestPlan` recomputed `nextDueAt` from `new Date()` and wrote it
+ * UNCONDITIONALLY — and it takes no `frequency` input at all, so the review
+ * cadence cannot have changed. Every schedule edit, including merely turning
+ * automation OFF, therefore restarted the human clock and forgave the backlog.
+ *
+ * `updateTestPlan` at least required a cadence change to trigger it. This one
+ * fired on any schedule write, which makes it the more likely of the two to
+ * have quietly erased real overdue state.
+ */
+describe('scheduleTestPlan — a schedule edit does not restart the review clock', () => {
+    const overdueDue = new Date(Date.now() - 90 * DAY);
+
+    beforeEach(() => {
+        mockTx.controlTestPlan.findFirst.mockResolvedValue({
+            id: 'plan_1',
+            tenantId: 'tenant-1',
+            automationType: 'MANUAL',
+            schedule: null,
+            scheduleTimezone: null,
+            nextRunAt: null,
+            frequency: 'MONTHLY',
+            nextDueAt: overdueDue,
+            createdAt: new Date(Date.now() - 400 * DAY),
+        });
+        mockTx.controlTestPlan.update.mockImplementation(async (args: any) => ({
+            id: 'plan_1',
+            ...args.data,
+        }));
+    });
+
+    it('preserves an overdue nextDueAt when a cron schedule is applied', async () => {
+        await scheduleTestPlan(makeRequestContext('ADMIN'), 'plan_1', {
+            schedule: '0 9 * * *',
+            scheduleTimezone: 'UTC',
+            automationType: 'MANUAL',
+        } as any);
+
+        const written = mockTx.controlTestPlan.update.mock.calls[0][0].data;
+        expect(written.nextDueAt).toEqual(overdueDue);
+        expect(written.nextDueAt.getTime()).toBeLessThan(Date.now());
+    });
+
+    it('preserves it when the schedule is CLEARED — the easiest way to hit this', async () => {
+        await scheduleTestPlan(makeRequestContext('ADMIN'), 'plan_1', {
+            schedule: null,
+            automationType: 'MANUAL',
+        } as any);
+
+        const written = mockTx.controlTestPlan.update.mock.calls[0][0].data;
+        expect(written.nextDueAt).toEqual(overdueDue);
+    });
+
+    it('seeds nextDueAt from createdAt when the plan has never had one', async () => {
+        const created = new Date(Date.now() - 400 * DAY);
+        mockTx.controlTestPlan.findFirst.mockResolvedValue({
+            id: 'plan_1',
+            tenantId: 'tenant-1',
+            automationType: 'MANUAL',
+            schedule: null,
+            scheduleTimezone: null,
+            nextRunAt: null,
+            frequency: 'MONTHLY',
+            nextDueAt: null,
+            createdAt: created,
+        });
+
+        await scheduleTestPlan(makeRequestContext('ADMIN'), 'plan_1', {
+            schedule: null,
+            automationType: 'MANUAL',
+        } as any);
+
+        const written = mockTx.controlTestPlan.update.mock.calls[0][0].data;
+        const expected = new Date(created);
+        expected.setMonth(expected.getMonth() + 1);
+        expect(written.nextDueAt.toISOString()).toBe(expected.toISOString());
+    });
+
+    /** The two-clocks invariant this must not break. */
+    it('keeps nextDueAt independent of the cron-derived nextRunAt', async () => {
+        await scheduleTestPlan(makeRequestContext('ADMIN'), 'plan_1', {
+            schedule: '0 9 * * *',
+            scheduleTimezone: 'UTC',
+            automationType: 'MANUAL',
+        } as any);
+
+        const written = mockTx.controlTestPlan.update.mock.calls[0][0].data;
+        expect(written.nextRunAt).toBeInstanceOf(Date);
+        expect(written.nextDueAt).not.toEqual(written.nextRunAt);
     });
 });

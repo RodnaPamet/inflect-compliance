@@ -64,8 +64,22 @@ describe('R4-P3 (4) FAIL gap task is spawned post-commit', () => {
 describe('R4-P3 (5) the two due clocks stay decoupled', () => {
     it('scheduleTestPlan derives nextDueAt from frequency, not from nextRunAt', () => {
         const src = read(SCHEDULING);
-        expect(src).toMatch(/const nextDueAt = computeNextDueAt\(plan\.frequency/);
+        // The invariant is FREQUENCY-derived, never cron-derived. That is
+        // unchanged. What changed is the second half: the value is now
+        // PRESERVED when it exists, and only seeded when it does not.
+        //
+        // This assertion used to require `computeNextDueAt(plan.frequency,
+        // new Date())` verbatim, which pinned a real defect: `scheduleTestPlan`
+        // takes no `frequency` input, so the cadence cannot have changed here —
+        // recomputing from now simply restarted the clock, and the write was
+        // unconditional. Every schedule edit, including turning automation OFF,
+        // forgave whatever backlog the plan had.
+        expect(src).toMatch(
+            /const nextDueAt = plan\.nextDueAt \?\? computeNextDueAt\(plan\.frequency/,
+        );
         expect(src).not.toMatch(/const nextDueAt = nextRunAt \?\?/);
+        // And never re-anchored to now — the shape that caused the reset.
+        expect(src).not.toMatch(/computeNextDueAt\(plan\.frequency, new Date\(\)\)/);
     });
 });
 
