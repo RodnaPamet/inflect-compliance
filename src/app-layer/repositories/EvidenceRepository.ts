@@ -27,6 +27,46 @@ export interface EvidenceListFilters {
     expiring?: boolean;
 }
 
+/** Window, in days, that "expiring soon" means for evidence. */
+export const EVIDENCE_EXPIRING_SOON_DAYS = 30;
+
+/**
+ * THE definition of "expiring soon" for evidence — one predicate, used by both
+ * the KPI tile and the list filter behind it.
+ *
+ * They used to disagree in three ways at once, which is why the tile's number
+ * could not be reconciled with the rows the tab showed:
+ *
+ *   - the tile preferred `nextReviewDate` and fell back to `retentionUntil`;
+ *     the filter looked ONLY at `retentionUntil` and ignored review dates;
+ *   - the tile bounded the window at both ends (`now .. now+30d`); the filter
+ *     was `lte: soon` with no lower bound, so everything ALREADY expired was
+ *     counted as "expiring soon" too;
+ *   - the tile excluded NEEDS_REVIEW and already-expired rows to keep the
+ *     freshness buckets mutually exclusive; the filter excluded neither.
+ *
+ * The tile's version is the considered one — the review-date preference and
+ * the mutual-exclusivity reasoning are deliberate — so it is what both sides
+ * now share. `now` is passed in rather than read here so a caller computing
+ * several buckets gets ONE clock for all of them.
+ */
+export function evidenceExpiringSoonWhere(now: Date): Prisma.EvidenceWhereInput {
+    const soon = new Date(now.getTime() + EVIDENCE_EXPIRING_SOON_DAYS * 86_400_000);
+    return {
+        // NEEDS_REVIEW wins the freshness bucket outright.
+        status: { not: 'NEEDS_REVIEW' as const },
+        // Already expired is a different bucket, not a nearly-expired one.
+        expiredAt: null,
+        OR: [
+            { nextReviewDate: { not: null, gte: now, lte: soon } },
+            {
+                nextReviewDate: null,
+                retentionUntil: { not: null, gte: now, lte: soon },
+            },
+        ],
+    };
+}
+
 export interface EvidenceListParams {
     limit?: number;
     cursor?: string;
@@ -178,10 +218,12 @@ export class EvidenceRepository {
             where.isArchived = filters.archived;
         }
         if (filters?.expiring) {
-            // Evidence expiring within 30 days
-            const soon = new Date();
-            soon.setDate(soon.getDate() + 30);
-            where.retentionUntil = { lte: soon };
+            // The SAME predicate the "Expiring soon" KPI counts with, so the
+            // tile and the rows it labels can be reconciled. This carries its
+            // own OR group, so it goes through andConditions rather than being
+            // assigned onto `where` — a bare `where.OR =` would be clobbered
+            // by the free-text search's OR below.
+            andConditions.push(evidenceExpiringSoonWhere(new Date()));
         }
         if (filters?.q) {
             andConditions.push({
@@ -368,8 +410,9 @@ export class EvidenceRepository {
     ): Promise<EvidenceRetentionMetrics> {
         return traceRepository('evidence.retentionMetrics', ctx, async () => {
             const tenantId = ctx.tenantId;
+            // ONE clock for every bucket below — a per-bucket `new Date()`
+            // would let the boundaries disagree by microseconds.
             const now = new Date();
-            const soon = new Date(now.getTime() + 30 * 86_400_000);
             // Soft-deleted rows are excluded everywhere (parity with the
             // client's per-row pass, which `continue`s on `deletedAt`).
             const base = { tenantId, deletedAt: null } as const;
@@ -409,18 +452,11 @@ export class EvidenceRepository {
                     }),
                     // expiring: not expired, review date within 30d (else the
                     // retention date within 30d when no review date is set).
+                    // Shares `evidenceExpiringSoonWhere` with the list filter
+                    // so this count and the rows that filter returns cannot
+                    // drift apart — they did, in three ways at once.
                     db.evidence.count({
-                        where: {
-                            ...nonReview,
-                            expiredAt: null,
-                            OR: [
-                                { nextReviewDate: { not: null, gte: now, lte: soon } },
-                                {
-                                    nextReviewDate: null,
-                                    retentionUntil: { not: null, gte: now, lte: soon },
-                                },
-                            ],
-                        },
+                        where: { ...base, ...evidenceExpiringSoonWhere(now) },
                     }),
                 ]);
 
