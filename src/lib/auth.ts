@@ -12,18 +12,7 @@
  * User.role and User.tenantId are deprecated backward-compat fields.
  */
 import { auth } from '@/auth';
-// `next/headers` is imported DYNAMICALLY, at its single use site below — never
-// statically here.
-//
-// This module is reachable from the BullMQ worker: every usecase imports
-// `@/app-layer/context`, which imports `getSessionOrThrow` from this file. A
-// top-level `import { cookies } from 'next/headers'` therefore had to resolve
-// inside `scripts/worker.ts`, where `next/headers` is not resolvable — the
-// worker died at module load with ERR_MODULE_NOT_FOUND before registering a
-// single executor, so NO background job ran at all.
-//
-// `src/auth.ts:466` and `src/lib/security/session-tracker.ts:88` already do it
-// this way. This file was the one that did not.
+import { cookies } from 'next/headers';
 import jwt from 'jsonwebtoken';
 import prisma from './prisma';
 import type { Role, User } from '@prisma/client';
@@ -62,11 +51,6 @@ export async function getSession(): Promise<JwtPayload | null> {
     // 2. Legacy fallback: check for old 'token' cookie
     if (LEGACY_JWT_SECRET) {
         try {
-            // Dynamic so importing this module never requires `next/headers`
-            // (see the note on the import block). Already inside a try/catch,
-            // so a non-request runtime falls through to `return null` exactly
-            // as an absent cookie does.
-            const { cookies } = await import('next/headers');
             const cookieStore = await cookies();
             const legacyToken = cookieStore.get('token')?.value;
             if (legacyToken) {
