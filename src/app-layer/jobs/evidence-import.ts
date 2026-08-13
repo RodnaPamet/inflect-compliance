@@ -413,6 +413,7 @@ export async function runEvidenceImport(
                     title: basename,
                     controlId: payload.controlId ?? null,
                     category: payload.category ?? null,
+                    folder: payload.folder ?? null,
                 });
                 evidenceIds.push(evidence.id);
                 extracted += 1;

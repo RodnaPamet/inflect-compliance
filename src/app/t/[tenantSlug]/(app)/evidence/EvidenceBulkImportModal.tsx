@@ -211,7 +211,13 @@ export function EvidenceBulkImportModal({
             // EP-3 — thread the optional default control (as a repeated
             // `controlIds` field) + folder so imported rows get an
             // EvidenceControlLink + folder label.
-            if (defaultControlId) formData.append('controlIds', defaultControlId);
+            // `controlId`, singular — the whole import pipeline is singular
+            // (route -> EvidenceImportPayload -> uploadEvidenceFile) and this
+            // field holds exactly one id. Posting it as `controlIds` meant the
+            // route's `formData.get('controlId')` found nothing, so the chosen
+            // control was dropped on every import while the modal reported
+            // success.
+            if (defaultControlId) formData.append('controlId', defaultControlId);
             if (importFolder.trim()) formData.append('folder', importFolder.trim());
             try {
                 const res = await uploadWithProgress<{ jobId: string }>(
