@@ -129,19 +129,30 @@ export async function scanBuffer(buffer: Buffer): Promise<ScanResult> {
             const durationMs = Math.round(performance.now() - startTime);
             const cleaned = response.replace(/\0/g, '').trim();
 
-            if (cleaned.includes('OK')) {
-                resolve({
-                    status: 'CLEAN',
-                    engine: 'clamav',
-                    durationMs,
-                    rawOutput: cleaned,
-                });
-            } else if (cleaned.includes('FOUND')) {
+            // FOUND is tested FIRST, and OK is matched as a whole word at the
+            // end of the reply rather than as a substring anywhere in it.
+            //
+            // The order used to be reversed with `cleaned.includes('OK')`
+            // leading, which reports CLEAN for any infection whose signature
+            // name happens to contain the letters OK — `stream: JS.Cookie-
+            // Stealer FOUND` and `stream: Win.Trojan.Broker FOUND` both
+            // resolved clean. A false CLEAN on an infected file is the one
+            // outcome this module exists to prevent, and it was inert only
+            // because nothing persisted the verdict; wiring the scanner up
+            // makes it live.
+            if (cleaned.includes('FOUND')) {
                 // Extract virus name: "stream: Eicar-Signature FOUND"
                 const match = cleaned.match(/stream:\s*(.+?)\s*FOUND/);
                 resolve({
                     status: 'INFECTED',
                     threat: match?.[1] || 'unknown',
+                    engine: 'clamav',
+                    durationMs,
+                    rawOutput: cleaned,
+                });
+            } else if (/\bOK\s*$/.test(cleaned)) {
+                resolve({
+                    status: 'CLEAN',
                     engine: 'clamav',
                     durationMs,
                     rawOutput: cleaned,

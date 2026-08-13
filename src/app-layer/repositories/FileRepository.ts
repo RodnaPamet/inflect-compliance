@@ -34,10 +34,35 @@ export class FileRepository {
         });
     }
 
-    static async markStored(db: PrismaTx, _ctx: RequestContext, id: string) {
+    /**
+     * @param scan verdict from `scanUploadOrRefuse`, when the caller scanned
+     *   the bytes before writing them. Omitted leaves `scanStatus` alone.
+     *
+     * Note there is no `scanStatus: 'PENDING'` in the data block any more.
+     * `createPending` already relies on the schema default, so the stamp was
+     * redundant — and it ran AFTER the upload path could have learned a
+     * verdict, so it silently reset every scan result back to PENDING. Do not
+     * restore it "for symmetry".
+     */
+    static async markStored(
+        db: PrismaTx,
+        _ctx: RequestContext,
+        id: string,
+        scan?: { scanStatus: 'CLEAN' | 'SKIPPED'; scanDetails?: string; scannedAt?: Date },
+    ) {
         return db.fileRecord.update({
             where: { id },
-            data: { status: 'STORED', storedAt: new Date(), scanStatus: 'PENDING' },
+            data: {
+                status: 'STORED',
+                storedAt: new Date(),
+                ...(scan
+                    ? {
+                          scanStatus: scan.scanStatus,
+                          scanDetails: scan.scanDetails ?? null,
+                          scannedAt: scan.scannedAt ?? new Date(),
+                      }
+                    : {}),
+            },
         });
     }
 
