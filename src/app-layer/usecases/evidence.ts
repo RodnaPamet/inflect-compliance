@@ -1217,25 +1217,51 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
 
         // EP-3 — "linked to a control" now means the Evidence has at least
         // one EvidenceControlLink (the singular controlId is gone).
-        const evidence = await db.evidence.findFirst({
-            where: { tenantId: ctx.tenantId, fileRecordId: headFileId },
-            select: {
-                id: true,
-                deletedAt: true,
-                isArchived: true,
-                _count: { select: { evidenceControlLinks: true } },
-            },
-        });
+        // `withDeleted` is LOAD-BEARING, not a convenience. Evidence is in
+        // SOFT_DELETE_MODELS, so without it the extension injects
+        // `deletedAt: null` here — a soft-deleted row then returns NULL and
+        // `evidence?.deletedAt` is `undefined`, which is falsy. The gate below
+        // was therefore SKIPPED by deletion rather than triggered by it, and
+        // selecting `deletedAt` in a query that can only ever return null for
+        // it is the tell. Fetching the deleted row is the only way the gate
+        // can see what it exists to refuse.
+        const evidence = await db.evidence.findFirst(
+            withDeleted({
+                where: { tenantId: ctx.tenantId, fileRecordId: headFileId },
+                select: {
+                    id: true,
+                    deletedAt: true,
+                    isArchived: true,
+                    _count: { select: { evidenceControlLinks: true } },
+                },
+            }),
+        );
 
-        if (evidence?.deletedAt) {
+        // No owning evidence at all — the file is an orphan. Today that means
+        // the evidence was hard-purged (`purgeEntity` deletes the Evidence row
+        // and leaves the FileRecord and its blob behind), so the bytes outlive
+        // every gate that was supposed to protect them.
+        //
+        // Refuse for EVERYONE. The read-tier branch below has always refused
+        // this case; write-tier fell through it and downloaded the file. A
+        // file with no evidence to authorise against cannot be authorised.
+        if (!evidence) {
+            throw notFound('File not found');
+        }
+        if (evidence.deletedAt) {
             throw notFound('Evidence has been deleted');
         }
-        if (evidence?.isArchived) {
+        if (evidence.isArchived) {
             throw notFound('Evidence has been archived and is no longer available for download');
         }
 
         if (!ctx.permissions.canWrite) {
-            if (!evidence || evidence._count.evidenceControlLinks === 0) {
+            // The `!evidence` half of this condition used to live here and was
+            // the ONLY thing refusing an orphaned file — which is why the hole
+            // was read-tier-shaped. It is now unreachable (the check above
+            // throws first, for every role), so this is purely the
+            // control-link rule it was always meant to be.
+            if (evidence._count.evidenceControlLinks === 0) {
                 throw forbidden('You can only download evidence that is linked to a control. Contact an admin to link this evidence.');
             }
         }
