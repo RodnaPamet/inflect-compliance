@@ -8,11 +8,12 @@
  *      coverage" and the /coverage risk-map.
  *   4. Polish: /tests H1 is visible; /due + /dashboard carry breadcrumbs.
  */
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
+const exists = (rel: string) => existsSync(join(ROOT, rel));
 
 const SUBNAV = 'src/app/t/[tenantSlug]/(app)/tests/_components/TestsSubNav.tsx';
 const TESTS = 'src/app/t/[tenantSlug]/(app)/tests/page.tsx';
@@ -21,12 +22,28 @@ const DASH = 'src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx';
 const G2 = 'src/components/TestDashboardG2Section.tsx';
 const COVERAGE = 'src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx';
 
-describe('R3-P3 (1) shared sub-nav', () => {
-    it('a TestsSubNav exists and all three pages mount it with the right active tab', () => {
-        expect(read(SUBNAV)).toMatch(/export function TestsSubNav/);
-        expect(read(TESTS)).toMatch(/<TestsSubNav active="tests"/);
-        expect(read(DUE)).toMatch(/<TestsSubNav active="due"/);
-        expect(read(DASH)).toMatch(/<TestsSubNav active="dashboard"/);
+describe('R3-P3 (1) the dashboard is an icon, not a tab (U2)', () => {
+    // REWRITTEN. This asserted a `TestsSubNav` on all three pages — the only
+    // bottom-bordered tab nav in the product, and the thing U2 reported. The
+    // canonical affordance is an icon-only <Link> in the toolbar's actions
+    // slot (ControlsClient does the same for /controls/dashboard), stated
+    // normatively in `src/components/ui/views-menu.tsx`.
+    //
+    // The sub-nav component is deleted, so asserting its absence by path is
+    // the honest form: a re-introduction has to re-create the file.
+    it('the sub-nav component is gone', () => {
+        expect(exists(SUBNAV)).toBe(false);
+    });
+
+    it('/tests reaches the dashboard through a toolbar icon-link', () => {
+        const tests = read(TESTS);
+        expect(tests).toMatch(/id="tests-dashboard-btn"/);
+        expect(tests).toMatch(/tenantHref\('\/tests\/dashboard'\)/);
+        // Icon-only: the accessible name comes from aria-label + Tooltip, not
+        // from visible text, which is what makes it an icon affordance rather
+        // than a relabelled tab.
+        expect(tests).toMatch(/aria-label=\{t\('nav\.dashboard'\)\}/);
+        expect(tests).not.toMatch(/<TestsSubNav/);
     });
 });
 
@@ -73,9 +90,17 @@ describe('R3-P3 (4) polish', () => {
         expect(tests).toMatch(/id="tests-page-title"/);
         expect(tests).toMatch(/id="tests-page-title" className="sr-only"/);
     });
-    it('/due and /dashboard carry breadcrumbs', () => {
-        expect(read(DUE)).toMatch(/PageBreadcrumbs/);
+    it('/dashboard carries breadcrumbs, and /due is a redirect shim (U3)', () => {
         expect(read(DASH)).toMatch(/breadcrumbs:/);
+        // /tests/due no longer renders a page — the due QUEUE is a filter on
+        // the list. The route survives as a shim so bookmarks, notification
+        // links and E2E `page.goto` keep working, and it pre-applies the
+        // filter: landing on an unfiltered register would answer a different
+        // question than the link was for.
+        const due = read(DUE);
+        expect(due).toMatch(/redirect\(/);
+        expect(due).toMatch(/\/tests\?due=next7d/);
+        expect(due).not.toMatch(/PageBreadcrumbs/);
     });
 });
 

@@ -156,6 +156,29 @@ describe('Button label centering', () => {
         // tracking brace depth + quotes so a `>` inside `{…}` or a
         // string doesn't terminate the tag early. Self-closing and
         // children forms both stop at the opening tag's closing `>`.
+        //
+        // Comments inside the tag are SKIPPED, not scanned. A `//` note
+        // between props is idiomatic here (the props are exactly what a
+        // reviewer asks "why?" about), and prose contains apostrophes:
+        //
+        //     <Button
+        //         // …would compete with the page's own create.
+        //         variant="secondary"
+        //
+        // Without the skip, that apostrophe opens a string that closes at
+        // the next one — 91 lines later, in a different component. The tag
+        // swallows every `>` and `className` in between, so the guard
+        // reports a violation against an unrelated `<div>` and names a file
+        // whose Buttons are all clean. That is worse than a miss: it sends
+        // the reader to the wrong line, and the cheapest way to green is to
+        // reword an innocent comment.
+        //
+        // Skipping inside the scan (rather than pre-stripping the file) keeps
+        // the blast radius at the tag: between `<Button` and its closing `>`
+        // there is no JSX text, so an apostrophe there is always either a
+        // string delimiter or comment prose. Across a whole file it could be
+        // "Don't" in a paragraph, and mis-tracking THAT could silently
+        // un-strip a real comment or strip real code.
         const buttonOpeningTags = (s: string): string[] => {
             const tags: string[] = [];
             const re = /<Button(?=[\s/>])/g;
@@ -164,12 +187,29 @@ describe('Button label centering', () => {
                 let i = m.index + m[0].length;
                 let depth = 0;
                 let quote: string | null = null;
+                // Built by hand so comment bodies never reach the className
+                // scan below — a slice would carry them along.
+                let code = m[0];
                 for (; i < s.length; i++) {
                     const c = s[i];
                     if (quote) {
+                        code += c;
                         if (c === quote) quote = null;
                         continue;
                     }
+                    if (c === '/' && s[i + 1] === '/') {
+                        const nl = s.indexOf('\n', i);
+                        i = nl === -1 ? s.length : nl;
+                        code += '\n';
+                        continue;
+                    }
+                    if (c === '/' && s[i + 1] === '*') {
+                        const end = s.indexOf('*/', i + 2);
+                        i = end === -1 ? s.length : end + 1;
+                        code += ' ';
+                        continue;
+                    }
+                    code += c;
                     if (c === '"' || c === "'" || c === '`') {
                         quote = c;
                         continue;
@@ -178,10 +218,58 @@ describe('Button label centering', () => {
                     else if (c === '}') depth--;
                     else if (c === '>' && depth === 0) break;
                 }
-                tags.push(s.slice(m.index, i + 1));
+                tags.push(code);
             }
             return tags;
         };
+
+        // The parser bug above, pinned directly. Both halves matter: the
+        // tag must END at its own `>`, and the comment's own text must not
+        // reach the className scan.
+        it('a comment inside the tag cannot extend it past the closing >', () => {
+            const sample = [
+                '<Button',
+                "    // would compete with the page's own create.",
+                '    variant="secondary"',
+                '>',
+                '    Run',
+                '</Button>',
+                '<div className="flex items-start justify-between gap-default">',
+            ].join('\n');
+
+            const tags = buttonOpeningTags(sample);
+            expect(tags).toHaveLength(1);
+            expect(tags[0]).not.toContain('justify-between');
+            expect(tags[0]).not.toContain("page's");
+            expect(tags[0]).toContain('variant="secondary"');
+            expect(FORBIDDEN.test(tags[0])).toBe(false);
+        });
+
+        it('a block comment between props is skipped too', () => {
+            const tags = buttonOpeningTags(
+                '<Button /* the row\'s own click navigates */ size="xs">x</Button>',
+            );
+            expect(tags).toHaveLength(1);
+            expect(tags[0]).toContain('size="xs"');
+            expect(tags[0]).not.toContain('navigates');
+        });
+
+        it('still terminates at the right > when props carry strings and braces', () => {
+            const tags = buttonOpeningTags(
+                '<Button onClick={() => go({ a: ">" })} title="a > b">y</Button>',
+            );
+            expect(tags).toHaveLength(1);
+            expect(tags[0].endsWith('>')).toBe(true);
+            expect(tags[0]).toContain('title="a > b"');
+            expect(tags[0]).not.toContain('y</Button');
+        });
+
+        it('still catches a real off-centre className (detector is live)', () => {
+            const tags = buttonOpeningTags('<Button className="justify-start w-40">z</Button>');
+            expect(tags).toHaveLength(1);
+            expect(FORBIDDEN.test(tags[0])).toBe(true);
+            expect(WIDTH_FULL.test(tags[0])).toBe(false);
+        });
 
         it('found Button call sites to scan (sanity)', () => {
             const total = files.reduce(

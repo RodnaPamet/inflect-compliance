@@ -149,8 +149,6 @@ const EXEMPTIONS: Record<string, string> = {
         "Control template catalogue — small fixed catalogue browsed by section; faceting not yet a need.",
 
     // ── Tests / planning surfaces ──
-    "src/app/t/[tenantSlug]/(app)/tests/due/page.tsx":
-        "Due-tests planning surface — fixed scope (tests due in the next window) with one tab selector.",
     // tests/page.tsx now carries a real FilterToolbar (Status / Last
     // Result / Frequency / Due + search), so it is no longer exempt.
 };
