@@ -420,6 +420,8 @@ export interface EvidenceImportPayload {
     retentionUntilIso?: string | null;
     /** Optional category tag applied to every extracted evidence. */
     category?: string | null;
+    /** Optional folder label applied to every extracted evidence. */
+    folder?: string | null;
     /** Optional log-correlation id from the upstream HTTP request. */
     requestId?: string;
 }

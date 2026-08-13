@@ -132,6 +132,9 @@ export const POST = withApiErrorHandling(
         const retentionUntil =
             (formData.get('retentionUntil') as string | null) || null;
         const category = (formData.get('category') as string | null) || null;
+        // The modal has always posted this; nothing read it, so the folder an
+        // operator typed was discarded on every import.
+        const folder = (formData.get('folder') as string | null) || null;
 
         // ── Enqueue the worker ─────────────────────────────────────
         const job = await enqueue('evidence-import', {
@@ -142,6 +145,7 @@ export const POST = withApiErrorHandling(
             controlId,
             retentionUntilIso: retentionUntil,
             category,
+            folder,
             requestId: ctx.requestId,
         });
 
