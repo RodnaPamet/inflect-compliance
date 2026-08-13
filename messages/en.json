@@ -6852,7 +6852,8 @@
                 "ANNUALLY": "Annually"
             },
             "due": {
-                "overdue": "Overdue"
+                "overdue": "Overdue",
+                "next7d": "Due in 7 days"
             }
         },
         "freq": {

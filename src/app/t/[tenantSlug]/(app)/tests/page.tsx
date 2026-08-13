@@ -145,6 +145,36 @@ const isOverdue = (
     return d ? new Date(d) <= now : false;
 };
 
+/** Seven days, in ms — the queue's lookahead window. */
+const DUE_SOON_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The `/tests/due` QUEUE predicate, expressed on this surface.
+ *
+ * Deliberately identical to `getDueQueue` (`due-planning.ts`): status ACTIVE
+ * and `min(nextDueAt, nextRunAt) <= now + 7d`. That upper-bound-only form is
+ * what makes it a SUPERSET of overdue rather than a disjoint "next week"
+ * bucket — the queue has always answered "what must I run this week",
+ * which includes everything already late.
+ *
+ * Getting that wrong is the trap here: the server's `next7d` query parameter
+ * (`due-planning.ts`) carries a `gte: now` LOWER bound, so it EXCLUDES overdue
+ * work. Mirroring that shape would have produced a filter that silently drops
+ * the most urgent rows — the opposite of what the queue shows. It is not used
+ * by this page for that reason.
+ *
+ * `now` is threaded in for the same hydration reason as `isOverdue`.
+ */
+const isDueWithin7Days = (
+    p: { nextDueAt: string | null; nextRunAt: string | null; status: string },
+    now: Date | null,
+) => {
+    if (!now) return false;
+    if (p.status !== 'ACTIVE') return false;
+    const d = effectiveDue(p);
+    return d ? new Date(d).getTime() <= now.getTime() + DUE_SOON_WINDOW_MS : false;
+};
+
 // R4-P3 #5 — the "last result" of a plan whose newest run is still
 // PLANNED/RUNNING has no verdict yet. Reading `runs[0].result` alone rendered
 // "No runs" next to a Runs count of 12 and dropped the plan into the NONE
@@ -373,10 +403,26 @@ function TestsRollupContent() {
             if (dueSel.includes('overdue') && !isOverdue(p, hydratedNow)) {
                 return false;
             }
+            if (dueSel.includes('next7d') && !isDueWithin7Days(p, hydratedNow)) {
+                return false;
+            }
             if (q && !p.name.toLowerCase().includes(q)) return false;
             return true;
         });
-    }, [plans, state, search]);
+        // `hydratedNow` is READ inside this memo (the `due=overdue` branch) and
+        // must therefore be a dependency. It was missing, and the consequence
+        // was not a stale render — it was an empty table.
+        //
+        // `useHydratedNow()` returns null on the first client render (it sets
+        // the clock in an effect, to keep SSR and hydration byte-identical),
+        // and `isOverdue(_, null)` returns false by design. So with
+        // `?due=overdue` the memo computed "nothing is overdue", cached it, and
+        // never recomputed when the clock arrived — because the clock was not a
+        // dep. The filter showed zero rows permanently.
+        //
+        // That is the exact link the tests dashboard hands users
+        // (`dashboard/page.tsx` → `/tests?due=overdue`).
+    }, [plans, state, search, hydratedNow]);
 
     // ─── Sortable headers (per-column asc/desc, parity with Controls) ───
     const [sortBy, setSortBy] = useState<string | undefined>(undefined);
@@ -609,7 +655,13 @@ function TestsRollupContent() {
                 <TestsSubNav active="tests" className="mb-3" />
                 <div className="flex items-start justify-between gap-default">
                     <div>
-                        <Heading level={1} id="tests-page-title">{t('list.title')}</Heading>
+                        {/* U4 — sr-only, matching risks / assets / evidence /
+                            vendors / tasks. The visible page title is the
+                            breadcrumb trail; a second visible H1 directly under
+                            it repeated the word "Tests" twice in a row. The
+                            heading itself stays for the accessibility tree and
+                            for the skip-link target. */}
+                        <Heading level={1} id="tests-page-title" className="sr-only">{t('list.title')}</Heading>
                         {/* R3-P1 — the tests-vs-checks distinction, explained at the
                             GLOBAL level (not only inline on a control's two tabs). */}
                         <p className="text-sm text-content-muted mt-1">{t('unified.explanation')}</p>

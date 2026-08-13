@@ -57,10 +57,21 @@ describe('R3-P3 (3) coverage/readiness disambiguation', () => {
 });
 
 describe('R3-P3 (4) polish', () => {
-    it('the /tests H1 is visible (not sr-only)', () => {
+    it('the /tests H1 is sr-only, matching every peer list page', () => {
+        // INVERTED (U4). This asserted the opposite — that the H1 must NOT be
+        // sr-only — and so forbade the canonical form character-for-character.
+        //
+        // Every peer list page renders `<Heading level={1} className="sr-only">`
+        // (risks, assets, evidence, vendors, tasks), and the rule is codified in
+        // the shared primitive: `PageHeader.tsx` sets `titleHidden` for a route
+        // classified 'main'. /tests was the sole holdout, printing "Tests"
+        // directly beneath a breadcrumb trail ending in "Tests".
+        //
+        // The heading is kept, not deleted: it remains the document's H1 for
+        // assistive tech and the skip-link target. Only its visibility changes.
         const tests = read(TESTS);
         expect(tests).toMatch(/id="tests-page-title"/);
-        expect(tests).not.toMatch(/id="tests-page-title" className="sr-only"/);
+        expect(tests).toMatch(/id="tests-page-title" className="sr-only"/);
     });
     it('/due and /dashboard carry breadcrumbs', () => {
         expect(read(DUE)).toMatch(/PageBreadcrumbs/);
