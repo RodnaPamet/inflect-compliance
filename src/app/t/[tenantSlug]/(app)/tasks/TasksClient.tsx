@@ -29,8 +29,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
-    filtersToCards,
-    selectVisibleFilters,
+    type CardDefinition,
 } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
@@ -46,6 +45,7 @@ import {
     taskSourceLabels,
 } from './filter-defs';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
+import { type MetricTone } from '@/components/ui/metric';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
@@ -409,15 +409,28 @@ function TasksPageInner({
             ),
         [tasks, t, tGroup, currentUserId],
     );
-    const filterCards = useMemo(() => filtersToCards(liveFilters), [liveFilters]);
-    const { visibleCards, dropdown: filtersDropdown } = useFilterCardVisibility({
-        storageKey: 'inflect:filter-vis:tasks',
-        cards: filterCards,
-    });
-    const visibleFilterDefs = useMemo(
-        () => selectVisibleFilters(visibleCards, liveFilters),
-        [visibleCards, liveFilters],
+    // R-filter-gear — the gear edits the quantifiable KPI CARDS
+    // (Total / Open / Overdue / Due this week), not the filter
+    // categories (which stay in the Filter dropdown). Every card here
+    // is kind:'kpi': the namespace under this storage key is
+    // exclusively KPI ids, so the hook's stale-data migration fires
+    // cleanly for anyone whose persisted list still holds the old
+    // filter ids. Ids MUST match `taskKpiDefs` below or the
+    // `selected=` highlight silently stops matching.
+    const kpiCards: CardDefinition[] = useMemo(
+        () => [
+            { id: 'total', label: t('kpi.total'), kind: 'kpi' },
+            { id: 'open', label: t('kpi.open'), kind: 'kpi' },
+            { id: 'overdue', label: t('kpi.overdue'), kind: 'kpi' },
+            { id: 'dueWeek', label: t('kpi.dueWeek'), kind: 'kpi' },
+        ],
+        [t],
     );
+    const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
+        useFilterCardVisibility({
+            storageKey: 'inflect:filter-vis:tasks',
+            cards: kpiCards,
+        });
 
     // ─── R23-PR-E — KPI definitions for the Tasks page ───
     // Aligned to `status` + `due` filter keys (both filterable
@@ -1107,48 +1120,59 @@ function TasksPageInner({
             <ListPageShell.Filters className="space-y-section">
                 {/* R23-PR-E — KPI strip. */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
-                    <KpiFilterCard
-                        label={t('kpi.total')}
-                        value={totalTasks}
-                        sparkline={taskTrends.total}
-                        sparklineVariant={sparkColors.total}
-                        sparklineDomain={centeredSparklineDomain(taskTrends.total)}
-                        onClick={() => toggleTaskKpi('total')}
-                        selected={activeTaskKpi === 'total'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.open')}
-                        value={openTasks}
-                        tone="attention"
-                        sparkline={taskTrends.open}
-                        sparklineVariant={sparkColors.open}
-                        sparklineDomain={centeredSparklineDomain(taskTrends.open)}
-                        onClick={() => toggleTaskKpi('open')}
-                        selected={activeTaskKpi === 'open'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.overdue')}
-                        value={overdueTasks}
-                        tone={overdueTasks > 0 ? 'critical' : 'default'}
-                        sparkline={taskTrends.overdue}
-                        sparklineVariant={sparkColors.overdue}
-                        sparklineDomain={centeredSparklineDomain(taskTrends.overdue)}
-                        onClick={() => toggleTaskKpi('overdue')}
-                        selected={activeTaskKpi === 'overdue'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.dueWeek')}
-                        value={dueWeekTasks}
-                        tone="attention"
-                        sparkline={taskTrends.dueWeek}
-                        sparklineVariant={sparkColors.dueWeek}
-                        sparklineDomain={centeredSparklineDomain(taskTrends.dueWeek)}
-                        onClick={() => toggleTaskKpi('dueWeek')}
-                        selected={activeTaskKpi === 'dueWeek'}
-                    />
+                    {visibleKpiCards.map((card) => {
+                        const cfg: Record<
+                            string,
+                            {
+                                value: number;
+                                tone?: MetricTone;
+                                sparkline: typeof taskTrends.total;
+                                sparklineVariant: typeof sparkColors.total;
+                            }
+                        > = {
+                            total: {
+                                value: totalTasks,
+                                sparkline: taskTrends.total,
+                                sparklineVariant: sparkColors.total,
+                            },
+                            open: {
+                                value: openTasks,
+                                tone: 'attention',
+                                sparkline: taskTrends.open,
+                                sparklineVariant: sparkColors.open,
+                            },
+                            overdue: {
+                                value: overdueTasks,
+                                tone: overdueTasks > 0 ? 'critical' : 'default',
+                                sparkline: taskTrends.overdue,
+                                sparklineVariant: sparkColors.overdue,
+                            },
+                            dueWeek: {
+                                value: dueWeekTasks,
+                                tone: 'attention',
+                                sparkline: taskTrends.dueWeek,
+                                sparklineVariant: sparkColors.dueWeek,
+                            },
+                        };
+                        const c = cfg[card.id];
+                        if (!c) return null;
+                        return (
+                            <KpiFilterCard
+                                key={card.id}
+                                label={card.label}
+                                value={c.value}
+                                tone={c.tone}
+                                sparkline={c.sparkline}
+                                sparklineVariant={c.sparklineVariant}
+                                sparklineDomain={centeredSparklineDomain(c.sparkline)}
+                                onClick={() => toggleTaskKpi(card.id as TaskKpiId)}
+                                selected={activeTaskKpi === card.id}
+                            />
+                        );
+                    })}
                 </div>
                 <FilterToolbar
-                    filters={visibleFilterDefs}
+                    filters={liveFilters}
                     searchId="tasks-search"
                     searchPlaceholder={t('list.searchPlaceholder')}
                     leading={appPermissions.tasks.create ? (

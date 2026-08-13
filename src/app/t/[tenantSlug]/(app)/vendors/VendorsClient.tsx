@@ -31,8 +31,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
-    filtersToCards,
-    selectVisibleFilters,
+    type CardDefinition,
 } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
@@ -330,15 +329,32 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
             ),
         [t, tGroup],
     );
-    const filterCards = useMemo(() => filtersToCards(liveFilters), [liveFilters]);
-    const { visibleCards, dropdown: filtersDropdown } = useFilterCardVisibility({
-        storageKey: 'inflect:filter-vis:vendors',
-        cards: filterCards,
-    });
-    const visibleFilterDefs = useMemo(
-        () => selectVisibleFilters(visibleCards, liveFilters),
-        [visibleCards, liveFilters],
+    // U1 — the gear edits the quantifiable KPI CARDS (Total / Active /
+    // Critical / Review overdue), not the filter categories (which stay in
+    // the Filter dropdown and are always all present). Registering
+    // the filter defs as cards here meant hiding a "card" removed a FILTER
+    // from the product while the KPI strip — hardcoded JSX — never moved.
+    //
+    // Every card registered under this key is `kind: 'kpi'`, deliberately:
+    // the hook's stale-data migration only fires when ALL persisted ids are
+    // dead, so a mixed registration would leave anyone who ever touched the
+    // gear with the new cards hidden. The old persisted ids were the filter
+    // keys (status / criticality / riskRating / reviewDue), none of which
+    // collide with the KPI ids below, so the migration fires cleanly.
+    const kpiCards: CardDefinition[] = useMemo(
+        () => [
+            { id: 'total', label: t('kpi.total'), kind: 'kpi' },
+            { id: 'active', label: t('kpi.active'), kind: 'kpi' },
+            { id: 'critical', label: t('kpi.critical'), kind: 'kpi' },
+            { id: 'reviewOverdue', label: t('kpi.reviewOverdue'), kind: 'kpi' },
+        ],
+        [t],
     );
+    const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
+        useFilterCardVisibility({
+            storageKey: 'inflect:filter-vis:vendors',
+            cards: kpiCards,
+        });
 
     // ─── R23-PR-F — KPI definitions for the Vendors page ───
     type VendorKpiId = 'total' | 'active' | 'critical' | 'reviewOverdue';
@@ -537,50 +553,64 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
             </ListPageShell.Header>
 
             <ListPageShell.Filters className="space-y-section">
-                {/* R23-PR-F — KPI strip. */}
+                {/* R23-PR-F — KPI strip. U1: rendered from the gear's visible
+                    set so hiding a card in the gear actually removes it here.
+                    Every prop the literal cards carried (tone, sparkline,
+                    sparklineVariant, centered domain) moved into `cfg`. */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
-                    <KpiFilterCard
-                        label={t('kpi.total')}
-                        value={totalVendors}
-                        sparkline={vendorTrends.total}
-                        sparklineVariant={sparkColors.total}
-                        sparklineDomain={centeredSparklineDomain(vendorTrends.total)}
-                        onClick={() => toggleVendorKpi('total')}
-                        selected={activeVendorKpi === 'total'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.active')}
-                        value={activeVendors}
-                        tone="success"
-                        sparkline={vendorTrends.active}
-                        sparklineVariant={sparkColors.active}
-                        sparklineDomain={centeredSparklineDomain(vendorTrends.active)}
-                        onClick={() => toggleVendorKpi('active')}
-                        selected={activeVendorKpi === 'active'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.critical')}
-                        value={criticalVendors}
-                        tone={criticalVendors > 0 ? 'critical' : 'default'}
-                        sparkline={vendorTrends.critical}
-                        sparklineVariant={sparkColors.critical}
-                        sparklineDomain={centeredSparklineDomain(vendorTrends.critical)}
-                        onClick={() => toggleVendorKpi('critical')}
-                        selected={activeVendorKpi === 'critical'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.reviewOverdue')}
-                        value={reviewOverdueVendors}
-                        tone={reviewOverdueVendors > 0 ? 'critical' : 'default'}
-                        sparkline={vendorTrends.reviewOverdue}
-                        sparklineVariant={sparkColors.reviewOverdue}
-                        sparklineDomain={centeredSparklineDomain(vendorTrends.reviewOverdue)}
-                        onClick={() => toggleVendorKpi('reviewOverdue')}
-                        selected={activeVendorKpi === 'reviewOverdue'}
-                    />
+                    {visibleKpiCards.map((card) => {
+                        const cfg: Record<
+                            string,
+                            {
+                                value: number;
+                                tone?: 'success' | 'critical' | 'default';
+                                sparkline: typeof vendorTrends.total;
+                                sparklineVariant: typeof sparkColors.total;
+                            }
+                        > = {
+                            total: {
+                                value: totalVendors,
+                                sparkline: vendorTrends.total,
+                                sparklineVariant: sparkColors.total,
+                            },
+                            active: {
+                                value: activeVendors,
+                                tone: 'success',
+                                sparkline: vendorTrends.active,
+                                sparklineVariant: sparkColors.active,
+                            },
+                            critical: {
+                                value: criticalVendors,
+                                tone: criticalVendors > 0 ? 'critical' : 'default',
+                                sparkline: vendorTrends.critical,
+                                sparklineVariant: sparkColors.critical,
+                            },
+                            reviewOverdue: {
+                                value: reviewOverdueVendors,
+                                tone: reviewOverdueVendors > 0 ? 'critical' : 'default',
+                                sparkline: vendorTrends.reviewOverdue,
+                                sparklineVariant: sparkColors.reviewOverdue,
+                            },
+                        };
+                        const c = cfg[card.id];
+                        if (!c) return null;
+                        return (
+                            <KpiFilterCard
+                                key={card.id}
+                                label={card.label}
+                                value={c.value}
+                                tone={c.tone}
+                                sparkline={c.sparkline}
+                                sparklineVariant={c.sparklineVariant}
+                                sparklineDomain={centeredSparklineDomain(c.sparkline)}
+                                onClick={() => toggleVendorKpi(card.id as VendorKpiId)}
+                                selected={activeVendorKpi === card.id}
+                            />
+                        );
+                    })}
                 </div>
                 <FilterToolbar
-                    filters={visibleFilterDefs}
+                    filters={liveFilters}
                     searchId="vendors-search"
                     searchPlaceholder={t('searchPlaceholder')}
                     leading={

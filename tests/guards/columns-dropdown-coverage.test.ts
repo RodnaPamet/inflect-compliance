@@ -223,6 +223,12 @@ describe('R-filter-gear — both gears mount the shared ChecklistGearButton', ()
         expect(src).toMatch(/ChecklistGearButton/);
         expect(src).toMatch(/\bSettings\b/);
         expect(src).toMatch(/data-testid="edit-filters-button"/);
-        expect(src).toMatch(/title="Edit filter cards"/);
+        // i18n: the title flows through the catalogue, mirroring the columns
+        // gear asserted just above. The literal it used to pin was also the
+        // WRONG NAME — the gear edits the KPI strip, not the Filter dropdown's
+        // categories, on all eight list pages.
+        expect(src).toMatch(/title=\{t\('table\.editKpiCards'\)\}/);
+        const enCat = JSON.parse(read('messages/en.json'));
+        expect(enCat.common.table.editKpiCards).toBe('Edit KPI cards');
     });
 });

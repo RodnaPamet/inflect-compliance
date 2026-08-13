@@ -25,6 +25,7 @@
  * the "gear doesn't open" bug). `aria-label` gives the SR name.
  */
 import { Command } from 'cmdk';
+import { useTranslations } from 'next-intl';
 import { GripVertical, RotateCcw } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Button } from './button';
@@ -70,6 +71,9 @@ export function ChecklistGearButton({
     className,
     id,
 }: ChecklistGearButtonProps) {
+    // Shared by BOTH toolbar gears, so its one hardcoded string ("Reset to
+    // defaults") shipped untranslated on every list page in the product.
+    const t = useTranslations('common');
     const [open, setOpen] = useState(false);
     // The id being dragged (handle → drop target). A ref, not state — it
     // mutates across native drag events without needing a re-render.
@@ -217,7 +221,7 @@ export function ChecklistGearButton({
                                         data-testid="checklist-reset"
                                     >
                                         <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-                                        <span>Reset to defaults</span>
+                                        <span>{t('table.resetToDefaults')}</span>
                                     </Command.Item>
                                 </>
                             )}
