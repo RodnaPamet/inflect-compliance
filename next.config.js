@@ -106,6 +106,25 @@ const defaultOptions = {
         // the process: with it set to 8192 the tree still reached 14,479 MB
         // resident, so no value of that flag was ever going to fix this.
         //
+        // The flag DOES change the emitted bundle, and the churn is real but
+        // semantically empty. Production builds either side, all 882 static
+        // chunks compared:
+        //
+        //   files 882 = 882      distinct module ids 1,210 = 1,210
+        //   module definitions 3,915 = 3,915
+        //   total bytes 10,754,726 vs 10,754,722   (-4 bytes, -0.00004%)
+        //   142 module ids renumbered 1:1; 0 ids differ in definition count
+        //
+        // i.e. the same modules, renumbered and redistributed across chunks.
+        // 182 of 882 chunks change content hash as a result, so a deploy
+        // invalidates ~21% of chunk caches ONCE — the ordinary consequence of
+        // any bundler-affecting change, including every dependency bump.
+        //
+        // Note per-chunk textual comparison does NOT show this: module bodies
+        // reference other modules' ids, so redistribution defeats any
+        // normalisation applied within a single chunk. Compare the module set
+        // across the WHOLE bundle instead.
+        //
         // Re-derive rather than trust: set NEXT_TEST_MODE=1 and sample
         // MemAvailable + the build tree's RSS through a build.
         webpackMemoryOptimizations: true,
