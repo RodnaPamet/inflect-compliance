@@ -22,7 +22,6 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
 const RUN_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx';
 const TESTS_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/page.tsx';
-const DUE_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/due/page.tsx';
 const DASH_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/dashboard/page.tsx';
 const PLAN_DETAIL = 'src/components/test-plans/TestPlanDetailView.tsx';
 const USECASE = 'src/app-layer/usecases/control/test-plans.ts';
@@ -92,8 +91,12 @@ describe('R4-P2 (5) bulk-delete undo + restore endpoint', () => {
 });
 
 describe('R4-P2 (6) error+retry states keep the surface mounted', () => {
-    it('tests/page, due, and dashboard all render an ErrorState with retry', () => {
-        for (const f of [TESTS_PAGE, DUE_PAGE, DASH_PAGE]) {
+    // DUE_PAGE dropped from this loop: `/tests/due` is a redirect shim since
+    // U3 folded the due queue into the list's `next7d` filter. A shim renders
+    // no surface, so it has no error state to keep mounted — the assertion
+    // moved to the list page, which is where that queue's failures now show.
+    it('tests/page and dashboard render an ErrorState with retry', () => {
+        for (const f of [TESTS_PAGE, DASH_PAGE]) {
             const src = read(f);
             expect(src).toMatch(/ErrorState/);
             expect(src).toMatch(/onRetry=/);

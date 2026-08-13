@@ -26,7 +26,7 @@ const SCHEDULING = 'src/app-layer/usecases/test-scheduling.ts';
 const RUN_REPO = 'src/app-layer/repositories/TestRunRepository.ts';
 const START_ROUTE = 'src/app/api/t/[tenantSlug]/tests/runs/[runId]/start/route.ts';
 const RUN_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx';
-const DUE_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/due/page.tsx';
+const TESTS_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/page.tsx';
 const STEPS_EDITOR = 'src/components/test-plans/TestStepsEditor.tsx';
 const SCHEMAS = 'src/lib/schemas/index.ts';
 const PLAN_REPO = 'src/app-layer/repositories/TestPlanRepository.ts';
@@ -67,9 +67,15 @@ describe('R3-P2 (3) evidence picker, not raw cuid', () => {
     });
 });
 
-describe('R3-P2 (4) client navigation on due Run-now', () => {
-    it('/tests/due uses router.push, not window.location.href', () => {
-        const src = read(DUE_PAGE);
+describe('R3-P2 (4) client navigation on Run-now', () => {
+    // The assertion FOLLOWED THE CODE. "Run now" moved from `/tests/due` to a
+    // row action on the `/tests` list (U3) when the due queue became a filter;
+    // `/tests/due` is now a redirect shim with no handler to assert about.
+    // The invariant is unchanged: navigate client-side so the SPA shell
+    // survives — the original bug was a `window.location.href` that discarded
+    // app state.
+    it('the Run-now row action uses router.push, not window.location.href', () => {
+        const src = read(TESTS_PAGE);
         expect(src).toMatch(/router\.push\(tenantHref\(`\/tests\/runs\//);
         expect(src).not.toMatch(/window\.location\.href = tenantHref/);
     });
@@ -107,7 +113,11 @@ describe('R3-P2 (5) method↔automation reconciliation', () => {
 describe('R3-P2 (6) no silent write failures', () => {
     it('the run + due + panel write paths surface an error toast', () => {
         expect(read(RUN_PAGE)).toMatch(/toast\.error\(t\('run\.errors\.completeFailed'\)\)/);
-        expect(read(DUE_PAGE)).toMatch(/toast\.error/);
+        // Was DUE_PAGE. Both of its write paths — the per-row run and the
+        // due-planning sweep — moved to the list page with U3, and each still
+        // surfaces its failure rather than swallowing it.
+        expect(read(TESTS_PAGE)).toMatch(/toast\.error\(t\('due\.runFailed'\)\)/);
+        expect(read(TESTS_PAGE)).toMatch(/toast\.error\(t\('due\.planningFailed'\)\)/);
         expect(read('src/components/TestPlansPanel.tsx')).toMatch(/toast\.error/);
     });
 });

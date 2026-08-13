@@ -8,7 +8,6 @@ import Link from 'next/link';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { TestsSubNav } from '../_components/TestsSubNav';
 import { ProgressBar, type ProgressBarVariant } from '@/components/ui/progress-bar';
 import { ProgressCircle } from '@/components/ui/progress-circle';
 import {
@@ -123,7 +122,6 @@ export default function TestDashboardPage() {
     if (metricsError) {
         return (
             <DashboardLayout header={header}>
-                <TestsSubNav active="dashboard" />
                 <ErrorState
                     title={t('dashboard.loadErrorTitle')}
                     description={t('dashboard.loadErrorBody')}
@@ -137,7 +135,6 @@ export default function TestDashboardPage() {
     if (!metrics) {
         return (
             <DashboardLayout header={header}>
-                <TestsSubNav active="dashboard" />
                 <SkeletonDashboard />
             </DashboardLayout>
         );
@@ -146,7 +143,6 @@ export default function TestDashboardPage() {
     return (
         <DashboardLayout header={header}>
             {/* R3-P3 — shared sub-nav spine across the three test surfaces. */}
-            <TestsSubNav active="dashboard" />
 
             {/* KPI Cards — R3-P3: rates only. The plan-total + overdue COUNTS
                 that used to sit here restated /tests and /tests/due; the

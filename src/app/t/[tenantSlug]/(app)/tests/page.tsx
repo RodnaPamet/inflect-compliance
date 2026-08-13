@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { NewTestPlanModal } from './_components/NewTestPlanModal';
-import { TestsSubNav } from './_components/TestsSubNav';
 import {
     buildPlanStatusLabels,
     buildResultLabels,
@@ -220,7 +219,7 @@ function TestsRollupContent() {
     const tGroup = useTranslations('common.filterGroups');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { tenantSlug } = useTenantContext();
+    const { tenantSlug, permissions } = useTenantContext();
     const router = useRouter();
     const { state, search, hasActive, clearAll } = useFilters();
 
@@ -436,6 +435,53 @@ function TestsRollupContent() {
         // (`dashboard/page.tsx` → `/tests?due=overdue`).
     }, [plans, state, search, hydratedNow]);
 
+    /**
+     * "Run now" — moved here from `/tests/due` (U3).
+     *
+     * The due queue owned the only way to start a run from a list. Folding the
+     * queue into this page's `due` filter would have retired that affordance
+     * along with the route, so it moves to the row it acts on. Same POST, same
+     * navigation to the created run.
+     */
+    const handleQuickRun = useCallback(
+        async (planId: string) => {
+            try {
+                const res = await fetch(apiUrl(`/tests/plans/${planId}/runs`), {
+                    method: 'POST',
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const run = await res.json();
+                router.push(tenantHref(`/tests/runs/${run.id}`));
+            } catch {
+                toast.error(t('due.runFailed'));
+            }
+        },
+        [apiUrl, router, tenantHref, t, toast],
+    );
+
+    /**
+     * "Run due planning" — the bulk sweep the due queue's header owned (U3).
+     *
+     * Not a per-plan action, so it is not a row action: it asks the server to
+     * open runs for everything currently due. It sits in the toolbar beside
+     * the other page-level affordances, and refetches so the table reflects
+     * the runs it just created.
+     */
+    const [planning, setPlanning] = useState(false);
+    const handleRunDuePlanning = useCallback(async () => {
+        setPlanning(true);
+        try {
+            const res = await fetch(apiUrl('/tests/due'), { method: 'POST' });
+            if (!res.ok) throw new Error(await res.text());
+            await mutate();
+            toast.success(t('due.planningDone'));
+        } catch {
+            toast.error(t('due.planningFailed'));
+        } finally {
+            setPlanning(false);
+        }
+    }, [apiUrl, mutate, t, toast]);
+
     // ─── Sortable headers (per-column asc/desc, parity with Controls) ───
     const [sortBy, setSortBy] = useState<string | undefined>(undefined);
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(
@@ -606,8 +652,33 @@ function TestsRollupContent() {
                     accessorFn: (p) => p._count?.runs ?? 0,
                     cell: ({ getValue }) => <span className="text-content-subtle">{getValue() as number}</span>,
                 },
+                {
+                    // U3 — the due queue's per-row "Run now", on the row it acts
+                    // on. Offered only where it was: an ACTIVE plan that is due
+                    // and has no run already open. A plan with an open run shows
+                    // nothing rather than a disabled button — the queue made the
+                    // same choice, and a second click would mint a duplicate.
+                    id: 'quickRun', header: '',
+                    enableSorting: false,
+                    cell: ({ row }) =>
+                        permissions.canWrite &&
+                        isDueWithin7Days(row.original, hydratedNow) &&
+                        getLastResultKey(row.original) !== 'IN_PROGRESS' ? (
+                            <Button
+                                variant="primary"
+                                size="xs"
+                                onClick={(e) => {
+                                    // The row itself navigates to the plan.
+                                    e.stopPropagation();
+                                    void handleQuickRun(row.original.id);
+                                }}
+                            >
+                                {t('due.runNow')}
+                            </Button>
+                        ) : null,
+                },
             ])),
-        [t, tenantHref, orderColumns, FREQ_LABELS, PLAN_STATUS_LABELS, RESULT_LABELS],
+        [t, tenantHref, orderColumns, FREQ_LABELS, PLAN_STATUS_LABELS, RESULT_LABELS, permissions, hydratedNow, handleQuickRun],
     );
 
     // R3-P1 — columns for the Automated checks view.
@@ -663,8 +734,6 @@ function TestsRollupContent() {
                     ]}
                     className="mb-1"
                 />
-                {/* R3-P3 — the single sub-nav spine across the three test surfaces. */}
-                <TestsSubNav active="tests" className="mb-3" />
                 <div className="flex items-start justify-between gap-default">
                     <div>
                         {/* U4 — sr-only, matching risks / assets / evidence /
@@ -769,9 +838,36 @@ function TestsRollupContent() {
                     searchPlaceholder={t('list.searchPlaceholder')}
                     actions={
                         <>
-                            {/* R3-P3 — due/dashboard cross-links now live in the
-                                shared TestsSubNav; only the cross-section
-                                access-reviews jump stays here. */}
+                            {/* U2 — the dashboard is reached by an ICON here, not
+                                by a tab. `TestsSubNav` was the only bottom-bordered
+                                tab nav in the product; the canonical affordance is
+                                an icon-only Link in this slot (ControlsClient does
+                                the same), stated normatively in views-menu.tsx.
+
+                                The route itself stays. Unlike tasks/dashboard —
+                                whose content folded into its list — this one carries
+                                completion/pass/fail rates, a ProgressCircle gauge and
+                                repeated-failure rollups that have no home on a list
+                                page. Only the affordance changed. */}
+                            <Tooltip content={t('nav.dashboard')}>
+                                <Link href={tenantHref('/tests/dashboard')} aria-label={t('nav.dashboard')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="tests-dashboard-btn">
+                                    <AppIcon name="dashboard" size={16} />
+                                </Link>
+                            </Tooltip>
+                            {permissions.canWrite && (
+                                <Tooltip content={t('due.runPlanning')}>
+                                    <Button
+                                        variant="secondary"
+                                        size="icon"
+                                        id="run-due-planning-btn"
+                                        aria-label={t('due.runPlanning')}
+                                        loading={planning}
+                                        onClick={() => void handleRunDuePlanning()}
+                                    >
+                                        <AppIcon name="run" size={16} />
+                                    </Button>
+                                </Tooltip>
+                            )}
                             <Tooltip content={t('nav.accessReviews')}>
                                 <Link href={tenantHref('/access-reviews')} aria-label={t('nav.accessReviews')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="tests-uar-btn">
                                     <AppIcon name="userCheck" size={16} />

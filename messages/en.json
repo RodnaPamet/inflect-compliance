@@ -6635,6 +6635,7 @@
         },
         "due": {
             "planningFailed": "Failed to run due planning",
+            "planningDone": "Due planning complete.",
             "loading": "Loading due queue...",
             "title": "Due Queue",
             "description": "Test plans due or overdue for execution",
