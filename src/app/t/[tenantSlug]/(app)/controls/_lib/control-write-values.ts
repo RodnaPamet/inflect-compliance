@@ -26,6 +26,19 @@ export interface ControlEditForm {
     mitigationType: string;
     annualCost: string;
     effectiveness: string;
+    /**
+     * The two fields that decide whether a control gets AUTOMATED CHECKS.
+     *
+     * `automation-runner.ts` selects a control only when `automationKey` is
+     * non-null AND `evidenceSource === 'INTEGRATION'`. Both were already
+     * accepted by Zod on create and update, and already written by
+     * `updateControl` — but nothing in `src/app` or `src/components` ever
+     * SENT them, so the feature could not be switched on from the product at
+     * all. The empty state told users to configure something the UI gave them
+     * no way to configure.
+     */
+    automationKey: string;
+    evidenceSource: string;
 }
 
 /**
@@ -95,5 +108,10 @@ export function buildControlPatchBody(form: ControlEditForm) {
         // Declared operating-effectiveness fallback (0–100). Measured pass
         // rate wins downstream when tests exist.
         effectiveness: numberOrNull(form.effectiveness),
+        // Automated-checks wiring. Both must be present for the runner to pick
+        // the control up; sending them independently is deliberate, so an
+        // operator can name the key first and opt in afterwards.
+        automationKey: textOrNull(form.automationKey),
+        evidenceSource: choiceOrNull(form.evidenceSource),
     };
 }

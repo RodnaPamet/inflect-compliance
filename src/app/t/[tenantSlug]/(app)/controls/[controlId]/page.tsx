@@ -295,7 +295,7 @@ export default function ControlDetailPage() {
 
     // Edit modal state
     const [showEditModal, setShowEditModal] = useState(false);
-    const [editForm, setEditForm] = useState({ name: '', objective: '', successCriteria: '', testingMethodology: '', category: '', frequency: '', owner: '', automationType: '', mitigationType: '', annualCost: '', effectiveness: '' });
+    const [editForm, setEditForm] = useState({ name: '', objective: '', successCriteria: '', testingMethodology: '', category: '', frequency: '', owner: '', automationType: '', mitigationType: '', annualCost: '', effectiveness: '', automationKey: '', evidenceSource: '' });
     const [savingEdit, setSavingEdit] = useState(false);
     const [editError, setEditError] = useState('');
 
@@ -315,6 +315,9 @@ export default function ControlDetailPage() {
             owner: control.ownerUserId || '',
             automationType: control.automationType || '',
             mitigationType: control.mitigationType || '',
+            // Automated-checks wiring — the runner needs BOTH.
+            automationKey: control.automationKey || '',
+            evidenceSource: control.evidenceSource || '',
             annualCost:
                 control.annualCost === null || control.annualCost === undefined
                     ? ''
@@ -399,6 +402,8 @@ export default function ControlDetailPage() {
                           // succeeded.
                           automationType: form.automationType || null,
                           mitigationType: form.mitigationType || null,
+                          automationKey: form.automationKey || null,
+                          evidenceSource: form.evidenceSource || null,
                       },
                   }
                 : // Cold cache: nothing to patch. `undefined` means "no

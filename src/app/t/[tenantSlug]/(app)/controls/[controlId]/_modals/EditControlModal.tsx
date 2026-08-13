@@ -45,6 +45,15 @@ export interface EditControlForm {
      *  string-bridge contract as annualCost — empty string → null;
      *  the measured pass rate wins when test history exists. */
     effectiveness: string;
+    /**
+     * Automated-checks wiring. `automation-runner.ts` picks a control up only
+     * when `automationKey` is non-null AND `evidenceSource === 'INTEGRATION'`.
+     * Both were accepted by Zod and written by the usecase long before any UI
+     * sent them — so the feature existed end-to-end on the server and could
+     * not be switched on from the product.
+     */
+    automationKey: string;
+    evidenceSource: string;
 }
 
 type OptT = (key: string) => string;
@@ -52,6 +61,16 @@ const buildAutomationTypeOptions = (t: OptT): ComboboxOption[] => [
     { value: 'AUTOMATED', label: t('automationTypeLabels.AUTOMATED') },
     { value: 'MANUAL', label: t('automationTypeLabels.MANUAL') },
     { value: 'IT_DEPENDENT_MANUAL', label: t('automationTypeLabels.IT_DEPENDENT_MANUAL') },
+];
+
+/**
+ * `MANUAL` is the implicit default; `INTEGRATION` is the explicit opt-in the
+ * runner requires. Kept as an explicit two-option picker rather than a
+ * checkbox so the stored value is legible in the audit trail.
+ */
+const buildEvidenceSourceOptions = (t: OptT): ComboboxOption[] => [
+    { value: 'MANUAL', label: t('editModal.evidenceSourceManual') },
+    { value: 'INTEGRATION', label: t('editModal.evidenceSourceIntegration') },
 ];
 
 const buildMitigationTypeOptions = (t: OptT): ComboboxOption[] => [
@@ -101,6 +120,7 @@ export function EditControlModal({
             : categoryOptions;
     const AUTOMATION_TYPE_OPTIONS = buildAutomationTypeOptions(tx);
     const MITIGATION_TYPE_OPTIONS = buildMitigationTypeOptions(tx);
+    const EVIDENCE_SOURCE_OPTIONS = buildEvidenceSourceOptions(tx);
     return (
         <Modal
             showModal={open}
@@ -350,6 +370,62 @@ export function EditControlModal({
                             />
                             <p className="mt-1 text-xs text-content-subtle">
                                 {tx('editModal.effectivenessHelp')}
+                            </p>
+                        </div>
+                        {/* Automated checks. These two are shown together, and
+                            the help text says they are a pair, because the
+                            runner requires BOTH — a key with the source left on
+                            MANUAL silently never runs, which is precisely the
+                            dead end this section exists to remove. */}
+                        <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
+                            <div data-testid="edit-evidence-source-input">
+                                <label
+                                    htmlFor="edit-evidence-source"
+                                    className="mb-1 block text-sm text-content-default"
+                                >
+                                    {tx('editModal.evidenceSourceLabel')}
+                                </label>
+                                <Combobox
+                                    hideSearch
+                                    forceDropdown
+                                    id="edit-evidence-source"
+                                    selected={
+                                        EVIDENCE_SOURCE_OPTIONS.find(
+                                            (o) => o.value === form.evidenceSource,
+                                        ) ?? null
+                                    }
+                                    setSelected={(opt) =>
+                                        setForm((f) => ({
+                                            ...f,
+                                            evidenceSource: opt?.value ?? '',
+                                        }))
+                                    }
+                                    options={EVIDENCE_SOURCE_OPTIONS}
+                                    placeholder={tx('editModal.nonePlaceholder')}
+                                    matchTriggerWidth
+                                />
+                            </div>
+                            <div data-testid="edit-automation-key-input">
+                                <label
+                                    htmlFor="edit-automation-key"
+                                    className="mb-1 block text-sm text-content-default"
+                                >
+                                    {tx('editModal.automationKeyLabel')}
+                                </label>
+                                <Input
+                                    id="edit-automation-key"
+                                    value={form.automationKey}
+                                    onChange={(e) =>
+                                        setForm((f) => ({
+                                            ...f,
+                                            automationKey: e.target.value,
+                                        }))
+                                    }
+                                    placeholder={tx('editModal.automationKeyPlaceholder')}
+                                />
+                            </div>
+                            <p className="text-xs text-content-subtle sm:col-span-2">
+                                {tx('editModal.automatedChecksHelp')}
                             </p>
                         </div>
                         <div>
