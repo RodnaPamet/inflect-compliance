@@ -3,6 +3,7 @@ import { RequestContext } from '../types';
 import { VendorRepository, VendorDocumentRepository, VendorLinkRepository, VendorFilters, VendorListParams } from '../repositories/VendorRepository';
 import { QuestionnaireRepository, VendorAssessmentRepository } from '../repositories/AssessmentRepository';
 import { assertCanReadVendors, assertCanManageVendors, assertCanManageVendorDocs } from '../policies/vendor.policies';
+import { assertCanAdmin } from '../policies/common';
 import {
     assertTargetInTenant,
     assertOwnerInTenant,
@@ -708,7 +709,16 @@ export async function bulkSetVendorStatus(
 
 /** Bulk soft-delete vendors selected in the table action bar. */
 export async function bulkDeleteVendor(ctx: RequestContext, vendorIds: string[]) {
-    assertCanManageVendors(ctx);
+    // Deleting the vendor register in bulk is an ADMIN action, matching every
+    // peer register (risk / control / asset / policy / test plan). This was
+    // `assertCanManageVendors` — the same EDITOR-level gate as bulk set-status
+    // and bulk assign — so an EDITOR could soft-delete 100 vendors at a time
+    // here while being refused the identical action on every other surface.
+    // Found by the bounded admin-gate assertion added to
+    // `tests/guards/bulk-actions-rollout.test.ts`; the previous whole-file
+    // regex could not see it, because the two recoverable verbs in this same
+    // file satisfied the check on this one's behalf.
+    assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
         const rows = await VendorRepository.listByIds(db, ctx, vendorIds);
         if (rows.length === 0) return { deleted: 0 };

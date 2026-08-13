@@ -140,6 +140,29 @@ export const TestPlanRepository = {
         return updated;
     },
 
+    /**
+     * When this plan was last actually tested — the `executedAt` of its most
+     * recent COMPLETED run, or null if it has never completed one.
+     *
+     * This is the anchor a cadence change must measure from. `getById`
+     * already includes runs, but only the latest 10 of ANY status, so a plan
+     * with a run of planned/running churn can push its last completed run out
+     * of that window. Asking the database directly cannot miss it.
+     */
+    async lastCompletedRunAt(db: PrismaTx, ctx: RequestContext, planId: string): Promise<Date | null> {
+        const run = await db.controlTestRun.findFirst({
+            where: {
+                testPlanId: planId,
+                tenantId: ctx.tenantId,
+                status: 'COMPLETED',
+                executedAt: { not: null },
+            },
+            select: { executedAt: true },
+            orderBy: { executedAt: 'desc' },
+        });
+        return run?.executedAt ?? null;
+    },
+
     async updateNextDueAt(db: PrismaTx, _ctx: RequestContext, planId: string, nextDueAt: Date | null) {
         return db.controlTestPlan.update({
             where: { id: planId },
