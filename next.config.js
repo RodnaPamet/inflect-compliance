@@ -65,6 +65,73 @@ const defaultOptions = {
             dynamic: 30,
             static: 180,
         },
+        // The E2E build was OOM-killing its runner.
+        //
+        // Measured 2026-08-13 on ubuntu-latest (15,989 MB / 4 vCPU), by
+        // sampling /proc/meminfo + the build process tree every 1s through
+        // `next build --webpack` under NEXT_TEST_MODE:
+        //
+        //                     peak build RSS      trough available
+        //   without this        14,479 MB              275 MB   (5 runs)
+        //   with this            8,070 MB            6,880 MB
+        //
+        // The individual samples matter more than the means, because the
+        // means hide the argument. Baseline runs, peak / trough / outcome:
+        //
+        //   14,548 / 261  lived      14,435 / 285  lived
+        //   14,394 / 289  lived      14,449 / 291  lived
+        //   14,568 / 251  lived      14,537 / 241  KILLED
+        //
+        // Read the first and last entries together: the run that peaked
+        // HIGHER survived and the one that peaked LOWER was killed. Below
+        // this margin the peak is not the variable and the diff under test
+        // is not the variable — the timing of the terminal surge is.
+        //
+        // The build was clearing a 16 GB box by 1.6%. That is not a margin,
+        // it is a coin flip — and it presented as one: E2E failed ~3 times in
+        // 8 runs with no code cause, on trees that had nothing in common.
+        //
+        // If the ratio of comment to code here looks wrong, that ratio IS the
+        // finding. Because the failure carried no attribution, two sessions
+        // spent an afternoon on it, a verified-working production fix was
+        // reverted on the strength of a correlation, and background jobs were
+        // down for hours. None of that was a code defect. The measurement is
+        // written down at this length so the next person spends ten minutes.
+        //
+        // Why the failures were unattributable, which is the part worth
+        // keeping: NODE_OPTIONS on the E2E build step carries
+        // --max-old-space-size=8192, and 8192 EXCEEDS what the box can
+        // actually supply once Postgres, Redis and the runner agent are
+        // resident. So the kernel OOM-killer always arrived before V8's own
+        // limit, and the job died as "The runner has received a shutdown
+        // signal" with no heap message and no attribution. A cap set BELOW
+        // available memory fails legibly; a cap above it fails silently.
+        // Note also that the flag bounds one heap inside the process, not
+        // the process: with it set to 8192 the tree still reached 14,479 MB
+        // resident, so no value of that flag was ever going to fix this.
+        //
+        // The flag DOES change the emitted bundle, and the churn is real but
+        // semantically empty. Production builds either side, all 882 static
+        // chunks compared:
+        //
+        //   files 882 = 882      distinct module ids 1,210 = 1,210
+        //   module definitions 3,915 = 3,915
+        //   total bytes 10,754,726 vs 10,754,722   (-4 bytes, -0.00004%)
+        //   142 module ids renumbered 1:1; 0 ids differ in definition count
+        //
+        // i.e. the same modules, renumbered and redistributed across chunks.
+        // 182 of 882 chunks change content hash as a result, so a deploy
+        // invalidates ~21% of chunk caches ONCE — the ordinary consequence of
+        // any bundler-affecting change, including every dependency bump.
+        //
+        // Note per-chunk textual comparison does NOT show this: module bodies
+        // reference other modules' ids, so redistribution defeats any
+        // normalisation applied within a single chunk. Compare the module set
+        // across the WHOLE bundle instead.
+        //
+        // Re-derive rather than trust: set NEXT_TEST_MODE=1 and sample
+        // MemAvailable + the build tree's RSS through a build.
+        webpackMemoryOptimizations: true,
         // optimizePackageImports remains experimental in Next 15.
         // Barrel/submodule packages — let Next rewrite imports to the
         // specific entry points so unused code tree-shakes out of the
