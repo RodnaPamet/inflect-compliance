@@ -134,8 +134,21 @@ describe('ColumnsDropdown + shared primitive — source contract', () => {
     });
 
     it('the shared primitive shows a "Reset to defaults" row gated on modification', () => {
-        expect(primitive).toMatch(/Reset to defaults/);
+        // U1d — the label moved into the message catalogue. It was a hardcoded
+        // English literal in a primitive that backs BOTH toolbar gears, so it
+        // shipped untranslated on every list page in the product.
+        //
+        // The row still exists and is still gated on `someModified`; only the
+        // string's source changed. Assert the wiring plus the catalogue value,
+        // mirroring how `columns-dropdown-coverage.test.ts` asserts the two
+        // gear titles.
+        expect(primitive).toMatch(/t\('table\.resetToDefaults'\)/);
         expect(primitive).toMatch(/someModified/);
+
+        const en = JSON.parse(
+            fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf-8'),
+        );
+        expect(en.common.table.resetToDefaults).toBe('Reset to defaults');
     });
 
     it('uses semantic tokens (no raw slate classes)', () => {
