@@ -187,9 +187,39 @@ describe('R5-P1 (4b) every storage read is gated or declared non-serving', () =>
 
 describe('R5-P1 (5) version-aware deleted/archived gate', () => {
     const src = read(EVIDENCE);
-    it('downloadEvidenceFile walks the version chain + checks deleted AND archived', () => {
+    it('downloadEvidenceFile walks the version chain', () => {
         expect(src).toMatch(/previousFileRecordId: headFileId/);
-        expect(src).toMatch(/evidence\?\.deletedAt/);
-        expect(src).toMatch(/evidence\?\.isArchived/);
+    });
+
+    /**
+     * This used to assert `evidence?.deletedAt` and `evidence?.isArchived` —
+     * the OPTIONAL-CHAINING form, which was the bug rather than the fix.
+     * Evidence is soft-delete filtered, so a deleted row came back NULL and
+     * `evidence?.deletedAt` evaluated to `undefined`: the gate was skipped BY
+     * deletion instead of triggered by it. The guard pinned the shape of the
+     * code it was written against, and that shape could not refuse anything.
+     *
+     * The invariant is what the gate must ACHIEVE: see the deleted row, and
+     * refuse when there is no owning evidence at all.
+     */
+    it('fetches the owning evidence with withDeleted so the gate can see a deleted row', () => {
+        expect(src).toMatch(/db\.evidence\.findFirst\(\s*withDeleted\(/);
+    });
+
+    it('refuses when there is no owning evidence, for every role', () => {
+        // An orphaned FileRecord (evidence hard-purged) must not be servable.
+        // Previously only the read-tier branch refused this, so write-tier
+        // roles downloaded purged files.
+        expect(src).toMatch(/if \(!evidence\) \{[\s\S]{0,120}?throw notFound/);
+        // …and the refusal must NOT be nested inside the canWrite branch.
+        const orphanCheck = src.indexOf('if (!evidence) {');
+        const readTierBranch = src.indexOf('if (!ctx.permissions.canWrite)');
+        expect(orphanCheck).toBeGreaterThan(-1);
+        expect(orphanCheck).toBeLessThan(readTierBranch);
+    });
+
+    it('still gates on deleted AND archived', () => {
+        expect(src).toMatch(/evidence\.deletedAt/);
+        expect(src).toMatch(/evidence\.isArchived/);
     });
 });

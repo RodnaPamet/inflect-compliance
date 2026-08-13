@@ -175,11 +175,63 @@ describeFn('downloadEvidenceFile (integration)', () => {
         );
     });
 
-    // NOTE: the `evidence?.deletedAt` block inside downloadEvidenceFile is
-    // unreachable through the app prisma client — the soft-delete extension
-    // injects `deletedAt: null` on findFirst, so a genuinely soft-deleted
-    // evidence row is filtered out (returns undefined) before the deletedAt
-    // check runs. Documented as uncovered-by-design rather than faked.
+    // These three cover what a NOTE here used to describe as
+    // "uncovered-by-design": the `evidence?.deletedAt` block was unreachable
+    // because the soft-delete extension filtered the row out before the check
+    // could run. The diagnosis was exactly right; the conclusion was that the
+    // gate could not be TESTED, when what it meant was that the gate never
+    // FIRED — deletion made the query return null, `evidence?.deletedAt`
+    // became undefined, and the download proceeded. The lookup now uses
+    // `withDeleted` so the gate can see the row it exists to refuse.
+
+    it('refuses a file whose evidence was SOFT-DELETED — for a write-tier role', async () => {
+        const ev = await uploadEvidenceFile(adminCtx(), txtFile(`dl-soft-del-${randomUUID()}`), {
+            title: 'dl soft deleted', controlId: CONTROL_ID,
+        });
+        await globalPrisma.fileRecord.update({
+            where: { id: ev.fileRecord.id }, data: { scanStatus: 'CLEAN' },
+        });
+        // Soft-delete via the raw client so we set exactly what the app's
+        // delete path sets, without depending on it.
+        await globalPrisma.evidence.update({
+            where: { id: ev.id }, data: { deletedAt: new Date() },
+        });
+
+        // ADMIN is write-tier, which is the role that used to sail through:
+        // the read-tier branch below was the only thing refusing this.
+        await expect(downloadEvidenceFile(adminCtx(), ev.fileRecord.id)).rejects.toThrow(
+            /deleted/i,
+        );
+    });
+
+    it('refuses a file whose evidence was HARD-PURGED (orphaned FileRecord)', async () => {
+        const ev = await uploadEvidenceFile(adminCtx(), txtFile(`dl-purged-${randomUUID()}`), {
+            title: 'dl purged', controlId: CONTROL_ID,
+        });
+        await globalPrisma.fileRecord.update({
+            where: { id: ev.fileRecord.id }, data: { scanStatus: 'CLEAN' },
+        });
+        // What the retention purge does today: delete the Evidence row and
+        // leave the FileRecord (and its blob) behind.
+        await globalPrisma.evidenceControlLink.deleteMany({ where: { evidenceId: ev.id } });
+        await globalPrisma.evidence.delete({ where: { id: ev.id } });
+
+        await expect(downloadEvidenceFile(adminCtx(), ev.fileRecord.id)).rejects.toThrow();
+    });
+
+    it('still allows a live, linked, CLEAN file for a write-tier role', async () => {
+        // The fix must not close the door on the normal path — an orphan check
+        // that refuses everything would pass both tests above and be useless.
+        const ev = await uploadEvidenceFile(adminCtx(), txtFile(`dl-live-${randomUUID()}`), {
+            title: 'dl live', controlId: CONTROL_ID,
+        });
+        await globalPrisma.fileRecord.update({
+            where: { id: ev.fileRecord.id }, data: { scanStatus: 'CLEAN' },
+        });
+
+        const res = await downloadEvidenceFile(adminCtx(), ev.fileRecord.id);
+        expect(res.mode).toBe('stream');
+    });
 
     it('READER can download evidence that IS linked to a control', async () => {
         const ev = await uploadEvidenceFile(adminCtx(), txtFile(`dl-reader-ok-${randomUUID()}`), {
