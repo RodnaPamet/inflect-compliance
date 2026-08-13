@@ -216,14 +216,28 @@ export async function scanStream(stream: Readable, maxBytes = 100 * 1024 * 1024)
  * @param scanStatus - current scan status of the file
  * @returns true if download should be allowed, false to block
  */
-export function isDownloadAllowed(scanStatus: ScanStatus | string | null): boolean {
+export function isDownloadAllowed(
+    // `undefined` is in the signature because the body already handles it
+    // (see the PENDING branch below) and callers legitimately hold an optional
+    // scanStatus. Omitting it from the type pushed call sites into writing
+    // `x !== undefined && !isDownloadAllowed(x)` — a fail-OPEN guard around a
+    // fail-closed predicate, which is how an unscanned file reached a bundle.
+    scanStatus: ScanStatus | string | null | undefined,
+): boolean {
     const mode = env.AV_SCAN_MODE;
 
-    // Disabled mode: always allow
-    if (mode === 'disabled') return true;
-
-    // Infected files are NEVER downloadable regardless of mode
+    // Infected files are NEVER downloadable — checked FIRST, so the claim
+    // "regardless of mode" is actually true.
+    //
+    // This used to sit below the `disabled` early-return, which meant a file
+    // already marked INFECTED became servable the moment an operator set
+    // AV_SCAN_MODE=disabled. Scanning being off explains why NEW files are not
+    // scanned; it does not un-know a verdict already recorded on an old one.
+    // The AV webhook writes INFECTED with no mode check, so such rows exist.
     if (scanStatus === 'INFECTED') return false;
+
+    // Disabled mode: allow anything not already known-infected.
+    if (mode === 'disabled') return true;
 
     // Clean and skipped files are always allowed
     if (scanStatus === 'CLEAN' || scanStatus === 'SKIPPED') return true;
