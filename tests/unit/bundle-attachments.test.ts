@@ -56,6 +56,14 @@ function makeFileRecord(overrides: Partial<FileRecordRow> = {}): FileRecordRow {
         sha256: FILE_SHA256,
         domain: 'evidence',
         storageProvider: 'local',
+        // Explicit, because the AV gate is now fail-CLOSED on an unknown
+        // status. These fixtures previously omitted scanStatus and were
+        // exported anyway — the call site guarded the gate with
+        // `scanStatus !== undefined &&`, so an absent status skipped it. A
+        // file with no recorded scan is exactly the file that must NOT be
+        // bundled, so the default here is a file that HAS been scanned; the
+        // gate's own behaviour is covered by the scan-gate tests below.
+        scanStatus: 'CLEAN',
         ...overrides,
     };
 }

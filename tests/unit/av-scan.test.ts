@@ -75,11 +75,23 @@ describe('AV Scan - Download Gate', () => {
             process.env.AV_SCAN_MODE = 'disabled';
         });
 
-        test('all statuses are downloadable when disabled', () => {
+        test('unscanned statuses are downloadable when disabled', () => {
             expect(isDownloadAllowed('CLEAN')).toBe(true);
-            expect(isDownloadAllowed('INFECTED')).toBe(true);
             expect(isDownloadAllowed('PENDING')).toBe(true);
             expect(isDownloadAllowed(null)).toBe(true);
+            expect(isDownloadAllowed(undefined)).toBe(true);
+        });
+
+        test('a file already known INFECTED is STILL refused', () => {
+            // Changed deliberately (this assertion used to expect `true`).
+            // `disabled` means "do not scan new files" — it cannot un-know a
+            // verdict already recorded against an old one. The AV webhook
+            // (src/app/api/storage/av-webhook/route.ts) writes INFECTED with no
+            // mode check, so a known-malware row genuinely can exist while the
+            // mode is disabled; serving it is indefensible whatever the config.
+            // This also makes the predicate match its own doc comment, which
+            // has always claimed INFECTED is refused "regardless of mode".
+            expect(isDownloadAllowed('INFECTED')).toBe(false);
         });
     });
 });

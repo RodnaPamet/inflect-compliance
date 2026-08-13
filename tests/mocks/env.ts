@@ -25,6 +25,14 @@ export const env = new Proxy({}, {
             case 'RATE_LIMIT_ENABLED': return '1';
             case 'RATE_LIMIT_MODE': return 'upstash';
             case 'AUTH_TEST_MODE': return 'true';
+            // Mirrors the real default in src/env.ts (`.default("strict")`).
+            // Falling through to `undefined` here made `isDownloadAllowed` take
+            // its PERMISSIVE branch in every test in the repo, so the strict
+            // gate — the one that blocks a file whose scan has not finished —
+            // was never once exercised. A mock that answers differently from
+            // production turns its suites green without testing the shipped
+            // configuration.
+            case 'AV_SCAN_MODE': return 'strict';
             default: return undefined;
         }
     }

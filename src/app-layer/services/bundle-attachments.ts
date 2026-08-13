@@ -166,7 +166,13 @@ export async function exportAttachments(
     for (const record of fileRecords) {
         // R5-P1 #3 — single shared AV gate: never bundle a file the download
         // predicate would block (INFECTED, or PENDING under strict mode).
-        if (record.scanStatus !== undefined && !isDownloadAllowed(record.scanStatus)) {
+        // Fail CLOSED on an unknown scanStatus. The `!== undefined` guard this
+        // replaces let an undefined status skip the gate entirely — while
+        // `isScanPending` in the client mirror classifies a falsy status as
+        // PENDING, i.e. explicitly NOT servable. The predicate already handles
+        // null/undefined correctly, so let it own the decision rather than
+        // second-guessing it at the call site.
+        if (!isDownloadAllowed(record.scanStatus)) {
             warnings.push(
                 `Skipped attachment ${record.id} (${record.originalName}): ` +
                 `blocked by antivirus scan gate (status ${record.scanStatus})`,
