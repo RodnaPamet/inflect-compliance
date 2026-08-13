@@ -108,6 +108,26 @@ export function getFrequencyIntervalMs(frequency: string | null): number | null 
 /**
  * Calculate the next due date given frequency and current due date.
  */
+/**
+ * Did this check actually observe anything?
+ *
+ * ERROR (broken collector, expired credentials, provider outage) and
+ * NOT_APPLICABLE (empty population) are not answers — the check ran and
+ * established nothing. Only PASSED and FAILED are real observations.
+ *
+ * This rule governs THREE writes and was previously spelled inline at each,
+ * which is how it came to be applied at two of them and not the third: the
+ * control's tested-state was advanced unconditionally, so a check that could
+ * not run still reported the control as freshly tested and rolled its due date.
+ *
+ * The sibling on the manual/test-run path is `isAttestingVerdict`
+ * (usecases/control/test-plans.ts), which is the same rule in that domain's
+ * vocabulary (PASS/FAIL rather than PASSED/FAILED).
+ */
+export function isRealObservation(status: string | null | undefined): boolean {
+    return status === 'PASSED' || status === 'FAILED';
+}
+
 export function computeNextDueAt(frequency: string | null, fromDate: Date): Date | null {
     const interval = getFrequencyIntervalMs(frequency);
     if (!interval) return null;
@@ -340,7 +360,7 @@ export async function executeControlAutomation(
     // H2 — never write APPROVED evidence off a broken run (ERROR) or an empty
     // population (NOT_APPLICABLE). Only PASSED/FAILED reflect a real
     // observation the evidence can attest to.
-    const evidenceEligible = result.status === 'PASSED' || result.status === 'FAILED';
+    const evidenceEligible = isRealObservation(result.status);
     if (evidencePayload && evidenceEligible) {
         const evidence = await prisma.evidence.create({
             data: {
@@ -393,15 +413,38 @@ export async function executeControlAutomation(
     // already committed, so a finding-side error is logged, not thrown.
     await reconcileFindingForCheck(control, result.status, result, now);
 
-    // Advance control scheduling
-    const nextDueAt = computeNextDueAt(control.frequency, now);
-    await prisma.control.update({
-        where: { id: control.id },
-        data: {
-            lastTested: now,
-            ...(nextDueAt ? { nextDueAt } : {}),
-        },
-    });
+    // Advance control scheduling — ONLY on a real verdict.
+    //
+    // This ran unconditionally. An ERROR (broken collector, expired
+    // credentials, provider outage) or a NOT_APPLICABLE (empty population)
+    // therefore stamped `lastTested = now` and rolled `nextDueAt` forward, so a
+    // control that nobody actually verified dropped off /tests?due=..., the
+    // dashboard and the coverage surfaces until its next cycle. A check that
+    // could not run reported the control as freshly tested.
+    //
+    // The rule was already established twice IN THIS FILE and simply not
+    // applied here: `evidenceEligible` above refuses to mint APPROVED evidence
+    // off a non-verdict, and `reconcileFindingForCheck` refuses to auto-close a
+    // finding off one. `attestControlTested` — the manual and test-run path —
+    // gates on `isAttestingVerdict` for exactly this reason, with a docblock
+    // saying that claiming "tested and on schedule" would be a false assurance
+    // an auditor could act on. The automated path was the one place the
+    // assurance was granted for free.
+    //
+    // FAILED still attests: the control WAS exercised and the answer was "not
+    // effective". That failure is carried by the Finding above; leaving the
+    // control ALSO reading overdue would double-count one problem.
+    const attests = isRealObservation(result.status);
+    if (attests) {
+        const nextDueAt = computeNextDueAt(control.frequency, now);
+        await prisma.control.update({
+            where: { id: control.id },
+            data: {
+                lastTested: now,
+                ...(nextDueAt ? { nextDueAt } : {}),
+            },
+        });
+    }
 
     return { status: result.status, executionId: execution.id };
 }
@@ -439,7 +482,7 @@ async function reconcileFindingForCheck(
     // H2 — a broken run (ERROR) or an empty population (NOT_APPLICABLE) is NOT
     // a pass: it must never auto-close an open finding. Only a genuine
     // FAILED/PASSED derived from a real parsed result reconciles findings.
-    if (status === 'ERROR' || status === 'NOT_APPLICABLE') return;
+    if (!isRealObservation(status)) return;
 
     const sourceRef = `${control.id}:${control.automationKey}`;
     try {
