@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import type { RequestContext } from '../types';
-import { buildSystemContext } from '../context';
+import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import { forbidden, badRequest } from '@/lib/errors/types';
 import { recordDeviceReport } from '@/lib/observability/integration-metrics';

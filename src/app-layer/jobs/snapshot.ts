@@ -23,7 +23,7 @@ import { prisma } from '@/lib/prisma';
 import { DashboardRepository } from '../repositories/DashboardRepository';
 import { withTenantDb } from '@/lib/db-context';
 import type { RequestContext } from '../types';
-import { buildSystemContext } from '../context';
+import { buildSystemContext } from '../context-system';
 import type { JobRunResult } from './types';
 
 /**

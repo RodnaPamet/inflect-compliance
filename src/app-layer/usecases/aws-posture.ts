@@ -14,7 +14,7 @@
  * only — NO risks are auto-created (a follow-on can propose-not-commit).
  */
 import type { RequestContext } from '../types';
-import { buildSystemContext } from '../context';
+import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';

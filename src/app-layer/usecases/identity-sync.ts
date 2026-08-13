@@ -10,7 +10,7 @@
  * email + status flags, not content — so nothing is encrypted here.
  */
 import type { RequestContext } from '../types';
-import { buildSystemContext } from '../context';
+import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
