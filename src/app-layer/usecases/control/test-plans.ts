@@ -468,10 +468,37 @@ export async function updateTestPlan(ctx: RequestContext, planId: string, patch:
             // the trail to explain it. This is that explanation.
             const stillOverdue = !!nextDueAt && nextDueAt <= now;
             if (wasOverdue && !stillOverdue) {
+                // `entity_lifecycle` / `updated`, NOT `status_change`: overdue is
+                // not a `TestPlanStatus` value, it is derived live from
+                // `nextDueAt < now()` (see the OVERDUE semantics note above).
+                // Tagging derived state as a status transition is what polluted
+                // the SIEM filters watching real ones — the same mistake the
+                // status-machine wiring guard records for BUNDLE_FROZEN.
+                //
+                // `detailsJson` leads the object deliberately: the structural
+                // guard reads only ~15 lines forward from the call, so a long
+                // `details` string ahead of it reads as a call with no payload.
                 await logEvent(db, ctx, {
                     action: 'TEST_PLAN_OVERDUE_CLEARED_BY_CADENCE',
                     entityType: 'ControlTestPlan',
                     entityId: planId,
+                    detailsJson: {
+                        category: 'entity_lifecycle',
+                        entityName: 'ControlTestPlan',
+                        operation: 'updated',
+                        changedFields: ['frequency', 'nextDueAt'],
+                        before: {
+                            frequency: existing.frequency,
+                            nextDueAt: existing.nextDueAt!.toISOString(),
+                            overdue: true,
+                        },
+                        after: {
+                            frequency: patch.frequency,
+                            nextDueAt: nextDueAt ? nextDueAt.toISOString() : null,
+                            overdue: false,
+                        },
+                        summary: 'Cadence change cleared an overdue test plan',
+                    },
                     details:
                         `Cadence changed ${existing.frequency} → ${patch.frequency}. ` +
                         `The plan was overdue (due ${existing.nextDueAt!.toISOString()}) and is no longer, ` +
