@@ -82,6 +82,66 @@ const codeOnly = (src: string): string =>
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/^\s*\/\/.*$/gm, '');
 
+describe('Policies KPI cards read the SERVER count, not the loaded array', () => {
+    const src = codeOnly(read(CLIENTS.Policies));
+
+    /**
+     * The defect this pins: every card count was `policies.filter(...).length`
+     * over an array that is capped (LIST_BACKFILL_CAP) and SSR-windowed, while
+     * each card's filter resolves against the whole tenant. A card read 3 and
+     * produced 47 rows.
+     *
+     * Two of the six were wrong for a second, independent reason:
+     *   - `total` displayed the CURRENT FILTERED length while its click calls
+     *     clearAll(), so it disagreed with itself whenever a filter was set;
+     *   - `approved` counted APPROVED||PUBLISHED but applied status=APPROVED
+     *     alone, over-counting by the published set on every render.
+     *
+     * A filter card's number is a promise about its own click. These assert
+     * the number now comes from the database.
+     */
+    it('reads counts from the list response', () => {
+        expect(src).toMatch(/serverKpiCounts\s*=\s*policiesQuery\.data\?\.kpiCounts/);
+    });
+
+    it.each(['total', 'draft', 'inReview', 'approved', 'overdueReview', 'outstandingAck'])(
+        '%s prefers the server count',
+        (id) => {
+            expect(src).toMatch(new RegExp(`serverKpiCounts\\?\\.${id}\\s*\\?\\?`));
+        },
+    );
+
+    it('approved selects BOTH statuses it counts', () => {
+        // Counting one set and filtering to another is the same class of lie
+        // as counting a page and filtering a tenant.
+        // Bound the read to policyKpiDefs. `id: 'approved'` also appears in
+        // the CardDefinition array above it, and slicing from the FIRST match
+        // reads the wrong block — which is how this assertion first failed
+        // against correct code.
+        const defsStart = src.indexOf('policyKpiDefs');
+        expect(defsStart).toBeGreaterThan(-1);
+        const defs = src.slice(defsStart);
+        const block = defs.slice(defs.indexOf("id: 'approved'"), defs.indexOf("id: 'approved'") + 400);
+        expect(block).toMatch(/ctx\.set\('status', 'APPROVED'\)/);
+        expect(block).toMatch(/ctx\.add\('status', 'PUBLISHED'\)/);
+    });
+
+    it('the two sparkline-less cards are opt-in, and keep their ids', () => {
+        // defaultVisible:false — NOT removed, NOT renamed. Renaming would
+        // leave one live persisted id, which skips the stale-id migration and
+        // strands prior gear users with a single visible card.
+        expect(src).toMatch(/id: 'overdueReview'[^}]*defaultVisible: false/);
+        expect(src).toMatch(/id: 'outstandingAck'[^}]*defaultVisible: false/);
+        // The other four stay default-visible: four fills the
+        // grid-cols-2 md:grid-cols-4 row exactly.
+        for (const id of ['total', 'draft', 'inReview', 'approved']) {
+            const m = src.match(new RegExp(`\\{ id: '${id}'[^}]*\\}`));
+            expect(m?.[0]).toBeDefined();
+            expect(m?.[0]).not.toMatch(/defaultVisible: false/);
+        }
+    });
+});
+
 describe('the filter-cards gear controls KPI cards on every list page', () => {
     it.each(Object.entries(CLIENTS))(
         '%s registers kind:"kpi" cards and renders its KPI strip from them',

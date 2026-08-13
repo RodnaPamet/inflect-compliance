@@ -2872,6 +2872,7 @@
             "delete": "Delete",
             "failed": "Bulk action failed",
             "deletedToast": "{count, plural, one {# policy deleted} other {# policies deleted}}",
+            "deletedReconciled": "{deleted, plural, one {# policy deleted} other {# policies deleted}} · {skipped, plural, one {# was already gone} other {# were already gone}}",
             "undo": "Undo",
             "archivedToast": "{count, plural, one {# policy archived} other {# policies archived}}",
             "assignedToast": "{count, plural, one {# policy updated} other {# policies updated}}"

@@ -57,7 +57,7 @@ export interface CardDefinition {
     icon?: ReactNode;
     /** Defaults to `true` — set `false` for opt-in cards. */
     defaultVisible?: boolean;
-    /** Extensible discriminator; only `'filter'` is wired today. */
+    /** Extensible discriminator; `'filter'` and `'kpi'` are both wired. */
     kind: CardKind;
 }
 
