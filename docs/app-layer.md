@@ -155,6 +155,48 @@ See [docs/rls.md](./rls.md) for full details.
 
 ---
 
+## When a usecase becomes a directory
+
+`src/app-layer/usecases/` holds both single files and directories
+(`audit-readiness/`, `compliance-calendar/`, `control/`, `framework/`). Nothing
+stated when to reach for which, so the split kept being argued from file size.
+
+**Size is the wrong trigger.** `task.ts` is 1,906 lines and is fine as one
+file: no `task/` directory exists, so nothing about it is hard to find.
+
+**The trigger is barrel bypass.** Split when a `<domain>-<subdomain>.ts` file
+sits BESIDE an existing `<domain>/` directory and is not re-exported by that
+directory's `index.ts`. At that point the module is part of the domain by name
+and outside it by structure, so every consumer has to know to reach around the
+barrel — and a sibling inside the directory ends up importing `../<domain>-x`,
+which is the shape that makes a domain impossible to reason about as a unit.
+
+The worked example: `control/health.ts` imported
+`computeControlEffectivenessMap` from `../control-test`, so control HEALTH
+could not be computed without reaching outside `usecases/control/`.
+`control-test.ts` is now `control/test-plans.ts`; `control-exception.ts` and
+`control-roi.ts` moved the same way.
+
+### The rule
+
+1. **No `<domain>/` directory exists** → keep the single file, whatever its
+   size. Create the directory only when a second module genuinely belongs to
+   the same domain.
+2. **A `<domain>/` directory exists** → every module of that domain lives
+   inside it and is re-exported from `<domain>/index.ts`. A file named for the
+   domain but sitting outside it is the defect.
+3. **Moving one in** → keep the barrel curated (explicit re-exports, not
+   `export *`), and inventory importers first; the move is mechanical, the
+   import rewrite is where mistakes hide.
+
+### Outstanding
+
+`framework-delta.ts` — 290 lines, sits beside `framework/`, is not re-exported
+by `framework/index.ts`, and has 5 importers. Same shape `control-test.ts` had.
+It is the only remaining instance.
+
+---
+
 ## CI Guardrails
 
 The CI guard (`tests/unit/no-direct-prisma.test.ts`) scans all source files and **fails if**:
