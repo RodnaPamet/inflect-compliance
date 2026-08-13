@@ -431,10 +431,54 @@ export async function updateTestPlan(ctx: RequestContext, planId: string, patch:
 
         const updated = await TestPlanRepository.update(db, ctx, planId, sanitisedPatch);
 
-        // Recompute nextDueAt if frequency changed
+        // Recompute nextDueAt if frequency changed.
+        //
+        // The anchor matters more than the arithmetic. This used to call
+        // `computeNextDueAt(patch.frequency)` with no second argument, which
+        // defaults `fromDate` to NOW — so a plan three months overdue became
+        // "due in a month" the instant anyone touched its cadence. The
+        // compliance gap vanished from /tests/due, the dashboard and every
+        // notification, silently, because nothing about a cadence edit says
+        // "and forgive the backlog".
+        //
+        // Measuring from when the plan was last actually tested keeps the
+        // backlog honest: a plan last tested four months ago that moves
+        // MONTHLY→QUARTERLY is still a month overdue afterwards, because it
+        // is. Falling back to the previous due date (then `createdAt`) keeps
+        // a never-run plan from resetting either.
         if (patch.frequency && patch.frequency !== existing.frequency) {
-            const nextDueAt = computeNextDueAt(patch.frequency);
+            const now = new Date();
+            const wasOverdue = !!existing.nextDueAt && existing.nextDueAt <= now;
+
+            const anchor =
+                (await TestPlanRepository.lastCompletedRunAt(db, ctx, planId)) ??
+                existing.nextDueAt ??
+                existing.createdAt;
+
+            const nextDueAt = computeNextDueAt(patch.frequency, anchor);
             await TestPlanRepository.updateNextDueAt(db, ctx, planId, nextDueAt);
+
+            // A relaxed cadence CAN legitimately clear an overdue state — a
+            // control tested four months ago is not overdue once it becomes an
+            // annual check. That is a real decision, so it is recorded rather
+            // than blocked: preserving the flag instead would strand the plan
+            // permanently overdue with no way to clear it.
+            //
+            // What must never happen is the state disappearing with nothing in
+            // the trail to explain it. This is that explanation.
+            const stillOverdue = !!nextDueAt && nextDueAt <= now;
+            if (wasOverdue && !stillOverdue) {
+                await logEvent(db, ctx, {
+                    action: 'TEST_PLAN_OVERDUE_CLEARED_BY_CADENCE',
+                    entityType: 'ControlTestPlan',
+                    entityId: planId,
+                    details:
+                        `Cadence changed ${existing.frequency} → ${patch.frequency}. ` +
+                        `The plan was overdue (due ${existing.nextDueAt!.toISOString()}) and is no longer, ` +
+                        `recomputed from ${anchor.toISOString()} to ` +
+                        `${nextDueAt ? nextDueAt.toISOString() : 'no scheduled due date'}.`,
+                });
+            }
         }
 
         // Emit events. PR-E — only a genuine pause/resume (to/from PAUSED)

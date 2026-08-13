@@ -67,3 +67,66 @@ export function declarationOf(src: string, name: string): string {
     }
     throw new Error(`unterminated declaration: const ${name}`);
 }
+
+/**
+ * Return `export async function <name>(…) { … }`, bounded by the brace
+ * that closes its body at depth zero.
+ *
+ * Sibling of `declarationOf()` above, which bounds a `const` declaration;
+ * this one bounds a `function` declaration, but it only matches `const <name> = …;`. The same rule
+ * applies here and for the same reason: a slice with no end bound (the
+ * shape this file used to carry — `src.slice(src.indexOf('export async
+ * function bulkSetStatus'))`, running to EOF) stays green when the
+ * target function is gutted, provided any LATER function in the file
+ * still mentions the identifiers being matched.
+ *
+ * Quoted text and comments are skipped so a brace or apostrophe inside
+ * either cannot terminate the scan early.
+ */
+export function functionBodyOf(src: string, name: string): string {
+    const start = src.search(
+        new RegExp(`\\b(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\b`),
+    );
+    if (start < 0) throw new Error(`function not found: ${name}`);
+
+    let parens = 0;
+    let braces = 0;
+    let seenBody = false;
+    let quote: string | null = null;
+
+    for (let i = start; i < src.length; i++) {
+        const ch = src[i];
+        const next = src[i + 1];
+
+        if (quote) {
+            if (ch === '\\') i++;
+            else if (ch === quote) quote = null;
+            continue;
+        }
+        if (ch === '/' && next === '/') {
+            i = src.indexOf('\n', i);
+            if (i < 0) break;
+            continue;
+        }
+        if (ch === '/' && next === '*') {
+            const end = src.indexOf('*/', i + 2);
+            if (end < 0) break;
+            i = end + 1;
+            continue;
+        }
+        if (ch === "'" || ch === '"' || ch === '`') {
+            quote = ch;
+            continue;
+        }
+        if (ch === '(') parens++;
+        else if (ch === ')') parens--;
+        else if (ch === '{' && parens === 0) {
+            braces++;
+            seenBody = true;
+        } else if (ch === '}' && parens === 0) {
+            braces--;
+            if (seenBody && braces === 0) return src.slice(start, i + 1);
+        }
+    }
+    throw new Error(`unterminated function body: ${name}`);
+}
