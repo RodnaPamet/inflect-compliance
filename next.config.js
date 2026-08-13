@@ -65,6 +65,50 @@ const defaultOptions = {
             dynamic: 30,
             static: 180,
         },
+        // The E2E build was OOM-killing its runner.
+        //
+        // Measured 2026-08-13 on ubuntu-latest (15,989 MB / 4 vCPU), by
+        // sampling /proc/meminfo + the build process tree every 1s through
+        // `next build --webpack` under NEXT_TEST_MODE:
+        //
+        //                     peak build RSS      trough available
+        //   without this        14,479 MB              275 MB   (5 runs)
+        //   with this            8,070 MB            6,880 MB
+        //
+        // The individual samples matter more than the means, because the
+        // means hide the argument. Baseline runs, peak / trough / outcome:
+        //
+        //   14,548 / 261  lived      14,435 / 285  lived
+        //   14,394 / 289  lived      14,449 / 291  lived
+        //   14,568 / 251  lived      14,537 / 241  KILLED
+        //
+        // Read the first and last entries together: the run that peaked
+        // HIGHER survived and the one that peaked LOWER was killed. Below
+        // this margin the peak is not the variable and the diff under test
+        // is not the variable — the timing of the terminal surge is.
+        //
+        // The build was clearing a 16 GB box by 1.6%. That is not a margin,
+        // it is a coin flip — and it presented as one: E2E failed ~3 times in
+        // 8 runs with no code cause, on trees that had nothing in common.
+        // Two runs make the point on their own: a tree peaking at 14,548 MB
+        // SURVIVED while one peaking at 14,537 MB was killed. Below this
+        // margin the diff under test does not decide the outcome.
+        //
+        // Why the failures were unattributable, which is the part worth
+        // keeping: NODE_OPTIONS on the E2E build step carries
+        // --max-old-space-size=8192, and 8192 EXCEEDS what the box can
+        // actually supply once Postgres, Redis and the runner agent are
+        // resident. So the kernel OOM-killer always arrived before V8's own
+        // limit, and the job died as "The runner has received a shutdown
+        // signal" with no heap message and no attribution. A cap set BELOW
+        // available memory fails legibly; a cap above it fails silently.
+        // Note also that the flag bounds one heap inside the process, not
+        // the process: with it set to 8192 the tree still reached 14,479 MB
+        // resident, so no value of that flag was ever going to fix this.
+        //
+        // Re-derive rather than trust: set NEXT_TEST_MODE=1 and sample
+        // MemAvailable + the build tree's RSS through a build.
+        webpackMemoryOptimizations: true,
         // optimizePackageImports remains experimental in Next 15.
         // Barrel/submodule packages — let Next rewrite imports to the
         // specific entry points so unused code tree-shakes out of the
