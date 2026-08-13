@@ -1986,6 +1986,12 @@
             "save": "Save",
             "effectivenessLabel": "Declared effectiveness (%)",
             "effectivenessHelp": "Declared fallback (0–100%). The measured pass rate wins when tests exist — leave at 0 if not declared.",
+            "evidenceSourceLabel": "Evidence source",
+            "evidenceSourceManual": "Manual",
+            "evidenceSourceIntegration": "Integration (automated checks)",
+            "automationKeyLabel": "Automation key",
+            "automationKeyPlaceholder": "e.g. aws.s3.public-access-block",
+            "automatedChecksHelp": "Automated checks run only when BOTH are set: evidence source ‘Integration’ and an automation key from a connected integration. The control’s frequency decides how often the check runs.",
             "effectivenessAria": "Declared effectiveness percent"
         },
         "newTask": {
@@ -6895,7 +6901,7 @@
             "colCheck": "Check",
             "colProvider": "Provider",
             "colExecuted": "Last run",
-            "empty": "No automated checks have run yet.",
+            "empty": "No automated checks have run yet. A control runs automated checks once it has an evidence source of \u2018Integration\u2019 and an automation key from a connected integration \u2014 set both on the control\u2019s Edit form. The control\u2019s frequency decides how often the check runs.",
             "entitySingular": "check",
             "entityPlural": "checks"
         },

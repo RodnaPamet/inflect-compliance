@@ -89,6 +89,8 @@ describe('buildControlPatchBody applies the rule uniformly', () => {
             mitigationType: '',
             annualCost: '',
             effectiveness: '',
+            automationKey: '',
+            evidenceSource: '',
             ...overrides,
         };
     }
@@ -99,6 +101,43 @@ describe('buildControlPatchBody applies the rule uniformly', () => {
             if (key === 'name') continue; // required, always a string
             expect({ key, value }).toEqual({ key, value: null });
         }
+    });
+
+    /**
+     * U5 — the two fields that decide whether a control gets automated checks.
+     *
+     * `automation-runner.ts` selects a control only when `automationKey` is
+     * non-null AND `evidenceSource === 'INTEGRATION'`. Both were accepted by
+     * Zod on create and update, and written by `updateControl`, long before
+     * any UI sent them — `evidenceSource` had ZERO occurrences across
+     * `src/app` and `src/components`. The feature was complete on the server
+     * and unreachable from the product, while the checks empty state told
+     * users to configure it.
+     *
+     * This is the same defect shape the docblock on the module records for
+     * `automationType`: rendered, seeded, accepted, written — and absent from
+     * the request. That one is why this file exists.
+     */
+    it('sends the automated-checks pair so the feature can be switched on', () => {
+        const body = buildControlPatchBody(
+            form({
+                automationKey: 'aws.s3.public-access-block',
+                evidenceSource: 'INTEGRATION',
+            }),
+        );
+        expect(body.automationKey).toBe('aws.s3.public-access-block');
+        expect(body.evidenceSource).toBe('INTEGRATION');
+    });
+
+    it('clears the automation key with null, so a control can be un-automated', () => {
+        const body = buildControlPatchBody(
+            form({ automationKey: '', evidenceSource: 'MANUAL' }),
+        );
+        // null, never undefined — an omitted key silently keeps the old value
+        // and the runner would carry on firing for a control the operator
+        // believes they detached.
+        expect(body.automationKey).toBeNull();
+        expect(body.evidenceSource).toBe('MANUAL');
     });
 
     it('still sends automationType and mitigationType', () => {
@@ -113,9 +152,14 @@ describe('buildControlPatchBody applies the rule uniformly', () => {
         expect(Object.keys(buildControlPatchBody(form())).sort()).toEqual(
             [
                 'annualCost',
+                // U5 — the automated-checks pair. This list IS the ratchet
+                // for the defect this module was extracted to prevent: a
+                // field the modal renders that the request never carries.
+                'automationKey',
                 'automationType',
                 'category',
                 'effectiveness',
+                'evidenceSource',
                 'frequency',
                 'mitigationType',
                 'name',
