@@ -14,7 +14,19 @@ const EvidenceQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),
     type: z.string().optional(),
-    status: z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'NEEDS_REVIEW']).optional(),
+    // A raw string, NOT `z.enum`, because the list page's status facet is
+    // `multiple: true` and comma-joins its selections. A single-member enum
+    // could not express `?status=DRAFT,SUBMITTED`, so every two-value
+    // selection 400'd here and the table rendered empty — which reads as
+    // "no evidence matches" rather than as an error.
+    //
+    // Validation is not lost, it moves one layer in:
+    // `EvidenceRepository._buildWhere` runs `parseEnumListFilter` over this
+    // value, rejects any member that is not a real `EvidenceStatus` with a
+    // 400 naming the offender, and returns `{ in: [...] }` for the
+    // multi-value form. That branch was unreachable while this enum stood in
+    // front of it. `type` was already a bare string for the same reason.
+    status: z.string().optional(),
     controlId: z.string().optional(),
     // EP-3 Part 5 — category filter (exact match).
     category: z.string().optional(),
