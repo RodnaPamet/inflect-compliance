@@ -90,9 +90,13 @@ const defaultOptions = {
         // The build was clearing a 16 GB box by 1.6%. That is not a margin,
         // it is a coin flip — and it presented as one: E2E failed ~3 times in
         // 8 runs with no code cause, on trees that had nothing in common.
-        // Two runs make the point on their own: a tree peaking at 14,548 MB
-        // SURVIVED while one peaking at 14,537 MB was killed. Below this
-        // margin the diff under test does not decide the outcome.
+        //
+        // If the ratio of comment to code here looks wrong, that ratio IS the
+        // finding. Because the failure carried no attribution, two sessions
+        // spent an afternoon on it, a verified-working production fix was
+        // reverted on the strength of a correlation, and background jobs were
+        // down for hours. None of that was a code defect. The measurement is
+        // written down at this length so the next person spends ten minutes.
         //
         // Why the failures were unattributable, which is the part worth
         // keeping: NODE_OPTIONS on the E2E build step carries
