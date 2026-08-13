@@ -52,7 +52,9 @@ describe('icon-only action discipline', () => {
         { file: `${APP}/audits/packs/[packId]/page.tsx`, label: 'Clone for retest', i18nKey: 'packs.cloneForRetest', ns: 'audits' },
         // label migrated to next-intl — resolves through the controls catalog.
         { file: `${APP}/controls/dashboard/page.tsx`, label: 'Consistency check', i18nKey: 'dashboard.consistencyCheck', ns: 'controls' },
-        { file: `${APP}/tests/due/page.tsx`, label: 'Run due planning', i18nKey: 'due.runPlanning', ns: 'controlTests' },
+        // U3 — /tests/due is a redirect shim now; the due-planning sweep moved
+        // to the list's toolbar with the rest of the queue.
+        { file: `${APP}/tests/page.tsx`, label: 'Run due planning', i18nKey: 'due.runPlanning', ns: 'controlTests' },
         // UI-18: the evidence "Upload file" + "Import ZIP" icon buttons were
         // removed — the +Evidence button opens the upload modal directly.
         // The Tasks bulk "Apply" IconAction moved into the shared

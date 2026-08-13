@@ -17,6 +17,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { Button } from '@/components/ui/button';
+import { IconAction } from '@/components/ui/icon-action';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { NewTestPlanModal } from './_components/NewTestPlanModal';
@@ -665,7 +666,12 @@ function TestsRollupContent() {
                         isDueWithin7Days(row.original, hydratedNow) &&
                         getLastResultKey(row.original) !== 'IN_PROGRESS' ? (
                             <Button
-                                variant="primary"
+                                // Secondary, not primary: on the register this
+                                // repeats once per due row. It was primary on
+                                // /tests/due because there it was THE action on
+                                // a dedicated queue; a column of primaries here
+                                // would compete with the page's own create.
+                                variant="secondary"
                                 size="xs"
                                 onClick={(e) => {
                                     // The row itself navigates to the plan.
@@ -855,18 +861,14 @@ function TestsRollupContent() {
                                 </Link>
                             </Tooltip>
                             {permissions.canWrite && (
-                                <Tooltip content={t('due.runPlanning')}>
-                                    <Button
-                                        variant="secondary"
-                                        size="icon"
-                                        id="run-due-planning-btn"
-                                        aria-label={t('due.runPlanning')}
-                                        loading={planning}
-                                        onClick={() => void handleRunDuePlanning()}
-                                    >
-                                        <AppIcon name="run" size={16} />
-                                    </Button>
-                                </Tooltip>
+                                <IconAction
+                                    variant="primary"
+                                    onClick={() => void handleRunDuePlanning()}
+                                    loading={planning}
+                                    id="run-due-planning-btn"
+                                    icon={<AppIcon name="run" size={16} />}
+                                    label={t('due.runPlanning')}
+                                />
                             )}
                             <Tooltip content={t('nav.accessReviews')}>
                                 <Link href={tenantHref('/access-reviews')} aria-label={t('nav.accessReviews')} className={buttonVariants({ variant: 'secondary', size: 'icon' })} id="tests-uar-btn">
