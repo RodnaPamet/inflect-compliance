@@ -27,7 +27,7 @@ import {
     PLAN_STATUS_BADGE,
     RESULT_BADGE,
 } from '@/components/test-plans/test-plan-labels';
-import { FilterProvider, useFilterContext, useFilters, useFilterCardVisibility, filtersToCards, selectVisibleFilters } from '@/components/ui/filter';
+import { FilterProvider, useFilterContext, useFilters, useFilterCardVisibility, type CardDefinition } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { ErrorState } from '@/components/ui/error-state';
@@ -378,15 +378,27 @@ function TestsRollupContent() {
         [t, tGroup],
     );
 
-    const filterCards = useMemo(() => filtersToCards(liveFilters), [liveFilters]);
-    const { visibleCards, dropdown: filtersDropdown } = useFilterCardVisibility({
-        storageKey: 'inflect:filter-vis:tests',
-        cards: filterCards,
-    });
-    const visibleFilterDefs = useMemo(
-        () => selectVisibleFilters(visibleCards, liveFilters),
-        [visibleCards, liveFilters],
+    // R-filter-gear (#3, 2026-06-07) — the gear controls the quantifiable
+    // KPI cards (Total / Active / Paused / Archived), not the filter
+    // categories (which stay in the Filter dropdown, always complete).
+    // Registering ONLY kind:'kpi' cards under the existing storage key is
+    // deliberate: the hook's stale-data migration fires only when EVERY
+    // persisted id is dead, so a mixed registration would leave the new
+    // cards hidden for anyone who has ever touched the gear.
+    const kpiCards: CardDefinition[] = useMemo(
+        () => [
+            { id: 'total', label: t('kpi.total'), kind: 'kpi' },
+            { id: 'active', label: t('kpi.active'), kind: 'kpi' },
+            { id: 'paused', label: t('kpi.paused'), kind: 'kpi' },
+            { id: 'archived', label: t('kpi.archived'), kind: 'kpi' },
+        ],
+        [t],
     );
+    const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
+        useFilterCardVisibility({
+            storageKey: 'inflect:filter-vis:tests',
+            cards: kpiCards,
+        });
 
     // ── Client-side filtering from the filter context ──
     const filteredPlans = useMemo(() => {
@@ -697,51 +709,62 @@ function TestsRollupContent() {
                 {view === 'plans' && (<>
                 {/* KPI strip — clickable cards filter the table by status. */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
-                    <KpiFilterCard
-                        label={t('kpi.total')}
-                        value={totalPlans}
-                        sparkline={testTrends.total}
-                        sparklineVariant={sparkColors.total}
-                        sparklineDomain={centeredSparklineDomain(testTrends.total)}
-                        onClick={() => toggleTestKpi('total')}
-                        selected={activeTestKpi === 'total'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.active')}
-                        value={activePlans}
-                        tone="success"
-                        sparkline={testTrends.active}
-                        sparklineVariant={sparkColors.active}
-                        sparklineDomain={centeredSparklineDomain(testTrends.active)}
-                        onClick={() => toggleTestKpi('active')}
-                        selected={activeTestKpi === 'active'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.paused')}
-                        value={pausedPlans}
-                        tone={pausedPlans > 0 ? 'attention' : 'default'}
-                        sparkline={testTrends.paused}
-                        sparklineVariant={sparkColors.paused}
-                        sparklineDomain={centeredSparklineDomain(testTrends.paused)}
-                        onClick={() => toggleTestKpi('paused')}
-                        selected={activeTestKpi === 'paused'}
-                    />
-                    <KpiFilterCard
-                        label={t('kpi.archived')}
-                        value={archivedPlans}
-                        sparkline={testTrends.archived}
-                        sparklineVariant={sparkColors.archived}
-                        sparklineDomain={centeredSparklineDomain(testTrends.archived)}
-                        onClick={() => toggleTestKpi('archived')}
-                        selected={activeTestKpi === 'archived'}
-                    />
+                    {visibleKpiCards.map((card) => {
+                        const cfg: Record<
+                            string,
+                            {
+                                value: number;
+                                tone?: 'default' | 'success' | 'attention';
+                                sparkline: typeof testTrends.total;
+                                sparklineVariant: typeof sparkColors.total;
+                            }
+                        > = {
+                            total: {
+                                value: totalPlans,
+                                sparkline: testTrends.total,
+                                sparklineVariant: sparkColors.total,
+                            },
+                            active: {
+                                value: activePlans,
+                                tone: 'success',
+                                sparkline: testTrends.active,
+                                sparklineVariant: sparkColors.active,
+                            },
+                            paused: {
+                                value: pausedPlans,
+                                tone: pausedPlans > 0 ? 'attention' : 'default',
+                                sparkline: testTrends.paused,
+                                sparklineVariant: sparkColors.paused,
+                            },
+                            archived: {
+                                value: archivedPlans,
+                                sparkline: testTrends.archived,
+                                sparklineVariant: sparkColors.archived,
+                            },
+                        };
+                        const c = cfg[card.id];
+                        if (!c) return null;
+                        return (
+                            <KpiFilterCard
+                                key={card.id}
+                                label={card.label}
+                                value={c.value}
+                                tone={c.tone}
+                                sparkline={c.sparkline}
+                                sparklineVariant={c.sparklineVariant}
+                                sparklineDomain={centeredSparklineDomain(c.sparkline)}
+                                onClick={() => toggleTestKpi(card.id as TestKpiId)}
+                                selected={activeTestKpi === card.id}
+                            />
+                        );
+                    })}
                 </div>
 
                 {/* Filter bar (Status / Last Result / Frequency / Due) +
                     live content search + column-visibility gear. Replaces
                     the old All/Overdue/Failed toggle blade. */}
                 <FilterToolbar
-                    filters={visibleFilterDefs}
+                    filters={liveFilters}
                     searchId="tests-search"
                     searchPlaceholder={t('list.searchPlaceholder')}
                     actions={

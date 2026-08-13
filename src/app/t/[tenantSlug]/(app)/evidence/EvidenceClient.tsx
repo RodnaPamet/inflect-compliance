@@ -46,8 +46,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
-    filtersToCards,
-    selectVisibleFilters,
+    type CardDefinition,
     type FilterType,
 } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
@@ -865,18 +864,30 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             ),
         [controls, evidence, tx, tGroup],
     );
-    const filterCards = useMemo(
-        () => filtersToCards(evidenceFilters),
-        [evidenceFilters],
+    // U1 (2026-08-13) — the gear edits the KPI CARDS, not the Filter
+    // dropdown's categories. Registering the filter defs as cards meant
+    // hiding a card removed a FILTER from the product while the KPI
+    // strip — hardcoded JSX — never changed. The registration is now a
+    // TOTAL namespace swap: every card is `kind: 'kpi'` under the SAME
+    // storage key, because the hook's stale-id migration only fires when
+    // ALL persisted ids are dead. One surviving filter id would skip the
+    // migration and render the new KPI cards hidden for every user who has
+    // ever touched the gear. Ids match the `evidenceKpiDefs` ids exactly —
+    // `selected={activeEvidenceKpi === card.id}` depends on it.
+    const kpiCards: CardDefinition[] = useMemo(
+        () => [
+            { id: 'total', label: tx('list.kpiTotal'), kind: 'kpi' },
+            { id: 'draft', label: tx('list.kpiDraft'), kind: 'kpi' },
+            { id: 'submitted', label: tx('list.kpiSubmitted'), kind: 'kpi' },
+            { id: 'approved', label: tx('list.kpiApproved'), kind: 'kpi' },
+        ],
+        [tx],
     );
-    const { visibleCards, dropdown: filtersDropdown } = useFilterCardVisibility({
-        storageKey: 'inflect:filter-vis:evidence',
-        cards: filterCards,
-    });
-    const visibleFilterDefs = useMemo(
-        () => selectVisibleFilters(visibleCards, evidenceFilters),
-        [visibleCards, evidenceFilters],
-    );
+    const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
+        useFilterCardVisibility({
+            storageKey: 'inflect:filter-vis:evidence',
+            cards: kpiCards,
+        });
 
     // ── Evidence Column Definitions ──
 
@@ -1439,45 +1450,58 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                     different axis from the retention tabs so the two
                     affordances compose naturally. */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
-                    <KpiFilterCard
-                        label={tx('list.kpiTotal')}
-                        value={totalEvidence}
-                        sparkline={evidenceTrends.total}
-                        sparklineVariant={sparkColors.total}
-                        sparklineDomain={centeredSparklineDomain(evidenceTrends.total)}
-                        onClick={() => toggleEvidenceKpi('total')}
-                        selected={activeEvidenceKpi === 'total'}
-                    />
-                    <KpiFilterCard
-                        label={tx('list.kpiDraft')}
-                        value={draftEvidence}
-                        tone="attention"
-                        sparkline={evidenceTrends.draft}
-                        sparklineVariant={sparkColors.draft}
-                        sparklineDomain={centeredSparklineDomain(evidenceTrends.draft)}
-                        onClick={() => toggleEvidenceKpi('draft')}
-                        selected={activeEvidenceKpi === 'draft'}
-                    />
-                    <KpiFilterCard
-                        label={tx('list.kpiSubmitted')}
-                        value={submittedEvidence}
-                        tone="default"
-                        sparkline={evidenceTrends.submitted}
-                        sparklineVariant={sparkColors.submitted}
-                        sparklineDomain={centeredSparklineDomain(evidenceTrends.submitted)}
-                        onClick={() => toggleEvidenceKpi('submitted')}
-                        selected={activeEvidenceKpi === 'submitted'}
-                    />
-                    <KpiFilterCard
-                        label={tx('list.kpiApproved')}
-                        value={approvedEvidence}
-                        tone="success"
-                        sparkline={evidenceTrends.approved}
-                        sparklineVariant={sparkColors.approved}
-                        sparklineDomain={centeredSparklineDomain(evidenceTrends.approved)}
-                        onClick={() => toggleEvidenceKpi('approved')}
-                        selected={activeEvidenceKpi === 'approved'}
-                    />
+                    {visibleKpiCards.map((card) => {
+                        const cfg: Record<
+                            string,
+                            {
+                                value: number;
+                                tone?: 'default' | 'attention' | 'success';
+                                sparkline: typeof evidenceTrends.total;
+                                sparklineVariant: typeof sparkColors.total;
+                            }
+                        > = {
+                            total: {
+                                value: totalEvidence,
+                                sparkline: evidenceTrends.total,
+                                sparklineVariant: sparkColors.total,
+                            },
+                            draft: {
+                                value: draftEvidence,
+                                tone: 'attention',
+                                sparkline: evidenceTrends.draft,
+                                sparklineVariant: sparkColors.draft,
+                            },
+                            submitted: {
+                                value: submittedEvidence,
+                                tone: 'default',
+                                sparkline: evidenceTrends.submitted,
+                                sparklineVariant: sparkColors.submitted,
+                            },
+                            approved: {
+                                value: approvedEvidence,
+                                tone: 'success',
+                                sparkline: evidenceTrends.approved,
+                                sparklineVariant: sparkColors.approved,
+                            },
+                        };
+                        const c = cfg[card.id];
+                        if (!c) return null;
+                        return (
+                            <KpiFilterCard
+                                key={card.id}
+                                label={card.label}
+                                value={c.value}
+                                tone={c.tone}
+                                sparkline={c.sparkline}
+                                sparklineVariant={c.sparklineVariant}
+                                sparklineDomain={centeredSparklineDomain(c.sparkline)}
+                                onClick={() =>
+                                    toggleEvidenceKpi(card.id as EvidenceKpiId)
+                                }
+                                selected={activeEvidenceKpi === card.id}
+                            />
+                        );
+                    })}
                 </div>
 
                 {/* EP-2 Part 3 — retention triage. The Active / Expiring /
@@ -1503,7 +1527,25 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 {/* EP-2 Part 3 — freshness (review-currency) KPI strip.
                     Each card toggles the freshness filter so the retention
                     triage (schedule/archive state) and review-currency
-                    (overdue-for-review) dimensions compose. */}
+                    (overdue-for-review) dimensions compose.
+
+                    DELIBERATELY NOT GEAR-MANAGED (U1, 2026-08-13), for one
+                    reason only: these four cards have no `KpiFilterDef`. They
+                    drive `setFreshnessFilter` directly rather than going
+                    through `useKpiFilter`, so there is no `activeKpi` for a
+                    `selected={activeKpi === card.id}` binding to read.
+
+                    Gear-managing them is a safe follow-up, NOT a hazard. Their
+                    natural ids (current/expiring/expired/needs_review) are
+                    VALUES of the `freshness` filter key, not keys — the page's
+                    keys are type/status/freshness/controlId/folder/category —
+                    and the visibility store persists card ids and reconciles
+                    them against card ids, so nothing collides. It needs the
+                    freshness strip moved onto `useKpiFilter` first, which is a
+                    behaviour change this diff deliberately does not make.
+
+                    The gear owns the status strip above; this one stays
+                    literal until then. */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                     <KpiFilterCard
                         label={evidenceFreshnessLabels(tx).current}
@@ -1546,7 +1588,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                   the gallery read from the same `displayEvidence` array.
                 */}
                 <EvidenceFilterToolbar
-                    filters={visibleFilterDefs}
+                    filters={evidenceFilters}
                     leading={
                         permissions.canWrite ? (
                             // PART 1 — one primary trigger opens a create
@@ -1627,12 +1669,19 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                 selectAction={(v) => setFilter('view', v === 'list' ? '' : v)}
                                 className="shrink-0"
                             />
-                            {viewMode === 'list' ? (
-                                <>
-                                    {columnsDropdown}
-                                    {filtersDropdown}
-                                </>
-                            ) : null}
+                            {/* Columns are list-only chrome — there is no
+                                column model in gallery view. */}
+                            {viewMode === 'list' ? columnsDropdown : null}
+                            {/* The KPI gear is NOT list-only. It was, back when
+                                it managed filter categories; it now manages the
+                                KPI strip, and that strip renders in BOTH views
+                                (it sits in ListPageShell.Filters, outside any
+                                viewMode guard). Leaving it gated meant a user
+                                who hid cards in list view and switched to
+                                gallery had no control to bring them back — and
+                                the choice persists in localStorage, so it
+                                survived a reload too. */}
+                            {filtersDropdown}
                         </>
                     }
                 />

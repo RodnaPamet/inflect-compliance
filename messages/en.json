@@ -66,6 +66,8 @@
             "expandRow": "Expand row",
             "emptyFallback": "No {items} found.",
             "toggleColumns": "Toggle columns",
+            "editKpiCards": "Edit KPI cards",
+            "resetToDefaults": "Reset to defaults",
             "chooseAction": "Choose action...",
             "apply": "Apply",
             "confirmVerbDelete": "Delete",

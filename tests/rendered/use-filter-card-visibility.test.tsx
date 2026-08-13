@@ -82,3 +82,90 @@ describe('useFilterCardVisibility', () => {
         expect(result.current.visibleCards.map((c) => c.id)).toEqual(['owner']);
     });
 });
+
+/**
+ * The stale-id migration — the invariant the whole kind swap rests on.
+ *
+ * U1 changed five pages from registering `kind: 'filter'` cards to
+ * `kind: 'kpi'` cards UNDER THE SAME STORAGE KEY. That is only safe because
+ * of one branch in the hook: when a NON-EMPTY persisted order has every one
+ * of its ids dropped, the hook falls back to defaults instead of rendering
+ * nothing.
+ *
+ * Nothing exercised that branch. Every fixture above is `kind: 'filter'`, so
+ * the five migrations shipped on an untested assumption — and the failure
+ * mode is invisible in code review: the same build shows all KPI cards to a
+ * user who has never touched the gear, and an empty strip to one who has.
+ */
+describe('stale-id migration (the namespace swap)', () => {
+    const KPI_CARDS: CardDefinition[] = [
+        { id: 'total', label: 'Total', kind: 'kpi' },
+        { id: 'active', label: 'Active', kind: 'kpi' },
+    ];
+
+    beforeEach(() => window.localStorage.clear());
+
+    it('falls back to defaults when EVERY persisted id is dead', () => {
+        // What a real user carries: an order saved while the gear still
+        // listed filter categories.
+        window.localStorage.setItem(
+            'test:filter-vis:swap',
+            JSON.stringify(['status', 'owner']),
+        );
+
+        const { result } = renderHook(() =>
+            useFilterCardVisibility({
+                storageKey: 'test:filter-vis:swap',
+                cards: KPI_CARDS,
+            }),
+        );
+
+        // Not an empty strip — all the new cards, visible.
+        expect(result.current.visibleCards.map((c) => c.id)).toEqual([
+            'total',
+            'active',
+        ]);
+    });
+
+    it('respects a genuinely empty order — the user hid everything', () => {
+        window.localStorage.setItem('test:filter-vis:empty', JSON.stringify([]));
+
+        const { result } = renderHook(() =>
+            useFilterCardVisibility({
+                storageKey: 'test:filter-vis:empty',
+                cards: KPI_CARDS,
+            }),
+        );
+
+        // The migration must NOT fire here: nothing was dropped, the user
+        // chose this. Re-showing the cards would silently undo a deliberate
+        // choice on every page load.
+        expect(result.current.visibleCards).toEqual([]);
+    });
+
+    /**
+     * The collision hazard, demonstrated rather than described.
+     *
+     * A single surviving id keeps `reconciled.length > 0`, so the migration
+     * is skipped and the user is left with just that one card. This is why
+     * `kpi-sparkline-canonical.test.ts` asserts no KPI card id equals one of
+     * its page's filter keys — a rename like `dueWeek` → `due` would produce
+     * exactly this state, on one page, only for users who had touched the
+     * gear.
+     */
+    it('does NOT migrate when even one persisted id survives', () => {
+        window.localStorage.setItem(
+            'test:filter-vis:partial',
+            JSON.stringify(['status', 'total']),
+        );
+
+        const { result } = renderHook(() =>
+            useFilterCardVisibility({
+                storageKey: 'test:filter-vis:partial',
+                cards: KPI_CARDS,
+            }),
+        );
+
+        expect(result.current.visibleCards.map((c) => c.id)).toEqual(['total']);
+    });
+});

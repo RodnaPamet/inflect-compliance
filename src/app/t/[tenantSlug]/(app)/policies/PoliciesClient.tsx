@@ -26,8 +26,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
-    filtersToCards,
-    selectVisibleFilters,
+    type CardDefinition,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
@@ -395,15 +394,29 @@ function PoliciesPageInner({
         [policies, tx, tGroup],
     );
 
-    const filterCards = useMemo(() => filtersToCards(liveFilters), [liveFilters]);
-    const { visibleCards, dropdown: filtersDropdown } = useFilterCardVisibility({
-        storageKey: 'inflect:filter-vis:policies',
-        cards: filterCards,
-    });
-    const visibleFilterDefs = useMemo(
-        () => selectVisibleFilters(visibleCards, liveFilters),
-        [visibleCards, liveFilters],
+    // R-filter-gear (#3) — the gear controls the quantifiable KPI CARDS
+    // (Total / Draft / In review / Approved / Overdue review / Outstanding
+    // ack), not the filter categories, which stay in the Filter dropdown and
+    // are always passed to the toolbar in full. Registering ONLY kind:'kpi'
+    // cards under this key is deliberate: the hook's stale-data migration
+    // fires only when EVERY persisted id is dead, so a mixed
+    // filter+kpi namespace would leave old gear users with hidden KPI cards.
+    const kpiCards: CardDefinition[] = useMemo(
+        () => [
+            { id: 'total', label: tx('list.kpiTotal'), kind: 'kpi' },
+            { id: 'draft', label: tx('list.kpiDraft'), kind: 'kpi' },
+            { id: 'inReview', label: tx('list.kpiInReview'), kind: 'kpi' },
+            { id: 'approved', label: tx('list.kpiApproved'), kind: 'kpi' },
+            { id: 'overdueReview', label: tx('list.kpiOverdueReview'), kind: 'kpi' },
+            { id: 'outstandingAck', label: tx('list.kpiOutstandingAck'), kind: 'kpi' },
+        ],
+        [tx],
     );
+    const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
+        useFilterCardVisibility({
+            storageKey: 'inflect:filter-vis:policies',
+            cards: kpiCards,
+        });
 
     // ─── R23-PR-F — KPI definitions for the Policies page ───
     type PolicyKpiId = 'total' | 'draft' | 'inReview' | 'approved' | 'overdueReview' | 'outstandingAck';
@@ -735,63 +748,68 @@ function PoliciesPageInner({
                 /* R23-PR-F — KPI strip rendered via EntityListPage's
                    kpis slot (added in R23-PR-D). */
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
-                    <KpiFilterCard
-                        label={tx('list.kpiTotal')}
-                        value={totalPolicies}
-                        sparkline={policyTrends.total}
-                        sparklineVariant={sparkColors.total}
-                        sparklineDomain={centeredSparklineDomain(policyTrends.total)}
-                        onClick={() => togglePolicyKpi('total')}
-                        selected={activePolicyKpi === 'total'}
-                    />
-                    <KpiFilterCard
-                        label={tx('list.kpiDraft')}
-                        value={draftPolicies}
-                        tone="attention"
-                        sparkline={policyTrends.draft}
-                        sparklineVariant={sparkColors.draft}
-                        sparklineDomain={centeredSparklineDomain(policyTrends.draft)}
-                        onClick={() => togglePolicyKpi('draft')}
-                        selected={activePolicyKpi === 'draft'}
-                    />
-                    <KpiFilterCard
-                        label={tx('list.kpiInReview')}
-                        value={inReviewPolicies}
-                        tone="default"
-                        sparkline={policyTrends.inReview}
-                        sparklineVariant={sparkColors.inReview}
-                        sparklineDomain={centeredSparklineDomain(policyTrends.inReview)}
-                        onClick={() => togglePolicyKpi('inReview')}
-                        selected={activePolicyKpi === 'inReview'}
-                    />
-                    <KpiFilterCard
-                        label={tx('list.kpiApproved')}
-                        value={approvedPolicies}
-                        tone="success"
-                        sparkline={policyTrends.approved}
-                        sparklineVariant={sparkColors.approved}
-                        sparklineDomain={centeredSparklineDomain(policyTrends.approved)}
-                        onClick={() => togglePolicyKpi('approved')}
-                        selected={activePolicyKpi === 'approved'}
-                    />
-                    <KpiFilterCard
-                        label={tx('list.kpiOverdueReview')}
-                        value={overdueReviewPolicies}
-                        tone={overdueReviewPolicies > 0 ? 'critical' : 'default'}
-                        onClick={() => togglePolicyKpi('overdueReview')}
-                        selected={activePolicyKpi === 'overdueReview'}
-                    />
-                    <KpiFilterCard
-                        label={tx('list.kpiOutstandingAck')}
-                        value={outstandingAckPolicies}
-                        tone={outstandingAckPolicies > 0 ? 'attention' : 'default'}
-                        onClick={() => togglePolicyKpi('outstandingAck')}
-                        selected={activePolicyKpi === 'outstandingAck'}
-                    />
+                    {visibleKpiCards.map((card) => {
+                        const cfg: Record<
+                            string,
+                            {
+                                value: number;
+                                tone?: 'default' | 'attention' | 'success' | 'critical';
+                                sparkline?: typeof policyTrends.total;
+                                sparklineVariant?: typeof sparkColors.total;
+                            }
+                        > = {
+                            total: {
+                                value: totalPolicies,
+                                sparkline: policyTrends.total,
+                                sparklineVariant: sparkColors.total,
+                            },
+                            draft: {
+                                value: draftPolicies,
+                                tone: 'attention',
+                                sparkline: policyTrends.draft,
+                                sparklineVariant: sparkColors.draft,
+                            },
+                            inReview: {
+                                value: inReviewPolicies,
+                                tone: 'default',
+                                sparkline: policyTrends.inReview,
+                                sparklineVariant: sparkColors.inReview,
+                            },
+                            approved: {
+                                value: approvedPolicies,
+                                tone: 'success',
+                                sparkline: policyTrends.approved,
+                                sparklineVariant: sparkColors.approved,
+                            },
+                            overdueReview: {
+                                value: overdueReviewPolicies,
+                                tone: overdueReviewPolicies > 0 ? 'critical' : 'default',
+                            },
+                            outstandingAck: {
+                                value: outstandingAckPolicies,
+                                tone: outstandingAckPolicies > 0 ? 'attention' : 'default',
+                            },
+                        };
+                        const c = cfg[card.id];
+                        if (!c) return null;
+                        return (
+                            <KpiFilterCard
+                                key={card.id}
+                                label={card.label}
+                                value={c.value}
+                                tone={c.tone}
+                                sparkline={c.sparkline}
+                                sparklineVariant={c.sparklineVariant}
+                                sparklineDomain={centeredSparklineDomain(c.sparkline)}
+                                onClick={() => togglePolicyKpi(card.id as PolicyKpiId)}
+                                selected={activePolicyKpi === card.id}
+                            />
+                        );
+                    })}
                 </div>
             }
             filters={{
-                defs: visibleFilterDefs,
+                defs: liveFilters,
                 searchId: 'policies-search',
                 searchPlaceholder: tx('list.searchPlaceholder'),
                 toolbarLeading: permissions.canWrite ? (

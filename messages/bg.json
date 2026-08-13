@@ -66,6 +66,8 @@
             "expandRow": "Разгъни реда",
             "emptyFallback": "Няма намерени {items}.",
             "toggleColumns": "Превключи колони",
+            "editKpiCards": "Редактирай KPI карти",
+            "resetToDefaults": "Възстанови по подразбиране",
             "chooseAction": "Изберете действие...",
             "apply": "Приложи",
             "confirmVerbDelete": "Изтрий",

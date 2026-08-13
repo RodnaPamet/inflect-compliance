@@ -62,7 +62,18 @@ describe('Policies list — Epic 45.1 shell + column wiring', () => {
         // wave; match the shell mount, not the specific type argument.
         expect(clientSrc).toMatch(/<EntityListPage<\w+>/);
         expect(clientSrc).toMatch(/header=\{\{[\s\S]{0,200}title:/);
-        expect(clientSrc).toMatch(/filters=\{\{[\s\S]{0,200}defs:\s*visibleFilterDefs/);
+        // U1 — the toolbar receives the FULL filter defs, not a gear-filtered
+        // subset. This used to require `defs: visibleFilterDefs`, which pinned
+        // the defect: that value came from `selectVisibleFilters(...)`, so the
+        // gear's checklist governed which FILTERS existed. Hiding a "card"
+        // removed a filter from the product, and the KPI strip the gear appears
+        // to control never changed.
+        //
+        // Now the gear registers kind:'kpi' cards and `selectVisibleFilters`
+        // returns [] for them — so leaving this wiring in place would render an
+        // empty Filter dropdown.
+        expect(clientSrc).toMatch(/filters=\{\{[\s\S]{0,200}defs:\s*liveFilters/);
+        expect(clientSrc).not.toMatch(/visibleFilterDefs/);
         // Columns are threaded via a MEMOISED array. They used to be
         // `orderColumns(policyColumns)` inline, which minted a new
         // identity every render and rebuilt the table model
