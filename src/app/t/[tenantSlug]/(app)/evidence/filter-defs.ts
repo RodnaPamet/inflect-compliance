@@ -8,12 +8,17 @@
  *   type       → EvidenceType (FILE | LINK | TEXT)
  *   status     → EvidenceStatus (DRAFT | SUBMITTED | APPROVED | REJECTED)
  *   controlId  → entity-reference (Control ID; options derived from loaded data)
+ *   tab        → retention bucket (active | expiring | archived)
  *
- * Retention buckets (`archived=true` / `expiring=true`) are *not* modelled
- * here — they're driven by the existing retention-tab UI (`tab=active|
- * expiring|archived`) and mapped to API flags in the page. Keeping them
- * outside the filter config preserves the separation between "view of the
- * data" (tabs) and "filters on the view" (this module).
+ * The retention bucket USED to sit outside this module, on the theory that a
+ * "view of the data" (a tab strip) is a different kind of thing from "filters
+ * on the view". That separation stopped paying rent once the bucket became a
+ * server-side predicate like every other filter (`evidenceRetentionTabWhere`):
+ * it was a second, parallel filtering mechanism with its own URL writer, its
+ * own UI primitive, and no pill in the filter bar — so an active retention
+ * bucket was invisible to "Clear all" and to the filter count. It is a normal
+ * single-select category now, and `?tab=` deep links keep working because the
+ * FilterProvider serialises a `tab` key to exactly that param.
  */
 
 import type {
@@ -24,7 +29,7 @@ import {
     optionsFromEnum,
 } from '@/components/ui/filter/filter-definitions';
 import type { FilterOption } from '@/components/ui/filter/types';
-import { FileText, CircleDot, Link2, FolderOpen, Clock, Tag } from 'lucide-react';
+import { FileText, CircleDot, Link2, FolderOpen, Clock, Tag, Archive } from 'lucide-react';
 
 /** Surface-namespace resolver (`useTranslations('evidence')`). */
 type T = (key: string, values?: Record<string, string | number | Date>) => string;
@@ -55,15 +60,32 @@ export function evidenceStatusLabels(t: T): Record<string, string> {
     };
 }
 
-// EP-2 — review-currency ("freshness") buckets. Applied client-side
-// against the loaded rows (the API ignores the `freshness` param via
-// `.strip()`), so this is a view refinement, not a server filter.
+// EP-2 — review-currency ("freshness") buckets. Applied SERVER-side
+// (`evidenceFreshnessWhere`); the API used to `.strip()` the param, which
+// meant the filter silently never reached the query at all.
 export function evidenceFreshnessLabels(t: T): Record<string, string> {
     return {
         current: t('filterEnums.freshness.current'),
         expiring: t('filterEnums.freshness.expiring'),
         expired: t('filterEnums.freshness.expired'),
         needs_review: t('filterEnums.freshness.needsReview'),
+    };
+}
+
+// Retention bucket → label. These four strings previously labelled the
+// retention ToggleGroup; the control is gone but the vocabulary is
+// unchanged, so the keys are repurposed rather than retired and
+// re-translated.
+//
+// There is deliberately no `all` option. The bucket has always defaulted to
+// `active`, and an UNSET `tab` is what expresses that default — see the
+// page's `fetchParams`. Adding an explicit "All" here would be a new
+// capability (archived rows in the default list), not a port of the toggle.
+export function evidenceRetentionTabLabels(t: T): Record<string, string> {
+    return {
+        active: t('list.retentionActive'),
+        expiring: t('list.triageExpiring'),
+        archived: t('list.retentionArchived'),
     };
 }
 
@@ -89,8 +111,20 @@ function evidenceFilterDefsInput(t: T, tGroup: TGroup) {
             multiple: true,
             resetBehavior: 'clearable',
         },
+        // R1-2b — retention bucket, formerly the ToggleGroup above the
+        // toolbar. Single-select: the buckets partition the tenant, so two at
+        // once has no meaning the server could answer.
+        tab: {
+            label: t('filters.retention'),
+            description: t('filters.retentionDesc'),
+            group: tGroup('workflow'),
+            icon: Archive,
+            options: optionsFromEnum(evidenceRetentionTabLabels(t)),
+            multiple: false,
+            resetBehavior: 'clearable',
+        },
         // EP-2 — freshness (review-currency) filter. Single-select;
-        // applied client-side against the loaded rows.
+        // applied server-side (`evidenceFreshnessWhere`).
         freshness: {
             label: t('filters.freshness'),
             description: t('filters.freshnessDesc'),

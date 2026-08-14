@@ -2445,7 +2445,6 @@
             "archiveFailedNet": "Failed to archive evidence",
             "unarchiveFailedNet": "Failed to unarchive evidence",
             "entityLabel": "evidence",
-            "retentionTriageAria": "Retention view",
             "triageExpiring": "Expiring",
             "reReview": "Re-review",
             "createMenuAria": "Add evidence",
@@ -2656,7 +2655,9 @@
             "freshness": "Freshness",
             "freshnessDesc": "Review-currency: current, expiring, expired, or needs review.",
             "category": "Category",
-            "categoryDesc": "Only show evidence in this category."
+            "categoryDesc": "Only show evidence in this category.",
+            "retention": "Retention",
+            "retentionDesc": "Retention bucket: active, expiring soon, or archived."
         },
         "filterEnums": {
             "type": {
