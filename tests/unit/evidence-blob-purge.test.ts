@@ -16,9 +16,9 @@ import { purgeEvidenceBlobs } from '@/app-layer/services/evidence-blob-purge';
 
 const deleteMock = jest.fn();
 const findManyMock = jest.fn();
-const countMock = jest.fn();
-const findUniqueMock = jest.fn();
-const frDeleteMock = jest.fn();
+const survivorsMock = jest.fn();
+const frFindManyMock = jest.fn();
+const frDeleteManyMock = jest.fn();
 
 jest.mock('@/lib/storage/index', () => ({
     __esModule: true,
@@ -33,12 +33,13 @@ jest.mock('@/lib/soft-delete', () => ({
 
 const db = {
     evidence: {
-        findMany: (...a: unknown[]) => findManyMock(...a),
-        count: (...a: unknown[]) => countMock(...a),
+        // First call resolves the purge candidates; second resolves survivors.
+        findMany: (...a: unknown[]) =>
+            (findManyMock.mock.calls.length === 0 ? findManyMock : survivorsMock)(...a),
     },
     fileRecord: {
-        findUnique: (...a: unknown[]) => findUniqueMock(...a),
-        delete: (...a: unknown[]) => frDeleteMock(...a),
+        findMany: (...a: unknown[]) => frFindManyMock(...a),
+        deleteMany: (...a: unknown[]) => frDeleteManyMock(...a),
     },
 } as never;
 
@@ -46,20 +47,20 @@ const FILE = { id: 'fr-1', pathKey: 'tenants/t1/evidence/a.pdf', storageProvider
 
 beforeEach(() => {
     jest.clearAllMocks();
-    findUniqueMock.mockResolvedValue(FILE);
+    frFindManyMock.mockResolvedValue([FILE]);
+    survivorsMock.mockResolvedValue([]);
     deleteMock.mockResolvedValue(undefined);
-    frDeleteMock.mockResolvedValue(undefined);
+    frDeleteManyMock.mockResolvedValue({ count: 1 });
 });
 
 describe('purgeEvidenceBlobs', () => {
     it('deletes the blob and the FileRecord when nothing else references it', async () => {
         findManyMock.mockResolvedValue([{ id: 'ev-1', fileRecordId: 'fr-1' }]);
-        countMock.mockResolvedValue(0);
 
         const out = await purgeEvidenceBlobs(db, ['ev-1']);
 
         expect(deleteMock).toHaveBeenCalledWith(FILE.pathKey);
-        expect(frDeleteMock).toHaveBeenCalledWith({ where: { id: 'fr-1' } });
+        expect(frDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ['fr-1'] } } });
         expect(out.deleted).toBe(1);
     });
 
@@ -67,12 +68,12 @@ describe('purgeEvidenceBlobs', () => {
         // The SHA-256 dedup case. Deleting here would break the sibling — the
         // difference between a retention fix and data loss.
         findManyMock.mockResolvedValue([{ id: 'ev-1', fileRecordId: 'fr-1' }]);
-        countMock.mockResolvedValue(1);
+        survivorsMock.mockResolvedValue([{ fileRecordId: 'fr-1' }]);
 
         const out = await purgeEvidenceBlobs(db, ['ev-1']);
 
         expect(deleteMock).not.toHaveBeenCalled();
-        expect(frDeleteMock).not.toHaveBeenCalled();
+        expect(frDeleteManyMock).not.toHaveBeenCalled();
         expect(out.retainedForSibling).toBe(1);
     });
 
@@ -85,17 +86,15 @@ describe('purgeEvidenceBlobs', () => {
             { id: 'ev-1', fileRecordId: 'fr-1' },
             { id: 'ev-2', fileRecordId: 'fr-1' },
         ]);
-        countMock.mockResolvedValue(0);
 
         await purgeEvidenceBlobs(db, ['ev-1', 'ev-2']);
 
-        const where = countMock.mock.calls[0][0].where;
-        expect(where.id).toMatchObject({ not: 'ev-1', notIn: ['ev-1', 'ev-2'] });
+        const where = survivorsMock.mock.calls[0][0].where;
+        expect(where.id).toMatchObject({ notIn: ['ev-1', 'ev-2'] });
     });
 
     it('treats an already-absent object as reconciled, not failed', async () => {
         findManyMock.mockResolvedValue([{ id: 'ev-1', fileRecordId: 'fr-1' }]);
-        countMock.mockResolvedValue(0);
         deleteMock.mockRejectedValue(new Error('NoSuchKey: the specified key does not exist'));
 
         const out = await purgeEvidenceBlobs(db, ['ev-1']);
@@ -103,7 +102,7 @@ describe('purgeEvidenceBlobs', () => {
         expect(out.alreadyGone).toBe(1);
         expect(out.failed).toBe(0);
         // Goal state reached, so the pointer row goes too.
-        expect(frDeleteMock).toHaveBeenCalled();
+        expect(frDeleteManyMock).toHaveBeenCalled();
     });
 
     it('reports a real provider failure AND keeps the FileRecord row', async () => {
@@ -112,14 +111,13 @@ describe('purgeEvidenceBlobs', () => {
         // and must be counted, because the product will otherwise attest a
         // destruction that did not happen.
         findManyMock.mockResolvedValue([{ id: 'ev-1', fileRecordId: 'fr-1' }]);
-        countMock.mockResolvedValue(0);
         deleteMock.mockRejectedValue(new Error('AccessDenied'));
 
         const out = await purgeEvidenceBlobs(db, ['ev-1']);
 
         expect(out.failed).toBe(1);
         expect(out.deleted).toBe(0);
-        expect(frDeleteMock).not.toHaveBeenCalled();
+        expect(frDeleteManyMock).not.toHaveBeenCalled();
     });
 
     it('does nothing for evidence with no file (TEXT / LINK)', async () => {

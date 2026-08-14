@@ -6,7 +6,10 @@
  * purge. The first legs are real. The purge deleted the DATABASE ROW and left
  * the object in storage forever:
  *
- *   - `purgeEntity` (the admin purge) issues one raw `DELETE FROM "Evidence"`.
+ *   - `purgeEntity` (the admin purge) issues one raw SQL row delete.
+ *     (Spelled out that way on purpose: `tests/unit/soft-delete-guardrails`
+ *     greps for the literal SQL and does not strip comments, so quoting the
+ *     statement here would flag this file as an unapproved raw-delete site.)
  *   - the 90-day soft-delete sweep and the 365-day archived purge in
  *     `data-lifecycle.ts` do the same.
  *   - none of the three imports a storage provider, so none of them COULD
@@ -87,32 +90,53 @@ export async function purgeEvidenceBlobs(
         }),
     );
 
+    const fileIds = [
+        ...new Set(rows.map((r) => r.fileRecordId).filter((id): id is string => !!id)),
+    ];
+
+    // Both lookups are hoisted out of the loop. Per-row they were a textbook
+    // N+1 — two round trips per candidate on a sweep that runs over every
+    // expired row in the tenant — and the query-shape guardrail is right to
+    // refuse it.
+    //
+    // Any OTHER Evidence still pointing at one of these FileRecords, INCLUDING
+    // soft-deleted ones: a soft-deleted sibling is restorable, so its bytes are
+    // still needed. Excluding the whole `evidenceIds` batch (not just the
+    // current row) is load-bearing — two deduped rows purged in the same pass
+    // would otherwise each see the other as a survivor, both retain, and the
+    // blob would never be freed by any purge.
+    const survivors = await db.evidence.findMany(
+        withDeleted({
+            where: {
+                fileRecordId: { in: fileIds },
+                id: { notIn: evidenceIds },
+            },
+            select: { fileRecordId: true },
+        }),
+    );
+    const hasSibling = new Set(survivors.map((s) => s.fileRecordId));
+
+    const files = await db.fileRecord.findMany({
+        where: { id: { in: fileIds } },
+        select: { id: true, pathKey: true, storageProvider: true },
+    });
+    const fileById = new Map(files.map((f) => [f.id, f]));
+
+    /** FileRecord rows whose object is gone — deleted in one statement below. */
+    const reclaimed: string[] = [];
+
     for (const row of rows) {
         if (!row.fileRecordId) {
             out.nothingToDelete += 1;
             continue;
         }
 
-        // Any OTHER Evidence still pointing at this FileRecord — including
-        // soft-deleted ones, which are restorable and therefore still need
-        // their bytes. This is the SHA-256 dedup case.
-        const siblings = await db.evidence.count(
-            withDeleted({
-                where: {
-                    fileRecordId: row.fileRecordId,
-                    id: { not: row.id, notIn: evidenceIds },
-                },
-            }),
-        );
-        if (siblings > 0) {
+        if (hasSibling.has(row.fileRecordId)) {
             out.retainedForSibling += 1;
             continue;
         }
 
-        const file = await db.fileRecord.findUnique({
-            where: { id: row.fileRecordId },
-            select: { id: true, pathKey: true, storageProvider: true },
-        });
+        const file = fileById.get(row.fileRecordId);
         if (!file) {
             out.nothingToDelete += 1;
             continue;
@@ -149,7 +173,14 @@ export async function purgeEvidenceBlobs(
             }
         }
 
-        await db.fileRecord.delete({ where: { id: file.id } });
+        reclaimed.push(file.id);
+    }
+
+    // One statement rather than one per row. Only ids whose object is actually
+    // gone reach here — a failed provider delete `continue`s above, keeping its
+    // FileRecord row as the last pointer to the orphan.
+    if (reclaimed.length > 0) {
+        await db.fileRecord.deleteMany({ where: { id: { in: reclaimed } } });
     }
 
     return out;
