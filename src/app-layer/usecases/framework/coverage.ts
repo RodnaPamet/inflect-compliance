@@ -6,6 +6,7 @@ import { notFound } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
 import { rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-rollup';
 import { isCoverageQualifyingEvidence } from '@/lib/compliance/coverage-evidence';
+import { toCsv } from '@/lib/csv/format-csv';
 
 // в”Ђв”Ђв”Ђ Coverage Computation в”Ђв”Ђв”Ђ
 
@@ -179,7 +180,7 @@ export async function exportCoverageData(
         rows.push(['Unmapped', r.code, r.title, r.section || '', '', '', '']);
     }
 
-    const csv = rows.map((r) => r.map((c) => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = toCsv(rows);
     return { csv, filename: `${frameworkKey}-coverage.csv` };
 }
 
@@ -412,6 +413,6 @@ export async function exportReadinessReport(
         rows.push(['', 'Overdue Task', t.controlCode || '', `${t.taskTitle} (${t.controlName})`, t.taskStatus, t.dueDate?.toString() || '']);
     }
 
-    const csv = rows.map((r) => r.map((c) => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = toCsv(rows);
     return { csv, filename: `${frameworkKey}-readiness-report.csv`, summary: report.summary };
 }

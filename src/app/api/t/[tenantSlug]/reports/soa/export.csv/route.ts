@@ -4,6 +4,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { logEvent } from '@/app-layer/events/audit';
 import { runInTenantContext } from '@/lib/db-context';
+import { neutralizeCsvCell } from '@/lib/csv/format-csv';
 
 // Report generation is long-running by nature, and the platform default
 // cuts it off well before these finish — a run killed mid-flight leaves a
@@ -30,7 +31,13 @@ export const maxDuration = 60;
  */
 
 function escapeCSV(value: string | null | undefined): string {
-    const s = String(value ?? '');
+    // Neutralise BEFORE deciding on quotes. This exporter quotes only when a
+    // cell contains a comma / quote / newline, so a bare `=SUM(A1)` used to be
+    // emitted unquoted AND live — the justification column is user-supplied.
+    // The shared neutraliser is the one piece that must never diverge between
+    // exporters; the conditional quoting below is this file's own formatting
+    // and is deliberately left alone.
+    const s = neutralizeCsvCell(String(value ?? ''));
     // Wrap in quotes if contains comma, quote, or newline
     if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
         return `"${s.replace(/"/g, '""')}"`;

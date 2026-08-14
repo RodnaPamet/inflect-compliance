@@ -30,6 +30,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { forbidden } from '@/lib/errors/types';
+import { neutralizeCsvCell } from '@/lib/csv/format-csv';
 import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
@@ -45,6 +46,11 @@ interface RouteContext {
 // ── CSV helpers ────────────────────────────────────────────────────────
 
 function escapeCSV(value: string | number | null | undefined): string {
+    // Neutralise BEFORE quoting. This is the only CROSS-TENANT export in the
+    // product: a formula planted in one tenant's control name lands in a file
+    // an ORG admin opens, so the blast radius crosses the isolation boundary
+    // every other control in this codebase is built to hold.
+    value = neutralizeCsvCell(String(value ?? ''));
     const s = String(value ?? '');
     if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
         return `"${s.replace(/"/g, '""')}"`;

@@ -14,6 +14,7 @@ import { addSectionTitle, addSummaryMetrics } from '@/lib/pdf/sections';
 import { renderTable, autoColumnWidths } from '@/lib/pdf/table';
 import { formatCompactCurrency } from '@/lib/risk-coherence';
 import { formatTailAwareAle } from '@/lib/tail-language';
+import { neutralizeCsvCell } from '@/lib/csv/format-csv';
 
 export interface ReportData {
     /** RQ3-OB-A — tenant display currency (default €). */
@@ -35,7 +36,12 @@ const moneyFor = (data: ReportData) => (n: number | null | undefined) =>
     formatCompactCurrency(n, data.currencySymbol ?? '€');
 const csvCell = (v: string | number | null | undefined) => {
     const s = v == null ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    // Neutralise first: the report TITLE is a user-created template name and
+    // lands in row 1. Local name kept (it is this module's row formatter), but
+    // the security half now comes from the shared helper so the two cannot
+    // drift apart.
+    const n = neutralizeCsvCell(s);
+    return /[",\n]/.test(n) ? `"${n.replace(/"/g, '""')}"` : n;
 };
 
 /** CSV export — portfolio KPIs + top risks. Deterministic. */
