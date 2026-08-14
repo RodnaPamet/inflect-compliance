@@ -120,7 +120,17 @@ const evidenceListSelect = {
         select: { control: { select: { id: true, name: true, annexId: true, code: true } } },
     },
     fileRecord: { select: { id: true, mimeType: true, scanStatus: true } },
-    // Tag chips on the list row + the tag filter's client-side match.
+    // Seeds the row's Edit modal so a save reconciles against the real tag set.
+    //
+    // The comment here used to claim these powered "tag chips on the list row +
+    // the tag filter's client-side match". Neither exists — the list renders no
+    // chips and the tag filter is server-side (`filters.tag`, applied in
+    // `_buildWhere`). Worse, `EvidenceRow` did not even DECLARE this field, so
+    // nothing client-side could read what the select was returning: the row's
+    // Edit button seeded the modal without tags and saving reconciled them to
+    // empty, deleting every one. Fixed in #1896; the description is corrected
+    // here so the next reader does not go looking for chips that were never
+    // built.
     tags: { select: { tag: true }, orderBy: { tag: 'asc' } },
 } as const;
 

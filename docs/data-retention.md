@@ -386,8 +386,13 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 | `daily-evidence-expiry` (daily 06:00 UTC) | `runDailyEvidenceExpiryNotifications` (`jobs/dailyEvidenceExpiry.ts`); reminder generation also in `runEvidenceRetentionNotifications` (`jobs/retention-notifications.ts`) | N-day-before (30/7/1) reminder tasks for expiring evidence, gated by `Tenant.reminderDaysBefore` (default 14). | Evidence only |
 | `data-lifecycle` (daily 03:00 UTC) | `purgeSoftDeletedOlderThan` (90-day grace, 12 `SOFT_DELETE_MODELS`) · `purgeExpiredEvidenceOlderThan` (hard-delete archived evidence > 365 days) · `runRetentionSweep` (cross-model `retentionUntil` sweep over the 2 `RETENTION_MODELS` that have a writer — `Asset`; `Evidence` is skipped by that loop and handled by the separate `retention-sweep` cron) — all in `jobs/data-lifecycle.ts` | The actual purge engine: hard-deletes aged soft-deletes + aged archived evidence; sweeps `retentionUntil` across the retention models. | 12 soft-delete + 2 retention models |
 
-`src/lib/retention-purge.ts::purgeSoftDeletedOlderThan(days)` is a manual/CLI raw-SQL
-variant of the same purge (writes a hash-chained audit row), for operator-run cleanups.
+There is ONE purge implementation. `src/lib/retention-purge.ts` used to hold a
+second, manual/CLI variant of the same sweep; it was deleted (2026-08-14)
+because nothing imported it but its own test, and the two had drifted in both
+directions — the dead copy carried a global-row guard the live path lacked,
+while the live path gained storage-blob reclamation the dead copy never had.
+The guard moved across (`NULLABLE_TENANT_MODELS` in `jobs/data-lifecycle.ts`);
+the rest went.
 
 ### Candidate cleanup jobs the policy implies (NOT built here — follow-up PRs)
 

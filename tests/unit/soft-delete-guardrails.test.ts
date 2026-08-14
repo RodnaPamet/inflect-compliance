@@ -85,7 +85,6 @@ describe('Soft-Delete CI Guardrails', () => {
         // Approved files that may contain raw DELETE:
         const APPROVED_RAW_DELETE_FILES = new Set([
             'soft-delete-operations.ts', // purgeEntity uses raw DELETE
-            'retention-purge.ts',         // purgeSoftDeletedOlderThan uses raw DELETE
             'data-lifecycle.ts',          // purgeSoftDeletedOlderThan + purgeExpiredEvidence use raw DELETE
             'soft-delete-lifecycle.ts',   // purgeSoftDeleted uses raw DELETE
         ]);
@@ -147,11 +146,26 @@ describe('Soft-Delete CI Guardrails', () => {
         expect(content).toContain('export function withDeleted');
     });
 
-    test('retention-purge.ts exists and exports purgeSoftDeletedOlderThan', () => {
-        const retentionFile = path.join(SRC_DIR, 'lib', 'retention-purge.ts');
-        expect(fs.existsSync(retentionFile)).toBe(true);
-        const content = fs.readFileSync(retentionFile, 'utf-8');
-        expect(content).toContain('export async function purgeSoftDeletedOlderThan');
+    test('the soft-delete purge lives in ONE place, and guards global rows', () => {
+        // Was: "retention-purge.ts exists and exports
+        // purgeSoftDeletedOlderThan". That file was a SECOND, unreferenced
+        // implementation of this sweep — its only importer was its own test —
+        // and it drifted from the live one: it carried the global-row guard
+        // that `data-lifecycle.ts` lacked, and lacked the blob reclamation
+        // that `data-lifecycle.ts` gained. A guard asserting a dead file
+        // exists keeps the duplicate alive.
+        //
+        // Assert the property instead: the live sweep refuses to hard-delete
+        // GLOBAL (tenantId IS NULL) rows on an unfiltered pass.
+        expect(fs.existsSync(path.join(SRC_DIR, 'lib', 'retention-purge.ts'))).toBe(false);
+
+        const live = fs.readFileSync(
+            path.join(SRC_DIR, 'app-layer', 'jobs', 'data-lifecycle.ts'),
+            'utf-8',
+        );
+        expect(live).toContain('export async function purgeSoftDeletedOlderThan');
+        expect(live).toMatch(/NULLABLE_TENANT_MODELS\.has\(model\)/);
+        expect(live).toMatch(/tenantId = \{ not: null \}/);
     });
 
     test('all 5 models have deletedAt field in schema', () => {
