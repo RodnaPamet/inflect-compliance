@@ -81,7 +81,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // pages themselves — the latter two written to repay the coverage their
 // first mount enrolled. See
 // docs/implementation-notes/2026-08-11-coverage-gate-enrolment.md.
-const RENDERED_TEST_FLOOR = 221;
+// 230 (2026-08-14): the evidence write surfaces. Tags surviving a save
+// that never touched them (the list-row Edit seeded the modal without
+// them and the payload reconciled to empty, deleting every tag), and a
+// half-succeeded save reporting WHICH half — both asserted on the
+// request payload, because a source scan passes against either bug.
+const RENDERED_TEST_FLOOR = 230;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
