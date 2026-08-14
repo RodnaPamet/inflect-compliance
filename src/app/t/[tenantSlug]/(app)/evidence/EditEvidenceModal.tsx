@@ -252,8 +252,35 @@ export function EditEvidenceModal({
                     }),
                 });
                 if (!rr.ok) {
+                    // PARTIAL SAVE. The PUT above already committed every
+                    // other field, so this is not "the save failed" — it is
+                    // "the save half-succeeded", and the user has to be told
+                    // which half.
+                    //
+                    // `apiErrorMessage(body, fallback)` returns the SERVER's
+                    // message whenever there is one and only falls back
+                    // otherwise, so passing the honest string as the fallback
+                    // meant it was displaced by e.g. "Evidence not found" on
+                    // every real failure — which reads as nothing having been
+                    // saved. Lead with what happened, append the server's
+                    // detail after it.
                     const err = await rr.json().catch(() => ({}));
-                    setError(apiErrorMessage(err, t('edit.retentionFailed')));
+                    const detail = apiErrorMessage(err, '');
+                    setError(
+                        detail
+                            ? `${t('edit.retentionFailed')}: ${detail}`
+                            : t('edit.retentionFailed'),
+                    );
+                    // The details ARE persisted, so the list behind the modal
+                    // is now stale. Refresh it: leaving it unrefreshed is what
+                    // makes a partial save look like a total failure even when
+                    // the message says otherwise.
+                    onSaved?.();
+                    // Deliberately NOT clearing isDirty and NOT closing — the
+                    // retention change genuinely is unsaved, so the
+                    // unsaved-changes guard should still fire and the user
+                    // keeps the modal to retry. Re-submitting re-sends the
+                    // metadata PUT, which is idempotent.
                     return;
                 }
             }
