@@ -85,6 +85,8 @@ interface PolicyRow {
 }
 
 interface PoliciesClientProps {
+    /** Server-computed KPI counts for the first paint (see page.tsx). */
+    initialKpiCounts: PolicyKpiCounts;
     initialPolicies: PolicyRow[];
     initialFilters?: Record<string, string>;
     tenantSlug: string;
@@ -138,6 +140,7 @@ export function PoliciesClient(props: PoliciesClientProps) {
 
 function PoliciesPageInner({
     initialPolicies,
+    initialKpiCounts,
     initialFilters,
     tenantSlug,
     permissions,
@@ -221,7 +224,7 @@ function PoliciesPageInner({
     // hydration is a worse lie than one reading the page count.
     const policiesQuery = useTenantSWR<PolicyListResponse>(policiesKey, {
         fallbackData: filtersMatchInitial
-            ? { rows: initialPolicies, truncated: false }
+            ? { rows: initialPolicies, truncated: false, kpiCounts: initialKpiCounts }
             : undefined,
     });
 
@@ -493,8 +496,8 @@ function PoliciesPageInner({
     //
     // The server computes, per card, the count its click would return. The
     // fallbacks below are the pre-hydration values only.
-    const serverKpiCounts = policiesQuery.data?.kpiCounts;
-    const totalPolicies = serverKpiCounts?.total ?? policies.length;
+    const serverKpiCounts = policiesQuery.data?.kpiCounts ?? initialKpiCounts;
+    const totalPolicies = serverKpiCounts.total;
 
     // Canonical KPI-card sparklines (shared hook). `total` is always present;
     // the status buckets (draft/inReview/approved) are forward-only nullable
@@ -517,13 +520,11 @@ function PoliciesPageInner({
         () => assignSparklineVariants(['total', 'draft', 'inReview', 'approved']),
         [],
     );
-    const draftPolicies = serverKpiCounts?.draft ?? policies.filter((p) => p.status === 'DRAFT').length;
-    const inReviewPolicies = serverKpiCounts?.inReview ?? policies.filter((p) => p.status === 'IN_REVIEW').length;
-    const approvedPolicies =
-        serverKpiCounts?.approved ??
-        policies.filter((p) => p.status === 'APPROVED' || p.status === 'PUBLISHED').length;
-    const overdueReviewPolicies = serverKpiCounts?.overdueReview ?? policies.filter((p) => p.reviewBucket === 'overdue').length;
-    const outstandingAckPolicies = serverKpiCounts?.outstandingAck ?? policies.filter((p) => p.acknowledgement?.outstanding).length;
+    const draftPolicies = serverKpiCounts.draft;
+    const inReviewPolicies = serverKpiCounts.inReview;
+    const approvedPolicies = serverKpiCounts.approved;
+    const overdueReviewPolicies = serverKpiCounts.overdueReview;
+    const outstandingAckPolicies = serverKpiCounts.outstandingAck;
     const policyKpiDefs: ReadonlyArray<KpiFilterDef<PolicyKpiId>> = useMemo(
         () => [
             {

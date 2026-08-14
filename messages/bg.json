@@ -2872,6 +2872,7 @@
             "delete": "Изтрий",
             "failed": "Груповото действие е неуспешно",
             "deletedToast": "{count, plural, one {# политика е изтрита} other {# политики са изтрити}}",
+            "deletedReconciled": "{deleted, plural, one {# политика е изтрита} other {# политики са изтрити}} · {skipped, plural, one {# вече липсваше} other {# вече липсваха}}",
             "undo": "Отмяна",
             "archivedToast": "{count, plural, one {# политика е архивирана} other {# политики са архивирани}}",
             "assignedToast": "{count, plural, one {# политика е обновена} other {# политики са обновени}}"

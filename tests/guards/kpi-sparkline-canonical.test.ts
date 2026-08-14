@@ -100,16 +100,30 @@ describe('Policies KPI cards read the SERVER count, not the loaded array', () =>
      * A filter card's number is a promise about its own click. These assert
      * the number now comes from the database.
      */
-    it('reads counts from the list response', () => {
-        expect(src).toMatch(/serverKpiCounts\s*=\s*policiesQuery\.data\?\.kpiCounts/);
+    it('reads counts from the list response, falling back to the SSR counts', () => {
+        expect(src).toMatch(
+            /serverKpiCounts\s*=\s*policiesQuery\.data\?\.kpiCounts\s*\?\?\s*initialKpiCounts/,
+        );
     });
 
     it.each(['total', 'draft', 'inReview', 'approved', 'overdueReview', 'outstandingAck'])(
-        '%s prefers the server count',
+        '%s reads the server count with NO client-side fallback',
         (id) => {
-            expect(src).toMatch(new RegExp(`serverKpiCounts\\?\\.${id}\\s*\\?\\?`));
+            // The `?? policies.filter(...)` fallback this replaced was itself
+            // the defect in miniature — and it tripped the
+            // no-client-side-filtering guardrail, which is the right guardrail.
+            // page.tsx computes the counts for the first paint, so there is
+            // nothing left to fall back to.
+            expect(src).toMatch(new RegExp(`serverKpiCounts\\.${id};`));
+            expect(src).not.toMatch(new RegExp(`serverKpiCounts\\?\\.${id}\\s*\\?\\?`));
         },
     );
+
+    it('the SSR path supplies counts so the client never derives them', () => {
+        const page = codeOnly(read('src/app/t/[tenantSlug]/(app)/policies/page.tsx'));
+        expect(page).toMatch(/listPolicyKpiCounts\(/);
+        expect(page).toMatch(/initialKpiCounts=\{initialKpiCounts\}/);
+    });
 
     it('approved selects BOTH statuses it counts', () => {
         // Counting one set and filtering to another is the same class of lie
