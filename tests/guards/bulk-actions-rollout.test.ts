@@ -23,9 +23,22 @@ interface EntitySpec {
     statusRoute: string;
     assignRoute: string;
     usecaseFile: string;
-    statusFn: RegExp;
-    assignFn: RegExp;
-    permission: RegExp;
+    /**
+     * Function NAMES, not regexes. `functionBodyOf` throws when the function
+     * is gone, so "it exists" stops needing its own assertion — and every
+     * check below can be bounded to the body instead of the file.
+     */
+    statusFn: string;
+    assignFn: string;
+    /**
+     * Split per verb. A single `permission` regex matched against the WHOLE
+     * usecase file let one gated function vouch for an ungated sibling — the
+     * blind spot that hid an unguarded bulk delete until #1884, and the same
+     * shape that hid `deleteTask` being EDITOR-gated until the cross-surface
+     * matrix looked at peers instead of siblings.
+     */
+    statusPermission: RegExp;
+    assignPermission: RegExp;
     repoBulkCall: RegExp;
     repoFile: string;
     schemaStatus: RegExp;
@@ -54,9 +67,10 @@ const ENTITIES: EntitySpec[] = [
         statusRoute: 'src/app/api/t/[tenantSlug]/risks/bulk/status/route.ts',
         assignRoute: 'src/app/api/t/[tenantSlug]/risks/bulk/assign/route.ts',
         usecaseFile: 'src/app-layer/usecases/risk.ts',
-        statusFn: /export async function bulkSetRiskStatus/,
-        assignFn: /export async function bulkAssignRisk/,
-        permission: /assertCanWrite\(ctx\)/,
+        statusFn: 'bulkSetRiskStatus',
+        assignFn: 'bulkAssignRisk',
+        statusPermission: /assertCanWrite\(ctx\)/,
+        assignPermission: /assertCanWrite\(ctx\)/,
         repoBulkCall: /RiskRepository\.bulkUpdate/,
         repoFile: 'src/app-layer/repositories/RiskRepository.ts',
         schemaStatus: /BulkRiskStatusSchema/,
@@ -71,9 +85,10 @@ const ENTITIES: EntitySpec[] = [
         statusRoute: 'src/app/api/t/[tenantSlug]/controls/bulk/status/route.ts',
         assignRoute: 'src/app/api/t/[tenantSlug]/controls/bulk/assign/route.ts',
         usecaseFile: 'src/app-layer/usecases/control/mutations.ts',
-        statusFn: /export async function bulkSetControlStatus/,
-        assignFn: /export async function bulkAssignControl/,
-        permission: /assertCanUpdateControl\(ctx\)/,
+        statusFn: 'bulkSetControlStatus',
+        assignFn: 'bulkAssignControl',
+        statusPermission: /assertCanUpdateControl\(ctx\)/,
+        assignPermission: /assertCanUpdateControl\(ctx\)/,
         repoBulkCall: /ControlRepository\.bulkUpdate/,
         repoFile: 'src/app-layer/repositories/ControlRepository.ts',
         schemaStatus: /BulkControlStatusSchema/,
@@ -88,9 +103,10 @@ const ENTITIES: EntitySpec[] = [
         statusRoute: 'src/app/api/t/[tenantSlug]/vendors/bulk/status/route.ts',
         assignRoute: 'src/app/api/t/[tenantSlug]/vendors/bulk/assign/route.ts',
         usecaseFile: 'src/app-layer/usecases/vendor.ts',
-        statusFn: /export async function bulkSetVendorStatus/,
-        assignFn: /export async function bulkAssignVendor/,
-        permission: /assertCanManageVendors\(ctx\)/,
+        statusFn: 'bulkSetVendorStatus',
+        assignFn: 'bulkAssignVendor',
+        statusPermission: /assertCanManageVendors\(ctx\)/,
+        assignPermission: /assertCanManageVendors\(ctx\)/,
         repoBulkCall: /VendorRepository\.bulkUpdate/,
         repoFile: 'src/app-layer/repositories/VendorRepository.ts',
         schemaStatus: /BulkVendorStatusSchema/,
@@ -105,9 +121,10 @@ const ENTITIES: EntitySpec[] = [
         statusRoute: 'src/app/api/t/[tenantSlug]/tests/plans/bulk/status/route.ts',
         assignRoute: 'src/app/api/t/[tenantSlug]/tests/plans/bulk/assign/route.ts',
         usecaseFile: 'src/app-layer/usecases/control/test-plans.ts',
-        statusFn: /export async function bulkSetTestPlanStatus/,
-        assignFn: /export async function bulkAssignTestPlan/,
-        permission: /assertCanManageTestPlans\(ctx\)/,
+        statusFn: 'bulkSetTestPlanStatus',
+        assignFn: 'bulkAssignTestPlan',
+        statusPermission: /assertCanManageTestPlans\(ctx\)/,
+        assignPermission: /assertCanManageTestPlans\(ctx\)/,
         repoBulkCall: /TestPlanRepository\.bulkUpdate/,
         repoFile: 'src/app-layer/repositories/TestPlanRepository.ts',
         schemaStatus: /BulkTestPlanStatusSchema/,
@@ -125,12 +142,19 @@ describe.each(ENTITIES)('Bulk action rollout — $name', (e) => {
         expect(exists(e.assignRoute)).toBe(true);
     });
 
-    it('usecases assert permission + use a tenant-scoped bulk update', () => {
-        const uc = read(e.usecaseFile);
-        expect(uc).toMatch(e.statusFn);
-        expect(uc).toMatch(e.assignFn);
-        expect(uc).toMatch(e.permission);
-        expect(uc).toMatch(e.repoBulkCall);
+    it('the STATUS verb asserts its own gate and its own tenant-scoped update', () => {
+        // Bounded to the function. The whole-file form this replaces was
+        // satisfied by any sibling in the module, so it could not tell a
+        // gated verb from an ungated one.
+        const body = functionBodyOf(read(e.usecaseFile), e.statusFn);
+        expect(body).toMatch(e.statusPermission);
+        expect(body).toMatch(e.repoBulkCall);
+    });
+
+    it('the ASSIGN verb asserts its own gate and its own tenant-scoped update', () => {
+        const body = functionBodyOf(read(e.usecaseFile), e.assignFn);
+        expect(body).toMatch(e.assignPermission);
+        expect(body).toMatch(e.repoBulkCall);
     });
 
     it('repository bulkUpdate is one updateMany filtered by tenantId', () => {

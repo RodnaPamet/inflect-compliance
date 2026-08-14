@@ -13,6 +13,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -75,7 +76,15 @@ describe('Bulk action rollout — Policy (assign + archive)', () => {
         // accepted for surfaces that have not moved yet. (The optional group is
         // required rather than cosmetic: `assertCanAdmin\(` does not match
         // `assertCanAdminPolicies(` — the escaped paren follows "Admin".)
-        expect(uc).toMatch(/bulkArchivePolicy[\s\S]{0,160}assertCanAdmin(Policies)?\(ctx\)/);
+        //
+        // Bounded to the FUNCTION BODY, not a 160-character window from the
+        // name. The window form is strictly worse than the whole-file regex it
+        // replaced: it fails on unrelated growth above the gate, and passes on
+        // a gate that has drifted 161 characters away. CLAUDE.md names the
+        // shape — never slice a magic byte offset.
+        expect(functionBodyOf(uc, 'bulkArchivePolicy')).toMatch(
+            /assertCanAdmin(Policies)?\(ctx\)/,
+        );
         expect(uc).not.toMatch(/bulkSetPolicyStatus/);
     });
 
