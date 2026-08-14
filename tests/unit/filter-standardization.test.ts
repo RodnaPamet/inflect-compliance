@@ -11,8 +11,10 @@
  *   2. Those pages import from the shared `@/components/ui/filter` stack
  *      and the shared `FilterToolbar`.
  *   3. They do NOT import `CompactFilterBar` / `useUrlFilters` (the legacy
- *      system) — exception: Evidence's retention tab, which reserves
- *      `useUrlFilters(['tab'])` for a view selector and is not a filter.
+ *      system) — exception: Evidence reserves `useUrlFilters(['view'])`
+ *      for its list/gallery selector, which is a renderer choice, not a
+ *      filter. (`tab` was allowed here until R1-2b, when the retention
+ *      bucket became a real filter category and moved to `filterCtx`.)
  *   4. Each filter-defs module imports from concrete sub-modules
  *      (`filter-definitions`, `types`) rather than the barrel, so jest's
  *      node env can load them without pulling in tsx components.
@@ -37,7 +39,10 @@ const MIGRATED_PAGES: Array<{
     allowLegacyUrlFilterScope?: string[];
 }> = [
     { dir: 'controls', client: 'ControlsClient.tsx' },
-    { dir: 'evidence', client: 'EvidenceClient.tsx', allowLegacyUrlFilterScope: ['tab', 'view'] },
+    // `tab` came off this allowlist in R1-2b. Leaving it would keep
+    // permitting the exact shape the change removed — the allowlist is a
+    // budget for legacy view slots, not a record of what once lived there.
+    { dir: 'evidence', client: 'EvidenceClient.tsx', allowLegacyUrlFilterScope: ['view'] },
     { dir: 'risks', client: 'RisksClient.tsx' },
     { dir: 'policies', client: 'PoliciesClient.tsx' },
     { dir: 'tasks', client: 'TasksClient.tsx' },
