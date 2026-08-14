@@ -252,8 +252,12 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // ─── Build the API query string from filter state + retention tab ───
     const fetchParams = useMemo(() => {
         const params = toApiSearchParams(state, { search });
-        if (filters.tab === 'archived') params.set('archived', 'true');
-        else if (filters.tab === 'expiring') params.set('expiring', 'true');
+        // Send the tab itself rather than translating it here. The old mapping
+        // to `archived` / `expiring` was only half the tab's meaning — the
+        // client still partitioned the returned rows to finish the job, over
+        // whatever the backfill cap happened to include. `freshness` is already
+        // in `state`, and was already being sent; the API used to `.strip()` it.
+        if (filters.tab) params.set('tab', filters.tab);
         return params;
     }, [state, search, filters.tab]);
 
@@ -670,22 +674,16 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     const { activeKpiId: activeEvidenceKpi, toggle: toggleEvidenceKpi } =
         useKpiFilter(evidenceKpiDefs);
 
-    const activeEvidence = evidence.filter(ev => !ev.isArchived && !ev.expiredAt && !ev.deletedAt);
-    const expiringEvidence = hydratedNow ? evidence.filter(ev => {
-        if (ev.isArchived || ev.deletedAt) return false;
-        if (!ev.retentionUntil) return false;
-        const until = new Date(ev.retentionUntil);
-        const in30Days = new Date(hydratedNow.getTime() + 30 * 86_400_000);
-        return until <= in30Days && until > hydratedNow;
-    }) : [];
-    const archivedEvidence = evidence.filter(ev => ev.isArchived || ev.expiredAt);
-
-    // ─── Filtered evidence list (respects the active retention tab) ───
-    const displayEvidence = retentionFilter === 'archived'
-        ? archivedEvidence
-        : retentionFilter === 'expiring'
-            ? expiringEvidence
-            : activeEvidence;
+    // The retention tab is applied SERVER-side (`tab` on the list query), so
+    // the rows that arrive are already the tab's whole-tenant result. This
+    // used to re-partition them here, which meant the tab only ever filtered
+    // whatever the backfill cap returned.
+    //
+    // Note the client's `expiring` partition keyed on `retentionUntil` alone —
+    // the definition the KPI tile stopped using when the two were unified. The
+    // server predicate prefers `nextReviewDate` and falls back to retention, so
+    // the tab and the tile now agree; see `evidenceRetentionTabWhere`.
+    const displayEvidence = evidence;
 
     // ─── EP-2 — freshness (review-currency) refinement ───
     // Read from the FilterProvider state (single-select). The API
@@ -694,18 +692,11 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     const freshnessValue = (state.freshness?.[0] ?? null) as
         | EvidenceFreshnessBucket
         | null;
-    const displayEvidenceFresh = useMemo(
-        () =>
-            freshnessValue
-                // guardrail-ignore: local view refinement over already-loaded rows.
-                ? displayEvidence.filter(
-                      (ev) =>
-                          evidenceFreshnessBucket(ev, hydratedNow) ===
-                          freshnessValue,
-                  )
-                : displayEvidence,
-        [displayEvidence, freshnessValue, hydratedNow],
-    );
+    // Applied SERVER-side now (`freshness` on the list query), so the rows
+    // arriving here are already the bucket's whole-tenant result rather than
+    // one page filtered twice. Kept as an alias so the render sites below
+    // read unchanged.
+    const displayEvidenceFresh = displayEvidence;
 
     // EP-4 — freshness KPI counts are SERVER-computed (the retention
     // aggregate's freshness buckets), not a pass over the ≤100 loaded rows.
@@ -723,15 +714,13 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         needs_review: metrics.needsReview,
     };
 
-    // The freshness KPI tiles read a TENANT-WIDE server aggregate, but
-    // clicking one refines CLIENT-side over the loaded page. Past the
-    // fetch cap those two numbers legitimately differ — the page showed
-    // the tile's tenant-wide count beside a shorter list with no
-    // explanation, which reads as a bug. Say which is which instead.
-    const freshnessCountMismatch =
-        freshnessValue !== null &&
-        truncated &&
-        displayEvidenceFresh.length < (freshnessCounts[freshnessValue] ?? 0);
+    // The tile count and the row count are both whole-tenant now, so the
+    // banner that used to explain their disagreement has nothing to explain.
+    // It existed because the tiles read a server aggregate while the filter
+    // refined one loaded page; the filter moved server-side, so the two are
+    // the same query. A row count short of the tile now means an ordinary
+    // pagination cap, which `truncated` already reports on its own.
+    const freshnessCountMismatch = false;
 
     const setFreshnessFilter = useCallback(
         (bucket: EvidenceFreshnessBucket) => {
@@ -1702,7 +1691,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 />
 
                 {/* Archived warning */}
-                {retentionFilter === 'archived' && archivedEvidence.length > 0 && (
+                {retentionFilter === 'archived' && displayEvidence.length > 0 && (
                     <InlineNotice variant="warning" title={tx('list.archivedNoticeTitle')}>
                         {tx('list.archivedNoticeBody')}
                     </InlineNotice>

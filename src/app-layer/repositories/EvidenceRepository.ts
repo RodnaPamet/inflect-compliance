@@ -25,6 +25,10 @@ export interface EvidenceListFilters {
     q?: string;
     archived?: boolean;
     expiring?: boolean;
+    /** Retention tab: active | expiring | archived. Applied server-side. */
+    tab?: string;
+    /** Freshness bucket: current | expiring | expired | needs_review. */
+    freshness?: string;
 }
 
 /** Window, in days, that "expiring soon" means for evidence. */
@@ -65,6 +69,97 @@ export function evidenceExpiringSoonWhere(now: Date): Prisma.EvidenceWhereInput 
             },
         ],
     };
+}
+
+/**
+ * `expired` — the bucket `evidenceFreshnessBucket` returns for a lapsed row.
+ *
+ * Mirrors that function's precedence exactly: an explicit `expiredAt` wins,
+ * otherwise the review date decides, otherwise the retention date. NEEDS_REVIEW
+ * is excluded because it owns its own bucket.
+ */
+export function evidenceExpiredWhere(now: Date): Prisma.EvidenceWhereInput {
+    return {
+        status: { not: 'NEEDS_REVIEW' as const },
+        OR: [
+            { expiredAt: { not: null } },
+            { expiredAt: null, nextReviewDate: { not: null, lt: now } },
+            {
+                expiredAt: null,
+                nextReviewDate: null,
+                retentionUntil: { not: null, lt: now },
+            },
+        ],
+    };
+}
+
+/**
+ * The four freshness buckets as SQL, so the list filter and the KPI counts
+ * cannot disagree.
+ *
+ * `evidenceFreshnessBucket` (src/lib/evidence-review-currency.ts) computes these
+ * per row in TypeScript for the badge. The list page used to apply them the same
+ * way — client-side, over whatever rows the truncated page happened to hold —
+ * because the API `.strip()`ped the `freshness` param. That is why the page
+ * carried a `freshnessCountMismatch` banner: the KPI counted the whole tenant
+ * and the filter counted one page, so they disagreed by construction.
+ *
+ * `current` is expressed as "none of the other three" rather than restated, so a
+ * change to any bucket cannot leave a row in two buckets or none.
+ */
+export function evidenceFreshnessWhere(
+    bucket: string,
+    now: Date,
+): Prisma.EvidenceWhereInput | undefined {
+    switch (bucket) {
+        case 'needs_review':
+            return { status: 'NEEDS_REVIEW' };
+        case 'expired':
+            return evidenceExpiredWhere(now);
+        case 'expiring':
+            return evidenceExpiringSoonWhere(now);
+        case 'current':
+            return {
+                NOT: [
+                    { status: 'NEEDS_REVIEW' },
+                    evidenceExpiredWhere(now),
+                    evidenceExpiringSoonWhere(now),
+                ],
+            };
+        default:
+            // Unknown bucket ⇒ no filter, matching how the other list facets
+            // treat a value they do not recognise.
+            return undefined;
+    }
+}
+
+/**
+ * The retention tab (`active` / `expiring` / `archived`) as SQL.
+ *
+ * NOTE a deliberate behaviour change. The client partitioned `expiring` on
+ * `retentionUntil` alone, which is the definition the KPI tile stopped using
+ * when the two were unified — the tile prefers `nextReviewDate` and falls back
+ * to retention. Moving the tab server-side adopts the unified predicate, so the
+ * tab and the tile now agree. Rows whose review date is near but whose
+ * retention date is far now appear under Expiring, and vice versa; that is the
+ * tile's definition, and having one was the point.
+ */
+export function evidenceRetentionTabWhere(
+    tab: string,
+    now: Date,
+): Prisma.EvidenceWhereInput | undefined {
+    switch (tab) {
+        case 'active':
+            return { isArchived: false, expiredAt: null };
+        case 'expiring':
+            return evidenceExpiringSoonWhere(now);
+        case 'archived':
+            // The client treated a lapsed row as archived even without the
+            // flag, and the Archived tab is where users look for both.
+            return { OR: [{ isArchived: true }, { expiredAt: { not: null } }] };
+        default:
+            return undefined;
+    }
 }
 
 export interface EvidenceListParams {
@@ -216,6 +311,18 @@ export class EvidenceRepository {
         }
         if (filters?.archived !== undefined) {
             where.isArchived = filters.archived;
+        }
+        // Both applied server-side. They used to partition the already-loaded
+        // page in the client, so they only ever filtered whatever the backfill
+        // cap happened to return — which is why the page carried a
+        // count-mismatch banner explaining that the KPI and the rows disagreed.
+        if (filters?.tab) {
+            const tabWhere = evidenceRetentionTabWhere(filters.tab, new Date());
+            if (tabWhere) andConditions.push(tabWhere);
+        }
+        if (filters?.freshness) {
+            const freshWhere = evidenceFreshnessWhere(filters.freshness, new Date());
+            if (freshWhere) andConditions.push(freshWhere);
         }
         if (filters?.expiring) {
             // The SAME predicate the "Expiring soon" KPI counts with, so the
@@ -437,18 +544,7 @@ export class EvidenceRepository {
                     // expired: expiredAt set, OR (no expiredAt) the review date
                     // lapsed, OR (no review date) the retention date lapsed.
                     db.evidence.count({
-                        where: {
-                            ...nonReview,
-                            OR: [
-                                { expiredAt: { not: null } },
-                                { expiredAt: null, nextReviewDate: { not: null, lt: now } },
-                                {
-                                    expiredAt: null,
-                                    nextReviewDate: null,
-                                    retentionUntil: { not: null, lt: now },
-                                },
-                            ],
-                        },
+                        where: { ...base, ...evidenceExpiredWhere(now) },
                     }),
                     // expiring: not expired, review date within 30d (else the
                     // retention date within 30d when no review date is set).
