@@ -21,6 +21,7 @@ import { prisma as defaultPrisma } from '@/lib/prisma';
 import { SOFT_DELETE_MODELS, withDeleted } from '@/lib/soft-delete';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
+import { purgeEvidenceBlobs } from '../services/evidence-blob-purge';
 
 /** Minimal delegate interface for dynamic model access by string key */
 interface ModelDelegate {
@@ -157,6 +158,26 @@ export async function purgeSoftDeletedOlderThan(
             let purged = 0;
 
             if (!dryRun) {
+                // Evidence is the only model in this loop whose rows point at
+                // an object in storage, so it is the only one with bytes to
+                // reclaim. Done once for the whole batch rather than per row so
+                // the sibling check sees the entire purge set — otherwise two
+                // deduped rows purged in the same pass would each retain the
+                // blob "for the other one" and neither would ever free it.
+                if (model === 'Evidence') {
+                    const blobs = await purgeEvidenceBlobs(
+                        db,
+                        candidates.map((c) => c.id),
+                    );
+                    if (blobs.failed > 0) {
+                        logger.error('data-lifecycle: evidence blobs survived the sweep', {
+                            component: 'data-lifecycle',
+                            model,
+                            ...blobs,
+                        });
+                    }
+                }
+
                 for (const record of candidates) {
                     await db.$executeRawUnsafe(
                         `DELETE FROM "${model}" WHERE "id" = $1`,
@@ -238,6 +259,21 @@ export async function purgeExpiredEvidenceOlderThan(
         let purged = 0;
 
         if (!dryRun) {
+            // Reclaim the stored bytes BEFORE the rows go. This is the
+            // documented 365-day hard purge, and it deleted rows only — so the
+            // DATA_PURGED entries below attested destructions that had not
+            // happened. Batched across all candidates so the sibling check
+            // (SHA-256 dedup: several Evidence rows can share one FileRecord)
+            // sees the whole purge set and does not retain a blob for a
+            // sibling that is also being purged in this same pass.
+            const blobs = await purgeEvidenceBlobs(db, candidates.map((c) => c.id));
+            if (blobs.failed > 0) {
+                logger.error('data-lifecycle: evidence blobs survived the purge', {
+                    component: 'data-lifecycle',
+                    ...blobs,
+                });
+            }
+
             for (const ev of candidates) {
                 await db.$executeRawUnsafe(
                     'DELETE FROM "Evidence" WHERE "id" = $1',
@@ -255,6 +291,7 @@ export async function purgeExpiredEvidenceOlderThan(
                             reason: 'expired_evidence_grace_exceeded',
                             graceDays,
                             purgedAt: now.toISOString(),
+                            blobPurge: blobs,
                         }),
                     },
                 });
