@@ -422,7 +422,7 @@ describe('deleteTask', () => {
             id: 't1', title: 'My task', type: 'TASK', status: 'OPEN', controlId: null,
         } as never);
 
-        await deleteTask(makeRequestContext('EDITOR'), 't1');
+        await deleteTask(makeRequestContext('ADMIN'), 't1');
 
         expect(del).toHaveBeenCalledWith({ where: { id: 't1' } });
         expect(mockLog).toHaveBeenCalledWith(
@@ -440,8 +440,40 @@ describe('deleteTask', () => {
         mockGetById.mockResolvedValueOnce(null as never);
 
         await expect(
-            deleteTask(makeRequestContext('EDITOR'), 'missing'),
+            deleteTask(makeRequestContext('ADMIN'), 'missing'),
         ).rejects.toThrow();
         expect(del).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The bulk gate was bypassable by iteration.
+     *
+     * bulkDeleteTask has always been assertCanAdmin, but deleteTask was
+     * assertCanWriteTasks — so an EDITOR refused the bulk verb could loop the
+     * single endpoint and reach the same outcome. Every peer register
+     * (risk / asset / evidence / control / policy) requires ADMIN for its
+     * single delete; task was the only one that did not.
+     *
+     * This asserts the single path is closed, which is what makes the bulk
+     * gate mean anything.
+     */
+    it('refuses an EDITOR — the single delete cannot undercut the bulk gate', async () => {
+        const del = jest.fn();
+        mockRunInTx.mockImplementation(async (_ctx, fn) =>
+            fn({ task: { delete: del } } as never),
+        );
+
+        await expect(
+            deleteTask(makeRequestContext('EDITOR'), 't1'),
+        ).rejects.toThrow();
+        // The refusal must land BEFORE any read or write, not after.
+        expect(del).not.toHaveBeenCalled();
+        expect(mockGetById).not.toHaveBeenCalled();
+    });
+
+    it('refuses a READER too', async () => {
+        await expect(
+            deleteTask(makeRequestContext('READER'), 't1'),
+        ).rejects.toThrow();
     });
 });

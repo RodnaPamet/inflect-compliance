@@ -656,7 +656,20 @@ export async function bulkDeleteTask(ctx: RequestContext, taskIds: string[]) {
 }
 
 export async function deleteTask(ctx: RequestContext, taskId: string) {
-    assertCanWriteTasks(ctx);
+    // ADMIN, matching deleteRisk / deleteAsset / deleteEvidence / deleteControl
+    // / deletePolicy. This was the only destructive verb in the codebase gated
+    // below ADMIN.
+    //
+    // The gap was not merely inconsistent, it was BYPASSABLE: bulkDeleteTask
+    // has always been assertCanAdmin (see below), so an EDITOR refused the
+    // bulk delete could loop DELETE /tasks/{id} and reach the identical
+    // outcome. A gate one call site can iterate around is not a gate.
+    //
+    // Task is soft-deleted, so rows survive — but the same EDITOR can neither
+    // restore them (soft-delete-operations assertCanAdmin) nor list what they
+    // removed (listTasksWithDeleted assertCanAdmin), so recovery means telling
+    // an ADMIN which task keys went missing.
+    assertCanAdmin(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const existing = await TaskRepository.getById(db, ctx, taskId);
         if (!existing) throw notFound('Task not found');
