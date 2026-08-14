@@ -717,6 +717,7 @@ import {
 } from '@/lib/storage';
 import type { StorageDomain } from '@/lib/storage';
 import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
+import { scanUploadOrRefuse } from '../services/file-scan';
 import { Readable } from 'stream';
 import { env } from '@/env';
 
@@ -768,8 +769,17 @@ export async function uploadEvidenceFile(
     // Write through the storage abstraction (local or S3)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const readable = Readable.from(buffer);
 
+    // Scan BEFORE the bytes reach storage. An infected upload is refused here,
+    // so it never enters the bucket and never enters the SHA-256 dedup index
+    // (where a later identical upload would reuse its FileRecord).
+    const scan = await scanUploadOrRefuse(ctx, buffer, {
+        originalName,
+        mimeType,
+        sizeBytes: buffer.length,
+    });
+
+    const readable = Readable.from(buffer);
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
     // EP-3 — normalise the control association (many-to-many + legacy single).
@@ -845,7 +855,7 @@ export async function uploadEvidenceFile(
                 bucket: env.S3_BUCKET || null,
                 domain,
             });
-            await FileRepository.markStored(db, ctx, fileRecord.id);
+            await FileRepository.markStored(db, ctx, fileRecord.id, scan);
             fileRecordId = fileRecord.id;
         }
 

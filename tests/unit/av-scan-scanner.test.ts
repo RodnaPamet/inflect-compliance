@@ -135,3 +135,59 @@ describe('isClamavAvailable', () => {
         await expect(isClamavAvailable()).resolves.toBe(false);
     });
 });
+
+describe('scanBuffer — clamd reply parsing', () => {
+    /** Stub a socket that replies with `reply` then ends. */
+    function stubReply(reply: string) {
+        return jest
+            .spyOn(net.Socket.prototype, 'connect')
+            .mockImplementation(function (this: net.Socket) {
+                process.nextTick(() => {
+                    this.emit('data', Buffer.from(`${reply}\0`));
+                    this.emit('end');
+                });
+                return this;
+            });
+    }
+
+    beforeEach(() => {
+        mockEnv.CLAMAV_HOST = '127.0.0.1:3310';
+    });
+
+    it('reports INFECTED when the threat name contains the letters OK', async () => {
+        // The regression: `cleaned.includes('OK')` was tested BEFORE
+        // `includes('FOUND')`, so a reply whose signature name contains the
+        // literal uppercase "OK" resolved CLEAN. `includes` is CASE-SENSITIVE,
+        // so it needs a signature like TOKEN or BROKER — a mixed-case name
+        // such as "Cookie" does NOT reproduce it, and a test using one passes
+        // against the broken code too.
+        const spy = stubReply('stream: Win.Trojan.TOKEN-9 FOUND');
+        try {
+            const r = await scanBuffer(Buffer.from('x'));
+            expect(r.status).toBe('INFECTED');
+            expect(r.threat).toBe('Win.Trojan.TOKEN-9');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('still reports CLEAN for a genuine OK reply', async () => {
+        // Guards the over-correction: inverting the order must not break the
+        // ordinary clean path.
+        const spy = stubReply('stream: OK');
+        try {
+            expect((await scanBuffer(Buffer.from('x'))).status).toBe('CLEAN');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('reports ERROR for an unparseable reply rather than guessing', async () => {
+        const spy = stubReply('stream: something unexpected');
+        try {
+            expect((await scanBuffer(Buffer.from('x'))).status).toBe('ERROR');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+});
