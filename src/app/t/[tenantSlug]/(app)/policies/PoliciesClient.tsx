@@ -85,6 +85,8 @@ interface PolicyRow {
 }
 
 interface PoliciesClientProps {
+    /** Server-computed KPI counts for the first paint (see page.tsx). */
+    initialKpiCounts: PolicyKpiCounts;
     initialPolicies: PolicyRow[];
     initialFilters?: Record<string, string>;
     tenantSlug: string;
@@ -110,6 +112,21 @@ interface PoliciesClientProps {
  * (Epic 91) so the layout chrome (header, filters, body, modals
  * passthrough) stays consistent with controls + risks.
  */
+/**
+ * Shape of GET /api/t/:slug/policies. `kpiCounts` is computed in the database
+ * (PolicyRepository.kpiCounts) rather than from `rows`, because `rows` is
+ * capped and SSR-windowed while every KPI card's filter resolves tenant-wide.
+ */
+type PolicyKpiCounts = {
+    total: number;
+    draft: number;
+    inReview: number;
+    approved: number;
+    overdueReview: number;
+    outstandingAck: number;
+};
+type PolicyListResponse = CappedList<PolicyRow> & { kpiCounts?: PolicyKpiCounts };
+
 export function PoliciesClient(props: PoliciesClientProps) {
     const filterCtx = useFilterContext([], POLICY_FILTER_KEYS, {
         serverFilters: props.initialFilters,
@@ -123,6 +140,7 @@ export function PoliciesClient(props: PoliciesClientProps) {
 
 function PoliciesPageInner({
     initialPolicies,
+    initialKpiCounts,
     initialFilters,
     tenantSlug,
     permissions,
@@ -199,9 +217,14 @@ function PoliciesPageInner({
 
     // PR-5 — API returns `{ rows, truncated }`. SSR initial wraps
     // with `truncated: false` (the SSR cap is below the backfill cap).
-    const policiesQuery = useTenantSWR<CappedList<PolicyRow>>(policiesKey, {
+    // `kpiCounts` is OPTIONAL, not required, and that is deliberate: the SSR
+    // fallback below has rows but no counts, so the cards fall back to
+    // page-derived numbers for the first paint only. Typing it required would
+    // force a fake zero into the fallback, and a card reading 0 before
+    // hydration is a worse lie than one reading the page count.
+    const policiesQuery = useTenantSWR<PolicyListResponse>(policiesKey, {
         fallbackData: filtersMatchInitial
-            ? { rows: initialPolicies, truncated: false }
+            ? { rows: initialPolicies, truncated: false, kpiCounts: initialKpiCounts }
             : undefined,
     });
 
@@ -303,6 +326,30 @@ function PoliciesPageInner({
                         body: JSON.stringify({ policyIds: ids }),
                     });
                     if (!res.ok) throw new Error(tx('bulk.failed'));
+                    // The optimistic toast above necessarily says `ids.length`
+                    // — it is composed BEFORE this request fires (Epic 67
+                    // schedules the commit 5s later), so it structurally
+                    // cannot know how many rows the server actually found.
+                    //
+                    // `deleted` is the count that survived a tenant-scoped
+                    // listByIds, so it drops ids already deleted by someone
+                    // else, and foreign-tenant ids. The single-delete path
+                    // throws notFound for exactly that case; the bulk path
+                    // absorbed it silently and told the user all N went.
+                    // Reconcile once the truth is known rather than leaving a
+                    // confident wrong number on screen.
+                    const body = (await res.json().catch(() => null)) as
+                        | { deleted?: number }
+                        | null;
+                    const deleted = typeof body?.deleted === 'number' ? body.deleted : ids.length;
+                    if (deleted !== ids.length) {
+                        toast.info(
+                            tx('bulk.deletedReconciled', {
+                                deleted,
+                                skipped: ids.length - deleted,
+                            }),
+                        );
+                    }
                     await policiesQuery.mutate();
                 },
                 undoAction: () => { void policiesQuery.mutate(); },
@@ -407,8 +454,25 @@ function PoliciesPageInner({
             { id: 'draft', label: tx('list.kpiDraft'), kind: 'kpi' },
             { id: 'inReview', label: tx('list.kpiInReview'), kind: 'kpi' },
             { id: 'approved', label: tx('list.kpiApproved'), kind: 'kpi' },
-            { id: 'overdueReview', label: tx('list.kpiOverdueReview'), kind: 'kpi' },
-            { id: 'outstandingAck', label: tx('list.kpiOutstandingAck'), kind: 'kpi' },
+            // Opt-in, not removed. Four cards fill the grid-cols-2 md:grid-cols-4
+            // row exactly; six wrapped two onto a second row, which no other
+            // list page does. These two are also the only pair without
+            // sparklines, so the row reads as one kind of thing again.
+            //
+            // Safe to demote because both are real SERVER-side filters
+            // (reviewBucket=overdue, outstanding=true) resolved in
+            // PolicyRepository — the latter as a currentVersionId IN (…)
+            // narrowing that composes with other filters and survives
+            // pagination. Nothing becomes unreachable; it moves behind the gear.
+            //
+            // Ids are UNCHANGED on purpose. The stale-id migration at
+            // use-filter-card-visibility only fires when EVERY persisted id is
+            // dead, so renaming one would strand prior gear users with a single
+            // visible card — and only those who had used the gear, which is
+            // invisible in review. Anyone who has already configured this strip
+            // keeps their choice; only the untouched default changes.
+            { id: 'overdueReview', label: tx('list.kpiOverdueReview'), kind: 'kpi', defaultVisible: false },
+            { id: 'outstandingAck', label: tx('list.kpiOutstandingAck'), kind: 'kpi', defaultVisible: false },
         ],
         [tx],
     );
@@ -420,8 +484,20 @@ function PoliciesPageInner({
 
     // ─── R23-PR-F — KPI definitions for the Policies page ───
     type PolicyKpiId = 'total' | 'draft' | 'inReview' | 'approved' | 'overdueReview' | 'outstandingAck';
-    // guardrail-ignore: KPI counts across the loaded page, not a refilter.
-    const totalPolicies = policies.length;
+    // KPI card counts come from the LIST ENDPOINT, not from `policies`.
+    //
+    // `policies` is the current-filter result capped at LIST_BACKFILL_CAP —
+    // and, until the SWR backfill lands, only the first SSR_PAGE_LIMIT rows.
+    // Every card's filter resolves against the whole tenant, so a count taken
+    // from that array could not predict its own click: a card read 3 and
+    // produced 47. `total` was worse than windowed — it displayed the CURRENT
+    // FILTERED length while its click calls clearAll(), so it disagreed with
+    // itself whenever any filter was set.
+    //
+    // The server computes, per card, the count its click would return. The
+    // fallbacks below are the pre-hydration values only.
+    const serverKpiCounts = policiesQuery.data?.kpiCounts ?? initialKpiCounts;
+    const totalPolicies = serverKpiCounts.total;
 
     // Canonical KPI-card sparklines (shared hook). `total` is always present;
     // the status buckets (draft/inReview/approved) are forward-only nullable
@@ -444,18 +520,11 @@ function PoliciesPageInner({
         () => assignSparklineVariants(['total', 'draft', 'inReview', 'approved']),
         [],
     );
-    // guardrail-ignore: KPI count, not a refilter.
-    const draftPolicies = policies.filter((p) => p.status === 'DRAFT').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const inReviewPolicies = policies.filter((p) => p.status === 'IN_REVIEW').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const approvedPolicies = policies.filter(
-        (p) => p.status === 'APPROVED' || p.status === 'PUBLISHED',
-    ).length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const overdueReviewPolicies = policies.filter((p) => p.reviewBucket === 'overdue').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const outstandingAckPolicies = policies.filter((p) => p.acknowledgement?.outstanding).length;
+    const draftPolicies = serverKpiCounts.draft;
+    const inReviewPolicies = serverKpiCounts.inReview;
+    const approvedPolicies = serverKpiCounts.approved;
+    const overdueReviewPolicies = serverKpiCounts.overdueReview;
+    const outstandingAckPolicies = serverKpiCounts.outstandingAck;
     const policyKpiDefs: ReadonlyArray<KpiFilterDef<PolicyKpiId>> = useMemo(
         () => [
             {
@@ -476,9 +545,20 @@ function PoliciesPageInner({
                 clear: (ctx) => ctx.removeAll('status'),
             },
             {
+                // The card has always DISPLAYED approved-or-published, while
+                // applying status=APPROVED alone — so it over-counted by the
+                // published set on every render, and clicking it produced
+                // fewer rows than it advertised. Widen the filter to match the
+                // count rather than shrinking the count to match the filter:
+                // a policy that is PUBLISHED is past approval, not outside it.
                 id: 'approved',
-                apply: (ctx) => ctx.set('status', 'APPROVED'),
-                isActive: (s) => (s.status ?? []).includes('APPROVED'),
+                apply: (ctx) => {
+                    ctx.set('status', 'APPROVED');
+                    ctx.add('status', 'PUBLISHED');
+                },
+                isActive: (s) =>
+                    (s.status ?? []).includes('APPROVED') &&
+                    (s.status ?? []).includes('PUBLISHED'),
                 clear: (ctx) => ctx.removeAll('status'),
             },
             {

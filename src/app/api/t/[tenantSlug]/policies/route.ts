@@ -66,6 +66,17 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     { take: LIST_BACKFILL_CAP + 1 },
   );
   const result = applyBackfillCap(policies);
+  // KPI card counts come from the DB, not from `result.rows`. The rows are
+  // capped and SSR-windowed; the cards' filters resolve tenant-wide, so a
+  // count derived from the array could not predict its own click.
+  const kpiCounts = await policyUsecases.listPolicyKpiCounts(ctx, {
+    status: query.status,
+    category: query.category,
+    language: query.language,
+    q: query.q,
+    reviewBucket: query.reviewBucket,
+    outstandingAck: query.outstanding === 'true',
+  });
   // PR-6 — row-count observability.
   recordListPageRowCount({
     entity: 'policies',
@@ -73,7 +84,7 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     truncated: result.truncated,
     tenantId: ctx.tenantId,
   });
-  return jsonResponse(result);
+  return jsonResponse({ ...result, kpiCounts });
 }));
 
 // POST /api/t/[tenantSlug]/policies — create (blank or from template)

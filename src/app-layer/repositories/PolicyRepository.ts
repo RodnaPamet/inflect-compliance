@@ -5,6 +5,16 @@ import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { parseEnumListFilter } from '../domain/list-filter';
 
+/** Counts backing the six KPI filter cards on the Policies list page. */
+export interface PolicyKpiCounts {
+    total: number;
+    draft: number;
+    inReview: number;
+    approved: number;
+    overdueReview: number;
+    outstandingAck: number;
+}
+
 export interface PolicyFilters {
     status?: string;
     category?: string;
@@ -157,6 +167,93 @@ export class PolicyRepository {
             select: policyListSelect,
             ...(options.take ? { take: options.take } : {}),
         });
+    }
+
+    /**
+     * Counts for the KPI filter cards.
+     *
+     * Each number answers exactly one question: "how many rows will I see if
+     * I click this card". That is the only contract a FILTER card can honour
+     * — a number that does not predict its own click is worse than no number,
+     * because the user reads it as a promise.
+     *
+     * They were previously derived client-side from the loaded array, which
+     * is the current-filter result capped at LIST_BACKFILL_CAP (and merely
+     * the first SSR_PAGE_LIMIT rows before the SWR backfill lands), while
+     * every card's filter resolves against the whole tenant. So a card could
+     * read 3 and produce 47.
+     *
+     * The shapes below mirror each def's `apply` in PoliciesClient — change
+     * one and you must change the other, which is why the mapping is spelled
+     * out rather than inferred:
+     *   total          clearAll()                  -> tenant, no filters
+     *   draft/inReview/approved
+     *                  set('status', X)            -> current filters, status replaced
+     *   overdueReview  set('reviewBucket','overdue')
+     *   outstandingAck set('outstanding','true')
+     */
+    static async kpiCounts(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters?: PolicyFilters,
+    ): Promise<PolicyKpiCounts> {
+        // Status is replaced (not intersected) by the status cards, so the
+        // groupBy runs over the other active filters only.
+        const withoutStatus: PolicyFilters | undefined = filters
+            ? { ...filters, status: undefined }
+            : undefined;
+        const statusWhere = await PolicyRepository._applyOutstandingAck(
+            db,
+            ctx,
+            PolicyRepository._buildWhere(ctx, withoutStatus),
+            withoutStatus,
+        );
+
+        const overdueFilters: PolicyFilters = { ...(filters ?? {}), reviewBucket: 'overdue' };
+        const ackFilters: PolicyFilters = { ...(filters ?? {}), outstandingAck: true };
+
+        const [byStatus, total, overdueReview, outstandingAck] = await Promise.all([
+            db.policy.groupBy({
+                by: ['status'],
+                where: statusWhere,
+                _count: { _all: true },
+            }),
+            db.policy.count({ where: { tenantId: ctx.tenantId } }),
+            db.policy.count({
+                where: await PolicyRepository._applyOutstandingAck(
+                    db,
+                    ctx,
+                    PolicyRepository._buildWhere(ctx, overdueFilters),
+                    overdueFilters,
+                ),
+            }),
+            db.policy.count({
+                where: await PolicyRepository._applyOutstandingAck(
+                    db,
+                    ctx,
+                    PolicyRepository._buildWhere(ctx, ackFilters),
+                    ackFilters,
+                ),
+            }),
+        ]);
+
+        const statusCount = (...wanted: PolicyStatus[]) =>
+            byStatus
+                .filter((g) => wanted.includes(g.status))
+                .reduce((n, g) => n + g._count._all, 0);
+
+        return {
+            total,
+            draft: statusCount(PolicyStatus.DRAFT),
+            inReview: statusCount(PolicyStatus.IN_REVIEW),
+            // APPROVED *and* PUBLISHED — the card has always displayed both,
+            // and its `apply` now selects both to match. Counting one set and
+            // filtering to another is the same class of lie as counting a
+            // page and filtering a tenant.
+            approved: statusCount(PolicyStatus.APPROVED, PolicyStatus.PUBLISHED),
+            overdueReview,
+            outstandingAck,
+        };
     }
 
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: PolicyListParams): Promise<PaginatedResponse<unknown>> {

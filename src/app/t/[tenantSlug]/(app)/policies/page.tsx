@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { listPolicies } from '@/app-layer/usecases/policy';
+import { listPolicyKpiCounts, listPolicies } from '@/app-layer/usecases/policy';
 import type { PolicyFilters } from '@/app-layer/repositories/PolicyRepository';
 import { cachedSsrPayload } from '@/lib/cache/ssr-cache';
 import { PoliciesClient } from './PoliciesClient';
@@ -62,8 +62,19 @@ export default async function PoliciesPage({
             ? await fetchPolicies()
             : await cachedSsrPayload({ tenantId: ctx.tenantId, route: 'policies', ttlSeconds: 30, compute: fetchPolicies });
 
+    // KPI counts are computed here too, not derived client-side from
+    // `policies`. That array is capped at SSR_PAGE_LIMIT while every card's
+    // filter resolves tenant-wide, so deriving from it is what made a card
+    // read 3 and produce 47 rows. Fetching them for the first paint means the
+    // client never needs a page-scoped fallback at all.
+    const initialKpiCounts = await listPolicyKpiCounts(
+        ctx,
+        Object.keys(queryFilters).length > 0 ? queryFilters : undefined,
+    );
+
     return (
         <PoliciesClient
+            initialKpiCounts={initialKpiCounts}
             initialPolicies={JSON.parse(JSON.stringify(policies))}
             initialFilters={filters}
             tenantSlug={tenantSlug}

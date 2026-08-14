@@ -105,6 +105,19 @@ export async function listPolicies(
     });
 }
 
+/**
+ * Counts for the KPI filter cards, resolved server-side.
+ *
+ * Deliberately NOT folded into `listPolicies`: the list is capped
+ * (LIST_BACKFILL_CAP) and SSR-windowed, and deriving counts from a windowed
+ * array is the exact defect this replaces. Counting in the database is the
+ * only way the number can describe the tenant rather than the page.
+ */
+export async function listPolicyKpiCounts(ctx: RequestContext, filters?: PolicyFilters) {
+    assertCanReadPolicies(ctx);
+    return runInTenantContext(ctx, (db) => PolicyRepository.kpiCounts(db, ctx, filters));
+}
+
 export async function listPoliciesPaginated(ctx: RequestContext, params: PolicyListParams) {
     assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
