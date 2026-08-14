@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable react-hooks/exhaustive-deps -- Various useEffect/useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers recreated each render) or use selector functions whose change-detection happens elsewhere. Adding the deps would either trigger unnecessary re-runs OR cause infinite render loops; the proper structural fix is to wrap parent-level callbacks in useCallback. Tracked as follow-up. */
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -228,8 +227,13 @@ function PoliciesPageInner({
             : undefined,
     });
 
-    const rawPolicies = policiesQuery.data?.rows ?? [];
-    const truncated = policiesQuery.data?.truncated ?? false;
+    // NOT `policiesQuery.data?.rows ?? []` at module-body level: the `?? []`
+    // mints a NEW array identity on every render where data is undefined, and
+    // that value is a dependency of the memo below — so the memo recomputed
+    // every render and the file-wide eslint suppression hid it. Depend on the
+    // stable `data` reference and apply the fallback inside.
+    const policiesData = policiesQuery.data;
+    const truncated = policiesData?.truncated ?? false;
 
     // Derive the review-cycle bucket per row (hydration-safe: null until mount,
     // matching the nextReviewAt column's overdue highlight). Drives the
@@ -237,7 +241,7 @@ function PoliciesPageInner({
     const policies = useMemo<PolicyRow[]>(() => {
         const nowMs = hydratedNow ? hydratedNow.getTime() : null;
         const upcomingMs = nowMs !== null ? nowMs + 30 * 24 * 60 * 60 * 1000 : null;
-        return rawPolicies.map((p) => {
+        return (policiesData?.rows ?? []).map((p) => {
             let reviewBucket: 'overdue' | 'upcoming' | undefined;
             if (nowMs !== null && upcomingMs !== null && p.nextReviewAt) {
                 const due = new Date(p.nextReviewAt).getTime();
@@ -245,7 +249,7 @@ function PoliciesPageInner({
             }
             return { ...p, reviewBucket };
         });
-    }, [rawPolicies, hydratedNow]);
+    }, [policiesData, hydratedNow]);
 
     // ─── Sortable headers (per-column asc/desc, parity with Controls) ───
     const [sortBy, setSortBy] = useState<string | undefined>(undefined);
@@ -515,7 +519,6 @@ function PoliciesPageInner({
         };
     }, [trendsQuery.data]);
     // Distinct sparkline colour per card (canonical allocator).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const sparkColors = useMemo(
         () => assignSparklineVariants(['total', 'draft', 'inReview', 'approved']),
         [],
