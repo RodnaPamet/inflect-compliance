@@ -14,6 +14,7 @@ import {
     getRestoreValidator,
     type RestorableModel,
 } from '../domain/restore-validators';
+import { purgeEvidenceBlobs } from '../services/evidence-blob-purge';
 
 /** Minimal delegate interface for dynamic model access by string key */
 interface ModelDelegate {
@@ -103,6 +104,17 @@ export async function purgeEntity(
             throw notFound(`${model} must be soft-deleted before purging`);
         }
 
+        // Reclaim the stored bytes BEFORE dropping the row. Evidence is the
+        // only SOFT_DELETE_MODELS member whose rows point at an object
+        // (`fileRecordId` -> `FileRecord.pathKey`), and this purge used to
+        // delete the row alone — so the audit entry below attested a
+        // destruction that had not happened. See `purgeEvidenceBlobs` for the
+        // SHA-256 dedup constraint that makes this more than a delete call.
+        const blobs =
+            model === 'Evidence'
+                ? await purgeEvidenceBlobs(db, [id])
+                : null;
+
         // Hard delete: use $executeRawUnsafe to bypass the soft-delete middleware
         await db.$executeRawUnsafe(
             `DELETE FROM "${model}" WHERE "id" = $1 AND "tenantId" = $2`,
@@ -120,6 +132,10 @@ export async function purgeEntity(
                 operation: 'purged',
                 model,
                 reason: 'Manual purge via admin action',
+                // Recorded on the audit row itself: a `failed` above zero
+                // means the row is gone but bytes remain, which is exactly the
+                // discrepancy a reviewer needs to see rather than infer.
+                ...(blobs ? { blobPurge: blobs } : {}),
             },
         });
 
