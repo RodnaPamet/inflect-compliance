@@ -15,7 +15,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { ForbiddenError } from '@/lib/errors/types';
-import { bulkSetVendorStatus, bulkAssignVendor } from '@/app-layer/usecases/vendor';
+import { bulkSetVendorStatus, bulkAssignVendor, bulkDeleteVendor } from '@/app-layer/usecases/vendor';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -78,7 +78,9 @@ describeFn('vendor bulk actions — integration', () => {
     });
 
     afterEach(async () => {
-        await globalPrisma.vendor.deleteMany({ where: { tenantId: TENANT_ID } });
+        await globalPrisma.vendor.deleteMany({
+            where: { tenantId: { in: [TENANT_ID, `${TENANT_ID}-other`] } },
+        });
         await clearAudit();
     });
 
@@ -168,5 +170,85 @@ describeFn('vendor bulk actions — integration', () => {
         await expect(
             bulkAssignVendor(ctxAs(Role.READER, reader.userId), [v1], admin.userId),
         ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    /**
+     * The count the client reports must be ACHIEVED, not REQUESTED.
+     *
+     * Every bulk usecase resolves its rows through a tenant-scoped listByIds
+     * before acting, so an id that a teammate already deleted is silently
+     * dropped. The clients used to toast `ids.length` regardless — select 10
+     * where 3 were gone and the user was told 10 — while the single-item paths
+     * throw notFound in exactly that situation.
+     *
+     * These prove the SERVER figure is genuinely reconciled, which is what the
+     * clients now surface. Asserting it here rather than in the UI is
+     * deliberate: this is where the number is decided.
+     */
+    it('bulkDeleteVendor reports rows ACTUALLY deleted, not ids requested', async () => {
+        const alive = await seedVendor('Alive Co');
+        const gone = await seedVendor('Gone Co');
+        // A teammate got there first.
+        await bulkDeleteVendor(ctxAs(Role.ADMIN, admin.userId), [gone]);
+
+        const res = await bulkDeleteVendor(ctxAs(Role.ADMIN, admin.userId), [alive, gone]);
+        expect(res).toEqual({ deleted: 1 });
+    });
+
+    it('bulkSetVendorStatus reports rows ACTUALLY updated', async () => {
+        const alive = await seedVendor('Status Alive');
+        const gone = await seedVendor('Status Gone');
+        await bulkDeleteVendor(ctxAs(Role.ADMIN, admin.userId), [gone]);
+
+        const res = await bulkSetVendorStatus(
+            ctxAs(Role.ADMIN, admin.userId),
+            [alive, gone],
+            'OFFBOARDING',
+        );
+        expect(res.updated).toBe(1);
+    });
+
+    it('bulkAssignVendor reports rows ACTUALLY updated', async () => {
+        const alive = await seedVendor('Assign Alive');
+        const gone = await seedVendor('Assign Gone');
+        await bulkDeleteVendor(ctxAs(Role.ADMIN, admin.userId), [gone]);
+
+        const res = await bulkAssignVendor(
+            ctxAs(Role.ADMIN, admin.userId),
+            [alive, gone],
+            admin.userId,
+        );
+        expect(res).toEqual({ updated: 1 });
+    });
+
+    it('an id from ANOTHER tenant is not counted', async () => {
+        const mine = await seedVendor('Mine Co');
+        // A real second tenant — Vendor.tenantId is an FK, so the row cannot
+        // exist without one. Created here rather than in beforeAll so the rest
+        // of the suite's fixture is unchanged.
+        const otherTenant = `${TENANT_ID}-other`;
+        await globalPrisma.tenant.upsert({
+            where: { id: otherTenant },
+            update: {},
+            create: { id: otherTenant, name: `t ${SUITE} other`, slug: `${SUITE}-other` },
+        });
+        // Not routed through the usecase on purpose — this asserts the tenant
+        // scoping in listByIds, so the row must exist without any tenant
+        // context vouching for it.
+        const foreign = await globalPrisma.vendor.create({
+            data: {
+                tenantId: otherTenant,
+                name: 'Foreign Co',
+                status: 'ONBOARDING',
+                criticality: 'MEDIUM',
+            },
+            select: { id: true },
+        });
+
+        const res = await bulkDeleteVendor(ctxAs(Role.ADMIN, admin.userId), [mine, foreign.id]);
+        expect(res).toEqual({ deleted: 1 });
+
+        const stillThere = await globalPrisma.vendor.findUnique({ where: { id: foreign.id } });
+        expect(stillThere).not.toBeNull();
     });
 });

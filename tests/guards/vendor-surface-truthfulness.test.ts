@@ -15,6 +15,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -95,9 +96,18 @@ describe('4 — a failed bulk action is audible', () => {
     });
 
     it('has a catch and reports through toast', () => {
-        const fn = src.slice(src.indexOf('const handleBulkApply'));
-        expect(fn.slice(0, 1600)).toMatch(/\} catch \{/);
-        expect(fn.slice(0, 1600)).toMatch(/toast\.error\(/);
+        // Bounded to the DECLARATION, not to a 1600-character window from
+        // its name. The window form failed the moment the handler grew — an
+        // unrelated edit upstream slides the target out of range, so the guard
+        // reports a missing catch that is sitting right there. CLAUDE.md names
+        // this exact shape ("never slice a magic byte offset"); this file
+        // predated the rule.
+        //
+        // declarationOf, not functionBodyOf: handleBulkApply is a `const`
+        // arrow, and functionBodyOf only matches `function name` forms.
+        const fn = declarationOf(src, 'handleBulkApply');
+        expect(fn).toMatch(/\} catch \{/);
+        expect(fn).toMatch(/toast\.error\(/);
     });
 
     it('the failure string is localised, not hardcoded English', () => {

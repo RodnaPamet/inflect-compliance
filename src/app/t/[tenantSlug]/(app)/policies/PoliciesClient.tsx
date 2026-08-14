@@ -387,13 +387,33 @@ function PoliciesPageInner({
                     .catch(() => null);
                 throw new Error(detail || tx('bulk.failed'));
             }
+            // Report the SERVER's figure. bulkArchivePolicy and
+            // bulkAssignPolicy both return { updated } from a tenant-scoped
+            // listByIds, so it excludes ids already deleted by a teammate.
+            // ids.length claimed all N every time — while the single-item
+            // path throws notFound in the same situation.
+            const payload = (await res.json().catch(() => null)) as
+                | { updated?: number }
+                | null;
+            const applied =
+                typeof payload?.updated === 'number' ? payload.updated : ids.length;
+
             await policiesQuery.mutate();
             setSelected(new Set());
-            toast.success(
-                action === 'archive'
-                    ? tx('bulk.archivedToast', { count: ids.length })
-                    : tx('bulk.assignedToast', { count: ids.length }),
-            );
+            if (applied !== ids.length) {
+                toast.info(
+                    tx('bulk.appliedReconciled', {
+                        count: applied,
+                        skipped: ids.length - applied,
+                    }),
+                );
+            } else {
+                toast.success(
+                    action === 'archive'
+                        ? tx('bulk.archivedToast', { count: applied })
+                        : tx('bulk.assignedToast', { count: applied }),
+                );
+            }
         } catch (err: unknown) {
             // Previously this threw inside try/finally with NO catch, into an
             // un-awaited onApply — an unhandled rejection: no toast, no error
