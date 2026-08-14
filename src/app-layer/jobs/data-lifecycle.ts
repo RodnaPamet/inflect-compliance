@@ -38,6 +38,22 @@ export const DEFAULT_SOFT_DELETE_GRACE_DAYS = 90;
 export const DEFAULT_EVIDENCE_PURGE_DAYS = 365;
 
 /**
+ * Soft-delete models that also carry GLOBAL (tenantId IS NULL) rows.
+ *
+ * Explicit rather than derived at runtime so adding a nullable-tenant model to
+ * SOFT_DELETE_MODELS is a decision someone makes, not a default they inherit.
+ * `Control` is the only such model today (`tenantId String?` in
+ * prisma/schema/controls.prisma) — the shared framework library every tenant
+ * reads.
+ *
+ * Carried over from `lib/retention-purge.ts`, a second, unreferenced
+ * implementation of this sweep that held this guard while the LIVE path did
+ * not. That file has been deleted; the guard was the only thing in it worth
+ * keeping.
+ */
+const NULLABLE_TENANT_MODELS = new Set<string>(['Control']);
+
+/**
  * Models whose `retentionUntil` the sweep enforces.
  *
  * MEMBERSHIP RULE: a model belongs here only if something in `src/` can
@@ -147,6 +163,20 @@ export async function purgeSoftDeletedOlderThan(
             };
             if (options.tenantId) {
                 whereClause.tenantId = options.tenantId;
+            } else if (NULLABLE_TENANT_MODELS.has(model)) {
+                // The scheduled sweep runs with NO tenant filter. Models whose
+                // `tenantId` is nullable also hold GLOBAL rows — the shared
+                // library every tenant reads — so an unfiltered purge would
+                // hard-delete those platform-wide on one tenant's retention
+                // clock.
+                //
+                // Unreachable today because `deleteControl` refuses to
+                // soft-delete a global (usecases/control/mutations.ts:428), so
+                // nothing ever sets `deletedAt` on one. But that is a guard in
+                // a different file with nothing connecting the two, and this
+                // sweep hard-deletes by raw SQL. It should be safe on its own
+                // terms.
+                whereClause.tenantId = { not: null };
             }
 
             const candidates = await delegate.findMany(withDeleted({

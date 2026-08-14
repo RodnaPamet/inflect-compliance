@@ -112,7 +112,7 @@ function generateCuid(): string {
  * Append a hash-chained audit entry within an advisory-locked transaction.
  *
  * This is the ONLY function that should insert into AuditLog. All other
- * audit write paths (logEvent, Prisma middleware, retention-purge,
+ * audit write paths (logEvent, Prisma middleware, data-lifecycle,
  * evidence-maintenance) must route through this function.
  *
  * Flow:

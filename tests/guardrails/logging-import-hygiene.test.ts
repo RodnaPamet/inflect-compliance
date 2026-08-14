@@ -121,7 +121,6 @@ describe('Dynamic require() usage is minimized', () => {
      * Circular dependency avoidance (prisma ↔ audit-writer):
      * - prisma.ts → require('./audit/audit-writer')
      * - audit-writer.ts → require('../prisma')
-     * - retention-purge.ts → require('./audit/audit-writer')
      * - evidence-maintenance.ts → require('@/lib/audit/audit-writer')
      *
      * Startup-time lazy loading:
@@ -139,7 +138,6 @@ describe('Dynamic require() usage is minimized', () => {
      */
     const REQUIRE_ALLOWLIST: Record<string, string[]> = {
         'lib/prisma.ts': ['./audit/audit-writer'],
-        'lib/retention-purge.ts': ['./audit/audit-writer'],
         'lib/mailer.ts': ['@/env'],
         'lib/observability/instrumentation.ts': ['./logger'],
         'lib/storage/index.ts': ['./s3-provider', './local-provider'],
