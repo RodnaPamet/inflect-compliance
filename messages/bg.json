@@ -2873,6 +2873,7 @@
             "failed": "Груповото действие е неуспешно",
             "deletedToast": "{count, plural, one {# политика е изтрита} other {# политики са изтрити}}",
             "deletedReconciled": "{deleted, plural, one {# политика е изтрита} other {# политики са изтрити}} · {skipped, plural, one {# вече липсваше} other {# вече липсваха}}",
+            "appliedReconciled": "{count, plural, one {# политика е обновена} other {# политики са обновени}} · {skipped, plural, one {# вече липсваше} other {# вече липсваха}}",
             "undo": "Отмяна",
             "archivedToast": "{count, plural, one {# политика е архивирана} other {# политики са архивирани}}",
             "assignedToast": "{count, plural, one {# политика е обновена} other {# политики са обновени}}"
@@ -5281,6 +5282,8 @@
             "ownerPlaceholder": "Отговорник (празно = премахване)",
             "delete": "Изтрий",
             "failed": "Груповото действие е неуспешно.",
+            "appliedReconciled": "Приложено за {count, plural, one {# доставчик} other {# доставчика}} · {skipped, plural, one {# вече липсваше} other {# вече липсваха}}",
+            "appliedBlocked": "Приложено за {count, plural, one {# доставчик} other {# доставчика}} · {blocked} пропуснати: {names}",
             "applied": "Приложено за {count} доставчика"
         },
         "statusOption": {

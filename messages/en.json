@@ -2873,6 +2873,7 @@
             "failed": "Bulk action failed",
             "deletedToast": "{count, plural, one {# policy deleted} other {# policies deleted}}",
             "deletedReconciled": "{deleted, plural, one {# policy deleted} other {# policies deleted}} · {skipped, plural, one {# was already gone} other {# were already gone}}",
+            "appliedReconciled": "{count, plural, one {# policy updated} other {# policies updated}} · {skipped, plural, one {# was already gone} other {# were already gone}}",
             "undo": "Undo",
             "archivedToast": "{count, plural, one {# policy archived} other {# policies archived}}",
             "assignedToast": "{count, plural, one {# policy updated} other {# policies updated}}"
@@ -5281,6 +5282,8 @@
             "ownerPlaceholder": "Owner (blank = unassign)",
             "delete": "Delete",
             "failed": "Bulk action failed.",
+            "appliedReconciled": "Applied to {count, plural, one {# vendor} other {# vendors}} · {skipped, plural, one {# was already gone} other {# were already gone}}",
+            "appliedBlocked": "Applied to {count, plural, one {# vendor} other {# vendors}} · {blocked} skipped: {names}",
             "applied": "Applied to {count} vendors"
         },
         "statusOption": {

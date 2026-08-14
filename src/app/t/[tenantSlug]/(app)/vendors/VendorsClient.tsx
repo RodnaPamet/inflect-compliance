@@ -269,9 +269,53 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                 toast.error(t('bulk.failed'));
                 return;
             }
+            // Report what the SERVER did, not what the user selected.
+            //
+            // Every bulk usecase resolves its rows through a tenant-scoped
+            // listByIds before acting, so the returned figure excludes ids
+            // that were already soft-deleted, belong to another tenant, or
+            // never existed. Reporting ids.length told a user who selected 10
+            // vendors — 3 of which a teammate had already deleted — that all
+            // 10 were done. The single-item paths throw notFound in exactly
+            // that situation, so bulk was strictly less honest than single.
+            //
+            // Key differs by verb: delete returns { deleted }, status and
+            // assign return { updated }.
+            const payload = (await res.json().catch(() => null)) as
+                | { deleted?: number; updated?: number; blocked?: { id: string; name: string }[] }
+                | null;
+            const applied =
+                typeof payload?.deleted === 'number'
+                    ? payload.deleted
+                    : typeof payload?.updated === 'number'
+                        ? payload.updated
+                        : ids.length;
+
             await vendorsQuery.mutate();
             setSelected(new Set());
-            toast.success(t('bulk.applied', { count: ids.length }));
+
+            // bulkSetVendorStatus additionally returns the vendors its
+            // activation gate REFUSED. That list was already on the wire and
+            // thrown away, so a silently-skipped vendor looked like a success.
+            const blocked = payload?.blocked ?? [];
+            if (blocked.length > 0) {
+                toast.info(
+                    t('bulk.appliedBlocked', {
+                        count: applied,
+                        blocked: blocked.length,
+                        names: blocked.slice(0, 3).map((b) => b.name).join(', '),
+                    }),
+                );
+            } else if (applied !== ids.length) {
+                toast.info(
+                    t('bulk.appliedReconciled', {
+                        count: applied,
+                        skipped: ids.length - applied,
+                    }),
+                );
+            } else {
+                toast.success(t('bulk.applied', { count: applied }));
+            }
         } catch {
             toast.error(t('bulk.failed'));
         } finally {
