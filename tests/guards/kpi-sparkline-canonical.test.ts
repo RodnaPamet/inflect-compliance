@@ -213,4 +213,75 @@ describe('the filter-cards gear controls KPI cards on every list page', () => {
             expect({ file, overlap }).toEqual({ file, overlap: [] });
         },
     );
+
+    /**
+     * R1-2c — a registered card that the strip cannot render.
+     *
+     * The render is `const c = cfg[card.id]; if (!c) return null;`. So a card
+     * registered with the gear but missing from `cfg` is listed in the gear
+     * popover, toggles on, renumbers the other cards — and draws nothing. The
+     * failure is silent in exactly the place a user has just asked for the
+     * card, and neither the type system nor the collision test above sees it:
+     * `cfg` is a `Record<string, …>`, so any id indexes it legally.
+     *
+     * This is a live risk now rather than a hypothetical: Evidence registers
+     * two DIFFERENT card axes (status and freshness) in one array, which is
+     * the shape that makes forgetting a `cfg` arm easy.
+     */
+    it.each(Object.entries(CLIENTS))(
+        '%s gives every registered KPI card a render config',
+        (_name, file) => {
+            const src = codeOnly(read(file));
+
+            const kpiIds = [...src.matchAll(/\{\s*id: '([a-zA-Z0-9_]+)',\s*label:[^}]*kind: 'kpi'/g)]
+                .map((m) => m[1]);
+            if (kpiIds.length === 0) return;
+
+            // Read the `cfg` record literal by BALANCED BRACES rather than by
+            // regex or a byte window: the arms contain nested objects, and a
+            // window would slide off target the moment an arm grows a field.
+            const declStart = src.indexOf('const cfg: Record<');
+            expect(declStart).toBeGreaterThan(-1);
+            const open = src.indexOf('> = {', declStart);
+            expect(open).toBeGreaterThan(-1);
+
+            const bodyStart = open + '> = '.length;
+            let depth = 0;
+            let bodyEnd = -1;
+            for (let i = bodyStart; i < src.length; i++) {
+                if (src[i] === '{') depth++;
+                else if (src[i] === '}') {
+                    depth--;
+                    if (depth === 0) {
+                        bodyEnd = i;
+                        break;
+                    }
+                }
+            }
+            expect(bodyEnd).toBeGreaterThan(-1);
+
+            // Top-level arms only. Advancing past each key's own `{` lets the
+            // depth counter swallow nested objects, so `sparkline: {...}`
+            // inside an arm is never mistaken for a card id.
+            const body = src.slice(bodyStart + 1, bodyEnd);
+            const cfgKeys: string[] = [];
+            depth = 0;
+            for (let i = 0; i < body.length; i++) {
+                const ch = body[i];
+                if (ch === '{') depth++;
+                else if (ch === '}') depth--;
+                else if (depth === 0) {
+                    const m = /^([a-zA-Z0-9_]+)\s*:\s*\{/.exec(body.slice(i));
+                    if (m) {
+                        cfgKeys.push(m[1]);
+                        i += m[0].length - 2;
+                    }
+                }
+            }
+            expect(cfgKeys.length).toBeGreaterThan(0);
+
+            const unrenderable = kpiIds.filter((id) => !cfgKeys.includes(id));
+            expect({ file, unrenderable }).toEqual({ file, unrenderable: [] });
+        },
+    );
 });

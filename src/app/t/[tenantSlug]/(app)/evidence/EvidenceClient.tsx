@@ -241,25 +241,31 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     const toast = useToast();
 
     // Retention-tab + view-mode selectors — deliberately kept separate from filter state.
-    // `tab`: active | expiring | archived. `view`: list | gallery.
-    // Both URL-synced so a refresh / back-button preserves the page
-    // shape, and toggling the view doesn't clobber the active filters
+    // `view`: list | gallery. URL-synced so a refresh / back-button preserves
+    // the page shape, and toggling the view doesn't clobber the active filters
     // (filter state lives in `filterCtx`, not in `useUrlFilters`).
-    const { filters, setFilter } = useUrlFilters(['tab', 'view']);
+    //
+    // R1-2b — `tab` used to live here too, written by a ToggleGroup. It is a
+    // normal filter category now, so it lives in `filterCtx` with every other
+    // filter. Two writers for one `?tab=` param is the bug this avoids: the
+    // FilterProvider deletes every param it owns before re-serialising state,
+    // so a `useUrlFilters`-owned `tab` would be dropped on any filter change.
+    const { filters, setFilter } = useUrlFilters(['view']);
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;
 
     // ─── Build the API query string from filter state + retention tab ───
     const fetchParams = useMemo(() => {
         const params = toApiSearchParams(state, { search });
-        // Send the tab itself rather than translating it here. The old mapping
-        // to `archived` / `expiring` was only half the tab's meaning — the
-        // client still partitioned the returned rows to finish the job, over
-        // whatever the backfill cap happened to include. `freshness` is already
-        // in `state`, and was already being sent; the API used to `.strip()` it.
-        if (filters.tab) params.set('tab', filters.tab);
+        // `tab` rides in `state` now, so `toApiSearchParams` already carries
+        // it. What it cannot carry is the DEFAULT: an unset bucket has always
+        // meant `active`, and dropping the param would widen the default list
+        // to include archived rows. Absent-means-active stays a page decision
+        // rather than a filter-def one, because "no filter" is exactly what an
+        // empty filter state should serialise to in the URL.
+        if (!params.has('tab')) params.set('tab', 'active');
         return params;
-    }, [state, search, filters.tab]);
+    }, [state, search]);
 
     // ─── Epic 69 — SWR-first read for the evidence list ───
     //
@@ -402,7 +408,9 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     );
 
     const [controls] = useState<EvidenceControlOption[]>(initialControls);
-    const retentionFilter = (filters.tab || 'active') as RetentionFilter;
+    // Mirrors `fetchParams`' default so the notices and empty-states below
+    // describe the bucket the server actually queried.
+    const retentionFilter = (state.tab?.[0] || 'active') as RetentionFilter;
     const { celebrate } = useCelebration();
     const viewMode: 'list' | 'gallery' =
         filters.view === 'gallery' ? 'gallery' : 'list';
@@ -867,25 +875,59 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // U1 (2026-08-13) — the gear edits the KPI CARDS, not the Filter
     // dropdown's categories. Registering the filter defs as cards meant
     // hiding a card removed a FILTER from the product while the KPI
-    // strip — hardcoded JSX — never changed. The registration is now a
-    // TOTAL namespace swap: every card is `kind: 'kpi'` under the SAME
-    // storage key, because the hook's stale-id migration only fires when
-    // ALL persisted ids are dead. One surviving filter id would skip the
-    // migration and render the new KPI cards hidden for every user who has
-    // ever touched the gear. Ids match the `evidenceKpiDefs` ids exactly —
-    // `selected={activeEvidenceKpi === card.id}` depends on it.
-    const kpiCards: CardDefinition[] = useMemo(
-        () => [
+    // strip — hardcoded JSX — never changed. Every card is `kind: 'kpi'`;
+    // that swap away from filter ids was carried by the hook's stale-id
+    // migration, which fires only when ALL persisted ids are dead.
+    //
+    // Status-card ids still match the `evidenceKpiDefs` ids exactly —
+    // `selected={activeEvidenceKpi === card.id}` depends on it. The four
+    // freshness ids are `EvidenceFreshnessBucket` values for the same reason:
+    // the card id IS the filter value it applies.
+    //
+    // R1-2c — the four FRESHNESS cards join the four status cards here. They
+    // were hardcoded JSX, so the gear could not hide them and they cost a
+    // permanent row of vertical space no matter how a tenant works.
+    //
+    // Note what does NOT fire this time. The stale-id migration only triggers
+    // when EVERY persisted id is dead, and the four status ids survive — so a
+    // user who has ever touched this gear would keep their four cards and
+    // never see the freshness four. `reconcileOrder` drops dead ids but
+    // deliberately never appends new ones (an absent id may be one the user
+    // HID, and re-adding it would un-hide it on every load).
+    //
+    // Renaming the status ids to force the migration is the other way out, and
+    // it is worse: `kpi-sparkline-canonical`'s collision guard matches ids as
+    // `[a-zA-Z0-9_]+`, so a namespaced `status:total` would match nothing, the
+    // extracted id list would be empty, and the guard would pass while
+    // checking nothing. Bumping the KEY resets the card set for everyone with
+    // one line and no id churn. The `-v2` suffix is the only migration
+    // mechanism the hook offers that is honest about what it is doing; the old
+    // key is left orphaned (a few bytes) rather than migrated, because there
+    // is no ordering worth preserving across a card set that doubled.
+    const kpiCards: CardDefinition[] = useMemo(() => {
+        // Built INSIDE the memo, and not hoisted to its own `useMemo`: the
+        // React Compiler reads a `.current` property access on a memoized
+        // value as a ref access, infers `labels.current` as the dependency,
+        // and bails out of optimizing the whole component ("existing
+        // memoization could not be preserved"). `current` is a freshness
+        // bucket name here, not a ref.
+        const fresh = evidenceFreshnessLabels((k, v) =>
+            tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]),
+        );
+        return [
             { id: 'total', label: tx('list.kpiTotal'), kind: 'kpi' },
             { id: 'draft', label: tx('list.kpiDraft'), kind: 'kpi' },
             { id: 'submitted', label: tx('list.kpiSubmitted'), kind: 'kpi' },
             { id: 'approved', label: tx('list.kpiApproved'), kind: 'kpi' },
-        ],
-        [tx],
-    );
+            { id: 'current', label: fresh.current, kind: 'kpi' },
+            { id: 'expiring', label: fresh.expiring, kind: 'kpi' },
+            { id: 'expired', label: fresh.expired, kind: 'kpi' },
+            { id: 'needs_review', label: fresh.needs_review, kind: 'kpi' },
+        ];
+    }, [tx]);
     const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
         useFilterCardVisibility({
-            storageKey: 'inflect:filter-vis:evidence',
+            storageKey: 'inflect:filter-vis:evidence-v2',
             cards: kpiCards,
         });
 
@@ -1449,43 +1491,88 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             </datalist>
 
             <ListPageShell.Filters className="space-y-section">
-                {/* R23-PR-E — KPI strip ABOVE the retention tabs +
-                    filter toolbar block. Status-based KPIs sit on a
-                    different axis from the retention tabs so the two
-                    affordances compose naturally. */}
+                {/* R1-2c — ONE gear-managed KPI strip. It used to be three
+                    stacked blocks: status cards, a retention ToggleGroup, and
+                    a freshness strip — roughly a third of the viewport before
+                    a single row of evidence appeared, none of it dismissable.
+                    The retention bucket is a filter category now, and both
+                    card axes are registered with the gear, so a tenant that
+                    does not work by review-currency can hide those four and a
+                    tenant that does can put them first. */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                     {visibleKpiCards.map((card) => {
+                        // Status cards drive `useKpiFilter`; freshness cards
+                        // drive the `freshness` filter directly. Both axes
+                        // carry their own click + selected binding here rather
+                        // than being forced onto one mechanism — the strip is
+                        // a layout, not a claim that the two mean the same
+                        // thing. Only the freshness four are sparkline-less;
+                        // `centeredSparklineDomain` already takes `undefined`.
                         const cfg: Record<
                             string,
                             {
                                 value: number;
-                                tone?: 'default' | 'attention' | 'success';
-                                sparkline: typeof evidenceTrends.total;
-                                sparklineVariant: typeof sparkColors.total;
+                                tone?: 'default' | 'attention' | 'success' | 'critical';
+                                sparkline?: typeof evidenceTrends.total;
+                                sparklineVariant?: typeof sparkColors.total;
+                                onClick: () => void;
+                                selected: boolean;
                             }
                         > = {
                             total: {
                                 value: totalEvidence,
                                 sparkline: evidenceTrends.total,
                                 sparklineVariant: sparkColors.total,
+                                onClick: () => toggleEvidenceKpi('total'),
+                                selected: activeEvidenceKpi === 'total',
                             },
                             draft: {
                                 value: draftEvidence,
                                 tone: 'attention',
                                 sparkline: evidenceTrends.draft,
                                 sparklineVariant: sparkColors.draft,
+                                onClick: () => toggleEvidenceKpi('draft'),
+                                selected: activeEvidenceKpi === 'draft',
                             },
                             submitted: {
                                 value: submittedEvidence,
                                 tone: 'default',
                                 sparkline: evidenceTrends.submitted,
                                 sparklineVariant: sparkColors.submitted,
+                                onClick: () => toggleEvidenceKpi('submitted'),
+                                selected: activeEvidenceKpi === 'submitted',
                             },
                             approved: {
                                 value: approvedEvidence,
                                 tone: 'success',
                                 sparkline: evidenceTrends.approved,
                                 sparklineVariant: sparkColors.approved,
+                                onClick: () => toggleEvidenceKpi('approved'),
+                                selected: activeEvidenceKpi === 'approved',
+                            },
+                            current: {
+                                value: freshnessCounts.current,
+                                tone: 'success',
+                                onClick: () => setFreshnessFilter('current'),
+                                selected: freshnessValue === 'current',
+                            },
+                            expiring: {
+                                value: freshnessCounts.expiring,
+                                tone: 'attention',
+                                onClick: () => setFreshnessFilter('expiring'),
+                                selected: freshnessValue === 'expiring',
+                            },
+                            expired: {
+                                value: freshnessCounts.expired,
+                                tone: 'critical',
+                                onClick: () => setFreshnessFilter('expired'),
+                                selected: freshnessValue === 'expired',
+                            },
+                            needs_review: {
+                                value: freshnessCounts.needs_review,
+                                tone: 'attention',
+                                onClick: () => setFreshnessFilter('needs_review'),
+                                selected: freshnessValue === 'needs_review',
                             },
                         };
                         const c = cfg[card.id];
@@ -1499,86 +1586,11 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                 sparkline={c.sparkline}
                                 sparklineVariant={c.sparklineVariant}
                                 sparklineDomain={centeredSparklineDomain(c.sparkline)}
-                                onClick={() =>
-                                    toggleEvidenceKpi(card.id as EvidenceKpiId)
-                                }
-                                selected={activeEvidenceKpi === card.id}
+                                onClick={c.onClick}
+                                selected={c.selected}
                             />
                         );
                     })}
-                </div>
-
-                {/* EP-2 Part 3 — retention triage. The Active / Expiring /
-                    Archived views were previously only reachable via the
-                    `?tab=` deep-link; this segmented control makes them a
-                    first-class affordance wired to the existing `filters.tab`
-                    state. */}
-                <div className="flex flex-wrap items-center gap-default">
-                    <ToggleGroup
-                        size="sm"
-                        ariaLabel={tx('list.retentionTriageAria')}
-                        options={[
-                            { value: 'active', label: tx('list.retentionActive'), id: 'evidence-tab-active' },
-                            { value: 'expiring', label: tx('list.triageExpiring'), id: 'evidence-tab-expiring' },
-                            { value: 'archived', label: tx('list.retentionArchived'), id: 'evidence-tab-archived' },
-                        ]}
-                        selected={retentionFilter}
-                        selectAction={(v) => setFilter('tab', v === 'active' ? '' : v)}
-                        className="shrink-0"
-                    />
-                </div>
-
-                {/* EP-2 Part 3 — freshness (review-currency) KPI strip.
-                    Each card toggles the freshness filter so the retention
-                    triage (schedule/archive state) and review-currency
-                    (overdue-for-review) dimensions compose.
-
-                    DELIBERATELY NOT GEAR-MANAGED (U1, 2026-08-13), for one
-                    reason only: these four cards have no `KpiFilterDef`. They
-                    drive `setFreshnessFilter` directly rather than going
-                    through `useKpiFilter`, so there is no `activeKpi` for a
-                    `selected={activeKpi === card.id}` binding to read.
-
-                    Gear-managing them is a safe follow-up, NOT a hazard. Their
-                    natural ids (current/expiring/expired/needs_review) are
-                    VALUES of the `freshness` filter key, not keys — the page's
-                    keys are type/status/freshness/controlId/folder/category —
-                    and the visibility store persists card ids and reconciles
-                    them against card ids, so nothing collides. It needs the
-                    freshness strip moved onto `useKpiFilter` first, which is a
-                    behaviour change this diff deliberately does not make.
-
-                    The gear owns the status strip above; this one stays
-                    literal until then. */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
-                    <KpiFilterCard
-                        label={evidenceFreshnessLabels(tx).current}
-                        value={freshnessCounts.current}
-                        tone="success"
-                        onClick={() => setFreshnessFilter('current')}
-                        selected={freshnessValue === 'current'}
-                    />
-                    <KpiFilterCard
-                        label={evidenceFreshnessLabels(tx).expiring}
-                        value={freshnessCounts.expiring}
-                        tone="attention"
-                        onClick={() => setFreshnessFilter('expiring')}
-                        selected={freshnessValue === 'expiring'}
-                    />
-                    <KpiFilterCard
-                        label={evidenceFreshnessLabels(tx).expired}
-                        value={freshnessCounts.expired}
-                        tone="critical"
-                        onClick={() => setFreshnessFilter('expired')}
-                        selected={freshnessValue === 'expired'}
-                    />
-                    <KpiFilterCard
-                        label={evidenceFreshnessLabels(tx).needs_review}
-                        value={freshnessCounts.needs_review}
-                        tone="attention"
-                        onClick={() => setFreshnessFilter('needs_review')}
-                        selected={freshnessValue === 'needs_review'}
-                    />
                 </div>
 
                 {/*

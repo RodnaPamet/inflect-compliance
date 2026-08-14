@@ -44,10 +44,42 @@ describe('Evidence filter config', () => {
         // EP-3 added `category` to the Evidence filter set (the API GET
         // route + EvidenceListFilters + repository where-builder honour
         // `category` end-to-end). `freshness` is the EP-2 review-currency
-        // refinement (applied client-side; a registered filter key).
+        // refinement — a server-side predicate since R1-2a.
+        // R1-2b added `tab` (the retention bucket), previously written by a
+        // ToggleGroup outside the filter system entirely.
         expect([...EVIDENCE_FILTER_KEYS].sort()).toEqual(
-            ['category', 'controlId', 'folder', 'freshness', 'status', 'type'].sort(),
+            ['category', 'controlId', 'folder', 'freshness', 'status', 'tab', 'type'].sort(),
         );
+    });
+
+    /**
+     * R1-2b — the retention bucket is a filter, not a second filtering
+     * mechanism.
+     *
+     * It used to be a ToggleGroup writing `?tab=` through `useUrlFilters`,
+     * parallel to the filter bar: no pill, uncounted by "Clear all", and
+     * invisible to anything reading filter state. These assert the three
+     * properties that made it worth folding in — it is registered, it is
+     * single-select (the buckets partition the tenant), and it offers exactly
+     * the three buckets the server's `evidenceRetentionTabWhere` answers.
+     */
+    it('tab is a single-select retention filter offering exactly the server buckets', () => {
+        const tab = evidenceFilterDefs.getFilter('tab');
+        expect(tab.multiple).toBe(false);
+        expect((tab.options ?? []).map((o) => o.value).sort()).toEqual(
+            ['active', 'archived', 'expiring'],
+        );
+    });
+
+    it('tab survives a URL round-trip, so ?tab= deep links keep working', () => {
+        // The deep link predates the ToggleGroup and outlives it. This is the
+        // property that let the control be deleted without breaking links.
+        const state = parseUrlToFilterState(
+            new URLSearchParams('tab=archived'),
+            [...EVIDENCE_FILTER_KEYS],
+        );
+        expect(state.tab).toEqual(['archived']);
+        expect(filterStateToUrlParams(state).get('tab')).toBe('archived');
     });
 
     it('type / status are multi-select enum filters with static options', () => {

@@ -78,11 +78,12 @@ const TAB_PAGES: TabPageEntry[] = [
         migrated: false,
         note: "Reports landing — tabs for report categories.",
     },
-    {
-        file: "src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx",
-        migrated: false,
-        note: "Evidence list — retention-tab selector (active / expiring / archived).",
-    },
+    // R1-2b — the Evidence entry is gone, not migrated. Its retention-tab
+    // selector was deleted rather than ported to <TabSelect>: the three
+    // buckets are a single-select FILTER on the list, and modelling them as a
+    // second, parallel filtering mechanism was the defect. They are a normal
+    // `tab` filter category now, so there is no tab UI left to adopt a tab
+    // primitive.
 ];
 
 describe("Tab primitive adoption registry", () => {

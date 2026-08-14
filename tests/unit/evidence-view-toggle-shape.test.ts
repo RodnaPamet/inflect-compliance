@@ -1,11 +1,11 @@
 /**
  * Structural ratchet: Epic 43.2 view toggle preserves filter state.
  *
- * The toggle is in URL-only state via `useUrlFilters(['tab', 'view'])`,
- * NOT in `filterCtx`. Switching list ↔ gallery therefore cannot
- * disturb the filter state (`q` / `type` / `status` / `controlId` /
- * retention pills) because both renderers consume the SAME
- * `displayEvidence` array which is computed off `filterCtx`.
+ * The toggle is in URL-only state via `useUrlFilters`, NOT in
+ * `filterCtx`. Switching list ↔ gallery therefore cannot disturb the
+ * filter state (`q` / `type` / `status` / `controlId` / retention)
+ * because both renderers consume the SAME `displayEvidence` array
+ * which is computed off `filterCtx`.
  *
  * This test locks in that wiring shape so a future refactor can't
  * silently re-introduce per-view filter state and reset filters on
@@ -37,12 +37,16 @@ describe('Epic 43.2 — view toggle wiring', () => {
         );
     });
 
-    it('extends useUrlFilters to include the view selector (alongside tab)', () => {
-        // useUrlFilters now manages BOTH tab and view — the view value
-        // flips the renderer, the tab value flips the retention slice.
-        // Filter pills (q / type / status / controlId) live in
-        // `filterCtx` and aren't touched by either.
-        expect(src).toMatch(/useUrlFilters\(\[['"]tab['"],\s*['"]view['"]\]\)/);
+    it('keeps the view selector in useUrlFilters, not in filter context', () => {
+        // The invariant is about `view` ALONE: it flips the renderer, so it
+        // must stay out of `filterCtx` or toggling the view would churn
+        // filter state. What ELSE useUrlFilters manages is not this test's
+        // business — R1-2b moved `tab` into `filterCtx`, where it belongs
+        // now that the retention bucket is a real filter category, and
+        // pinning the exact array contents failed that correct change.
+        expect(src).toMatch(/useUrlFilters\(\[[^\]]*['"]view['"][^\]]*\]\)/);
+        // The retention bucket reads from filter state, not from here.
+        expect(src).not.toMatch(/useUrlFilters\(\[[^\]]*['"]tab['"][^\]]*\]\)/);
     });
 
     it('derives a `viewMode` of list | gallery from the URL', () => {
