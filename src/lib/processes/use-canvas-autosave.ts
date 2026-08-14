@@ -41,7 +41,7 @@
  * initial rehydration sequence doesn't trigger a save.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type AutosaveStatus =
     | "idle"
@@ -153,11 +153,24 @@ export function useCanvasAutosave({
     // never fire a save against a stale state.
     useEffect(() => () => clearTimer(), [clearTimer]);
 
-    return {
-        markDirty,
-        markClean,
-        status,
-        lastSavedAt,
-        error,
-    };
+    // Memoised so the object only changes identity when its CONTENTS change,
+    // rather than on every render.
+    //
+    // Be clear about what this does NOT buy: `status`, `lastSavedAt` and
+    // `error` are part of the returned object and they change during every
+    // save cycle, so this object can never be a stable dependency. A consumer
+    // that puts the whole object in an effect's dep array WILL re-run that
+    // effect mid-cycle — and if the effect calls `markClean()`, it clears the
+    // debounce timer `markDirty()` just armed.
+    //
+    // That is not hypothetical: it is exactly how autosave came to never fire
+    // once on the process canvas. The fix that matters is on the consumer
+    // side — depend on the specific callback (`markClean`), which IS stable —
+    // and `tests/rendered/canvas-autosave-consumer-shape.test.tsx` pins both
+    // halves, including a test documenting that the object-dep shape still
+    // churns.
+    return useMemo(
+        () => ({ markDirty, markClean, status, lastSavedAt, error }),
+        [markDirty, markClean, status, lastSavedAt, error],
+    );
 }
