@@ -884,26 +884,28 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // freshness ids are `EvidenceFreshnessBucket` values for the same reason:
     // the card id IS the filter value it applies.
     //
-    // R1-2c — the four FRESHNESS cards join the four status cards here. They
-    // were hardcoded JSX, so the gear could not hide them and they cost a
-    // permanent row of vertical space no matter how a tenant works.
+    // R1-2c — the four FRESHNESS cards join the four status cards here, as
+    // OPT-IN cards. They were hardcoded JSX, so the gear could not hide them
+    // and they cost a permanent second row of vertical space no matter how a
+    // tenant works. Review-currency is a real way to work but not the common
+    // one; the page opens on the status four and offers the rest in the gear.
     //
-    // Note what does NOT fire this time. The stale-id migration only triggers
-    // when EVERY persisted id is dead, and the four status ids survive — so a
-    // user who has ever touched this gear would keep their four cards and
-    // never see the freshness four. `reconcileOrder` drops dead ids but
-    // deliberately never appends new ones (an absent id may be one the user
-    // HID, and re-adding it would un-hide it on every load).
+    // `defaultVisible: false` is what makes this a fold rather than a move —
+    // and it is only reachable because #1909 fixed the hook to reconcile
+    // against EVERY registered card. Before that, `onToggle` wrote an opt-in
+    // id to storage and the next render dropped it again, so the checkbox
+    // would not even check.
     //
-    // Renaming the status ids to force the migration is the other way out, and
-    // it is worse: `kpi-sparkline-canonical`'s collision guard matches ids as
-    // `[a-zA-Z0-9_]+`, so a namespaced `status:total` would match nothing, the
-    // extracted id list would be empty, and the guard would pass while
-    // checking nothing. Bumping the KEY resets the card set for everyone with
-    // one line and no id churn. The `-v2` suffix is the only migration
-    // mechanism the hook offers that is honest about what it is doing; the old
-    // key is left orphaned (a few bytes) rather than migrated, because there
-    // is no ordering worth preserving across a card set that doubled.
+    // No storage-key migration is needed, which is the point. New cards that
+    // are hidden by default are exactly the case `reconcileOrder` already
+    // handles: it drops dead ids and never appends, so a user's persisted
+    // status-card order survives untouched and the four freshness cards
+    // simply appear as unchecked rows in the gear. (The `-v2` key this
+    // briefly used was only justified while the cards were default-VISIBLE,
+    // where being dropped would have hidden them for anyone who had ever
+    // touched the gear. Reverting it restores those users' saved card order;
+    // nothing was stranded, because the version that wrote `-v2` never
+    // reached a deployed environment.)
     const kpiCards: CardDefinition[] = useMemo(() => {
         // Built INSIDE the memo, and not hoisted to its own `useMemo`: the
         // React Compiler reads a `.current` property access on a memoized
@@ -919,15 +921,15 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             { id: 'draft', label: tx('list.kpiDraft'), kind: 'kpi' },
             { id: 'submitted', label: tx('list.kpiSubmitted'), kind: 'kpi' },
             { id: 'approved', label: tx('list.kpiApproved'), kind: 'kpi' },
-            { id: 'current', label: fresh.current, kind: 'kpi' },
-            { id: 'expiring', label: fresh.expiring, kind: 'kpi' },
-            { id: 'expired', label: fresh.expired, kind: 'kpi' },
-            { id: 'needs_review', label: fresh.needs_review, kind: 'kpi' },
+            { id: 'current', label: fresh.current, kind: 'kpi', defaultVisible: false },
+            { id: 'expiring', label: fresh.expiring, kind: 'kpi', defaultVisible: false },
+            { id: 'expired', label: fresh.expired, kind: 'kpi', defaultVisible: false },
+            { id: 'needs_review', label: fresh.needs_review, kind: 'kpi', defaultVisible: false },
         ];
     }, [tx]);
     const { visibleCards: visibleKpiCards, dropdown: filtersDropdown } =
         useFilterCardVisibility({
-            storageKey: 'inflect:filter-vis:evidence-v2',
+            storageKey: 'inflect:filter-vis:evidence',
             cards: kpiCards,
         });
 
@@ -1491,14 +1493,18 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             </datalist>
 
             <ListPageShell.Filters className="space-y-section">
-                {/* R1-2c — ONE gear-managed KPI strip. It used to be three
-                    stacked blocks: status cards, a retention ToggleGroup, and
-                    a freshness strip — roughly a third of the viewport before
-                    a single row of evidence appeared, none of it dismissable.
-                    The retention bucket is a filter category now, and both
-                    card axes are registered with the gear, so a tenant that
-                    does not work by review-currency can hide those four and a
-                    tenant that does can put them first. */}
+                {/* R1-2c — ONE gear-managed KPI strip, ONE row by default. It
+                    used to be three stacked blocks: status cards, a retention
+                    ToggleGroup, and a freshness strip — roughly a third of the
+                    viewport before a single row of evidence appeared, none of
+                    it dismissable. The retention bucket is a filter category
+                    now, and the freshness four are opt-in cards, so the page
+                    opens on four status cards and a tenant that works by
+                    review-currency switches the others on in the gear.
+
+                    `grid-cols-2 md:grid-cols-4` therefore fills exactly one
+                    row at the default, and wraps to a second only for a user
+                    who asked for more. */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                     {visibleKpiCards.map((card) => {
                         // Status cards drive `useKpiFilter`; freshness cards

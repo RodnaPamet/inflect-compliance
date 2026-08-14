@@ -156,6 +156,49 @@ describe('Policies KPI cards read the SERVER count, not the loaded array', () =>
     });
 });
 
+describe('Evidence folds the freshness axis into the gear', () => {
+    const src = codeOnly(read(CLIENTS.Evidence));
+
+    /**
+     * The requested shape: the page opens on the STATUS four, and the
+     * review-currency four are reachable from the gear.
+     *
+     * Registering a card is not the same as folding it away — the first
+     * attempt registered all eight as default-visible, which left the page
+     * looking exactly as before (eight cards, two rows) and only changed
+     * whether they COULD be hidden. `defaultVisible: false` is the whole
+     * difference between "the gear can hide this" and "this lives in the
+     * gear", and nothing else in the file distinguishes the two.
+     */
+    it.each(['current', 'expiring', 'expired', 'needs_review'])(
+        'freshness card %s is opt-in',
+        (id) => {
+            const m = src.match(new RegExp(`\\{ id: '${id}'[^}]*\\}`));
+            expect(m?.[0]).toBeDefined();
+            expect(m?.[0]).toMatch(/defaultVisible: false/);
+        },
+    );
+
+    it.each(['total', 'draft', 'submitted', 'approved'])(
+        'status card %s stays default-visible',
+        (id) => {
+            const m = src.match(new RegExp(`\\{ id: '${id}'[^}]*\\}`));
+            expect(m?.[0]).toBeDefined();
+            expect(m?.[0]).not.toMatch(/defaultVisible: false/);
+        },
+    );
+
+    it('keeps the original storage key, so saved card orders survive', () => {
+        // The `-v2` bump was only justified while the freshness cards were
+        // default-VISIBLE and had to be forced past `reconcileOrder`. Opt-in
+        // cards need no migration — they are the case the hook already
+        // handles — and a gratuitous key change discards every user's saved
+        // card order for nothing.
+        expect(src).toMatch(/storageKey: 'inflect:filter-vis:evidence'/);
+        expect(src).not.toMatch(/filter-vis:evidence-v\d/);
+    });
+});
+
 describe('the filter-cards gear controls KPI cards on every list page', () => {
     it.each(Object.entries(CLIENTS))(
         '%s registers kind:"kpi" cards and renders its KPI strip from them',
