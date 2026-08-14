@@ -3,26 +3,48 @@
 /**
  * useFilterCardVisibility — the "Edit filter cards" gear's state (2026-06-07).
  *
- * Mirrors `useColumnsDropdown`'s contract but for the toolbar's FILTER
- * cards (and, by design, any future card that wants to live in the same
- * gear). Owns the click-to-order + visibility state, persists it to
- * localStorage under `inflect:filter-vis:<entity>`, and returns a ready
- * `<EditFiltersButton>` plus the ordered visible cards.
+ * Owns the click-to-order + visibility state for the cards above a list
+ * table, persists it to localStorage under `inflect:filter-vis:<entity>`, and
+ * returns a ready `<EditFiltersButton>` plus the ordered visible cards.
  *
- *   const cards = useMemo(() => filtersToCards(liveFilterDefs), [liveFilterDefs]);
+ *   const cards: CardDefinition[] = useMemo(() => [
+ *     { id: 'total',  label: tx('list.kpiTotal'),  kind: 'kpi' },
+ *     { id: 'draft',  label: tx('list.kpiDraft'),  kind: 'kpi' },
+ *     { id: 'stale',  label: tx('list.kpiStale'),  kind: 'kpi', defaultVisible: false },
+ *   ], [tx]);
  *   const { visibleCards, dropdown: filterGear } =
- *     useFilterCardVisibility({ storageKey: 'inflect:filter-vis:controls', cards });
- *   const visibleFilters = useMemo(
- *     () => selectVisibleFilters(visibleCards, liveFilterDefs), [...]);
- *   // <EntityListPage filters={{ defs: visibleFilters, toolbarActions: <>{filterGear}{columnsGear}</> }} />
+ *     useFilterCardVisibility({ storageKey: 'inflect:filter-vis:policies', cards });
+ *   // strip:   {visibleCards.map((card) => …)}
+ *   // toolbar: <EntityListPage filters={{ defs: liveFilters, toolbarActions: filterGear }} />
  *
- * EXTENSIBILITY (P4): the hook is keyed on a discriminated
- * `CardDefinition[]`, not raw `FilterType[]`. Only `kind: 'filter'` is
- * wired into the toolbar today; `kpi` / `preset` / `scope` are typed
- * forward-compat extension points — a KPI summary card, a saved-filter
- * preset chip, or a date-range scope can register here later and be
- * shown/hidden from the SAME gear popover, with the page reading
- * `visibleCards.filter(c => c.kind === 'kpi')` etc.
+ * WHAT THE GEAR CONTROLS. `kind: 'kpi'` — on all eight list pages, since
+ * #1886. The gear is named "edit cards" and edits the KPI cards; it does not
+ * touch the filter dropdown, and the toolbar gets the FULL filter defs.
+ *
+ * An earlier version of this comment said the opposite ("only `kind:'filter'`
+ * is wired; kpi is a forward-compat extension point") and its usage example
+ * called `filtersToCards` + `selectVisibleFilters` — the two functions
+ * `kpi-sparkline-canonical` now FAILS a page for calling. So the module's own
+ * documentation instructed the next contributor to write code that could not
+ * merge. #1905 corrected the field comment on `kind` and missed this block,
+ * which is its own lesson: fixing the line you are looking at is not the same
+ * as fixing the file.
+ *
+ * `preset` and `scope` remain genuine forward-compat extension points — typed,
+ * unused, and free to register here later.
+ *
+ * WHY THERE IS NO `kpisToCards` FACTORY. Each page hand-writes its array
+ * (evidence 5 cards, policies 6, tasks 4, vendors 5, risks 4, plus tests). That
+ * is deliberate, but NOT for the reason recorded in the #1886 implementation
+ * note — which says every label carries "that page's own tx() call" and is
+ * false on its own evidence. There are three different label mechanisms in
+ * play: `tx('list.kpiTotal')` (policies, evidence), `t('kpi.total')` (tasks,
+ * vendors) and `t.totalRisks`, a SERVER-PASSED PROP BAG (risks). A factory
+ * would therefore have to take a label resolver as a parameter, and what
+ * remains to be saved is the words `kind: 'kpi'` on each line.
+ *
+ * So: inline is right, the array is the page's own data, and if you are here
+ * to extract a factory, the thing to extract is not the labels.
  */
 import {
     createElement,
@@ -99,7 +121,23 @@ function renderFilterIcon(icon: FilterType['icon']): ReactNode {
     return icon as ReactNode;
 }
 
-/** Map a page's `FilterType[]` into `kind: 'filter'` card definitions. */
+/**
+ * Map a page's `FilterType[]` into `kind: 'filter'` card definitions.
+ *
+ * NO CALLERS IN `src/`, deliberately, and `kpi-sparkline-canonical` FAILS any
+ * list page that acquires one — feeding the gear filter categories is the
+ * defect #1886 existed to remove. Same for `selectVisibleFilters` below, which
+ * returns `[]` once every card is `kind: 'kpi'`, so wiring it into a toolbar
+ * renders an empty Filter dropdown.
+ *
+ * Kept rather than deleted because they are the correct projection for a
+ * future `kind: 'filter'` consumer, and that argument previously existed only
+ * inside a dated implementation note — which is read-only, classified
+ * historical, and not where anyone looks before deleting an unused export.
+ * If that future consumer never arrives, deleting these three (with
+ * `renderFilterIcon` and their two unit tests) is the right call; it is not a
+ * decision to make silently in passing.
+ */
 export function filtersToCards(filters: FilterType[]): CardDefinition[] {
     return filters.map((f) => ({
         id: f.key,
