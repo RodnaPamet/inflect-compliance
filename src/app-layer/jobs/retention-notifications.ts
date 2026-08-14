@@ -18,7 +18,7 @@ import { emitAutomationEvent } from '../automation';
 import { createTask, addTaskLink } from '../usecases/task';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
-import { buildDelegatedJobContext } from '../context';
+import { buildDelegatedJobContext } from '../context-system';
 
 /**
  * System context for an evidence-expiry reminder task, owned by the

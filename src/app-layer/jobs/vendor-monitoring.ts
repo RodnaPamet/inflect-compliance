@@ -18,7 +18,7 @@ import { runVendorMonitor } from '../usecases/vendor-monitoring';
 import { runVendorReassessmentReminder } from '../usecases/vendor-reassessment-reminder';
 import { env } from '@/env';
 import type { RequestContext } from '../types';
-import { buildSystemContext } from '../context';
+import { buildSystemContext } from '../context-system';
 import type { JobRunResult } from './types';
 
 function makeSystemCtx(tenantId: string): RequestContext {

@@ -95,7 +95,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { prisma } from '@/lib/prisma';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
-import { buildDelegatedJobContext } from '../context';
+import { buildDelegatedJobContext } from '../context-system';
 import { TestRunRepository } from '../repositories/TestRunRepository';
 import { TestEvidenceRepository } from '../repositories/TestEvidenceRepository';
 import { TestPlanRepository } from '../repositories/TestPlanRepository';

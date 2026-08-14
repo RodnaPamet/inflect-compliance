@@ -29,7 +29,7 @@ import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 import { getPermissionsForRole } from '@/lib/permissions';
 import crypto from 'crypto';
-import { buildSystemContext } from '../context';
+import { buildSystemContext } from '../context-system';
 
 /** Dedup window: ignore duplicate payloads within this period */
 const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes

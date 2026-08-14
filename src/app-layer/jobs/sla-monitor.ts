@@ -25,7 +25,7 @@ import { withTenantDb } from '@/lib/db-context';
 import { AutomationExecutionRepository } from '../automation';
 import { logEvent } from '../events/audit';
 import type { RequestContext } from '../types';
-import { buildSystemContext } from '../context';
+import { buildSystemContext } from '../context-system';
 import type { JobRunResult } from './types';
 
 function makeSystemCtx(tenantId: string): RequestContext {

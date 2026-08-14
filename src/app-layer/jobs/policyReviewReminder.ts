@@ -29,7 +29,7 @@ import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { createTask, addTaskLink } from '../usecases/task';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
-import { buildDelegatedJobContext } from '../context';
+import { buildDelegatedJobContext } from '../context-system';
 
 /**
  * Context for a policy-review reminder task.
