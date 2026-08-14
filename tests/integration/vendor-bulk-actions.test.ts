@@ -15,7 +15,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { ForbiddenError } from '@/lib/errors/types';
-import { bulkSetVendorStatus, bulkAssignVendor, bulkDeleteVendor } from '@/app-layer/usecases/vendor';
+import { bulkSetVendorStatus, bulkAssignVendor, bulkDeleteVendor, listVendorKpiCounts } from '@/app-layer/usecases/vendor';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -170,6 +170,83 @@ describeFn('vendor bulk actions — integration', () => {
         await expect(
             bulkAssignVendor(ctxAs(Role.READER, reader.userId), [v1], admin.userId),
         ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    /**
+     * KPI card counts must equal what the card's CLICK returns.
+     *
+     * These came from getVendorMetrics, a `findMany({ take: 5000 })` looped in
+     * memory — a server number, but one that goes silently wrong above the cap
+     * and costs the whole register plus an assessment join to produce four
+     * integers. And because the metrics endpoint takes no filters, the cards
+     * showed tenant-wide numbers while their clicks intersect with whatever is
+     * already filtered.
+     */
+    describe('KPI counts', () => {
+        it('counts by status and criticality, mirroring what each card applies', async () => {
+            await seedVendor('A', 'ACTIVE');
+            await seedVendor('B', 'ACTIVE');
+            await seedVendor('C', 'ONBOARDING');
+            await globalPrisma.vendor.updateMany({
+                where: { tenantId: TENANT_ID, name: 'A' },
+                data: { criticality: 'CRITICAL' },
+            });
+
+            const k = await listVendorKpiCounts(ctxAs(Role.ADMIN, admin.userId));
+            expect(k.total).toBe(3);
+            expect(k.active).toBe(2);
+            expect(k.critical).toBe(1);
+        });
+
+        it('reviewOverdue counts only vendors past their next review', async () => {
+            const past = new Date(Date.now() - 86400000);
+            const future = new Date(Date.now() + 86400000);
+            const a = await seedVendor('Overdue Co');
+            const b = await seedVendor('Fine Co');
+            await globalPrisma.vendor.update({ where: { id: a }, data: { nextReviewAt: past } });
+            await globalPrisma.vendor.update({ where: { id: b }, data: { nextReviewAt: future } });
+
+            const k = await listVendorKpiCounts(ctxAs(Role.ADMIN, admin.userId));
+            expect(k.reviewOverdue).toBe(1);
+        });
+
+        /**
+         * The card is a promise about its own click. `active` applies
+         * status=ACTIVE ON TOP of whatever is set, so with another filter
+         * active its number has to narrow too — otherwise it advertises rows
+         * the click will not produce.
+         */
+        it('is FILTER-AWARE — active narrows when another filter is set', async () => {
+            await seedVendor('Crit Active', 'ACTIVE');
+            await seedVendor('Low Active', 'ACTIVE');
+            await globalPrisma.vendor.updateMany({
+                where: { tenantId: TENANT_ID, name: 'Crit Active' },
+                data: { criticality: 'CRITICAL' },
+            });
+
+            const all = await listVendorKpiCounts(ctxAs(Role.ADMIN, admin.userId));
+            expect(all.active).toBe(2);
+
+            const scoped = await listVendorKpiCounts(ctxAs(Role.ADMIN, admin.userId), {
+                criticality: 'CRITICAL',
+            });
+            expect(scoped.active).toBe(1);
+            // `total` clears every filter, so it stays the tenant count.
+            expect(scoped.total).toBe(2);
+        });
+
+        /**
+         * A READER IS allowed — these are counts of rows a READER can already
+         * list, so the gate is assertCanReadVendors, not a write gate. Pinned
+         * because the obvious mistake when adding a new endpoint is to reach
+         * for the stricter assertion and quietly remove a role's dashboard.
+         */
+        it('a READER can read the counts', async () => {
+            await seedVendor('Readable Co', 'ACTIVE');
+            const k = await listVendorKpiCounts(ctxAs(Role.READER, reader.userId));
+            expect(k.total).toBe(1);
+            expect(k.active).toBe(1);
+        });
     });
 
     /**

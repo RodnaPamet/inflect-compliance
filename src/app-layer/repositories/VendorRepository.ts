@@ -14,6 +14,14 @@ export interface VendorFilters {
     q?: string;
 }
 
+/** Counts backing the four KPI filter cards on the Vendors list page. */
+export interface VendorKpiCounts {
+    total: number;
+    active: number;
+    critical: number;
+    reviewOverdue: number;
+}
+
 export interface VendorListParams {
     limit?: number;
     cursor?: string;
@@ -132,6 +140,66 @@ export class VendorRepository {
 
         const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
         return { items: trimmedItems, pageInfo: { nextCursor, hasNextPage } };
+    }
+
+    /**
+     * Counts for the four KPI filter cards on the Vendors list page.
+     *
+     * Each number answers exactly one question: "how many rows will I see if
+     * I click this card". A filter card's number is a promise about its own
+     * click, and the shapes below mirror each def's `apply` in VendorsClient —
+     * change one and you must change the other:
+     *   total         clearAll()                   -> tenant, no filters
+     *   active        set('status', 'ACTIVE')      -> current filters, status replaced
+     *   critical      set('criticality','CRITICAL')
+     *   reviewOverdue set('reviewDue', 'overdue')
+     *
+     * They previously came from `getVendorMetrics`, which is a
+     * `findMany({ take: 5000 })` with an assessment include, looped in memory.
+     * That is a server-side number, so it was not the client-derives-from-a-
+     * page defect — it is the same defect one layer down: above 5,000 vendors
+     * the tiles are silently wrong, and the cost is the whole register plus a
+     * join to produce four integers.
+     *
+     * These are aggregates. No cap, no include, no loop — and no assessment
+     * join, because none of the four cards needs one. `getVendorMetrics` keeps
+     * its bounded read for the dashboard tiles that genuinely do
+     * (byRiskRating, highRiskNoAssessment, overdueReassessment).
+     */
+    static async kpiCounts(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters: VendorFilters = {},
+    ): Promise<VendorKpiCounts> {
+        // status and criticality are REPLACED by their cards, so each groups
+        // over the other active filters rather than intersecting with itself.
+        const withoutStatus = VendorRepository._buildWhere(ctx, { ...filters, status: undefined });
+        const withoutCriticality = VendorRepository._buildWhere(ctx, {
+            ...filters,
+            criticality: undefined,
+        });
+        const overdueWhere = VendorRepository._buildWhere(ctx, {
+            ...filters,
+            reviewDue: 'overdue',
+        });
+
+        const [byStatus, byCriticality, total, reviewOverdue] = await Promise.all([
+            db.vendor.groupBy({ by: ['status'], where: withoutStatus, _count: { _all: true } }),
+            db.vendor.groupBy({
+                by: ['criticality'],
+                where: withoutCriticality,
+                _count: { _all: true },
+            }),
+            db.vendor.count({ where: { tenantId: ctx.tenantId } }),
+            db.vendor.count({ where: overdueWhere }),
+        ]);
+
+        return {
+            total,
+            active: byStatus.find((g) => g.status === 'ACTIVE')?._count._all ?? 0,
+            critical: byCriticality.find((g) => g.criticality === 'CRITICAL')?._count._all ?? 0,
+            reviewOverdue,
+        };
     }
 
     private static _buildWhere(ctx: RequestContext, filters: VendorFilters = {}): Prisma.VendorWhereInput {

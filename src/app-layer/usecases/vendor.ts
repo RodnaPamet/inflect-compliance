@@ -60,6 +60,18 @@ export async function listInformationRegister(ctx: RequestContext) {
     return runInTenantContext(ctx, (db) => VendorRepository.listInformationRegister(db, ctx));
 }
 
+/**
+ * Counts for the KPI filter cards, resolved by aggregate.
+ *
+ * Separate from `getVendorMetrics` on purpose: that one needs the latest
+ * assessment per vendor for the dashboard tiles, so it reads rows. None of
+ * the four cards does, so these are pure counts with no cap and no join.
+ */
+export async function listVendorKpiCounts(ctx: RequestContext, filters: VendorFilters = {}) {
+    assertCanReadVendors(ctx);
+    return runInTenantContext(ctx, (db) => VendorRepository.kpiCounts(db, ctx, filters));
+}
+
 export async function listVendorsPaginated(ctx: RequestContext, params: VendorListParams) {
     assertCanReadVendors(ctx);
     return runInTenantContext(ctx, (db) => VendorRepository.listPaginated(db, ctx, params));
