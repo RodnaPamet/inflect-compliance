@@ -226,6 +226,30 @@ describe('the filter-cards gear controls KPI cards on every list page', () => {
     );
 
     /**
+     * The hook's own documentation must not teach what this file forbids.
+     *
+     * The header of `use-filter-card-visibility.tsx` carried a usage example
+     * calling `filtersToCards` and `selectVisibleFilters` — the exact two
+     * functions the assertions above FAIL a page for calling. A contributor
+     * following the module's documented usage would have written code that
+     * could not merge, and the docs were the more authoritative-looking
+     * source.
+     *
+     * This is deliberately NOT a general prose check. It does not grep for
+     * future tense or stale claims — CLAUDE.md is explicit that CI must not
+     * gate on prose, because a doc-mention check verifies mention rather than
+     * accuracy. It asserts one concrete, mechanical contradiction: the
+     * documented usage cannot call a banned function.
+     */
+    it('the hook docs do not demonstrate the banned functions', () => {
+        const src = read('src/components/ui/filter/use-filter-card-visibility.tsx');
+        const header = src.slice(0, src.indexOf('import '));
+        expect(header.length).toBeGreaterThan(200); // the block exists at all
+        expect(header).not.toMatch(/filtersToCards\(/);
+        expect(header).not.toMatch(/selectVisibleFilters\(/);
+    });
+
+    /**
      * The id-collision failure mode, locked before it can happen.
      *
      * Card visibility persists ONE ordered id list per page under
