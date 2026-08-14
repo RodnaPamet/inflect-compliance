@@ -13,6 +13,7 @@ import { notFound, badRequest } from '@/lib/errors/types';
 import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
+import { toCsv } from '@/lib/csv/format-csv';
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Audit Packs РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
@@ -541,6 +542,6 @@ export async function exportAuditPack(ctx: RequestContext, packId: string, forma
         ]);
     }
 
-    const csv = rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = toCsv(rows);
     return { csv, filename: `${pack.name.replace(/\s+/g, '-')}-audit-pack.csv` };
 }

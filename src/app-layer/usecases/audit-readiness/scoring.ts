@@ -32,6 +32,7 @@ import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import { NIS2_SOURCE_KIND } from '../nis2-readiness';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
 import { readinessBand } from '@/lib/readiness/bands';
+import { toCsv } from '@/lib/csv/format-csv';
 
 /**
  * The engine that produces the score owns the bands that read it. The numbers
@@ -807,7 +808,7 @@ export async function exportUnmappedCsv(ctx: RequestContext, cycleId: string): P
     const rows = [['Requirement', 'Details', 'Severity']];
     unmapped.forEach((g) => rows.push([g.title, g.details, g.severity]));
 
-    const csv = rows.map((r) => r.map((c) => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = toCsv(rows);
 
     await runInTenantContext(ctx, (tdb) =>
         logEvent(tdb, ctx, {
@@ -834,7 +835,7 @@ export async function exportControlGapsCsv(ctx: RequestContext, cycleId: string)
     const rows = [['Type', 'Title', 'Details', 'Severity']];
     gapItems.forEach((g) => rows.push([g.type, g.title, g.details, g.severity]));
 
-    const csv = rows.map((r) => r.map((c) => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = toCsv(rows);
 
     await runInTenantContext(ctx, (tdb) =>
         logEvent(tdb, ctx, {

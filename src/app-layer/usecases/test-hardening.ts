@@ -18,6 +18,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { verifyFileIntegrity } from './audit-hardening';
+import { neutralizeCsvCell } from '@/lib/csv/format-csv';
 
 // ─── Evidence Integrity ───
 
@@ -328,7 +329,13 @@ export async function exportTestEvidenceBundle(ctx: RequestContext, options: Exp
                 headers.join(','),
                 ...rows.map(row =>
                     headers.map(h => {
-                        const val = String((row as Record<string, unknown>)[h] ?? '');
+                        // Neutralise before the conditional quoting: a bare
+                        // `=…` in controlName / notes was emitted unquoted AND
+                        // live. Quoting is this exporter's own formatting and
+                        // is left as-is; only the security half is shared.
+                        const val = neutralizeCsvCell(
+                            String((row as Record<string, unknown>)[h] ?? ''),
+                        );
                         return val.includes(',') || val.includes('"') || val.includes('\n')
                             ? `"${val.replace(/"/g, '""')}"`
                             : val;
