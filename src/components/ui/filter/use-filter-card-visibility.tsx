@@ -138,8 +138,36 @@ export function useFilterCardVisibility({
     );
 
     const [stored, setStored] = useLocalStorage<string[]>(storageKey, defaults);
+
+    /**
+     * Reconcile a persisted order against EVERY registered card — not just
+     * the default-visible ones.
+     *
+     * `defaultVisibleDefs` answers "what shows on a fresh mount". It must not
+     * also answer "what is the user allowed to turn on", and conflating the
+     * two made every `defaultVisible: false` card permanently unreachable:
+     * `onToggle` wrote the id to storage, and the next render's reconcile
+     * dropped it again because it was never in the live set. The checklist row
+     * rendered, the user clicked, and the checkbox did not even check.
+     *
+     * `reconcileOrder` only DROPS unknown ids — it never appends — so widening
+     * the def list cannot un-hide anything. Opt-in cards stay hidden on a
+     * fresh mount because `defaults` is still built from `defaultVisibleDefs`.
+     *
+     * The non-array branch stays on `defaults` rather than delegating: a
+     * pre-gear persisted value is a TanStack VisibilityState OBJECT, and
+     * `reconcileOrder`'s own fallback returns every def it is given — which,
+     * now that we pass the full registry, would silently un-hide the opt-in
+     * cards for exactly those legacy users.
+     */
+    const reconcileLive = useCallback(
+        (prev: unknown): string[] =>
+            Array.isArray(prev) ? reconcileOrder(prev as string[], cards) : defaults,
+        [cards, defaults],
+    );
+
     const order = useMemo(() => {
-        const reconciled = reconcileOrder(stored, defaultVisibleDefs);
+        const reconciled = reconcileLive(stored);
         // Stale-data migration: if a NON-empty persisted order had ALL of
         // its ids dropped (the gear's cards changed identity — e.g. filter
         // categories → KPI cards under the same storage key), fall back to
@@ -153,7 +181,7 @@ export function useFilterCardVisibility({
             return defaults;
         }
         return reconciled;
-    }, [stored, defaultVisibleDefs, defaults]);
+    }, [stored, reconcileLive, defaults]);
 
     const cardById = useMemo(
         () => new Map(cards.map((c) => [c.id, c])),
@@ -176,23 +204,14 @@ export function useFilterCardVisibility({
     );
 
     const onToggle = useCallback(
-        (id: string) =>
-            setStored((prev) =>
-                toggleOrder(reconcileOrder(prev, defaultVisibleDefs), id),
-            ),
-        [setStored, defaultVisibleDefs],
+        (id: string) => setStored((prev) => toggleOrder(reconcileLive(prev), id)),
+        [setStored, reconcileLive],
     );
     const onReset = useCallback(() => setStored(defaults), [setStored, defaults]);
     const onReorder = useCallback(
         (fromId: string, toId: string) =>
-            setStored((prev) =>
-                reorderOrder(
-                    reconcileOrder(prev, defaultVisibleDefs),
-                    fromId,
-                    toId,
-                ),
-            ),
-        [setStored, defaultVisibleDefs],
+            setStored((prev) => reorderOrder(reconcileLive(prev), fromId, toId)),
+        [setStored, reconcileLive],
     );
 
     const dropdown = (

@@ -97,6 +97,93 @@ describe('useFilterCardVisibility', () => {
  * mode is invisible in code review: the same build shows all KPI cards to a
  * user who has never touched the gear, and an empty strip to one who has.
  */
+describe('opt-in cards (defaultVisible: false) can actually be turned on', () => {
+    /**
+     * The regression this pins shipped in #1905 and was live on main.
+     *
+     * `defaultVisibleDefs` EXCLUDES opt-in cards, and both `order` and
+     * `onToggle` reconciled against it. So toggling one ON wrote the id to
+     * storage and the very next render dropped it again — it was never in the
+     * live set. The checklist row rendered, the user clicked, and the checkbox
+     * did not even check. Two Policies KPI cards were unreachable.
+     *
+     * Note what the #1905 ratchet asserted: that `defaultVisible: false`
+     * appears in the page source. It did. The flag was present and inert.
+     * That is the difference between pinning the shape of a diff and testing
+     * that the feature works — and it is why this test toggles rather than
+     * greps.
+     */
+    const OPT_IN: CardDefinition[] = [
+        { id: 'total', label: 'Total', kind: 'kpi' },
+        { id: 'draft', label: 'Draft', kind: 'kpi' },
+        { id: 'overdue', label: 'Overdue', kind: 'kpi', defaultVisible: false },
+    ];
+
+    /** onToggle is not on the hook result — it rides the rendered gear. */
+    const toggle = (
+        result: { current: { dropdown: React.ReactNode } },
+        id: string,
+    ) => {
+        const dd = result.current.dropdown as React.ReactElement<{
+            onToggle: (id: string) => void;
+        }>;
+        act(() => dd.props.onToggle(id));
+    };
+
+    beforeEach(() => window.localStorage.clear());
+
+    it('hides an opt-in card on a fresh mount', () => {
+        const { result } = renderHook(() =>
+            useFilterCardVisibility({ storageKey: 'test:opt-in:fresh', cards: OPT_IN }),
+        );
+        expect(result.current.visibleCards.map((c) => c.id)).toEqual(['total', 'draft']);
+    });
+
+    it('SHOWS it after the user toggles it on, and keeps it across a re-render', () => {
+        const { result, rerender } = renderHook(() =>
+            useFilterCardVisibility({ storageKey: 'test:opt-in:toggle', cards: OPT_IN }),
+        );
+        toggle(result, 'overdue');
+        expect(result.current.visibleCards.map((c) => c.id)).toContain('overdue');
+
+        // The bug only became visible on the NEXT render: the id was written
+        // to storage and then reconciled straight back out.
+        rerender();
+        expect(result.current.visibleCards.map((c) => c.id)).toContain('overdue');
+    });
+
+    it('survives a remount — the choice is persisted, not just in-memory', () => {
+        const first = renderHook(() =>
+            useFilterCardVisibility({ storageKey: 'test:opt-in:persist', cards: OPT_IN }),
+        );
+        toggle(first.result, 'overdue');
+        first.unmount();
+
+        const second = renderHook(() =>
+            useFilterCardVisibility({ storageKey: 'test:opt-in:persist', cards: OPT_IN }),
+        );
+        expect(second.result.current.visibleCards.map((c) => c.id)).toContain('overdue');
+    });
+
+    it('can be toggled back off again', () => {
+        const { result } = renderHook(() =>
+            useFilterCardVisibility({ storageKey: 'test:opt-in:off', cards: OPT_IN }),
+        );
+        toggle(result, 'overdue');
+        expect(result.current.visibleCards.map((c) => c.id)).toContain('overdue');
+        toggle(result, 'overdue');
+        expect(result.current.visibleCards.map((c) => c.id)).not.toContain('overdue');
+    });
+
+    it('a default-visible card still hides — widening the def list did not un-hide anything', () => {
+        const { result } = renderHook(() =>
+            useFilterCardVisibility({ storageKey: 'test:opt-in:still-hides', cards: OPT_IN }),
+        );
+        toggle(result, 'draft');
+        expect(result.current.visibleCards.map((c) => c.id)).toEqual(['total']);
+    });
+});
+
 describe('stale-id migration (the namespace swap)', () => {
     const KPI_CARDS: CardDefinition[] = [
         { id: 'total', label: 'Total', kind: 'kpi' },
