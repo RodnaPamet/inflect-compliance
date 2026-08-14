@@ -40,6 +40,14 @@ const EvidenceQuerySchema = z.object({
     // matching null/empty folder values; any other value is an
     // exact-match. Optional everywhere — omitted ⇒ no filter.
     folder: z.string().optional(),
+    // Retention tab + freshness bucket. Both used to be applied CLIENT-side
+    // over whatever rows the backfill cap returned — `freshness` was even
+    // sent by the UI and silently dropped by this schema's `.strip()`, which
+    // is why the page carried a banner explaining that its KPI counts and its
+    // rows disagreed. Values are validated in the repository's predicate
+    // switch, which returns no filter for anything it does not recognise.
+    tab: z.string().optional(),
+    freshness: z.string().optional(),
     includeDeleted: z.enum(['true', 'false']).optional(),
 }).strip();
 
@@ -62,6 +70,8 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         tag: query.tag,
         folder: query.folder,
         q: query.q,
+        tab: query.tab,
+        freshness: query.freshness,
         archived: query.archived === 'true' ? true : query.archived === 'false' ? false : undefined,
         expiring: query.expiring === 'true',
     };
