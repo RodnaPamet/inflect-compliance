@@ -1092,6 +1092,24 @@ export async function replaceEvidenceFile(ctx: RequestContext, evidenceId: strin
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    // Scan BEFORE the bytes reach storage, exactly as `uploadEvidenceFile`
+    // does. This path accepted user-supplied bytes and called `markStored`
+    // with NO verdict, so the replacement FileRecord sat at the schema's
+    // PENDING forever — nothing ever scanned it, because the only scan in
+    // this file is on the create path.
+    //
+    // The consequence differed by mode rather than being uniformly fatal,
+    // which is why it stayed hidden: under `strict` the PENDING row is
+    // refused at download (a replaced file silently becomes undownloadable),
+    // and under `permissive` it is served — unscanned bytes behind an
+    // existing, already-approved evidence row.
+    const scan = await scanUploadOrRefuse(ctx, buffer, {
+        originalName,
+        mimeType,
+        sizeBytes: buffer.length,
+    });
+
     const readable = Readable.from(buffer);
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
@@ -1107,7 +1125,7 @@ export async function replaceEvidenceFile(ctx: RequestContext, evidenceId: strin
             bucket: env.S3_BUCKET || null,
             domain,
         });
-        await FileRepository.markStored(db, ctx, fileRecord.id);
+        await FileRepository.markStored(db, ctx, fileRecord.id, scan);
         if (target.fileRecordId) {
             await db.fileRecord.update({
                 where: { id: fileRecord.id },

@@ -154,15 +154,42 @@ export async function POST(req: NextRequest) {
         });
 
         // ─── Update file record ───
-
-        await prisma.fileRecord.update({
-            where: { id: fileRecord.id },
+        //
+        // INFECTED IS TERMINAL. This was an unconditional update with no read
+        // of the current verdict, so any later `clean` or `skipped` callback
+        // silently un-quarantined an infected file — and the download gates,
+        // which trust `scanStatus` alone, would then serve it.
+        //
+        // The write is a conditional `updateMany` rather than a read-then-
+        // write for the usual reason: two callbacks racing on one file would
+        // both pass a prior read. The predicate makes the database settle it.
+        // Same shape as the invite-redemption claim.
+        //
+        // Clearing a false positive stays possible, but as an explicit admin
+        // action — never as a side effect of whatever the scanner posts last.
+        const claimed = await prisma.fileRecord.updateMany({
+            where: { id: fileRecord.id, scanStatus: { not: 'INFECTED' } },
             data: {
                 scanStatus,
                 scanDetails,
                 scannedAt: payload.scannedAt ? new Date(payload.scannedAt) : new Date(),
             },
         });
+
+        if (claimed.count === 0) {
+            // The row is already INFECTED. Report success — the webhook did
+            // its job and a retrying scanner must not be told to retry — but
+            // record the refusal, because a scanner reversing an infection
+            // verdict is exactly the sequence worth alerting on.
+            logger.warn('AV webhook: refused to overwrite an INFECTED verdict', {
+                component: 'av-webhook',
+                fileId: fileRecord.id,
+                tenantId: fileRecord.tenantId,
+                attemptedStatus: scanStatus,
+                engine: payload.engine,
+            });
+            return jsonResponse({ ok: true, ignored: 'already_infected' });
+        }
 
         logger.info('AV webhook: scan result recorded', {
             component: 'av-webhook',
