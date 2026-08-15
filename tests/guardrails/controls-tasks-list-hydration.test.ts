@@ -46,9 +46,22 @@ describe('list-page hydration shape', () => {
         // union and the fallback additionally excludes the deleted view
         // (`&& !showDeleted`) — a stricter gate. Accept both, still requiring
         // the CappedList shape and the filtersMatchInitial predicate.
+        // The generic may be spelled inline OR as a named alias — the KPI
+        // server-count work introduced `ControlListResponse` so the response
+        // could carry `kpiCounts`. Pinning the literal text would fail on a
+        // rename that preserves the shape, so assert the SHAPE: whatever the
+        // hook is parameterised with must resolve to a CappedList of
+        // ControlListItem.
         expect(controlsClient).toMatch(
-            /useTenantSWR<CappedList<ControlListItem>(\s*\|\s*ControlListItem\[\])?>/,
+            /useTenantSWR<(?:CappedList<ControlListItem>|ControlListResponse)(\s*\|\s*ControlListItem\[\])?>/,
         );
+        // If it is the alias, it must actually BE a CappedList — otherwise the
+        // rename could have widened it to anything.
+        if (/useTenantSWR<ControlListResponse/.test(controlsClient)) {
+            expect(controlsClient).toMatch(
+                /type ControlListResponse = CappedList<ControlListItem>/,
+            );
+        }
         expect(controlsClient).toMatch(
             /fallbackData:\s*filtersMatchInitial(\s*&&\s*!showDeleted)?\s*\?\s*\{\s*rows:\s*initialControls,\s*truncated:\s*false\s*\}/,
         );

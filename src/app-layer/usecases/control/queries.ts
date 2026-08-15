@@ -68,6 +68,24 @@ function toRepoFilters(filters: ControlListInputFilters | undefined, ids: string
     };
 }
 
+/**
+ * Counts for the KPI filter cards, resolved by aggregate.
+ *
+ * Deliberately NOT folded into `listControls`: that read is filter-scoped and
+ * backfill-capped, and deriving counts from it is the defect this replaces.
+ * Counting in the database is the only way `total` can mean "the whole
+ * register", which is what its click returns.
+ */
+export async function listControlKpiCounts(
+    ctx: RequestContext,
+    filters?: ControlListInputFilters,
+) {
+    assertCanReadControls(ctx);
+    return runInTenantContext(ctx, (db) =>
+        ControlRepository.kpiCounts(db, ctx, filters as never),
+    );
+}
+
 export async function listControls(
     ctx: RequestContext,
     filters?: ControlListInputFilters,

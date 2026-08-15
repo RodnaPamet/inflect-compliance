@@ -6,6 +6,7 @@
  */
 export {
     listControls,
+    listControlKpiCounts,
     listControlsPaginated,
     getControl,
     getControlHeader,
