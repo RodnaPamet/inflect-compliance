@@ -159,6 +159,7 @@ export async function getSoA(ctx: RequestContext, options: SoAOptions = {}): Pro
             applicability: string;
             applicabilityJustification: string | null;
             ownerUserId: string | null;
+            owner: { name: string | null } | null;
             frequency: string | null;
             deletedAt: Date | null;
             exceptions: { expiresAt: Date | null }[];
@@ -184,6 +185,11 @@ export async function getSoA(ctx: RequestContext, options: SoAOptions = {}): Pro
                         applicability: true,
                         applicabilityJustification: true,
                         ownerUserId: true,
+                        // The SoA export's own docstring promises "No internal
+                        // IDs are exposed"; the Owner column was emitting the
+                        // raw cuid, so the artefact contradicted its contract
+                        // and told an auditor nothing. Read the display name.
+                        owner: { select: { name: true } },
                         frequency: true,
                         deletedAt: true,
                         // In-force exceptions: APPROVED and not yet expired.
@@ -252,7 +258,10 @@ export async function getSoA(ctx: RequestContext, options: SoAOptions = {}): Pro
             // framework doesn't read N/A everywhere.
             applicability: l.applicability ?? l.control.applicability,
             justification: l.applicabilityJustification ?? l.control.applicabilityJustification,
-            owner: l.control.ownerUserId,
+            // Name, never the id — see the select above. Null when the
+            // control is unowned OR the user row has no name set; both mean
+            // "no owner to show", and neither should leak an identifier.
+            owner: l.control.owner?.name ?? null,
             frequency: l.control.frequency,
         }));
 

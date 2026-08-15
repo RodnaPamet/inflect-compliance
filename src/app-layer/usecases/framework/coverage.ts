@@ -228,7 +228,24 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
                         // dominant cost of this query on a large tenant, and
                         // only status/dueAt are read — the overdue check below
                         // does not need every task ever created.
-                        tasks: { select: { id: true, status: true, dueAt: true, title: true }, take: 500 },
+                        // `orderBy` is not cosmetic here. Without it Postgres
+                        // returns an ARBITRARY 500, so the overdue check below
+                        // could miss overdue tasks that happened to fall
+                        // outside the window — and miss DIFFERENT ones on each
+                        // run. `dueAt: 'asc'` puts the most overdue first
+                        // (NULLs sort last, and a task with no due date can
+                        // never be overdue), so the rows the check actually
+                        // needs are the ones guaranteed to be present.
+                        //
+                        // Measured 2026-08-15: max 7 tasks on any production
+                        // control, so the cap does not bind today. This makes
+                        // the day it does bind produce a correct answer rather
+                        // than an optimistic one.
+                        tasks: {
+                            select: { id: true, status: true, dueAt: true, title: true },
+                            orderBy: { dueAt: 'asc' },
+                            take: 500,
+                        },
                         // Evidence↔Control is a many-to-many join now; read the
                         // linked Evidence through it (flattened at the consumer).
                         // PR-I — exclude soft-deleted evidence at the query
@@ -241,6 +258,18 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
                         evidenceControlLinks: {
                             where: { tenantId: ctx.tenantId, evidence: { deletedAt: null } },
                             select: { evidence: { select: { id: true, status: true, title: true, expiredAt: true, isArchived: true, deletedAt: true } } },
+                            // Same reasoning as `tasks` above: an unordered
+                            // `take` makes the truncation arbitrary, so a
+                            // control WITH qualifying evidence could be
+                            // reported as missing it — pessimistic here, but
+                            // still wrong, and irreproducible between runs.
+                            //
+                            // Newest first: the consumer only asks whether ANY
+                            // linked row is coverage-qualifying, and a recent
+                            // row is likelier to be APPROVED and unexpired than
+                            // an old one. Max 3 per control in production, so
+                            // this does not bind today either.
+                            orderBy: { createdAt: 'desc' },
                             take: 500,
                         },
                         // In-force exceptions: APPROVED and not yet expired.
