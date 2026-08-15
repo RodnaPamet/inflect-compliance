@@ -85,17 +85,41 @@ describe('R5-P1 (4) one AV predicate on every serving path', () => {
  * back something this process itself just wrote are all non-serving. Handing a
  * user a stream or a redirect is not, no matter how the route is authenticated.
  */
+/**
+ * Reads that genuinely never hand bytes to a caller.
+ *
+ * TWO ENTRIES HAVE BEEN REMOVED from this map because they did not meet its
+ * own definition, and their presence made the scan certify them without ever
+ * checking. That is the failure this file was written to prevent, recreated
+ * one level up: the discovery scan replaced a hand-written route list, and its
+ * escape hatch quietly became the new hand-written route list.
+ *
+ * They now live in SERVES_UNSCANNED_BY_DESIGN below, which states what is
+ * actually true about them instead.
+ */
 const NON_SERVING_READS: Record<string, string> = {
-    'src/lib/account/avatar.ts':
-        'Account avatars — not FileRecord-backed evidence; no scanStatus column exists on that path.',
     'src/app-layer/jobs/evidence-import.ts':
         'Reads back its OWN staging upload to parse it — this runs BEFORE the file becomes servable evidence, so gating on the scan it precedes would deadlock the import.',
     'src/app-layer/services/import-snapshot.ts':
         'Reads back a snapshot this process wrote moments earlier; never serves it to a caller.',
-    'src/app-layer/usecases/risk-report.ts':
-        'Streams a report the generator itself just produced into storage — system-authored bytes, never user-uploaded content.',
     'src/app-layer/usecases/audit-hardening.ts':
         'Reads to compute a SHA-256 integrity hash. The bytes are consumed by crypto.createHash and discarded; hashing an infected file is safe precisely because nothing is served.',
+};
+
+/**
+ * Reads that DO serve bytes, are NOT gated on `isDownloadAllowed`, and are
+ * accepted anyway — each with the actual reason, not a category error.
+ *
+ * The distinction from NON_SERVING_READS is the whole point. Calling a serving
+ * path "non-serving" makes the scan skip it and tells the next reader there is
+ * nothing here; recording it as an accepted risk keeps it visible and puts the
+ * argument where it can be disagreed with.
+ */
+const SERVES_UNSCANNED_BY_DESIGN: Record<string, string> = {
+    'src/lib/account/avatar.ts':
+        'SERVES user-uploaded bytes, unscanned. Not FileRecord-backed, so there is no scanStatus to gate on — that is a gap, not a refutation. Accepted on three mitigations: a 512KB cap, a magic-byte sniff, and a forced image/webp content-type with no Content-Disposition, so the response renders rather than downloads. That blocks the stored-XSS and dropper shapes but NOT a malicious-decoder payload. Any session user can fetch any userId by design (member lists). Routing avatars through FileRecord + scan is the real fix and is a product decision, not a line.',
+    'src/app-layer/usecases/risk-report.ts':
+        'SERVES a report the generator itself just produced — system-authored bytes, never user-uploaded. The argument holds today; it is listed here rather than as non-serving so that an edit which reads a user-uploaded attachment INTO a report has to come past this line.',
 };
 
 describe('R5-P1 (4b) every storage read is gated or declared non-serving', () => {
@@ -135,7 +159,10 @@ describe('R5-P1 (4b) every storage read is gated or declared non-serving', () =>
 
     it('every storage reader gates on isDownloadAllowed or is a declared non-serving read', () => {
         const ungated = callers.filter(
-            (f) => !read(f).includes('isDownloadAllowed') && !(f in NON_SERVING_READS),
+            (f) =>
+                !read(f).includes('isDownloadAllowed') &&
+                !(f in NON_SERVING_READS) &&
+                !(f in SERVES_UNSCANNED_BY_DESIGN),
         );
         expect(ungated).toEqual([]);
     });
@@ -152,6 +179,29 @@ describe('R5-P1 (4b) every storage read is gated or declared non-serving', () =>
         // 404 not 403 — a distinguishable 403 confirms the document exists to
         // an anonymous caller replaying or guessing a token.
         expect(src).not.toMatch(/status: 403/);
+    });
+
+    /**
+     * The accepted-risk map needs the SAME stale check, and one more: an entry
+     * that starts gating on `isDownloadAllowed` should leave this map rather
+     * than sit here claiming to be an accepted risk it no longer is.
+     */
+    it('SERVES_UNSCANNED_BY_DESIGN has no stale entries', () => {
+        for (const declared of Object.keys(SERVES_UNSCANNED_BY_DESIGN)) {
+            expect({ declared, exists: existsSync(join(ROOT, declared)) }).toEqual({
+                declared,
+                exists: true,
+            });
+            expect(read(declared).includes('isDownloadAllowed')).toBe(false);
+        }
+    });
+
+    it('every accepted risk states WHY, at length', () => {
+        // A one-line reason is how "not FileRecord-backed" came to read as a
+        // refutation instead of a description of the gap.
+        for (const [file, reason] of Object.entries(SERVES_UNSCANNED_BY_DESIGN)) {
+            expect({ file, long: reason.length > 120 }).toEqual({ file, long: true });
+        }
     });
 
     it('NON_SERVING_READS has no stale entries', () => {
