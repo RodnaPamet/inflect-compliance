@@ -312,3 +312,78 @@ describe('SaveProcessMapSchema', () => {
         expect(SaveProcessMapSchema.safeParse({ nodes: [], edges }).success).toBe(false);
     });
 });
+/**
+ * `dataJson` is a free-form slot, and free-form was unbounded.
+ *
+ * Node and edge COUNTS were capped (500 / 1000) but per-blob size was not, so
+ * a map inside every count limit could still carry an arbitrarily large
+ * payload — into rows that are rewritten by every autosave AND copied
+ * wholesale into a ProcessMapSnapshot. The cost is write amplification on a
+ * 3-second debounce rather than one large row.
+ *
+ * A byte cap rather than a per-nodeType schema: the failure mode is volume,
+ * not shape, and one rule covers node, edge and edge-control blobs. The JSON
+ * slot exists so payloads can evolve without migrations, which an allowlist
+ * schema would spend immediately — and the server writes keys the client does
+ * not know about, so a strict shape would break the round trip.
+ */
+describe('dataJson is size-bounded', () => {
+    const node = (dataJson: unknown) => ({
+        nodeKey: 'n1',
+        nodeType: 'step',
+        label: 'Step',
+        posX: 0,
+        posY: 0,
+        dataJson,
+    });
+
+    const big = (bytes: number) => ({ blob: 'x'.repeat(bytes) });
+
+    it('accepts a realistic blob', () => {
+        expect(ProcessNodeInputSchema.safeParse(node({ colour: 'red', notes: 'ok' })).success).toBe(
+            true,
+        );
+    });
+
+    it.each([undefined, null])('accepts %s — the slot stays optional', (v) => {
+        expect(ProcessNodeInputSchema.safeParse(node(v)).success).toBe(true);
+    });
+
+    it('rejects a blob over the cap', () => {
+        expect(ProcessNodeInputSchema.safeParse(node(big(70 * 1024))).success).toBe(false);
+    });
+
+    it('accepts one just under it — the cap is not accidentally tighter than stated', () => {
+        expect(ProcessNodeInputSchema.safeParse(node(big(60 * 1024))).success).toBe(true);
+    });
+
+    it('rejects an unserialisable blob rather than passing it to Prisma', () => {
+        // A cycle throws in JSON.stringify. Letting it through turns a 400
+        // into a 500 further down.
+        const cyclic: Record<string, unknown> = {};
+        cyclic.self = cyclic;
+        expect(ProcessNodeInputSchema.safeParse(node(cyclic)).success).toBe(false);
+    });
+
+    it('bounds the EDGE blob too, not just nodes', () => {
+        const edge = {
+            edgeKey: 'e1',
+            sourceKey: 'n1',
+            targetKey: 'n2',
+            dataJson: big(70 * 1024),
+        };
+        expect(ProcessEdgeInputSchema.safeParse(edge).success).toBe(false);
+    });
+
+    it('bounds the EDGE-CONTROL blob too — the slot easiest to forget', () => {
+        const edge = {
+            edgeKey: 'e1',
+            sourceKey: 'n1',
+            targetKey: 'n2',
+            controls: [
+                { controlKey: 'c1', label: 'C', controlId: 'id1', dataJson: big(70 * 1024) },
+            ],
+        };
+        expect(ProcessEdgeInputSchema.safeParse(edge).success).toBe(false);
+    });
+});

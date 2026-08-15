@@ -326,10 +326,28 @@ export class ProcessMapRepository {
         // defence catching any concurrent commit that lands BETWEEN
         // the check and the version bump.
         //
-        // Callers who omit `expectedVersion` are accepting last-
-        // write-wins by omission. The canvas client always sends it
-        // now; the omission path keeps the migration door open for
-        // older bundles still in browser caches.
+        // Callers who omit `expectedVersion` are accepting last-write-wins
+        // by omission.
+        //
+        // THE DOOR CANNOT BE CLOSED IN ONE LINE, and the comment that used to
+        // sit here made it look like it could. It claimed "the canvas client
+        // always sends it now", which is false: two in-repo canvas paths omit
+        // it by construction, both of them CREATE-then-FILL flows that have no
+        // version to send until the create returns —
+        //
+        //   PersistedProcessCanvas.tsx  (Duplicate)
+        //   lib/processes/create-map-from-template.ts  (New from template)
+        //
+        // Making `expectedVersion` required today would 400 both, plus any
+        // save or rename attempted while `loadedMap` is null after a failed
+        // load. The sunset needs those two callers to thread the freshly
+        // created map's version first — the POST response already returns it,
+        // and both helpers read `filled.version` immediately afterwards, so
+        // the value is there for the taking.
+        //
+        // Until then this is not migration debt for stale browser bundles; it
+        // is a live path with in-repo callers, and the current gap is benign
+        // because those callers race nothing (they have just created the row).
         if (
             input.expectedVersion !== undefined &&
             existing.version !== input.expectedVersion
