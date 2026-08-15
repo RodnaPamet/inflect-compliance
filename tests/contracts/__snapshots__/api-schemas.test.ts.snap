@@ -1464,6 +1464,9 @@ exports[`API contract — per-schema snapshots schema: ControlDashboard 1`] = `
     },
     "applicableCount": {
       "type": "number"
+    },
+    "controlsMissingEvidence": {
+      "type": "number"
     }
   },
   "required": [
@@ -1475,7 +1478,8 @@ exports[`API contract — per-schema snapshots schema: ControlDashboard 1`] = `
     "topOwners",
     "implementationProgress",
     "implementedCount",
-    "applicableCount"
+    "applicableCount",
+    "controlsMissingEvidence"
   ],
   "description": "Aggregate metrics for the control dashboard view — counts, distributions, top-owner leaderboard, and implementation-progress percentage."
 }"

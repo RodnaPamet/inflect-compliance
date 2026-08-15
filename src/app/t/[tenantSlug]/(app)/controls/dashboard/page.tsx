@@ -84,7 +84,7 @@ export default function ControlsDashboard() {
             }}
         >
             {/* Stat Cards Row — Polish PR-2: KPIStat primitive. */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-default" id="dashboard-stats">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-default" id="dashboard-stats">
                 <div className={cardVariants({ density: 'compact' })}>
                     <KPIStat
                         id="implementation-progress"
@@ -124,6 +124,21 @@ export default function ControlsDashboard() {
                         value={data.applicabilityDistribution.applicable}
                         label={t('dashboard.applicability')}
                         description={t('dashboard.excludedNA', { count: data.applicabilityDistribution.notApplicable })}
+                    />
+                </div>
+                {/* Relocated from the readiness report, and RECOMPUTED rather
+                    than moved: there it was framework-scoped, driven by that
+                    page's framework selector. This page has no framework
+                    concept, so the honest figure is tenant-wide. It is also a
+                    COUNT, not the report's uncapped list — a tenant with 400
+                    such controls rendered 400 rows there. */}
+                <div className={cardVariants({ density: 'compact' })}>
+                    <KPIStat
+                        id="controls-missing-evidence"
+                        value={data.controlsMissingEvidence}
+                        label={t('dashboard.missingEvidence')}
+                        tone={data.controlsMissingEvidence > 0 ? 'attention' : 'default'}
+                        description={t('dashboard.noQualifyingEvidence')}
                     />
                 </div>
             </div>

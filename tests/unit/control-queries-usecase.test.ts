@@ -325,7 +325,8 @@ describe('getControlDashboard', () => {
             ]);
         (mockDb.control.count as jest.Mock)
             .mockResolvedValueOnce(3)  // implementedCount
-            .mockResolvedValueOnce(2); // controlsDueSoon
+            .mockResolvedValueOnce(2)  // controlsDueSoon
+            .mockResolvedValueOnce(7); // controlsMissingEvidence
         (mockDb.task.count as jest.Mock).mockResolvedValueOnce(4); // overdueTasks
         (mockDb.task.groupBy as jest.Mock).mockResolvedValueOnce([
             { controlId: 'c-1', _count: { _all: 3 } },
@@ -346,6 +347,35 @@ describe('getControlDashboard', () => {
         expect(dash.applicableCount).toBe(5);
         expect(dash.controlsDueSoon).toBe(2);
         expect(dash.overdueTasks).toBe(4);
+        expect(dash.controlsMissingEvidence).toBe(7);
+
+        /**
+         * The count is only meaningful if it asks the RIGHT question, and the
+         * risk here is silent: `control.count` is mocked positionally, so a
+         * query that filtered on the wrong field — or forgot the nested
+         * `deletedAt: null` the soft-delete extension does not inject into
+         * relation filters — would still return 7 and pass every assertion
+         * above.
+         *
+         * So assert the where-shape. It must exclude NOT_APPLICABLE by STATUS
+         * (the readiness report's filter, not the sibling scorer's
+         * `applicability` one — picking that would make this card disagree
+         * with the tile it was relocated from), and it must express "has no
+         * evidence" through the SHARED qualifying-evidence predicate.
+         */
+        const missingEvidenceCall = (mockDb.control.count as jest.Mock).mock.calls[2][0];
+        expect(missingEvidenceCall.where.status).toEqual({ not: 'NOT_APPLICABLE' });
+        const nested = missingEvidenceCall.where.NOT.evidenceControlLinks.some;
+        expect(nested.tenantId).toBe(readerCtx.tenantId);
+        expect(nested.evidence).toEqual(
+            expect.objectContaining({
+                status: 'APPROVED',
+                isArchived: false,
+                deletedAt: null,
+            }),
+        );
+        // Unexpired: either no expiry, or an expiry still in the future.
+        expect(nested.evidence.OR).toHaveLength(2);
         // implementation progress = round(3/5 * 100) = 60
         expect(dash.implementationProgress).toBe(60);
         // top owners — Alice 3, Bob 1; null-owner controls skipped

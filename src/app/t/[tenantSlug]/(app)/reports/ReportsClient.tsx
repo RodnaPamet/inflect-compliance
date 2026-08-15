@@ -450,26 +450,18 @@ export function ReportsClient({
                             </div>
                         )}
 
-                        {/* Overdue tasks */}
-                        {readiness.overdueTasks.length > 0 && (
-                            <div className={cardVariants({ density: 'none' })}>
-                                <Heading level={3} className="text-content-warning mb-3">
-                                    {tx('overdueTasksHeading', { count: readiness.overdueTasks.length })}
-                                </Heading>
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {readiness.overdueTasks.map((task, i) => (
-                                        <div key={i} className="flex items-center gap-compact px-3 py-1.5 text-sm">
-                                            <span className="text-content-default">{task.taskTitle}</span>
-                                            {task.controlCode && (
-                                                <code className="text-xs text-content-subtle font-mono">
-                                                    {task.controlCode}
-                                                </code>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        {/* The overdue-tasks list was removed from this report.
+                            Tasks have their own surface with filtering, sorting
+                            and assignment; a flat read-only list here answered
+                            a question the reader could not act on.
+
+                            `readiness.overdueTasks` DELIBERATELY REMAINS on the
+                            payload. It has a second consumer — the readiness
+                            CSV emits one "Overdue Task" row per entry
+                            (`framework/coverage.ts`) — so deleting the field
+                            would silently drop a column from an auditor-facing
+                            export. Same for `summary.overdueTaskCount`, which
+                            the readiness PDF still reads. */}
                     </div>
                 )}
             </section>

@@ -158,6 +158,8 @@ export const ControlDashboardDTOSchema = z.object({
     implementationProgress: z.number(),
     implementedCount: z.number(),
     applicableCount: z.number(),
+    /** Tenant-wide count of controls with no coverage-qualifying evidence. */
+    controlsMissingEvidence: z.number(),
 }).openapi('ControlDashboard', {
     description: 'Aggregate metrics for the control dashboard view — counts, distributions, top-owner leaderboard, and implementation-progress percentage.',
 });

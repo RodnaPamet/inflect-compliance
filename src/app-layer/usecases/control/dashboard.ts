@@ -13,6 +13,7 @@ import { assertCanReadControls } from '../../policies/control.policies';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import type { TaskStatus } from '@prisma/client';
+import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
 
 // Non-terminal (active) work-item statuses — the unified-Task equivalent of
 // the legacy `status != 'DONE'` predicate the ControlTask dashboard used.
@@ -47,6 +48,7 @@ export async function getControlDashboard(ctx: RequestContext) {
             applicabilityGroups,
             implementedCount,
             controlsDueSoon,
+            controlsMissingEvidence,
             overdueTasks,
             openTasksByControl,
             controlOwners,
@@ -73,6 +75,45 @@ export async function getControlDashboard(ctx: RequestContext) {
                     tenantId: ctx.tenantId,
                     applicability: 'APPLICABLE',
                     nextDueAt: { not: null, lte: soonThreshold },
+                },
+            }),
+            // Controls with no QUALIFYING evidence, tenant-wide.
+            //
+            // This is deliberately NOT the number the readiness report shows.
+            // That one is framework-scoped (`generateReadinessReport(ctx,
+            // frameworkKey)`), reachable only through the report page's
+            // framework selector; this page has no framework concept, so the
+            // honest figure here is "across every control".
+            //
+            // What the two DO share is the definition of "has evidence", via
+            // `coverageQualifyingEvidenceWhere` — the same APPROVED +
+            // unexpired + not-archived + not-deleted rule the report applies
+            // in memory through `isCoverageQualifyingEvidence`. Two surfaces
+            // disagreeing on what evidence counts is the failure this avoids.
+            //
+            // Three exclusions, each load-bearing:
+            //   - `status: { not: 'NOT_APPLICABLE' }` mirrors the report's
+            //     filter. Note it keys on STATUS, not the `applicability`
+            //     field a sibling scorer uses — picking the other one would
+            //     make this card disagree with the tile it was moved from.
+            //   - `deletedAt: null` on the LINKED evidence: the soft-delete
+            //     extension injects that at the top level only, never inside
+            //     a nested relation filter, so a soft-deleted evidence row
+            //     would otherwise still count as coverage.
+            //   - the control's own soft-delete is handled by the extension
+            //     (Control is in SOFT_DELETE_MODELS and `count` is wrapped).
+            db.control.count({
+                where: {
+                    tenantId: ctx.tenantId,
+                    status: { not: 'NOT_APPLICABLE' },
+                    NOT: {
+                        evidenceControlLinks: {
+                            some: {
+                                tenantId: ctx.tenantId,
+                                evidence: coverageQualifyingEvidenceWhere(now),
+                            },
+                        },
+                    },
                 },
             }),
             // Overdue = open (non-terminal) unified Task past its due date.
@@ -156,6 +197,7 @@ export async function getControlDashboard(ctx: RequestContext) {
             implementationProgress,
             implementedCount,
             applicableCount,
+            controlsMissingEvidence,
         };
     });
 }
