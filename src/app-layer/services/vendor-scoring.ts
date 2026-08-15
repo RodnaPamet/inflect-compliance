@@ -18,27 +18,74 @@ export interface ScoringAnswer {
  * Compute raw risk points for a single answer given the question's riskPointsJson mapping.
  * Returns 0 if no mapping is found.
  */
+/**
+ * Normalise a submitted answer into the key a `riskPointsJson` map is
+ * written with.
+ *
+ * EXPORTED because there were two implementations of this and they
+ * disagreed. `computeProvisionalPoints` in vendor-assessment-response did a
+ * raw `map[value]` lookup, so a form submitting `"yes"` missed a fixture
+ * keyed `"YES"` and scored ZERO — on 9 of 11 scoring YES_NO questions per
+ * shipped template. Its own docstring claimed it mirrored this function.
+ *
+ * The normalisation is the part worth sharing: uppercasing, the
+ * boolean→YES/NO mapping, and unwrapping `{ value }`. Two copies of a rule
+ * that must agree is the defect class; one copy with two callers is not.
+ */
+export function answerPointsKey(val: unknown): string | null {
+    if (typeof val === 'boolean') return val ? 'YES' : 'NO';
+    if (typeof val === 'string') return val.toUpperCase();
+    if (typeof val === 'number') return String(val);
+    if (val && typeof val === 'object' && 'value' in val) {
+        return String((val as { value: unknown }).value).toUpperCase();
+    }
+    return null;
+}
+
+/**
+ * Look a normalised answer up in a `riskPointsJson` map, CASE-INSENSITIVELY.
+ *
+ * Both conventions exist in the data. The shipped questionnaire fixtures key
+ * on `YES`/`NO`; other maps — including ones this repo's own tests were
+ * written against — key on `yes`/`no`. The two scoring paths each handled
+ * exactly one of them:
+ *
+ *   review path   uppercased, so it scored 0 against a lowercase map
+ *   submit path   raw lookup, so it scored 0 against an uppercase map
+ *
+ * Uppercasing everywhere would have fixed the shipped fixtures and broken the
+ * lowercase maps — I know because doing exactly that turned an existing test
+ * red, which is the only reason the second convention surfaced at all.
+ *
+ * So: try the normalised key, then the raw value, then a case-folded match.
+ * Neither convention can score a silent zero again.
+ */
+function lookupPoints(mapping: Record<string, number>, raw: unknown): number | null {
+    const key = answerPointsKey(raw);
+    if (key === null) return null;
+
+    if (typeof mapping[key] === 'number') return mapping[key];
+
+    const rawKey = typeof raw === 'string' ? raw : null;
+    if (rawKey !== null && typeof mapping[rawKey] === 'number') return mapping[rawKey];
+
+    const folded = Object.keys(mapping).find((k) => k.toUpperCase() === key);
+    return folded !== undefined ? mapping[folded] : null;
+}
+
 export function computeAnswerPoints(question: ScoringQuestion, answer: ScoringAnswer): number {
     if (!question.riskPointsJson) return 0;
     const mapping = question.riskPointsJson as Record<string, number>;
+    return lookupPoints(mapping, answer.answerJson) ?? 0;
+}
 
-    // The answer could be a simple value (string/bool/number) or wrapped
-    let key: string;
-    const val = answer.answerJson;
-
-    if (typeof val === 'boolean') {
-        key = val ? 'YES' : 'NO';
-    } else if (typeof val === 'string') {
-        key = val.toUpperCase();
-    } else if (typeof val === 'number') {
-        key = String(val);
-    } else if (val && typeof val === 'object' && 'value' in val) {
-        key = String(val.value).toUpperCase();
-    } else {
-        return 0;
-    }
-
-    return mapping[key] ?? 0;
+/** The submit path needs the same lookup; see `lookupPoints`. */
+export function riskPointsFor(
+    riskPointsJson: unknown,
+    rawAnswerValue: unknown,
+): number | null {
+    if (!riskPointsJson || typeof riskPointsJson !== 'object') return null;
+    return lookupPoints(riskPointsJson as Record<string, number>, rawAnswerValue);
 }
 
 /**
