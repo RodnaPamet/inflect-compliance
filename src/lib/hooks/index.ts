@@ -31,4 +31,4 @@ export type {
     ShortcutScope,
     UseKeyboardShortcutOptions,
 } from './use-keyboard-shortcut';
-
+export { useUnsavedChangesWarning } from './use-unsaved-changes-warning';

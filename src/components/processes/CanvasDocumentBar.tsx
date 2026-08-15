@@ -61,6 +61,8 @@ export interface CanvasDocumentBarBusy {
 export interface CanvasDocumentBarEditorState {
     snapEnabled: boolean;
     autosaveStatus: AutosaveStatus;
+    /** Message from the failed save, surfaced as the status chip's title. */
+    autosaveError: string | null;
     canUndo: boolean;
     canRedo: boolean;
 }
@@ -156,7 +158,7 @@ export function CanvasDocumentBar({
         [activeProcess, statusOptions],
     );
     const { saving, loading, creating, duplicating } = busy;
-    const { snapEnabled, autosaveStatus, canUndo, canRedo } = editorState;
+    const { snapEnabled, autosaveStatus, autosaveError, canUndo, canRedo } = editorState;
     const {
         onActiveIdChange,
         setEditedName,
@@ -438,6 +440,27 @@ export function CanvasDocumentBar({
                         data-autosave-status="saved"
                     >
                         {t("saved")}
+                    </span>
+                )}
+                {/* The error branch. There was none — because the canvas
+                    swallowed save failures, so the hook could never reach
+                    `error` and the missing branch was invisible.
+                    
+                    This has to be PERSISTENT, not a toast. Autosave does not
+                    retry after a failure (the deliberate no-thrash property),
+                    the canvas stays fully interactive, and a dismissed or
+                    missed toast left NO indication that saving had stopped —
+                    the user keeps editing into nothing. Modelled on the 409
+                    treatment, which warns before the user acts rather than
+                    after. */}
+                {autosaveStatus === "error" && (
+                    <span
+                        className="text-[11px] font-medium text-content-error"
+                        data-testid="autosave-status"
+                        data-autosave-status="error"
+                        title={autosaveError ?? undefined}
+                    >
+                        {t("saveFailed")}
                     </span>
                 )}
                 {exportSlot}
