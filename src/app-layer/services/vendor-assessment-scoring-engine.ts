@@ -44,6 +44,24 @@ export interface RatingThreshold {
 }
 
 export interface ScoringConfig {
+    /**
+     * Which scale `ratingThresholds` are authored on.
+     *
+     * BOTH conventions exist in this codebase and neither was declared:
+     *   - the seeded questionnaires use 0-25/26-50/51-75/76-100, i.e. PERCENT;
+     *   - this engine's own tests use 0-1.5/1.5-3/3-4/4+, i.e. RAW
+     *     points-per-unit-weight.
+     *
+     * Undeclared, WEIGHTED_AVERAGE bracketed the raw average against whatever
+     * the operator wrote — so percentage thresholds put every achievable score
+     * in the first bucket and every vendor auto-rated LOW.
+     *
+     * Defaults to RAW, which preserves every existing configuration. The seed
+     * now declares PERCENT explicitly. Making the scale part of the config is
+     * the fix: guessing it from the numbers would be right until someone
+     * authors 0-10 buckets and means them.
+     */
+    thresholdScale?: 'RAW' | 'PERCENT';
     mode: ScoringMode;
     /** PASS_FAIL_THRESHOLD only. Score >= threshold ⇒ PASS. */
     threshold?: number;
@@ -162,8 +180,28 @@ export function scoreAssessment(input: {
             // Defensive divide-by-zero — empty assessment is an
             // edge case for the review UI, not the runtime.
             result.score = totalWeight > 0 ? effectiveSum / totalWeight : 0;
+            // Rate on the PERCENTAGE, not the raw average.
+            //
+            // `score` here is points-per-unit-weight. The shipped fixtures use
+            // option points in [-10, 10], so it cannot exceed ~10 — while
+            // every ratingThresholds set in this codebase is authored 0-100.
+            // Bracketing the raw average therefore put EVERY achievable score
+            // in the first bucket: every vendor auto-rated LOW, that rating
+            // was written to VendorAssessment.riskRating and stamped onto
+            // Vendor.inherentRisk, and the auto-created HIGH/CRITICAL register
+            // Risk was dead code in production.
+            //
+            // This is not a new convention. `computeAssessmentScore` in
+            // vendor-scoring.ts already normalises the same way
+            // (`maxPossible = totalWeight * MAX_POINTS_PER_QUESTION`, then
+            // percent), and its `scoreToRiskRating` uses exactly the buckets
+            // the thresholds are seeded with — <=25 / <=50 / <=75 / else. The
+            // newer engine simply did not carry it across, which is the same
+            // two-implementations-of-one-rule class as the YES_NO lookup.
             result.suggestedRating = deriveRating(
-                result.score,
+                config.thresholdScale === 'PERCENT'
+                    ? toPercentScore(result.score)
+                    : result.score,
                 config.ratingThresholds,
             );
             break;
@@ -197,6 +235,11 @@ function normaliseConfig(
         mode: raw.mode,
         threshold: raw.threshold,
         ratingThresholds: raw.ratingThresholds,
+        // Carried explicitly. This function rebuilds the config from named
+        // fields rather than spreading, so anything not listed here is
+        // silently dropped — a new option would reach the engine as undefined
+        // and read as "RAW" no matter what the operator configured.
+        thresholdScale: raw.thresholdScale,
     };
 }
 
@@ -206,6 +249,28 @@ function normaliseConfig(
  * the score doesn't match any bucket. The reviewer can still
  * supply a manual override on top.
  */
+/**
+ * Convert a points-per-unit-weight average into the 0-100 scale that every
+ * `ratingThresholds` set in this codebase is authored on.
+ *
+ * MAX_POINTS_PER_QUESTION mirrors `computeAssessmentScore`'s `maxPossible =
+ * totalWeight * 10`. Keeping the constant named and in one place is the point:
+ * the previous arrangement had the assumption written as a trailing comment in
+ * one file and not at all in the other, which is how the two drifted.
+ *
+ * Negative points are legitimate (the fixtures range -10..10), so the floor is
+ * clamped at 0 rather than allowed to go negative — a score below every
+ * bracket returns null from deriveRating, which reads to a reviewer as "no
+ * suggestion" rather than "low risk", and that distinction matters.
+ */
+const MAX_POINTS_PER_QUESTION = 10;
+
+export function toPercentScore(pointsPerUnitWeight: number): number {
+    if (!Number.isFinite(pointsPerUnitWeight)) return 0;
+    const pct = (pointsPerUnitWeight / MAX_POINTS_PER_QUESTION) * 100;
+    return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
 function deriveRating(
     score: number,
     thresholds: RatingThreshold[] | undefined,

@@ -2404,6 +2404,11 @@ Reviewed at least annually.` },
                 description: `${aisvsVendorQ.description}\n\n${aisvsVendorQ.attribution}`,
                 scoringConfigJson: {
                     mode: 'WEIGHTED_AVERAGE',
+                    // Percentages, declared rather than implied — see
+                    // ScoringConfig.thresholdScale. Undeclared, these were
+                    // bracketed against a points-per-unit-weight average that
+                    // never exceeds ~10, so every vendor auto-rated LOW.
+                    thresholdScale: 'PERCENT',
                     ratingThresholds: [
                         { rating: 'LOW', minScore: 0, maxScore: 25 },
                         { rating: 'MEDIUM', minScore: 26, maxScore: 50 },
