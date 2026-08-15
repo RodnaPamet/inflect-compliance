@@ -19,6 +19,7 @@
  * @module usecases/vendor-assessment-response
  */
 import { prisma } from '@/lib/prisma';
+import { riskPointsFor } from '@/app-layer/services/vendor-scoring';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import {
@@ -801,12 +802,20 @@ function computeProvisionalPoints(
     if (q.answerType === 'SCALE' && typeof value === 'number') {
         return value * weight;
     }
-    // YES_NO — try the riskPointsJson legacy map.
+    // YES_NO — the riskPointsJson map.
+    //
+    // Uses the SHARED key normalisation. This did a raw `map[value]` lookup,
+    // so the lowercase literal the form submits ("yes") missed the uppercase
+    // key the fixtures are written with ("YES") and scored ZERO — silently,
+    // on 9 of 11 scoring YES_NO questions per shipped template. A vendor
+    // answering "no" to every security question scored the same as one
+    // answering "yes".
+    //
+    // The docstring above already claimed this mirrored `computeAnswerPoints`.
+    // It did not; now the part that has to agree is one function.
     if (q.answerType === 'YES_NO') {
-        const map = q.riskPointsJson as Record<string, number> | null;
-        if (map && typeof value === 'string' && typeof map[value] === 'number') {
-            return map[value] * weight;
-        }
+        const points = riskPointsFor(q.riskPointsJson, value);
+        if (points !== null) return points * weight;
     }
     return 0;
 }
