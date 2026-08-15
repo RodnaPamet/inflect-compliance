@@ -56,8 +56,26 @@ const NOT_EXPORTERS: Record<string, string> = {
 /** The signature of hand-rolled cell escaping, in every spelling found in src/. */
 const HAND_ROLLED_ESCAPE = /replace\(\/"\/g,\s*['"]""['"]\)/;
 
-/** Any reference to the shared module's exports. */
-const USES_SHARED = /neutralizeCsvCell|\bcsvCell\b|\btoCsv\b/;
+/**
+ * A reference to the shared module's exports — matched as an IMPORT, not as a
+ * bare identifier.
+ *
+ * The name-only form let a file vouch for itself. `vendors/exports/route.ts`
+ * defines its own local `function toCsv(...)` and its own `neutraliseFormula`,
+ * and imports nothing from `@/lib/csv/format-csv` — so `\btoCsv\b` matched
+ * the local declaration and the guard skipped the file. Deleting that file's
+ * neutraliser would have reopened the hole with CI green.
+ *
+ * Same shape as the sibling-vouches-for-sibling defect #1916 fixed in the bulk
+ * ratchet: a check satisfied by something other than the thing it is about.
+ * Requiring the import means only a file that actually reaches the shared
+ * module can pass.
+ */
+const IMPORTS_SHARED =
+    /from\s+['"](?:@\/lib\/csv\/format-csv|\.\.?\/[^'"]*csv\/format-csv)['"]/;
+
+/** A local formatter that itself reaches the shared module still counts. */
+const USES_SHARED_SYMBOL = /neutralizeCsvCell|\bcsvCell\b/;
 
 describe('CSV exporters neutralise formula triggers', () => {
     const files = walk(SRC);
@@ -83,7 +101,9 @@ describe('CSV exporters neutralise formula triggers', () => {
 
             const src = stripComments(fs.readFileSync(file, 'utf8'));
             if (!HAND_ROLLED_ESCAPE.test(src)) continue;
-            if (USES_SHARED.test(src)) continue;
+            // Must IMPORT the shared module. A same-named local function is
+            // exactly what this used to accept.
+            if (IMPORTS_SHARED.test(src) && USES_SHARED_SYMBOL.test(src)) continue;
 
             offenders.push(rel);
         }

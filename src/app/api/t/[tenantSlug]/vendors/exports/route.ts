@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { neutralizeCsvCell } from '@/lib/csv/format-csv';
 import { getTenantCtx } from '@/app-layer/context';
 import { exportVendorsRegister, exportAssessments, exportDocumentExpiry } from '@/app-layer/usecases/vendor-audit';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -20,9 +21,11 @@ import { contentDispositionHeader } from '@/lib/http/content-disposition';
  * because a leading whitespace character is stripped by some parsers,
  * re-exposing the trigger beneath it.
  */
-function neutraliseFormula(s: string): string {
-    return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-}
+// Was a local copy of the neutraliser, added independently of the shared one.
+// It was correct — and that is the problem: the guard's "reaches the shared
+// module" check matched this file's own `toCsv` by NAME, so the file vouched
+// for itself and deleting this function would have reopened the hole with CI
+// green. One implementation, imported, is the only version a guard can verify.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toCsv(rows: Record<string, any>[]): string {
@@ -34,7 +37,7 @@ function toCsv(rows: Record<string, any>[]): string {
         lines.push(headers.map(h => {
             const v = row[h];
             if (v == null) return '';
-            const s = neutraliseFormula(String(v));
+            const s = neutralizeCsvCell(String(v));
             return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
         }).join(','));
     }

@@ -12,6 +12,14 @@ import {
     type ApplicabilityState,
 } from '@/lib/controls/control-applicability';
 
+/** Counts backing the four KPI filter cards on the Controls list page. */
+export interface ControlKpiCounts {
+    total: number;
+    implemented: number;
+    inProgress: number;
+    notStarted: number;
+}
+
 export interface ControlListFilters {
     status?: string;
     applicability?: string;
@@ -154,6 +162,69 @@ export class ControlRepository {
         );
         if (states === undefined) return undefined;
         return applicabilityStateWhere(typeof states === 'string' ? [states] : states.in);
+    }
+
+    /**
+     * Counts for the four KPI filter cards on the Controls list page.
+     *
+     * Each number answers exactly one question: "how many rows will I see if
+     * I click this card". They were derived client-side from the loaded array
+     * — and that array is FILTER-SCOPED, because `controlsKey` puts the active
+     * filters in the SWR key. So the numbers were wrong in two independent
+     * ways, neither needing a large tenant:
+     *
+     *   `total` displayed the FILTERED length while its click calls
+     *   clearAll(). With Owner=Alice set, the card read 12 and the click
+     *   returned the whole register.
+     *
+     *   the status cards counted within a set that already had `status`
+     *   applied, while their click REPLACES that dimension. Under any active
+     *   status filter, two of the three read 0 permanently.
+     *
+     * The shapes below mirror each def's `apply` in ControlsClient — change
+     * one and you must change the other:
+     *   total        clearAll()              -> tenant, no filters
+     *   implemented  set('status','IMPLEMENTED')
+     *   inProgress   IN_PROGRESS + IMPLEMENTING under one label (the card
+     *                shows both; the filter sets IN_PROGRESS — that
+     *                divergence is pre-existing and deliberate, see the
+     *                comment on the def)
+     *   notStarted   set('status','NOT_STARTED')
+     */
+    static async kpiCounts(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters?: ControlListFilters,
+    ): Promise<ControlKpiCounts> {
+        // The status cards REPLACE the status dimension, so the groupBy runs
+        // over the other active filters only.
+        const withoutStatus: ControlListFilters | undefined = filters
+            ? { ...filters, status: undefined }
+            : undefined;
+
+        const [byStatus, total] = await Promise.all([
+            db.control.groupBy({
+                by: ['status'],
+                where: ControlRepository._buildWhere(ctx, withoutStatus),
+                _count: { _all: true },
+            }),
+            db.control.count({
+                where: { OR: [{ tenantId: ctx.tenantId }, { tenantId: null }] },
+            }),
+        ]);
+
+        const of = (...wanted: string[]) =>
+            byStatus
+                .filter((g) => wanted.includes(g.status as string))
+                .reduce((n, g) => n + g._count._all, 0);
+
+        return {
+            total,
+            implemented: of('IMPLEMENTED'),
+            // Both, matching what the card DISPLAYS.
+            inProgress: of('IN_PROGRESS', 'IMPLEMENTING'),
+            notStarted: of('NOT_STARTED'),
+        };
     }
 
     private static _buildWhere(ctx: RequestContext, filters?: ControlListFilters): Prisma.ControlWhereInput {

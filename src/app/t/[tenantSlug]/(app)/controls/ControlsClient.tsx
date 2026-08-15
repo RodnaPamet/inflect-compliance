@@ -170,6 +170,24 @@ interface ControlsClientProps {
  *   - Owner / Category options are derived client-side from loaded controls so
  *     the picker reflects reality without an extra API call.
  */
+/**
+ * Shape of GET /api/t/:slug/controls. `kpiCounts` is computed by aggregate in
+ * ControlRepository.kpiCounts — not derived from `rows`, which is both
+ * filter-scoped and backfill-capped.
+ *
+ * OPTIONAL on purpose: the `includeDeleted` branch returns a bare array, and
+ * the SSR fallback has rows but no counts. Requiring it would force a fake
+ * zero into both, and a card reading 0 is a worse lie than one reading the
+ * page count.
+ */
+type ControlKpiCounts = {
+    total: number;
+    implemented: number;
+    inProgress: number;
+    notStarted: number;
+};
+type ControlListResponse = CappedList<ControlListItem> & { kpiCounts?: ControlKpiCounts };
+
 export function ControlsClient(props: ControlsClientProps) {
     // Build the filter context at the outer boundary so the provider can wrap
     // the inner tree — the inner component consumes via `useFilters()`.
@@ -377,7 +395,7 @@ function ControlsPageInner({
     }, [filtersForQuery, showDeleted]);
     // The live list GET returns `{ rows, truncated }`; the `includeDeleted`
     // branch returns a bare array (listControlsWithDeleted). Type + read both.
-    const controlsQuery = useTenantSWR<CappedList<ControlListItem> | ControlListItem[]>(controlsKey, {
+    const controlsQuery = useTenantSWR<ControlListResponse | ControlListItem[]>(controlsKey, {
         // The SSR initial payload never contains soft-deleted rows, so the
         // deleted view must always fetch fresh (no fallback).
         fallbackData: filtersMatchInitial && !showDeleted
@@ -540,6 +558,20 @@ function ControlsPageInner({
         inProgress: inProgressControls,
         notStarted: notStartedControls,
     } = useMemo(() => {
+        // SERVER counts when the list endpoint supplies them.
+        //
+        // `controls` is the current-FILTER result set — `controlsKey` puts the
+        // active filters in the SWR key — and it is backfill-capped on top.
+        // Counting it was wrong in two ways that need no large tenant:
+        //   `total` showed the filtered length while its click calls
+        //   clearAll(), so Owner=Alice read 12 and returned the register;
+        //   the status cards counted inside an already-status-filtered set
+        //   while their click REPLACES that dimension, so under any status
+        //   filter two of the three read 0 permanently.
+        //
+        // The client fallback below is the pre-hydration path only.
+        const server = !Array.isArray(controlsData) ? controlsData?.kpiCounts : undefined;
+        if (server) return server;
         const counts = { total: controls.length, implemented: 0, inProgress: 0, notStarted: 0 };
         for (const c of controls) {
             if (c.status === 'IMPLEMENTED') counts.implemented++;
@@ -695,7 +727,7 @@ function ControlsPageInner({
      * would land on a different SWR entry and paint nothing.
      */
     const bulkMutation = useTenantMutation<
-        CappedList<ControlListItem> | ControlListItem[],
+        ControlListResponse | ControlListItem[],
         BulkVars,
         unknown
     >({

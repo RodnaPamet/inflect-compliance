@@ -1,4 +1,4 @@
-import { listControls, listControlsPaginated, createControl, listControlsWithDeleted } from '@/app-layer/usecases/control';
+import { listControls, listControlKpiCounts, listControlsPaginated, createControl, listControlsWithDeleted } from '@/app-layer/usecases/control';
 import { CreateControlSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
@@ -59,6 +59,12 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     // the cap and reports `truncated: true` if the sentinel was hit.
     const controls = await listControls(ctx, filters, { take: LIST_BACKFILL_CAP + 1 });
     const result = applyBackfillCap(controls);
+    // KPI card counts come from aggregates, not from `result.rows`. The rows
+    // are filter-scoped AND backfill-capped; every card's click resolves
+    // against the tenant, so a count taken from the array could not predict
+    // its own click — `total` in particular displayed the filtered length
+    // while its click clears every filter.
+    const kpiCounts = await listControlKpiCounts(ctx, filters);
     // PR-6 — row-count observability.
     recordListPageRowCount({
         entity: 'controls',
@@ -66,7 +72,7 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
         truncated: result.truncated,
         tenantId: ctx.tenantId,
     });
-    return jsonResponse(result);
+    return jsonResponse({ ...result, kpiCounts });
 }));
 
 export const POST = withApiErrorHandling(requirePermission<{ tenantSlug: string }>('controls.create', async (req, _routeArgs, ctx) => {
