@@ -90,6 +90,22 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'cloud-posture-collect-dispatch',
+        // 01:20 UTC, and each part of that is load-bearing:
+        //   - BEFORE daily-evidence-expiry (06:00) and notification-dispatch
+        //     (07:00), so a batch is consumed the same day rather than waiting
+        //     ~21h;
+        //   - OUTSIDE 02:00-06:00, already carrying sharepoint-subscription-
+        //     renew, risk-snapshot, vendor-monitoring, identity-sync,
+        //     hris-sync and retention-sweep;
+        //   - OFF the hour, dodging the hourly job, the `0 */4` SharePoint
+        //     fan-out and the `*/15` automation tick.
+        pattern: '20 1 * * *',
+        tz: 'UTC',
+        description: 'Fan out a cloud-posture collect per enabled AWS / Azure / GCP posture connection (Powerpipe benchmark → rolling Evidence). Daily because a run spawns an external Powerpipe process per connection; the evidence it writes carries a 30-day nextReviewDate.',
+        defaultPayload: {},
+    },
+    {
         name: 'identity-sync-dispatch',
         pattern: '0 3 * * *',     // daily at 03:00 UTC
         description: 'Fan out an identity-sync per enabled Okta / Google Workspace / Entra ID / Active Directory connection (directory → ConnectedIdentityAccount)',

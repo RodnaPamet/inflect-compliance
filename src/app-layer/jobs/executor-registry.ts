@@ -1048,6 +1048,21 @@ executorRegistry.register('identity-sync-dispatch', async () => {
     });
 });
 
+// ── cloud-posture-collect-dispatch ───────────────────────────────────
+// The fan-out the three *-posture-collect executors never had: they were
+// registered here and enqueued by nothing, so the rolling-evidence collectors
+// behind them were unreachable. See ./cloud-posture-collect-dispatch.
+executorRegistry.register('cloud-posture-collect-dispatch', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runCloudPostureCollectDispatch } = await import('./cloud-posture-collect-dispatch');
+    const r = await runCloudPostureCollectDispatch();
+    return makeResult('cloud-posture-collect-dispatch', startedAt, startMs, r.connections, r.dispatched, 0, {
+        connections: r.connections,
+        byProvider: r.byProvider,
+    });
+});
+
 // PR-3 — azure-posture-collect: run one Azure connection's benchmark + collect evidence.
 executorRegistry.register('azure-posture-collect', async (payload) => {
     const startedAt = new Date().toISOString();

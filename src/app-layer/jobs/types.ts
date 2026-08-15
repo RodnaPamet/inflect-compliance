@@ -616,6 +616,7 @@ export interface JobPayloadMap {
     'compliance-posture-summary-dispatch': CompliancePostureDispatchPayload;
     'identity-sync': IdentitySyncPayload;
     'identity-sync-dispatch': IdentitySyncDispatchPayload;
+    'cloud-posture-collect-dispatch': CloudPostureCollectDispatchPayload;
     'azure-posture-collect': AzurePostureCollectPayload;
     'gcp-posture-collect': GcpPostureCollectPayload;
     'hris-sync': HrisSyncPayload;
@@ -659,6 +660,12 @@ export interface IdentitySyncPayload {
 
 /** identity-sync-dispatch — fan out an identity-sync per enabled connection. */
 export interface IdentitySyncDispatchPayload {
+    // no fields — cron-triggered global fan-out
+    _?: never;
+}
+
+/** cloud-posture-collect-dispatch — fan out a posture collect per enabled connection. */
+export interface CloudPostureCollectDispatchPayload {
     // no fields — cron-triggered global fan-out
     _?: never;
 }
@@ -715,6 +722,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 20,
         removeOnFail: 50,
+    },
+    'cloud-posture-collect-dispatch': {
+        // One attempt. A failed fan-out is picked up by tomorrow's run, and a
+        // retry would re-enqueue collects that the first attempt already
+        // queued — duplicated Powerpipe runs are the expensive kind of
+        // duplicate.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
     },
     'azure-posture-collect': {
         attempts: 1,
