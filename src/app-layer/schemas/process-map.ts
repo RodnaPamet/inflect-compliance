@@ -39,6 +39,50 @@ export type ProcessMapStatusValue = z.infer<typeof ProcessMapStatusSchema>;
  * (e.g. "node-1") and the server persists it verbatim so the round-
  * trip is round-trip-stable for selection state.
  */
+/**
+ * Per-blob size ceiling for the free-form `dataJson` slots.
+ *
+ * Node and edge COUNTS are capped (500 / 1000 below), but per-blob size was
+ * not — so a map within every count limit could still carry an arbitrarily
+ * large payload. That payload lands in the node/edge rows AND is copied
+ * wholesale into a ProcessMapSnapshot, on a column written by every autosave.
+ * The cost is write amplification on a 3-second debounce, not one big row.
+ *
+ * A BYTE CAP rather than a per-nodeType schema, deliberately:
+ *   - it matches the failure mode, which is volume rather than shape, and it
+ *     covers node, edge AND edge-control blobs with one rule;
+ *   - the JSON slot exists so per-type payloads can evolve without migrations
+ *     (processes.prisma:22-25). An allowlist schema spends that immediately;
+ *   - it cannot break a round-trip. The server writes keys the client does not
+ *     know about, and a strict shape would reject them on the way back.
+ *
+ * 64 KB bounds the pathological case without constraining real use. It is a
+ * guard rail, not a budget.
+ */
+const DATA_JSON_MAX_BYTES = 64 * 1024;
+
+const boundedDataJson = z
+    .unknown()
+    .optional()
+    .nullable()
+    .refine(
+        (v) => {
+            if (v === undefined || v === null) return true;
+            try {
+                return (
+                    new TextEncoder().encode(JSON.stringify(v)).length <=
+                    DATA_JSON_MAX_BYTES
+                );
+            } catch {
+                // Unserialisable (cycles, BigInt) — reject here rather than
+                // let it reach Prisma, where it is a 500 instead of a 400.
+                return false;
+            }
+        },
+        { message: `dataJson exceeds ${DATA_JSON_MAX_BYTES} bytes` },
+    );
+
+
 export const ProcessNodeInputSchema = z.object({
     nodeKey: z.string().min(1).max(128),
     nodeType: z.string().min(1).max(64),
@@ -51,7 +95,7 @@ export const ProcessNodeInputSchema = z.object({
     // layer rejects unknown `parentNodeKey` values; a self-reference
     // (parentNodeKey === own nodeKey) is rejected explicitly.
     parentNodeKey: z.string().max(128).optional().nullable(),
-    dataJson: z.unknown().optional().nullable(),
+    dataJson: boundedDataJson,
 });
 export type ProcessNodeInput = z.infer<typeof ProcessNodeInputSchema>;
 
@@ -61,7 +105,7 @@ export const ProcessEdgeInputSchema = z.object({
     targetKey: z.string().min(1).max(128),
     edgeKind: z.string().min(1).max(64).default('flow'),
     labelOverride: z.string().max(200).optional().nullable(),
-    dataJson: z.unknown().optional().nullable(),
+    dataJson: boundedDataJson,
     controls: z
         .array(
             z.object({
@@ -70,7 +114,7 @@ export const ProcessEdgeInputSchema = z.object({
                 // PR-D — every edge control links to a real Control row
                 // (ProcessEdgeControl.controlId is NOT NULL + FK).
                 controlId: z.string().min(1),
-                dataJson: z.unknown().optional().nullable(),
+                dataJson: boundedDataJson,
             }),
         )
         .max(64)

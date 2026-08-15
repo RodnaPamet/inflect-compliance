@@ -49,7 +49,19 @@ const ROOT = path.resolve(__dirname, '../..');
  */
 const DB_GATED_SUITE_FLOOR = 150;
 
-/** Suites whose absence would specifically mean "isolation is unproven". */
+/**
+ * Suites whose absence would specifically mean a guarantee is unproven.
+ *
+ * The floor above catches a COLLAPSE — it cannot notice one suite going
+ * missing among 180. These are the individual files where that matters, so
+ * deleting or un-gating one turns the build red by name.
+ *
+ * NOTE THE LIMIT, so nobody reads more into a green than is there: this guard
+ * runs in the DB-free Ratchets job and deliberately does not import
+ * `db-helper`. It can prove a suite still EXISTS and is still DB-gated. It
+ * cannot prove the suite EXECUTED — that is what the fail-closed throw in
+ * db-helper is for, and the two are complementary rather than interchangeable.
+ */
 const LOAD_BEARING = [
     'tests/integration/rls-isolation.test.ts',
     'tests/integration/tenant-isolation-usecases.test.ts',
@@ -59,6 +71,14 @@ const LOAD_BEARING = [
     'tests/integration/multi-tenant-jwt.test.ts',
     'tests/integration/last-owner-guard.test.ts',
     'tests/guardrails/rls-coverage.test.ts',
+    // The ONLY behavioural coverage of the process-map optimistic concurrency
+    // control — an up-front expectedVersion check that avoids a destructive
+    // delete-and-insert when the commit would lose the race, plus a
+    // conditional updateMany catching a commit that lands between the check
+    // and the version bump. The surrounding unit suites are large (1,548 lines
+    // across three files) and none of them exercises a real concurrent commit,
+    // so if this file goes the guarantee is untested and nothing says so.
+    'tests/integration/process-map-concurrency.test.ts',
 ] as const;
 
 function walk(dir: string, out: string[] = []): string[] {
