@@ -8909,6 +8909,7 @@
             }
         },
         "canvas": {
+            "unsavedLeaveConfirm": "You have unsaved changes on this canvas. Leave and lose them?",
             "rejectSelf": "A step can't connect to itself.",
             "rejectDuplicate": "These steps are already connected.",
             "rejectAnnotation": "Annotations don't carry the flow — they sit beside it.",
