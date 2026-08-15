@@ -91,18 +91,13 @@ import {
 import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
 import { controlBulkActionsFor, type ControlBulkAction } from './_lib/bulk-action-policy';
+import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 
 // ─── Constants ───
 
-const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
-    NOT_STARTED: 'neutral',
-    PLANNED: 'neutral',
-    IN_PROGRESS: 'info',
-    IMPLEMENTING: 'info',
-    IMPLEMENTED: 'success',
-    NEEDS_REVIEW: 'warning',
-    NOT_APPLICABLE: 'neutral',
-};
+// Was a byte-identical private copy of the shared map. Kept the local name so
+// the ~dozen call sites below read unchanged; only the source moved.
+const STATUS_BADGE: Record<string, StatusBadgeVariant> = CONTROL_STATUS_VARIANT;
 /** The seven ControlStatus enum members, in canonical display order. Labels
  *  are resolved per-render from `buildControlStatusLabels(t)` inside the
  *  component (badge copy + filter picker copy share one localized source). */
