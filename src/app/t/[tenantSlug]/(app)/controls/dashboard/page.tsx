@@ -22,20 +22,37 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SkeletonDashboard } from '@/components/ui/skeleton';
 import { BestValueControls } from '../_components/BestValueControls';
 import { ControlHealthSummary } from '../_components/ControlHealthSummary';
+import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 
+// All SEVEN ControlStatus members. This covered four, while
+// `getControlDashboard` groups over every status the enum has — so PLANNED,
+// IMPLEMENTING and NOT_APPLICABLE segments fell through
+// `STATUS_LABELS[status] || status` and rendered the RAW ENUM KEY on screen,
+// un-localized, in both locales.
+//
+// Reads `filterEnums.status`, which already carries all seven in en and bg and
+// agrees character-for-character with the four this used. The old
+// `controls.statusLabels` block was a strict subset of it.
 const buildStatusLabels = (t: (k: string) => string): Record<string, string> => ({
-    NOT_STARTED: t('statusLabels.NOT_STARTED'), IN_PROGRESS: t('statusLabels.IN_PROGRESS'), IMPLEMENTED: t('statusLabels.IMPLEMENTED'), NEEDS_REVIEW: t('statusLabels.NEEDS_REVIEW'),
+    NOT_STARTED: t('filterEnums.status.NOT_STARTED'),
+    PLANNED: t('filterEnums.status.PLANNED'),
+    IN_PROGRESS: t('filterEnums.status.IN_PROGRESS'),
+    IMPLEMENTING: t('filterEnums.status.IMPLEMENTING'),
+    IMPLEMENTED: t('filterEnums.status.IMPLEMENTED'),
+    NEEDS_REVIEW: t('filterEnums.status.NEEDS_REVIEW'),
+    NOT_APPLICABLE: t('filterEnums.status.NOT_APPLICABLE'),
 });
 // Map control status onto semantic StatusBreakdown variants so the
 // distribution bar re-themes cleanly under Epic 51 light-mode. Drops
 // the hand-picked hex palette (#94a3b8/#38bdf8/#34d399/#fbbf24) the
 // inline bar used.
-const STATUS_VARIANT: Record<string, StatusBreakdownVariant> = {
-    NOT_STARTED: 'neutral',
-    IN_PROGRESS: 'info',
-    IMPLEMENTED: 'success',
-    NEEDS_REVIEW: 'warning',
-};
+//
+// Derived from the shared map rather than being a sixth private copy — the
+// distribution bar and the badges beside it were free to disagree before.
+// `StatusBadgeVariant` is a strict subset of `StatusBreakdownVariant`
+// (neutral/info/success/warning/error, plus `brand` which controls do not
+// use), so the widening is safe and the compiler checks it.
+const STATUS_VARIANT: Record<string, StatusBreakdownVariant> = CONTROL_STATUS_VARIANT;
 
 export default function ControlsDashboard() {
     const tenantHref = useTenantHref();

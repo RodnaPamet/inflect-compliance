@@ -23,6 +23,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { formatDate } from '@/lib/format-date';
 import { cn } from '@/lib/cn';
+import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import {
     CONTROL_HEALTH_VERDICT_VARIANT,
     type ControlHealthVerdict,
@@ -42,10 +43,8 @@ interface ControlHealthDTO {
     coverage: { requirementCount: number; frameworkCount: number; frameworks: string[] };
 }
 
-const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
-    NOT_STARTED: 'neutral', PLANNED: 'neutral', IN_PROGRESS: 'info', IMPLEMENTING: 'info',
-    IMPLEMENTED: 'success', NEEDS_REVIEW: 'warning', NOT_APPLICABLE: 'neutral',
-};
+// Was a byte-identical private copy of the shared map.
+const STATUS_VARIANT: Record<string, StatusBadgeVariant> = CONTROL_STATUS_VARIANT;
 const TEST_RESULT_VARIANT: Record<string, StatusBadgeVariant> = {
     PASS: 'success', FAIL: 'error', INCONCLUSIVE: 'warning',
 };
