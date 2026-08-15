@@ -6,6 +6,7 @@ import {
 } from '@/app-layer/usecases/audit-readiness';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; cycleId: string }> }) => {
     const params = await paramsPromise;
@@ -21,14 +22,14 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     if (action === 'export-unmapped-csv') {
         const { csv, filename } = await exportUnmappedCsv(ctx, params.cycleId);
         return new NextResponse(csv, {
-            headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="${filename}"` },
+            headers: { 'Content-Type': 'text/csv', 'Content-Disposition': contentDispositionHeader(filename) },
         });
     }
 
     if (action === 'export-control-gaps-csv') {
         const { csv, filename } = await exportControlGapsCsv(ctx, params.cycleId);
         return new NextResponse(csv, {
-            headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="${filename}"` },
+            headers: { 'Content-Type': 'text/csv', 'Content-Disposition': contentDispositionHeader(filename) },
         });
     }
 

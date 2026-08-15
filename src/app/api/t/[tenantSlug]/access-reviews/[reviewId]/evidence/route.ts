@@ -18,6 +18,7 @@ import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { notFound, forbidden } from '@/lib/errors/types';
 import { assertCanRead } from '@/app-layer/policies/common';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 export const GET = withApiErrorHandling(
     async (
@@ -73,7 +74,7 @@ export const GET = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': fileRecord.mimeType,
-                'Content-Disposition': `attachment; filename="${fileRecord.originalName}"`,
+                'Content-Disposition': contentDispositionHeader(fileRecord.originalName),
                 'Content-Length': String(fileRecord.sizeBytes),
                 'Cache-Control': 'private, no-store',
             },

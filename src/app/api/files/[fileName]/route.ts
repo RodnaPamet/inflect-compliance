@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getLegacyCtx } from '@/app-layer/context';
 import { downloadFile } from '@/app-layer/usecases/file';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ fileName: string }> }) => {
     const params = await paramsPromise;
@@ -16,7 +17,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     return new NextResponse(result.buffer as unknown as BodyInit, {
         headers: {
             'Content-Type': result.mimeType,
-            'Content-Disposition': `attachment; filename="${result.name}"`,
+            'Content-Disposition': contentDispositionHeader(result.name),
         },
     });
 });

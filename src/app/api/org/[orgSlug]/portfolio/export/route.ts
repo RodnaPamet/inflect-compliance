@@ -31,6 +31,7 @@ import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { forbidden } from '@/lib/errors/types';
 import { neutralizeCsvCell } from '@/lib/csv/format-csv';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 import {
     getPortfolioSummary,
     getPortfolioTenantHealth,
@@ -213,7 +214,7 @@ export const GET = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': 'text/csv; charset=utf-8',
-                'Content-Disposition': `attachment; filename="${filename}"`,
+                'Content-Disposition': contentDispositionHeader(filename),
                 'Cache-Control': 'no-cache, no-store',
             },
         });

@@ -11,6 +11,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { badRequest } from '@/lib/errors/types';
 import { logEvent } from '@/app-layer/events/audit';
 import { runInTenantContext } from '@/lib/db-context';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 // The storage stream and Readable.toWeb both need Node primitives.
 export const runtime = 'nodejs';
@@ -74,7 +75,9 @@ export const GET = withApiErrorHandling(
             {
                 headers: {
                     'Content-Type': mime,
-                    'Content-Disposition': `attachment; filename="report-${run.id}.${run.format.toLowerCase()}"`,
+                    'Content-Disposition': contentDispositionHeader(
+                        `report-${run.id}.${run.format.toLowerCase()}`,
+                    ),
                     // Known from the ReportRun row, so the client can show real
                     // progress rather than an indeterminate spinner.
                     ...(run.outputSizeBytes ? { 'Content-Length': String(run.outputSizeBytes) } : {}),

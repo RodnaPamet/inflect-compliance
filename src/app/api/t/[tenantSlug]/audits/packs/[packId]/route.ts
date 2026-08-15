@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { FEATURES } from '@/lib/entitlements';
 import { requireFeature } from '@/lib/entitlements-server';
 import { jsonResponse } from '@/lib/api-response';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 const UpdatePackSchema = z.object({
     name: z.string().min(1).max(200).optional(),
@@ -63,7 +64,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
             return new NextResponse(data.csv, {
                 headers: {
                     'Content-Type': 'text/csv',
-                    'Content-Disposition': `attachment; filename="${data.filename}"`,
+                    'Content-Disposition': contentDispositionHeader(data.filename),
                 },
             });
         }

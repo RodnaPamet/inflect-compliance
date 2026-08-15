@@ -90,8 +90,17 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
 
         it("returns application/pdf with Content-Disposition: attachment", () => {
             expect(src).toMatch(/['"]Content-Type['"]:\s*['"]application\/pdf['"]/);
+            // Was a match on the literal `attachment; filename=` spelling.
+            // That pinned the raw interpolation this route USED to do, so
+            // routing it through the shared builder — which exists because
+            // hand-interpolating a user-supplied filename let it spoof the
+            // `filename*` parameter — turned this red for a correct change.
+            //
+            // The invariant is that the route serves an ATTACHMENT with a
+            // filename, not how the string is spelled. `contentDispositionHeader`
+            // defaults to `attachment`, and its own tests assert the output.
             expect(src).toMatch(
-                /['"]Content-Disposition['"]:[\s\S]{0,200}attachment;\s*filename=/,
+                /['"]Content-Disposition['"]:\s*contentDispositionHeader\(/,
             );
         });
     });
