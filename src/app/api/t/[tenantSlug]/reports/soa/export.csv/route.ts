@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { logEvent } from '@/app-layer/events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { neutralizeCsvCell } from '@/lib/csv/format-csv';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 // Report generation is long-running by nature, and the platform default
 // cuts it off well before these finish — a run killed mid-flight leaves a
@@ -157,7 +158,7 @@ export const GET = withApiErrorHandling(
         status: 200,
         headers: {
             'Content-Type': 'text/csv; charset=utf-8',
-            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Disposition': contentDispositionHeader(filename),
             'Cache-Control': 'no-cache, no-store',
         },
     });

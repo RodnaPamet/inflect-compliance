@@ -16,6 +16,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '@/env';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 import type {
     StorageProvider,
     WriteResult,
@@ -141,8 +142,12 @@ export class S3StorageProvider implements StorageProvider {
         const command = new GetObjectCommand({
             Bucket: this.bucket,
             Key: pathKey,
+            // S3 echoes this back as the real Content-Disposition header on
+            // the presigned GET, so an unsanitised filename is the same
+            // injection as building the header ourselves — just laundered
+            // through a signed URL, and served from the BUCKET's origin.
             ...(opts?.downloadFilename && {
-                ResponseContentDisposition: `attachment; filename="${opts.downloadFilename}"`,
+                ResponseContentDisposition: contentDispositionHeader(opts.downloadFilename),
             }),
         });
         return getSignedUrl(this.client, command, {

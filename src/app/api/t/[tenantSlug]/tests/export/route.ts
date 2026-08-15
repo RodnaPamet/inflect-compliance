@@ -8,6 +8,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { exportTestEvidenceBundle } from '@/app-layer/usecases/test-hardening';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 const QuerySchema = z.object({
     controlId: z.string().optional(),
@@ -44,7 +45,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
             status: 200,
             headers: {
                 'Content-Type': 'text/csv; charset=utf-8',
-                'Content-Disposition': `attachment; filename="${filename}"`,
+                'Content-Disposition': contentDispositionHeader(filename),
             },
         });
     }

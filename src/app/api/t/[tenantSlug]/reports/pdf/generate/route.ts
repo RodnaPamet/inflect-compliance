@@ -23,6 +23,7 @@ import { FEATURES } from '@/lib/entitlements';
 import { requireFeature } from '@/lib/entitlements-server';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 const GenerateSchema = z.object({
     type: z.nativeEnum(ReportType),
@@ -148,7 +149,7 @@ export const POST = withApiErrorHandling(
         status: 200,
         headers: {
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'Content-Disposition': contentDispositionHeader(fileName),
             'Cache-Control': 'no-store',
             'Content-Length': String(pdfBuffer.length),
         },

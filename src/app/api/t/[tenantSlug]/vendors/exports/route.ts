@@ -3,6 +3,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { exportVendorsRegister, exportAssessments, exportDocumentExpiry } from '@/app-layer/usecases/vendor-audit';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 /**
  * Neutralise spreadsheet formula injection (CWE-1236).
@@ -88,7 +89,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         return new NextResponse(csv, {
             headers: {
                 'Content-Type': 'text/csv',
-                'Content-Disposition': `attachment; filename="${filename}.csv"`,
+                'Content-Disposition': contentDispositionHeader(`${filename}.csv`),
             },
         });
     }

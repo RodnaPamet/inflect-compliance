@@ -11,6 +11,7 @@ import {
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 const InstallSchema = z.object({
     packKey: z.string().min(1),
@@ -83,7 +84,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
             return new NextResponse(data.csv, {
                 headers: {
                     'Content-Type': 'text/csv',
-                    'Content-Disposition': `attachment; filename="${data.filename}"`,
+                    'Content-Disposition': contentDispositionHeader(data.filename),
                 },
             });
         }
@@ -101,7 +102,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
             return new NextResponse(data.csv, {
                 headers: {
                     'Content-Type': 'text/csv',
-                    'Content-Disposition': `attachment; filename="${data.filename}"`,
+                    'Content-Disposition': contentDispositionHeader(data.filename),
                 },
             });
         }

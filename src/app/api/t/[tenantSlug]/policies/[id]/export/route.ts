@@ -35,6 +35,7 @@ import type { PolicyClassification } from '@/lib/pdf/policyLayout';
 import { FEATURES } from '@/lib/entitlements';
 import { requireFeature } from '@/lib/entitlements-server';
 import { logger } from '@/lib/observability/logger';
+import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
 // Force Node.js runtime — PDFKit needs stream/zlib/Buffer.
 export const runtime = 'nodejs';
@@ -101,7 +102,7 @@ export const GET = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="${fileName}"`,
+                'Content-Disposition': contentDispositionHeader(fileName),
                 'Cache-Control': 'no-store',
             },
         });
