@@ -289,10 +289,26 @@ describe('9 — the respondent page distinguishes its failure modes', () => {
     });
 
     it('warns before a navigation would discard a part-filled form', () => {
+        // The listener moved into `useUnsavedChangesWarning` when the process
+        // canvas needed the same guard — so this asserts the CONTRACT (the
+        // page still warns while answers are unsaved) rather than the
+        // mechanism (a hand-rolled addEventListener pair). Asserting the
+        // mechanism is what made this test fail on a refactor that improved
+        // the thing it protects.
         const src = read(RESPONDENT);
         expect(src).toMatch(/hasUnsavedAnswers/);
-        expect(src).toMatch(/addEventListener\('beforeunload'/);
-        expect(src).toMatch(/removeEventListener\('beforeunload'/);
+        expect(src).toMatch(/useUnsavedChangesWarning\(hasUnsavedAnswers\)/);
+    });
+
+    it('the shared hook still installs and removes the listener', () => {
+        // The half the page no longer owns. Bounded to the hook so the
+        // guarantee is asserted somewhere rather than assumed.
+        const hook = read('src/lib/hooks/use-unsaved-changes-warning.ts');
+        expect(hook).toMatch(/addEventListener\('beforeunload'/);
+        expect(hook).toMatch(/removeEventListener\('beforeunload'/);
+        // The prompt does not appear at all without this pair.
+        expect(hook).toMatch(/e\.preventDefault\(\)/);
+        expect(hook).toMatch(/e\.returnValue = ''/);
     });
 
     it('uses design-system tokens, so it has a dark mode at all', () => {

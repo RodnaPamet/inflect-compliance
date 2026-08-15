@@ -90,6 +90,7 @@ import {
     edgeKindOf,
 } from "@/lib/processes/serialize-graph";
 import { useProximityAutoBind } from "@/lib/processes/use-proximity-auto-bind";
+import { useUnsavedChangesWarning } from "@/lib/hooks";
 import { useCanvasHistory } from "@/lib/processes/use-canvas-history";
 import { useCanvasAutosave } from "@/lib/processes/use-canvas-autosave";
 import { useCanvasChangeEmitter } from "@/lib/processes/canvas-change-events";
@@ -642,6 +643,25 @@ function Inner({
         save: handleSave,
     });
     const { markClean } = autosave;
+
+    // Warn before the browser discards unsaved canvas work.
+    //
+    // `saving` counts as unsaved on purpose: the request is in flight and the
+    // tab closing kills it. `error` counts because autosave deliberately does
+    // NOT retry — the hook's own header calls that the no-thrash property —
+    // so in `error` nothing is going to save this for the user.
+    //
+    // `pending` is the debounce window: markDirty has fired, the save has not.
+    // That window is where most unsaved work lives during normal editing.
+    //
+    // Not covered here, and stated rather than implied: App Router
+    // client-side navigation never fires beforeunload. Clicking a sidebar
+    // link still loses work silently. That guard is a separate change.
+    const hasUnsavedCanvasWork =
+        autosave.status === 'pending' ||
+        autosave.status === 'saving' ||
+        autosave.status === 'error';
+    useUnsavedChangesWarning(hasUnsavedCanvasWork);
     // Clear autosave dirty whenever rehydration completes — the
     // load sequence calls setNodes/setEdges which would normally
     // mark dirty; markClean keeps the post-load state idle.
@@ -1947,6 +1967,7 @@ function Inner({
                 editorState={{
                     snapEnabled,
                     autosaveStatus: autosave.status,
+                    autosaveError: autosave.error,
                     canUndo: history.canUndo,
                     canRedo: history.canRedo,
                 }}

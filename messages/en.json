@@ -9030,6 +9030,7 @@
             "unsaved": "Unsaved",
             "saving": "Saving…",
             "saved": "Saved",
+            "saveFailed": "Save failed",
             "save": "Save",
             "statusDraft": "Draft",
             "statusActive": "Active",

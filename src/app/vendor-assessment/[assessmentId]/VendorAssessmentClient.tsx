@@ -24,6 +24,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
 import { formatDate } from '@/lib/format-date';
+import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { RequiredMarker } from '@/components/ui/required-marker';
 
 interface Question {
@@ -133,17 +134,10 @@ export function VendorAssessmentClient({
             return true;
         });
 
-    useEffect(() => {
-        if (!hasUnsavedAnswers) return;
-        const onBeforeUnload = (e: BeforeUnloadEvent) => {
-            e.preventDefault();
-            // Browsers ignore custom text now and show their own copy; the
-            // assignment is still required to trigger the prompt at all.
-            e.returnValue = '';
-        };
-        window.addEventListener('beforeunload', onBeforeUnload);
-        return () => window.removeEventListener('beforeunload', onBeforeUnload);
-    }, [hasUnsavedAnswers]);
+    // Was hand-rolled here; the canvas needed the same thing, so it moved to
+    // `useUnsavedChangesWarning`. Behaviour is unchanged — same preventDefault
+    // + returnValue pair, same add/remove lifecycle.
+    useUnsavedChangesWarning(hasUnsavedAnswers);
 
     useEffect(() => {
         if (!initialToken) {
