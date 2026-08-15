@@ -90,7 +90,7 @@ import {
     edgeKindOf,
 } from "@/lib/processes/serialize-graph";
 import { useProximityAutoBind } from "@/lib/processes/use-proximity-auto-bind";
-import { useUnsavedChangesWarning } from "@/lib/hooks";
+import { useUnsavedChangesWarning, useUnsavedNavigationGuard } from "@/lib/hooks";
 import { useCanvasHistory } from "@/lib/processes/use-canvas-history";
 import { useCanvasAutosave } from "@/lib/processes/use-canvas-autosave";
 import { useCanvasChangeEmitter } from "@/lib/processes/canvas-change-events";
@@ -662,6 +662,13 @@ function Inner({
         autosave.status === 'saving' ||
         autosave.status === 'error';
     useUnsavedChangesWarning(hasUnsavedCanvasWork);
+    // And the in-app half: beforeunload does not fire for App Router
+    // client-side transitions, so a sidebar click used to discard the same
+    // work without a word. Covers link-shaped exits, including the two raw
+    // anchors this surface renders itself; browser Back and the ⌘K palette's
+    // programmatic push remain uncovered, because the App Router has no
+    // blocker API and the pushState decoy corrupts history.
+    useUnsavedNavigationGuard(hasUnsavedCanvasWork, t("unsavedLeaveConfirm"));
     // Clear autosave dirty whenever rehydration completes — the
     // load sequence calls setNodes/setEdges which would normally
     // mark dirty; markClean keeps the post-load state idle.
