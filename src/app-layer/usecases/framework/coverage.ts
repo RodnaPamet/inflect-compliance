@@ -310,6 +310,33 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     // Controls missing evidence — a control "has evidence" only when at
     // least one attached row is coverage-qualifying (APPROVED + unexpired +
     // not archived/deleted). Reuses the `now` resolved above.
+    //
+    // DELIBERATELY UNCAPPED, and the same goes for `overdueTasks` below.
+    // Measured against production on 2026-08-15 before deciding:
+    //
+    //   worst tenant           308 control→requirement links
+    //   tasks per control      max 7      (the include caps at 500)
+    //   evidence per control   max 3      (the include caps at 500)
+    //
+    // The fan-out is ~2 orders of magnitude under the caps already in place,
+    // so there is no cost here to reclaim — capping these would be optimising
+    // a number nobody is paying.
+    //
+    // It would also be WRONG. These two arrays feed an auditor-facing report
+    // and its CSV export. A `take` makes a truncated list look like a complete
+    // one, so the report would UNDERSTATE gaps — the same failure class as the
+    // soft-deleted-control bug documented at the links query above, where
+    // "readiness was the optimistic one". A compliance number that errs
+    // optimistic is a correctness regression, not a performance win.
+    //
+    // If this ever does get slow, the honest fixes are to narrow the SELECT or
+    // paginate the RENDER while keeping the count whole — never to silently
+    // shorten the list. The failure mode today is a 60s timeout on an
+    // admin-triggered report: visible, and far preferable to a quiet undercount.
+    //
+    // (Layer D2's unbounded-findMany budget scans `repositories/` only, so
+    // this file has never been in its scope — the absence of a
+    // `guardrail-allow` pragma here is not a prior decision.)
     const missingEvidence = controls.filter((c) =>
         c.status !== 'NOT_APPLICABLE' &&
         !(c.evidenceControlLinks ?? []).some((l) => isCoverageQualifyingEvidence(l.evidence, now))
