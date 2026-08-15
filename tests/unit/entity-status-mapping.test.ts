@@ -63,6 +63,33 @@ describe('status-variant lookup tables', () => {
         expect(CONTROL_STATUS_VARIANT.NEEDS_REVIEW).toBe('warning');
     });
 
+    /**
+     * The three members this map used to omit.
+     *
+     * Omission was not neutral: each caller supplied its own `?? 'neutral'`,
+     * so the gap never surfaced as a bug, and six pages wrote private maps to
+     * fill it. They then disagreed — PLANNED rendered `neutral` on the SoA,
+     * the controls list and the health card, but `info` in the policy
+     * traceability panel, for the same control.
+     *
+     * PLANNED is `neutral`: an intention, not work in flight. Colouring it
+     * `info` made a control nobody had started look like one being actively
+     * implemented, which is the direction that misleads.
+     */
+    test('control status: covers all seven enum members, including the three that forked', () => {
+        expect(CONTROL_STATUS_VARIANT.PLANNED).toBe('neutral');
+        expect(CONTROL_STATUS_VARIANT.IMPLEMENTING).toBe('info');
+        expect(CONTROL_STATUS_VARIANT.NOT_APPLICABLE).toBe('neutral');
+
+        // A member added to the Prisma enum without a variant here silently
+        // falls back to `neutral` at every call site — which is how the
+        // forking started. Keep the key set complete.
+        expect(Object.keys(CONTROL_STATUS_VARIANT).sort()).toEqual([
+            'IMPLEMENTED', 'IMPLEMENTING', 'IN_PROGRESS', 'NEEDS_REVIEW',
+            'NOT_APPLICABLE', 'NOT_STARTED', 'PLANNED',
+        ]);
+    });
+
     test('control applicability: only APPLICABLE draws attention', () => {
         expect(CONTROL_APPLICABILITY_VARIANT.APPLICABLE).toBe('info');
         expect(CONTROL_APPLICABILITY_VARIANT.NOT_APPLICABLE).toBe('neutral');

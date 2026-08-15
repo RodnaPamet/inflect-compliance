@@ -24,6 +24,7 @@ import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import { useToastWithUndo } from '@/components/ui/hooks';
+import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 
 interface ControlOption { id: string; code: string | null; name: string; status: string | null; }
 
@@ -69,15 +70,10 @@ interface PolicyTraceData {
     assets: AssetEntry[];
 }
 
-const CONTROL_STATUS_BADGE: Record<string, StatusBadgeVariant> = {
-    IMPLEMENTED: 'success',
-    IN_PROGRESS: 'info',
-    IMPLEMENTING: 'info',
-    PLANNED: 'info',
-    NEEDS_REVIEW: 'warning',
-    NOT_STARTED: 'neutral',
-    NOT_APPLICABLE: 'neutral',
-};
+// Was a seventh private copy, and the one that DIVERGED: it rendered PLANNED
+// as `info` while the SoA, the controls list and the health card rendered it
+// `neutral`. Same control, two colours, depending on which page you opened.
+const CONTROL_STATUS_BADGE = CONTROL_STATUS_VARIANT;
 const RISK_STATUS_BADGE: Record<string, StatusBadgeVariant> = {
     OPEN: 'error',
     MITIGATING: 'warning',

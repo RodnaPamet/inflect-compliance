@@ -22,6 +22,7 @@ import { cardVariants } from '@/components/ui/card';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@/lib/cn';
+import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 
 // ─── Types ───
 
@@ -50,15 +51,11 @@ function ApplicabilityBadge({ value }: { value: boolean | null }) {
 
 function StatusBadge({ value }: { value: string | null }) {
     if (!value) return <span className="text-content-subtle text-xs">—</span>;
-    const cls: Record<string, StatusBadgeVariant> = {
-        IMPLEMENTED: 'success',
-        IMPLEMENTING: 'info',
-        IN_PROGRESS: 'info',
-        NEEDS_REVIEW: 'warning',
-        PLANNED: 'neutral',
-        NOT_STARTED: 'neutral',
-    };
-    return <StatusBadgePrimitive variant={cls[value] || 'neutral'}>{value.replace(/_/g, ' ')}</StatusBadgePrimitive>;
+    return (
+        <StatusBadgePrimitive variant={CONTROL_STATUS_VARIANT[value] || 'neutral'}>
+            {value.replace(/_/g, ' ')}
+        </StatusBadgePrimitive>
+    );
 }
 
 // R2-P5 — the EXCEPTED verdict: risk-accepted via an in-force exception,
@@ -421,9 +418,18 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                                         {c.name}
                                     </span>
                                 </div>
-                                <StatusBadgePrimitive variant={c.status === 'IMPLEMENTED' ? 'success' : 'neutral'}>
-                                    {c.status}
-                                </StatusBadgePrimitive>
+                                {/* The map picker used to inline its own rule
+                                    — `IMPLEMENTED ? success : neutral` over a
+                                    RAW enum value. Same `c.status` field the
+                                    list below renders through <StatusBadge>,
+                                    so one control appeared grey and
+                                    `NEEDS_REVIEW` here, amber and
+                                    `NEEDS REVIEW` there. On the picker the
+                                    grey was the misleading direction: a
+                                    control needing review looked as settled as
+                                    one merely planned, in the moment a user is
+                                    choosing which control to attest with. */}
+                                <StatusBadge value={c.status} />
                             </button>
                         ))}
                         {mapFilteredControls.length === 0 && (
