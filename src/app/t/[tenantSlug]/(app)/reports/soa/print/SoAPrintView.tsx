@@ -156,7 +156,7 @@ function PrintRow({ entry }: { entry: SoAEntryDTO }) {
                     the expiry) on the auditor artifact, never as implemented. */}
                 {entry.verdict === 'excepted'
                     ? (entry.exceptedUntil
-                        ? t('soaPrint.exceptedUntil', { date: new Date(entry.exceptedUntil).toISOString().slice(0, 10) })
+                        ? t('soaPrint.exceptedUntil', { date: formatDate(entry.exceptedUntil) })
                         : t('soaPrint.excepted'))
                     : (entry.implementationStatus?.replace(/_/g, ' ') || '—')}
             </td>

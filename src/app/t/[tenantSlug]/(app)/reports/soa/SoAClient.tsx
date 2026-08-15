@@ -23,6 +23,7 @@ import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@/lib/cn';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
+import { formatDate } from '@/lib/format-date';
 
 // ─── Types ───
 
@@ -65,7 +66,7 @@ function ExceptedBadge({ until, t }: { until: string | null; t: (k: string, v?: 
     return (
         <StatusBadgePrimitive variant="warning" data-testid="soa-excepted-badge">
             {until
-                ? t('soaView.exceptedUntil', { date: new Date(until).toISOString().slice(0, 10) })
+                ? t('soaView.exceptedUntil', { date: formatDate(until) })
                 : t('soaView.excepted')}
         </StatusBadgePrimitive>
     );

@@ -14,7 +14,7 @@ export interface SoAMappedControlDTO {
     status: string;
     applicability: string;           // APPLICABLE | NOT_APPLICABLE
     justification: string | null;    // applicabilityJustification
-    owner: string | null;            // ownerUser name or userId
+    owner: string | null;            // ownerUser display name (never the id)
     frequency: string | null;        // ControlFrequency enum value
 }
 
