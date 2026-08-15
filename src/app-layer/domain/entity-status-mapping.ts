@@ -56,11 +56,32 @@ export function riskSeverityToBadgeVariant(tone: RiskSeverityTone): StatusBadgeV
 
 // ─── Control status ──────────────────────────────────────────────────
 
+/**
+ * ControlStatus → badge variant. Covers ALL SEVEN enum members
+ * (`prisma/schema/enums.prisma`), deliberately.
+ *
+ * It used to define four. The three it omitted — PLANNED, IMPLEMENTING,
+ * NOT_APPLICABLE — did not fail loudly; they fell through each caller's
+ * `?? 'neutral'`, so the gap was invisible and every page that wanted them
+ * wrote its own map instead. Six independent copies grew that way, and they
+ * disagreed: PLANNED rendered `neutral` on the SoA and controls list but
+ * `info` in the policy traceability panel, for the same control.
+ *
+ * A missing key here is not a neutral default — it is an invitation to fork.
+ * When a status is added to the enum, add it here in the same change.
+ */
 export const CONTROL_STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     NOT_STARTED: 'neutral',
+    // PLANNED is `neutral`, matching the SoA, the controls list and the
+    // control health card. It is an intention, not work in flight — colouring
+    // it `info` (as the traceability panel did) made a control nobody had
+    // started look the same as one being actively implemented.
+    PLANNED: 'neutral',
     IN_PROGRESS: 'info',
+    IMPLEMENTING: 'info',
     IMPLEMENTED: 'success',
     NEEDS_REVIEW: 'warning',
+    NOT_APPLICABLE: 'neutral',
 };
 
 export const CONTROL_APPLICABILITY_VARIANT: Record<string, StatusBadgeVariant> = {

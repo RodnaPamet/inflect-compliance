@@ -10,6 +10,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 
 const APP = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 const read = (p: string) => fs.readFileSync(path.join(APP, p), 'utf-8');
@@ -54,9 +55,42 @@ describe('SoAClient — Print affordance + full status map', () => {
         expect(client).toMatch(/reports\/soa\/print\?framework=\$\{encodeURIComponent\(report\.framework\)\}/);
     });
 
-    test('rollup status map covers PLANNED and IMPLEMENTING', () => {
-        expect(client).toMatch(/PLANNED:/);
-        expect(client).toMatch(/IMPLEMENTING:/);
+    /**
+     * This used to assert that the literals `PLANNED:` and `IMPLEMENTING:`
+     * appeared in SoAClient's source — key PRESENCE in raw text.
+     *
+     * It could not see the defect it was named for. The file carried TWO
+     * status rules: the map it checked, and a binary
+     * `status === 'IMPLEMENTED' ? 'success' : 'neutral'` in the map-control
+     * picker, which rendered NEEDS_REVIEW grey where the table rendered it
+     * amber. Presence of a key says nothing about the VALUE, and nothing at
+     * all about a second rule elsewhere in the file.
+     *
+     * Worse, it actively blocked the fix: deleting the inline map in favour
+     * of the shared one removed the only `PLANNED:` in the file, so the
+     * correct change turned this red.
+     *
+     * The invariant is that SoA reads the SHARED map and does not fork its
+     * own — asserted against the map's real contents, not its spelling.
+     */
+    test('SoA reads the shared control-status map rather than forking one', () => {
+        expect(client).toMatch(/CONTROL_STATUS_VARIANT/);
+        // No private status→variant literal left in the file.
+        expect(client).not.toMatch(/IMPLEMENTED:\s*'success'/);
+        // And no second, inline rule for the same field.
+        expect(client).not.toMatch(/status === 'IMPLEMENTED' \? 'success'/);
+    });
+
+    test('the shared map covers every ControlStatus the SoA can render', () => {
+        // PLANNED and IMPLEMENTING are the two this file historically cared
+        // about; they are only meaningful if the shared map actually defines
+        // them, which it did not until the copies were consolidated.
+        for (const status of [
+            'NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IMPLEMENTING',
+            'IMPLEMENTED', 'NEEDS_REVIEW', 'NOT_APPLICABLE',
+        ]) {
+            expect(CONTROL_STATUS_VARIANT[status]).toBeDefined();
+        }
     });
 });
 
