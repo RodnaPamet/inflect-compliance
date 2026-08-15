@@ -188,6 +188,46 @@ const getLastResultKey = (plan: TestPlanSummary): LastResultKey => {
     return 'IN_PROGRESS';
 };
 
+/**
+ * The plan-list filter predicate — ONE implementation, used by the table and
+ * by the KPI card counts.
+ *
+ * Extracted because the counts must answer "how many rows will this card's
+ * click produce", which means running the same filters the table runs, minus
+ * the dimension the card itself sets. Two copies of this logic would drift,
+ * and the drift would be exactly the defect: a card whose number disagrees
+ * with the table it filters.
+ *
+ * `hydratedNow` is threaded rather than read from a hook so the function stays
+ * pure — and because it is load-bearing. `useHydratedNow()` returns null on
+ * the first client render, and `isOverdue(_, null)` is false by design, so a
+ * caller that forgets to pass it computes "nothing is overdue" and caches it.
+ * That is not hypothetical: it is how `?due=overdue` showed an empty table
+ * permanently, before the dep was added to the memo below.
+ */
+function filterPlans(
+    plans: TestPlanSummary[],
+    state: Record<string, string[] | undefined>,
+    search: string,
+    hydratedNow: Date | null,
+): TestPlanSummary[] {
+    const statusSel = state.status ?? [];
+    const resultSel = state.result ?? [];
+    const freqSel = state.frequency ?? [];
+    const dueSel = state.due ?? [];
+    const q = search.trim().toLowerCase();
+    return plans.filter((p) => {
+        if (statusSel.length && !statusSel.includes(p.status)) return false;
+        const result = getLastResultKey(p);
+        if (resultSel.length && !resultSel.includes(result)) return false;
+        if (freqSel.length && !freqSel.includes(p.frequency)) return false;
+        if (dueSel.includes('overdue') && !isOverdue(p, hydratedNow)) return false;
+        if (dueSel.includes('next7d') && !isDueWithin7Days(p, hydratedNow)) return false;
+        if (q && !p.name.toLowerCase().includes(q)) return false;
+        return true;
+    });
+}
+
 export default function TestsRollupPage() {
     // Filter state lives in the URL-synced filter context; the page
     // filters its in-memory plan list off `state` + `search`.
@@ -402,25 +442,7 @@ function TestsRollupContent() {
 
     // ── Client-side filtering from the filter context ──
     const filteredPlans = useMemo(() => {
-        const statusSel = state.status ?? [];
-        const resultSel = state.result ?? [];
-        const freqSel = state.frequency ?? [];
-        const dueSel = state.due ?? [];
-        const q = search.trim().toLowerCase();
-        return plans.filter((p) => {
-            if (statusSel.length && !statusSel.includes(p.status)) return false;
-            const result = getLastResultKey(p);
-            if (resultSel.length && !resultSel.includes(result)) return false;
-            if (freqSel.length && !freqSel.includes(p.frequency)) return false;
-            if (dueSel.includes('overdue') && !isOverdue(p, hydratedNow)) {
-                return false;
-            }
-            if (dueSel.includes('next7d') && !isDueWithin7Days(p, hydratedNow)) {
-                return false;
-            }
-            if (q && !p.name.toLowerCase().includes(q)) return false;
-            return true;
-        });
+        return filterPlans(plans, state, search, hydratedNow);
         // `hydratedNow` is READ inside this memo (the `due=overdue` branch) and
         // must therefore be a dependency. It was missing, and the consequence
         // was not a stale render — it was an empty table.
@@ -514,12 +536,31 @@ function TestsRollupContent() {
         [filteredPlans, sortAccessors, sortBy, sortOrder],
     );
 
-    // KPI-card counts — total + the three TestPlanStatus buckets. These power
-    // the clickable KpiFilterCard row (each toggles the table's status filter).
+    // KPI-card counts — total + the three TestPlanStatus buckets.
+    //
+    // FILTER-AWARE, and deliberately still CLIENT-SIDE. A filter card's number
+    // is a promise about its own click, and these cards set the STATUS filter
+    // on top of whatever else is active. Counting the whole array meant that
+    // with, say, a frequency filter set, the card advertised rows its own
+    // click would not return.
+    //
+    // Why not a server-side kpiCounts, which is what the sibling surfaces got:
+    // this page's filters are not all server filters. `result` comes from
+    // `getLastResultKey(p)` and the due buckets from `isOverdue(p,
+    // hydratedNow)` — both DERIVED CLIENT-SIDE from the fetched row and the
+    // hydration clock. A server count cannot mirror a click that filters on a
+    // value the server never computes, so lifting these would have made the
+    // cards disagree with the table rather than agree with the click.
+    //
+    // `total` clears every filter, so it stays the whole set.
+    const plansMatchingNonStatus = useMemo(
+        () => filterPlans(plans, { ...state, status: undefined }, search, hydratedNow),
+        [plans, state, search, hydratedNow],
+    );
     const totalPlans = plans.length;
-    const activePlans = plans.filter((p) => p.status === 'ACTIVE').length;
-    const pausedPlans = plans.filter((p) => p.status === 'PAUSED').length;
-    const archivedPlans = plans.filter((p) => p.status === 'ARCHIVED').length;
+    const activePlans = plansMatchingNonStatus.filter((p) => p.status === 'ACTIVE').length;
+    const pausedPlans = plansMatchingNonStatus.filter((p) => p.status === 'PAUSED').length;
+    const archivedPlans = plansMatchingNonStatus.filter((p) => p.status === 'ARCHIVED').length;
 
     // Canonical KPI-card sparklines (shared hook). total is an always-present
     // series; active/paused/archived are forward-only nullable columns (PR3) —

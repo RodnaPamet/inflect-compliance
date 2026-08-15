@@ -131,6 +131,101 @@ describe('the pre-hydration clock reports nothing, by design', () => {
  * express: the null result is only correct if the memo RECOMPUTES once the
  * clock arrives.
  */
+/**
+ * KPI card counts must equal what the card's CLICK returns.
+ *
+ * The three status cards set the STATUS filter on top of whatever else is
+ * active. Counting the whole fetched array meant that with, say, a frequency
+ * filter set, the card advertised rows its own click would not produce — the
+ * same disagreement `total` had on Policies, and reachable at any tenant size.
+ *
+ * Deliberately NOT lifted to a server kpiCounts like the sibling surfaces.
+ * This page's filters are not all server filters: `result` comes from
+ * `getLastResultKey(p)` and the due buckets from `isOverdue(p, hydratedNow)`,
+ * both derived CLIENT-SIDE from the fetched row and the hydration clock. A
+ * server count cannot mirror a click that filters on a value the server never
+ * computes, so lifting these would have made the cards disagree with the TABLE
+ * instead of with the click — trading one lie for another.
+ *
+ * Mirrors `filterPlans` as page.tsx defines it, pinned against the source
+ * below, matching the pairing the predicates above already use.
+ */
+describe('KPI counts are filter-aware', () => {
+    type P = Plan & { frequency: string; name: string };
+    const plan = (over: Partial<P>): P => ({
+        nextDueAt: null, nextRunAt: null, status: 'ACTIVE',
+        frequency: 'MONTHLY', name: 'plan', ...over,
+    });
+
+    const filterPlans = (
+        plans: P[],
+        state: Record<string, string[] | undefined>,
+        search: string,
+        now: Date | null,
+    ) => {
+        const statusSel = state.status ?? [];
+        const freqSel = state.frequency ?? [];
+        const dueSel = state.due ?? [];
+        const q = search.trim().toLowerCase();
+        return plans.filter((p) => {
+            if (statusSel.length && !statusSel.includes(p.status)) return false;
+            if (freqSel.length && !freqSel.includes(p.frequency)) return false;
+            if (dueSel.includes('overdue') && !isOverdue(p, now)) return false;
+            if (q && !p.name.toLowerCase().includes(q)) return false;
+            return true;
+        });
+    };
+
+    const counts = (plans: P[], state: Record<string, string[] | undefined>, now: Date | null) => {
+        const nonStatus = filterPlans(plans, { ...state, status: undefined }, '', now);
+        return {
+            total: plans.length,
+            active: nonStatus.filter((p) => p.status === 'ACTIVE').length,
+            paused: nonStatus.filter((p) => p.status === 'PAUSED').length,
+        };
+    };
+
+    const FIXTURE: P[] = [
+        plan({ status: 'ACTIVE', frequency: 'MONTHLY' }),
+        plan({ status: 'ACTIVE', frequency: 'QUARTERLY' }),
+        plan({ status: 'PAUSED', frequency: 'MONTHLY' }),
+    ];
+
+    it('counts the whole set when nothing else is filtered', () => {
+        const c = counts(FIXTURE, {}, NOW);
+        expect(c).toEqual({ total: 3, active: 2, paused: 1 });
+    });
+
+    it('NARROWS when another dimension is filtered — the card predicts its click', () => {
+        const c = counts(FIXTURE, { frequency: ['MONTHLY'] }, NOW);
+        // One ACTIVE monthly, one PAUSED monthly. The quarterly ACTIVE plan is
+        // excluded because clicking "Active" would not show it either.
+        expect(c.active).toBe(1);
+        expect(c.paused).toBe(1);
+    });
+
+    it('IGNORES the status filter itself — the cards replace that dimension', () => {
+        // With status=PAUSED set, the Active card must still count the ACTIVE
+        // plans: clicking it REPLACES the status selection rather than
+        // intersecting with it.
+        const c = counts(FIXTURE, { status: ['PAUSED'] }, NOW);
+        expect(c.active).toBe(2);
+    });
+
+    it('`total` stays the whole set — its click clears every filter', () => {
+        expect(counts(FIXTURE, { frequency: ['MONTHLY'] }, NOW).total).toBe(3);
+    });
+
+    it('respects the hydration clock like the table does', () => {
+        const overdue = plan({ status: 'ACTIVE', nextDueAt: '2026-01-01T00:00:00.000Z' });
+        const withDue = counts([overdue, ...FIXTURE], { due: ['overdue'] }, NOW);
+        expect(withDue.active).toBe(1);
+        // Pre-hydration the clock is null and nothing reads as overdue — the
+        // same null-safety the table relies on, not a separate rule.
+        expect(counts([overdue, ...FIXTURE], { due: ['overdue'] }, null).active).toBe(0);
+    });
+});
+
 describe('the filter memo depends on the hydrated clock', () => {
     const fs = require('node:fs') as typeof import('node:fs');
     const path = require('node:path') as typeof import('node:path');
@@ -149,6 +244,25 @@ describe('the filter memo depends on the hydrated clock', () => {
         expect(src).toMatch(/const isDueWithin7Days = \(/);
         // Upper bound only — no `gte`/lower-bound reconstruction.
         expect(src).toMatch(/<= now\.getTime\(\) \+ DUE_SOON_WINDOW_MS/);
+    });
+
+    /**
+     * The mirror above is only honest if the page really does compute its card
+     * counts from the filtered set. These pin the two halves that make it true.
+     */
+    it('the counts run through the SAME predicate as the table', () => {
+        // One implementation, two callers. Two copies would drift, and the
+        // drift IS the defect: a card disagreeing with the table it filters.
+        expect(src).toMatch(/function filterPlans\(/);
+        expect(src).toMatch(/const filteredPlans = useMemo\(\(\) => \{\s*return filterPlans\(/);
+    });
+
+    it('the card counts drop the status dimension the cards themselves set', () => {
+        // `{ ...state, status: undefined }` is the whole mechanism: count what
+        // the click would show, which means every OTHER filter but not this one.
+        expect(src).toMatch(
+            /filterPlans\(plans, \{ \.\.\.state, status: undefined \}, search, hydratedNow\)/,
+        );
     });
 
     it('the due filter offers both buckets', () => {
