@@ -82,7 +82,72 @@ describe('every report family excludes soft-deleted rows', () => {
     });
 
     it('the SoA filters soft-deleted controls', () => {
-        expect(SOA).toMatch(/deletedAt/);
+        // Hardened for the same reason as the readiness assertion above, which
+        // this half was left out of. `expect(SOA).toMatch(/deletedAt/)` was
+        // VACUOUS three times over: soa.ts carries `deletedAt` in a type
+        // declaration (:164), in the `select` that feeds this very filter
+        // (:194), and in an unrelated comment (:399). Deleting the actual
+        // filter left all three — and so the assertion — untouched.
+        //
+        // Unlike the other three families the SoA filters IN MEMORY, after the
+        // query, so there is no WHERE shape to assert; pin the filter itself.
+        const code = stripComments(SOA);
+        expect(code).toMatch(/\.filter\(\s*\(?\s*[A-Za-z_$][\w$]*\s*\)?\s*=>\s*!\s*[A-Za-z_$][\w$]*\.control\.deletedAt\s*\)/);
+    });
+});
+
+describe('every report family excludes deprecated requirements', () => {
+    /** The `frameworkRequirement.findMany({ … })` belonging to one function. */
+    function requirementsQueryOf(code: string, fnName: string): string {
+        const start = code.indexOf(`export async function ${fnName}`);
+        if (start === -1) throw new Error(`function not found: ${fnName}`);
+        const q = code.indexOf('frameworkRequirement.findMany', start);
+        if (q === -1) throw new Error(`no requirements query in ${fnName}`);
+        return code.slice(q, code.indexOf('controlRequirementLink.findMany', q));
+    }
+
+    it('all three requirement reads filter deprecatedAt', () => {
+        // The same divergence as the soft-delete family above, on the other
+        // side of the join, and it survived that whole reconciliation:
+        // `generateReadinessReport` and `getSoA` filtered deprecated
+        // requirements, `computeCoverage` did not — so a field with the same
+        // NAME (`coveragePercent`) and the same formula was computed over a
+        // bigger denominator on the Frameworks page than in the two reports.
+        //
+        // Deprecation is default-on (`library-importer` ships
+        // `deprecateMissing: true`), and a deprecated requirement can never be
+        // mapped, so the gap only ever widened.
+        const coverage = stripComments(COVERAGE);
+        for (const fn of ['computeCoverage', 'generateReadinessReport']) {
+            expect(requirementsQueryOf(coverage, fn)).toMatch(/deprecatedAt:\s*null/);
+        }
+        expect(requirementsQueryOf(stripComments(SOA), 'getSoA')).toMatch(/deprecatedAt:\s*null/);
+    });
+});
+
+describe('the report family has ONE implementation per report', () => {
+    it('no module outside framework/coverage.ts exports computeCoverage or listTemplates', () => {
+        // `framework/install.ts` carried a dead second copy of both. Nothing in
+        // src/ could reach it — the barrel re-exports from ./coverage — but it
+        // was a FORK, not a mirror: both the soft-deleted-control fix and the
+        // deprecated-requirement fix were applied to the live copy only, so the
+        // twin still produced the two wrong compliance numbers, and its own
+        // tests asserted that behaviour was correct.
+        //
+        // That is the failure mode this whole file exists to prevent, arriving
+        // by copy rather than by drift. A duplicate is how a one-sided fix
+        // happens; forbid the duplicate.
+        const dir = path.join(ROOT, 'src/app-layer/usecases/framework');
+        const offenders: string[] = [];
+        for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && f !== 'coverage.ts' && f !== 'index.ts')) {
+            const src = stripComments(read(path.join('src/app-layer/usecases/framework', f)));
+            for (const fn of ['computeCoverage', 'listTemplates']) {
+                if (new RegExp(`export\\s+(async\\s+)?function\\s+${fn}\\b`).test(src)) {
+                    offenders.push(`${f} exports ${fn}`);
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
     });
 });
 

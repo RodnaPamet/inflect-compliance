@@ -19,8 +19,26 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
         : await db.framework.findFirst({ where: { key: frameworkKey } });
     if (!fw) throw notFound('Framework not found');
 
+    // `deprecatedAt: null` — the third instance of the same divergence the
+    // `control: { deletedAt: null }` comment below describes, on the other
+    // side of the join. `generateReadinessReport` (this file) and `getSoA`
+    // (soa.ts) both exclude deprecated requirements; this query did not, so
+    // the SAME field name — `coveragePercent`, same formula — was computed
+    // over a LARGER denominator here than in the two reports beside it.
+    //
+    // Deprecation is a live, default-on write path: `library-importer.ts`
+    // ships `deprecateMissing: true` in its defaults and stamps
+    // `deprecatedAt` on every requirement absent from a re-imported library,
+    // so any tenant that has re-imported a framework has rows this excludes.
+    // The drift was one-directional: a requirement no longer in the framework
+    // stayed in the denominator forever, and could never be mapped, so this
+    // surface reported a permanently LOWER coverage percentage than the
+    // readiness report and the SoA for the same tenant at the same moment.
+    //
+    // This is the number on the Frameworks list page, the framework JSON +
+    // CSV exports, and the MCP framework tools/resources.
     const requirements = await db.frameworkRequirement.findMany({
-        where: { frameworkId: fw.id },
+        where: { frameworkId: fw.id, deprecatedAt: null },
         orderBy: { sortOrder: 'asc' },
     });
 
@@ -329,8 +347,40 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
         // 'not-applicable' / 'unmapped' → neither implemented nor a gap
     }
 
+    // EFFECTIVE applicability per control — the per-framework link override
+    // (`ControlRequirementLink.applicability`) falling back to the control's
+    // global column, resolved exactly as `getSoA` (soa.ts) and the shared
+    // rollup 20 lines above already resolve it.
+    //
+    // These two lists used to key on `Control.status === 'NOT_APPLICABLE'`,
+    // which is the SAME divergence class the `deletedAt` comment on the links
+    // query above describes: the SoA and the readiness report answering
+    // "is this control applicable?" from two different columns, so they gave
+    // DIFFERENT compliance numbers for the same tenant at the same moment.
+    //
+    // Here the readiness side was the PESSIMISTIC one, and silently so.
+    // Marking a control N/A is an `applicability` write — `setApplicability`
+    // (ControlRepository) writes `applicability` + justification + decided-by
+    // + decided-at and never touches `status`, and all three status-write
+    // schemas exclude NOT_APPLICABLE on purpose (src/lib/schemas/index.ts).
+    // So no current write path can produce the state this filter tested for:
+    // `notApplicableControls` could only ever list rows left behind by a
+    // pre-hardening writer, while every properly-decided N/A control fell
+    // through to `controlsMissingEvidence` and was billed as a gap.
+    //
+    // A control counts as N/A for this framework only when EVERY link that
+    // brings it in says so — if it is applicable against any requirement
+    // here, it still owes evidence.
+    const applicableSomewhere = new Set<string>();
+    for (const l of links) {
+        if ((l.applicability ?? l.control.applicability) !== 'NOT_APPLICABLE') {
+            applicableSomewhere.add(l.control.id);
+        }
+    }
+    const isNotApplicable = (c: LinkControl) => !applicableSomewhere.has(c.id);
+
     // NOT_APPLICABLE controls
-    const notApplicable = controls.filter((c) => c.status === 'NOT_APPLICABLE').map((c) => ({
+    const notApplicable = controls.filter(isNotApplicable).map((c) => ({
         code: c.code,
         name: c.name,
         justification: c.applicabilityJustification || 'No justification provided',
@@ -367,7 +417,7 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     // this file has never been in its scope — the absence of a
     // `guardrail-allow` pragma here is not a prior decision.)
     const missingEvidence = controls.filter((c) =>
-        c.status !== 'NOT_APPLICABLE' &&
+        !isNotApplicable(c) &&
         !(c.evidenceControlLinks ?? []).some((l) => isCoverageQualifyingEvidence(l.evidence, now))
     ).map((c) => ({ code: c.code, name: c.name, status: c.status }));
 
