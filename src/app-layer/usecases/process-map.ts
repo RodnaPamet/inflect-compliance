@@ -6,7 +6,7 @@
 
 import { RequestContext } from '../types';
 import { ProcessMapRepository } from '../repositories/ProcessMapRepository';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -363,7 +363,25 @@ export async function restoreProcessMapSnapshot(
 }
 
 export async function deleteProcessMap(ctx: RequestContext, id: string) {
-    assertCanWrite(ctx);
+    // ADMIN, matching every peer destructive verb (deleteRisk, deleteAsset,
+    // deleteEvidence, deleteControl, deletePolicy, deleteTask).
+    //
+    // This one is worse than the deleteTask gap that prompted the peer-gate
+    // guardrail, on two counts.
+    //
+    // IRREVERSIBLE. Task is in SOFT_DELETE_MODELS, so an ADMIN can
+    // `restoreEntity` a task somebody deleted by mistake. ProcessMap is in
+    // NEITHER that list nor the SoftDeletableModel union — there is no restore
+    // surface for any role, including OWNER. The `deletedAt` stamp is a
+    // one-way door and recovery means a database restore.
+    //
+    // AND IT REMOVES COMPLIANCE EVIDENCE SILENTLY. Both reverse-lookup queries
+    // filter deleted maps (ProcessMapRepository :708, :769), and they back
+    // listMapsUsingControl / listMapsUsingRisk / listMapsUsingAsset — the
+    // "where is this control used?" panel on Control, Risk and Asset detail.
+    // So an EDITOR removing one map quietly drops control-coverage placements
+    // out of the governance view, with nothing to put them back.
+    assertCanAdmin(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const ok = await ProcessMapRepository.softDelete(db, ctx, id, ctx.userId);

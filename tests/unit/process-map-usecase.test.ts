@@ -303,6 +303,31 @@ describe('deleteProcessMap', () => {
             'Process map not found',
         );
     });
+
+    /**
+     * An EDITOR could delete any process map in the tenant, and unlike every
+     * other register that is UNRECOVERABLE: ProcessMap is in neither
+     * SOFT_DELETE_MODELS nor the SoftDeletableModel union, so no role — not
+     * ADMIN, not OWNER — has a restore surface. It also silently drops
+     * control-coverage placements out of the "where is this control used?"
+     * panel, because both reverse-lookup queries filter deleted maps.
+     *
+     * The existing tests above pass either way: `writerCtx` is already ADMIN.
+     * That is exactly why the gap survived — nothing exercised the tier it
+     * actually let through.
+     */
+    it('refuses an EDITOR — the delete is irreversible, so the gate is the only guard', async () => {
+        (ProcessMapRepository.softDelete as jest.Mock).mockClear();
+
+        await expect(deleteProcessMap(makeCtx('EDITOR'), 'pm-1')).rejects.toThrow();
+        // Refused BEFORE any write, so a denial cannot be mistaken for a
+        // successful delete of a missing row.
+        expect(ProcessMapRepository.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a READER too', async () => {
+        await expect(deleteProcessMap(makeCtx('READER'), 'pm-1')).rejects.toThrow();
+    });
 });
 
 describe('setProcessMapCanvasMode', () => {
