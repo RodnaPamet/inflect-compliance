@@ -615,6 +615,19 @@ function Inner({
             });
         } catch (err) {
             reportFailure(err, "failSave");
+            // RETHROW. The autosave hook decides its own state from whether
+            // this promise settles, and swallowing here made every failure
+            // look like a success: the hook took its saved branch, nulled
+            // dirtySince, and the bar rendered "Saved" over unsaved work.
+            // `status === 'error'` was therefore unreachable from the canvas,
+            // which is why the documented no-retry behaviour never appeared
+            // and why CanvasDocumentBar has no error branch to render.
+            //
+            // reportFailure still owns the user-facing toast; this only tells
+            // the hook the truth. The 409 path above returns EARLY and
+            // deliberately still resolves — a version conflict is handled by
+            // the reload toast, not a failed save.
+            throw err;
         } finally {
             setSaving(false);
         }
@@ -628,15 +641,25 @@ function Inner({
         enabled: Boolean(activeId) && !loading,
         save: handleSave,
     });
+    const { markClean } = autosave;
     // Clear autosave dirty whenever rehydration completes — the
     // load sequence calls setNodes/setEdges which would normally
     // mark dirty; markClean keeps the post-load state idle.
     useEffect(() => {
-        if (!loading) autosave.markClean();
-        // markClean is stable enough (memoised in the hook); we
-        // depend on `loading` only so the cleanup fires once per
-        // load cycle.
-    }, [loading, activeId, autosave]);
+        if (!loading) markClean();
+        // Depend on the FUNCTION, not the hook's return object.
+        //
+        // The old comment claimed "markClean is stable (memoised in the
+        // hook)" — true of the function, false of the object that held it,
+        // and the object was what sat in these deps. So this effect re-ran on
+        // every render and markClean() cleared the debounce timer markDirty
+        // had just armed. Autosave never fired once.
+        //
+        // The hook's return is memoised now, so `autosave` would also be
+        // stable — but depending on the function states the actual
+        // requirement, and does not silently break again if the memo is ever
+        // dropped.
+    }, [loading, activeId, markClean]);
 
     // ─── Inspector: patch selected node ───────────────────────────
 
