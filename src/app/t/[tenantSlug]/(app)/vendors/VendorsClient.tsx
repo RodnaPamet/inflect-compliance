@@ -96,6 +96,19 @@ interface VendorMetricsPayload {
     overdueReview: number;
 }
 
+/**
+ * Shape of GET /api/t/:slug/vendors. `kpiCounts` is computed by aggregate in
+ * VendorRepository.kpiCounts — not derived from `rows`, and not from
+ * getVendorMetrics' bounded read.
+ */
+type VendorKpiCounts = {
+    total: number;
+    active: number;
+    critical: number;
+    reviewOverdue: number;
+};
+type VendorListResponse = CappedList<VendorRow> & { kpiCounts?: VendorKpiCounts };
+
 export function VendorsClient(props: VendorsClientProps) {
     const filterCtx = useFilterContext([], VENDOR_FILTER_KEYS, {
         serverFilters: props.initialFilters,
@@ -180,7 +193,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
 
     // PR-5 — API returns `{ rows, truncated }`. SSR initial wraps
     // with `truncated: false` (the SSR cap is below the backfill cap).
-    const vendorsQuery = useTenantSWR<CappedList<VendorRow>>(vendorsKey, {
+    const vendorsQuery = useTenantSWR<VendorListResponse>(vendorsKey, {
         fallbackData: filtersMatchInitial
             ? { rows: initialVendors, truncated: false }
             : undefined,
@@ -425,10 +438,28 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     // this page reading 0.
     const metricsQuery = useTenantSWR<VendorMetricsPayload>('/vendors/metrics');
     const metrics = metricsQuery.data;
-    const totalVendors = metrics?.totalVendors ?? 0;
-    const activeVendors = metrics?.byStatus?.ACTIVE ?? 0;
-    const criticalVendors = metrics?.byCriticality?.CRITICAL ?? 0;
-    const reviewOverdueVendors = metrics?.overdueReview ?? 0;
+
+    // KPI card counts come from the LIST endpoint's aggregates, not from
+    // /vendors/metrics.
+    //
+    // Both are server values, so this was never the client-derives-from-a-page
+    // defect — it is that defect one layer down. getVendorMetrics is a
+    // `findMany({ take: 5000 })` with an assessment include, looped in memory:
+    // above 5,000 vendors these four numbers were silently wrong, and the cost
+    // of producing them was the whole register plus a join.
+    //
+    // They are also now FILTER-AWARE. The metrics key is bare, so the cards
+    // used to show tenant-wide numbers while their clicks intersect with
+    // whatever filters are already set — the same disagreement `total` had on
+    // Policies. The list endpoint already knows the active filters.
+    //
+    // metrics is still read for the dashboard tiles below, which genuinely
+    // need the latest assessment per vendor.
+    const kpi = vendorsQuery.data?.kpiCounts;
+    const totalVendors = kpi?.total ?? 0;
+    const activeVendors = kpi?.active ?? 0;
+    const criticalVendors = kpi?.critical ?? 0;
+    const reviewOverdueVendors = kpi?.reviewOverdue ?? 0;
 
     // Canonical KPI-card sparklines (shared hook). total + reviewOverdue are
     // always-present series; active + critical are forward-only nullable
