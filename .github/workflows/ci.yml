@@ -117,7 +117,27 @@ on:
     - cron: "0 6 * * 0"
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # PUSH runs get a per-COMMIT group; everything else stays per-ref.
+  #
+  # `cancel-in-progress: false` stops GitHub cancelling a RUNNING sibling, but
+  # a group still holds only ONE PENDING run: a third push evicts the one
+  # waiting in the middle. Every main push shared `ci-refs/heads/main`, so
+  # whenever two merges landed inside one run's duration (over an hour now
+  # that main adds Coverage shards + Docker Build + Load Smoke + Trivy) the
+  # commit between them was cancelled before it ever started.
+  #
+  # That is worse than a wasted run. Coverage (≥60%) and the Trivy image scan
+  # execute ONLY on main pushes, so an evicted commit is never
+  # coverage-measured and its image never scanned — and nothing surfaces it,
+  # because a cancelled run is not a failed one. It reads exactly like a run
+  # that passed. Observed twice on 2026-08-15 (c4eb17d5, and 2639c61b when
+  # #1925 merged moments after #1923).
+  #
+  # Keying pushes on the SHA gives every commit its own group, so nothing
+  # queues and nothing is evicted. It costs concurrent runners when merges
+  # land in a burst; it does NOT weaken any of the guarantees below, all of
+  # which are about not cancelling runs that have already started.
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
   # NEVER cancel in-progress runs — for pushes OR pull_requests.
   #
   # PR runs: a `synchronize` fires whenever the PR's merge-ref is recomputed
