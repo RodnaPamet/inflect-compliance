@@ -132,8 +132,11 @@ export const POST = withApiErrorHandling(
         const retentionUntil =
             (formData.get('retentionUntil') as string | null) || null;
         const category = (formData.get('category') as string | null) || null;
-        // The modal has always posted this; nothing read it, so the folder an
-        // operator typed was discarded on every import.
+        // The modal has always posted this. Nothing read it, so the folder an
+        // operator typed WAS discarded on every import — fixed by this line
+        // plus the `folder` passed to the job below. Stated in the past tense
+        // deliberately: while it read as a live defect, an audit grepping for
+        // "discarded on every import" re-reported it as one.
         const folder = (formData.get('folder') as string | null) || null;
 
         // ── Enqueue the worker ─────────────────────────────────────

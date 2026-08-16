@@ -185,11 +185,20 @@ const evidenceListSelect = {
     content: true,
     // EP-3 Part 5 — category is now a rendered column + filter.
     category: true,
+    // LEGACY free-text owner. Still selected because it is the only owner
+    // a row created before the FK existed has, and the create-from-text
+    // modal still writes it.
     owner: true,
     // Real owner FK — seeds the edit modal's owner picker when the
     // Evidence list-row edit affordance opens it (B8 follow-up parity
     // with the detail sheet's edit).
     ownerUserId: true,
+    // …and the user it points at. Without this join, `ownerUserId` was
+    // WRITE-ONLY from the UI's point of view: the edit modal's owner picker
+    // and the bulk "Assign owner" action both wrote the FK, while every
+    // read path rendered the legacy free-text `owner` column — so assigning
+    // an owner appeared to do nothing at all.
+    ownerUser: { select: { id: true, name: true, email: true } },
     // B8 follow-up — folder label is rendered as a column + drives
     // the Folder filter's option set.
     folder: true,

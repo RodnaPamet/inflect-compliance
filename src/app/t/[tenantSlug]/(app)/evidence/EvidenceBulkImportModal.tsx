@@ -213,10 +213,11 @@ export function EvidenceBulkImportModal({
             // EvidenceControlLink + folder label.
             // `controlId`, singular — the whole import pipeline is singular
             // (route -> EvidenceImportPayload -> uploadEvidenceFile) and this
-            // field holds exactly one id. Posting it as `controlIds` meant the
+            // field holds exactly one id. Posting it as `controlIds` MEANT the
             // route's `formData.get('controlId')` found nothing, so the chosen
-            // control was dropped on every import while the modal reported
-            // success.
+            // control WAS dropped on every import while the modal reported
+            // success. Fixed — the name below is the singular one the route
+            // reads; the paragraph is here so a rename does not undo it.
             if (defaultControlId) formData.append('controlId', defaultControlId);
             if (importFolder.trim()) formData.append('folder', importFolder.trim());
             try {

@@ -4,10 +4,18 @@
  * Extracted from the detail page so it can be tested directly. It was inline
  * in the `useTenantMutation` callback, where the only way to observe it was
  * to mount a 1,383-line page — which is why two fields could be missing from
- * it for as long as they were: `automationType` and `mitigationType` are
+ * it for as long as they were: `automationType` and `mitigationType` WERE
  * rendered as wired Comboboxes, seeded from the loaded control, accepted by
- * Zod and written by `updateControl`, yet absent from the request. The modal
- * closed, `toast.success` fired, and the stale value re-rendered on refetch.
+ * Zod and written by `updateControl`, and yet absent from the request. The
+ * modal closed, `toast.success` fired, and the stale value re-rendered on
+ * refetch.
+ *
+ * Both have been in the body since #1888 (they are at `automationType` /
+ * `mitigationType` below), and `control-write-values.test.ts` pins the exact
+ * key set plus a dedicated case for the two. Past tense is load-bearing here:
+ * while this read "…yet absent from the request" in the present, an audit
+ * grepping for the symptom landed on this line and reported the closed defect
+ * as live.
  *
  * The optimistic update on the same mutation must stay in step with this: a
  * paint that omits a field the request sends flashes the old value and then

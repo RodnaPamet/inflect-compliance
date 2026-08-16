@@ -42,6 +42,7 @@ import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 import Link from 'next/link';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { ownerLabel } from '@/lib/evidence-owner-label';
 
 /** Human-readable byte size (mirrors FileDropzone's local helper). */
 function formatBytes(bytes: number | null | undefined): string {
@@ -123,6 +124,7 @@ interface EvidenceDetailPayload {
     reviewCycle: string | null;
     owner: string | null;
     ownerUserId: string | null;
+    ownerUser?: { id: string; name: string | null; email: string | null } | null;
     /** EP-3 — persisted classification. */
     category: string | null;
     /** B8 follow-up — folder label (null = unfoldered). */
@@ -270,7 +272,12 @@ export function EvidenceDetailSheet({
         if (!evidence) return [];
         const rows: Array<{ label: string; value: React.ReactNode }> = [];
         rows.push({ label: t('detail.metaType'), value: evidenceTypeLabel(evidence.type, t) });
-        if (evidence.owner) rows.push({ label: t('detail.metaOwner'), value: evidence.owner });
+        // Resolved owner — the assigned USER, falling back to the legacy
+        // free-text column. This rendered `evidence.owner` alone, so an owner
+        // set through the edit modal's picker (which writes `ownerUserId`)
+        // never appeared here.
+        const owner = ownerLabel(evidence);
+        if (owner) rows.push({ label: t('detail.metaOwner'), value: owner });
         if (evidence.category) {
             rows.push({ label: t('detail.metaCategory'), value: evidence.category });
         }
