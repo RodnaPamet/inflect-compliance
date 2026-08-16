@@ -44,6 +44,7 @@
  */
 
 import { useSWRConfig } from 'swr';
+import { applyEvidenceRetention, applyEvidenceRetentionBatch } from '@/lib/evidence-retention-request';
 import {
     SharePointFilePicker,
     type SpPickedItem,
@@ -182,24 +183,58 @@ export function UploadEvidenceModal({
                 const res = await fetch(apiUrl('/integrations/sharepoint/import'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    // Category, Folder and Retention are rendered above and
+                    // were all dropped on this branch: the user filled them
+                    // in, imported, and the values vanished with no warning.
+                    // `category` was already accepted end-to-end by the route
+                    // and the importer — it was simply never sent. `folder`
+                    // needed the route schema widened to match
+                    // `uploadEvidenceFile`, which has always taken it.
                     body: JSON.stringify({
                         connectionId: spConnId,
                         items: items.map((i) => ({ driveId: i.driveId, itemId: i.itemId, name: i.name })),
                         controlId: controlId || undefined,
+                        category: category.trim() || undefined,
+                        folder: folder.trim() || undefined,
                     }),
                 });
                 if (!res.ok) {
                     setError(tx('upload.spImportFailed'));
                     return;
                 }
+                // Retention is not part of the import contract — it is a
+                // second write per row, exactly as on the dropzone path. The
+                // route already returns the ids it created, so apply it here
+                // rather than widening the import to do N writes server-side.
+                //
+                // A partial failure REVALIDATES and stays open with the
+                // error: the rows exist and are worth showing, but reporting
+                // plain success over a missing retention date is the defect
+                // this whole change is about.
+                const created = (await res.json().catch(() => null)) as
+                    | { evidenceIds?: string[] }
+                    | null;
                 const prefix = apiUrl(CACHE_KEYS.evidence.list());
+                if (retentionUntil && created?.evidenceIds?.length) {
+                    try {
+                        await applyEvidenceRetentionBatch(
+                            apiUrl,
+                            created.evidenceIds,
+                            retentionUntil,
+                        );
+                    } catch {
+                        await swrMutate((key) => typeof key === 'string' && key.startsWith(prefix));
+                        setError(tx('upload.spImportRetentionFailed'));
+                        return;
+                    }
+                }
                 await swrMutate((key) => typeof key === 'string' && key.startsWith(prefix));
                 setOpen(false);
             } catch {
                 setError(tx('upload.spImportFailedNet'));
             }
         },
-        [apiUrl, spConnId, controlId, swrMutate, setOpen],
+        [apiUrl, spConnId, controlId, category, folder, retentionUntil, tx, swrMutate, setOpen],
     );
 
     // Reset on every open so a previous cancel doesn't leak state.
@@ -293,17 +328,19 @@ export function UploadEvidenceModal({
                 },
             );
 
+            // Retention is a SECOND write and can fail on its own. This
+            // fired and never read the response, so a non-ok reply was
+            // swallowed: the dropzone reported success and the modal closed
+            // over a row with no retention on it and no reason given.
+            // `applyEvidenceRetention` throws instead, which surfaces the
+            // partial save through the dropzone's existing error path.
             if (vars.retentionUntil && uploaded?.id) {
-                await fetch(apiUrl(`/evidence/${uploaded.id}/retention`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        retentionUntil: new Date(
-                            vars.retentionUntil,
-                        ).toISOString(),
-                        retentionPolicy: 'FIXED_DATE',
-                    }),
-                });
+                await applyEvidenceRetention(
+                    apiUrl,
+                    uploaded.id,
+                    vars.retentionUntil,
+                    { signal },
+                );
             }
 
             return uploaded;

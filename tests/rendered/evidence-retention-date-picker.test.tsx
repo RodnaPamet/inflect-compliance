@@ -173,17 +173,23 @@ describe('Epic 58 — existing API contracts preserved', () => {
         // E2E selects the retention field by id — must survive the
         // migration (DatePicker forwards `id` to its trigger).
         expect(src).toMatch(/id=["']retention-date-input["']/);
-        // Post-migration the modal still converts the stored YMD
-        // string to an ISO timestamp for the /retention endpoint.
-        // After the mutation refactor (vars-destructured handler), the
-        // retention value lives on the mutation `vars` object, not
-        // the bare closure variable — match either shape so the test
-        // asserts the conversion contract regardless of plumbing.
-        // Allow optional trailing comma (Prettier formats multiline
-        // function calls with trailing commas).
-        expect(src).toMatch(
-            /new Date\(\s*(vars\.)?retentionUntil\s*,?\s*\)\.toISOString\(\)/,
+        // The stored YMD string is still converted to an ISO timestamp
+        // for the /retention endpoint — but the conversion moved OUT of
+        // this component when the retention write was extracted so both
+        // create paths (dropzone and SharePoint import) could share one
+        // implementation that CHECKS the response.
+        //
+        // So this asserts the contract at its new home, plus the fact that
+        // the modal delegates rather than hand-rolling a second copy. A
+        // bare `fetch(…/retention)` here would be the old shape returning:
+        // it resolved on a non-ok reply, so the dropzone reported success
+        // over a row that never got its date.
+        const helper = read('src/lib/evidence-retention-request.ts');
+        expect(helper).toMatch(
+            /new Date\(\s*retentionUntil\s*,?\s*\)\.toISOString\(\)/,
         );
+        expect(src).toMatch(/from '@\/lib\/evidence-retention-request'/);
+        expect(src).not.toMatch(/fetch\([^)]*\/retention/);
     });
 
     it('Edit modal retention posts { retentionUntil: ISO | null, retentionPolicy } to /retention', () => {

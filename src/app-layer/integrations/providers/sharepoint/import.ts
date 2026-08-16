@@ -26,6 +26,7 @@ export interface SpImportInput {
     items: Array<{ driveId: string; itemId: string; name?: string }>;
     controlId?: string;
     category?: string;
+    folder?: string;
 }
 export interface SpImportResult {
     imported: number;
@@ -40,7 +41,7 @@ async function importOne(
     client: SharePointClient,
     connectionId: string,
     sel: { driveId: string; itemId: string; name?: string },
-    target: { controlId?: string; category?: string },
+    target: { controlId?: string; category?: string; folder?: string },
 ): Promise<string> {
     const item = await client.getItem(sel.driveId, sel.itemId);
     const name = sel.name ?? item.name ?? 'sharepoint-file';
@@ -52,6 +53,7 @@ async function importOne(
         title: name,
         controlId: target.controlId ?? null,
         category: target.category ?? null,
+        folder: target.folder ?? null,
     });
 
     await upsertEvidenceMapping(ctx, {
