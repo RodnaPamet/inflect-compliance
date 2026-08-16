@@ -25,6 +25,7 @@ let _checkOutcome: Counter | null = null;
 let _checkDuration: Histogram | null = null;
 let _syncTruncated: Counter | null = null;
 let _identityDeprovisioned: Counter | null = null;
+let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
 let _aiTokens: Histogram | null = null;
@@ -93,6 +94,20 @@ export function recordSyncTruncated(attrs: { provider: string }): void {
  * The size of an identity-sync deprovision reconcile batch. A spike is the H3
  * wrongful-mass-deprovision signature — alert on sudden jumps.
  */
+/**
+ * A scanner ingest discarded above-threshold findings at the materialisation
+ * cap. Unlike the sync caps — which were removed in favour of draining — this
+ * one stays, because each skipped iteration is a WRITE and an unbounded write
+ * loop is a different risk from an unbounded read. So it must be visible: a
+ * non-zero rate means a compliance record is incomplete, and the CI pipeline
+ * that produced the scan has no other way to learn it.
+ */
+export function recordScannerFindingsTruncated(attrs: { source: string; dropped: number }): void {
+    if (attrs.dropped <= 0) return;
+    if (!_scannerFindingsTruncated) _scannerFindingsTruncated = getMeter().createCounter('scanner.findings.truncated', { description: 'Above-threshold scanner findings dropped at the materialisation cap', unit: '1' });
+    _scannerFindingsTruncated.add(attrs.dropped, { source: attrs.source });
+}
+
 export function recordIdentityDeprovisioned(attrs: { provider: string; count: number }): void {
     if (attrs.count <= 0) return;
     if (!_identityDeprovisioned) _identityDeprovisioned = getMeter().createCounter('integration.identity.deprovisioned', { description: 'Accounts deprovisioned by an identity-sync reconcile', unit: '1' });

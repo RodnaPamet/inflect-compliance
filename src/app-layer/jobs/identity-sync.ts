@@ -15,6 +15,7 @@ import { logger } from '@/lib/observability/logger';
 import { enqueue } from './queue';
 import { runIdentitySync } from '@/app-layer/usecases/identity-sync';
 import type { IdentitySyncPayload } from './types';
+import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 
@@ -33,11 +34,17 @@ export async function runIdentitySyncJob(payload: IdentitySyncPayload): Promise<
 
 /** Fan-out: one identity-sync per enabled Okta / Google Workspace connection. */
 export async function runIdentitySyncDispatch(): Promise<{ connections: number; dispatched: number }> {
-    const connections = await prisma.integrationConnection.findMany({
-        where: { provider: { in: IDENTITY_PROVIDERS }, isEnabled: true },
-        select: { id: true, tenantId: true },
-        take: 1000,
-    });
+    // Was `take: 1000` with no signal. Past the cap, tenants never synced and
+    // the completion log still read like a clean success.
+    const connections = await drainPages((cursor) =>
+        prisma.integrationConnection.findMany({
+            where: { provider: { in: IDENTITY_PROVIDERS }, isEnabled: true },
+            select: { id: true, tenantId: true },
+            orderBy: { id: 'asc' },
+            take: DRAIN_PAGE_SIZE,
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    );
 
     let dispatched = 0;
     for (const conn of connections) {

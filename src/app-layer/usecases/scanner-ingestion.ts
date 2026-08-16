@@ -45,6 +45,8 @@ import {
 } from '../services/sarif';
 import { mapCwes } from '../services/cwe-mapping';
 import type { FindingSeverity } from '@prisma/client';
+import { drainPages, DRAIN_PAGE_SIZE } from '@/app-layer/jobs/drain-pages';
+import { recordScannerFindingsTruncated } from '@/lib/observability/integration-metrics';
 
 /** Provenance tag on materialised Findings — the reconcile key space. */
 export const SCANNER_SOURCE_KIND = 'SCANNER';
@@ -149,6 +151,17 @@ export interface IngestScannerRunResult {
     evidenceId: string | null;
     findingsMaterialized: number;
     findingsReconciledClosed: number;
+    /**
+     * Above-threshold findings BEFORE the materialisation cap.
+     *
+     * `findingsIngested` counts every parsed finding including
+     * below-threshold ones, so it cannot answer "were any of my findings
+     * dropped?". This can: `findingsMaterialized + findingsTruncated` should
+     * equal this.
+     */
+    aboveThresholdTotal: number;
+    /** Above-threshold findings the cap discarded. Non-zero means loss. */
+    findingsTruncated: number;
 }
 
 export async function ingestScannerRun(
@@ -178,6 +191,8 @@ export async function ingestScannerRun(
     const thresholdRank = SEVERITY_RANK[threshold];
 
     const aboveThreshold = parsed.findings.filter((f) => SEVERITY_RANK[f.severity] >= thresholdRank);
+
+    const aboveThresholdTotal = aboveThreshold.length;
     const derivedOutcome: 'PASS' | 'FAIL' = aboveThreshold.length > 0 ? 'FAIL' : 'PASS';
     const outcome = input.outcome ?? derivedOutcome;
     const ranAt = new Date();
@@ -349,18 +364,30 @@ export async function ingestScannerRun(
 
     // ── Phase 2: materialise + reconcile Findings (each createFinding
     //    manages its own tenant transaction — mirrors vulnerability.ts). ──
+    let findingsTruncated = 0;
     let findingsMaterialized = 0;
     let findingsReconciledClosed = 0;
 
     if (input.materializeFindings) {
         // Existing scanner-sourced findings keyed by fingerprint.
-        const existing = await runInTenantContext(ctx, async (db) => {
-            return db.finding.findMany({
-                where: { tenantId: ctx.tenantId, sourceKind: SCANNER_SOURCE_KIND, deletedAt: null },
-                select: { id: true, sourceRef: true, status: true },
-                take: 5000, // bounded: scanner findings per tenant
-            });
-        });
+        // DRAINED, not capped. `byRef` below is the ONLY dedupe mechanism in
+        // this ingest: a fingerprint missing from it reads as "never seen
+        // before". So a `take` here does not drop work — it makes the ingest
+        // forget history, creating DUPLICATE Findings for issues already
+        // tracked and skipping the auto-close reconcile for issues already
+        // fixed. That is silent corruption of the compliance record, a
+        // different and worse thing than the omission the other caps caused.
+        const existing = await runInTenantContext(ctx, async (db) =>
+            drainPages((cursor) =>
+                db.finding.findMany({
+                    where: { tenantId: ctx.tenantId, sourceKind: SCANNER_SOURCE_KIND, deletedAt: null },
+                    select: { id: true, sourceRef: true, status: true },
+                    orderBy: { id: 'asc' },
+                    take: DRAIN_PAGE_SIZE,
+                    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+                }),
+            ),
+        );
         const byRef = new Map<string, { id: string; status: string }>();
         for (const f of existing) {
             if (f.sourceRef) byRef.set(f.sourceRef, { id: f.id, status: f.status });
@@ -369,6 +396,20 @@ export async function ingestScannerRun(
 
         // Create a Finding for each above-threshold scanner finding that
         // doesn't already have an OPEN one (idempotent). Bounded by cap.
+        // The materialisation cap STAYS — each iteration is a write, and an
+        // unbounded write loop is a different risk from an unbounded read. But
+        // it now reports itself: see `findingsTruncated` in the return.
+        if (aboveThreshold.length > MAX_FINDINGS_PER_INGEST) {
+            findingsTruncated = aboveThreshold.length - MAX_FINDINGS_PER_INGEST;
+            logger.warn('scanner ingest truncated above-threshold findings', {
+                component: 'scanner-ingestion',
+                source,
+                aboveThresholdTotal: aboveThreshold.length,
+                cap: MAX_FINDINGS_PER_INGEST,
+                dropped: findingsTruncated,
+            });
+            recordScannerFindingsTruncated({ source, dropped: findingsTruncated });
+        }
         for (const f of aboveThreshold.slice(0, MAX_FINDINGS_PER_INGEST)) {
             const prior = byRef.get(f.fingerprint);
             if (prior && prior.status !== 'CLOSED') continue; // already tracked
@@ -426,6 +467,15 @@ export async function ingestScannerRun(
         evidenceId: phase1.evidenceId,
         findingsMaterialized,
         findingsReconciledClosed,
+        // `findingsIngested` counts EVERY parsed finding, including
+        // below-threshold ones, so on its own it cannot distinguish "400 were
+        // below threshold" from "400 were silently discarded". These two make
+        // the difference visible: a CI pipeline can compare
+        // `findingsMaterialized + findingsTruncated` against
+        // `aboveThresholdTotal` and fail its own build when its findings were
+        // dropped.
+        aboveThresholdTotal,
+        findingsTruncated,
     };
 }
 
