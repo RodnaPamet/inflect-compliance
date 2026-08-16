@@ -132,6 +132,37 @@ const defaultOptions = {
         // Re-derive rather than trust: set NEXT_TEST_MODE=1 and sample
         // MemAvailable + the build tree's RSS through a build.
         webpackMemoryOptimizations: true,
+        // Build workers were OFF, and not by anyone's decision.
+        //
+        // next/dist/build/index.js:850:
+        //   useBuildWorker = config.experimental.webpackBuildWorker
+        //     || config.experimental.webpackBuildWorker === undefined
+        //        && !config.webpack;
+        //
+        // i.e. auto-on UNLESS a custom `config.webpack` exists. `next-intl/
+        // plugin` injects one — purely to alias ./src/i18n.ts — which
+        // silently flipped this off. Verified live: `withNextIntl({})`
+        // yields keys `turbopack,webpack`, and useBuildWorker evaluates
+        // false. (@next/bundle-analyzer with enabled:false returns the
+        // config untouched, so it is not the cause.)
+        //
+        // Consequence: the client, server and edge compilations all run in
+        // the PARENT process, in one heap, with nothing released between
+        // them. Peak heap is their accumulated union rather than the
+        // largest single compilation — which is exactly the shape of the
+        // ~6.1 GB wall this build kept hitting. Next's own guidance says to
+        // set it explicitly in this situation (its memory-usage guide:
+        // "allows you to run Webpack compilations inside a separate Node.js
+        // worker which will decrease memory usage").
+        //
+        // Why it became necessary rather than merely nice. Both ceilings
+        // were exhausted: 6144 gives a deterministic V8 OOM ("Reached heap
+        // limit", Mark-Compact 6133.6 MB), and 8192 gets the process
+        // OOM-KILLED by the kernel — including in a job with no service
+        // containers at all, which is what ruled out container contention
+        // as the cause. Demand had to come down; this is the only lever
+        // that reduces it rather than moving it around.
+        webpackBuildWorker: true,
         // optimizePackageImports remains experimental in Next 15.
         // Barrel/submodule packages — let Next rewrite imports to the
         // specific entry points so unused code tree-shakes out of the
