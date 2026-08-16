@@ -20,7 +20,10 @@ export const PATCH = withApiErrorHandling(requirePermission<TaskDetailParams>('t
     return jsonResponse(task);
 }));
 
-export const DELETE = withApiErrorHandling(requirePermission<TaskDetailParams>('tasks.edit', async (_req, { params }, ctx) => {
+// `admin.manage`, not `tasks.edit`: `deleteTask` asserts `assertCanAdmin`. The
+// weaker key let an EDITOR past the middleware to be denied by the usecase,
+// which writes no AUTHZ_DENIED row — so the denial was invisible.
+export const DELETE = withApiErrorHandling(requirePermission<TaskDetailParams>('admin.manage', async (_req, { params }, ctx) => {
     const { taskId } = await params;
     await deleteTask(ctx, taskId);
     return jsonResponse({ ok: true });

@@ -20,7 +20,10 @@ export const PUT = withApiErrorHandling(requirePermission<RiskDetailParams>('ris
     return jsonResponse({ success: true, risk });
 }));
 
-export const DELETE = withApiErrorHandling(requirePermission<RiskDetailParams>('risks.edit', async (_req, { params }, ctx) => {
+// `admin.manage`, not `risks.edit`: `deleteRisk` asserts `assertCanAdmin`.
+// The weaker key let an EDITOR past the middleware to be denied by the
+// usecase, which writes no AUTHZ_DENIED row — the denial was invisible.
+export const DELETE = withApiErrorHandling(requirePermission<RiskDetailParams>('admin.manage', async (_req, { params }, ctx) => {
     const { id } = await params;
     await deleteRisk(ctx, id);
     return jsonResponse({ success: true });

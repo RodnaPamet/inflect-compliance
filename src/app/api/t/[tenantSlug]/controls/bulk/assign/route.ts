@@ -1,23 +1,20 @@
 import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { bulkAssignControl } from '@/app-layer/usecases/control';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { BulkControlAssignSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
+// `controls.edit` matches the tier `bulkAssignControl` itself asserts. That alignment is
+// the point of the gate: if the declared key were the weaker one, the
+// middleware would let the request through and the usecase would throw —
+// and a usecase throw writes NO AUTHZ_DENIED row, so the denial would be
+// invisible to the security trail. See docs/epic-c-security.md (C.1).
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        BulkControlAssignSchema,
-        async (
-            req: NextRequest,
-            { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
-            body,
-        ) => {
-            const params = await paramsPromise;
-            const ctx = await getTenantCtx(params, req);
-            const result = await bulkAssignControl(ctx, body.controlIds, body.ownerUserId);
-            return jsonResponse(result);
-        },
-    ),
+    requirePermission('controls.edit', async (req: NextRequest, _routeArgs, ctx) => {
+        const body = await parseJsonBody(req, BulkControlAssignSchema);
+        const result = await bulkAssignControl(ctx, body.controlIds, body.ownerUserId);
+        return jsonResponse(result);
+    }),
 );
