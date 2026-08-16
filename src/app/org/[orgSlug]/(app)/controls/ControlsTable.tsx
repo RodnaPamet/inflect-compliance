@@ -26,6 +26,34 @@ interface Props {
     orgSlug?: string;
 }
 
+/**
+ * DELIBERATELY hotter than `CONTROL_STATUS_VARIANT`, on two statuses.
+ *
+ * Every other surface renders NOT_STARTED and PLANNED as `neutral`, because
+ * there they sit beside IMPLEMENTED controls and mean "not started yet" — an
+ * ordinary state, not a problem.
+ *
+ * This table is the org-level NON-PERFORMING drill-down. Its row type is a
+ * narrowed five-status union (`NonPerformingControlRow['status']`) with no
+ * IMPLEMENTED and no NOT_APPLICABLE, because a control that is implemented is
+ * not non-performing by definition. Everything on this screen is already a
+ * problem, so the useful signal is which problem is WORST — and within a list
+ * of failures, the control nobody has started is worse than one being
+ * actively implemented. Flattening these to `neutral` would paint every row
+ * the same and delete the only ranking the view offers.
+ *
+ *   NOT_STARTED  error    ← diverges (shared: neutral)
+ *   PLANNED      warning  ← diverges (shared: neutral)
+ *   IN_PROGRESS  info     ← agrees with the shared map
+ *   IMPLEMENTING info     ← agrees
+ *   NEEDS_REVIEW warning  ← agrees
+ *
+ * The three that agree must KEEP agreeing — that is what
+ * `tests/rendered/org-controls-status-emphasis.test.tsx` pins, so a change to
+ * the shared map surfaces here as a decision instead of as drift. This is the
+ * only remaining ControlStatus→variant literal in `src/`, and it is the only
+ * one that should be.
+ */
 const STATUS_VARIANTS: Record<NonPerformingControlRow['status'], 'warning' | 'info' | 'error'> = {
     NOT_STARTED: 'error',
     PLANNED: 'warning',
