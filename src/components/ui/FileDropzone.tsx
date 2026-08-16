@@ -44,6 +44,7 @@ import {
 import { CheckCircle2, UploadCloud, X } from 'lucide-react';
 
 import { FileTypeIcon } from '@/components/ui/file-type-icon';
+import { formatBytes } from '@/lib/evidence-upload-limits';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -155,11 +156,8 @@ function uid(): string {
         : `f-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 }
 
-function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1048576).toFixed(1)} MB`;
-}
+// formatBytes moved to @/lib/evidence-upload-limits — it had two other
+// copies, one of which had lost the sub-kilobyte branch.
 
 /** Whether the dragged item is a file (vs text/etc). */
 function dragHasFiles(e: DragEvent): boolean {

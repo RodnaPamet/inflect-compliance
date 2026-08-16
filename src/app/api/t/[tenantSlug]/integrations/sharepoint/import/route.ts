@@ -16,6 +16,11 @@ const Body = z.object({
         .min(1),
     controlId: z.string().optional(),
     category: z.string().optional(),
+    // `folder` was the one field the upload modal renders that this schema
+    // did not accept, so it was unreachable end-to-end on the SharePoint
+    // path even though `uploadEvidenceFile` has always taken it. `category`
+    // was accepted here all along and simply never sent by the client.
+    folder: z.string().optional(),
 });
 
 export const POST = withApiErrorHandling(

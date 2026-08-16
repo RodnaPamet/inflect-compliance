@@ -2609,6 +2609,7 @@
             "fileRequired": "A file is required to upload evidence.",
             "spImportFailed": "SharePoint import failed.",
             "spImportFailedNet": "SharePoint import failed — network error.",
+            "spImportRetentionFailed": "Imported, but the retention date could not be applied to every file. Set it from the evidence row.",
             "spProbeErrorTitle": "Couldn't check SharePoint",
             "spProbeErrorBody": "We couldn't verify your SharePoint connection, so import from SharePoint is unavailable right now. Check the integration and try reopening this dialog.",
             "uploadFailed": "Upload failed",

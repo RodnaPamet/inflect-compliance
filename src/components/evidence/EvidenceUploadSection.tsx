@@ -19,13 +19,14 @@ import { FileDropzone, type FileUploadEntry } from '@/components/ui/FileDropzone
 import { Button } from '@/components/ui/button';
 import { Download, ArrowUpRight } from '@/components/ui/icons/nucleo';
 import { uploadWithProgress } from '@/lib/upload/upload-with-progress';
+import { EVIDENCE_ACCEPT, EVIDENCE_MAX_FILE_MB, EVIDENCE_UPLOAD_HINT } from '@/lib/evidence-upload-limits';
 
 // Mirrors the evidence upload modal's accept list + hint copy so every
 // evidence surface advertises the same supported types + size cap.
-const EVIDENCE_ACCEPT =
-    '.pdf,.jpg,.jpeg,.png,.gif,.webp,.csv,.txt,.doc,.docx,.xlsx,.xls,.json,.zip';
-const EVIDENCE_HINT = 'PDF, Office, CSV, image, JSON, or ZIP — up to 25 MB per file';
-const MAX_FILE_MB = 25;
+// The comment above used to say this mirrored the upload modal's list and
+// hint. It did — and saying so is not the same as sharing them.
+const EVIDENCE_HINT = EVIDENCE_UPLOAD_HINT;
+const MAX_FILE_MB = EVIDENCE_MAX_FILE_MB;
 
 /** Raw `Evidence` row as returned by the evidence-tab GET. */
 interface RawEvidence {

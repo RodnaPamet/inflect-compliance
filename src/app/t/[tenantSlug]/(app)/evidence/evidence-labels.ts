@@ -16,7 +16,38 @@
  * member degrades to its identifier rather than a dotted key path.
  */
 
+import type { StatusBadgeVariant } from '@/components/ui/status-badge';
+
 type T = (key: string, values?: Record<string, string | number>) => string;
+
+/**
+ * `EvidenceStatus` → badge tone.
+ *
+ * The labels above were centralised; the TONE was not, and the two copies
+ * drifted. `EvidenceClient`'s map carried `PENDING_UPLOAD: 'info'` and
+ * `EvidenceDetailSheet`'s omitted it, falling through to `'neutral'` — so
+ * the same row badged one way in the list and another in the sheet, at the
+ * same moment, for the one status that only exists mid-upload and is
+ * therefore the hardest to notice.
+ *
+ * PENDING_UPLOAD is the optimistic sentinel, not a persisted status: it
+ * reads `info` because the row is in flight, not because anything is wrong.
+ */
+export const EVIDENCE_STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
+    DRAFT: 'neutral',
+    SUBMITTED: 'info',
+    APPROVED: 'success',
+    REJECTED: 'error',
+    // EP-2 — the stale-review sweep flips rows into NEEDS_REVIEW; give it a
+    // warning tone so it reads as "needs attention".
+    NEEDS_REVIEW: 'warning',
+    PENDING_UPLOAD: 'info',
+};
+
+/** Badge tone for a status, defaulting to neutral for an unmapped member. */
+export function evidenceStatusVariant(status: string | null | undefined): StatusBadgeVariant {
+    return EVIDENCE_STATUS_VARIANT[status ?? ''] ?? 'neutral';
+}
 
 /** Localized `EvidenceType` label (`t` = `useTranslations('evidence')`). */
 export function evidenceTypeLabel(type: string | null | undefined, t: T): string {

@@ -18,9 +18,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
+import { EVIDENCE_ACCEPT, formatBytes } from '@/lib/evidence-upload-limits';
 
-const FILE_ACCEPT =
-    '.pdf,.jpg,.jpeg,.png,.gif,.webp,.csv,.txt,.doc,.docx,.xlsx,.xls,.json,.zip';
+// Was a third copy of the accept string, byte-identical to the other two.
+const FILE_ACCEPT = EVIDENCE_ACCEPT;
 
 export interface EvidenceAddFormIds {
     trigger: string;
@@ -55,11 +56,9 @@ export interface EvidenceAddFormProps {
     saving: boolean;
 }
 
-function formatSize(bytes: number): string {
-    return bytes < 1048576
-        ? `${(bytes / 1024).toFixed(1)} KB`
-        : `${(bytes / 1048576).toFixed(1)} MB`;
-}
+// This copy had lost the `< 1024` branch the other two kept, so a 500-byte
+// file rendered "0.5 KB". Now the shared one.
+const formatSize = formatBytes;
 
 export function EvidenceAddForm({
     ids,
