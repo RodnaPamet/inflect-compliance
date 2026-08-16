@@ -119,7 +119,46 @@ export const env = createEnv({
         // Rate Limiting
         RATE_LIMIT_ENABLED: z.enum(["0", "1"]).optional(),
         RATE_LIMIT_MODE: z.enum(["upstash", "memory"]).default("upstash"),
-        AUTH_TEST_MODE: z.enum(["0", "1"]).optional(),
+        // AUTH_TEST_MODE must NEVER be "1" in production. It is not a
+        // single switch — setting it strips four production controls at
+        // once, each in a different file, none of which announces itself:
+        //   - src/lib/auth/credentials.ts:209    credentials sign-in gate
+        //   - src/lib/auth/credential-rate-limit.ts:103
+        //                                        login brute-force throttle
+        //                                        becomes a NO-OP (Epic A.3)
+        //   - src/lib/rate-limit/authRateLimit.ts:143   auth tier bypassed
+        //   - src/lib/rate-limit/apiReadRateLimit.ts:190 read tier bypassed
+        //
+        // So a production process with this set accepts username/password
+        // auth AND has no brute-force protection AND no rate limiting on
+        // either tier. Refuse to boot instead, on the GAP-03 /
+        // DATA_ENCRYPTION_KEY pattern.
+        //
+        // This exists because deploy/.env.prod carried AUTH_TEST_MODE=1
+        // next to NODE_ENV=production — checked in, consumed by three
+        // services via env_file in deploy/docker-compose.prod.yml. The live
+        // VM did not have it (verified 2026-08-17: zero occurrences in
+        // /opt/inflect/.env.prod and in the running container's env), so
+        // production was never exposed. But the repo's own documented
+        // deployment path would have exposed it, and a config file is the
+        // wrong place to enforce this — the same edit recurs on the next
+        // deploy otherwise.
+        AUTH_TEST_MODE: z
+            .enum(["0", "1"])
+            .optional()
+            .superRefine((val, ctx) => {
+                if (process.env.NODE_ENV !== 'production') return;
+                if (val === '1') {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message:
+                            'AUTH_TEST_MODE must not be "1" in production. It enables ' +
+                            'credentials sign-in AND disables the login brute-force ' +
+                            'throttle and both rate-limit tiers. Remove it from the ' +
+                            'production environment.',
+                    });
+                }
+            }),
         // When "1", the Credentials provider rejects sign-ins whose User row
         // has `emailVerified = null`. See src/lib/auth/credentials.ts. Default
         // is OFF so existing deployments behave unchanged until verification

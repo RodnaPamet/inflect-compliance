@@ -28,6 +28,30 @@ export async function register() {
             process.exit(1);
         }
 
+        // ── AUTH_TEST_MODE must not be "1" in production ──
+        // Same defense-in-depth reasoning as the two checks around it: the
+        // env schema catches it at module load, this catches the case where
+        // SKIP_ENV_VALIDATION=1 leaks into the runtime container — which is
+        // exactly the configuration a container image is most likely to
+        // carry, since the build sets it deliberately.
+        //
+        // Worth stating what the flag actually does, because the name
+        // undersells it. It does not just enable credentials sign-in: it
+        // makes the login brute-force throttle a no-op and bypasses BOTH
+        // rate-limit tiers, in four different files, silently.
+        if (
+            process.env.NODE_ENV === 'production' &&
+            process.env.AUTH_TEST_MODE === '1'
+        ) {
+            console.error(
+                '[startup] FATAL: AUTH_TEST_MODE=1 is set in production. ' +
+                'It enables credentials sign-in AND disables the login ' +
+                'brute-force throttle and both rate-limit tiers. ' +
+                'Remove AUTH_TEST_MODE from the production environment.',
+            );
+            process.exit(1);
+        }
+
         // ── GAP-03: DATA_ENCRYPTION_KEY is required in production ──
         // Defense-in-depth alongside the env-schema check (`src/env.ts`):
         // schema validation catches missing/wrong-fallback configs at
