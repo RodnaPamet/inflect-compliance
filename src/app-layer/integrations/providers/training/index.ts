@@ -22,6 +22,8 @@ interface TrainingDeps {
 
 export class TrainingProvider implements ScheduledCheckProvider {
     readonly id = 'training';
+    // Internal provider over the tenant's own training rows — no credential.
+    readonly liveValidation = false;
     readonly displayName = 'Training & Background';
     readonly description = 'Internal checks over security-awareness training completion and background-check status.';
     readonly supportedChecks = [...TRAINING_CHECKS];

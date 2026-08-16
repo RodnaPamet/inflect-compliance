@@ -23,6 +23,8 @@ interface DeviceDeps {
 
 export class DeviceProvider implements ScheduledCheckProvider {
     readonly id = 'device';
+    // Internal provider over the tenant's own device rows — no credential.
+    readonly liveValidation = false;
     readonly displayName = 'Device Posture';
     readonly description = 'Internal checks over the device inventory: disk encryption, screen lock, antivirus, password manager.';
     readonly supportedChecks = [...DEVICE_CHECKS];

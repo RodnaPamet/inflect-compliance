@@ -217,11 +217,23 @@ export interface IntegrationProvider {
      */
     readonly setupGuide?: string;
     /**
-     * P2 — does `validateConnection` perform a REAL third-party probe (true) or
-     * only check field shape (false/undefined)? Drives honest test-connection
-     * labelling so a green check doesn't imply verified connectivity.
+     * Does `validateConnection` perform a REAL third-party probe (true) or only
+     * check field shape (false)? Drives honest test-connection labelling so a
+     * green check doesn't imply verified connectivity.
+     *
+     * REQUIRED, deliberately. It used to be optional, and optional meant an
+     * undeclared provider read as `false` — shape-only BY SILENCE rather than
+     * by decision. That defaulted the weaker, safer-sounding label onto anyone
+     * who forgot, and it mislabelled in both directions: GitHub performs a real
+     * authenticated `GET /repos/{owner}/{repo}` and was still presented to
+     * admins as unverified, because nobody had written the line.
+     *
+     * A new provider must now state which it is. `false` is a legitimate
+     * answer — for the internal check providers (personnel / device /
+     * training) there is no external credential to probe at all — but it has
+     * to be an answer.
      */
-    readonly liveValidation?: boolean;
+    readonly liveValidation: boolean;
 
     /**
      * Validate that a connection config is correct and credentials work.

@@ -66,6 +66,7 @@ let nextEvidence: EvidencePayload | null = {
 
 const fakeProvider: ScheduledCheckProvider = {
     id: PROVIDER_ID,
+    liveValidation: false,
     displayName: 'Fake Provider',
     description: 'test',
     supportedChecks: [CHECK_TYPE],

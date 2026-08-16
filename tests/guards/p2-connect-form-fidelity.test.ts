@@ -38,7 +38,14 @@ describe('P2 — setup guidance + honest test + internal providers', () => {
 
     it('providers carry setupGuide + liveValidation, surfaced to the UI', () => {
         expect(types).toMatch(/readonly setupGuide\?/);
-        expect(types).toMatch(/readonly liveValidation\?/);
+        // Was `readonly liveValidation\?` — it pinned the field as OPTIONAL,
+        // and optional was the defect: an undeclared provider read as `false`,
+        // so a provider was labelled shape-only BY SILENCE rather than by
+        // decision. GitHub performs a real authenticated probe and was still
+        // shown to admins as unverified because nobody wrote the line.
+        // Required now, so tsc enumerates anyone who forgets.
+        expect(types).toMatch(/readonly liveValidation:\s*boolean;/);
+        expect(types).not.toMatch(/readonly liveValidation\?/);
         expect(read('src/app-layer/integrations/aws-posture-provider.ts')).toMatch(/liveValidation = true/);
         expect(read('src/app-layer/integrations/providers/azure-posture-provider.ts')).toMatch(/liveValidation = false/);
         expect(page).toMatch(/data-testid="provider-setup-guide"/);

@@ -194,6 +194,14 @@ export function evaluateBranchProtection(
 
 export class GitHubProvider implements ScheduledCheckProvider, WebhookEventProvider {
     readonly id = 'github';
+    /**
+     * TRUE, and this was the mislabel worth fixing. `validateConnection` below
+     * does a real authenticated `GET https://api.github.com/repos/{owner}/{repo}`
+     * with the tenant's token — a revoked token or a wrong repo fails it. The
+     * field was simply never declared, so the UI read the undefined as false
+     * and told admins their verified connection was shape-only.
+     */
+    readonly liveValidation = true;
     readonly displayName = 'GitHub';
     readonly description = 'GitHub repository compliance checks — branch protection, security settings';
     readonly supportedChecks = ['branch_protection'];
