@@ -48,6 +48,13 @@ const REGISTERS: ReadonlyArray<{
     { name: 'policy', file: 'src/app-layer/usecases/policy.ts', single: 'deletePolicy', bulk: 'bulkDeletePolicy' },
     { name: 'control', file: 'src/app-layer/usecases/control/mutations.ts', single: 'deleteControl', bulk: 'bulkDeleteControl' },
     { name: 'vendor', file: 'src/app-layer/usecases/vendor.ts', single: null, bulk: 'bulkDeleteVendor' },
+    // Added after the cross-surface sweep found deleteProcessMap on
+    // assertCanWrite. Worth its own note: ProcessMap is in NEITHER
+    // SOFT_DELETE_MODELS nor the SoftDeletableModel union, so unlike every
+    // other register here a mistaken delete has no restore path for any role.
+    // That makes the ADMIN gate the only thing standing between an EDITOR and
+    // an unrecoverable loss of control-coverage evidence.
+    { name: 'process map', file: 'src/app-layer/usecases/process-map.ts', single: 'deleteProcessMap', bulk: null },
 ];
 
 /** Any of these satisfies "requires ADMIN". */
