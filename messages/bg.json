@@ -4522,6 +4522,8 @@
             "colStatus": "Статус",
             "colSecrets": "Тайни",
             "colLastTest": "Последен тест",
+            "colLastCollected": "Последно събрано",
+            "neverCollected": "Никога",
             "colExecutions": "Изпълнения",
             "colActions": "Действия",
             "statusActive": "Активна",

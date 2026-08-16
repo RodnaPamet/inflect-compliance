@@ -4522,6 +4522,8 @@
             "colStatus": "Status",
             "colSecrets": "Secrets",
             "colLastTest": "Last Test",
+            "colLastCollected": "Last collected",
+            "neverCollected": "Never",
             "colExecutions": "Executions",
             "colActions": "Actions",
             "statusActive": "Active",

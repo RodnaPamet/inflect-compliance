@@ -84,6 +84,19 @@ export default function AdminIntegrationsPage() {
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState<string | null>(null);
     const [syncingId, setSyncingId] = useState<string | null>(null);
+    /**
+     * connectionId -> last SUCCESSFUL execution, i.e. when this connection
+     * last actually COLLECTED evidence.
+     *
+     * Deliberately not a new column on IntegrationConnection. The model
+     * carries `lastTestedAt` / `lastTestStatus`, which answer "did the
+     * credentials work when someone last pressed Test" — a different question
+     * from the one an admin is asking, and the reason the table looked
+     * informative while telling them nothing about continuity. The answer
+     * already existed: `getConnectionsHealth` derives it from
+     * IntegrationExecution and the health endpoint already serves it.
+     */
+    const [lastSuccessById, setLastSuccessById] = useState<Record<string, string | null>>({});
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const fetchConnections = useCallback(async () => {
@@ -92,6 +105,22 @@ export default function AdminIntegrationsPage() {
             const res = await fetch(apiUrl('/admin/integrations'));
             const data = await res.json();
             setConnections(data.connections ?? []);
+            // Same endpoint the freshness panel below reads. Fetched here so
+            // the table can answer "when did this last collect?" without a
+            // schema change.
+            try {
+                const healthRes = await fetch(apiUrl('/admin/integrations/health'));
+                const health = await healthRes.json();
+                const map: Record<string, string | null> = {};
+                for (const row of (health.connections ?? []) as Array<{ connectionId: string; lastSuccessAt: string | null }>) {
+                    map[row.connectionId] = row.lastSuccessAt;
+                }
+                setLastSuccessById(map);
+            } catch {
+                // Non-fatal: the table still renders, the column reads "—".
+                // A freshness signal is not worth failing the page over.
+                setLastSuccessById({});
+            }
             setProviders(data.availableProviders ?? []);
             setWebhookBaseUrl(data.webhookBaseUrl ?? '');
         } catch {
@@ -488,6 +517,26 @@ export default function AdminIntegrationsPage() {
                                             {formatDate(row.original.lastTestedAt)}
                                         </span>
                                     ) : <span className="text-content-subtle">—</span>,
+                                },
+                                {
+                                    // "Tested OK" and "collected evidence" are
+                                    // different facts, and only one of them
+                                    // tells an admin the integration is doing
+                                    // its job. They sit adjacent so the
+                                    // difference is legible at a glance.
+                                    id: 'lastCollected', header: t('integrations.colLastCollected'),
+                                    accessorFn: (c: ConnectionDTO) => lastSuccessById[c.id] ?? '',
+                                    cell: ({ row }) => {
+                                        const at = lastSuccessById[row.original.id];
+                                        if (at) return <span className="text-content-muted">{formatDate(at)}</span>;
+                                        // An enabled connection that has never
+                                        // collected is the case worth seeing:
+                                        // it looks connected and is producing
+                                        // nothing.
+                                        return row.original.isEnabled
+                                            ? <span className="text-content-warning">{t('integrations.neverCollected')}</span>
+                                            : <span className="text-content-subtle">—</span>;
+                                    },
                                 },
                                 { id: 'executions', header: t('integrations.colExecutions'), accessorFn: (c: ConnectionDTO) => c._count?.executions ?? 0, cell: ({ getValue }) => <span>{getValue()}</span> },
                                 {
