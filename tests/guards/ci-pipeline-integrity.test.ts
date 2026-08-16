@@ -39,6 +39,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import * as yaml from 'js-yaml';
+
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
@@ -159,5 +161,82 @@ describe('CI/CD pipeline-integrity — build / env-validation discipline', () =>
     it('detects a guardrail registry entry whose file is missing', () => {
         const missing = { file: 'tests/guards/__deleted__.test.ts' };
         expect(exists(missing.file)).toBe(false);
+    });
+});
+
+describe('CI/CD pipeline-integrity — the E2E build does not share a box with its services', () => {
+    /**
+     * The `e2e` job's Next build used to run in the same job that hosts
+     * postgres:16-alpine + redis:7-alpine. That combination periodically
+     * exceeded the runner and the KERNEL killed it — no V8 message, just
+     * "received a shutdown signal", once a bare "Killed". Six times across
+     * three branches on 2026-08-16, interleaved with successes, while the
+     * `build` job compiled the same app on the same commits every time.
+     * Its advantage was never a memory ceiling; it was having the box to
+     * itself.
+     *
+     * Lowering the ceiling is not available as a fix: 6144 produces a
+     * deterministic V8 OOM (verified, "Reached heap limit" at Mark-Compact
+     * 6133.6 MB against a 6144 cap). Demand cannot go below ~6.1 GB and
+     * supply cannot reach 8192-plus-two-containers, so the only move is to
+     * remove the competition.
+     *
+     * These assert the INTENT rather than the prose that explains it: a
+     * comment can be edited to say anything, and the reason this was hard
+     * to see the first time is that nothing checked the shape.
+     */
+    const ci = yaml.load(read('.github/workflows/ci.yml')) as {
+        jobs: Record<string, Record<string, unknown>>;
+    };
+
+    it('the bundle is built in its own job', () => {
+        expect(Object.keys(ci.jobs)).toContain('e2e-bundle');
+    });
+
+    it('that job runs NO service containers', () => {
+        // The whole point. A `services:` block here puts postgres back on
+        // the build's runner and restores the failure.
+        expect(ci.jobs['e2e-bundle'].services).toBeUndefined();
+    });
+
+    it('and declares no job-level env that would need one', () => {
+        // Copying the `e2e` env block across would import a DATABASE_URL
+        // pointing at a postgres this job deliberately does not have —
+        // which reads as "the build needs a DB" and invites someone to add
+        // the service back. `next build` needs no database: the `build`
+        // job has none and compiles this app green every run.
+        expect(ci.jobs['e2e-bundle'].env).toBeUndefined();
+    });
+
+    it('the e2e job downloads the bundle instead of building it', () => {
+        const steps = ci.jobs.e2e.steps as Array<Record<string, unknown>>;
+        const builds = steps.filter((s) => String(s.run ?? '').includes('next build'));
+        expect(builds).toEqual([]);
+        expect(steps.some((s) => String(s.uses ?? '').includes('download-artifact'))).toBe(true);
+    });
+
+    it('e2e waits for the bundle job', () => {
+        expect(ci.jobs.e2e.needs).toContain('e2e-bundle');
+    });
+
+    it('the missing-artifact path reaches its own diagnostic', () => {
+        // `download-artifact` fails the step when the artifact is absent,
+        // and a failed step skips every later step without an `if:`. So the
+        // verify step below it can only ever run if the download is marked
+        // continue-on-error — otherwise the operator gets GitHub's generic
+        // "Artifact not found" and none of the retention/re-run guidance.
+        const steps = ci.jobs.e2e.steps as Array<Record<string, unknown>>;
+        const dl = steps.findIndex((s) => String(s.uses ?? '').includes('download-artifact'));
+        const verify = steps.findIndex((s) => String(s.run ?? '').includes('BUILD_ID'));
+        expect(dl).toBeGreaterThanOrEqual(0);
+        expect(verify).toBeGreaterThan(dl);
+        expect(steps[dl]['continue-on-error']).toBe(true);
+    });
+
+    it('but never falls back to rebuilding in-job', () => {
+        // A rebuild fallback would reintroduce the exact failure, silently,
+        // under the conditions hardest to notice.
+        const steps = ci.jobs.e2e.steps as Array<Record<string, unknown>>;
+        expect(steps.some((s) => String(s.run ?? '').includes('next build'))).toBe(false);
     });
 });
