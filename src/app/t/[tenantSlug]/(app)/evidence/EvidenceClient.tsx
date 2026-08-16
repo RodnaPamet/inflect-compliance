@@ -81,6 +81,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Plus, Pen2, Download, BoxArchive, PaperPlane, Check, Xmark, CalendarRefresh, ShieldAlert, CircleHalfDottedClock } from '@/components/ui/icons/nucleo';
 import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
+import { ownerLabel } from '@/lib/evidence-owner-label';
 
 interface Permissions {
     canRead: boolean;
@@ -133,6 +134,7 @@ interface EvidenceRow {
     fileName: string | null;
     owner: string | null;
     ownerUserId: string | null;
+    ownerUser?: { id: string; name: string | null; email: string | null } | null;
     folder: string | null;
     isArchived: boolean;
     expiredAt: string | null;
@@ -158,14 +160,18 @@ interface EvidenceRow {
     }>;
     fileRecord: { id: string; mimeType: string | null; scanStatus?: string | null } | null;
     /**
-     * Tags on the row. The list select has always returned these
-     * (`evidenceListSelect` in EvidenceRepository), but this interface did not
-     * declare them, so nothing here could see them — and the row's Edit button
-     * seeded `EditEvidenceModal` without them. `tags` is optional on
-     * `EditEvidenceInitial`, so that omission type-checked, the field rendered
-     * empty, and saving reconciled the row's tags to the empty set: every tag
-     * silently deleted. The detail sheet's edit button always passed them,
-     * which is why the same modal behaved correctly from there.
+     * Tags on the row. FIXED — the row's Edit button now seeds
+     * `EditEvidenceModal` with them (see the `tags:` mapping at the edit call
+     * site below); this paragraph records why the field is declared here.
+     *
+     * The list select has always returned these (`evidenceListSelect` in
+     * EvidenceRepository), but this interface did not declare them, so nothing
+     * here could see them, and the row's Edit button seeded the modal without
+     * them. `tags` is optional on `EditEvidenceInitial`, so that omission
+     * type-checked, the field rendered empty, and saving reconciled the row's
+     * tags to the empty set: every tag silently deleted. The detail sheet's
+     * edit button always passed them, which is why the same modal behaved
+     * correctly from there.
      */
     tags?: Array<{ tag: string }>;
 }
@@ -753,7 +759,11 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     //   - `retention` → the cell shows getRetentionStatus(...).label
     //                   (Active / Expiring / Expired), not the raw ISO date.
     //   - `status`    → the cell shows statusLabel(ev.status), not the enum.
-    //   - `owner`     → the cell shows `ev.owner`, not `ev.ownerUser?.name`.
+    //   - `owner`     → resolved owner: the assigned USER's name, falling
+    //     back to the legacy free-text column. The cell used to show
+    //     `ev.owner` alone, which made `ownerUserId` write-only from the
+    //     UI's point of view — the edit modal's owner picker and the bulk
+    //     "Assign owner" action both wrote the FK and nothing rendered it.
     // Each accessor below reuses the SAME derivation as its column cell.
     const sortAccessors = useMemo<SortAccessors<EvidenceRow>>(
         () => ({
@@ -768,7 +778,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             category: (ev) => ev.category || '—',
             retention: (ev) => getRetentionStatus(ev, hydratedNow, tx).label,
             status: (ev) => statusLabel(ev.status),
-            owner: (ev) => ev.owner || '—',
+            owner: (ev) => ownerLabel(ev),
         }),
         // statusLabel closes over `t`; getRetentionStatus is pure of `hydratedNow`.
         [t, hydratedNow, tx],
@@ -1121,7 +1131,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             id: 'owner',
             header: t.ownerLabel,
 
-            accessorFn: (ev) => ev.owner || '\u2014',
+            accessorFn: (ev) => ownerLabel(ev) || '\u2014',
             cell: ({ getValue }: { getValue: () => string }) => (
                 <span className="text-xs">{getValue()}</span>
             ),
