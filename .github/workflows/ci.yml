@@ -832,12 +832,137 @@ jobs:
         continue-on-error: true
 
   # ═══════════════════════════════════════════════════════════════
+  #  Job 6a: E2E bundle — compile the test-mode bundle OFF the E2E box
+  #
+  #  This exists for one reason: `next build` and the E2E job's service
+  #  containers do not fit on one runner.
+  #
+  #  Measured on ubuntu-latest (15,989 MB / 4 vCPU), sampling
+  #  /proc/meminfo + the build tree every 1s under NEXT_TEST_MODE
+  #  (next.config.js carries the full table): the build peaks at
+  #  ~8,070 MB RSS even WITH `webpackMemoryOptimizations`. Below 6 GB of
+  #  V8 heap it dies with a clean "Reached heap limit" (verified
+  #  2026-08-16 at Mark-Compact 6133.6 MB against a 6144 cap), so the
+  #  ceiling cannot come down. Above that, the build plus
+  #  postgres:16-alpine plus redis:7-alpine plus a seeded database
+  #  periodically exceeded the host and the KERNEL took the runner —
+  #  no V8 message, just "received a shutdown signal", once a bare
+  #  "Killed". Six of those across three branches on 2026-08-16,
+  #  interleaved with successes, while the `build` job compiled the same
+  #  app on the same commits every time. Its advantage was never the
+  #  ceiling; it was having the runner to itself.
+  #
+  #  So: no `services:` here. This job gets the box the way `build` does.
+  #  The bundle rides to `e2e` as an artifact, exactly as `build` already
+  #  hands its output to `load-smoke`.
+  #
+  #  The bundle is NOT interchangeable with the `build` job's. This one
+  #  sets NEXT_TEST_MODE (routing output to `.next-test/`, next.config.js)
+  #  and NEXT_PUBLIC_TEST_MODE, and NEXT_PUBLIC_* is INLINED at build
+  #  time — so the two artifacts differ in the shipped JS, not just in
+  #  where they land. Handing `e2e` the production one would silently
+  #  re-enable the onboarding tour and the calendar-badge polling that
+  #  test mode exists to suppress; it would not fail loudly, it would
+  #  stop `networkidle` settling and read as flake.
+  # ═══════════════════════════════════════════════════════════════
+  e2e-bundle:
+    name: E2E bundle
+    # Same event gate as `e2e` — no point building a bundle for a job
+    # that is skipped in the merge queue.
+    if: ${{ github.event_name != 'merge_group' }}
+    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
+    # `build` is 25 for the same workload plus cold-runner and npm-retry
+    # headroom. This one has the same shape, so it gets the same budget.
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Next reads `.env` at build time, so the NEXT_PUBLIC_* inlining and
+      # the i18n/config resolution match what `e2e` expects.
+      #
+      # NOT byte-identical inputs to the old in-job build, and worth being
+      # precise about: that step ALSO inherited the `e2e` job-level env —
+      # a live DATABASE_URL on 5432, REDIS_URL, DATA_ENCRYPTION_KEY — and
+      # process env beats `.env`, so those won. This job has only the
+      # workflow-level env plus `.env.e2e.example`, whose DATABASE_URL
+      # points at 5434 with nothing listening and which carries no
+      # DATA_ENCRYPTION_KEY.
+      #
+      # The emitted bundle is unchanged regardless: none of those are
+      # NEXT_PUBLIC_*, so none are inlined. And `next build` provably needs
+      # no database, no Redis and no key — the `build` job has none of
+      # them and compiles this same app green every run.
+      - name: Setup environment
+        run: cp .env.e2e.example .env
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Moved here with the build it belongs to. Keyed exactly as it was
+      # in `e2e` so entries written by earlier runs still hit.
+      - name: Cache Next.js build cache (test mode)
+        uses: actions/cache@v5
+        with:
+          path: .next-test/cache
+          key: ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.[jt]s', 'src/**/*.[jt]sx', 'next.config.js') }}
+          restore-keys: |
+            ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-
+            ${{ runner.os }}-next-test-
+
+      - name: Build Next.js app
+        # --webpack: match the deployed bundler (nonce strict-CSP chunks).
+        run: npx next build --webpack
+        env:
+          # 8192 stays. The lower bound is measured: 6144 OOM'd
+          # deterministically at Mark-Compact 6133.6 (6148.6) MB. What
+          # changed is that this process now has the runner to itself, so
+          # the ceiling no longer competes with two containers for RSS.
+          NODE_OPTIONS: "--max-old-space-size=8192"
+          NODE_ENV: production
+          NEXT_TEST_MODE: "1"
+          # NEXT_PUBLIC_* is inlined at BUILD time, so it must be set on
+          # this step — which is now in a different JOB from the tests.
+          # That is the whole reason this job exists as its own artifact
+          # rather than reusing `build`'s. Mirrors scripts/e2e-local.mjs.
+          # Suppresses the Driver.js onboarding tour AND the sidebar
+          # calendar-badge polling — both produce background network noise
+          # that keeps `waitForLoadState('networkidle')` from settling
+          # within the 180s test timeout on slow CI runners.
+          NEXT_PUBLIC_TEST_MODE: "1"
+
+      - name: Upload the test-mode bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: next-test-build-${{ github.sha }}
+          # `cache/` is the webpack incremental cache — hundreds of MB
+          # that `next start` never reads. Cached separately above for
+          # the job that BUILDS; shipping it would only slow both ends.
+          path: |
+            .next-test
+            !.next-test/cache
+          retention-days: 1
+          include-hidden-files: true
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-bundle-failure-logs
+          path: .next-test/trace
+          retention-days: 7
+        continue-on-error: true
+
+  # ═══════════════════════════════════════════════════════════════
   #  Job 6: E2E — Playwright browser tests
   #  Needs: build (validates app compiles before expensive E2E)
+  #         e2e-bundle (the test-mode bundle these tests run against)
   # ═══════════════════════════════════════════════════════════════
   e2e:
     name: E2E
-    needs: [build]
+    needs: [build, e2e-bundle]
     # ── Merge-queue lean set: SKIP ──
     # E2E is ~17-25 min serial and would be the single longest job in the
     # queue, serialising that cost onto EVERY merge. It also catches a
@@ -954,49 +1079,46 @@ jobs:
       - name: Create upload directory
         run: mkdir -p /tmp/ci-uploads
 
-      # The e2e bundle is built with NEXT_TEST_MODE, which routes the
-      # output to `.next-test/` (next.config.js:157) — so it needs its own
-      # cache entry, not the production one.
-      - name: Cache Next.js build cache (test mode)
-        uses: actions/cache@v5
+      # The bundle is built in `e2e-bundle`, on a runner with no service
+      # containers, and arrives here as an artifact. See the banner on
+      # that job for the measurements — building it HERE is what was
+      # getting the runner killed.
+      #
+      # `next start` finds it because playwright.config.ts's webServer
+      # command sets NEXT_TEST_MODE=1, and next.config.js routes
+      # `distDir` to `.next-test` under that flag. So the download path
+      # below is load-bearing, not cosmetic.
+      # `continue-on-error` is here for ONE reason: to let the next step
+      # own the failure message. `download-artifact` fails the step when the
+      # artifact is absent, and a failed step skips every later step that
+      # carries no `if:` — so without this, the verify step below would be
+      # SKIPPED in exactly the case it exists for, and the operator would
+      # get GitHub's generic "Artifact not found for name: …" instead of
+      # the retention/re-run guidance.
+      - name: Download the test-mode bundle
+        continue-on-error: true
+        uses: actions/download-artifact@v8
         with:
-          path: .next-test/cache
-          key: ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.[jt]s', 'src/**/*.[jt]sx', 'next.config.js') }}
-          restore-keys: |
-            ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-
-            ${{ runner.os }}-next-test-
+          name: next-test-build-${{ github.sha }}
+          path: .next-test
 
-      - name: Build Next.js app
-        # --webpack: match the deployed bundler (nonce strict-CSP chunks).
-        run: npx next build --webpack
-        env:
-          # The workflow-level 6144 MB was sized for JEST — `--runInBand`
-          # holding one shard's whole module graph in a single process (see
-          # the comment on the top-level NODE_OPTIONS). `next build` is a
-          # different workload and had quietly grown into that ceiling:
-          # measured 2026-08-10, this step OOM'd twice in a row at
-          # Mark-Compact 6097.8 → 6100.4 MB against the 6144 cap, i.e. it
-          # was failing with ~0.7% headroom. That is not a flake to re-run
-          # past — at that margin it is a coin flip per build, which is
-          # exactly how it presented (green on one main commit, red twice on
-          # the next branch).
-          #
-          # Runners have 16 GB, so 8192 restores real headroom without
-          # crowding Postgres + the Next server that share this job. Raised
-          # only HERE rather than at the workflow level so the Jest ceiling
-          # keeps its own rationale and its own tuning history.
-          NODE_OPTIONS: "--max-old-space-size=8192"
-          NODE_ENV: production
-          NEXT_TEST_MODE: "1"
-          # NEXT_PUBLIC_* env vars are inlined at BUILD time, so they
-          # must be set on the build step (not just on `playwright test`)
-          # to take effect in the runtime bundle. Mirrors what
-          # `scripts/e2e-local.mjs` does. Suppresses the Driver.js
-          # onboarding tour AND the sidebar calendar-badge polling —
-          # both produce background network noise that keeps
-          # `waitForLoadState('networkidle')` from settling within the
-          # 180s test timeout on slow CI runners.
-          NEXT_PUBLIC_TEST_MODE: "1"
+      # `load-smoke`'s download shape MINUS its rebuild fallback, and the
+      # omission is deliberate. A fallback here would rebuild inside this
+      # job — the exact thing that was killing the runner — reintroduced
+      # silently, and only under the conditions (expired artifact, job
+      # re-run alone) that are hardest to notice. load-smoke can afford its
+      # fallback because it rebuilds the PRODUCTION bundle in a job with no
+      # containers; this one cannot.
+      - name: Verify the bundle arrived
+        run: |
+          if [ ! -f .next-test/BUILD_ID ]; then
+            echo "::error::No .next-test/BUILD_ID — the e2e-bundle artifact did not arrive."
+            echo "Re-run the whole workflow rather than this job alone: the artifact"
+            echo "belongs to the run and has a 1-day retention."
+            ls -la .next-test 2>/dev/null || echo "(.next-test does not exist)"
+            exit 1
+          fi
+          echo "bundle ok: BUILD_ID=$(cat .next-test/BUILD_ID)"
 
       # ── Playwright with browser cache ──
       - name: Get Playwright version
