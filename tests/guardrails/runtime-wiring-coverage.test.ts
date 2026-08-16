@@ -35,9 +35,15 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
  * reason. A new executor job must be scheduled OR added here deliberately.
  */
 const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
-    'aws-posture-collect': 'per-control cloud check dispatched by automation-runner',
-    'azure-posture-collect': 'per-control cloud check dispatched by automation-runner',
-    'gcp-posture-collect': 'per-control cloud check dispatched by automation-runner',
+    // These three said 'dispatched by automation-runner' and nothing checked
+    // it. It was false: automation-runner resolves a control's automationKey
+    // and calls the PROVIDER's runCheck — it never enqueues these job names.
+    // Nothing did. They sat here, exempted by a plausible sentence, while the
+    // rolling-evidence collectors behind them were unreachable. The
+    // `dispatched by` assertion below now verifies the claim.
+    'aws-posture-collect': 'per-connection collect dispatched by cloud-posture-collect-dispatch',
+    'azure-posture-collect': 'per-connection collect dispatched by cloud-posture-collect-dispatch',
+    'gcp-posture-collect': 'per-connection collect dispatched by cloud-posture-collect-dispatch',
     'control-test-runner': 'per-plan run dispatched by control-test-scheduler',
     'identity-sync': 'per-connection sync dispatched by identity-sync-dispatch',
     'hris-sync': 'per-connection sync dispatched by hris-sync-dispatch',
@@ -113,6 +119,52 @@ describe('Runtime wiring forward-lock', () => {
             const execSet = new Set(executors);
             const dangling = [...scheduled].filter((j) => !execSet.has(j));
             expect(dangling).toEqual([]);
+        });
+
+        /**
+         * The escape hatch used to accept prose, and prose is how three jobs
+         * stayed exempt while being reachable by nothing at all: their reason
+         * named `automation-runner`, which dispatches providers per control
+         * and never enqueues a job by these names.
+         *
+         * A reason of the form "... dispatched by <name>" is a CHECKABLE
+         * claim, so check it: some file must actually enqueue this job. That
+         * converts the hatch from a place to write a sentence into a place to
+         * state a fact.
+         */
+        it('every "dispatched by" reason names a real enqueue site', () => {
+            // Scoped to app-layer, which is where every `enqueue(...)` lives.
+            const walk = (dir: string, out: string[] = []): string[] => {
+                for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                    const p = path.join(dir, e.name);
+                    if (e.isDirectory()) walk(p, out);
+                    else if (p.endsWith('.ts')) out.push(p);
+                }
+                return out;
+            };
+            // Only files that actually enqueue something can vouch for a job.
+            // Requiring the NAME to appear in such a file — rather than
+            // anywhere in the tree — is what keeps this from degrading into
+            // the hole it replaced: a file must not be able to satisfy the
+            // check by merely mentioning the job in a comment or a type.
+            const dispatchers = walk(path.join(ROOT, 'src/app-layer'))
+                .map((f) => fs.readFileSync(f, 'utf8'))
+                .filter((src) => /\benqueue\(/.test(src));
+
+            const unenqueued: string[] = [];
+            for (const [job, reason] of Object.entries(ON_DEMAND_JOBS)) {
+                if (!/dispatched by/i.test(reason)) continue;
+                // Either a literal `enqueue('<job>')`, or the name quoted in a
+                // file that enqueues — the latter covers a map-driven
+                // dispatcher (`enqueue(JOB_BY_PROVIDER[p], …)`), which is a
+                // real enqueue site that a literal-only match would reject.
+                const named = new RegExp(`['"\`]${job.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"\`]`);
+                if (!dispatchers.some((src) => named.test(src))) {
+                    unenqueued.push(`${job} — reason claims "${reason}"`);
+                }
+            }
+
+            expect({ unenqueued }).toEqual({ unenqueued: [] });
         });
 
         it('no stale on-demand entries — every listed job still has an executor', () => {
