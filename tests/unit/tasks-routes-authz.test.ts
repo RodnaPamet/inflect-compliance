@@ -125,6 +125,37 @@ const ROUTE_FILES = discoverRoutes(TASKS_API_DIR).sort();
  * say WHY, because the entry is the thing standing between "documented
  * split" and "missing gate" — and those look identical from here.
  */
+/**
+ * Methods gated ABOVE the EDITOR tier — the mirror of VIEW_GATED_WRITES.
+ *
+ * The blanket "lets an EDITOR through" assertion below encodes the C.1
+ * parity rule: a granular `.edit` key is true for the same roles as coarse
+ * `canWrite`, so gating a write route changes the denial SHAPE and not who
+ * is allowed. That rule does not extend to destructive verbs.
+ *
+ * `deleteTask` asserts `assertCanAdmin` — deleting is an ADMIN verb across
+ * the codebase, and the comment on that assert records why the task-side
+ * exception was closed: `bulkDeleteTask` was already ADMIN, so an EDITOR
+ * refused the bulk delete could loop the single DELETE and reach the same
+ * outcome. "A gate one call site can iterate around is not a gate."
+ *
+ * While the ROUTE declared the EDITOR-tier `tasks.edit`, an EDITOR passed the
+ * middleware and was refused by the usecase — and a usecase throw writes no
+ * AUTHZ_DENIED row, so that denial never reached the security trail. The key
+ * now matches the assert, which means an EDITOR is refused HERE, and this
+ * table is what keeps the two halves from drifting apart again.
+ */
+const ADMIN_GATED_WRITES: Record<string, { methods: string[]; reason: string }> = {
+    '[taskId]/route.ts': {
+        methods: ['DELETE'],
+        reason:
+            'deleteTask asserts assertCanAdmin. The route now declares ' +
+            'admin.manage to match, so the denial happens at the layer that ' +
+            'writes AUTHZ_DENIED rather than one layer deeper where nothing ' +
+            'is recorded.',
+    },
+};
+
 const VIEW_GATED_WRITES: Record<string, { methods: string[]; reason: string }> = {
     '[taskId]/watchers/route.ts': {
         methods: ['POST', 'DELETE'],
@@ -274,15 +305,35 @@ describe('tasks API — every route refuses a READER and admits an EDITOR', () =
                     }
                 });
 
+                const adminOnly = ADMIN_GATED_WRITES[rel]?.methods.includes(method) ?? false;
+
                 it(`${method} lets an EDITOR through — the gate is not deny-all`, async () => {
                     mockGetTenantCtx.mockResolvedValue(ctxFor('EDITOR'));
                     const reached = await reachedDomain(handler, method);
                     expect({ route: rel, method, reachedDomain: reached }).toEqual({
                         route: rel,
                         method,
-                        reachedDomain: true,
+                        // An ADMIN-tier verb refuses an EDITOR at the gate, by
+                        // design — that is the whole point of matching the key
+                        // to the usecase's assert.
+                        reachedDomain: !adminOnly,
                     });
                 });
+
+                if (adminOnly) {
+                    it(`${method} still admits an ADMIN — the gate is not deny-all`, async () => {
+                        // The not-deny-all half the assertion above gives up
+                        // for this method. Without it, gating DELETE to a
+                        // permission NOBODY holds would look correct.
+                        mockGetTenantCtx.mockResolvedValue(ctxFor('ADMIN'));
+                        const reached = await reachedDomain(handler, method);
+                        expect({ route: rel, method, reachedDomain: reached }).toEqual({
+                            route: rel,
+                            method,
+                            reachedDomain: true,
+                        });
+                    });
+                }
             }
         });
     }
