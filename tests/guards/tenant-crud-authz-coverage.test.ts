@@ -18,9 +18,21 @@
  *
  * Parity note: granular `.view` is true for every role and
  * `.create`/`.edit` are true for OWNER/ADMIN/EDITOR (= the coarse
- * `canWrite` set), so wiring these keys preserves WHO is allowed; only
+ * `canWrite` set), so wiring those keys preserves WHO is allowed; only
  * the denial shape changes. See `computePermissions` + the role table
  * in `src/lib/permissions.ts`.
+ *
+ * That parity note did NOT hold for DELETE, and this table encoded the
+ * mismatch for three routes. `deleteRisk`, `deleteTask` and `deleteAsset`
+ * all assert `assertCanAdmin` — deleting is an ADMIN verb throughout the
+ * codebase — while the routes declared the EDITOR-tier `.edit` key. An
+ * EDITOR therefore PASSED the middleware and was refused by the usecase,
+ * and a usecase throw writes no `AUTHZ_DENIED` row: the one denial class
+ * this gate exists to record was the one it could not see.
+ *
+ * The rule the table now encodes: the declared key must match the tier
+ * the usecase asserts. A key weaker than the assert is not a lenient
+ * gate, it is an unlogged one.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -35,13 +47,13 @@ interface RouteSpec {
 
 const SPECS: RouteSpec[] = [
     { file: 'risks/route.ts', gates: { GET: 'risks.view', POST: 'risks.create' } },
-    { file: 'risks/[id]/route.ts', gates: { GET: 'risks.view', PUT: 'risks.edit', DELETE: 'risks.edit' } },
+    { file: 'risks/[id]/route.ts', gates: { GET: 'risks.view', PUT: 'risks.edit', DELETE: 'admin.manage' } },
     { file: 'controls/route.ts', gates: { GET: 'controls.view', POST: 'controls.create' } },
     { file: 'controls/[controlId]/route.ts', gates: { GET: 'controls.view', PATCH: 'controls.edit' } },
     { file: 'tasks/route.ts', gates: { GET: 'tasks.view', POST: 'tasks.create' } },
-    { file: 'tasks/[taskId]/route.ts', gates: { GET: 'tasks.view', PATCH: 'tasks.edit', DELETE: 'tasks.edit' } },
+    { file: 'tasks/[taskId]/route.ts', gates: { GET: 'tasks.view', PATCH: 'tasks.edit', DELETE: 'admin.manage' } },
     { file: 'assets/route.ts', gates: { GET: 'assets.view', POST: 'assets.create' } },
-    { file: 'assets/[id]/route.ts', gates: { GET: 'assets.view', PUT: 'assets.edit', DELETE: 'assets.edit' } },
+    { file: 'assets/[id]/route.ts', gates: { GET: 'assets.view', PUT: 'assets.edit', DELETE: 'admin.manage' } },
     { file: 'policies/route.ts', gates: { GET: 'policies.view', POST: 'policies.create' } },
     { file: 'policies/[id]/route.ts', gates: { GET: 'policies.view', PATCH: 'policies.edit' } },
     { file: 'vendors/route.ts', gates: { GET: 'vendors.view', POST: 'vendors.create' } },

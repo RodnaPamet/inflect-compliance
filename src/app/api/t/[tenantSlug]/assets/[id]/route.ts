@@ -22,7 +22,10 @@ export const PUT = withApiErrorHandling(requirePermission<AssetDetailParams>('as
 
 export const PATCH = PUT;
 
-export const DELETE = withApiErrorHandling(requirePermission<AssetDetailParams>('assets.edit', async (_req, { params }, ctx) => {
+// `admin.manage`, not `assets.edit`: `deleteAsset` asserts `assertCanAdmin`. The
+// weaker key let an EDITOR past the middleware to be denied by the usecase,
+// which writes no AUTHZ_DENIED row — so the denial was invisible.
+export const DELETE = withApiErrorHandling(requirePermission<AssetDetailParams>('admin.manage', async (_req, { params }, ctx) => {
     const { id } = await params;
     await deleteAsset(ctx, id);
     return jsonResponse({ success: true });
