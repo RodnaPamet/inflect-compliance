@@ -30,6 +30,7 @@ function createMockProvider(
 ): ScheduledCheckProvider {
     return {
         id,
+        liveValidation: false,
         displayName: `${id} Provider`,
         description: `Mock ${id}`,
         supportedChecks: checks,

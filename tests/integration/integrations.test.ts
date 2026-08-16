@@ -28,6 +28,7 @@ import { registry } from '@/app-layer/integrations/registry';
 function createMockScheduledProvider(id: string, checks: string[]): ScheduledCheckProvider {
     return {
         id,
+        liveValidation: false,
         displayName: `${id} Provider`,
         description: `Mock ${id} provider`,
         supportedChecks: checks,
@@ -65,6 +66,7 @@ function createMockScheduledProvider(id: string, checks: string[]): ScheduledChe
 function createMockWebhookProvider(id: string, checks: string[]): WebhookEventProvider {
     return {
         id,
+        liveValidation: false,
         displayName: `${id} Webhook`,
         description: `Mock ${id} webhook provider`,
         supportedChecks: checks,
@@ -216,6 +218,7 @@ describe('Integration Framework', () => {
             const scheduled = createMockScheduledProvider('github', ['branch_protection']);
             const base: IntegrationProvider = {
                 id: 'base',
+                liveValidation: false,
                 displayName: 'Base',
                 description: '',
                 supportedChecks: [],

@@ -30,6 +30,7 @@ function createConfiguredProvider(
 ): ScheduledCheckProvider {
     return {
         id,
+        liveValidation: false,
         displayName: `${id} Provider`,
         description: `Test ${id} provider`,
         supportedChecks: ['test_check'],

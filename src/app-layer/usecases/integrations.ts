@@ -38,6 +38,30 @@ const IDENTITY_SYNC_PROVIDERS = new Set(['okta', 'google-workspace', 'entra-id',
  * List all integration connections for the tenant.
  * Secrets are never returned — only metadata.
  */
+/**
+ * Config toggles that WEAKEN a security control, surfaced into the audit entry.
+ *
+ * Integration config changes were already audited, but the entry recorded only
+ * "Updated integration: <name>" — so switching OFF TLS certificate
+ * verification against a directory service produced a record indistinguishable
+ * from renaming the connection. For a flag that is switched on during setup
+ * and never switched back, "something changed" is not a usable record: the
+ * question an auditor asks is *when did verification stop*, and the trail could
+ * not answer it.
+ *
+ * Listed explicitly rather than pattern-matched. A new weakening flag should
+ * have to be added here by someone who thought about it, the same reason
+ * `liveValidation` is required rather than inferred.
+ */
+const SECURITY_WEAKENING_FLAGS = ['allowSelfSignedTls', 'insecureSkipVerify', 'disableCertValidation'] as const;
+
+/** The weakening flags currently ON, for the audit entry. Empty when none. */
+function enabledSecurityFlags(configJson: unknown): string[] {
+    if (!configJson || typeof configJson !== 'object') return [];
+    const cfg = configJson as Record<string, unknown>;
+    return SECURITY_WEAKENING_FLAGS.filter((k) => cfg[k] === true || cfg[k] === 'true');
+}
+
 export async function listIntegrationConnections(ctx: RequestContext) {
     return runInTenantContext(ctx, (db) =>
         db.integrationConnection.findMany({
@@ -137,6 +161,9 @@ export async function upsertIntegrationConnection(
                     entityName: 'IntegrationConnection',
                     operation: 'updated',
                     provider: input.provider,
+                    // Names the weakening flags explicitly so the trail can
+                    // answer "when did certificate verification stop?".
+                    securityFlagsEnabled: enabledSecurityFlags(input.configJson),
                     summary: `Updated integration: ${input.name}`,
                 },
             });
@@ -165,7 +192,8 @@ export async function upsertIntegrationConnection(
                 entityName: 'IntegrationConnection',
                 operation: 'created',
                 provider: input.provider,
-                summary: `Created integration: ${input.name}`,
+                securityFlagsEnabled: enabledSecurityFlags(input.configJson),
+                    summary: `Created integration: ${input.name}`,
             },
         });
 

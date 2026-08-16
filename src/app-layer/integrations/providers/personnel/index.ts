@@ -27,6 +27,10 @@ interface PersonnelDeps {
 
 export class PersonnelProvider implements ScheduledCheckProvider {
     readonly id = 'personnel';
+    // No external credential exists to probe: this provider reads the tenant's
+    // own Employee / account rows. `validateConnection` returns valid
+    // unconditionally, which is honest only because there is nothing to check.
+    readonly liveValidation = false;
     readonly displayName = 'Personnel';
     readonly description = 'Internal checks over the personnel roster: offboarded access, onboarding SLA, manager coverage.';
     readonly supportedChecks = [...PERSONNEL_CHECKS];

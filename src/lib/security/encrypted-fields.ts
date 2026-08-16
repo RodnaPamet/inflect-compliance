@@ -117,6 +117,24 @@
  * (`encryption-manifest-coverage.test.ts`) will fail until you justify
  * it in its `NOT_SENSITIVE` allowlist — that is the intended opt-out.
  */
+/**
+ * IntegrationConnection is DELIBERATELY ABSENT from this manifest.
+ *
+ * Its credentials do not live in a manifest-managed column: they go through an
+ * explicit `secretEncrypted` field, written by `usecases/integrations.ts` as
+ * `encryptField(JSON.stringify(input.secrets))` and decrypted at the read.
+ * That is a separate, working mechanism.
+ *
+ * Do not "fix" the omission by adding `configJson` here. `configJson` is the
+ * PUBLIC half of a connection — hostnames, thresholds, feature toggles — and
+ * the admin UI renders it as ordinary form fields. Encrypting it would break
+ * that rendering while protecting nothing that is not already protected, and
+ * it would hide the real invariant, which is that a credential must never be
+ * declared in `configFields` at all.
+ *
+ * That invariant is enforced by
+ * `tests/guards/integration-credential-placement.test.ts`.
+ */
 export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // ─── Tenant security settings ──────────────────────
     //  Epic C.4 — audit-stream HMAC secret. URL stays plaintext so DBAs
