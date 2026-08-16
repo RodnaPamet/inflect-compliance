@@ -70,7 +70,7 @@ import {
     EVIDENCE_FILTER_KEYS,
     evidenceFreshnessLabels,
 } from './filter-defs';
-import { evidenceStatusLabel } from './evidence-labels';
+import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel } from './evidence-labels';
 import {
     evidenceFreshnessBucket,
     reviewCurrencyAnchor,
@@ -91,13 +91,10 @@ interface Permissions {
     canExport: boolean;
 }
 
-const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
-    DRAFT: 'neutral', SUBMITTED: 'info', APPROVED: 'success', REJECTED: 'error',
-    // EP-2 — the stale-review sweep flips rows into NEEDS_REVIEW; give
-    // it a warning tone so it reads as "needs attention".
-    NEEDS_REVIEW: 'warning',
-    PENDING_UPLOAD: 'info',
-};
+// Moved to evidence-labels alongside the status LABELS, which were already
+// shared. The tone was not, and the detail sheet's copy had lost
+// PENDING_UPLOAD — so the same row badged differently in list vs sheet.
+const STATUS_BADGE = EVIDENCE_STATUS_VARIANT;
 
 // Shared icon-only action button (Edit / Archive / Download columns) —
 // mirrors the control-table quick-edit affordance.

@@ -81,6 +81,7 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
+import { EVIDENCE_ACCEPT, EVIDENCE_MAX_FILE_MB } from '@/lib/evidence-upload-limits';
 import {
     uploadWithProgress,
     UploadHttpError,
@@ -91,10 +92,8 @@ import {
 // pack, still small enough to surface oversized uploads client-side
 // before we burn bandwidth on a 4xx round-trip. Server-side still
 // enforces the canonical limit.
-const MAX_FILE_SIZE_MB = 25;
-
-const EVIDENCE_ACCEPT =
-    '.pdf,.jpg,.jpeg,.png,.gif,.webp,.csv,.txt,.doc,.docx,.xlsx,.xls,.json,.zip';
+// Both were local constants duplicated across three evidence surfaces.
+const MAX_FILE_SIZE_MB = EVIDENCE_MAX_FILE_MB;
 
 // ─── Types ──────────────────────────────────────────────────────────
 

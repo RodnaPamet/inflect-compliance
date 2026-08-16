@@ -20,7 +20,7 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { RejectReasonModal } from './RejectReasonModal';
-import { evidenceStatusLabel, evidenceTypeLabel, evidenceReviewActionLabel } from './evidence-labels';
+import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel, evidenceTypeLabel, evidenceReviewActionLabel } from './evidence-labels';
 import type { EditEvidenceInitial } from './EditEvidenceModal';
 import { evidenceContentRole } from '@/lib/evidence-content';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -43,22 +43,14 @@ import Link from 'next/link';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { ownerLabel } from '@/lib/evidence-owner-label';
+import { formatBytes } from '@/lib/evidence-upload-limits';
 
-/** Human-readable byte size (mirrors FileDropzone's local helper). */
-function formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null) return '—';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1048576).toFixed(1)} MB`;
-}
+// formatBytes now comes from @/lib/evidence-upload-limits. Its comment used
+// to say it mirrored FileDropzone's local helper — which it did, and a third
+// copy in EvidenceAddForm had already drifted away from both.
 
-const EVIDENCE_STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
-    DRAFT: 'neutral',
-    SUBMITTED: 'info',
-    APPROVED: 'success',
-    REJECTED: 'error',
-    NEEDS_REVIEW: 'warning',
-};
+// This copy omitted PENDING_UPLOAD and fell through to 'neutral', so an
+// in-flight row badged differently here than in the list. Now shared.
 
 export interface EvidenceDetailSheetProps {
     open: boolean;
