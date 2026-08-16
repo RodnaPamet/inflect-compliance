@@ -1181,7 +1181,14 @@ keeps the markers honest — pick the right class when you add a doc.
   Don't delete the file (inbound cross-links).
 
 When you add a doc, add its entry to `doc-classification.json` in the
-same PR — the ratchet's bidirectional cross-walk fails otherwise.
+same PR — the ratchet's bidirectional cross-walk fails otherwise. Add ONLY
+the entry: the file carries no per-class `counts` header, and re-adding one
+fails the ratchet even if the number is right. It was derived data stored
+beside its own source, and the way it broke is worth remembering — two
+branches each bumping `494 → 495` do not CONFLICT, so git keeps one copy,
+both PRs are green, and main is wrong by one with no suspicious diff for a
+reviewer to catch. A clean merge was the dangerous case, so the header is
+gone rather than monitored.
 
 ## UI Platform — Epics 51–60
 

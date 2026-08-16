@@ -110,36 +110,35 @@ describe('docs accuracy', () => {
     const classified = Object.keys(classification.docs);
 
     /**
-     * The `counts` header is a DERIVED tally, and until 2026-08-07 nothing
-     * checked it — so it drifted silently and repeatedly.
+     * There is no `counts` header any more, and re-adding one is the thing
+     * this now guards against.
      *
-     * The failure mode is specific to how it drifts. Two PRs each add one
-     * doc and each bump the same number 494 -> 495. Neither conflicts:
-     * their entries land in different places and the count line is
-     * IDENTICAL, so git takes it once. Both PRs are green, main is wrong by
-     * one, and no reviewer sees a suspicious diff — the header says exactly
-     * what each author intended it to say. It happened again between #1798
-     * and #1803, which is what prompted this test.
+     * It was a DERIVED tally stored beside its own source, and the way it
+     * drifted is the reason it had to go. Two PRs each add one doc and each
+     * bump the same number 494 -> 495. Neither CONFLICTS: their entries land
+     * in different places and the count line is IDENTICAL, so git takes it
+     * once. Both PRs are green, main is wrong by one, and no reviewer sees a
+     * suspicious diff — the header says exactly what each author intended.
      *
-     * A clean merge is the dangerous case here, not a conflicting one.
+     * A clean merge is the dangerous case, which is why "just recount
+     * carefully" never held. The drift is undetectable on either branch and
+     * only appears on main, so it turns main red AFTER both PRs pass. It
+     * happened between #1798 and #1803 (which prompted the original check),
+     * and again across three branches in the 2026-08-16 batch, where every
+     * one of them recomputed the tally correctly against its own map.
+     *
+     * Nothing outside this file ever read the header. Deleting it removes the
+     * whole failure class rather than monitoring it; the tally is one
+     * Object.values().length away for anyone who wants it.
      */
-    it('the counts header matches the actual tally', () => {
-        if (!classification.counts) return; // header is optional
-        const actual: Record<string, number> = {};
-        for (const entry of Object.values(classification.docs)) {
-            actual[entry.class] = (actual[entry.class] ?? 0) + 1;
-        }
-        const declared = classification.counts as Record<string, number>;
-        const drift = Object.keys({ ...actual, ...declared })
-            .filter((k) => (actual[k] ?? 0) !== (declared[k] ?? 0))
-            .map((k) => `${k}: header says ${declared[k] ?? 0}, ${actual[k] ?? 0} entries carry it`);
-
+    it('carries no derived counts header', () => {
         expect({
-            drift,
-            hint: drift.length === 0
-                ? 'none'
-                : 'Recount rather than incrementing. If two branches each added a doc, both bumped the same number and git kept one copy.',
-        }).toEqual({ drift: [], hint: 'none' });
+            hasCounts: 'counts' in (classification as Record<string, unknown>),
+            why: 'derived data beside its own source merges cleanly to a wrong value',
+        }).toEqual({
+            hasCounts: false,
+            why: 'derived data beside its own source merges cleanly to a wrong value',
+        });
     });
 
     it('every doc on disk is classified', () => {

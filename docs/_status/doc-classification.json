@@ -1,12 +1,6 @@
 {
     "$schema": "internal: docs classification source of truth",
-    "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\".",
-    "counts": {
-        "authoritative": 116,
-        "historical": 537,
-        "living": 5,
-        "deprecated": 1
-    },
+    "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record (incl. all of docs/implementation-notes/); deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. See CLAUDE.md \"Doc classifications\". NOTE: this file deliberately carries no per-class `counts` header — it was derived data stored beside its own source, and two branches each incrementing it merged CLEANLY to a wrong number three times (#1798/#1803, then again in the 2026-08-16 batch). Count the entries.",
     "docs": {
         "docs/admin-rbac-scim.md": {
             "class": "authoritative"
