@@ -98,6 +98,19 @@ export async function listRisks(
     });
 }
 
+/**
+ * Counts for the KPI filter cards, resolved by aggregate.
+ *
+ * Risks was the last list surface still counting client-side; Policies,
+ * Controls and Vendors each serve these from the DB. See
+ * `RiskRepository.kpiCounts` for why a card's number cannot come from the
+ * returned rows.
+ */
+export async function listRiskKpiCounts(ctx: RequestContext, filters: RiskFilters = {}) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) => RiskRepository.kpiCounts(db, ctx, filters));
+}
+
 export async function listRisksPaginated(ctx: RequestContext, params: RiskListParams) {
     assertCanRead(ctx);
     return cachedListRead({
@@ -821,10 +834,24 @@ export async function purgeRisk(ctx: RequestContext, id: string) {
     return result;
 }
 
+// Safety cap on the recycle-bin view's tenant-wide scan. Same value and same
+// reasoning as `FULL_SCAN_CAP` in control/queries.ts: the view intentionally
+// reads the whole tenant so it cannot paginate, and the cap is a latency /
+// memory guard against a pathological tenant rather than a page size.
+const FULL_SCAN_CAP = 5000;
+
 export async function listRisksWithDeleted(ctx: RequestContext) {
     assertCanAdmin(ctx);
+    // This read was unbounded while its direct Controls twin
+    // (`listControlsWithDeleted`) was capped. It is worse than the twin on
+    // two counts: no `select`, so it returns full rows, and `Risk` carries
+    // encrypted columns — so the Epic-B middleware decrypts `treatmentNotes`
+    // on every row it returns.
+    //
+    // The Layer-D2 unbounded-findMany budget never saw it: D2 scans
+    // `src/app-layer/repositories`, and this lives in usecases.
     return runInTenantContext(ctx, (db) =>
-        db.risk.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const } }))
+        db.risk.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const }, take: FULL_SCAN_CAP }))
     );
 }
 

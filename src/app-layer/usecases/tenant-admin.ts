@@ -28,6 +28,19 @@ import type { Role } from '@prisma/client';
 // ─── Valid roles for assignment ───
 const VALID_ROLES: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
 
+// Safety cap on the two whole-tenant membership scans below. Both feed
+// surfaces that legitimately want every member (the admin roster, and the
+// people-picker options), so neither can paginate — the cap is a latency and
+// memory guard against a pathological tenant, not a page size. Set an order
+// of magnitude above the largest plausible tenant so it does not bind in
+// practice; when it does bind, it truncates the OLDEST-first ordering
+// deterministically rather than returning an arbitrary subset.
+//
+// Neither read was bounded before, and the Layer-D2 unbounded-findMany budget
+// could not see them: D2 scans `src/app-layer/repositories`, and these live in
+// usecases.
+const MEMBERSHIP_SCAN_CAP = 5000;
+
 // ─── List Members ───
 
 export async function listTenantMembers(ctx: RequestContext) {
@@ -56,6 +69,7 @@ export async function listTenantMembers(ctx: RequestContext) {
                 },
             },
             orderBy: { createdAt: 'asc' },
+            take: MEMBERSHIP_SCAN_CAP,
         })
     );
 
@@ -122,6 +136,7 @@ export async function listAssignableUsers(
                 },
             },
             orderBy: { createdAt: 'asc' },
+            take: MEMBERSHIP_SCAN_CAP,
         }),
     );
     return memberships.map((m) => ({

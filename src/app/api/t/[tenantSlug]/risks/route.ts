@@ -1,4 +1,4 @@
-import { listRisks, listRisksPaginated, createRisk, listRisksWithDeleted } from '@/app-layer/usecases/risk';
+import { listRisks, listRisksPaginated, createRisk, listRisksWithDeleted, listRiskKpiCounts } from '@/app-layer/usecases/risk';
 import { getRiskStaleness } from '@/app-layer/usecases/risk-staleness';
 import { CreateRiskSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -86,6 +86,10 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
         { take: LIST_BACKFILL_CAP + 1 },
     );
     const result = applyBackfillCap(risks);
+    // KPI card counts come from aggregates, not from `result.rows` — so they
+    // stay correct above the cap, and each card counts the set its own click
+    // produces rather than the set currently on screen.
+    const kpiCounts = await listRiskKpiCounts(ctx, toRiskFilters(query, staleIdIn));
     // PR-6 — row-count observability.
     recordListPageRowCount({
         entity: 'risks',
@@ -93,7 +97,7 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
         truncated: result.truncated,
         tenantId: ctx.tenantId,
     });
-    return jsonResponse(result);
+    return jsonResponse({ ...result, kpiCounts });
 }));
 
 export const POST = withApiErrorHandling(requirePermission<{ tenantSlug: string }>('risks.create', async (req, _routeArgs, ctx) => {
