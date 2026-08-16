@@ -92,14 +92,27 @@ describe('GUARD: worker-reachable code has no static Next-only imports', () => {
 
     it('the known use sites still reach next/headers dynamically', () => {
         // Guards the other direction: someone "tidying" a dynamic import back
-        // into a static one at these three sites reintroduces the crash.
+        // into a static one at these sites reintroduces the crash.
+        //
+        // `src/lib/auth.ts` came OFF this list when the legacy `token` cookie
+        // was removed — that fallback was its only reason to read
+        // `next/headers`, so it now touches the module not at all, which is
+        // strictly safer than reaching it dynamically. The static-import scan
+        // above still covers it.
         for (const f of [
-            'src/lib/auth.ts',
             'src/auth.ts',
             'src/lib/security/session-tracker.ts',
         ]) {
             expect(read(f)).toMatch(/await import\(\s*['"]next\/headers['"]\s*\)/);
         }
+    });
+
+    it('src/lib/auth.ts no longer needs next/headers at all', () => {
+        // The stronger property that replaced its dynamic-import entry. If a
+        // future change reintroduces a need for request-scoped cookies here,
+        // it must be dynamic — put the file back on the list above rather
+        // than deleting this.
+        expect(stripComments(read('src/lib/auth.ts'))).not.toMatch(/next\/headers/);
     });
 
     it('context.ts — the module every usecase pulls — is clean', () => {

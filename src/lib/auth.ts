@@ -38,7 +38,6 @@ export interface JwtPayload {
 }
 
 // Legacy JWT secret — used only for reading old cookies during migration
-const LEGACY_JWT_SECRET = env.JWT_SECRET;
 
 /**
  * Get the current session by:
@@ -59,35 +58,32 @@ export async function getSession(): Promise<JwtPayload | null> {
         };
     }
 
-    // 2. Legacy fallback: check for old 'token' cookie
-    if (LEGACY_JWT_SECRET) {
-        try {
-            // Dynamic so importing this module never requires `next/headers`
-            // (see the note on the import block). Already inside a try/catch,
-            // so a non-request runtime falls through to `return null` exactly
-            // as an absent cookie does.
-            const { cookies } = await import('next/headers');
-            const cookieStore = await cookies();
-            const legacyToken = cookieStore.get('token')?.value;
-            if (legacyToken) {
-                const decoded = jwt.verify(legacyToken, LEGACY_JWT_SECRET) as {
-                    userId: string;
-                    tenantId: string;
-                    email: string;
-                    role: Role;
-                };
-                return {
-                    userId: decoded.userId,
-                    tenantId: decoded.tenantId,
-                    email: decoded.email,
-                    role: decoded.role,
-                };
-            }
-        } catch {
-            // Legacy token invalid — ignore
-        }
-    }
-
+    // The legacy `token` cookie fallback used to live here, and it was a
+    // SECOND session mechanism that honoured none of the first one's
+    // revocation.
+    //
+    // It read the cookie, `jwt.verify`'d it against JWT_SECRET, and
+    // returned a full session — userId, tenantId, email, role — straight
+    // into `getSessionOrThrow`, which builds the RequestContext every
+    // usecase runs on (src/app-layer/context.ts). It checked no
+    // `sessionVersion`, no `UserSession.revokedAt`, and never called
+    // `verifyAndTouchSession`.
+    //
+    // So a password change or reset (which bumps sessionVersion and
+    // revokes every UserSession), an admin revoking a session from
+    // /admin/members, and the Epic C.3 concurrent-session cap all left a
+    // legacy cookie working for the rest of its 7-day life.
+    //
+    // Three comments asserted nothing read it — the writer's said "no
+    // `cookies.get('token')` anywhere" while this function did exactly
+    // that, twenty lines from its own gate. `LEGACY_JWT_SECRET` reads
+    // `env.JWT_SECRET`, a core auth variable set in production, so the
+    // `if` that looked like a kill switch was always true.
+    //
+    // Removing the reader is what makes outstanding cookies inert. The
+    // writer is gone too (api/auth/register), and the signup client has
+    // always called `signIn('credentials', …)` immediately afterwards, so
+    // this cookie was never the session it appeared to be.
     return null;
 }
 
@@ -211,35 +207,10 @@ export async function verifyPassword(
     return bcrypt.compare(password, hash);
 }
 
-/**
- * @deprecated Legacy pre-NextAuth helper. Today's only caller is
- * `src/app/api/auth/register/route.ts`, which mints the legacy
- * `token` cookie alongside the canonical NextAuth session cookie.
- *
- * The corresponding `verifyToken` has **zero consumers** in the
- * codebase, so the cookie is never validated server-side. The
- * mint/clear pair stays for one more release in case an external
- * integration depends on the cookie shape; both will be removed
- * next release together with `LEGACY_JWT_SECRET`. See
- * `docs/auth.md` → "Legacy `token` cookie — deprecated".
- */
-export function signToken(payload: JwtPayload): string {
-    if (!LEGACY_JWT_SECRET) {
-        throw new Error('JWT_SECRET not set — legacy token signing disabled');
-    }
-    return jwt.sign(payload, LEGACY_JWT_SECRET, { expiresIn: '7d' });
-}
+// signToken / verifyToken removed with the legacy `token` cookie they
+// existed for. signToken had exactly one caller (api/auth/register) and
+// verifyToken had none — the deprecation note above them had already
+// spelled out this deletion; what kept it from happening was the belief
+// that the cookie was unread, which src/lib/auth.ts's own fallback
+// disproved.
 
-/**
- * @deprecated Companion to {@link signToken}. Currently has no
- * call sites — kept exported for the deprecation window only.
- * See the `@deprecated` block on `signToken` above.
- */
-export function verifyToken(token: string): JwtPayload | null {
-    if (!LEGACY_JWT_SECRET) return null;
-    try {
-        return jwt.verify(token, LEGACY_JWT_SECRET) as JwtPayload;
-    } catch {
-        return null;
-    }
-}

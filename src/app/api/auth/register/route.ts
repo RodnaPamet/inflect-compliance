@@ -10,7 +10,6 @@
  * `/api/auth/callback/credentials`.
  */
 import prisma from '@/lib/prisma';
-import { signToken } from '@/lib/auth';
 import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
@@ -128,29 +127,11 @@ async function handleRegister(body: { email: string; password: string; name: str
     // by SMTP latency or outages.
     await issueEmailVerification(email, { userId: user.id }).catch(() => undefined);
 
-    // ── DEPRECATED: legacy `token` cookie (see docs/auth.md → "Legacy
-    //    `token` cookie — deprecated") ────────────────────────────────
-    //
-    // This cookie predates the NextAuth migration. Today's product
-    // login flow uses the NextAuth `__Secure-authjs.session-token`
-    // cookie exclusively; nothing in the codebase reads `token` (zero
-    // consumers of `verifyToken`, no `cookies.get('token')` anywhere).
-    // It's kept here for one more release in case an external
-    // integration still relies on it. The next-release PR will:
-    //   1. Drop this block.
-    //   2. Drop `signToken` + `verifyToken` exports from `@/lib/auth`.
-    //   3. Drop the cookie-clear in `src/app/api/auth/logout/route.ts`.
-    //   4. Add a structural ratchet rejecting reintroduction.
-    //
-    // If you find a real external consumer DURING this window: open
-    // an issue with the consumer details before the delete lands.
-    const token = signToken({
-        userId: user.id,
-        tenantId: tenant.id,
-        email: user.email,
-        role: membership.role,
-    });
-
+    // The legacy `token` cookie that used to be minted here is gone. It
+    // was a second session credential that bypassed every revocation
+    // mechanism the real one has — see the note in src/lib/auth.ts. The
+    // client has always called signIn('credentials', …) immediately after
+    // this response (src/app/login/page.tsx), so nothing depended on it.
     const response = jsonResponse({
         user: { id: user.id, email: user.email, name: user.name, role: membership.role },
         // GAP-23: slug exposed alongside id/name so callers (notably
@@ -160,14 +141,6 @@ async function handleRegister(body: { email: string; password: string; name: str
         // not sensitive — it appears in every authenticated URL.
         tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
         emailVerificationRequired: env.AUTH_REQUIRE_EMAIL_VERIFICATION === '1',
-    });
-
-    response.cookies.set('token', token, {
-        httpOnly: true,
-        secure: env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-        path: '/',
     });
 
     return response;
