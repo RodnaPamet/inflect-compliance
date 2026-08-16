@@ -50,7 +50,14 @@ function classifyEndpoint(pathname: string): EndpointTier {
     if (
         pathname.startsWith('/api/auth/signin') ||
         pathname.startsWith('/api/auth/callback') ||
-        pathname.startsWith('/api/auth/signout')
+        pathname.startsWith('/api/auth/signout') ||
+        // The SSO entry points are sign-in endpoints too, and they were
+        // falling through to the `low` bucket meant for /csrf and
+        // /providers — 60/min against credentials sign-in's 10/min. They
+        // are unauthenticated, take a tenant slug and a provider id from
+        // the query string, and each one does a DB lookup, so the loose
+        // tier is exactly what makes slug enumeration cheap.
+        pathname.startsWith('/api/auth/sso/')
     ) {
         return 'high';
     }

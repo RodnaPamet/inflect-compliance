@@ -57,7 +57,12 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
 
     if (!tenant) {
         ssoLog('warn', 'Tenant not found', { ...logCtx, stage: 'start' });
-        throw notFound('Tenant not found');
+        // One generic message for both "no such tenant" and "no such
+        // provider". Distinct messages here answer, to a FULLY ANONYMOUS
+        // caller and before any assertion or code is validated, whether a
+        // given tenant slug exists and which SSO providers it has
+        // configured. That is a customer list, enumerable by dictionary.
+        throw notFound('SSO is not available for this tenant and provider');
     }
 
     // ── Load provider config ──
@@ -72,7 +77,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
 
     if (!provider) {
         ssoLog('warn', 'Provider not found or disabled', { ...logCtx, stage: 'config_load' });
-        throw notFound('OIDC provider not found or not enabled');
+        throw notFound('SSO is not available for this tenant and provider');
     }
 
     // ── Parse OIDC config ──
