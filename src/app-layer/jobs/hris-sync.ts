@@ -13,6 +13,7 @@ import { logger } from '@/lib/observability/logger';
 import { enqueue } from './queue';
 import { runHrisSync } from '@/app-layer/usecases/hris-sync';
 import type { HrisSyncPayload } from './types';
+import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 
 const HRIS_PROVIDERS = ['bamboohr'];
 
@@ -23,11 +24,16 @@ export async function runHrisSyncJob(payload: HrisSyncPayload): Promise<{ execut
 }
 
 export async function runHrisSyncDispatch(): Promise<{ connections: number; dispatched: number }> {
-    const connections = await prisma.integrationConnection.findMany({
-        where: { provider: { in: HRIS_PROVIDERS }, isEnabled: true },
-        select: { id: true, tenantId: true },
-        take: 1000,
-    });
+    // Was `take: 1000` with no signal — see ./drain-pages.
+    const connections = await drainPages((cursor) =>
+        prisma.integrationConnection.findMany({
+            where: { provider: { in: HRIS_PROVIDERS }, isEnabled: true },
+            select: { id: true, tenantId: true },
+            orderBy: { id: 'asc' },
+            take: DRAIN_PAGE_SIZE,
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    );
     let dispatched = 0;
     for (const conn of connections) {
         await enqueue('hris-sync', { tenantId: conn.tenantId, connectionId: conn.id });
