@@ -12,6 +12,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { CappedList } from '@/lib/list-backfill-cap';
+import type { RiskKpiCounts } from '@/app-layer/repositories/RiskRepository';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 // NOTE: NewRiskModal was previously lazy-loaded via next/dynamic, but
 // the JIT race in `next dev` made the modal occasionally fail to mount
@@ -153,6 +154,13 @@ interface RiskListItem {
     residualImpact?: number | null;
     residualScore?: number | null;
 }
+
+/**
+ * Shape of GET /api/t/:slug/risks. `kpiCounts` is optional because the SSR
+ * fallbackData below carries rows only — the cards fall back to counting the
+ * page for that one pre-hydration render, then take the server's numbers.
+ */
+type RiskListResponse = CappedList<RiskListItem> & { kpiCounts?: RiskKpiCounts };
 
 interface RisksClientProps {
     initialRisks: RiskListItem[];
@@ -345,13 +353,16 @@ function RisksPageInner({
             : CACHE_KEYS.risks.list();
     }, [fetchParams]);
 
+    // `kpiCounts` is computed by aggregate in RiskRepository.kpiCounts — not
+    // derived from `rows`, which is both server-filtered and capped.
+    //
     // PR-5 — API returns `{ rows, truncated }` so the Client knows
     // when the backfill cap fired and can render the truncation
     // banner. SSR initial is wrapped at the page layer with
     // `truncated: false` because the SSR cap (100) is well below the
     // backfill cap (5000) — the banner only fires when SWR brings
     // back the cap+1 sentinel.
-    const risksQuery = useTenantSWR<CappedList<RiskListItem>>(risksKey, {
+    const risksQuery = useTenantSWR<RiskListResponse>(risksKey, {
         fallbackData: filtersMatchInitial
             ? { rows: initialRisks, truncated: false }
             : undefined,
@@ -591,14 +602,30 @@ function RisksPageInner({
     });
 
     // ── KPI Computations ──
-    // Local aggregations over the already-fetched page of risks — these
-    // power the KPI cards and the 5×5 heatmap, not a re-filter of the
-    // server-side data set. The `// guardrail-ignore` directives tell
-    // `tests/guardrails/no-client-side-filtering.test.ts` to skip them.
-    const total = risks.length;
-    const avgScore = total ? (risks.reduce((s, r) => s + r.inherentScore, 0) / total).toFixed(1) : '0.0';
-    // guardrail-ignore: KPI count across the loaded page, not a refilter.
-    const openCount = risks.filter(r => r.status === 'OPEN' || r.status === 'MITIGATING').length;
+    // KPI card counts, served as DB aggregates. Risks was the last list
+    // surface still counting these client-side, and it carried both halves of
+    // the defect the peers were fixed for:
+    //
+    //   `total` displayed the CURRENT FILTERED length while its click calls
+    //   clearAll(), so any active filter made the number disagree with what
+    //   clicking it returned; and `open` counted inside an already-status-
+    //   filtered set while its click REPLACES that dimension, so under any
+    //   status filter it read 0 permanently.
+    //
+    // Both are windowed by the 5,000-row backfill cap on top of that, so on a
+    // large tenant the numbers were wrong even with no filters set.
+    //
+    // The client fallback below is the pre-hydration (SSR fallbackData) path
+    // only — it counts the page because on that render the page is all there
+    // is, and it is replaced as soon as the query resolves.
+    const serverKpis = risksQuery.data?.kpiCounts;
+    const total = serverKpis?.total ?? risks.length;
+    const avgScore = (
+        serverKpis?.avgScore ??
+        (risks.length ? risks.reduce((s, r) => s + r.inherentScore, 0) / risks.length : 0)
+    ).toFixed(1);
+    // guardrail-ignore: pre-hydration fallback over the loaded page, not a refilter.
+    const openCount = serverKpis?.open ?? risks.filter(r => r.status === 'OPEN' || r.status === 'MITIGATING').length;
     // `now` is null during SSR and first client render so the overdue
     // count matches exactly across hydration (avoids React #418/#422).
     // PR-K — the naive nextReviewAt<now overdue count was replaced by the
@@ -648,10 +675,16 @@ function RisksPageInner({
                 // scopes teardown so toggling off doesn't disturb a
                 // search query or sibling category/severity filter
                 // the user may have layered on.
+                // The card DISPLAYS OPEN + MITIGATING (both read as "open"
+                // to a user) but applied OPEN alone, so clicking it returned
+                // fewer risks than the number on the card promised. Widened
+                // the filter rather than narrowing the count: the displayed
+                // total is the one a user is reading.
                 id: 'open',
-                apply: (ctx) => ctx.set('status', 'OPEN'),
+                apply: (ctx) => { ctx.set('status', 'OPEN'); ctx.add('status', 'MITIGATING'); },
                 isActive: (state) =>
-                    (state.status ?? []).includes('OPEN'),
+                    (state.status ?? []).includes('OPEN') &&
+                    (state.status ?? []).includes('MITIGATING'),
                 clear: (ctx) => ctx.removeAll('status'),
             },
             {

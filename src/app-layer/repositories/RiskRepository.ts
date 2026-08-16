@@ -6,6 +6,12 @@ import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
 import { parseEnumListFilter } from '../domain/list-filter';
 
+export interface RiskKpiCounts {
+    total: number;
+    open: number;
+    avgScore: number;
+}
+
 export interface RiskFilters {
     status?: string;
     scoreMin?: number;
@@ -123,6 +129,51 @@ export class RiskRepository {
                 ...(options.take ? { take: options.take } : {}),
             });
         });
+    }
+
+    /**
+     * Counts for the KPI filter cards, resolved by aggregate.
+     *
+     * Never derived from the returned rows. A card's number has to describe
+     * the set its CLICK produces, and the rows are both filtered and capped:
+     *
+     *   - `total` deactivates to "no filters at all", so it counts the whole
+     *     tenant register — not the current page, and not the current filter.
+     *   - `open` REPLACES the status dimension, so it groups over the other
+     *     active filters with `status` dropped. Counting inside an
+     *     already-status-filtered set makes the card read 0 under any status
+     *     filter, permanently.
+     *   - `avgScore` is the one card that is NOT clickable, so it describes
+     *     the current view — but by aggregate, so it stays correct above the
+     *     row cap instead of averaging whatever fitted on the page.
+     */
+    static async kpiCounts(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters: RiskFilters = {},
+    ): Promise<RiskKpiCounts> {
+        const withoutStatus = RiskRepository._buildWhere(ctx, { ...filters, status: undefined });
+
+        const [byStatus, total, avg] = await Promise.all([
+            db.risk.groupBy({ by: ['status'], where: withoutStatus, _count: { _all: true } }),
+            db.risk.count({ where: { tenantId: ctx.tenantId } }),
+            db.risk.aggregate({
+                where: RiskRepository._buildWhere(ctx, filters),
+                _avg: { inherentScore: true },
+            }),
+        ]);
+
+        return {
+            total,
+            // OPEN and MITIGATING both read as "open" to a user, and the card
+            // has always displayed their sum. The FILTER was the half that
+            // disagreed — it set OPEN alone — so the widening lives in the
+            // click (RisksClient kpiDefs), not in a narrowed count here.
+            open: byStatus
+                .filter((g) => g.status === RiskStatus.OPEN || g.status === RiskStatus.MITIGATING)
+                .reduce((n, g) => n + g._count._all, 0),
+            avgScore: avg._avg.inherentScore ?? 0,
+        };
     }
 
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: RiskListParams): Promise<PaginatedResponse<unknown>> {
