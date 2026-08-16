@@ -145,6 +145,27 @@ describe('computeCoverage', () => {
         expect(sections).toContain('CatA');
         expect(sections).toContain('Other');
     });
+
+    it('excludes deprecated requirements, agreeing with readiness + the SoA', async () => {
+        // `computeCoverage` returns a field named `coveragePercent`, computed
+        // with the identical formula as `generateReadinessReport`'s — but over
+        // a LARGER denominator, because this was the only one of the three
+        // requirement reads in the report family without `deprecatedAt: null`.
+        //
+        // The drift is one-directional and permanent: a requirement dropped
+        // from a re-imported library is stamped deprecated (library-importer
+        // ships `deprecateMissing: true` by default) and can never be mapped
+        // again, so it sat in this denominator forever. This surface is the
+        // Frameworks list page, the JSON + CSV exports, and the MCP tools.
+        mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'X', version: '2022' });
+        mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([]);
+        tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([]);
+
+        await computeCoverage(ctx, 'iso');
+
+        const where = mockPrisma.frameworkRequirement.findMany.mock.calls[0][0].where;
+        expect(where.deprecatedAt).toBeNull();
+    });
 });
 
 // ──────────────────────────────────────────────────────────────────────
@@ -291,7 +312,14 @@ describe('generateReadinessReport', () => {
             { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
         ]);
         tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
-            { requirementId: 'r-1', control: { id: 'c-1', code: 'CC1', name: 'NA Ctrl', status: 'NOT_APPLICABLE', applicabilityJustification: 'Justified because X', tasks: [], evidenceControlLinks: [] } },
+            // The state a real N/A decision produces: `setApplicability` writes
+            // `applicability` + justification + decided-by/at and NEVER touches
+            // `status` — every status-write schema excludes NOT_APPLICABLE on
+            // purpose. This fixture used to say `status: 'NOT_APPLICABLE'` with
+            // no `applicability` at all, which no write path can produce; it
+            // held the assertion green over an unreachable state while every
+            // real N/A control fell through to `controlsMissingEvidence`.
+            { requirementId: 'r-1', control: { id: 'c-1', code: 'CC1', name: 'NA Ctrl', status: 'NOT_STARTED', applicability: 'NOT_APPLICABLE', applicabilityJustification: 'Justified because X', tasks: [], evidenceControlLinks: [] } },
         ]);
 
         const result = await generateReadinessReport(ctx, 'iso');
@@ -302,13 +330,80 @@ describe('generateReadinessReport', () => {
         expect(result.controlsMissingEvidence).toEqual([]);
     });
 
+    it('honours the per-framework applicability override, as the SoA does', async () => {
+        // `getSoA` resolves `l.applicability ?? l.control.applicability` — a
+        // control can be globally applicable but scoped out of ONE framework.
+        // Readiness read the control column only (via `status`), so it could
+        // not see the override at all.
+        mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
+        mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
+            { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
+        ]);
+        tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
+            { requirementId: 'r-1', applicability: 'NOT_APPLICABLE', control: { id: 'c-1', code: 'CC1', name: 'Scoped Out', status: 'NOT_STARTED', applicability: 'APPLICABLE', applicabilityJustification: 'Out of scope here', tasks: [], evidenceControlLinks: [] } },
+        ]);
+
+        const result = await generateReadinessReport(ctx, 'iso');
+
+        expect(result.notApplicableControls).toEqual([
+            { code: 'CC1', name: 'Scoped Out', justification: 'Out of scope here' },
+        ]);
+        expect(result.controlsMissingEvidence).toEqual([]);
+    });
+
+    it('a legacy status-only NOT_APPLICABLE still owes evidence, as the SoA says', async () => {
+        // Pins the DIRECTION of the fix. Rows written before the status-write
+        // schemas excluded NOT_APPLICABLE may carry it with the `applicability`
+        // column left at its APPLICABLE default — i.e. no recorded decision:
+        // no justification, no decided-by, no decided-at.
+        //
+        // The SoA counts such a control as applicable, so readiness must too.
+        // Reading it as N/A here is what made the two reports disagree.
+        mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
+        mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
+            { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
+        ]);
+        tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
+            { requirementId: 'r-1', control: { id: 'c-1', code: 'CC1', name: 'Legacy', status: 'NOT_APPLICABLE', applicability: 'APPLICABLE', applicabilityJustification: null, tasks: [], evidenceControlLinks: [] } },
+        ]);
+
+        const result = await generateReadinessReport(ctx, 'iso');
+
+        expect(result.notApplicableControls).toEqual([]);
+        expect(result.controlsMissingEvidence).toEqual([
+            { code: 'CC1', name: 'Legacy', status: 'NOT_APPLICABLE' },
+        ]);
+    });
+
+    it('a control scoped out of one requirement but not another still owes evidence', async () => {
+        // The "every link says N/A" rule. Applicability is per-link, but these
+        // two lists are per-CONTROL, so a control reachable as applicable
+        // anywhere in the framework must stay in the evidence-owing set.
+        mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
+        mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
+            { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
+            { id: 'r-2', code: 'B', title: 'Y', section: 'Org', sortOrder: 2 },
+        ]);
+        tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
+            { requirementId: 'r-1', applicability: 'NOT_APPLICABLE', control: { id: 'c-1', code: 'CC1', name: 'Mixed', status: 'IMPLEMENTED', applicability: 'APPLICABLE', applicabilityJustification: null, tasks: [], evidenceControlLinks: [] } },
+            { requirementId: 'r-2', applicability: null, control: { id: 'c-1', code: 'CC1', name: 'Mixed', status: 'IMPLEMENTED', applicability: 'APPLICABLE', applicabilityJustification: null, tasks: [], evidenceControlLinks: [] } },
+        ]);
+
+        const result = await generateReadinessReport(ctx, 'iso');
+
+        expect(result.notApplicableControls).toEqual([]);
+        expect(result.controlsMissingEvidence).toEqual([
+            { code: 'CC1', name: 'Mixed', status: 'IMPLEMENTED' },
+        ]);
+    });
+
     it('NOT_APPLICABLE control with null justification uses default justification', async () => {
         mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
         mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
             { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
         ]);
         tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
-            { requirementId: 'r-1', control: { id: 'c-1', code: 'CC1', name: 'NA', status: 'NOT_APPLICABLE', applicabilityJustification: null, tasks: [], evidenceControlLinks: [] } },
+            { requirementId: 'r-1', control: { id: 'c-1', code: 'CC1', name: 'NA', status: 'NOT_STARTED', applicability: 'NOT_APPLICABLE', applicabilityJustification: null, tasks: [], evidenceControlLinks: [] } },
         ]);
 
         const result = await generateReadinessReport(ctx, 'iso');
@@ -485,7 +580,7 @@ describe('exportReadinessReport', () => {
         const past = new Date('2020-01-01');
         tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
             { requirementId: 'r-1', control: {
-                id: 'c-na', code: 'NA1', name: 'NotAppl', status: 'NOT_APPLICABLE', description: 'why',
+                id: 'c-na', code: 'NA1', name: 'NotAppl', status: 'NOT_STARTED', applicability: 'NOT_APPLICABLE', description: 'why',
                 evidenceControlLinks: [], tasks: [],
             }},
             { requirementId: 'r-1', control: {

@@ -209,148 +209,17 @@ export async function installPack(ctx: RequestContext, packKey: string) {
     return result;
 }
 
-// в”Ђв”Ђв”Ђ Coverage Computation в”Ђв”Ђв”Ђ
-
-export async function computeCoverage(ctx: RequestContext, frameworkKey: string, version?: string) {
-    assertCanViewFrameworks(ctx);
-    const db = prisma;
-
-    const fw = version
-        ? await db.framework.findUnique({ where: { key_version: { key: frameworkKey, version } } })
-        : await db.framework.findFirst({ where: { key: frameworkKey } });
-    if (!fw) throw notFound('Framework not found');
-
-    const requirements = await db.frameworkRequirement.findMany({
-        where: { frameworkId: fw.id },
-        orderBy: { sortOrder: 'asc' },
-    });
-
-    // Get all tenant control requirement links for this framework
-    const links = await runInTenantContext(ctx, (tdb) =>
-        tdb.controlRequirementLink.findMany({
-            where: { tenantId: ctx.tenantId, requirementId: { in: requirements.map((r) => r.id) } },
-            include: {
-                control: { select: { id: true, code: true, name: true, status: true } },
-                requirement: { select: { id: true, code: true, title: true } },
-            },
-        })
-    );
-
-
-    const mappedReqIds = new Set(links.map((l) => l.requirementId));
-    const mapped = requirements.filter((r) => mappedReqIds.has(r.id));
-    const unmapped = requirements.filter((r) => !mappedReqIds.has(r.id));
-    const total = requirements.length;
-    const coveragePercent = total > 0 ? Math.round((mapped.length / total) * 100) : 0;
-
-    // Group by section
-    const sections = [...new Set(requirements.map((r) => r.section || r.category || 'Other'))];
-    const bySection = sections.map((s) => {
-        const sectionReqs = requirements.filter((r) => (r.section || r.category || 'Other') === s);
-        const sectionMapped = sectionReqs.filter((r) => mappedReqIds.has(r.id));
-        return {
-            section: s,
-            total: sectionReqs.length,
-            mapped: sectionMapped.length,
-            coveragePercent: sectionReqs.length > 0 ? Math.round((sectionMapped.length / sectionReqs.length) * 100) : 0,
-        };
-    });
-
-    return {
-        framework: { key: fw.key, name: fw.name, version: fw.version },
-        total,
-        mapped: mapped.length,
-        unmapped: unmapped.length,
-        coveragePercent,
-        bySection,
-        unmappedRequirements: unmapped.map((r) => ({ code: r.code, title: r.title, section: r.section || r.category })),
-
-        controlMappings: links.map((l) => ({
-            requirementCode: l.requirement.code,
-            requirementTitle: l.requirement.title,
-            controlCode: l.control.code,
-            controlName: l.control.name,
-            controlStatus: l.control.status,
-        })),
-    };
-}
-
-// в”Ђв”Ђв”Ђ Template Library (global catalog with tenant install status) в”Ђв”Ђв”Ђ
-
-export async function listTemplates(
-    ctx: RequestContext,
-    filters: { frameworkKey?: string; section?: string; category?: string; search?: string }
-) {
-    assertCanViewFrameworks(ctx);
-    const db = prisma;
-
-
-    const where: Prisma.ControlTemplateWhereInput = {};
-    if (filters.frameworkKey) {
-        const fw = await db.framework.findFirst({ where: { key: filters.frameworkKey } });
-        if (!fw) throw notFound('Framework not found');
-        where.requirementLinks = { some: { requirement: { frameworkId: fw.id } } };
-    }
-    if (filters.category) {
-        where.category = filters.category;
-    }
-    if (filters.search) {
-        where.OR = [
-            { code: { contains: filters.search } },
-            { title: { contains: filters.search } },
-        ];
-    }
-
-    const templates = await db.controlTemplate.findMany({
-        where,
-        include: {
-            tasks: true,
-            requirementLinks: { include: { requirement: { include: { framework: true } } } },
-            packLinks: { include: { pack: true } },
-        },
-        orderBy: { code: 'asc' },
-    });
-
-    // Check install status per template for this tenant
-    const existingControls = await runInTenantContext(ctx, (tdb) =>
-        tdb.control.findMany({
-            where: { tenantId: ctx.tenantId, code: { in: templates.map((t) => t.code) } },
-            select: { code: true },
-        })
-    );
-
-    const installedCodes = new Set(existingControls.map((c) => c.code));
-
-    // Filter by section if specified (section comes from linked requirement)
-    let result = templates;
-    if (filters.section) {
-        result = templates.filter((t) =>
-
-            t.requirementLinks.some((rl) => (rl.requirement.section || rl.requirement.category) === filters.section)
-        );
-    }
-
-    return result.map((t) => ({
-        id: t.id,
-        code: t.code,
-        title: t.title,
-        description: t.description,
-        category: t.category,
-        defaultFrequency: t.defaultFrequency,
-        isGlobal: t.isGlobal,
-        installed: installedCodes.has(t.code),
-        tasks: t.tasks.map((tt) => ({ id: tt.id, title: tt.title, description: tt.description })),
-
-        requirements: t.requirementLinks.map((rl) => ({
-            code: rl.requirement.code,
-            title: rl.requirement.title,
-            section: rl.requirement.section || rl.requirement.category,
-            framework: { key: rl.requirement.framework.key, name: rl.requirement.framework.name },
-        })),
-
-        packs: t.packLinks.map((pl) => ({ key: pl.pack.key, name: pl.pack.name })),
-    }));
-}
+// Coverage + template listing live in `./coverage`, and the barrel
+// (`./index.ts`) has always re-exported them from there. This file
+// carried a second, DEAD copy of `computeCoverage` + `listTemplates`
+// that nothing in src/ could reach.
+//
+// It was not harmless. The copy was a FORK: the soft-deleted-control fix
+// and the deprecated-requirement fix were both applied to the coverage.ts
+// side only, so the dead twin still computed the two wrong compliance
+// numbers the report family was reconciled to stop producing — and its
+// own tests pinned that behaviour, so a reader who found this copy first
+// would have found the bug documented as correct. Deleted 2026-08-16.
 
 // в”Ђв”Ђв”Ђ Install Single Template в”Ђв”Ђв”Ђ
 
