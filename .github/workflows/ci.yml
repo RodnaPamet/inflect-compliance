@@ -970,45 +970,41 @@ jobs:
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
         run: npx next build --webpack
         env:
-          # Back to the workflow-level 6144 on 2026-08-16. The history is
-          # worth keeping because the two failures look nothing alike.
+          # 8192, and the band this sits in is narrower than it looks.
+          # Both bounds are measured, not guessed.
           #
-          # 2026-08-10 — this step OOM'd twice at Mark-Compact 6097.8 →
-          # 6100.4 MB against the 6144 cap: ~0.7% headroom, a coin flip per
-          # build, and it presented exactly that way (green on one main
-          # commit, red twice on the next branch). It was raised to 8192.
+          # LOWER BOUND — 6144 is not enough. Raised to 8192 on 2026-08-10
+          # after this step OOM'd twice at Mark-Compact 6097.8 → 6100.4 MB
+          # against the 6144 cap. Re-tested on 2026-08-16 by dropping it
+          # back: deterministic V8 OOM in ~5 min, "FATAL ERROR: Reached heap
+          # limit", exit 134, at Mark-Compact 6133.6 (6148.6) MB. So the
+          # build genuinely needs more than 6 GB, and #1900's
+          # `experimental.webpackMemoryOptimizations` did not bring it back
+          # under that line — it is enabled and the build still wants ~6.1 GB.
           #
-          # Why that is now the wrong setting. `--max-old-space-size` bounds
-          # V8's old space, NOT the process RSS — raising it does not hand
-          # the job more memory, it lets V8 DEFER collection and grow larger
-          # before it has to compact. That is a fine trade in a job that owns
-          # the runner. This job does not: unlike the `build` job (same
-          # `next build --webpack`, no services, 6144, and green every time),
-          # it carries postgres:16-alpine + redis:7-alpine as service
-          # containers on the same box.
+          # UPPER BOUND — 8192 does not fit the JOB, only the process.
+          # `--max-old-space-size` bounds V8's old space, not process RSS:
+          # a higher ceiling does not add memory, it lets V8 defer collection
+          # and grow before compacting. Fine in a job that owns the runner —
+          # which is why the `build` job (same `next build --webpack`, NO
+          # services, inherits 6144... and note it therefore has headroom
+          # this job does not) is green every time. This job additionally
+          # hosts postgres:16-alpine + redis:7-alpine on the same box, and at
+          # 8192 the total periodically exceeds the host: the build stops
+          # mid-"Creating an optimized production build", no V8 message at
+          # all, and the RUNNER dies ("received a shutdown signal", once
+          # preceded by a bare "Killed" — a kernel SIGKILL). Six of those
+          # across three branches on 2026-08-16, interleaved with successes.
           #
-          # And the premise the 8192 was chosen under no longer holds. #1900
-          # enabled `experimental.webpackMemoryOptimizations` in
-          # next.config.js AFTER this was raised, cutting the build's memory
-          # at the source — the ceiling was a workaround for a problem that
-          # has since been fixed properly.
-          #
-          # The tell is the failure SIGNATURE. A V8-ceiling failure announces
-          # itself: "Ineffective mark-compacts near heap limit", which is what
-          # 2026-08-10 logged. The 2026-08-16 failures carry no V8 message at
-          # all — the build stops mid-"Creating an optimized production
-          # build" and the RUNNER goes away ("received a shutdown signal"),
-          # once preceded by a bare "Killed", i.e. a kernel SIGKILL. V8 did
-          # not hit its limit; something outside the process ran out of
-          # memory and killed it. Six occurrences across three branches,
-          # 4 min to a full 40-min timeout, while `Build` passed on the same
-          # commits every time.
-          #
-          # If this ever regresses to the 2026-08-10 signature — a real
-          # mark-compact OOM near 6144 — do NOT re-raise the ceiling. That
-          # trades a loud, diagnosable failure for a silent one that takes
-          # the runner with it. Cut the build's memory instead.
-          NODE_OPTIONS: "--max-old-space-size=6144"
+          # So the two failure modes have opposite fixes and the ceiling
+          # cannot satisfy both. Read the SIGNATURE before touching this:
+          #   "Reached heap limit" / mark-compact  -> V8 hit ITS cap
+          #   runner shutdown, no V8 message       -> the HOST ran out
+          # Tuning this number trades one for the other. The durable fix is
+          # to stop building inside the job that carries the containers —
+          # give the test-mode bundle its own job and pass it as an artifact,
+          # the way `build` already hands its output to `load-smoke`.
+          NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
           NEXT_TEST_MODE: "1"
           # NEXT_PUBLIC_* env vars are inlined at BUILD time, so they
