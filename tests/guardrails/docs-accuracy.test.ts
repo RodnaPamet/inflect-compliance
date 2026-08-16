@@ -133,7 +133,7 @@ describe('docs accuracy', () => {
      */
     it('carries no derived counts header', () => {
         expect({
-            hasCounts: 'counts' in (classification as Record<string, unknown>),
+            hasCounts: 'counts' in classification,
             why: 'derived data beside its own source merges cleanly to a wrong value',
         }).toEqual({
             hasCounts: false,
