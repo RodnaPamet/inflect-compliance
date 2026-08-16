@@ -60,6 +60,57 @@ export const PUBLIC_API_REGEXES: readonly RegExp[] = [
 ];
 
 /**
+ * Endpoints whose caller is a MACHINE, not a browser session.
+ *
+ * These were all unreachable. The edge gate runs
+ * `isPublicPath(pathname)` and then, on a missing JWT,
+ * `if (isApiRoute(pathname)) return unauthorizedJson()` — so a caller with
+ * no NextAuth cookie is refused BEFORE the handler that would have
+ * authenticated it. Stripe, Microsoft Graph, the AV scanner, a SCIM IdP and
+ * an MCP client all send exactly that request, and all got 401.
+ *
+ * Nothing about the routes looked wrong, which is why this survived: every
+ * one of them verifies its own caller, correctly, in code that never ran.
+ * The gap was that "authenticates itself" was never expressed to the edge.
+ *
+ * Each entry below MUST authenticate inside the handler. That is not a
+ * convention — `tests/guards/machine-caller-paths-self-authenticate.test.ts`
+ * fails if an entry here has no in-handler gate, because an allowlist entry
+ * without one is a hole, and this list is the only thing standing between a
+ * public prefix and the tenant API.
+ */
+export const MACHINE_CALLER_PREFIXES = [
+    // Bearer SCIM token, tenant-scoped — `authenticateScimRequest`
+    // (src/lib/scim/auth.ts). The IdP has no cookie by construction.
+    '/api/scim',
+    // `stripe-signature` header verified against the raw body by
+    // `constructWebhookEvent`. The route's own docblock already said
+    // "Public (no auth), but verifies signature".
+    '/api/stripe/webhook',
+    // HMAC over the raw body, compared with `crypto.timingSafeEqual`.
+    '/api/storage/av-webhook',
+    // Graph validation-token handshake plus a `clientState` anti-spoof
+    // check against the stored subscription id. Its header comment reads
+    // "Unauthenticated by design (Graph is the caller)" — which was true
+    // of the handler and false of the deployment.
+    '/api/webhooks/sharepoint',
+    // Per-provider raw-body signature verification; the tenant is resolved
+    // from the IntegrationConnection and never from the caller.
+    '/api/integrations/webhooks',
+    // `Bearer <TenantApiKey>` → `authenticateMcpRequest` → verifyApiKey with
+    // an `mcp:read` capability scope.
+    '/api/mcp',
+    // Browser-sent CSP violation reports. Credential-less by spec — the
+    // browser will not attach cookies, so requiring one guarantees zero
+    // reports. Protected by a per-IP report limiter and a 16 KB body cap.
+    '/api/security/csp-report',
+    '/api/csp-report',
+    // Web-vitals beacon, same reasoning: `navigator.sendBeacon` from a page
+    // that may not yet have a session.
+    '/api/telemetry/vitals',
+];
+
+/**
  * Check if a pathname is public (should bypass auth).
  */
 export function isPublicPath(pathname: string): boolean {
@@ -71,6 +122,13 @@ export function isPublicPath(pathname: string): boolean {
 
     // Regex matches — public API routes with a dynamic segment mid-path.
     if (PUBLIC_API_REGEXES.some((re) => re.test(pathname))) return true;
+    // Exact match OR a `<prefix>/…` sub-path. Deliberately NOT a bare
+    // `startsWith`: that would make `/api/mcp` also open `/api/mcp-admin`,
+    // and an allowlist whose entries quietly cover their own siblings is
+    // the shape that turns one intended hole into several.
+    if (MACHINE_CALLER_PREFIXES.some(
+        (p) => pathname === p || pathname.startsWith(p.endsWith('/') ? p : `${p}/`),
+    )) return true;
 
     // Static file extensions
     if (STATIC_EXTENSIONS.test(pathname)) return true;
