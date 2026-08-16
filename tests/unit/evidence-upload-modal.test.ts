@@ -20,6 +20,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { EVIDENCE_MAX_FILE_MB } from '@/lib/evidence-upload-limits';
 
 const ROOT = path.resolve(__dirname, '../../');
 function read(rel: string): string {
@@ -155,12 +156,21 @@ describe('UploadEvidenceModal — business contract preserved', () => {
         expect(UPLOAD_MODAL_SRC).toMatch(
             /if \(\s*(vars\.)?retentionUntil\s*&&\s*uploaded\?\.id\s*\)/,
         );
-        expect(UPLOAD_MODAL_SRC).toMatch(
-            /apiUrl\(`\/evidence\/\$\{uploaded\.id\}\/retention`\)/,
-        );
-        expect(UPLOAD_MODAL_SRC).toMatch(
-            /retentionPolicy:\s*['"]FIXED_DATE['"]/,
-        );
+        // The endpoint call moved OUT of this component: both create paths
+        // (dropzone here, SharePoint import below) now share one helper that
+        // CHECKS the response. This used to be a bare
+        // `await fetch(apiUrl(`…/retention`))` whose result was discarded,
+        // so a non-ok reply read as success. The conditional above is still
+        // the contract; the call target is now the helper.
+        expect(UPLOAD_MODAL_SRC).toMatch(/applyEvidenceRetention\(/);
+        expect(UPLOAD_MODAL_SRC).not.toMatch(/fetch\([^)]*\/retention/);
+                // Moved with the request body into the shared helper. Asserted at
+        // its new home so the contract stays pinned rather than dropped —
+        // and covered behaviourally in
+        // tests/unit/evidence-retention-request.test.ts.
+        expect(
+            read('src/lib/evidence-retention-request.ts'),
+        ).toMatch(/retentionPolicy:\s*['"]FIXED_DATE['"]/);
     });
 
     // Epic 69 migrated this surface from React Query's
@@ -241,7 +251,13 @@ describe('UploadEvidenceModal — UX invariants', () => {
     });
 
     it('enforces a generous but finite client-side max size', () => {
-        expect(UPLOAD_MODAL_SRC).toMatch(/MAX_FILE_SIZE_MB\s*=\s*\d+/);
+        // The literal moved to @/lib/evidence-upload-limits, where three
+        // surfaces now share it — it was duplicated, and the third copy had
+        // no cap at all. Assert the VALUE is finite at its source rather
+        // than that a digit appears in this file.
+        expect(Number.isFinite(EVIDENCE_MAX_FILE_MB)).toBe(true);
+        expect(EVIDENCE_MAX_FILE_MB).toBeGreaterThan(0);
+        expect(UPLOAD_MODAL_SRC).toMatch(/MAX_FILE_SIZE_MB\s*=\s*EVIDENCE_MAX_FILE_MB/);
         expect(UPLOAD_MODAL_SRC).toMatch(/maxFileSizeMB=\{MAX_FILE_SIZE_MB\}/);
     });
 });
