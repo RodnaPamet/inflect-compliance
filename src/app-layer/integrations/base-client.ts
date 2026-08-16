@@ -27,6 +27,8 @@
  * @module integrations/base-client
  */
 
+import { boundedFetch } from './bounded-fetch';
+
 // ─── Connection Config ───────────────────────────────────────────────
 
 /**
@@ -116,7 +118,7 @@ export abstract class BaseIntegrationClient<
 
     constructor(config: TConfig, fetchImpl?: typeof globalThis.fetch) {
         this.config = config;
-        this.fetchImpl = fetchImpl ?? globalThis.fetch;
+        this.fetchImpl = fetchImpl ?? boundedFetch;
     }
 
     // ── Connection ──
