@@ -1,4 +1,10 @@
 {
+    "deepmerge-ts": {
+        "kind": "security",
+        "advisory": "GHSA-ggr8-5vv4-36mx",
+        "patchedFrom": "8.0.0",
+        "reason": "deepmerge-ts stack exhaustion when merging recursive object graphs (high). Vulnerable range is < 8.0.0, so the 7.1.6 that also exists does NOT fix it — the patch is a major bump. Reached via prisma@7.9.1 -> @prisma/config@7.9.1 -> deepmerge-ts@7.1.5, and it lands in the PRODUCTION audit because `prisma` (the CLI) is a production dependency here, not only @prisma/client. Not a direct dependency, so a literal range is used rather than $deepmerge-ts. Compatibility of @prisma/config with deepmerge-ts 8 verified by execution: `prisma validate` logs \"Loaded Prisma config from prisma.config.ts\" (the consuming code path) and reports the schemas valid, plus `prisma generate` and `prisma migrate status` (241 migrations, schema current)."
+    },
     "undici": {
         "kind": "security",
         "advisory": "GHSA-vxpw-j846-p89q",
