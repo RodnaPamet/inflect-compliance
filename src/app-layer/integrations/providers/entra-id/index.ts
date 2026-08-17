@@ -40,6 +40,7 @@ import {
     type NormalizedIdentityAccount,
 } from '../identity/types';
 import { logger } from '@/lib/observability/logger';
+import { boundedFetch } from '../../bounded-fetch';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
@@ -155,7 +156,7 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
         if (!tenantId) return { valid: false, error: 'A Directory (tenant) ID is required.' };
         if (!clientId) return { valid: false, error: 'An Application (client) ID is required.' };
         if (!clientSecret) return { valid: false, error: 'A client secret is required.' };
-        const doFetch = this.deps.fetchImpl ?? fetch;
+        const doFetch = this.deps.fetchImpl ?? boundedFetch;
         try {
             const token = this.deps.getAccessToken
                 ? await this.deps.getAccessToken({ ...config, ...secrets })
@@ -178,7 +179,7 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
     }
 
     private async fetchEntraAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
-        const doFetch = this.deps.fetchImpl ?? fetch;
+        const doFetch = this.deps.fetchImpl ?? boundedFetch;
         const token = this.deps.getAccessToken
             ? await this.deps.getAccessToken(config)
             : await getEntraAccessToken(config, doFetch);

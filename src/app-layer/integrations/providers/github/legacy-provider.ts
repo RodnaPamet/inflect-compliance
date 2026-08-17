@@ -41,6 +41,7 @@ import type {
 import type { RequestContext } from '../../../types';
 import { verifyGitHubSignature } from '../../webhook-crypto';
 import { logger } from '@/lib/observability/logger';
+import { boundedFetch } from '../../bounded-fetch';
 
 // ─── GitHub API Types ────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ export async function fetchBranchProtection(
     repo: string,
     branch: string,
     token: string,
-    fetchImpl: FetchFn = globalThis.fetch
+    fetchImpl: FetchFn = boundedFetch
 ): Promise<{ protection: GitHubBranchProtection | null; status: number; error?: string }> {
     const url = `https://api.github.com/repos/${owner}/${repo}/branches/${branch}/protection`;
 
@@ -254,12 +255,14 @@ export class GitHubProvider implements ScheduledCheckProvider, WebhookEventProvi
     };
 
     /**
-     * Injectable fetch for testing. Defaults to globalThis.fetch.
+     * Injectable fetch for testing. Defaults to the BOUNDED fetch —
+     * an injected impl bypasses the deadline, which is what makes the
+     * timeout itself testable.
      */
     private fetchImpl: FetchFn;
 
     constructor(fetchImpl?: FetchFn) {
-        this.fetchImpl = fetchImpl ?? globalThis.fetch;
+        this.fetchImpl = fetchImpl ?? boundedFetch;
     }
 
     // ── Connection Validation ──
