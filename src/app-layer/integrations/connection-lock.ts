@@ -56,6 +56,7 @@
 import { randomUUID } from 'node:crypto';
 import type { PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
+import { recordSyncLock } from '@/lib/observability/integration-metrics';
 
 /**
  * How long a held lock stays valid before another run may steal it.
@@ -85,6 +86,15 @@ export async function acquireSyncLock(
     const token = randomUUID();
     const staleBefore = new Date(now.getTime() - ttlMs);
 
+    // Read purely to label the metric. NOT part of the claim — the claim is the
+    // conditional UPDATE below, and a read-then-write claim would reintroduce
+    // the race this exists to close. A stale read here can only mislabel a
+    // counter, never admit a second concurrent sync.
+    const existing = await db.integrationConnection.findFirst({
+        where: { id: connectionId },
+        select: { syncLockedAt: true },
+    });
+
     const r = await db.integrationConnection.updateMany({
         where: {
             id: connectionId,
@@ -102,8 +112,17 @@ export async function acquireSyncLock(
             component: 'integrations',
             connectionId,
         });
+        recordSyncLock({ component: 'integrations', outcome: 'busy' });
         return null;
     }
+
+    // `reaped` is worth separating from a plain acquire: it means the previous
+    // holder overran its TTL or its worker was killed mid-sync, and that is the
+    // signal an operator should act on.
+    recordSyncLock({
+        component: 'integrations',
+        outcome: existing?.syncLockedAt ? 'reaped' : 'acquired',
+    });
     return token;
 }
 
@@ -135,6 +154,7 @@ export async function releaseSyncLock(
             connectionId,
             ttlMs: SYNC_LOCK_TTL_MS,
         });
+        recordSyncLock({ component: 'integrations', outcome: 'release_lost' });
         return false;
     }
     return true;
