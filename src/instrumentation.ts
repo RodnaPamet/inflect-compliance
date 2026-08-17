@@ -55,9 +55,28 @@ export async function register() {
         // change. NEXT_TEST_MODE is set only by the Playwright webServer
         // and scripts/e2e-local.mjs; a real production process never has
         // it, so it separates the two cases without weakening the check.
+        // SYNTHETIC_TEST_HARNESS is the second exemption, and it exists because
+        // NEXT_TEST_MODE could not be stretched to cover the rest. Four CI
+        // harnesses besides Playwright legitimately boot a production build
+        // with AUTH_TEST_MODE=1 — ci.yml's `load-smoke`, load-test.yml,
+        // dast.yml, dast-full.yml — and `next start` forces NODE_ENV=production
+        // for all of them, so they present here exactly as production does.
+        //
+        // NEXT_TEST_MODE is NOT usable for them: next.config.js reroutes
+        // distDir to `.next-test/` when it is set, and `load-smoke` starts from
+        // the `.next/` artifact the build job published (ci.yml documents this
+        // at the "Build Next.js app" step). Setting it there trades a boot
+        // failure for a missing-directory failure.
+        //
+        // A second exemption does not weaken this check. Its strength was
+        // already "one env var bypasses it" — anything able to set
+        // SYNTHETIC_TEST_HARNESS in a real production environment could equally
+        // set NEXT_TEST_MODE. What matters is that each exemption is named for
+        // what it is, so nobody sets one believing it does something else.
         if (
             process.env.NODE_ENV === 'production' &&
             process.env.NEXT_TEST_MODE !== '1' &&
+            process.env.SYNTHETIC_TEST_HARNESS !== '1' &&
             process.env.AUTH_TEST_MODE === '1'
         ) {
             console.error(

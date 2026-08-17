@@ -152,6 +152,13 @@ export const env = createEnv({
                 // E2E server would otherwise trip this. NEXT_TEST_MODE is
                 // set only by that webServer and scripts/e2e-local.mjs.
                 if (process.env.NEXT_TEST_MODE === '1') return;
+                // The non-Playwright harnesses — ci.yml `load-smoke`,
+                // load-test.yml, dast.yml, dast-full.yml — also boot a
+                // production build with AUTH_TEST_MODE=1 and cannot use
+                // NEXT_TEST_MODE (it reroutes distDir). See the matching
+                // exemption in src/instrumentation.ts for why a second one
+                // does not weaken the check.
+                if (process.env.SYNTHETIC_TEST_HARNESS === '1') return;
                 if (val === '1') {
                     ctx.addIssue({
                         code: z.ZodIssueCode.custom,

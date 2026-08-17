@@ -40,6 +40,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as yaml from 'js-yaml';
 
 const ROOT = path.resolve(__dirname, '../../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -48,10 +49,18 @@ const codeOnly = (s: string) =>
 
 describe('AUTH_TEST_MODE is refused in production', () => {
     it('the env schema rejects "1" when NODE_ENV is production', () => {
-        const src = read('src/env.ts');
+        // Bounded by the DECLARATION, not by a magic character count. The
+        // previous `slice(at, at + 900)` over raw source broke the moment a
+        // second exemption clause was added above `val === '1'` — a guard whose
+        // window is a constant fails on unrelated edits to the thing it guards,
+        // which is the opposite of useful.
+        const src = codeOnly(read('src/env.ts'));
         const at = src.indexOf('AUTH_TEST_MODE: z');
         expect(at).toBeGreaterThan(-1);
-        const block = src.slice(at, at + 900);
+        // From the declaration to the start of the NEXT field declaration.
+        const rest = src.slice(at);
+        const end = rest.search(/\n\s{8}[A-Z][A-Z0-9_]*:\s/);
+        const block = end > 0 ? rest.slice(0, end) : rest;
         expect(block).toMatch(/superRefine/);
         expect(block).toMatch(/NODE_ENV !== 'production'/);
         expect(block).toMatch(/val === '1'/);
@@ -60,10 +69,17 @@ describe('AUTH_TEST_MODE is refused in production', () => {
     it('the startup hook exits 1 rather than booting weakened', () => {
         // The schema check does not fire under SKIP_ENV_VALIDATION=1, which
         // is precisely what a built container carries.
-        const src = read('src/instrumentation.ts');
-        expect(src).toMatch(
-            /NODE_ENV === 'production'[\s\S]{0,120}AUTH_TEST_MODE === '1'/,
+        // Comment-stripped, and matched WITHIN one `if (...)` condition rather
+        // than across a fixed character gap. The old `{0,120}` window broke
+        // when a second exemption clause was inserted between the two
+        // literals — an assertion that fails on a correct edit trains people
+        // to bump the constant instead of reading it.
+        const src = codeOnly(read('src/instrumentation.ts'));
+        const conditions = src.match(/if \(([\s\S]*?)\)\s*\{/g) ?? [];
+        const guard = conditions.find(
+            (c) => c.includes("AUTH_TEST_MODE === '1'") && c.includes("NODE_ENV === 'production'"),
         );
+        expect(guard).toBeDefined();
         const at = src.indexOf("AUTH_TEST_MODE === '1'");
         expect(src.slice(at, at + 700)).toMatch(/process\.exit\(1\)/);
     });
@@ -129,5 +145,114 @@ describe('AUTH_TEST_MODE is refused in production', () => {
         const at = src.indexOf('AUTH_TEST_MODE: z');
         expect(src.slice(at, at + 900)).toMatch(/return;/); // the non-prod early return
         expect(read('.env.e2e.example')).toMatch(/AUTH_TEST_MODE/);
+    });
+});
+
+// ── The gap that actually shipped ────────────────────────────────────────
+// The tests above assert the SHAPE of the guard in source, and the guard's
+// shape was correct. What shipped broken was the set of CALLERS: four CI jobs
+// boot a production build with AUTH_TEST_MODE=1 and could not use the single
+// NEXT_TEST_MODE exemption, so all four died at startup — `Load Smoke (k6)`,
+// `Load Test (k6)`, `DAST (ZAP Baseline)`, and dast-full.
+//
+// None of them runs on a pull request (load-smoke is push/schedule/dispatch
+// only; the other three are scheduled), so the breakage was invisible until it
+// reached main. A source-shape assertion cannot catch that. This can: it reads
+// the workflows and checks the invariant across every caller.
+
+describe('every harness that boots production with AUTH_TEST_MODE=1 is exempted', () => {
+    const WORKFLOWS = path.join(ROOT, '.github/workflows');
+
+    /** Job env values, flattened to strings — YAML gives us '1' or 1. */
+    const envOf = (job: Record<string, unknown>): Record<string, string> => {
+        const e = (job?.env ?? {}) as Record<string, unknown>;
+        return Object.fromEntries(Object.entries(e).map(([k, v]) => [k, String(v)]));
+    };
+
+    /** Does any step in this job start a Next server itself? */
+    const startsNextServer = (job: Record<string, unknown>): boolean => {
+        const steps = (job?.steps ?? []) as Array<{ run?: string }>;
+        return steps.some((st) =>
+            typeof st?.run === 'string' &&
+            /(^|\s)(npx\s+next\s+start|next\s+start|npm\s+start|npm\s+run\s+start)\b/.test(st.run),
+        );
+    };
+
+    const jobs = fs
+        .readdirSync(WORKFLOWS)
+        .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+        .flatMap((f) => {
+            const doc = yaml.load(fs.readFileSync(path.join(WORKFLOWS, f), 'utf8')) as {
+                jobs?: Record<string, Record<string, unknown>>;
+            };
+            return Object.entries(doc?.jobs ?? {}).map(([name, job]) => ({
+                file: f,
+                name,
+                job,
+            }));
+        });
+
+    it('sanity — the workflow tree parsed and has jobs', () => {
+        // A test over an empty job list passes vacuously, which is how a
+        // "green" invariant check ends up protecting nothing.
+        expect(jobs.length).toBeGreaterThan(10);
+    });
+
+    it('sanity — it can see the jobs this rule is about', () => {
+        const withFlag = jobs.filter(({ job }) => envOf(job).AUTH_TEST_MODE === '1');
+        // e2e + load-smoke + load-test + dast + dast-full = 5 today. If this
+        // drops to 0 the detector has stopped detecting and every assertion
+        // below is vacuous.
+        expect(withFlag.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('each one carries NEXT_TEST_MODE or SYNTHETIC_TEST_HARNESS', () => {
+        const offenders = jobs
+            .filter(({ job }) => envOf(job).AUTH_TEST_MODE === '1' && startsNextServer(job))
+            .filter(({ job }) => {
+                const e = envOf(job);
+                return e.NEXT_TEST_MODE !== '1' && e.SYNTHETIC_TEST_HARNESS !== '1';
+            })
+            .map(({ file, name }) => `${file}:${name}`);
+
+        // Each of these would boot, print "Ready", then exit 1 — and the job
+        // would fail 60s later on a health poll, naming nothing.
+        expect({ offenders }).toEqual({ offenders: [] });
+    });
+
+    it('both exemptions are honoured by BOTH guard surfaces', () => {
+        // The env schema and the instrumentation hook are independent
+        // defence-in-depth checks. An exemption added to only one leaves the
+        // other one killing the harness, with a different error message.
+        const envSrc = codeOnly(read('src/env.ts'));
+        const declAt = envSrc.indexOf('AUTH_TEST_MODE: z');
+        const decl = envSrc.slice(declAt, declAt + 900);
+        expect(decl).toMatch(/NEXT_TEST_MODE === '1'\)\s*return;/);
+        expect(decl).toMatch(/SYNTHETIC_TEST_HARNESS === '1'\)\s*return;/);
+
+        const instrSrc = codeOnly(read('src/instrumentation.ts'));
+        expect(instrSrc).toMatch(
+            /NEXT_TEST_MODE !== '1'[\s\S]{0,200}SYNTHETIC_TEST_HARNESS !== '1'[\s\S]{0,200}AUTH_TEST_MODE === '1'/,
+        );
+    });
+
+    it('the exemption is not set anywhere a real deployment would read it', () => {
+        // The whole point of the refusal is that a real production process
+        // cannot be talked out of it. An exemption leaking into a deploy
+        // template would undo that silently.
+        const templates = [
+            'deploy/.env.prod.example',
+            '.env.example',
+            'docker-compose.prod.yml',
+            'deploy/docker-compose.prod.yml',
+        ].filter((rel) => fs.existsSync(path.join(ROOT, rel)));
+
+        expect(templates.length).toBeGreaterThan(0);
+        for (const rel of templates) {
+            expect({ rel, leaks: /SYNTHETIC_TEST_HARNESS/.test(read(rel)) }).toEqual({
+                rel,
+                leaks: false,
+            });
+        }
     });
 });
