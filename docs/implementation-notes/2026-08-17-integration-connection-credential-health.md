@@ -1,6 +1,6 @@
 # 2026-08-17 — Integrations: credential health, and reporting failure as failure
 
-**PR:** #TBD — fix(integrations): surface a revoked credential, and stop reporting failed syncs as successes
+**PR:** #1956 — fix(integrations): surface a revoked credential, and stop reporting failed syncs as successes
 
 ## Design
 
