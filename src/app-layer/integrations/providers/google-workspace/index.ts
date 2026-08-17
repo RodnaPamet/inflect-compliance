@@ -138,19 +138,28 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
         }
     }
 
-    async listAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
+    async listAccounts(
+        config: Record<string, unknown>,
+        resumeFrom?: string | null,
+    ): Promise<ListAccountsResult> {
         if (this.deps.listAccounts) return { accounts: await this.deps.listAccounts(config), complete: true };
-        return this.fetchGoogleAccounts(config);
+        return this.fetchGoogleAccounts(config, resumeFrom);
     }
 
-    private async fetchGoogleAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
+    private async fetchGoogleAccounts(
+        config: Record<string, unknown>,
+        resumeFrom?: string | null,
+    ): Promise<ListAccountsResult> {
         const doFetch = this.deps.fetchImpl ?? resilientFetch;
         const token = this.deps.getAccessToken
             ? await this.deps.getAccessToken(config)
             : await getGoogleAccessToken(config);
         const domain = String(config.domain ?? '');
         const out: NormalizedIdentityAccount[] = [];
-        let pageToken: string | undefined;
+        // Google's continuation is an opaque token rather than a URL, so unlike
+        // Okta/Entra it cannot redirect our credentialed request anywhere — it
+        // is only ever appended as a query parameter to our own base URL.
+        let pageToken: string | undefined = resumeFrom ?? undefined;
         do {
             const url = new URL(`${DIRECTORY_BASE}/users`);
             url.searchParams.set('domain', domain);
@@ -190,7 +199,8 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
 
         // H3 — a still-present nextPageToken means we hit MAX_USERS mid-directory:
         // the enumeration is KNOWN-PARTIAL and must not drive deprovisioning.
-        return { accounts: out, complete: !pageToken };
+        // H3-2 — carry the token so the next run continues from here.
+        return { accounts: out, complete: !pageToken, resumeToken: pageToken ?? null };
     }
 
     async runCheck(input: CheckInput): Promise<CheckResult> {

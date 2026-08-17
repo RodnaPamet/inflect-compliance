@@ -138,6 +138,9 @@ describe('GoogleWorkspaceProvider.listAccounts — injected override', () => {
         const listAccounts = jest.fn().mockResolvedValue([]);
         const res = await provider({ listAccounts }).listAccounts(CONFIG);
         expect(listAccounts).toHaveBeenCalledWith(CONFIG);
+        // The dep-injection path bypasses pagination entirely, so it carries no
+        // resume token — deliberately distinct from the real fetch path, which
+        // reports `resumeToken: null` to mean "complete, nothing to resume".
         expect(res).toEqual({ accounts: [], complete: true });
     });
 });
@@ -186,7 +189,7 @@ describe('GoogleWorkspaceProvider — directory fetch', () => {
 
     it('tolerates a page with no users array', async () => {
         const res = await accountsFrom([{}]);
-        expect(res).toEqual({ accounts: [], complete: true });
+        expect(res).toEqual({ accounts: [], complete: true, resumeToken: null });
     });
 
     it('reports complete=false when the cap is hit with pages remaining (H3)', async () => {

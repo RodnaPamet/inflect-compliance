@@ -32,7 +32,7 @@ function acct(id: string): NormalizedIdentityAccount {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true });
+    mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true, syncCursor: null, syncPassStartedAt: null });
     mockDb.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
     mockDb.integrationExecution.update.mockResolvedValue({});
     mockDb.connectedIdentityAccount.upsert.mockResolvedValue({});
@@ -69,13 +69,18 @@ describe('runIdentitySync', () => {
         expect(mockDb.connectedIdentityAccount.upsert).toHaveBeenCalledTimes(1);
     });
 
-    it('reconciles vanished accounts to DEPROVISIONED (excludes the seen set)', async () => {
+    it('reconciles vanished accounts to DEPROVISIONED (by pass timestamp)', async () => {
+        // The predicate changed with H3-2, from `externalUserId notIn <this
+        // run's seen set>` to `syncedAt < <when the pass began>`. The invariant
+        // is the same — accounts no longer in the directory get deprovisioned —
+        // but the old form was correct only while a pass was a single run.
         const provider = stubProvider([acct('a')]);
         const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
 
         expect(mockDb.connectedIdentityAccount.updateMany).toHaveBeenCalledTimes(1);
         const call = mockDb.connectedIdentityAccount.updateMany.mock.calls[0][0];
-        expect(call.where.externalUserId).toEqual({ notIn: ['a'] });
+        expect(call.where.syncedAt).toEqual({ lt: NOW });
+        expect(call.where.status).toEqual({ not: 'DEPROVISIONED' });
         expect(call.data.status).toBe('DEPROVISIONED');
         expect(r.deprovisioned).toBe(3);
     });
@@ -85,7 +90,7 @@ describe('runIdentitySync', () => {
         await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
         const firstKeys = mockDb.connectedIdentityAccount.upsert.mock.calls.map((c) => c[0].where.tenantId_provider_externalUserId.externalUserId);
         jest.clearAllMocks();
-        mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true });
+        mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true, syncCursor: null, syncPassStartedAt: null });
         mockDb.integrationExecution.create.mockResolvedValue({ id: 'exec-2' });
         mockDb.connectedIdentityAccount.updateMany.mockResolvedValue({ count: 0 });
         await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
@@ -94,7 +99,7 @@ describe('runIdentitySync', () => {
     });
 
     it('errors cleanly when the connection is not an identity provider', async () => {
-        mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'conn-1', provider: 'github', configJson: {}, secretEncrypted: null, isEnabled: true });
+        mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'conn-1', provider: 'github', configJson: {}, secretEncrypted: null, isEnabled: true, syncCursor: null, syncPassStartedAt: null });
         const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([]) });
         expect(r.status).toBe('ERROR');
         expect(mockDb.connectedIdentityAccount.upsert).not.toHaveBeenCalled();
@@ -174,5 +179,119 @@ describe('runIdentitySync — credential health', () => {
         const marked = mockDb.integrationConnection.updateMany.mock.calls
             .some((c) => c[0].data.authFailedAt instanceof Date);
         expect(marked).toBe(false);
+    });
+});
+
+// ── H3-2: resuming a directory larger than MAX_USERS ─────────────────────
+// A directory over the cap could never finish: every run started at page one
+// and stopped in exactly the same place, so accounts past the cap were never
+// synced and the reconcile was skipped forever.
+//
+// The dangerous part of the fix is the reconcile. Under resume, this run's
+// `seen` set holds only the LAST slice of the directory — so the old
+// `externalUserId notIn seen` predicate would have deprovisioned every account
+// from every earlier run of the same pass. That is the wrongful-mass-
+// deprovision failure this area exists to prevent, and it would have been
+// introduced BY the resume feature.
+
+describe('runIdentitySync — resumable enumeration', () => {
+    const partial = (accounts: string[], resumeToken: string | null) => ({
+        listAccounts: jest.fn(async () => ({
+            accounts: accounts.map(acct),
+            complete: false,
+            resumeToken,
+        })),
+    });
+
+    it('stores the cursor and reports PARTIAL rather than ERROR', async () => {
+        // Progress, not failure. Reporting ERROR would page someone every night
+        // for a large directory that is working exactly as designed.
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW,
+            provider: partial(['a'], 'https://acme.okta.com/api/v1/users?after=xyz'),
+        });
+
+        expect(r.status).toBe('PARTIAL');
+        const stored = mockDb.integrationConnection.updateMany.mock.calls
+            .map((c) => c[0].data)
+            .find((d) => typeof d.syncCursor === 'string');
+        expect(stored.syncCursor).toBe('https://acme.okta.com/api/v1/users?after=xyz');
+        expect(stored.syncPassStartedAt).toBe(NOW);
+        // Still no reconcile — the directory is only partly observed.
+        expect(mockDb.connectedIdentityAccount.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('passes the stored cursor back to the provider on the next run', async () => {
+        // Without this the resume does nothing at all: the run restarts at page
+        // one and truncates in exactly the same place, forever.
+        mockDb.integrationConnection.findFirst.mockResolvedValue({
+            id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true,
+            syncCursor: 'CURSOR_FROM_LAST_RUN', syncPassStartedAt: new Date('2026-05-30T00:00:00Z'),
+        });
+        const provider = partial(['b'], 'NEXT_CURSOR');
+
+        await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        expect(provider.listAccounts).toHaveBeenCalledWith(expect.anything(), 'CURSOR_FROM_LAST_RUN');
+    });
+
+    it('keeps the ORIGINAL pass timestamp across runs', async () => {
+        // The reconcile compares against this. If a resumed run reset it to
+        // `now`, the completing run would deprovision every account synced by
+        // the earlier runs of its own pass.
+        const passStart = new Date('2026-05-30T00:00:00Z');
+        mockDb.integrationConnection.findFirst.mockResolvedValue({
+            id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true,
+            syncCursor: 'C1', syncPassStartedAt: passStart,
+        });
+
+        await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: partial(['b'], 'C2'),
+        });
+
+        const stored = mockDb.integrationConnection.updateMany.mock.calls
+            .map((c) => c[0].data)
+            .find((d) => typeof d.syncCursor === 'string');
+        expect(stored.syncPassStartedAt).toBe(passStart);
+    });
+
+    it('on the FINAL run, reconciles against the pass start and clears the cursor', async () => {
+        // The whole point. Accounts synced by earlier runs of this pass have
+        // `syncedAt >= passStart` and must survive; only accounts untouched
+        // since the pass began are genuinely gone.
+        const passStart = new Date('2026-05-30T00:00:00Z');
+        mockDb.integrationConnection.findFirst.mockResolvedValue({
+            id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true,
+            syncCursor: 'LAST_PAGE', syncPassStartedAt: passStart,
+        });
+
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([acct('z')]),
+        });
+
+        expect(r.status).toBe('PASSED');
+        const rec = mockDb.connectedIdentityAccount.updateMany.mock.calls[0][0];
+        // Against the PASS start — NOT `now`, and NOT this run's seen set.
+        expect(rec.where.syncedAt).toEqual({ lt: passStart });
+        expect(rec.where.externalUserId).toBeUndefined();
+
+        const cleared = mockDb.integrationConnection.updateMany.mock.calls
+            .map((c) => c[0].data)
+            .find((d) => d.syncCursor === null);
+        expect(cleared).toEqual({ syncCursor: null, syncPassStartedAt: null });
+    });
+
+    it('a provider that CANNOT resume keeps the old loud behaviour', async () => {
+        // Active Directory: ldapjs paged search uses a server-side cookie tied
+        // to the live connection, so it cannot survive a process boundary.
+        // Silently treating that as "resuming" would store a null cursor and
+        // report success for a sync that will truncate identically forever.
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: partial(['a'], null),
+        });
+
+        expect(r.status).toBe('ERROR');
+        expect(r.noRetry).toBe(true);
+        expect(mockDb.connectedIdentityAccount.updateMany).not.toHaveBeenCalled();
     });
 });

@@ -172,13 +172,19 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
     }
 
     /** Enumerate the Entra directory into normalized accounts. */
-    async listAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
+    async listAccounts(
+        config: Record<string, unknown>,
+        resumeFrom?: string | null,
+    ): Promise<ListAccountsResult> {
         // A test/dep injection returns a bare array — treat it as complete.
         if (this.deps.listAccounts) return { accounts: await this.deps.listAccounts(config), complete: true };
-        return this.fetchEntraAccounts(config);
+        return this.fetchEntraAccounts(config, resumeFrom);
     }
 
-    private async fetchEntraAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
+    private async fetchEntraAccounts(
+        config: Record<string, unknown>,
+        resumeFrom?: string | null,
+    ): Promise<ListAccountsResult> {
         const doFetch = this.deps.fetchImpl ?? resilientFetch;
         const token = this.deps.getAccessToken
             ? await this.deps.getAccessToken(config)
@@ -191,8 +197,17 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
         // fall back to the base select (last-sign-in then reports null → dormant
         // checks treat those admins as never-active, which is fail-closed).
         let select = USER_SELECT_FULL;
-        let url: string | null = `${GRAPH_BASE}/users?$top=${PAGE_SIZE}&$select=${select}`;
-        let first = true;
+        // Resume from the stored @odata.nextLink when we have one. Graph's
+        // nextLink is absolute, so it MUST be origin-checked: a tampered stored
+        // cursor would otherwise send this request — carrying a Graph bearer
+        // token — to an arbitrary host.
+        const resuming = Boolean(resumeFrom && resumeFrom.startsWith(`${GRAPH_BASE}/`));
+        let url: string | null = resuming
+            ? (resumeFrom as string)
+            : `${GRAPH_BASE}/users?$top=${PAGE_SIZE}&$select=${select}`;
+        // A resumed URL already carries its own $select, so the
+        // signInActivity fallback below must not rewrite it from scratch.
+        let first = !resuming;
         while (url && out.length < MAX_USERS) {
             const res: Response = await doFetch(url, { headers: authHeaders });
             if (!res.ok) {
@@ -257,7 +272,8 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
 
         // A still-present nextLink means we stopped at MAX_USERS mid-directory:
         // the enumeration is KNOWN-PARTIAL and must not drive deprovisioning.
-        return { accounts: out, complete: url === null };
+        // H3-2 — carry it out so the next run continues from here.
+        return { accounts: out, complete: url === null, resumeToken: url };
     }
 
     async runCheck(input: CheckInput): Promise<CheckResult> {

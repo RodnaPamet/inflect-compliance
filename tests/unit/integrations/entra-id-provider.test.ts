@@ -232,7 +232,7 @@ describe('EntraIdProvider — directory enumeration', () => {
     it('tolerates a page with no value array', async () => {
         const fetchImpl = graphFetch({ users: [{}] });
         const res = await provider(withToken({ fetchImpl })).listAccounts(CONFIG);
-        expect(res).toEqual({ accounts: [], complete: true });
+        expect(res).toEqual({ accounts: [], complete: true, resumeToken: null });
     });
 });
 
