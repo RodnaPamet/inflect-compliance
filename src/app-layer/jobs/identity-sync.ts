@@ -17,6 +17,9 @@ import { runIdentitySync, type IdentitySyncResult } from '@/app-layer/usecases/i
 import type { IdentitySyncPayload } from './types';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
+import { runInTenantContext } from '@/lib/db-context';
+import { buildSystemContext } from '@/app-layer/context-system';
+import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 
@@ -24,10 +27,33 @@ export async function runIdentitySyncJob(payload: IdentitySyncPayload): Promise<
     if (!payload.tenantId || !payload.connectionId) {
         throw new Error('identity-sync requires tenantId + connectionId');
     }
-    // Returned whole rather than field-by-field. The old shim re-listed four
-    // fields, so `errorMessage` and `noRetry` were silently dropped on the way
-    // to the queue — the classification existed and never arrived.
-    return runIdentitySync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
+    // One sync at a time per connection. Two overlapping runs compute their
+    // `seen` sets independently, and the deprovision reconcile from the run
+    // that started EARLIER (`externalUserId: { notIn: seen }`) can flip accounts
+    // the later run just upserted to DEPROVISIONED — the wrongful-mass-
+    // deprovision hazard the truncation guard already worries about, arriving
+    // through a different door.
+    const ctx = buildSystemContext({ tenantId: payload.tenantId, job: 'identity-sync' });
+    const token = await runInTenantContext(ctx, (db) =>
+        acquireSyncLock(db, payload.connectionId!),
+    );
+    if (!token) {
+        // Not a failure — another run is already doing exactly this work.
+        return { executionId: '', status: 'SKIPPED', upserted: 0, deprovisioned: 0 };
+    }
+
+    try {
+        // Returned whole rather than field-by-field. The old shim re-listed four
+        // fields, so `errorMessage` and `noRetry` were silently dropped on the way
+        // to the queue — the classification existed and never arrived.
+        return await runIdentitySync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
+    } finally {
+        // `finally`, so a throw releases the lock rather than wedging the
+        // connection until the lease expires.
+        await runInTenantContext(ctx, (db) =>
+            releaseSyncLock(db, payload.connectionId!, token),
+        );
+    }
 }
 
 /** Fan-out: one identity-sync per enabled Okta / Google Workspace connection. */

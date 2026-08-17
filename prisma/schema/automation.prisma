@@ -122,6 +122,13 @@ model IntegrationConnection {
   // cleared on every successful sync. See integrations/connection-health.ts.
   authFailedAt      DateTime?
   authFailureReason String?
+  // Per-connection sync LEASE. One sync at a time per connection: two
+  // concurrent SharePoint delta syncs replay the same change set and each
+  // create a fresh Evidence row for the same file (only the mapping is
+  // upserted), leaving an orphaned duplicate. Reaped by staleness in the
+  // acquire predicate — see integrations/connection-lock.ts.
+  syncLockedAt      DateTime?
+  syncLockToken     String?
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   tenant            Tenant                   @relation(fields: [tenantId], references: [id])

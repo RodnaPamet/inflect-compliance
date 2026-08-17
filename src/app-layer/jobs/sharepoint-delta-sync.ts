@@ -16,6 +16,8 @@ import { fanOut, dispatchJobId, FOUR_HOURLY_BUCKET_MS } from './fan-out';
 import { logger } from '@/lib/observability/logger';
 import type { SharePointDeltaSyncPayload, SharePointDeltaSyncDispatchPayload } from './types';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
+import { runInTenantContext } from '@/lib/db-context';
+import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
 
 /** Build a tenant RequestContext for a job actor (an active member). */
 async function buildJobContext(tenantId: string, actorUserId: string): Promise<RequestContext> {
@@ -48,7 +50,29 @@ export async function runSharePointDeltaSyncJob(payload: SharePointDeltaSyncPayl
     if (!ctx.permissions.canWrite) {
         throw new Error(`sharepoint-delta-sync: actor lacks evidence.upload on tenant ${payload.tenantId}`);
     }
-    return runSharePointDeltaSync(ctx, payload.connectionId);
+
+    // One delta sync at a time per connection. Two concurrent runs replay the
+    // same change set from the same delta token and each create a FRESH
+    // Evidence row for every changed file — only the mapping is upserted — so
+    // the duplicate is left orphaned, with no provenance back to the drive.
+    // Reachable by double-clicking "Sync now". See integrations/connection-lock.
+    const token = await runInTenantContext(ctx, (db) =>
+        acquireSyncLock(db, payload.connectionId),
+    );
+    if (!token) {
+        // Not a failure: another run is already doing exactly this work.
+        return { drivesSynced: 0, reimported: 0, staled: 0, skipped: 'sync_already_running' as const };
+    }
+
+    try {
+        return await runSharePointDeltaSync(ctx, payload.connectionId);
+    } finally {
+        // `finally`, so a throw releases the lock rather than wedging the
+        // connection until the lease expires.
+        await runInTenantContext(ctx, (db) =>
+            releaseSyncLock(db, payload.connectionId, token),
+        );
+    }
 }
 
 /**

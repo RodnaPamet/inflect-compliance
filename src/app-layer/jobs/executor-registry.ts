@@ -318,7 +318,7 @@ function makeResult(
  * the job itself broke.
  */
 interface JobOutcome {
-    status: 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_APPLICABLE';
+    status: 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_APPLICABLE' | 'SKIPPED';
     errorMessage?: string;
     noRetry?: boolean;
 }
