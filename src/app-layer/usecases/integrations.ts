@@ -74,6 +74,10 @@ export async function listIntegrationConnections(ctx: RequestContext) {
                 configJson: true,
                 lastTestedAt: true,
                 lastTestStatus: true,
+                // H1-3 — credential health as observed by BACKGROUND syncs.
+                // Distinct from lastTest*, which is the operator's Test button.
+                authFailedAt: true,
+                authFailureReason: true,
                 createdAt: true,
                 updatedAt: true,
                 _count: { select: { executions: true } },
@@ -98,6 +102,10 @@ export async function getIntegrationConnection(ctx: RequestContext, connectionId
                 configJson: true,
                 lastTestedAt: true,
                 lastTestStatus: true,
+                // H1-3 — credential health as observed by BACKGROUND syncs.
+                // Distinct from lastTest*, which is the operator's Test button.
+                authFailedAt: true,
+                authFailureReason: true,
                 createdAt: true,
                 updatedAt: true,
             },

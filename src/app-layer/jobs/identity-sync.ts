@@ -13,23 +13,20 @@
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { enqueue } from './queue';
-import { runIdentitySync } from '@/app-layer/usecases/identity-sync';
+import { runIdentitySync, type IdentitySyncResult } from '@/app-layer/usecases/identity-sync';
 import type { IdentitySyncPayload } from './types';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 
-export async function runIdentitySyncJob(payload: IdentitySyncPayload): Promise<{
-    executionId: string;
-    status: string;
-    upserted: number;
-    deprovisioned: number;
-}> {
+export async function runIdentitySyncJob(payload: IdentitySyncPayload): Promise<IdentitySyncResult> {
     if (!payload.tenantId || !payload.connectionId) {
         throw new Error('identity-sync requires tenantId + connectionId');
     }
-    const r = await runIdentitySync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
-    return { executionId: r.executionId, status: r.status, upserted: r.upserted, deprovisioned: r.deprovisioned };
+    // Returned whole rather than field-by-field. The old shim re-listed four
+    // fields, so `errorMessage` and `noRetry` were silently dropped on the way
+    // to the queue — the classification existed and never arrived.
+    return runIdentitySync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
 }
 
 /** Fan-out: one identity-sync per enabled Okta / Google Workspace connection. */

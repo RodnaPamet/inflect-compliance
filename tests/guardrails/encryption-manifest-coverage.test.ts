@@ -164,6 +164,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
     'FileRecord.scanDetails': 'AV-scan engine verdict detail, not user content.',
     'UserSession.revokedReason':
         'Short operational revocation reason (e.g. "logout", "admin_revoke").',
+    'IntegrationConnection.authFailureReason':
+        'System-generated auth-failure line ("Integration auth failed (401): host/path"); URL is scrubbed to host+path by safeUrl so no query-string token reaches it.',
 
     // ── Ephemeral AI drafts — exist only until accepted into a real
     //    record. ──────────────────────────────────────────────────────

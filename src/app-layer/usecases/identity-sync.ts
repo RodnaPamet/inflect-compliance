@@ -12,6 +12,8 @@
 import type { RequestContext } from '../types';
 import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
+import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
+import { shouldBypassQueueRetry } from '../integrations/http-resilience';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 import { recordSyncTruncated, recordIdentityDeprovisioned } from '@/lib/observability/integration-metrics';
@@ -31,6 +33,15 @@ export interface IdentitySyncResult {
     upserted: number;
     deprovisioned: number;
     errorMessage?: string;
+    /**
+     * True when the queue must NOT immediately re-run this sync — a revoked
+     * credential or a throttle that outlasted our absorb budget.
+     *
+     * Carried on the result rather than raised as a throw because this usecase
+     * deliberately catches provider errors to record them on the execution row.
+     * Without it the classification dies here and the queue retries anyway.
+     */
+    noRetry?: boolean;
 }
 
 /**
@@ -100,7 +111,23 @@ export async function runIdentitySync(input: {
                 where: { id: execution.id },
                 data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() },
             });
-            return { executionId: execution.id, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: msg };
+            // Surface a REVOKED CREDENTIAL on the connection itself. Recording
+            // it only on the execution row left a dead connection presenting as
+            // healthy until someone opened the history of a job nobody watches.
+            // No-op unless this is an IntegrationAuthError (401/403).
+            await markAuthFailure(db, conn.id, e, now);
+            return {
+                executionId: execution.id,
+                status: 'ERROR',
+                upserted: 0,
+                deprovisioned: 0,
+                errorMessage: msg,
+                // Preserve the retry classification across the usecase boundary.
+                // This function CATCHES the provider error, so without this the
+                // queue-level bypass could never see it and a revoked credential
+                // would go back to being retried three times in ~35s.
+                noRetry: shouldBypassQueueRetry(e),
+            };
         }
 
         // Upsert each account idempotently by (tenantId, provider, externalUserId).
@@ -151,7 +178,20 @@ export async function runIdentitySync(input: {
             });
             logger.warn('identity-sync partial enumeration — deprovision skipped', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted });
             recordSyncTruncated({ provider: conn.provider }); // H6 — alertable truncation signal
-            return { executionId: execution.id, status: 'ERROR', upserted, deprovisioned: 0, errorMessage: msg };
+            return {
+                executionId: execution.id,
+                status: 'ERROR',
+                upserted,
+                deprovisioned: 0,
+                errorMessage: msg,
+                // Loud, but NOT retryable. The cap is deterministic: re-running
+                // enumerates the same too-large directory and truncates at the
+                // same point. Three retries would mean three more full 5000-
+                // account enumerations for a guaranteed-identical outcome —
+                // the amplification pattern, arriving from a different door.
+                // Resuming past the cap is H3-2, not a retry.
+                noRetry: true,
+            };
         }
 
         // Reconcile still-ACTIVE accounts no longer in the (fully-enumerated)
@@ -177,6 +217,13 @@ export async function runIdentitySync(input: {
                 completedAt: new Date(),
             },
         });
+
+        // The load-bearing half. A "credential revoked" banner that survives
+        // the admin fixing the credential is worse than no banner — it teaches
+        // people to ignore the one signal that means someone must act. Cleared
+        // unconditionally on every success, not only the success after a
+        // failure.
+        await clearAuthFailure(db, conn.id);
 
         recordIdentityDeprovisioned({ provider: conn.provider, count: reconcile.count }); // H6 — spike = wrongful mass-deprovision
         logger.info('identity-sync complete', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted, deprovisioned: reconcile.count });

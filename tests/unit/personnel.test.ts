@@ -19,7 +19,7 @@ import type { NormalizedEmployee } from '@/app-layer/integrations/providers/hris
 const NOW = new Date('2026-06-01T00:00:00.000Z');
 
 const mockDb = {
-    integrationConnection: { findFirst: jest.fn() },
+    integrationConnection: { findFirst: jest.fn(), updateMany: jest.fn(async () => ({ count: 0 })) },
     integrationExecution: { create: jest.fn(), update: jest.fn() },
     // H3 — runHrisSync now reconciles departed employees via updateMany.
     employee: { upsert: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },

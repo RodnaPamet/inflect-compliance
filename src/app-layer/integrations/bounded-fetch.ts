@@ -72,8 +72,15 @@ export class IntegrationTimeoutError extends Error {
     }
 }
 
-/** Host only — a full URL can carry a token in the query string. */
-function safeUrl(input: RequestInfo | URL): string {
+/**
+ * Host + path only — a full URL can carry a token in the query string.
+ *
+ * Exported because every integration error message that names a URL must go
+ * through here. `http-resilience.ts` persists its auth-failure message to
+ * `IntegrationConnection.authFailureReason` and shows it in the UI, so a raw
+ * `input.url` there would write an access token into the database.
+ */
+export function safeUrl(input: RequestInfo | URL): string {
     try {
         const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(raw);

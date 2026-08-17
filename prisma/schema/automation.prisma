@@ -104,20 +104,29 @@ model UserNotificationPreference {
 }
 
 model IntegrationConnection {
-  id              String                   @id @default(cuid())
-  tenantId        String
-  provider        String
-  name            String
-  isEnabled       Boolean                  @default(true)
-  configJson      Json                     @default("{}")
-  secretEncrypted String?
-  lastTestedAt    DateTime?
-  lastTestStatus  String?
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
-  tenant          Tenant                   @relation(fields: [tenantId], references: [id])
-  executions      IntegrationExecution[]
-  syncMappings    IntegrationSyncMapping[]
+  id                String                   @id @default(cuid())
+  tenantId          String
+  provider          String
+  name              String
+  isEnabled         Boolean                  @default(true)
+  configJson        Json                     @default("{}")
+  secretEncrypted   String?
+  lastTestedAt      DateTime?
+  lastTestStatus    String?
+  // Credential health as observed by BACKGROUND syncs. Deliberately separate
+  // from lastTestedAt/lastTestStatus, which belong to the operator-initiated
+  // "Test connection" button — sharing one field would let a manual test paper
+  // over a nightly sync that is still failing, and vice versa.
+  //
+  // Set ONLY on 401/403 (IntegrationAuthError), never on 404 or 429, and
+  // cleared on every successful sync. See integrations/connection-health.ts.
+  authFailedAt      DateTime?
+  authFailureReason String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  tenant            Tenant                   @relation(fields: [tenantId], references: [id])
+  executions        IntegrationExecution[]
+  syncMappings      IntegrationSyncMapping[]
 
   @@unique([tenantId, provider, name])
   @@index([tenantId])
@@ -211,20 +220,20 @@ model IntegrationSyncMapping {
 }
 
 model AutomationRule {
-  id                  String                @id @default(cuid())
-  tenantId            String
-  name                String
-  description         String?
+  id                     String                @id @default(cuid())
+  tenantId               String
+  name                   String
+  description            String?
   /// The event name this rule subscribes to. Free-form string so new
   /// events can be emitted without a migration; the canonical catalog
   /// lives at src/app-layer/automation/events.ts so typos are caught
   /// at the producer side, not here.
-  triggerEvent        String
+  triggerEvent           String
   /// Optional filter expression (e.g. `{ severity: "CRITICAL" }`).
   /// Evaluated by the dispatcher against the event payload before any
   /// action fires. `null` means "match every event of this type".
-  triggerFilterJson   Json?
-  actionType          AutomationActionType
+  triggerFilterJson      Json?
+  actionType             AutomationActionType
   /// Action-specific config. Shape depends on `actionType`:
   ///   NOTIFY_USER       → { userIds: string[], message: string }
   ///   CREATE_TASK       → { title, severity, assigneeUserId? }
@@ -235,7 +244,7 @@ model AutomationRule {
   /// encrypted-field manifest, so anything stored in it sits in clear in the
   /// database, in backups and in any query result. The WEBHOOK HMAC key lives
   /// in `webhookSecretEncrypted` below.
-  actionConfigJson    Json
+  actionConfigJson       Json
   /// WEBHOOK HMAC signing key, encrypted at rest via the Epic B field manifest
   /// (`ENCRYPTED_FIELDS.AutomationRule`). Written as plaintext by the usecase;
   /// the Prisma middleware encrypts on write and decrypts on read.
@@ -245,52 +254,52 @@ model AutomationRule {
   /// DIRECTLY as the HMAC key — so the raw secret sat in plaintext
   /// `actionConfigJson`. Null means the outbound webhook is unsigned.
   webhookSecretEncrypted String?
-  status              AutomationRuleStatus  @default(DRAFT)
+  status                 AutomationRuleStatus  @default(DRAFT)
   /// Higher priority runs first when multiple rules match the same
   /// event. Ties broken by `createdAt`.
-  priority            Int                   @default(0)
+  priority               Int                   @default(0)
   /// Cheap dashboard counters. Incremented by the dispatcher; never
   /// the source of truth (AutomationExecution is).
-  executionCount      Int                   @default(0)
-  lastTriggeredAt     DateTime?
+  executionCount         Int                   @default(0)
+  lastTriggeredAt        DateTime?
   /// Stuck-execution timeout (Epic 5, reframed): max minutes an execution may
   /// stay RUNNING before the watchdog treats it as hung. `null` = no watchdog.
   /// The sla-monitor job scans RUNNING executions past this window and fires
   /// the breach action. NOT a business-entity deadline — dispatch settles
   /// executions synchronously, so this only catches genuinely stuck runs
   /// (unresponsive webhook, dead worker). See sla-monitor.ts.
-  slaWindowMinutes    Int?
+  slaWindowMinutes       Int?
   /// Action fired on breach + its config.
-  slaBreachActionType AutomationActionType?
-  slaBreachConfigJson Json?
+  slaBreachActionType    AutomationActionType?
+  slaBreachConfigJson    Json?
   /// Chained workflow (Epic 7): fire `nextRule` after this rule succeeds,
   /// optionally after `nextRuleDelay` minutes. A DFS cycle guard in the
   /// usecase prevents loops. `null` = terminal rule.
-  nextRuleId          String?
-  nextRuleDelay       Int?
+  nextRuleId             String?
+  nextRuleDelay          Int?
   /// PR-F — the ELSE branch. When a chained rule's own `triggerFilter` does
   /// NOT match the payload at chain time, the chain follows `elseRuleId`
   /// instead of `nextRuleId` (and the rule's action is skipped). This makes
   /// the canvas condition-pass / condition-fail edges executable.
-  elseRuleId          String?
+  elseRuleId             String?
   /// PR-E — schedule config for time-based triggers (triggerEvent = 'SCHEDULE').
   /// Shape: { kind: 'DATE_RELATIVE', target: 'Evidence'|'ControlException'|
   /// 'ControlTestPlan', offsetDays: number }. The cron-trigger-sweep fires the
   /// rule N days before the target entity's due date. null for event-triggered
   /// rules.
-  scheduleConfigJson  Json?
+  scheduleConfigJson     Json?
   /// VR-7 — when this rule belongs to a canvas sub-flow group, the enclosing
   /// group's ProcessNode.nodeKey. The governance graph (VR-10) reads this to
   /// draw sub-flow-call relationships between maps. No FK — the group node
   /// lives in a ProcessMap, not a constrainable table.
-  subFlowGroupId      String?
-  createdByUserId     String?
-  updatedByUserId     String?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  subFlowGroupId         String?
+  createdByUserId        String?
+  updatedByUserId        String?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
   /// Soft-delete. Archived rules stop firing but their execution
   /// history survives for audit.
-  deletedAt           DateTime?
+  deletedAt              DateTime?
 
   tenant        Tenant                @relation(fields: [tenantId], references: [id])
   executions    AutomationExecution[]

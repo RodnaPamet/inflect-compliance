@@ -12,9 +12,10 @@ jest.mock('@/app-layer/integrations/registry', () => ({ registry: { getProvider:
 
 import { runIdentitySync } from '@/app-layer/usecases/identity-sync';
 import type { NormalizedIdentityAccount } from '@/app-layer/integrations/providers/identity/types';
+import { IntegrationAuthError } from '@/app-layer/integrations/http-resilience';
 
 const mockDb = {
-    integrationConnection: { findFirst: jest.fn() },
+    integrationConnection: { findFirst: jest.fn(), updateMany: jest.fn() },
     integrationExecution: { create: jest.fn(), update: jest.fn() },
     connectedIdentityAccount: { upsert: jest.fn(), updateMany: jest.fn() },
 };
@@ -35,6 +36,7 @@ beforeEach(() => {
     mockDb.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
     mockDb.integrationExecution.update.mockResolvedValue({});
     mockDb.connectedIdentityAccount.upsert.mockResolvedValue({});
+    mockDb.integrationConnection.updateMany.mockResolvedValue({ count: 0 });
     mockDb.connectedIdentityAccount.updateMany.mockResolvedValue({ count: 3 });
 });
 
@@ -104,5 +106,73 @@ describe('runIdentitySync', () => {
         expect(r.status).toBe('ERROR');
         expect(r.errorMessage).toContain('rate limited');
         expect(mockDb.integrationExecution.update.mock.calls.at(-1)?.[0].data.status).toBe('ERROR');
+    });
+});
+
+// ── H1-3: credential health on the connection ────────────────────────────
+// Recording an auth failure only on IntegrationExecution left a dead
+// connection presenting as healthy until someone opened the execution history
+// of a job nobody watches.
+
+describe('runIdentitySync — credential health', () => {
+    const authFail = () => ({
+        listAccounts: jest.fn(async () => {
+            throw new IntegrationAuthError(401, 'https://acme.okta.com/api/v1/users');
+        }),
+    });
+
+    it('marks the connection when the credential is rejected', async () => {
+        const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: authFail() });
+
+        expect(r.status).toBe('ERROR');
+        const call = mockDb.integrationConnection.updateMany.mock.calls.at(-1)?.[0];
+        expect(call.where).toEqual({ id: 'conn-1' });
+        expect(call.data.authFailedAt).toBe(NOW);
+        expect(String(call.data.authFailureReason)).toContain('401');
+    });
+
+    it('tells the queue not to retry a revoked credential', async () => {
+        // The usecase CATCHES the provider error, so without this the
+        // classification dies here and BullMQ retries three times in ~35s.
+        const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: authFail() });
+        expect(r.noRetry).toBe(true);
+    });
+
+    it('does NOT mark the connection for a non-auth failure', async () => {
+        // A throttle or a network blip must not put a "credential revoked"
+        // banner in front of an admin whose credential is fine.
+        const provider = { listAccounts: jest.fn(async () => { throw new Error('socket hang up'); }) };
+        const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        expect(r.status).toBe('ERROR');
+        expect(r.noRetry).toBe(false);
+        const marked = mockDb.integrationConnection.updateMany.mock.calls
+            .some((c) => c[0].data.authFailedAt instanceof Date);
+        expect(marked).toBe(false);
+    });
+
+    it('CLEARS a stale failure on the next successful sync', async () => {
+        // The load-bearing half. A banner that survives the admin fixing the
+        // credential trains people to ignore the one signal that matters.
+        const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([acct('a')]) });
+
+        expect(r.status).toBe('PASSED');
+        const call = mockDb.integrationConnection.updateMany.mock.calls.at(-1)?.[0];
+        expect(call.where).toEqual({ id: 'conn-1', authFailedAt: { not: null } });
+        expect(call.data).toEqual({ authFailedAt: null, authFailureReason: null });
+    });
+
+    it('a truncated enumeration fails loudly but is not retried', async () => {
+        // The cap is deterministic — retrying re-enumerates the same too-large
+        // directory and truncates at the same point.
+        const provider = { listAccounts: jest.fn(async () => ({ accounts: [acct('a')], complete: false })) };
+        const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        expect(r.status).toBe('ERROR');
+        expect(r.noRetry).toBe(true);
+        // Not a credential problem, so the connection must stay unmarked.
+        const marked = mockDb.integrationConnection.updateMany.mock.calls
+            .some((c) => c[0].data.authFailedAt instanceof Date);
+        expect(marked).toBe(false);
     });
 });

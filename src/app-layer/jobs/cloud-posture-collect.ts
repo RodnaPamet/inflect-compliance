@@ -25,7 +25,8 @@ export async function runAzurePostureCollectJob(payload: CollectPayload) {
         provider: new AzurePostureProvider(),
         controlMap: AZURE_POSTURE_CONTROL_MAP,
     });
-    return { executionId: r.executionId, status: r.status, evidenceCreated: r.evidenceCreated };
+    // Whole result — a field-by-field shim drops errorMessage/noRetry silently.
+    return r;
 }
 
 export async function runGcpPostureCollectJob(payload: CollectPayload) {
@@ -37,5 +38,6 @@ export async function runGcpPostureCollectJob(payload: CollectPayload) {
         provider: new GcpPostureProvider(),
         controlMap: GCP_POSTURE_CONTROL_MAP,
     });
-    return { executionId: r.executionId, status: r.status, evidenceCreated: r.evidenceCreated };
+    // Whole result — a field-by-field shim drops errorMessage/noRetry silently.
+    return r;
 }

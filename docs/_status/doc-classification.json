@@ -1984,6 +1984,9 @@
         },
         "docs/implementation-notes/2026-08-17-integrations-rate-limit-handling.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-17-integration-connection-credential-health.md": {
+            "class": "historical"
         }
     }
 }

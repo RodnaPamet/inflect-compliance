@@ -11,16 +11,16 @@
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { enqueue } from './queue';
-import { runHrisSync } from '@/app-layer/usecases/hris-sync';
+import { runHrisSync, type HrisSyncResult } from '@/app-layer/usecases/hris-sync';
 import type { HrisSyncPayload } from './types';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 
 const HRIS_PROVIDERS = ['bamboohr'];
 
-export async function runHrisSyncJob(payload: HrisSyncPayload): Promise<{ executionId: string; status: string; upserted: number; managersLinked: number }> {
+export async function runHrisSyncJob(payload: HrisSyncPayload): Promise<HrisSyncResult> {
     if (!payload.tenantId || !payload.connectionId) throw new Error('hris-sync requires tenantId + connectionId');
-    const r = await runHrisSync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
-    return { executionId: r.executionId, status: r.status, upserted: r.upserted, managersLinked: r.managersLinked };
+    // Whole result — a field-by-field shim drops errorMessage/noRetry silently.
+    return runHrisSync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
 }
 
 export async function runHrisSyncDispatch(): Promise<{ connections: number; dispatched: number }> {
