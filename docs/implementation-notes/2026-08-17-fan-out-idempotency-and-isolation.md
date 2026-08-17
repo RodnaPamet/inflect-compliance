@@ -1,6 +1,6 @@
 # 2026-08-17 — Fan-out: deterministic job ids and failure isolation
 
-**PR:** #TBD — fix(jobs): make every fan-out idempotent and failure-isolating
+**PR:** #1957 — fix(jobs): make every fan-out idempotent and failure-isolating
 
 ## Design
 
