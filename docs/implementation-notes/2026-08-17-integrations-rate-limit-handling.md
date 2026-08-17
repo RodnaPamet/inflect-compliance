@@ -1,6 +1,6 @@
 # 2026-08-17 — Integrations: 429 handling, and the queue amplification behind it
 
-**Commit:** `ac76564a` fix(integrations): handle 429 without letting the queue amplify it
+**PR:** #1955 — fix(integrations): handle 429 without letting the queue amplify it
 
 ## Design
 
