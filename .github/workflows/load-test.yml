@@ -61,6 +61,13 @@ jobs:
       DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
       REDIS_URL: redis://localhost:6379
       AUTH_TEST_MODE: '1'
+      # Exempts this job from the AUTH_TEST_MODE production-boot refusal
+      # (src/instrumentation.ts + src/env.ts). This job legitimately boots a
+      # PRODUCTION build with AUTH_TEST_MODE=1, and `next start` forces
+      # NODE_ENV=production, so it presents to that check exactly as a real
+      # production process does. NEXT_TEST_MODE is not usable here — it
+      # reroutes distDir to `.next-test/` in next.config.js.
+      SYNTHETIC_TEST_HARNESS: '1'
       RATE_LIMIT_ENABLED: '0'
       AUTH_SECRET: ci-load-test-secret-do-not-use-in-prod
       NEXTAUTH_URL: http://localhost:3006

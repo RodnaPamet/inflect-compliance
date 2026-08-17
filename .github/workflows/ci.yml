@@ -1224,6 +1224,17 @@ jobs:
 
     env:
       AUTH_TEST_MODE: "1"
+      # Exempts this job from the AUTH_TEST_MODE production-boot refusal
+      # (src/instrumentation.ts + src/env.ts). This job legitimately boots a
+      # PRODUCTION build with AUTH_TEST_MODE=1 — tests/load/mutations.js drives
+      # the real credentials login — and `next start` forces
+      # NODE_ENV=production, so it presents to that check exactly as a real
+      # production process does.
+      #
+      # NEXT_TEST_MODE is deliberately NOT used: next.config.js reroutes
+      # distDir to `.next-test/` when it is set, and this job starts from the
+      # `.next/` artifact the build job published (see the Build step below).
+      SYNTHETIC_TEST_HARNESS: '1'
       AUTH_TRUST_HOST: "1"
       AUTH_SECRET: "test-auth-secret-that-is-long-enough-32chars" # pragma: allowlist secret — test-only stub for the load-smoke CI job
       JWT_SECRET: "test-auth-secret-that-is-long-enough-32chars" # pragma: allowlist secret — test-only stub for the load-smoke CI job
