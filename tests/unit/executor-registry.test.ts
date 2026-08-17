@@ -10,6 +10,10 @@
  */
 import { executorRegistry } from '@/app-layer/jobs/executor-registry';
 import type { JobRunResult } from '@/app-layer/jobs/types';
+import {
+    IntegrationAuthError,
+    IntegrationRateLimitedError,
+} from '@/app-layer/integrations/http-resilience';
 
 // ── Mock the heavy job modules behind the uniform `{ result }` executors
 // so we can drive their closure bodies through `execute` without loading
@@ -259,6 +263,48 @@ describe('executorRegistry.execute — dispatch + fault isolation', () => {
         const result = await reg.execute('unit-string-throw-job', {});
         expect(result.success).toBe(false);
         expect(result.errorMessage).toBe('plain string failure');
+    });
+
+    // ── Queue-retry suppression ──────────────────────────────────────────
+    // This catch block is the single funnel for every executor throw, which
+    // makes it the only place that can decide whether BullMQ re-runs the job.
+    // Getting it wrong is invisible in the happy path and expensive in the
+    // failure path: `attempts: 3` with 5s exponential backoff turns one
+    // throttled sync into three full re-syncs inside ~35 seconds.
+
+    it('flags a rate-limit failure as no-retry', async () => {
+        reg.register('unit-throttled-job', async () => {
+            throw new IntegrationRateLimitedError('https://okta.example.com/x', 600_000);
+        });
+        const result = await reg.execute('unit-throttled-job', {});
+
+        expect(result.success).toBe(false);
+        // Still a recorded failure — the bypass suppresses the RETRY, not the
+        // failure. A silently-succeeding throttle would be worse than the bug.
+        expect(result.noRetry).toBe(true);
+    });
+
+    it('flags a revoked credential as no-retry', async () => {
+        reg.register('unit-revoked-job', async () => {
+            throw new IntegrationAuthError(401, 'https://graph.microsoft.com/v1.0/users');
+        });
+        const result = await reg.execute('unit-revoked-job', {});
+
+        expect(result.success).toBe(false);
+        expect(result.noRetry).toBe(true);
+    });
+
+    it('leaves an ordinary failure retryable', async () => {
+        // The bypass must stay narrow. A transient network fault is exactly
+        // what the queue's retry is for, and marking everything no-retry would
+        // trade an amplification bug for a durability one.
+        reg.register('unit-transient-job', async () => {
+            throw new TypeError('fetch failed');
+        });
+        const result = await reg.execute('unit-transient-job', {});
+
+        expect(result.success).toBe(false);
+        expect(result.noRetry).toBeUndefined();
     });
 });
 

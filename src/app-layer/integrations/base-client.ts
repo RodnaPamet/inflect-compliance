@@ -27,7 +27,7 @@
  * @module integrations/base-client
  */
 
-import { boundedFetch } from './bounded-fetch';
+import { resilientFetch } from './http-resilience';
 
 // ─── Connection Config ───────────────────────────────────────────────
 
@@ -118,7 +118,7 @@ export abstract class BaseIntegrationClient<
 
     constructor(config: TConfig, fetchImpl?: typeof globalThis.fetch) {
         this.config = config;
-        this.fetchImpl = fetchImpl ?? boundedFetch;
+        this.fetchImpl = fetchImpl ?? resilientFetch;
     }
 
     // ── Connection ──

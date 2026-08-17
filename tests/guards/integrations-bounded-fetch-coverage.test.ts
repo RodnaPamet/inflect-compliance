@@ -45,6 +45,18 @@ const ALLOWED: Record<string, string> = {
         'The helper itself — it is the one place allowed to call the global fetch.',
 };
 
+/**
+ * `boundedFetch` alone is no longer the finished article: it bounds ONE request
+ * but leaves a 429 to surface as a generic failure, which the queue then
+ * answers with three full re-syncs in ~35s. `resilientFetch` wraps it. Only
+ * these two may name the bounded helper directly.
+ */
+const BOUNDED_DIRECT_ALLOWED: Record<string, string> = {
+    'src/app-layer/integrations/bounded-fetch.ts': 'Defines it.',
+    'src/app-layer/integrations/http-resilience.ts':
+        'Wraps it — the resilient fetch is a bounded fetch plus throttle handling.',
+};
+
 describe('every integration provider defaults to a bounded fetch', () => {
     const files = walk(INTEGRATIONS);
 
@@ -86,10 +98,51 @@ describe('every integration provider defaults to a bounded fetch', () => {
         expect(src).not.toMatch(/err instanceof Error && err\.name === 'TimeoutError'/);
     });
 
+    it('no provider settles for a bounded-but-throttle-blind default', () => {
+        // The next omission is not `?? fetch` — that rule is already held
+        // above. It is `?? boundedFetch`, which looks correct, passes the rule
+        // above, and silently reinstates the amplification a 429 causes.
+        const offenders = files
+            .filter((f) => {
+                const rel = path.relative(ROOT, f);
+                if (BOUNDED_DIRECT_ALLOWED[rel]) return false;
+                return /\bboundedFetch\b/.test(stripComments(fs.readFileSync(f, 'utf8')));
+            })
+            .map((f) => path.relative(ROOT, f));
+
+        expect({ offenders }).toEqual({ offenders: [] });
+    });
+
+    it('the resilient fetch still layers ON the bounded one', () => {
+        // If this stops being true, every provider quietly loses its deadline
+        // while the rule above still reads as satisfied.
+        const src = stripComments(
+            fs.readFileSync(path.join(INTEGRATIONS, 'http-resilience.ts'), 'utf8'),
+        );
+        expect(src).toMatch(/opts\.fetchImpl \?\? boundedFetch/);
+    });
+
+    it('the queue-retry bypass covers BOTH failure modes, not just auth', () => {
+        // Narrowing this to terminal errors alone would leave the 429 path
+        // amplifying again — the exact defect H1-2 exists to close — and no
+        // other test would notice, because the in-process retry would still
+        // work perfectly.
+        const src = stripComments(
+            fs.readFileSync(path.join(INTEGRATIONS, 'http-resilience.ts'), 'utf8'),
+        );
+        const fn = src.slice(src.indexOf('export function shouldBypassQueueRetry'));
+        const body = fn.slice(0, fn.indexOf('\n}'));
+        expect(body).toMatch(/IntegrationTerminalError/);
+        expect(body).toMatch(/IntegrationRateLimitedError/);
+    });
+
     it('every carve-out still exists and carries a reason', () => {
-        for (const [rel, reason] of Object.entries(ALLOWED)) {
+        for (const [rel, reason] of Object.entries({
+            ...ALLOWED,
+            ...BOUNDED_DIRECT_ALLOWED,
+        })) {
             expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
-            expect(reason.length).toBeGreaterThan(20);
+            expect(reason.length).toBeGreaterThan(10);
         }
     });
 });

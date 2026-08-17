@@ -41,7 +41,7 @@ import type {
 import type { RequestContext } from '../../../types';
 import { verifyGitHubSignature } from '../../webhook-crypto';
 import { logger } from '@/lib/observability/logger';
-import { boundedFetch } from '../../bounded-fetch';
+import { resilientFetch } from '../../http-resilience';
 
 // ─── GitHub API Types ────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ export async function fetchBranchProtection(
     repo: string,
     branch: string,
     token: string,
-    fetchImpl: FetchFn = boundedFetch
+    fetchImpl: FetchFn = resilientFetch
 ): Promise<{ protection: GitHubBranchProtection | null; status: number; error?: string }> {
     const url = `https://api.github.com/repos/${owner}/${repo}/branches/${branch}/protection`;
 
@@ -262,7 +262,7 @@ export class GitHubProvider implements ScheduledCheckProvider, WebhookEventProvi
     private fetchImpl: FetchFn;
 
     constructor(fetchImpl?: FetchFn) {
-        this.fetchImpl = fetchImpl ?? boundedFetch;
+        this.fetchImpl = fetchImpl ?? resilientFetch;
     }
 
     // ── Connection Validation ──

@@ -32,6 +32,7 @@
 import { logger } from '@/lib/observability/logger';
 import { recordJobMetrics } from '@/lib/observability/metrics';
 import { env } from '@/env';
+import { shouldBypassQueueRetry } from '@/app-layer/integrations/http-resilience';
 import type { JobName, JobPayload, JobRunResult } from './types';
 
 // ─── Executor Contract ──────────────────────────────────────────────
@@ -199,6 +200,12 @@ export const executorRegistry = {
             // ── Record job failure metric ──
             recordJobMetrics({ jobName: name, success: false, durationMs });
 
+            // Every executor throw funnels through here, so this is the one
+            // place that has to decide whether BullMQ should immediately re-run
+            // the job. A revoked credential or a long throttle must not be
+            // answered with three more attempts in 35 seconds — see
+            // `shouldBypassQueueRetry`. The job still FAILS; only the immediate
+            // retry is suppressed.
             return {
                 jobName: name,
                 jobRunId,
@@ -210,6 +217,7 @@ export const executorRegistry = {
                 itemsActioned: 0,
                 itemsSkipped: 0,
                 errorMessage,
+                ...(shouldBypassQueueRetry(error) ? { noRetry: true } : {}),
             };
         }
     },

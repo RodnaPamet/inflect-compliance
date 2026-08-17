@@ -27,7 +27,7 @@ import {
     type ListAccountsResult,
     type NormalizedIdentityAccount,
 } from '../identity/types';
-import { boundedFetch } from '../../bounded-fetch';
+import { resilientFetch } from '../../http-resilience';
 
 const MAX_USERS = 5000;
 const PAGE_SIZE = 200;
@@ -144,7 +144,7 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
     }
 
     private async fetchGoogleAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
-        const doFetch = this.deps.fetchImpl ?? boundedFetch;
+        const doFetch = this.deps.fetchImpl ?? resilientFetch;
         const token = this.deps.getAccessToken
             ? await this.deps.getAccessToken(config)
             : await getGoogleAccessToken(config);

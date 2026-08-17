@@ -154,6 +154,31 @@ describe('job execution inherits the originating trace', () => {
         expect(execSpan!.events.some((e) => e.name === 'exception')).toBe(true);
     });
 
+    it('re-throws the SAME error object, preserving its class', async () => {
+        // The span wrapper sits between the worker's throw and BullMQ's retry
+        // decision, and that decision is made with `instanceof
+        // UnrecoverableError`. Re-wrapping the error here — `throw new
+        // Error(err.message)`, which reads like a tidy-up and preserves the
+        // message the assertion above checks — would silently restore the
+        // amplification H1-2 removed: a throttled or credential-revoked sync
+        // would go back to being retried three times in ~35s, and no test
+        // would notice.
+        class SentinelError extends Error {}
+        const thrown = new SentinelError('sentinel');
+
+        const caught = await runJobInTraceContext(
+            {},
+            'execute sentinel-job',
+            {},
+            async () => {
+                throw thrown;
+            },
+        ).catch((e) => e);
+
+        expect(caught).toBe(thrown);
+        expect(caught).toBeInstanceOf(SentinelError);
+    });
+
     it('starts a fresh root trace when no carrier is present (legacy/orphan job)', async () => {
         // A job enqueued before this feature shipped has no carrier.
         const payload = { tenantId: 't1' };
