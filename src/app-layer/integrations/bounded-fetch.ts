@@ -23,22 +23,45 @@
  * injectable `deps.fetchImpl ?? fetch`, which is a different and perfectly good
  * pattern that exists for testability.
  *
- * So the bound goes where the default goes. Every provider swaps its `?? fetch`
- * for `?? boundedFetch`, keeps its injection point, and no provider is forced
- * into a class hierarchy it does not use. A test that injects its own fetch
- * still bypasses this entirely — which is what makes the timeout itself
- * testable.
+ * So the bound goes where the default goes: every provider swaps its `?? fetch`
+ * for a hardened default, keeps its injection point, and no provider is forced
+ * into a class hierarchy it does not use.
  *
- * ## The two timeouts
+ * That default is `resilientFetch`, NOT `boundedFetch` — this file used to say
+ * otherwise and the example was wrong. `http-resilience.ts` composes
+ * `createResilientFetch` OVER `createBoundedFetch`, so a provider reads:
+ *
+ *     const doFetch = this.deps.fetchImpl ?? resilientFetch;
+ *
+ * and gets the deadline here PLUS 429/Retry-After handling. Wiring a provider
+ * to `boundedFetch` directly still bounds the request but silently drops the
+ * throttle handling, which is why
+ * `tests/guards/integrations-bounded-fetch-coverage.test.ts` bans it outright.
+ *
+ * A test that injects its own fetch bypasses BOTH layers — which is what makes
+ * the timeout itself testable, and also why the stress suite injects a composed
+ * real stack rather than a bare fake.
+ *
+ * ## One timeout, deliberately
  *
  * `DEFAULT_TIMEOUT_MS` (30 s) matches the deliberate AD LDAP bound, so a single
- * request has one answer across the layer regardless of transport.
+ * request has one answer across the layer regardless of transport. It is per
+ * REQUEST, not per enumeration — a 50-page enumeration gets 50 separate
+ * deadlines, because a per-enumeration budget would make the failure depend on
+ * how far through the directory the slow page happened to fall.
  *
- * `ENUMERATION_TIMEOUT_MS` (120 s) is for a single page of a paginated
- * enumeration, where the remote is doing real work per page. It is per REQUEST,
- * not per enumeration — an enumeration of 50 pages gets 50 separate deadlines,
- * because a per-enumeration budget would make the failure depend on how far
- * through the directory the slow page happened to fall.
+ * There used to be a second bound here, `ENUMERATION_TIMEOUT_MS` (120 s), for
+ * "a page where the remote is doing real work". It was removed because it never
+ * had a consumer: it shipped with this file, and the PR that gave providers
+ * their hardened default wired them to `resilientFetch` (30 s) without ever
+ * reaching for it. A longer bound that nothing uses is worse than no bound —
+ * the prose asserts a two-tier design the code does not implement, and the next
+ * reader believes it.
+ *
+ * Bring it back when there is EVIDENCE rather than a hypothesis: an
+ * `IntegrationTimeoutError` naming a page that genuinely needed longer. The
+ * error carries the host, path and the budget it blew, so the real number will
+ * be observable instead of guessed.
  *
  * @see tests/unit/integrations-bounded-fetch.test.ts
  */
@@ -47,8 +70,6 @@ import { logger } from '@/lib/observability/logger';
 /** One ordinary API call. Matches the AD LDAP bound so the layer is coherent. */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** One PAGE of a paginated enumeration — the remote is doing more work. */
-export const ENUMERATION_TIMEOUT_MS = 120_000;
 
 /**
  * Thrown when OUR deadline fired, as distinct from the caller aborting or the
@@ -135,11 +156,12 @@ export function createBoundedFetch(timeoutMs: number = DEFAULT_TIMEOUT_MS): type
 }
 
 /**
- * The default bound. Providers use this in place of bare `fetch`:
+ * The default bound.
  *
- *     const doFetch = this.deps.fetchImpl ?? boundedFetch;
+ * NOT what providers use directly — `http-resilience.ts` wraps this as
+ * `resilientFetch`, and that is the provider default. Wiring a provider to
+ * `boundedFetch` bounds the request but loses 429/Retry-After handling, which
+ * `tests/guards/integrations-bounded-fetch-coverage.test.ts` rejects.
  */
 export const boundedFetch: typeof fetch = createBoundedFetch();
 
-/** Per-page bound for paginated enumeration. */
-export const enumerationFetch: typeof fetch = createBoundedFetch(ENUMERATION_TIMEOUT_MS);

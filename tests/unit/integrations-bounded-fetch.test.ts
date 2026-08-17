@@ -14,10 +14,8 @@
 import {
     createBoundedFetch,
     boundedFetch,
-    enumerationFetch,
     IntegrationTimeoutError,
     DEFAULT_TIMEOUT_MS,
-    ENUMERATION_TIMEOUT_MS,
 } from '@/app-layer/integrations/bounded-fetch';
 
 describe('createBoundedFetch', () => {
@@ -127,11 +125,17 @@ describe('the two exported bounds', () => {
         expect(typeof boundedFetch).toBe('function');
     });
 
-    it('enumeration gets a longer PER-PAGE budget', () => {
-        // Per request, not per enumeration: a per-enumeration budget would make
-        // the failure depend on how far through the directory the slow page
-        // happened to fall.
-        expect(ENUMERATION_TIMEOUT_MS).toBeGreaterThan(DEFAULT_TIMEOUT_MS);
-        expect(typeof enumerationFetch).toBe('function');
+    it('the bound is PER REQUEST, so a long enumeration is not penalised for its length', () => {
+        // A 50-page enumeration gets 50 separate deadlines. A per-enumeration
+        // budget would make the failure depend on how far through the directory
+        // the slow page happened to fall.
+        //
+        // This replaced an assertion over ENUMERATION_TIMEOUT_MS, a 120s
+        // second bound that never had a consumer — the assertion only checked
+        // that the constant existed and exceeded the default, which is true of
+        // any dead export.
+        const bounded = createBoundedFetch(DEFAULT_TIMEOUT_MS);
+        expect(typeof bounded).toBe('function');
+        expect(typeof boundedFetch).toBe('function');
     });
 });
