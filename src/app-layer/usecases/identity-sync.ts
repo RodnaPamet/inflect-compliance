@@ -35,7 +35,7 @@ export interface IdentitySyncResult {
      * sync passed when it never ran would make the lock invisible in exactly
      * the logs someone would check to find out why data looks stale.
      */
-    status: 'PASSED' | 'ERROR' | 'SKIPPED';
+    status: 'PASSED' | 'ERROR' | 'SKIPPED' | 'PARTIAL';
     upserted: number;
     deprovisioned: number;
     errorMessage?: string;
@@ -67,7 +67,7 @@ export async function runIdentitySync(input: {
     return runInTenantContext(ctx, async (db) => {
         const conn = await db.integrationConnection.findFirst({
             where: { id: input.connectionId, tenantId: ctx.tenantId },
-            select: { id: true, provider: true, configJson: true, secretEncrypted: true, isEnabled: true },
+            select: { id: true, provider: true, configJson: true, secretEncrypted: true, isEnabled: true, syncCursor: true, syncPassStartedAt: true },
         });
         if (!conn || !IDENTITY_PROVIDERS.has(conn.provider)) {
             const execution = await db.integrationExecution.create({
@@ -105,12 +105,23 @@ export async function runIdentitySync(input: {
         }
 
         const start = Date.now();
+
+        // A PASS is one full traversal of the directory, which for a directory
+        // over MAX_USERS spans several scheduled runs. `syncPassStartedAt`
+        // marks when it began; the deprovision reconcile compares each
+        // account's `syncedAt` against it, so "seen" accumulates across the
+        // whole pass instead of resetting every run — which is what makes
+        // reconciling after a resumed enumeration safe at all.
+        const passStartedAt = conn.syncPassStartedAt ?? now;
+
         let accounts: NormalizedIdentityAccount[];
         let complete: boolean;
+        let resumeToken: string | null = null;
         try {
-            const res = await resolved.listAccounts({ ...config, ...secrets });
+            const res = await resolved.listAccounts({ ...config, ...secrets }, conn.syncCursor);
             accounts = res.accounts;
             complete = res.complete;
+            resumeToken = res.resumeToken ?? null;
         } catch (e) {
             const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
             await db.integrationExecution.update({
@@ -171,31 +182,66 @@ export async function runIdentitySync(input: {
             upserted += 1;
         }
 
-        // H3 — a KNOWN-PARTIAL enumeration (directory larger than MAX_USERS)
-        // must NEVER drive the deprovision reconcile: accounts past the cap
-        // weren't observed and would be wrongly flipped to DEPROVISIONED. Upsert
-        // what we did see (idempotent, additive), skip the reconcile, and fail
-        // the execution loudly so the truncation is visible.
+        // A KNOWN-PARTIAL enumeration must NEVER drive the deprovision
+        // reconcile: accounts past the cap were not observed and would be
+        // wrongly flipped to DEPROVISIONED.
+        //
+        // H3-2 splits this by whether the provider handed back a resume token.
         if (!complete) {
-            const msg = `Partial directory enumeration: hit the ${accounts.length}-account cap with more pages remaining. Deprovision reconcile skipped to avoid wrongful mass-deprovisioning.`;
+            recordSyncTruncated({ provider: conn.provider }); // H6 — alertable truncation signal
+
+            if (resumeToken) {
+                // RESUMABLE. This is progress, not failure: the accounts we saw
+                // are upserted, the cursor advances, and the next scheduled run
+                // continues from here until the pass completes and reconciles.
+                // Reporting ERROR would page someone every night for a large
+                // directory that is working exactly as designed.
+                await db.integrationConnection.updateMany({
+                    where: { id: conn.id },
+                    data: { syncCursor: resumeToken, syncPassStartedAt: passStartedAt },
+                });
+                const msg = `Partial enumeration (${accounts.length} accounts this run); pass continues from the stored cursor on the next run.`;
+                await db.integrationExecution.update({
+                    where: { id: execution.id },
+                    data: {
+                        status: 'PASSED',
+                        errorMessage: null,
+                        resultJson: { upserted, deprovisioned: 0, total: accounts.length, partial: true, resuming: true },
+                        durationMs: Date.now() - start,
+                        completedAt: new Date(),
+                    },
+                });
+                logger.info('identity-sync partial — cursor stored, pass continues', {
+                    component: 'identity-sync',
+                    tenantId: ctx.tenantId,
+                    provider: conn.provider,
+                    executionId: execution.id,
+                    upserted,
+                    passStartedAt,
+                });
+                await clearAuthFailure(db, conn.id, conn.provider);
+                return { executionId: execution.id, status: 'PARTIAL', upserted, deprovisioned: 0, errorMessage: msg };
+            }
+
+            // NOT resumable (Active Directory: ldapjs paged search uses a
+            // server-side cookie tied to the live connection, so it cannot
+            // survive a process boundary). Unchanged behaviour — loud, and not
+            // retryable, because re-running truncates at the same place.
+            const msg = `Partial directory enumeration: hit the ${accounts.length}-account cap with more pages remaining, and this provider cannot resume. Deprovision reconcile skipped to avoid wrongful mass-deprovisioning.`;
             await db.integrationExecution.update({
                 where: { id: execution.id },
                 data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, deprovisioned: 0, total: accounts.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
             });
             logger.warn('identity-sync partial enumeration — deprovision skipped', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted });
-            recordSyncTruncated({ provider: conn.provider }); // H6 — alertable truncation signal
             return {
                 executionId: execution.id,
                 status: 'ERROR',
                 upserted,
                 deprovisioned: 0,
                 errorMessage: msg,
-                // Loud, but NOT retryable. The cap is deterministic: re-running
-                // enumerates the same too-large directory and truncates at the
-                // same point. Three retries would mean three more full 5000-
-                // account enumerations for a guaranteed-identical outcome —
-                // the amplification pattern, arriving from a different door.
-                // Resuming past the cap is H3-2, not a retry.
+                // Deterministic: re-running enumerates the same too-large
+                // directory and truncates identically, so three retries mean
+                // three more full enumerations for the same outcome.
                 noRetry: true,
             };
         }
@@ -204,14 +250,29 @@ export async function runIdentitySync(input: {
         // directory — they are now deprovisioned. Runs ONLY on a confirmed-
         // complete enumeration. The whole callback is one RLS transaction
         // (runInTenantContext), so upsert + reconcile commit atomically.
+        // Anything not touched since the PASS began was not in the directory
+        // during any run of this pass, so it is genuinely gone.
+        //
+        // This replaces `externalUserId: { notIn: seen }`, which was correct
+        // only while a pass was a single run. Under resume, `seen` holds just
+        // the LAST run's slice — reconciling against it would deprovision every
+        // account from every earlier run of the same pass. That is the
+        // wrongful-mass-deprovision failure this whole area is built to avoid,
+        // and it would have been introduced BY the resume feature.
         const reconcile = await db.connectedIdentityAccount.updateMany({
             where: {
                 tenantId: ctx.tenantId,
                 provider: conn.provider,
                 status: { not: 'DEPROVISIONED' },
-                externalUserId: { notIn: seen.length > 0 ? seen : ['__none__'] },
+                syncedAt: { lt: passStartedAt },
             },
             data: { status: 'DEPROVISIONED', syncedAt: now },
+        });
+
+        // The pass is done: clear the cursor so the next run starts a fresh one.
+        await db.integrationConnection.updateMany({
+            where: { id: conn.id },
+            data: { syncCursor: null, syncPassStartedAt: null },
         });
 
         await db.integrationExecution.update({

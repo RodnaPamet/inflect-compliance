@@ -335,9 +335,14 @@ function makeResult(
  * a job failure would turn every tenant's genuine findings into retried job
  * failures, which is a worse bug than the one being fixed. Only `ERROR` means
  * the job itself broke.
+ *
+ * `PARTIAL` (H3-2) is likewise a success: a directory over MAX_USERS is synced
+ * across several runs, and each run that stores a cursor and stops has done
+ * exactly what it should. Reporting it as a failure would page someone nightly
+ * for a large directory working as designed.
  */
 interface JobOutcome {
-    status: 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_APPLICABLE' | 'SKIPPED';
+    status: 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_APPLICABLE' | 'SKIPPED' | 'PARTIAL';
     errorMessage?: string;
     noRetry?: boolean;
 }

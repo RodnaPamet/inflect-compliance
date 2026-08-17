@@ -45,11 +45,36 @@ export interface NormalizedIdentityAccount {
 export interface ListAccountsResult {
     accounts: NormalizedIdentityAccount[];
     complete: boolean;
+    /**
+     * Where to pick up when `complete` is false — an opaque, provider-specific
+     * continuation (Okta's `link` rel=next URL, Google's `nextPageToken`,
+     * Entra's `@odata.nextLink`).
+     *
+     * Every one of those was already computed at the truncation point and then
+     * thrown away, which is why a directory over the cap could never finish: the
+     * next run started from page one and stopped at exactly the same place.
+     *
+     * `null` means the provider cannot resume. Active Directory is the real
+     * case — ldapjs paged search uses a server-side cookie tied to the live LDAP
+     * connection, so it cannot survive a process boundary. Those directories
+     * keep the old behaviour: partial, no reconcile, and loud.
+     */
+    resumeToken?: string | null;
 }
 
 export interface IdentitySyncProvider {
-    /** Enumerate every account in the connected directory. */
-    listAccounts(config: Record<string, unknown>): Promise<ListAccountsResult>;
+    /**
+     * Enumerate the connected directory.
+     *
+     * `resumeFrom` is a `resumeToken` from a previous partial result. Providers
+     * that cannot resume must ignore it and start from the beginning — which is
+     * exactly today's behaviour, so ignoring it is safe rather than silently
+     * wrong.
+     */
+    listAccounts(
+        config: Record<string, unknown>,
+        resumeFrom?: string | null,
+    ): Promise<ListAccountsResult>;
 }
 
 export function isIdentitySyncProvider(p: unknown): p is IdentitySyncProvider {

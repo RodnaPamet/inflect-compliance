@@ -129,6 +129,14 @@ model IntegrationConnection {
   // acquire predicate — see integrations/connection-lock.ts.
   syncLockedAt      DateTime?
   syncLockToken     String?
+  // H3-2 — multi-run enumeration state for directories over MAX_USERS.
+  // syncCursor is the provider's opaque continuation (Okta rel=next URL,
+  // Google pageToken, Entra @odata.nextLink); syncPassStartedAt marks when
+  // the current multi-run PASS began, and is what the deprovision reconcile
+  // compares ConnectedIdentityAccount.syncedAt against on completion.
+  // Both NULL means "no pass in flight". See usecases/identity-sync.ts.
+  syncCursor        String?
+  syncPassStartedAt DateTime?
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   tenant            Tenant                   @relation(fields: [tenantId], references: [id])

@@ -160,18 +160,32 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
     }
 
     /** Enumerate the Okta directory into normalized accounts. */
-    async listAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
+    async listAccounts(
+        config: Record<string, unknown>,
+        resumeFrom?: string | null,
+    ): Promise<ListAccountsResult> {
         // A test/dep injection returns a bare array — treat it as complete.
         if (this.deps.listAccounts) return { accounts: await this.deps.listAccounts(config), complete: true };
-        return this.fetchOktaAccounts(config);
+        return this.fetchOktaAccounts(config, resumeFrom);
     }
 
-    private async fetchOktaAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
+    private async fetchOktaAccounts(
+        config: Record<string, unknown>,
+        resumeFrom?: string | null,
+    ): Promise<ListAccountsResult> {
         const orgUrl = String(config.orgUrl ?? '').replace(/\/$/, '');
         const apiToken = String((config as { apiToken?: string }).apiToken ?? '');
         const doFetch = this.deps.fetchImpl ?? resilientFetch;
         const out: NormalizedIdentityAccount[] = [];
-        let url: string | null = `${orgUrl}/api/v1/users?limit=${PAGE_LIMIT}`;
+        // Resume from the previous run's `next` link when we have one. Okta's
+        // rel=next URL is absolute and self-contained, so it needs no
+        // reconstruction — but it MUST be checked against the configured org,
+        // or a tampered stored cursor would point our credentialed request at
+        // an arbitrary host.
+        let url: string | null =
+            resumeFrom && resumeFrom.startsWith(`${orgUrl}/`)
+                ? resumeFrom
+                : `${orgUrl}/api/v1/users?limit=${PAGE_LIMIT}`;
         while (url && out.length < MAX_USERS) {
             const res: Response = await doFetch(url, {
                 headers: { Authorization: `SSWS ${apiToken}`, Accept: 'application/json' },
@@ -196,7 +210,9 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
 
         // H3 — if we stopped with a `next` link still present, we hit MAX_USERS
         // mid-directory: the enumeration is KNOWN-PARTIAL (do not deprovision).
-        return { accounts: out, complete: url === null };
+        // H3-2 — carry that link out so the next run continues rather than
+        // restarting at page one and stopping in the same place.
+        return { accounts: out, complete: url === null, resumeToken: url };
     }
 
     /**

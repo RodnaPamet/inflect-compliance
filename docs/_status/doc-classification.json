@@ -1996,6 +1996,9 @@
         },
         "docs/implementation-notes/2026-08-17-integration-observability.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-17-identity-sync-resume.md": {
+            "class": "historical"
         }
     }
 }
