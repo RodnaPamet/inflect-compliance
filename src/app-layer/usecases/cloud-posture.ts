@@ -91,7 +91,7 @@ export async function runCloudPostureCollection(input: CloudPostureCollectInput)
             await db.integrationExecution.update({ where: { id: execution.id }, data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() } });
             // Surface a REVOKED CREDENTIAL on the connection; no-op for
             // anything that is not an IntegrationAuthError (401/403).
-            await markAuthFailure(db, conn.id, e, now);
+            await markAuthFailure(db, conn.id, e, now, input.cloud);
             // Caught here, so the retry classification must ride the result.
             return { executionId: execution.id, status: 'ERROR', counts: null, evidenceCreated: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
         }
@@ -152,7 +152,7 @@ export async function runCloudPostureCollection(input: CloudPostureCollectInput)
         // Reached only when the collection itself ran. A FAILED compliance
         // verdict is a successful collection reporting a real gap, so the
         // credential is demonstrably good either way — clear any stale banner.
-        await clearAuthFailure(db, conn.id);
+        await clearAuthFailure(db, conn.id, input.cloud);
 
         logger.info('cloud-posture collection complete', { component: 'cloud-posture', cloud: input.cloud, tenantId: ctx.tenantId, executionId: execution.id, status: checkResult.status, evidenceCreated });
         return { executionId: execution.id, status: checkResult.status, counts, evidenceCreated, errorMessage: checkResult.errorMessage };

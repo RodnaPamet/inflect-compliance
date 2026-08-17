@@ -34,6 +34,7 @@
 import type { PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import { IntegrationAuthError } from './http-resilience';
+import { recordConnectionAuthState } from '@/lib/observability/integration-metrics';
 
 /** Longest reason we persist — the column is free text and this is UI copy. */
 const MAX_REASON_LEN = 500;
@@ -51,6 +52,7 @@ export async function markAuthFailure(
     connectionId: string,
     err: unknown,
     now: Date = new Date(),
+    provider = 'unknown',
 ): Promise<boolean> {
     if (!(err instanceof IntegrationAuthError)) return false;
 
@@ -65,6 +67,7 @@ export async function markAuthFailure(
         connectionId,
         status: err.status,
     });
+    recordConnectionAuthState({ provider, state: 'marked' });
     return true;
 }
 
@@ -78,7 +81,11 @@ export async function markAuthFailure(
  *
  * @returns true when a stale failure was actually cleared.
  */
-export async function clearAuthFailure(db: PrismaTx, connectionId: string): Promise<boolean> {
+export async function clearAuthFailure(
+    db: PrismaTx,
+    connectionId: string,
+    provider = 'unknown',
+): Promise<boolean> {
     const r = await db.integrationConnection.updateMany({
         where: { id: connectionId, authFailedAt: { not: null } },
         data: { authFailedAt: null, authFailureReason: null },
@@ -89,6 +96,10 @@ export async function clearAuthFailure(db: PrismaTx, connectionId: string): Prom
             component: 'integrations',
             connectionId,
         });
+        // Only counted when something was ACTUALLY cleared. Counting every
+        // success-path call would drown the signal in the common case and make
+        // "an operator fixed a credential" indistinguishable from "a sync ran".
+        recordConnectionAuthState({ provider, state: 'recovered' });
     }
     return r.count > 0;
 }

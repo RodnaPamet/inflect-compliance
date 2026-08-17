@@ -45,6 +45,7 @@
  * @see tests/unit/jobs-fan-out.test.ts
  */
 import { logger } from '@/lib/observability/logger';
+import { recordDispatchEnqueueFailed } from '@/lib/observability/integration-metrics';
 
 /** One minute, in ms. Used by manual-trigger routes to collapse double-clicks. */
 export const MINUTE_MS = 60_000;
@@ -114,6 +115,10 @@ export async function fanOut<T>(
             dispatched++;
         } catch (err) {
             failed++;
+            // Continuing past the failure is right, but it makes the loss
+            // silent unless it is counted. A non-zero rate here means
+            // connections that did not get a sync this cycle.
+            recordDispatchEnqueueFailed({ component });
             logger.error('fan-out enqueue failed — continuing with the rest', {
                 component,
                 ...describe(item),

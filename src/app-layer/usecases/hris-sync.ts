@@ -83,7 +83,7 @@ export async function runHrisSync(input: {
             await db.integrationExecution.update({ where: { id: execution.id }, data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() } });
             // Surface a REVOKED CREDENTIAL on the connection itself; no-op for
             // anything that is not an IntegrationAuthError (401/403).
-            await markAuthFailure(db, conn.id, e, now);
+            await markAuthFailure(db, conn.id, e, now, conn.provider);
             // This usecase CATCHES the provider error, so the classification has
             // to ride the result or the queue-level bypass never sees it.
             return { executionId: execution.id, status: 'ERROR', upserted: 0, managersLinked: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
@@ -153,7 +153,7 @@ export async function runHrisSync(input: {
         logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId: execution.id, upserted, managersLinked, departed });
         // Clear unconditionally on success — a stale "credential revoked"
         // banner is worse than none, because it trains people to ignore it.
-        await clearAuthFailure(db, conn.id);
+        await clearAuthFailure(db, conn.id, conn.provider);
 
         return { executionId: execution.id, status: 'PASSED', upserted, managersLinked };
     });

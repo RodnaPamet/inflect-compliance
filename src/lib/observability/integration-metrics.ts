@@ -136,3 +136,151 @@ export function recordAiGeneration(attrs: { feature: 'questionnaire' | 'assistan
         _aiTokens.record(attrs.tokens, { feature: attrs.feature });
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+//  H3-1 — the hardening work is only as good as its visibility
+//
+//  The four preceding PRs each added a behaviour whose ONLY signal was a
+//  log line: throttles absorbed or deferred, credentials marked revoked,
+//  queue retries suppressed, fan-out enqueues dropped, sync locks
+//  contended. Every one of those is a thing an operator would want to
+//  alert on, and none of them was countable.
+//
+//  Modelled on the Epic E.2 audit-stream set (success/failure counters +
+//  an attempts histogram for retry pressure), because the failure shapes
+//  are the same shape: an out-of-band path that fails safe, where the
+//  only way to notice degradation is a metric.
+// ─────────────────────────────────────────────────────────────────────
+
+let _httpThrottled: Counter | null = null;
+let _httpAttempts: Histogram | null = null;
+let _authState: Counter | null = null;
+let _queueRetryBypass: Counter | null = null;
+let _dispatchEnqueueFailed: Counter | null = null;
+let _syncLock: Counter | null = null;
+
+/**
+ * A provider throttled us (429 / Retry-After).
+ *
+ * `outcome` is the load-bearing label:
+ *   - `absorbed` — waited it out in-process and carried on;
+ *   - `deferred` — the wait exceeded the budget, so the tick ended and the
+ *     next scheduled run picks it up.
+ *
+ * A rising `absorbed` rate is a provider getting tighter; any sustained
+ * `deferred` rate means syncs are being pushed to the next cycle, which is the
+ * point at which data starts going stale and nothing else says so.
+ */
+export function recordIntegrationThrottled(attrs: {
+    provider: string;
+    outcome: 'absorbed' | 'deferred';
+    retryAfterMs?: number | null;
+}): void {
+    if (!_httpThrottled) {
+        _httpThrottled = getMeter().createCounter('integration.http.throttled', {
+            description: 'Provider 429/throttle responses, by whether the wait was absorbed or deferred',
+            unit: '1',
+        });
+    }
+    _httpThrottled.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+}
+
+/**
+ * Attempts made inside ONE resilient-fetch call (1 = no retry).
+ *
+ * The audit-stream analogue: the counter says whether it worked, the histogram
+ * says how hard it had to try. A distribution creeping from 1 toward the cap is
+ * a provider degrading well before any failure rate moves.
+ */
+export function recordIntegrationHttpAttempts(attrs: {
+    provider: string;
+    attempts: number;
+    outcome: 'ok' | 'throttled' | 'terminal' | 'error';
+}): void {
+    if (!_httpAttempts) {
+        _httpAttempts = getMeter().createHistogram('integration.http.attempts', {
+            description: 'Attempts per resilient-fetch call (1 = no retry, up to the cap)',
+            unit: '1',
+        });
+    }
+    _httpAttempts.record(attrs.attempts, { provider: attrs.provider, outcome: attrs.outcome });
+}
+
+/**
+ * A connection's credential was marked bad, or recovered.
+ *
+ * Deliberately a counter rather than a gauge of currently-broken connections: a
+ * gauge would need a per-scrape DB query across every tenant. The `marked` rate
+ * is the alertable signal, and `recovered` is what tells you an operator acted
+ * rather than the alert simply going quiet.
+ */
+export function recordConnectionAuthState(attrs: {
+    provider: string;
+    state: 'marked' | 'recovered';
+}): void {
+    if (!_authState) {
+        _authState = getMeter().createCounter('integration.connection.auth_state', {
+            description: 'Connections marked credential-revoked, or cleared after recovery',
+            unit: '1',
+        });
+    }
+    _authState.add(1, { provider: attrs.provider, state: attrs.state });
+}
+
+/**
+ * A job failure was flagged `noRetry`, so BullMQ did not immediately re-run it.
+ *
+ * Worth counting separately from the failure itself: this is the difference
+ * between "a sync failed" and "a sync failed AND we deliberately declined to
+ * retry it", and the second needs its own eye — a bug in the classifier shows
+ * up here as a suppression rate that does not match the failure mix.
+ */
+export function recordQueueRetryBypass(attrs: { jobName: string; reason: 'terminal' | 'rate_limited' | 'truncated' }): void {
+    if (!_queueRetryBypass) {
+        _queueRetryBypass = getMeter().createCounter('integration.queue.retry_bypassed', {
+            description: 'Job failures where the queue retry was deliberately suppressed',
+            unit: '1',
+        });
+    }
+    _queueRetryBypass.add(1, { job_name: attrs.jobName, reason: attrs.reason });
+}
+
+/**
+ * A fan-out enqueue threw and was skipped.
+ *
+ * The dispatcher now continues past these instead of aborting, which is right —
+ * but it means the loss is silent unless it is counted. Any non-zero rate is
+ * connections that did not get a sync this cycle.
+ */
+export function recordDispatchEnqueueFailed(attrs: { component: string }): void {
+    if (!_dispatchEnqueueFailed) {
+        _dispatchEnqueueFailed = getMeter().createCounter('integration.dispatch.enqueue_failed', {
+            description: 'Fan-out enqueues that threw and were skipped (connection not synced this cycle)',
+            unit: '1',
+        });
+    }
+    _dispatchEnqueueFailed.add(1, { component: attrs.component });
+}
+
+/**
+ * Per-connection sync-lock outcome.
+ *
+ *   - `busy`   — another run held it; this one skipped. Routine in small
+ *     numbers, a queue backing up if sustained.
+ *   - `reaped` — a lease was taken from a previous holder, meaning that run
+ *     exceeded the TTL or its worker died. This is the one to alert on: it says
+ *     either that syncs are overrunning their budget, or that workers are being
+ *     killed mid-sync.
+ */
+export function recordSyncLock(attrs: {
+    component: string;
+    outcome: 'acquired' | 'busy' | 'reaped' | 'release_lost';
+}): void {
+    if (!_syncLock) {
+        _syncLock = getMeter().createCounter('integration.sync.lock', {
+            description: 'Per-connection sync-lock outcomes (acquired/busy/reaped/release_lost)',
+            unit: '1',
+        });
+    }
+    _syncLock.add(1, { component: attrs.component, outcome: attrs.outcome });
+}

@@ -37,6 +37,10 @@
  * @see tests/unit/integrations-http-resilience.test.ts
  */
 import { logger } from '@/lib/observability/logger';
+import {
+    recordIntegrationThrottled,
+    recordIntegrationHttpAttempts,
+} from '@/lib/observability/integration-metrics';
 import { boundedFetch, safeUrl, IntegrationTimeoutError } from './bounded-fetch';
 
 /** How a failure should be treated by the caller and by the queue. */
@@ -173,6 +177,42 @@ export function parseRetryAfter(header: string | null, now: number = Date.now())
     return delta > 0 ? delta : null;
 }
 
+/**
+ * Map a request URL to a LOW-CARDINALITY provider label.
+ *
+ * The raw host cannot be used: Okta and SharePoint hosts are per-tenant
+ * (`acme.okta.com`, `contoso.sharepoint.com`), so labelling by host would grow
+ * one metric series per customer — the classic way to take down a metrics
+ * backend with an observability change.
+ *
+ * Matching is by known suffix and falls back to `other`, so an unrecognised
+ * provider costs one shared series rather than unbounded ones. Deliberately
+ * approximate: this labels a metric, it does not make a decision.
+ */
+const PROVIDER_BY_HOST_SUFFIX: ReadonlyArray<[string, string]> = [
+    ['okta.com', 'okta'],
+    ['oktapreview.com', 'okta'],
+    ['graph.microsoft.com', 'microsoft-graph'],
+    ['login.microsoftonline.com', 'microsoft-graph'],
+    ['sharepoint.com', 'sharepoint'],
+    ['googleapis.com', 'google-workspace'],
+    ['bamboohr.com', 'bamboohr'],
+    ['api.github.com', 'github'],
+];
+
+export function providerLabelFor(url: string): string {
+    let host: string;
+    try {
+        host = new URL(url).host.toLowerCase();
+    } catch {
+        return 'other';
+    }
+    for (const [suffix, label] of PROVIDER_BY_HOST_SUFFIX) {
+        if (host === suffix || host.endsWith(`.${suffix}`)) return label;
+    }
+    return 'other';
+}
+
 /** Full jitter: uniform in [0, base]. Prevents a fan-out retrying in lockstep. */
 function jitteredBackoff(attempt: number, rand: () => number): number {
     const base = Math.min(1_000 * 2 ** (attempt - 1), 30_000);
@@ -218,6 +258,7 @@ export function createResilientFetch(opts: ResilientFetchOptions = {}): typeof f
         // raw URL here would write an access token from the query string into
         // the database — the exact leak bounded-fetch's safeUrl exists to stop.
         const url = safeUrl(input);
+        const provider = providerLabelFor(url);
         let lastRetryable: unknown;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -227,16 +268,23 @@ export function createResilientFetch(opts: ResilientFetchOptions = {}): typeof f
             } catch (err) {
                 // A timeout is retryable; a caller abort is not, and
                 // classifyError deliberately does not claim otherwise.
-                if (classifyError(err) === 'terminal' || attempt === maxAttempts) throw err;
+                if (classifyError(err) === 'terminal' || attempt === maxAttempts) {
+                    recordIntegrationHttpAttempts({ provider, attempts: attempt, outcome: 'error' });
+                    throw err;
+                }
                 lastRetryable = err;
                 await doSleep(jitteredBackoff(attempt, rand));
                 continue;
             }
 
             const kind = res.status ? classifyStatus(res.status) : null;
-            if (kind === null) return res;
+            if (kind === null) {
+                recordIntegrationHttpAttempts({ provider, attempts: attempt, outcome: 'ok' });
+                return res;
+            }
 
             if (kind === 'terminal') {
+                recordIntegrationHttpAttempts({ provider, attempts: attempt, outcome: 'terminal' });
                 throw isAuthStatus(res.status)
                     ? new IntegrationAuthError(res.status, url)
                     : new IntegrationTerminalError(res.status, url);
@@ -253,11 +301,20 @@ export function createResilientFetch(opts: ResilientFetchOptions = {}): typeof f
                     retryAfterMs,
                     maxAbsorbed,
                 });
+                recordIntegrationThrottled({ provider, outcome: 'deferred', retryAfterMs });
+                recordIntegrationHttpAttempts({ provider, attempts: attempt, outcome: 'throttled' });
                 throw new IntegrationRateLimitedError(url, retryAfterMs);
             }
 
             if (attempt === maxAttempts) {
+                recordIntegrationThrottled({ provider, outcome: 'deferred', retryAfterMs });
+                recordIntegrationHttpAttempts({ provider, attempts: attempt, outcome: 'throttled' });
                 throw new IntegrationRateLimitedError(url, retryAfterMs);
+            }
+
+            // Absorbed: we are about to wait it out and try again in-process.
+            if (res.status === 429) {
+                recordIntegrationThrottled({ provider, outcome: 'absorbed', retryAfterMs });
             }
 
             // Honour the server's number when it gave one; otherwise jitter.

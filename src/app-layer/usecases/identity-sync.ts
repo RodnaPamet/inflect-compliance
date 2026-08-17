@@ -121,7 +121,7 @@ export async function runIdentitySync(input: {
             // it only on the execution row left a dead connection presenting as
             // healthy until someone opened the history of a job nobody watches.
             // No-op unless this is an IntegrationAuthError (401/403).
-            await markAuthFailure(db, conn.id, e, now);
+            await markAuthFailure(db, conn.id, e, now, conn.provider);
             return {
                 executionId: execution.id,
                 status: 'ERROR',
@@ -229,7 +229,7 @@ export async function runIdentitySync(input: {
         // people to ignore the one signal that means someone must act. Cleared
         // unconditionally on every success, not only the success after a
         // failure.
-        await clearAuthFailure(db, conn.id);
+        await clearAuthFailure(db, conn.id, conn.provider);
 
         recordIdentityDeprovisioned({ provider: conn.provider, count: reconcile.count }); // H6 — spike = wrongful mass-deprovision
         logger.info('identity-sync complete', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted, deprovisioned: reconcile.count });

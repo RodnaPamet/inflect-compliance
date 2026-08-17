@@ -30,6 +30,9 @@ function fakeDb(initial: { syncLockedAt: Date | null; syncLockToken: string | nu
     const row = { ...initial };
     const db = {
         integrationConnection: {
+            // Present only so acquire can LABEL its metric (acquired vs reaped).
+            // Deliberately returns the pre-claim state.
+            findFirst: jest.fn(async () => ({ syncLockedAt: row.syncLockedAt })),
             updateMany: jest.fn(async ({ where, data }: { where: Where; data: Where }) => {
                 let match = true;
 
@@ -101,18 +104,37 @@ describe('acquireSyncLock', () => {
         expect(await acquireSyncLock(db, CONN, NOW)).toBeNull();
     });
 
-    it('claims atomically — one conditional UPDATE, not read-then-write', async () => {
-        // A read-then-write would leave exactly the race this exists to close.
+    it('claims with ONE conditional UPDATE that carries the freshness predicate', async () => {
+        // A read-then-write claim would leave exactly the race this exists to
+        // close. There IS a read now — added to label the metric acquired-vs-
+        // reaped — so this asserts the claim itself is still a single
+        // conditional statement and that the predicate travels WITH it, rather
+        // than the read having become load-bearing.
         const { db } = fakeDb({ syncLockedAt: null, syncLockToken: null });
         await acquireSyncLock(db, CONN, NOW);
 
-        const calls = (db as unknown as {
-            integrationConnection: { updateMany: jest.Mock };
-        }).integrationConnection.updateMany.mock.calls;
+        const conn = (db as unknown as {
+            integrationConnection: { updateMany: jest.Mock; findFirst: jest.Mock };
+        }).integrationConnection;
 
-        expect(calls).toHaveLength(1);
-        expect(calls[0][0].where.id).toBe(CONN);
-        expect(calls[0][0].where.OR).toHaveLength(2);
+        expect(conn.updateMany.mock.calls).toHaveLength(1);
+        const where = conn.updateMany.mock.calls[0][0].where;
+        expect(where.id).toBe(CONN);
+        expect(where.OR).toHaveLength(2);
+        // The read must select ONLY the label input. If it ever starts feeding
+        // the claim, the claim has stopped being atomic.
+        expect(conn.findFirst.mock.calls[0][0].select).toEqual({ syncLockedAt: true });
+    });
+
+    it('still refuses a fresh lock even if the labelling read is stale', async () => {
+        // The read is best-effort. A stale one may mislabel a counter; it must
+        // never admit a second concurrent sync, because the claim does not
+        // consult it.
+        const { db } = fakeDb({ syncLockedAt: new Date(NOW.getTime() - 1000), syncLockToken: 'holder' });
+        (db as unknown as { integrationConnection: { findFirst: jest.Mock } })
+            .integrationConnection.findFirst.mockResolvedValueOnce({ syncLockedAt: null });
+
+        expect(await acquireSyncLock(db, CONN, NOW)).toBeNull();
     });
 
     it('issues a distinct token per acquisition', async () => {

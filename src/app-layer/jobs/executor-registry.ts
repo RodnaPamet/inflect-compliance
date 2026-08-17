@@ -32,7 +32,11 @@
 import { logger } from '@/lib/observability/logger';
 import { recordJobMetrics } from '@/lib/observability/metrics';
 import { env } from '@/env';
-import { shouldBypassQueueRetry } from '@/app-layer/integrations/http-resilience';
+import {
+    shouldBypassQueueRetry,
+    IntegrationRateLimitedError,
+} from '@/app-layer/integrations/http-resilience';
+import { recordQueueRetryBypass } from '@/lib/observability/integration-metrics';
 import type { JobName, JobPayload, JobRunResult } from './types';
 
 // ─── Executor Contract ──────────────────────────────────────────────
@@ -200,6 +204,21 @@ export const executorRegistry = {
             // ── Record job failure metric ──
             recordJobMetrics({ jobName: name, success: false, durationMs });
 
+            const bypass = shouldBypassQueueRetry(error);
+            if (bypass) {
+                // Counted separately from the failure itself: "a sync failed"
+                // and "a sync failed AND we declined to retry it" are different
+                // operational facts, and a classifier bug shows up here as a
+                // suppression rate that does not match the failure mix.
+                recordQueueRetryBypass({
+                    jobName: name,
+                    reason:
+                        error instanceof IntegrationRateLimitedError
+                            ? 'rate_limited'
+                            : 'terminal',
+                });
+            }
+
             // Every executor throw funnels through here, so this is the one
             // place that has to decide whether BullMQ should immediately re-run
             // the job. A revoked credential or a long throttle must not be
@@ -217,7 +236,7 @@ export const executorRegistry = {
                 itemsActioned: 0,
                 itemsSkipped: 0,
                 errorMessage,
-                ...(shouldBypassQueueRetry(error) ? { noRetry: true } : {}),
+                ...(bypass ? { noRetry: true } : {}),
             };
         }
     },
