@@ -232,6 +232,7 @@
     "*": "bash scripts/detect-secrets.sh"
   },
   "overrides": {
+    "deepmerge-ts": "^8.0.1",
     "valibot": "^1.4.2",
     "@sentry/bundler-plugin-core": {
       "brace-expansion": "^5.0.9"
