@@ -1,6 +1,6 @@
 # 2026-08-17 — Resuming a directory larger than the cap
 
-**PR:** #TBD — feat(identity-sync): resume enumeration past MAX_USERS
+**PR:** #1960 — feat(identity-sync): resume enumeration past MAX_USERS
 
 ## Design
 
