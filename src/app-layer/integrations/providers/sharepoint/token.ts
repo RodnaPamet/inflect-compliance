@@ -16,7 +16,7 @@
  */
 import { env } from '@/env';
 import { refreshMicrosoftToken, isTokenExpired, type TokenRefreshResult } from '@/lib/auth/refresh';
-import { boundedFetch } from '../../bounded-fetch';
+import { resilientFetch } from '../../http-resilience';
 
 /** Delegated Graph scopes SharePoint needs (beyond the auth-only sign-in set). */
 export const SHAREPOINT_SCOPES = [
@@ -83,7 +83,7 @@ export async function exchangeCodeForSharePointToken(
     deps: { fetchImpl?: typeof fetch; env?: Partial<MsEnv> } = {},
 ): Promise<SharePointSecret> {
     const { clientId, clientSecret, tenantId } = msEnv(deps.env);
-    const fetchImpl = deps.fetchImpl ?? boundedFetch;
+    const fetchImpl = deps.fetchImpl ?? resilientFetch;
     const res = await fetchImpl(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

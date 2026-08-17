@@ -30,7 +30,7 @@ import {
     readTraceCarrier,
     stripTraceCarrier,
 } from '../src/lib/observability/job-trace';
-import { Worker, Job, Queue } from 'bullmq';
+import { Worker, Job, Queue, UnrecoverableError } from 'bullmq';
 import Redis from 'ioredis';
 import pino from 'pino';
 import {
@@ -252,7 +252,16 @@ async function bootstrap(): Promise<void> {
 
                         // Thrown inside the trace span so it is marked ERROR
                         // and recorded, then re-thrown for BullMQ's retry.
-                        throw new Error(result.errorMessage || `Job "${jobName}" failed`);
+                        //
+                        // `noRetry` opts out of that retry. A revoked
+                        // credential and a rate limit both FAIL, but retrying
+                        // either in 5s is worse than not retrying: the first
+                        // delays every other tenant in the fan-out, the second
+                        // answers a throttle with three more full syncs.
+                        // UnrecoverableError makes BullMQ record the failure
+                        // and stop, leaving the next scheduled tick to retry.
+                        const message = result.errorMessage || `Job "${jobName}" failed`;
+                        throw result.noRetry ? new UnrecoverableError(message) : new Error(message);
                     }
 
                     log.info({

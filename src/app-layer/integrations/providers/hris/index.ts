@@ -18,7 +18,7 @@ import type {
     CheckResult,
     EvidencePayload,
 } from '../../types';
-import { boundedFetch } from '../../bounded-fetch';
+import { resilientFetch } from '../../http-resilience';
 
 /** A roster row normalized across HRIS vendors. */
 export interface NormalizedEmployee {
@@ -123,7 +123,7 @@ export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvide
     private async fetchBambooRoster(config: Record<string, unknown>): Promise<ListEmployeesResult> {
         const subdomain = String(config.subdomain ?? '');
         const apiKey = String((config as { apiKey?: string }).apiKey ?? '');
-        const doFetch = this.deps.fetchImpl ?? boundedFetch;
+        const doFetch = this.deps.fetchImpl ?? resilientFetch;
         // BambooHR: Basic auth with apiKey as username, any password.
         const auth = Buffer.from(`${apiKey}:x`).toString('base64');
         const url = `https://api.bamboohr.com/api/gateway.php/${subdomain}/v1/reports/custom?format=JSON`;

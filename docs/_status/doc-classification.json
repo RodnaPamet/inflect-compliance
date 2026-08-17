@@ -1981,6 +1981,9 @@
         },
         "docs/implementation-notes/2026-08-16-risks-kpi-counts-and-usecase-scan-caps.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-17-integrations-rate-limit-handling.md": {
+            "class": "historical"
         }
     }
 }

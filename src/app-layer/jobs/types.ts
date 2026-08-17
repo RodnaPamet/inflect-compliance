@@ -52,6 +52,23 @@ export interface JobRunResult {
     itemsSkipped: number;
     /** Optional error message if success=false */
     errorMessage?: string;
+    /**
+     * Set when a failure must NOT be retried by the queue.
+     *
+     * The queue defaults to `attempts: 3` with 5s exponential backoff, which is
+     * right for a transient fault and actively harmful for two cases:
+     *
+     *   - a REVOKED CREDENTIAL, where three retries are pure delay for every
+     *     other tenant behind this job in the fan-out;
+     *   - a RATE LIMIT, where retrying the whole sync three times inside ~35s
+     *     is precisely what the remote just asked us not to do, and can turn a
+     *     soft throttle into a hard block.
+     *
+     * The worker converts this into BullMQ's `UnrecoverableError`. The job
+     * still FAILS and is still recorded — it simply is not re-run before the
+     * next scheduled tick.
+     */
+    noRetry?: boolean;
     /** Optional structured details (job-specific payload) */
     details?: Record<string, unknown>;
 }

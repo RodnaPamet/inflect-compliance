@@ -24,7 +24,7 @@ import {
     type NormalizedIdentityAccount,
 } from '../identity/types';
 import { logger } from '@/lib/observability/logger';
-import { boundedFetch } from '../../bounded-fetch';
+import { resilientFetch } from '../../http-resilience';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
@@ -147,7 +147,7 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         const apiToken = String(secrets.apiToken ?? '');
         if (!orgUrl) return { valid: false, error: 'Okta org URL is required.' };
         if (!apiToken) return { valid: false, error: 'An Okta API token is required.' };
-        const doFetch = this.deps.fetchImpl ?? boundedFetch;
+        const doFetch = this.deps.fetchImpl ?? resilientFetch;
         try {
             const res = await doFetch(`${orgUrl}/api/v1/users?limit=1`, {
                 headers: { Authorization: `SSWS ${apiToken}`, Accept: 'application/json' },
@@ -169,7 +169,7 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
     private async fetchOktaAccounts(config: Record<string, unknown>): Promise<ListAccountsResult> {
         const orgUrl = String(config.orgUrl ?? '').replace(/\/$/, '');
         const apiToken = String((config as { apiToken?: string }).apiToken ?? '');
-        const doFetch = this.deps.fetchImpl ?? boundedFetch;
+        const doFetch = this.deps.fetchImpl ?? resilientFetch;
         const out: NormalizedIdentityAccount[] = [];
         let url: string | null = `${orgUrl}/api/v1/users?limit=${PAGE_LIMIT}`;
         while (url && out.length < MAX_USERS) {
