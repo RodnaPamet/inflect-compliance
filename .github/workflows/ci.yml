@@ -45,12 +45,29 @@ on:
       - ".gitignore"
   pull_request:
     branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - ".github/ISSUE_TEMPLATE/**"
-      - "LICENSE"
-      - ".gitignore"
+    # NO paths-ignore here, deliberately — see the push trigger above, which
+    # keeps one.
+    #
+    # A required status check that does not RUN never reports, and GitHub treats
+    # "never reported" as not-satisfied. So with `paths-ignore` on this trigger,
+    # a docs-only PR ran ZERO jobs from this workflow, none of the required
+    # contexts ever reported, and the PR was unmergeable with nothing to click.
+    # There is no way to clear it from the PR — only an admin editing branch
+    # protection.
+    #
+    # That is not hypothetical for this repo: docs/implementation-notes/ entries
+    # are a documented convention and docs/ carries 660+ classified files, so a
+    # docs-only PR is routine.
+    #
+    # The cost is a full CI run on a PR that only edits prose. That is the price
+    # of having enforceable required checks at all, and it is the cheaper side of
+    # the trade — the alternative is duplicating every required job name into a
+    # stub that reports success when the paths filter misses, which is both
+    # fragile and easy to get subtly wrong.
+    #
+    # The `push` trigger keeps its paths-ignore: nothing gates a push to main on
+    # these contexts, so skipping CI for a docs-only release commit costs
+    # nothing.
   # ── Merge queue ──
   # Two PRs each pass CI against `main` as it was when their run STARTED.
   # Both merge. Nothing ever tests the combination. Git only objects when
