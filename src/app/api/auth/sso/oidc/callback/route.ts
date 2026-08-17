@@ -13,6 +13,7 @@ import { linkExternalIdentity } from '@/app-layer/usecases/sso';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { env } from '@/env';
 import jwt from 'jsonwebtoken';
+import { sanitizeRedirectPath } from '@/lib/auth/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -245,7 +246,24 @@ export async function GET(req: NextRequest) {
     });
 
     // ── Redirect to app ──
-    const returnTo = state.returnTo || `/t/${tenant.slug}/dashboard`;
+    // `returnTo` originates in the UNAUTHENTICATED /start query string and
+    // rides here inside an UNSIGNED state blob, so it is attacker-controlled
+    // end to end. `new URL(returnTo, baseUrl)` does not constrain it:
+    // `new URL('https://evil.com', base)` and `new URL('//evil.com', base)`
+    // both resolve to the attacker's origin, which is a phishing link served
+    // from our own domain.
+    //
+    // Sanitised HERE, on the way out, rather than only at /start: a value
+    // smuggled past the entry point — or reached by any future path that
+    // writes state — still cannot escape. sanitizeRedirectPath was already
+    // in the tree, unused by this flow.
+    // Ternary, not `sanitize(x) || fallback`: sanitizeRedirectPath
+    // returns '/' for anything it rejects, and '/' is truthy — so the
+    // `||` form would silently retire the dashboard fallback and land
+    // every SSO sign-in with no returnTo on the root instead.
+    const returnTo = state.returnTo
+        ? sanitizeRedirectPath(state.returnTo)
+        : `/t/${tenant.slug}/dashboard`;
     return NextResponse.redirect(new URL(returnTo, baseUrl));
 }
 
