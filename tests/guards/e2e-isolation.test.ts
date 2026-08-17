@@ -358,6 +358,7 @@ describe('E2E test isolation — no cross-test `let` cascade', () => {
 const SHARED_SEED_ALLOWLIST: ReadonlyArray<{ file: string; reason: string }> = [
     // ── Read-only: navigate + assert chrome/role-gates, no DB writes ──
     { file: 'a11y.spec.ts', reason: 'read-only accessibility scan over seeded pages' },
+    { file: 'csp-nonce-coverage.spec.ts', reason: 'read-only: loads dashboard + controls and asserts every executable <script> carries a nonce; no DB writes. Replaced tests/guards/csp-nonce-component-scripts-patch.test.ts, a source-scanning ratchet that passed against a stock npm bundle.' },
     { file: 'assets-create-modal.spec.ts', reason: 'read-only: navigates to /assets/new and asserts the create modal opens; never submits the form' },
     { file: 'admin-members.spec.ts', reason: 'read-only: opens the invite form + asserts its fields; never clicks #send-invite-btn' },
     { file: 'admin-regression.spec.ts', reason: 'read-only admin-page regression assertions' },
