@@ -119,7 +119,50 @@ export const env = createEnv({
         // Rate Limiting
         RATE_LIMIT_ENABLED: z.enum(["0", "1"]).optional(),
         RATE_LIMIT_MODE: z.enum(["upstash", "memory"]).default("upstash"),
-        AUTH_TEST_MODE: z.enum(["0", "1"]).optional(),
+        // AUTH_TEST_MODE must NEVER be "1" in production. It is not a
+        // single switch — setting it strips four production controls at
+        // once, each in a different file, none of which announces itself:
+        //   - src/lib/auth/credentials.ts:209    credentials sign-in gate
+        //   - src/lib/auth/credential-rate-limit.ts:103
+        //                                        login brute-force throttle
+        //                                        becomes a NO-OP (Epic A.3)
+        //   - src/lib/rate-limit/authRateLimit.ts:143   auth tier bypassed
+        //   - src/lib/rate-limit/apiReadRateLimit.ts:190 read tier bypassed
+        //
+        // So a production process with this set accepts username/password
+        // auth AND has no brute-force protection AND no rate limiting on
+        // either tier. Refuse to boot instead, on the GAP-03 /
+        // DATA_ENCRYPTION_KEY pattern.
+        //
+        // Nothing was exposed when this was written — docs/ci-local.md:122
+        // already promised "the production app will never have this enabled
+        // unless explicitly set", no tracked env template sets it, and the
+        // live VM was verified clean (2026-08-17: zero occurrences in
+        // /opt/inflect/.env.prod and in the running container's env). What
+        // was missing was anything ENFORCING that promise: a single
+        // explicit set, anywhere in a deploy chain, silently strips the four
+        // controls above.
+        AUTH_TEST_MODE: z
+            .enum(["0", "1"])
+            .optional()
+            .superRefine((val, ctx) => {
+                if (process.env.NODE_ENV !== 'production') return;
+                // `next start` forces NODE_ENV=production even under test
+                // (see playwright.config.ts's webServer comment), so the
+                // E2E server would otherwise trip this. NEXT_TEST_MODE is
+                // set only by that webServer and scripts/e2e-local.mjs.
+                if (process.env.NEXT_TEST_MODE === '1') return;
+                if (val === '1') {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message:
+                            'AUTH_TEST_MODE must not be "1" in production. It enables ' +
+                            'credentials sign-in AND disables the login brute-force ' +
+                            'throttle and both rate-limit tiers. Remove it from the ' +
+                            'production environment.',
+                    });
+                }
+            }),
         // When "1", the Credentials provider rejects sign-ins whose User row
         // has `emailVerified = null`. See src/lib/auth/credentials.ts. Default
         // is OFF so existing deployments behave unchanged until verification

@@ -28,6 +28,47 @@ export async function register() {
             process.exit(1);
         }
 
+        // ── AUTH_TEST_MODE must not be "1" in production ──
+        // Same defense-in-depth reasoning as the two checks around it: the
+        // env schema catches it at module load, this catches the case where
+        // SKIP_ENV_VALIDATION=1 leaks into the runtime container — which is
+        // exactly the configuration a container image is most likely to
+        // carry, since the build sets it deliberately.
+        //
+        // Worth stating what the flag actually does, because the name
+        // undersells it. It does not just enable credentials sign-in: it
+        // makes the login brute-force throttle a no-op and bypasses BOTH
+        // rate-limit tiers, in four different files, silently.
+        //
+        // NEXT_TEST_MODE is the exemption, and it is load-bearing rather
+        // than a convenience. `next start` OVERWRITES process.env.NODE_ENV
+        // to "production" regardless of what the caller passed — the
+        // playwright.config.ts webServer comment says so explicitly, and
+        // the Epic B encryption sentinel a few lines below already has to
+        // account for it. So the E2E server, which legitimately sets
+        // AUTH_TEST_MODE=1, presents to this check as production.
+        //
+        // Without the exemption this refusal kills the E2E webserver: it
+        // exits 1, Playwright waits for a port that never opens, and the
+        // job dies at its 40-minute timeout with no failing test to point
+        // at. That is exactly what happened on the first version of this
+        // change. NEXT_TEST_MODE is set only by the Playwright webServer
+        // and scripts/e2e-local.mjs; a real production process never has
+        // it, so it separates the two cases without weakening the check.
+        if (
+            process.env.NODE_ENV === 'production' &&
+            process.env.NEXT_TEST_MODE !== '1' &&
+            process.env.AUTH_TEST_MODE === '1'
+        ) {
+            console.error(
+                '[startup] FATAL: AUTH_TEST_MODE=1 is set in production. ' +
+                'It enables credentials sign-in AND disables the login ' +
+                'brute-force throttle and both rate-limit tiers. ' +
+                'Remove AUTH_TEST_MODE from the production environment.',
+            );
+            process.exit(1);
+        }
+
         // ── GAP-03: DATA_ENCRYPTION_KEY is required in production ──
         // Defense-in-depth alongside the env-schema check (`src/env.ts`):
         // schema validation catches missing/wrong-fallback configs at
