@@ -37,7 +37,7 @@
  * @see tests/unit/integrations-http-resilience.test.ts
  */
 import { logger } from '@/lib/observability/logger';
-import { boundedFetch, IntegrationTimeoutError } from './bounded-fetch';
+import { boundedFetch, safeUrl, IntegrationTimeoutError } from './bounded-fetch';
 
 /** How a failure should be treated by the caller and by the queue. */
 export type FailureKind = 'retryable' | 'terminal';
@@ -213,7 +213,11 @@ export function createResilientFetch(opts: ResilientFetchOptions = {}): typeof f
     const inner = opts.fetchImpl ?? boundedFetch;
 
     return async function resilientFetchImpl(input, init) {
-        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        // Host + path only. These errors are PERSISTED to
+        // IntegrationConnection.authFailureReason and rendered in the UI, so a
+        // raw URL here would write an access token from the query string into
+        // the database — the exact leak bounded-fetch's safeUrl exists to stop.
+        const url = safeUrl(input);
         let lastRetryable: unknown;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {

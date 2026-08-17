@@ -116,6 +116,31 @@ describe('createResilientFetch', () => {
         expect(r.slept).toEqual([]);
     });
 
+    it.each([401, 403, 404, 429])(
+        'never puts the query string in a %d error message',
+        async (status) => {
+            // These messages are PERSISTED to
+            // IntegrationConnection.authFailureReason and rendered in the UI, so
+            // a raw URL here writes an access token from the query string into
+            // the database and then onto a screen.
+            const fetchImpl = jest.fn(async () => res(status, { 'retry-after': '600' }));
+            const f = createResilientFetch({
+                fetchImpl: fetchImpl as unknown as typeof fetch,
+                ...recorder(),
+            });
+
+            const err = await f(
+                'https://api.example.com/v1/users?access_token=SECRET123&api_key=ALSOSECRET',
+            ).catch((e) => e);
+
+            expect(err.message).not.toContain('SECRET123');
+            expect(err.message).not.toContain('ALSOSECRET');
+            expect(err.message).not.toContain('access_token');
+            // Still useful for debugging — host and path survive.
+            expect(err.message).toContain('api.example.com/v1/users');
+        },
+    );
+
     it('honours Retry-After on a 429 rather than guessing', async () => {
         const fetchImpl = jest
             .fn()

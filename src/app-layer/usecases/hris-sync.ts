@@ -9,6 +9,8 @@
 import type { RequestContext } from '../types';
 import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
+import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
+import { shouldBypassQueueRetry } from '../integrations/http-resilience';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 import { recordSyncTruncated } from '@/lib/observability/integration-metrics';
@@ -25,6 +27,12 @@ function makeSystemCtx(tenantId: string): RequestContext {
 export interface HrisSyncResult {
     executionId: string;
     status: 'PASSED' | 'ERROR';
+    /**
+     * True when the queue must NOT immediately re-run this sync. Set for a
+     * revoked credential, a throttle past the absorb budget, and a truncated
+     * roster — all cases where retrying repeats identical work.
+     */
+    noRetry?: boolean;
     upserted: number;
     managersLinked: number;
     errorMessage?: string;
@@ -73,7 +81,12 @@ export async function runHrisSync(input: {
         } catch (e) {
             const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
             await db.integrationExecution.update({ where: { id: execution.id }, data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() } });
-            return { executionId: execution.id, status: 'ERROR', upserted: 0, managersLinked: 0, errorMessage: msg };
+            // Surface a REVOKED CREDENTIAL on the connection itself; no-op for
+            // anything that is not an IntegrationAuthError (401/403).
+            await markAuthFailure(db, conn.id, e, now);
+            // This usecase CATCHES the provider error, so the classification has
+            // to ride the result or the queue-level bypass never sees it.
+            return { executionId: execution.id, status: 'ERROR', upserted: 0, managersLinked: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
         }
 
         // Pass 1 — upsert each employee (no manager yet).
@@ -113,7 +126,9 @@ export async function runHrisSync(input: {
             });
             logger.warn('hris-sync partial roster — departure reconcile skipped', { component: 'hris-sync', tenantId: ctx.tenantId, executionId: execution.id, upserted });
             recordSyncTruncated({ provider: 'bamboohr' }); // H6 — alertable truncation signal
-            return { executionId: execution.id, status: 'ERROR', upserted, managersLinked, errorMessage: msg };
+            // Loud, but NOT retryable: the cap is deterministic, so a retry
+            // re-reads the same too-large roster and truncates identically.
+            return { executionId: execution.id, status: 'ERROR', upserted, managersLinked, errorMessage: msg, noRetry: true };
         }
 
         // H3 — departed-employee reconcile: a source=HRIS employee absent from a
@@ -136,6 +151,10 @@ export async function runHrisSync(input: {
             data: { status: 'PASSED', resultJson: { upserted, managersLinked, departed, total: roster.length }, durationMs: Date.now() - start, completedAt: new Date() },
         });
         logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId: execution.id, upserted, managersLinked, departed });
+        // Clear unconditionally on success — a stale "credential revoked"
+        // banner is worse than none, because it trains people to ignore it.
+        await clearAuthFailure(db, conn.id);
+
         return { executionId: execution.id, status: 'PASSED', upserted, managersLinked };
     });
 }

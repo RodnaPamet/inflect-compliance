@@ -53,6 +53,7 @@
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { enqueue } from './queue';
+import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
 import type { JobName } from './types';
 
 /** Provider id → the collect job that services it. */
@@ -73,12 +74,14 @@ const PAGE_SIZE = 500;
 export async function runCloudPostureCollectDispatch(): Promise<{
     connections: number;
     dispatched: number;
+    failed: number;
     byProvider: Record<string, number>;
 }> {
     const providers = Object.keys(POSTURE_JOB_BY_PROVIDER);
     const byProvider: Record<string, number> = {};
     let connections = 0;
     let dispatched = 0;
+    let failed = 0;
     let cursor: string | undefined;
 
     // Drains every page. The D1 scan flags a `findMany` inside a loop, but
@@ -97,16 +100,31 @@ export async function runCloudPostureCollectDispatch(): Promise<{
         });
         if (page.length === 0) break;
 
-        for (const conn of page) {
+        // Defensive: `where` already restricts to the three providers, so a
+        // miss means the map and the filter have drifted apart.
+        const routable = page.filter((c) => {
             connections++;
-            const job = POSTURE_JOB_BY_PROVIDER[conn.provider];
-            // Defensive: `where` already restricts to the three, so a miss
-            // means the map and the filter have drifted apart.
-            if (!job) continue;
-            await enqueue(job, { tenantId: conn.tenantId, connectionId: conn.id });
-            dispatched++;
-            byProvider[conn.provider] = (byProvider[conn.provider] ?? 0) + 1;
-        }
+            return Boolean(POSTURE_JOB_BY_PROVIDER[c.provider]);
+        });
+
+        // Deterministic id per (connection, UTC day) + isolated failures. Both
+        // were missing here; see ./fan-out for why they compound.
+        const r = await fanOut(
+            routable,
+            'cloud-posture',
+            (conn) => ({ tenantId: conn.tenantId, connectionId: conn.id, provider: conn.provider }),
+            async (conn) => {
+                const job = POSTURE_JOB_BY_PROVIDER[conn.provider];
+                await enqueue(
+                    job,
+                    { tenantId: conn.tenantId, connectionId: conn.id },
+                    { jobId: dispatchJobId(job, conn.id, DAILY_BUCKET_MS) },
+                );
+                byProvider[conn.provider] = (byProvider[conn.provider] ?? 0) + 1;
+            },
+        );
+        dispatched += r.dispatched;
+        failed += r.failed;
 
         if (page.length < PAGE_SIZE) break;
         cursor = page[page.length - 1].id;
@@ -116,7 +134,14 @@ export async function runCloudPostureCollectDispatch(): Promise<{
         component: 'cloud-posture',
         connections,
         dispatched,
+        failed,
         byProvider,
     });
-    return { connections, dispatched, byProvider };
+
+    // Nothing got out at all — success here would report a clean run that
+    // dispatched no posture collection for any tenant.
+    if (failed > 0 && dispatched === 0) {
+        throw new Error(`cloud-posture-collect-dispatch: all ${failed} enqueues failed`);
+    }
+    return { connections, dispatched, failed, byProvider };
 }

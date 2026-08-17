@@ -19,6 +19,7 @@ import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 import { generateCompliancePostureSummary } from '@/app-layer/usecases/compliance-posture';
 import { enqueue } from './queue';
+import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
 import type {
     CompliancePostureSummaryPayload,
     CompliancePostureDispatchPayload,
@@ -96,18 +97,22 @@ export async function runCompliancePostureDispatch(_payload: CompliancePostureDi
         take: 5000,
     });
 
-    let dispatched = 0;
-    for (const { id } of tenants) {
-        try {
-            await enqueue('compliance-posture-summary', { tenantId: id });
-            dispatched++;
-        } catch (err) {
-            logger.warn('compliance-posture-summary: enqueue failed for tenant', {
-                component: 'compliance-posture',
-                tenantId: id,
-                error: err instanceof Error ? err.message : String(err),
-            });
-        }
+    // This dispatcher already isolated failures; what it lacked was a
+    // deterministic id, so a retry re-queued a summary for every tenant.
+    const { dispatched, failed } = await fanOut(
+        tenants,
+        'compliance-posture',
+        ({ id }) => ({ tenantId: id }),
+        ({ id }) =>
+            enqueue(
+                'compliance-posture-summary',
+                { tenantId: id },
+                { jobId: dispatchJobId('compliance-posture-summary', id, DAILY_BUCKET_MS) },
+            ),
+    );
+
+    if (failed > 0 && dispatched === 0) {
+        throw new Error(`compliance-posture-summary-dispatch: all ${failed} enqueues failed`);
     }
-    return { tenants: tenants.length, dispatched };
+    return { tenants: tenants.length, dispatched, failed };
 }

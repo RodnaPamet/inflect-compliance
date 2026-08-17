@@ -12,6 +12,7 @@ import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { runSharePointDeltaSync } from '@/app-layer/integrations/providers/sharepoint/import';
 import { enqueue } from './queue';
+import { fanOut, dispatchJobId, FOUR_HOURLY_BUCKET_MS } from './fan-out';
 import { logger } from '@/lib/observability/logger';
 import type { SharePointDeltaSyncPayload, SharePointDeltaSyncDispatchPayload } from './types';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
@@ -92,33 +93,57 @@ export async function runSharePointDeltaSyncDispatch(_payload: SharePointDeltaSy
     const adminByTenant = new Map<string, string>();
     for (const a of admins) if (!adminByTenant.has(a.tenantId)) adminByTenant.set(a.tenantId, a.userId);
 
-    let dispatched = 0;
-    for (const conn of connections) {
-        const actorUserId = adminByTenant.get(conn.tenantId);
-        if (!actorUserId) {
-            logger.warn('sharepoint-delta-sync-dispatch: no eligible admin', {
-                component: 'sharepoint',
-                tenantId: conn.tenantId,
-                connectionId: conn.id,
-            });
-            continue;
-        }
-        await enqueue('sharepoint-delta-sync', {
+    const routable = connections.filter((conn) => {
+        if (adminByTenant.has(conn.tenantId)) return true;
+        logger.warn('sharepoint-delta-sync-dispatch: no eligible admin', {
+            component: 'sharepoint',
             tenantId: conn.tenantId,
             connectionId: conn.id,
-            actorUserId,
-            triggeredBy: 'scheduled',
         });
-        dispatched++;
-    }
-    // This dispatcher had no completion log at all. `connections` and
-    // `dispatched` differ whenever a tenant is skipped for want of an admin,
-    // and that gap is the thing worth seeing.
+        return false;
+    });
+
+    // FOUR-hourly bucket, not daily — this dispatcher runs `0 */4 * * *`, and a
+    // 24 h bucket would dedupe five of the six daily runs into a silent no-op.
+    // See ./fan-out: an over-coarse bucket does not duplicate work, it stops it.
+    const { dispatched, failed } = await fanOut(
+        routable,
+        'sharepoint',
+        (conn) => ({ tenantId: conn.tenantId, connectionId: conn.id }),
+        (conn) =>
+            enqueue(
+                'sharepoint-delta-sync',
+                {
+                    tenantId: conn.tenantId,
+                    connectionId: conn.id,
+                    actorUserId: adminByTenant.get(conn.tenantId)!,
+                    triggeredBy: 'scheduled',
+                },
+                {
+                    jobId: dispatchJobId(
+                        'sharepoint-delta-sync',
+                        conn.id,
+                        FOUR_HOURLY_BUCKET_MS,
+                    ),
+                },
+            ),
+    );
+    // This dispatcher had no completion log at all. The three ways a
+    // connection fails to get a job are now distinguishable: no eligible admin,
+    // a throwing enqueue, or simply not being there.
     logger.info('sharepoint-delta-sync-dispatch complete', {
         component: 'sharepoint',
         connections: connections.length,
         dispatched,
-        skippedNoAdmin: connections.length - dispatched,
+        failed,
+        // Derived from `routable`, NOT from `dispatched` — subtracting the
+        // dispatched count would relabel every enqueue failure as a
+        // missing-admin skip and hide the Redis problem behind a config one.
+        skippedNoAdmin: connections.length - routable.length,
     });
-    return { connections: connections.length, dispatched };
+
+    if (failed > 0 && dispatched === 0) {
+        throw new Error(`sharepoint-delta-sync-dispatch: all ${failed} enqueues failed`);
+    }
+    return { connections: connections.length, dispatched, failed };
 }

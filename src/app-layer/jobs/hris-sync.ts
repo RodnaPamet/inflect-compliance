@@ -11,19 +11,20 @@
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { enqueue } from './queue';
-import { runHrisSync } from '@/app-layer/usecases/hris-sync';
+import { runHrisSync, type HrisSyncResult } from '@/app-layer/usecases/hris-sync';
 import type { HrisSyncPayload } from './types';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
+import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
 
 const HRIS_PROVIDERS = ['bamboohr'];
 
-export async function runHrisSyncJob(payload: HrisSyncPayload): Promise<{ executionId: string; status: string; upserted: number; managersLinked: number }> {
+export async function runHrisSyncJob(payload: HrisSyncPayload): Promise<HrisSyncResult> {
     if (!payload.tenantId || !payload.connectionId) throw new Error('hris-sync requires tenantId + connectionId');
-    const r = await runHrisSync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
-    return { executionId: r.executionId, status: r.status, upserted: r.upserted, managersLinked: r.managersLinked };
+    // Whole result — a field-by-field shim drops errorMessage/noRetry silently.
+    return runHrisSync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
 }
 
-export async function runHrisSyncDispatch(): Promise<{ connections: number; dispatched: number }> {
+export async function runHrisSyncDispatch(): Promise<{ connections: number; dispatched: number; failed: number }> {
     // Was `take: 1000` with no signal — see ./drain-pages.
     const connections = await drainPages((cursor) =>
         prisma.integrationConnection.findMany({
@@ -34,11 +35,24 @@ export async function runHrisSyncDispatch(): Promise<{ connections: number; disp
             ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         }),
     );
-    let dispatched = 0;
-    for (const conn of connections) {
-        await enqueue('hris-sync', { tenantId: conn.tenantId, connectionId: conn.id });
-        dispatched++;
+    // Deterministic id per (connection, UTC day) + isolated failures — see
+    // ./fan-out for why the two defects compound.
+    const { dispatched, failed } = await fanOut(
+        connections,
+        'hris-sync',
+        (conn) => ({ tenantId: conn.tenantId, connectionId: conn.id }),
+        (conn) =>
+            enqueue(
+                'hris-sync',
+                { tenantId: conn.tenantId, connectionId: conn.id },
+                { jobId: dispatchJobId('hris-sync', conn.id, DAILY_BUCKET_MS) },
+            ),
+    );
+
+    logger.info('hris-sync-dispatch complete', { component: 'hris-sync', connections: connections.length, dispatched, failed });
+
+    if (failed > 0 && dispatched === 0) {
+        throw new Error(`hris-sync-dispatch: all ${failed} enqueues failed`);
     }
-    logger.info('hris-sync-dispatch complete', { component: 'hris-sync', connections: connections.length, dispatched });
-    return { connections: connections.length, dispatched };
+    return { connections: connections.length, dispatched, failed };
 }

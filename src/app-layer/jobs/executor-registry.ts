@@ -280,11 +280,12 @@ function makeResult(
     actioned: number,
     skipped: number,
     details?: Record<string, unknown>,
+    outcome?: JobOutcome,
 ): JobRunResult {
     return {
         jobName,
         jobRunId: crypto.randomUUID(),
-        success: true,
+        success: outcome ? outcome.status !== 'ERROR' : true,
         startedAt,
         completedAt: new Date().toISOString(),
         durationMs: Math.round(performance.now() - startMs),
@@ -292,7 +293,34 @@ function makeResult(
         itemsActioned: actioned,
         itemsSkipped: skipped,
         details,
+        ...(outcome?.errorMessage && outcome.status === 'ERROR'
+            ? { errorMessage: outcome.errorMessage }
+            : {}),
+        ...(outcome?.noRetry ? { noRetry: true } : {}),
     };
+}
+
+/**
+ * The outcome an integration usecase reports back, for jobs that CATCH their
+ * own failures instead of throwing.
+ *
+ * Those usecases return `status: 'ERROR'` in a result object, so before this
+ * existed `makeResult` hardcoded `success: true` and a sync that failed
+ * completely — revoked credential, dead network — was recorded by the queue as
+ * a success. Job metrics, alerting and the BullMQ failed set all read clean.
+ *
+ * ## `status !== 'ERROR'`, never `status === 'PASSED'`
+ *
+ * The posture usecases report four statuses, and `FAILED` means *the compliance
+ * check found a real gap* — a perfectly successful collection. Treating that as
+ * a job failure would turn every tenant's genuine findings into retried job
+ * failures, which is a worse bug than the one being fixed. Only `ERROR` means
+ * the job itself broke.
+ */
+interface JobOutcome {
+    status: 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_APPLICABLE';
+    errorMessage?: string;
+    noRetry?: boolean;
 }
 
 // ── health-check ─────────────────────────────────────────────────────
@@ -1030,7 +1058,7 @@ executorRegistry.register('aws-posture-collect', async (payload) => {
     return makeResult('aws-posture-collect', startedAt, startMs, 1, r.evidenceCreated, 0, {
         executionId: r.executionId,
         status: r.status,
-    });
+    }, { status: r.status, errorMessage: r.errorMessage, noRetry: r.noRetry });
 });
 
 // PR-2 — identity-sync: sync one Okta / Google Workspace connection.
@@ -1042,7 +1070,7 @@ executorRegistry.register('identity-sync', async (payload) => {
     return makeResult('identity-sync', startedAt, startMs, r.upserted, r.upserted, r.deprovisioned, {
         executionId: r.executionId,
         status: r.status,
-    });
+    }, { status: r.status, errorMessage: r.errorMessage, noRetry: r.noRetry });
 });
 
 // PR-2 — identity-sync-dispatch: fan out a sync per enabled identity connection.
@@ -1077,7 +1105,7 @@ executorRegistry.register('azure-posture-collect', async (payload) => {
     const startMs = performance.now();
     const { runAzurePostureCollectJob } = await import('./cloud-posture-collect');
     const r = await runAzurePostureCollectJob({ tenantId: payload.tenantId, connectionId: payload.connectionId });
-    return makeResult('azure-posture-collect', startedAt, startMs, 1, r.evidenceCreated, 0, { executionId: r.executionId, status: r.status });
+    return makeResult('azure-posture-collect', startedAt, startMs, 1, r.evidenceCreated, 0, { executionId: r.executionId, status: r.status }, { status: r.status, errorMessage: r.errorMessage, noRetry: r.noRetry });
 });
 
 // PR-3 — gcp-posture-collect: run one GCP connection's benchmark + collect evidence.
@@ -1086,7 +1114,7 @@ executorRegistry.register('gcp-posture-collect', async (payload) => {
     const startMs = performance.now();
     const { runGcpPostureCollectJob } = await import('./cloud-posture-collect');
     const r = await runGcpPostureCollectJob({ tenantId: payload.tenantId, connectionId: payload.connectionId });
-    return makeResult('gcp-posture-collect', startedAt, startMs, 1, r.evidenceCreated, 0, { executionId: r.executionId, status: r.status });
+    return makeResult('gcp-posture-collect', startedAt, startMs, 1, r.evidenceCreated, 0, { executionId: r.executionId, status: r.status }, { status: r.status, errorMessage: r.errorMessage, noRetry: r.noRetry });
 });
 
 // PR-4 — hris-sync: sync one BambooHR connection's roster.
@@ -1095,7 +1123,7 @@ executorRegistry.register('hris-sync', async (payload) => {
     const startMs = performance.now();
     const { runHrisSyncJob } = await import('./hris-sync');
     const r = await runHrisSyncJob({ tenantId: payload.tenantId, connectionId: payload.connectionId });
-    return makeResult('hris-sync', startedAt, startMs, r.upserted, r.upserted, r.managersLinked, { executionId: r.executionId, status: r.status });
+    return makeResult('hris-sync', startedAt, startMs, r.upserted, r.upserted, r.managersLinked, { executionId: r.executionId, status: r.status }, { status: r.status, errorMessage: r.errorMessage, noRetry: r.noRetry });
 });
 
 // PR-4 — hris-sync-dispatch: fan out a sync per enabled HRIS connection.

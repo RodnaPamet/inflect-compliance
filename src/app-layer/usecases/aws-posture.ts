@@ -16,6 +16,8 @@
 import type { RequestContext } from '../types';
 import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
+import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
+import { shouldBypassQueueRetry } from '../integrations/http-resilience';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -36,6 +38,11 @@ function makeSystemCtx(tenantId: string): RequestContext {
 export interface AwsPostureCollectResult {
     executionId: string;
     status: 'PASSED' | 'FAILED' | 'ERROR' | 'NOT_APPLICABLE';
+    /**
+     * True when the queue must NOT immediately re-run this collection —
+     * a revoked credential, or a throttle past the absorb budget.
+     */
+    noRetry?: boolean;
     counts: { ok: number; alarm: number; skip: number; error: number; total: number } | null;
     evidenceCreated: number;
     errorMessage?: string;
@@ -93,7 +100,11 @@ export async function runAwsPostureCollection(input: {
         } catch (e) {
             const msg = scrubAwsCredentials(e instanceof Error ? e.message : String(e), secretVals).slice(0, 500);
             await db.integrationExecution.update({ where: { id: execution.id }, data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() } });
-            return { executionId: execution.id, status: 'ERROR', counts: null, evidenceCreated: 0, errorMessage: msg };
+            // Surface a REVOKED CREDENTIAL on the connection; no-op for
+            // anything that is not an IntegrationAuthError (401/403).
+            await markAuthFailure(db, conn.id, e, now);
+            // Caught here, so the retry classification must ride the result.
+            return { executionId: execution.id, status: 'ERROR', counts: null, evidenceCreated: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
         }
 
         const summary = checkResult.details as { counts?: AwsPostureCollectResult['counts']; controls?: Array<{ id: string; status: string }> };
@@ -158,6 +169,11 @@ export async function runAwsPostureCollection(input: {
                 completedAt: new Date(),
             },
         });
+
+        // Reached only when the collection itself ran. A FAILED compliance
+        // verdict is a successful collection reporting a real gap, so the
+        // credential is demonstrably good either way — clear any stale banner.
+        await clearAuthFailure(db, conn.id);
 
         logger.info('aws-posture collection complete', { component: 'aws-posture', tenantId: ctx.tenantId, executionId: execution.id, status: checkResult.status, evidenceCreated });
         return { executionId: execution.id, status: checkResult.status, counts, evidenceCreated, errorMessage: checkResult.errorMessage };

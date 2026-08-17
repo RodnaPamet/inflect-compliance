@@ -63,6 +63,21 @@ jest.mock('@/app-layer/jobs/control-test-runner', () => ({
     controlTestRunnerExecutor: jest.fn(async () => RESULT),
 }));
 
+// ── Integration jobs whose usecases CATCH their own failures and report them
+// as `status: 'ERROR'` in the result rather than throwing. Mocked so the
+// success-mapping in `makeResult` can be driven per status. ──
+jest.mock('@/app-layer/jobs/identity-sync', () => ({
+    runIdentitySyncJob: jest.fn(async () => ({
+        executionId: 'e0', status: 'PASSED', upserted: 0, deprovisioned: 0,
+    })),
+    runIdentitySyncDispatch: jest.fn(async () => ({ connections: 0, dispatched: 0 })),
+}));
+jest.mock('@/app-layer/jobs/aws-posture-collect', () => ({
+    runAwsPostureCollectJob: jest.fn(async () => ({
+        executionId: 'e0', status: 'PASSED', counts: null, evidenceCreated: 0,
+    })),
+}));
+
 // ── makeResult-wrapper executors: mock each job module's return with the
 // exact shape its closure reads, so the wrapper body runs end-to-end. ──
 jest.mock('@/lib/prisma', () => ({ prisma: {} }));
@@ -305,6 +320,92 @@ describe('executorRegistry.execute — dispatch + fault isolation', () => {
 
         expect(result.success).toBe(false);
         expect(result.noRetry).toBeUndefined();
+    });
+});
+
+describe('integration jobs report failure as failure', () => {
+    // These usecases CATCH their own provider errors and return
+    // `status: 'ERROR'` in a result object rather than throwing. `makeResult`
+    // used to hardcode `success: true`, so a sync that failed completely — dead
+    // credential, dead network — was recorded by the queue as a success: job
+    // metrics clean, BullMQ failed-set empty, alerting silent.
+
+    const reg = executorRegistry as unknown as {
+        register(name: string, fn: () => Promise<JobRunResult>): void;
+        execute(name: string, payload: unknown): Promise<JobRunResult>;
+        _reset(): void;
+    };
+
+    it('identity-sync ERROR is a job failure', async () => {
+        const { runIdentitySyncJob } = jest.requireMock('@/app-layer/jobs/identity-sync');
+        runIdentitySyncJob.mockResolvedValueOnce({
+            executionId: 'e1',
+            status: 'ERROR',
+            upserted: 0,
+            deprovisioned: 0,
+            errorMessage: 'Integration auth failed (401): https://okta/x',
+            noRetry: true,
+        });
+
+        const r = await reg.execute('identity-sync', { tenantId: 't1', connectionId: 'c1' });
+
+        expect(r.success).toBe(false);
+        expect(r.errorMessage).toContain('401');
+        // The classification survives the usecase's catch — without this the
+        // queue retries a revoked credential three times in ~35s.
+        expect(r.noRetry).toBe(true);
+    });
+
+    it('a FAILED compliance verdict is a job SUCCESS', async () => {
+        // The sharp one. Posture statuses are PASSED/FAILED/ERROR/NOT_APPLICABLE,
+        // and FAILED means the check found a REAL COMPLIANCE GAP — a perfectly
+        // successful collection. Mapping success to `status === 'PASSED'` would
+        // turn every tenant's genuine findings into retried job failures, which
+        // is a worse bug than the one being fixed here.
+        const { runAwsPostureCollectJob } = jest.requireMock('@/app-layer/jobs/aws-posture-collect');
+        runAwsPostureCollectJob.mockResolvedValueOnce({
+            executionId: 'e2',
+            status: 'FAILED',
+            counts: null,
+            evidenceCreated: 0,
+        });
+
+        const r = await reg.execute('aws-posture-collect', { tenantId: 't1', connectionId: 'c1' });
+
+        expect(r.success).toBe(true);
+        expect(r.noRetry).toBeUndefined();
+    });
+
+    it('NOT_APPLICABLE is also a job success', async () => {
+        const { runAwsPostureCollectJob } = jest.requireMock('@/app-layer/jobs/aws-posture-collect');
+        runAwsPostureCollectJob.mockResolvedValueOnce({
+            executionId: 'e3',
+            status: 'NOT_APPLICABLE',
+            counts: null,
+            evidenceCreated: 0,
+        });
+
+        expect((await reg.execute('aws-posture-collect', { tenantId: 't1', connectionId: 'c1' })).success).toBe(true);
+    });
+
+    it('a truncated enumeration fails LOUDLY but is not retried', async () => {
+        // The cap is deterministic: a retry re-enumerates the same too-large
+        // directory and truncates at the same point. Three retries would mean
+        // three more full 5000-account enumerations for an identical outcome.
+        const { runIdentitySyncJob } = jest.requireMock('@/app-layer/jobs/identity-sync');
+        runIdentitySyncJob.mockResolvedValueOnce({
+            executionId: 'e4',
+            status: 'ERROR',
+            upserted: 5000,
+            deprovisioned: 0,
+            errorMessage: 'Partial directory enumeration: hit the 5000-account cap',
+            noRetry: true,
+        });
+
+        const r = await reg.execute('identity-sync', { tenantId: 't1', connectionId: 'c1' });
+
+        expect(r.success).toBe(false);
+        expect(r.noRetry).toBe(true);
     });
 });
 
