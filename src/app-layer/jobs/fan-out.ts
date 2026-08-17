@@ -46,6 +46,9 @@
  */
 import { logger } from '@/lib/observability/logger';
 
+/** One minute, in ms. Used by manual-trigger routes to collapse double-clicks. */
+export const MINUTE_MS = 60_000;
+
 /** One hour, in ms. Bucket sizes are expressed against this for readability. */
 export const HOUR_MS = 3_600_000;
 

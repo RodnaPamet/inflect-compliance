@@ -158,6 +158,14 @@ export interface SpDeltaSyncResult {
     drivesSynced: number;
     reimported: number;
     staled: number;
+    /**
+     * Set when another run held the per-connection sync lock, so this one did
+     * nothing. Kept on the SAME shape rather than returned as a separate union
+     * member: a caller reading `reimported` must see 0, not a type error, and a
+     * skip that reported no counters at all would be indistinguishable from a
+     * sync that ran and found nothing to do.
+     */
+    skipped?: 'sync_already_running';
 }
 
 /**

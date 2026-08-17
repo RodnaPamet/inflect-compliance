@@ -29,7 +29,13 @@ function makeSystemCtx(tenantId: string): RequestContext {
 
 export interface IdentitySyncResult {
     executionId: string;
-    status: 'PASSED' | 'ERROR';
+    /**
+     * `SKIPPED` means another run already holds the per-connection lock. It is
+     * a success (nothing went wrong) but deliberately NOT `PASSED` — claiming a
+     * sync passed when it never ran would make the lock invisible in exactly
+     * the logs someone would check to find out why data looks stale.
+     */
+    status: 'PASSED' | 'ERROR' | 'SKIPPED';
     upserted: number;
     deprovisioned: number;
     errorMessage?: string;

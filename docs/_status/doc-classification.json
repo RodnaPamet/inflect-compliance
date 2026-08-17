@@ -1990,6 +1990,9 @@
         },
         "docs/implementation-notes/2026-08-17-fan-out-idempotency-and-isolation.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-17-per-connection-sync-lock.md": {
+            "class": "historical"
         }
     }
 }
