@@ -1987,6 +1987,9 @@
         },
         "docs/implementation-notes/2026-08-17-integration-connection-credential-health.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-17-fan-out-idempotency-and-isolation.md": {
+            "class": "historical"
         }
     }
 }

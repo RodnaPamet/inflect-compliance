@@ -16,6 +16,7 @@ import { enqueue } from './queue';
 import { runIdentitySync, type IdentitySyncResult } from '@/app-layer/usecases/identity-sync';
 import type { IdentitySyncPayload } from './types';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
+import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 
@@ -30,7 +31,7 @@ export async function runIdentitySyncJob(payload: IdentitySyncPayload): Promise<
 }
 
 /** Fan-out: one identity-sync per enabled Okta / Google Workspace connection. */
-export async function runIdentitySyncDispatch(): Promise<{ connections: number; dispatched: number }> {
+export async function runIdentitySyncDispatch(): Promise<{ connections: number; dispatched: number; failed: number }> {
     // Was `take: 1000` with no signal. Past the cap, tenants never synced and
     // the completion log still read like a clean success.
     const connections = await drainPages((cursor) =>
@@ -43,11 +44,28 @@ export async function runIdentitySyncDispatch(): Promise<{ connections: number; 
         }),
     );
 
-    let dispatched = 0;
-    for (const conn of connections) {
-        await enqueue('identity-sync', { tenantId: conn.tenantId, connectionId: conn.id });
-        dispatched++;
+    // Deterministic id per (connection, UTC day) so a dispatcher retry or a
+    // redeploy replaying the schedule cannot queue a second full sync for every
+    // connection; failures isolated so one bad enqueue does not silently drop
+    // every connection behind it.
+    const { dispatched, failed } = await fanOut(
+        connections,
+        'identity-sync',
+        (conn) => ({ tenantId: conn.tenantId, connectionId: conn.id }),
+        (conn) =>
+            enqueue(
+                'identity-sync',
+                { tenantId: conn.tenantId, connectionId: conn.id },
+                { jobId: dispatchJobId('identity-sync', conn.id, DAILY_BUCKET_MS) },
+            ),
+    );
+
+    logger.info('identity-sync-dispatch complete', { component: 'identity-sync', connections: connections.length, dispatched, failed });
+
+    // Nothing got out at all — reporting success would claim a clean run that
+    // dispatched nothing.
+    if (failed > 0 && dispatched === 0) {
+        throw new Error(`identity-sync-dispatch: all ${failed} enqueues failed`);
     }
-    logger.info('identity-sync-dispatch complete', { component: 'identity-sync', connections: connections.length, dispatched });
-    return { connections: connections.length, dispatched };
+    return { connections: connections.length, dispatched, failed };
 }
