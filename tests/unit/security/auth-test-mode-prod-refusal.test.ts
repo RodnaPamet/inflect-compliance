@@ -43,6 +43,8 @@ import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const codeOnly = (s: string) =>
+    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('AUTH_TEST_MODE is refused in production', () => {
     it('the env schema rejects "1" when NODE_ENV is production', () => {
@@ -83,6 +85,41 @@ describe('AUTH_TEST_MODE is refused in production', () => {
 
     it('those templates are genuinely production ones, so the check above bites', () => {
         expect(read('deploy/.env.prod.example')).toMatch(/^NODE_ENV=production$/m);
+    });
+
+    it('exempts `next start` under test, or it kills the E2E webserver', () => {
+        // The case that actually broke, and the reason it is worth its own
+        // test rather than a comment. `next start` OVERWRITES
+        // process.env.NODE_ENV to "production" regardless of what the
+        // caller passed — playwright.config.ts says so explicitly, and the
+        // Epic B encryption sentinel already had to account for it.
+        //
+        // So the E2E server, which legitimately sets AUTH_TEST_MODE=1,
+        // presents to both checks as production. Without the exemption the
+        // refusal exits 1, Playwright waits for a port that never opens,
+        // and the job dies at its 40-minute timeout with NO failing test to
+        // point at — a red run that names nothing.
+        //
+        // NEXT_TEST_MODE is set only by that webServer and
+        // scripts/e2e-local.mjs, so it separates the two cases without
+        // weakening the refusal.
+        // COMMENT-STRIPPED, and that is the whole point. Both files
+        // explain this exemption in prose immediately above the code that
+        // implements it, so an assertion over raw source is satisfied by
+        // the explanation — deleting the actual guard leaves it green.
+        // Verified: without stripping, removing both guards still passed.
+        const envSrc = codeOnly(read('src/env.ts'));
+        const declAt = envSrc.indexOf('AUTH_TEST_MODE: z');
+        expect(declAt).toBeGreaterThan(-1);
+        expect(envSrc.slice(declAt, declAt + 700))
+            .toMatch(/NEXT_TEST_MODE === '1'\)\s*return;/);
+
+        const instrSrc = codeOnly(read('src/instrumentation.ts'));
+        expect(instrSrc).toMatch(
+            /NEXT_TEST_MODE !== '1'[\s\S]{0,120}AUTH_TEST_MODE === '1'/,
+        );
+        // …and the webServer really does set it, so the exemption fires.
+        expect(read('playwright.config.ts')).toMatch(/NEXT_TEST_MODE=1/);
     });
 
     it('the flag still works outside production — this is a prod refusal, not a removal', () => {

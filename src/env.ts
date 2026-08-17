@@ -134,20 +134,24 @@ export const env = createEnv({
         // either tier. Refuse to boot instead, on the GAP-03 /
         // DATA_ENCRYPTION_KEY pattern.
         //
-        // This exists because deploy/.env.prod carried AUTH_TEST_MODE=1
-        // next to NODE_ENV=production — checked in, consumed by three
-        // services via env_file in deploy/docker-compose.prod.yml. The live
-        // VM did not have it (verified 2026-08-17: zero occurrences in
-        // /opt/inflect/.env.prod and in the running container's env), so
-        // production was never exposed. But the repo's own documented
-        // deployment path would have exposed it, and a config file is the
-        // wrong place to enforce this — the same edit recurs on the next
-        // deploy otherwise.
+        // Nothing was exposed when this was written — docs/ci-local.md:122
+        // already promised "the production app will never have this enabled
+        // unless explicitly set", no tracked env template sets it, and the
+        // live VM was verified clean (2026-08-17: zero occurrences in
+        // /opt/inflect/.env.prod and in the running container's env). What
+        // was missing was anything ENFORCING that promise: a single
+        // explicit set, anywhere in a deploy chain, silently strips the four
+        // controls above.
         AUTH_TEST_MODE: z
             .enum(["0", "1"])
             .optional()
             .superRefine((val, ctx) => {
                 if (process.env.NODE_ENV !== 'production') return;
+                // `next start` forces NODE_ENV=production even under test
+                // (see playwright.config.ts's webServer comment), so the
+                // E2E server would otherwise trip this. NEXT_TEST_MODE is
+                // set only by that webServer and scripts/e2e-local.mjs.
+                if (process.env.NEXT_TEST_MODE === '1') return;
                 if (val === '1') {
                     ctx.addIssue({
                         code: z.ZodIssueCode.custom,
