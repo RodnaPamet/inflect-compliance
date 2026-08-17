@@ -17,7 +17,7 @@
  * bumping the `swagger-ui-dist` devDependency, then commit the diff.
  * It is intentionally NOT wired into `postinstall` — that hook is
  * pinned to exactly `patch-package` (locked by
- * tests/guards/csp-nonce-component-scripts-patch.test.ts).
+ * tests/e2e/csp-nonce-coverage.spec.ts).
  *
  * Plain Node (`.js`, CommonJS — package.json has no `"type"`), not tsx,
  * so it runs with the always-present `node`. If `swagger-ui-dist` isn't
