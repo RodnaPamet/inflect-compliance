@@ -199,6 +199,18 @@ const nodeProject = {
         // project so they run exclusively under the jsdom project's
         // testMatch.
         '<rootDir>/src/.*/__tests__/',
+        // ── H3-3 integrations stress suite (JEST_STRESS=1 to opt IN) ──
+        //
+        // Excluded by default because these are minutes-long, DB-backed, and
+        // bind real sockets — they belong to the scheduled `Integration Stress`
+        // workflow, not to the PR shards.
+        //
+        // An env opt-in rather than a separate Jest project on purpose:
+        // `tests/guards/coverage-config-resolution.test.ts` requires every
+        // resolved project to carry `coveragePathIgnorePatterns` containing
+        // `/tests/`, and adding a third project means satisfying that for a
+        // suite whose coverage is meaningless.
+        ...(process.env.JEST_STRESS === '1' ? [] : ['<rootDir>/tests/stress/']),
     ],
     transform: {
         '^.+\\.(ts|tsx)$': 'ts-jest',

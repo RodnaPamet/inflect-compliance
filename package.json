@@ -64,6 +64,7 @@
     "load:mutations:100": "k6 run -e VUS=100 -e DURATION=2m tests/load/mutations.js",
     "load:mutations:200": "k6 run -e VUS=200 -e DURATION=2m tests/load/mutations.js",
     "load:smoke": "k6 run -e VUS=5 -e DURATION=30s tests/load/auth.js && k6 run -e VUS=5 -e DURATION=30s tests/load/lists.js",
+    "stress": "JEST_STRESS=1 DATABASE_URL=\"${DATABASE_URL_TEST:-postgresql://test:test@127.0.0.1:5434/inflect_test?schema=public}\" jest tests/stress --runInBand",
     "prod:up": "docker compose -f docker-compose.prod.yml up -d --build",
     "prod:down": "docker compose -f docker-compose.prod.yml down",
     "swagger-ui:vendor": "node scripts/copy-swagger-ui.js",

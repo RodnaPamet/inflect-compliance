@@ -1,0 +1,132 @@
+# ─────────────────────────────────────────────────────────────────────
+#  Integration Stress — H3-3
+#
+#  A BLOCKING stress suite for the integrations subsystem. Everything the
+#  hardening (#1950/#1955/#1957/#1958/#1959/#1960) fixed lives BELOW the
+#  HTTP boundary, so `tests/load/` (k6 over HTTP) cannot reach any of it:
+#  a deadline on a hung socket, a throttle absorbed vs deferred, a lease
+#  reaped, a resumed pass that must not deprovision its own earlier runs.
+#
+#  ## Why `push: [main]` and NO continue-on-error
+#
+#  Required status checks are a repo setting, and a workflow with no
+#  `pull_request` trigger produces no PR check context — so it can never
+#  literally be "required". `push: [main]` is what makes this a real gate:
+#  a regression turns main RED, which is the same strength `load-smoke`
+#  has in ci.yml.
+#
+#  The absence of `continue-on-error` is the entire delta from
+#  load-test.yml, which is a trend-tracker. Do not "fix" it back in: an
+#  advisory suite that nobody acts on is how dast.yml sat red for three
+#  weeks after an unrelated PR broke the app's boot, indistinguishable
+#  from a genuine HIGH finding.
+#
+#  ## Why no Redis, and no AUTH_TEST_MODE
+#
+#  Nothing here touches BullMQ — `enqueue` is mocked in the fan-out tier
+#  because the property under test is what the dispatcher PRODUCES, not
+#  whether Redis stored it. And no Next server is booted, so the
+#  AUTH_TEST_MODE production-boot refusal (and its NEXT_TEST_MODE /
+#  SYNTHETIC_TEST_HARNESS exemptions) is not in play at all.
+#
+#  ## Why DATABASE_URL and DATABASE_URL_TEST are the same value
+#
+#  These scenarios drive the REAL usecase, so the app's prisma singleton
+#  does the writing while the harness reads. Pointed at different
+#  databases, every assertion fails with "Can't reach database server" —
+#  or worse, silently reads an empty table. `requireStressDb()` asserts
+#  they match and FAILS rather than skips, because a skipped suite in a
+#  blocking job reads as green.
+#
+#  See tests/stress/README.md.
+# ─────────────────────────────────────────────────────────────────────
+name: Integration Stress
+
+on:
+  # 02:30 UTC — a free slot. Taken: 01:20 cloud-posture-dispatch (BullMQ),
+  # 03:30 load-test, 04:00 dast, 05:00 Sun dast-full, 06:00 Sun ci.
+  schedule:
+    - cron: '30 2 * * *'
+  # The real gate: a regression turns main red.
+  push:
+    branches: [main]
+  # A schedule/push-only workflow is otherwise unverifiable off main.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-stress
+  cancel-in-progress: false
+
+jobs:
+  stress:
+    name: Integration Stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: ci_testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ci -d ci_testdb"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # Same value in all three: see the header. DIRECT_DATABASE_URL is what
+      # `prisma migrate deploy` uses.
+      DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DATABASE_URL_TEST: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DATA_ENCRYPTION_KEY: stress-suite-encryption-key-32-chars-min
+      SKIP_ENV_VALIDATION: '1'
+      # Row counts scale; timeouts never do — a scaled timeout would make the
+      # thresholds mean different things locally and in CI.
+      STRESS_SCALE: '4'
+      # NODE_ENV is deliberately NOT set at job level: it makes `npm ci` skip
+      # devDependencies, and the patch-package postinstall then exits 127.
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: '24'
+
+      # RLS migrations reference these roles; `migrate deploy` aborts without them.
+      - name: Create PostgreSQL roles for RLS
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
+          END $$;
+          GRANT app_user TO ci;
+          GRANT app_user TO postgres;
+          SQL
+
+      - name: Apply schema
+        run: ./node_modules/.bin/prisma migrate deploy
+
+      # No continue-on-error. This is the gate.
+      - name: Run integration stress suite
+        run: npm run stress
+
+      - name: Upload trend numbers
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-stress-trends-${{ github.sha }}
+          path: tests/stress/results/
+          if-no-files-found: ignore
+          retention-days: 30
