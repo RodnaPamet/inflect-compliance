@@ -1,6 +1,6 @@
 # 2026-08-17 — Integrations: making the hardening visible
 
-**PR:** #TBD — feat(observability): instrument the integrations hardening
+**PR:** #1959 — feat(observability): instrument the integrations hardening
 
 ## Design
 
