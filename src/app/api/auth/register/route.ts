@@ -20,22 +20,46 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { AuthActionSchema } from '@/lib/schemas';
 import { env } from '@/env';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { TENANT_CREATE_LIMIT } from '@/lib/security/rate-limit';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
 import { recordTenantCreated, recordUserSignup } from '@/lib/observability/business-metrics';
 
-export const POST = withApiErrorHandling(withValidatedBody(AuthActionSchema, async (_req, _ctx, body) => {
-    try {
-        // Zod discriminated-union already rejects anything but `register`
-        // — no else branches needed. Keep the try/catch as a final safety
-        // net so a DB error during registration returns JSON instead of
-        // bubbling as an HTML 500 page.
+// NOTE for whoever owns signup policy: this route has NO AUTH_TEST_MODE
+// gate, while both CLAUDE.md ("credentials self-service signup
+// (AUTH_TEST_MODE-gated)") and the OpenAPI description ("gated by
+// AUTH_TEST_MODE in non-prod") say it does. The provider side is
+// unambiguous — src/auth.ts:342-349 states the credentials provider is
+// "always registered" — so a self-registered production account is
+// usable. Whether public signup should be open is a product decision and
+// is deliberately NOT changed here; this file only fixes the things that
+// are wrong either way.
+//
+// The local try/catch that used to wrap this is gone. It caught every
+// failure and returned `error.message` verbatim with status 500, which
+// DEFEATED withApiErrorHandling's toApiErrorResponse shaping — so raw
+// Prisma text, constraint and column names, the invocation site and an
+// absolute server path went to an unauthenticated caller. Its comment
+// justified it as "a final safety net so a DB error returns JSON instead
+// of an HTML 500 page", which is exactly what the wrapper already does,
+// minus the disclosure.
+//
+// TENANT_CREATE_LIMIT (5/hour) is the preset the repo already wrote for
+// this threat — it was wired only to the platform-key-GATED
+// /api/admin/tenants, while this strictly weaker-gated route inherited
+// the generic API_MUTATION_LIMIT (60/min). Each accepted request
+// permanently creates a Tenant + wrapped per-tenant DEK + User +
+// TenantMembership, runs bcrypt cost 12, makes an outbound HIBP call,
+// and sends mail to an attacker-chosen recipient from our sending
+// domain. 3,600/hour from one IP was the ceiling.
+export const POST = withApiErrorHandling(
+    withValidatedBody(AuthActionSchema, async (_req, _ctx, body) => {
+        // Zod's discriminated union already rejects anything but
+        // `register`, so there are no else branches to guard.
         return await handleRegister(body);
-    } catch (error) {
-        logger.error('Auth error', { component: 'auth', error: error instanceof Error ? error.message : String(error) });
-        return jsonResponse({ error: error instanceof Error ? error.message : 'Auth failed' }, { status: 500 });
-    }
-}));
+    }),
+    { rateLimit: { config: TENANT_CREATE_LIMIT, scope: 'self-service-register' } },
+);
 
 async function handleRegister(body: { email: string; password: string; name: string; orgName: string }) {
     const { email: rawEmail, password, name, orgName } = body;
@@ -112,7 +136,16 @@ async function handleRegister(body: { email: string; password: string; name: str
         data: {
             tenantId: tenant.id,
             userId: user.id,
-            role: 'ADMIN',
+            // OWNER, not ADMIN. OWNER is strictly superior: it alone carries
+            // admin.tenant_lifecycle (delete tenant, rotate DEK, transfer
+            // ownership) and admin.owner_management (invite/remove OWNERs).
+            // Creating the tenant's first member as ADMIN left every
+            // self-service tenant with ZERO owners, so those two capability
+            // sets were permanently unreachable for it — it could never
+            // delete itself, rotate its own key, or hand ownership on.
+            // createTenantWithOwner (the platform-admin path) has always
+            // made this member an OWNER; this path had drifted.
+            role: 'OWNER',
         },
     });
 
