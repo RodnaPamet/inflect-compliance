@@ -24,7 +24,7 @@ import {
     type NormalizedIdentityAccount,
 } from '../identity/types';
 import { logger } from '@/lib/observability/logger';
-import { resilientFetch } from '../../http-resilience';
+import { resilientFetch, IntegrationAuthError, isAuthStatus } from '../../http-resilience';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
@@ -238,9 +238,23 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         const authHeaders = { Authorization: `SSWS ${apiToken}`, Accept: 'application/json' };
         const getJson = async (path: string): Promise<unknown> => {
             const res = await doFetch(`${orgUrl}${path}`, { headers: authHeaders });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                // Classify HERE rather than trusting the layer above to have
+                // done it. `resilientFetch` throws IntegrationAuthError on
+                // 401/403 before this line is reached, so in production this is
+                // belt-and-braces — but a caller that injects its own
+                // `fetchImpl` (every provider supports it, and the tests use it)
+                // hands back a raw 401 RESPONSE instead. Throwing a generic
+                // Error there would put the swallow back for exactly the case
+                // the enrichment catch is meant to let through.
+                if (isAuthStatus(res.status)) {
+                    throw new IntegrationAuthError(res.status, `${orgUrl}${path}`);
+                }
+                throw new Error(`HTTP ${res.status}`);
+            }
             return res.json();
         };
+        let enrichFailures = 0;
         await mapPool(toEnrich, ENRICH_CONCURRENCY, async (acct) => {
             try {
                 const [factors, roles] = await Promise.all([
@@ -256,10 +270,41 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
                 if (Array.isArray(roles)) {
                     acct.isAdmin = roles.length > 0;
                 }
-            } catch {
-                // Leave base (null) signals — a single flaky user must not fail the sync.
+            } catch (err) {
+                // A single flaky user must not fail the sync — that is what this
+                // catch is for, and that part stays.
+                //
+                // But a REJECTED CREDENTIAL is not a flaky user. It fails
+                // identically for every account, and swallowing it is silent in
+                // the worst possible way: every account's mfaEnrolled/isAdmin
+                // stays null, `mfa_enforced` then finds zero KNOWN accounts and
+                // reports NOT_APPLICABLE (identity/types.ts), and the sync
+                // reports PASSED. The MFA check stops measuring MFA and nothing
+                // says so. The GAP-4 note above added this enrichment precisely
+                // so those checks would stop vacuously passing; swallowing a 401
+                // hands that back.
+                //
+                // IntegrationAuthError is deliberately narrow — 401/403 only,
+                // never 404 — so a user deleted between enumeration and
+                // enrichment still takes the tolerant path below.
+                if (err instanceof IntegrationAuthError) throw err;
+                enrichFailures += 1;
             }
         });
+
+        if (enrichFailures > 0) {
+            // Counted rather than fatal: with ENRICH_CONCURRENCY parallel calls
+            // over a large directory, transient per-user failures and throttles
+            // are expected. But they leave null signals behind, which quietly
+            // shrinks what the checks measure — so the number has to be visible
+            // rather than inferred from a check that went NOT_APPLICABLE.
+            logger.warn('okta enrichment incomplete — some accounts have unknown MFA/admin signals', {
+                component: 'integrations',
+                provider: 'okta',
+                enrichFailures,
+                enrichAttempted: toEnrich.length,
+            });
+        }
     }
 
     async runCheck(input: CheckInput): Promise<CheckResult> {

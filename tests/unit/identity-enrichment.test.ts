@@ -112,3 +112,90 @@ describe('GAP-4 — Google Workspace SSO enrichment', () => {
         expect(accounts[0].ssoEnrolled).toBe(true);
     });
 });
+
+// ── A rejected credential during enrichment must not be swallowed ────────
+//
+// The enrichment catch exists so one flaky user cannot fail a 5000-account
+// sync, and that is right. But it was a bare `catch {}`, and a 401 is not a
+// flaky user — it fails identically for EVERY account.
+//
+// The consequence was silent and specific: every account's mfaEnrolled/isAdmin
+// stayed null, `mfa_enforced` then found zero KNOWN accounts and reported
+// NOT_APPLICABLE (see runIdentityCheck in providers/identity/types.ts), and the
+// sync reported PASSED. The check stopped measuring MFA and nothing said so —
+// which is the exact vacuous-passing this enrichment was added to end.
+
+describe('Okta enrichment — a rejected credential is not swallowed', () => {
+    const orgUrl = 'https://acme.okta.com';
+    const cfg = { orgUrl, apiToken: 'tok' };
+
+    /** Healthy user list; the per-user enrichment endpoints answer `status`. */
+    function enrichFails(status: number, path: 'factors' | 'roles' | 'both' = 'both'): typeof fetch {
+        return (jest.fn(async (url: string | URL) => {
+            const u = String(url);
+            if (u.includes('/api/v1/users?')) {
+                return resp([
+                    { id: 'u1', status: 'ACTIVE', profile: { email: 'u1@acme.com' } },
+                    { id: 'u2', status: 'ACTIVE', profile: { email: 'u2@acme.com' } },
+                ]);
+            }
+            const hit =
+                path === 'both'
+                    ? u.includes('/factors') || u.includes('/roles')
+                    : u.includes(`/${path}`);
+            if (hit) return resp({ errorCode: 'E0000011' }, { ok: false, status });
+            return resp([]);
+        }) as unknown) as typeof fetch;
+    }
+
+    it('THE BUG — a 401 on /factors propagates instead of leaving null signals', async () => {
+        const p = new OktaProvider({ fetchImpl: enrichFails(401) });
+
+        // Must reject. Previously this resolved with two accounts whose
+        // mfaEnrolled was null, and the caller reported a successful sync.
+        await expect(p.listAccounts(cfg)).rejects.toMatchObject({
+            name: 'IntegrationAuthError',
+            status: 401,
+        });
+    });
+
+    it('403 propagates too — a scope-limited token is still a bad credential', async () => {
+        const p = new OktaProvider({ fetchImpl: enrichFails(403) });
+        await expect(p.listAccounts(cfg)).rejects.toMatchObject({ name: 'IntegrationAuthError' });
+    });
+
+    it('404 on one user is STILL tolerated — that is a deleted user, not a bad token', async () => {
+        // The distinction the fix turns on. IntegrationAuthError is narrow
+        // (401/403 only), so a user who vanished between enumeration and
+        // enrichment keeps taking the tolerant path.
+        const p = new OktaProvider({ fetchImpl: enrichFails(404) });
+
+        const { accounts } = await p.listAccounts(cfg);
+
+        expect(accounts).toHaveLength(2);
+        expect(accounts[0].mfaEnrolled).toBeNull(); // unknown, not asserted false
+        expect(accounts[0].isAdmin).toBeNull();
+    });
+
+    it('a 500 on one user is tolerated — transient, and one user must not fail the sync', async () => {
+        const p = new OktaProvider({ fetchImpl: enrichFails(500) });
+        const { accounts } = await p.listAccounts(cfg);
+        expect(accounts).toHaveLength(2);
+    });
+
+    it('the failure surfaces even when only /roles rejects', async () => {
+        // Both endpoints are fetched with Promise.all, so either one rejecting
+        // has to carry the whole call out.
+        const p = new OktaProvider({ fetchImpl: enrichFails(401, 'roles') });
+        await expect(p.listAccounts(cfg)).rejects.toMatchObject({ name: 'IntegrationAuthError' });
+    });
+
+    it('enrichPerUser=false still skips enrichment entirely, 401 or not', async () => {
+        // The opt-out has to keep working — it is the documented escape hatch
+        // for directories too large to fan out over.
+        const p = new OktaProvider({ fetchImpl: enrichFails(401) });
+        const { accounts } = await p.listAccounts({ ...cfg, enrichPerUser: false });
+        expect(accounts).toHaveLength(2);
+        expect(accounts[0].mfaEnrolled).toBeNull();
+    });
+});
