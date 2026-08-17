@@ -1,6 +1,6 @@
 # 2026-08-17 — One sync at a time per connection
 
-**PR:** #TBD — fix(integrations): one sync at a time per connection
+**PR:** #1958 — fix(integrations): one sync at a time per connection
 
 ## Design
 
