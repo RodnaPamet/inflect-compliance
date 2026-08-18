@@ -41,6 +41,7 @@ auditor can verify the inventory is accurate, not merely asserted.
 | Microsoft Entra ID / Azure AD (`entra-id`) | Directory account metadata — email, status, MFA-registration/admin flags, domain federation (per-tenant integration only; read-only Graph pull; also covers on-prem AD synced via Azure AD Connect) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | On-prem Active Directory (`active-directory`) | Directory account metadata — sAMAccountName/UPN, email, enabled/disabled status, group membership, last-logon (per-tenant integration only; read-only LDAPS bind to the customer's own domain controller — no data leaves the customer network except the metadata pulled into Inflect) | Identity posture sync | Customer-hosted DC | Sync retention | Yes (per-tenant opt-in) |
 | BambooHR (`hris`) | Employee roster metadata — name, work email, employment status, department (per-tenant integration only; read-only pull) | HRIS sync | Global | Token lifetime | Yes (per-tenant opt-in) |
+| Workday (`workday`) | Employee roster metadata — name, work email, employment status, department, manager (per-tenant integration only; read-only OAuth2 pull from the customer's own Workday tenant) | HRIS sync | Customer-selected Workday data centre | Token lifetime | Yes (per-tenant opt-in) |
 
 > **Customer-configured SSO IdPs.** A tenant may configure its own SAML
 > or OIDC identity provider (`src/app/api/auth/sso/saml/*`,
