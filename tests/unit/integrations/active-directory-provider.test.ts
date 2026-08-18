@@ -226,14 +226,26 @@ describe('ActiveDirectoryProvider.validateConnection', () => {
         );
     });
 
-    it('verifies TLS by default and skips it only when opted in', async () => {
+    it('verifies TLS by default and skips it only when opted in FOR AN INTERNAL HOST', async () => {
+        // The opt-in half of this changed. Skipping certificate verification is
+        // now permitted only when the host is internal, because that check is
+        // what would otherwise make a redirected bind fail loudly — and the url
+        // is tenant-admin config with no vendor allowlist to constrain it (an AD
+        // host is customer infrastructure). The option's own justification is an
+        // internal or enterprise CA, so it is bound to that condition rather
+        // than to the operator asserting it.
+        //
+        // A private IP literal is used rather than a hostname because it needs
+        // no DNS lookup; the resolution path is covered in
+        // tests/unit/ad-tls-bypass-gating.test.ts.
         const createClient = jest.fn().mockReturnValue(ldapClient());
         const p = new ActiveDirectoryProvider({ createClient });
+        const internal = { ...CONFIG, url: 'ldaps://10.10.0.5:636' };
 
-        await p.validateConnection(CONFIG, SECRETS);
+        await p.validateConnection(internal, SECRETS);
         expect(createClient.mock.calls[0][0].tlsOptions.rejectUnauthorized).toBe(true);
 
-        await p.validateConnection({ ...CONFIG, allowSelfSignedTls: 'true' }, SECRETS);
+        await p.validateConnection({ ...internal, allowSelfSignedTls: 'true' }, SECRETS);
         expect(createClient.mock.calls[1][0].tlsOptions.rejectUnauthorized).toBe(false);
     });
 });
