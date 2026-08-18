@@ -28,6 +28,7 @@ const EXPECTED_PROVIDER_IDS = [
     'personnel',
     'device',
     'training',
+    'servicenow',
 ].sort();
 
 describe('integration provider fleet — runtime wiring', () => {

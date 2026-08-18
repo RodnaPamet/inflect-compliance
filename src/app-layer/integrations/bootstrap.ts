@@ -32,6 +32,9 @@ import { GitHubBranchProtectionMapper } from './providers/github-mapper';
 import { GitHubSyncOrchestrator } from './providers/github/sync';
 import { SharePointClient } from './providers/sharepoint/client';
 import { SharePointMapper } from './providers/sharepoint/mapper';
+import { ServiceNowProvider } from './providers/servicenow';
+import { ServiceNowClient } from './providers/servicenow/client';
+import { ServiceNowChangeMapper } from './providers/servicenow/mapper';
 
 // ─── ProviderRegistry: Automation Key Routing ────────────────────────
 
@@ -76,6 +79,9 @@ registry.register(new DeviceProvider());
 // Training & Background — internal checks (annual training completion, background-check status).
 registry.register(new TrainingProvider());
 
+// ServiceNow — change-management checks (approval on production changes).
+registry.register(new ServiceNowProvider());
+
 // Future providers:
 // registry.register(new GitLabProvider());
 
@@ -102,7 +108,18 @@ integrationRegistry.register({
     mapperClass: SharePointMapper,
 });
 
+// ServiceNow — ITSM: change requests as change-management evidence (S1).
+// No orchestratorClass yet — outbound writes land in S5, where retry
+// idempotency is the design question rather than an afterthought.
+integrationRegistry.register({
+    name: 'servicenow',
+    type: 'itsm',
+    displayName: 'ServiceNow',
+    description: 'ServiceNow change management — change requests, approvals, and implementation records as evidence',
+    clientClass: ServiceNowClient,
+    mapperClass: ServiceNowChangeMapper,
+});
+
 // Future bundles:
 // integrationRegistry.register({ name: 'jira', type: 'itsm', ... });
-// integrationRegistry.register({ name: 'servicenow', type: 'itsm', ... });
 
