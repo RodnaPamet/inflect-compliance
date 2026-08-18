@@ -205,6 +205,29 @@ export function parseRetryAfter(header: string | null, now: number = Date.now())
  * provider costs one shared series rather than unbounded ones. Deliberately
  * approximate: this labels a metric, it does not make a decision.
  */
+/**
+ * Host suffix → metric label. Bounded cardinality is the whole point; see
+ * providerLabelFor.
+ *
+ * THIS IS NOT AN ALLOWLIST, and the resemblance is dangerous enough to say so
+ * here. `integrations/allowed-host.ts` holds a SECOND list that also names
+ * okta.com, workday.com and service-now.com, and the next person to notice will
+ * reasonably want to derive one from the other.
+ *
+ * Do not. They answer different questions and change for different reasons:
+ *
+ *   this table          decides what a request is LABELLED. It may reasonably
+ *                       grow an entry for a host we merely observe, and editing
+ *                       it is an observability change.
+ *   allowed-host.ts     decides where a CREDENTIAL MAY BE SENT. Editing it is a
+ *                       privilege grant.
+ *
+ * Deriving the second from the first would make a casual observability edit
+ * silently authorise a credential destination — and this is the table people
+ * edit casually. If they are ever unified it must be in the other direction:
+ * the allowlist is the narrower, security-owned list, so it could feed labels;
+ * labels must never feed it.
+ */
 const PROVIDER_BY_HOST_SUFFIX: ReadonlyArray<[string, string]> = [
     ['okta.com', 'okta'],
     ['oktapreview.com', 'okta'],
