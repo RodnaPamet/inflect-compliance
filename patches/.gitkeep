@@ -1,0 +1,12 @@
+This directory is intentionally kept even when empty.
+
+The Dockerfile copies `patches/` into the image BEFORE running `npm ci`, so that
+the `postinstall: patch-package` hook can see it. Docker `COPY` fails on a
+missing source, so removing this file breaks the image build the moment the
+directory has no other contents — which is exactly the state the repo is in
+whenever there are no patches.
+
+Keeping the directory also preserves the ordering fix itself: without it, the
+`COPY patches ./patches` line has to be deleted too, and deleting it silently
+restores the bug where every patch is skipped in the image while working locally
+and in CI.

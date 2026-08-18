@@ -6,7 +6,15 @@ WORKDIR /app
 # package-lock.json tree and fails if it is out of sync with
 # package.json. Never `npm install` in an image build (it can mutate
 # the lockfile and resolve fresh versions, defeating reproducibility).
+# `patches/` MUST be copied BEFORE `npm ci`. The `postinstall` hook is
+# `patch-package`, which applies every patch in that directory — and exits 0
+# with "No patch files found" when the directory is absent. So installing first
+# and copying patches later (as this stage used to do) produced an image where
+# every patch was silently skipped, while the same patch applied correctly
+# locally and in CI. That divergence only ever manifests in production, with no
+# failing check anywhere. See tests/guards/dockerfile-patch-ordering.test.ts.
 COPY package.json package-lock.json ./
+COPY patches ./patches
 RUN npm ci
 
 # ─── Stage 2: Builder ──────────────────────────────────────
