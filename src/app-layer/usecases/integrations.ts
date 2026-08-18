@@ -25,6 +25,7 @@ import type { CheckResult, EvidencePayload } from '../integrations/types';
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { validateProviderConfig } from '../integrations/config-schema';
 import { logger } from '@/lib/observability/logger';
 import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-freshness';
 import { runIdentitySync } from './identity-sync';
@@ -142,6 +143,13 @@ export async function upsertIntegrationConnection(
         secretEncrypted = encryptField(JSON.stringify(input.secrets));
     }
 
+    // Validate BEFORE anything is written. configJson was previously stored
+    // verbatim, which is how a tenant-admin string reached a token POST carrying
+    // client credentials (Workday), four credentialed calls (Okta) and an LDAPS
+    // bind target (Active Directory). Each was fixed at its call site; this is
+    // the boundary that stops the next one being stored at all.
+    const validatedConfig = validateProviderConfig(input.provider, input.configJson);
+
     return runInTenantContext(ctx, async (db) => {
         if (input.id) {
             // Update existing
@@ -154,7 +162,7 @@ export async function upsertIntegrationConnection(
                 where: { id: input.id },
                 data: {
                     name: input.name,
-                    configJson: input.configJson != null ? (input.configJson as Prisma.InputJsonValue) : undefined,
+                    configJson: input.configJson != null ? (validatedConfig as Prisma.InputJsonValue) : undefined,
                     ...(secretEncrypted ? { secretEncrypted } : {}),
                     isEnabled: input.isEnabled ?? true,
                 },
@@ -185,7 +193,7 @@ export async function upsertIntegrationConnection(
                 tenantId: ctx.tenantId,
                 provider: input.provider,
                 name: input.name,
-                configJson: (input.configJson ?? {}) as Prisma.InputJsonValue,
+                configJson: validatedConfig as Prisma.InputJsonValue,
                 secretEncrypted,
                 isEnabled: input.isEnabled ?? true,
             },
