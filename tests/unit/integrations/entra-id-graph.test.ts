@@ -99,20 +99,35 @@ describe('getEntraAccessToken', () => {
         expect(doFetch.mock.calls[0][0]).toContain('a%20b%2Fc');
     });
 
-    it('trims whitespace around the ids and tolerates missing fields', async () => {
+    it('trims whitespace around the ids', async () => {
         const doFetch = jest.fn().mockResolvedValue(jsonOk({ access_token: 'x' }));
         await getEntraAccessToken(
-            { tenantId: '  t  ', clientId: '  c  ' },
+            { tenantId: '  t  ', clientId: '  c  ', clientSecret: 'shh' },
             doFetch as never,
         );
         expect(doFetch.mock.calls[0][0]).toContain('/t/oauth2');
         expect((doFetch.mock.calls[0][1].body as URLSearchParams).get('client_id')).toBe(
             'c',
         );
-        // Absent secret coerces to empty rather than "undefined".
-        expect(
-            (doFetch.mock.calls[0][1].body as URLSearchParams).get('client_secret'),
-        ).toBe('');
+    });
+
+    it('refuses to send an absent secret rather than coercing it to empty', async () => {
+        // This assertion is inverted from what it used to be. The old contract
+        // was "an absent secret coerces to empty rather than 'undefined'",
+        // which sent `client_secret=` and drew
+        //   401 AADSTS7000218 "The request body must contain ... client_secret"
+        // — our own malformed request. Because resilientFetch converts EVERY
+        // 401 into IntegrationAuthError, that answer marked the connection
+        // credential-failed and stripped the job of its retries, so a secret
+        // missing because it failed to decrypt was recorded permanently as
+        // "your credentials are revoked".
+        //
+        // Not sending the request is the whole fix, so that is what is asserted.
+        const doFetch = jest.fn().mockResolvedValue(jsonOk({ access_token: 'x' }));
+        await expect(
+            getEntraAccessToken({ tenantId: 't', clientId: 'c' }, doFetch as never),
+        ).rejects.toThrow(/clientSecret is missing/);
+        expect(doFetch).not.toHaveBeenCalled();
     });
 
     it('throws with the status on a rejected exchange', async () => {
