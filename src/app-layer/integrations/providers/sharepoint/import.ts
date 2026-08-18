@@ -11,6 +11,7 @@
  * @module integrations/providers/sharepoint/import
  */
 import type { RequestContext } from '../../../types';
+import { validateProviderConfig } from '../../config-schema';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { uploadEvidenceFile } from '../../../usecases/evidence';
@@ -258,7 +259,12 @@ async function writeDeltaTokens(ctx: RequestContext, connectionId: string, token
         const cfg = (conn?.configJson ?? {}) as Record<string, unknown>;
         await db.integrationConnection.update({
             where: { id: connectionId },
-            data: { configJson: { ...cfg, deltaTokens: tokens } as Prisma.InputJsonValue },
+            data: {
+                configJson: validateProviderConfig('sharepoint', {
+                    ...cfg,
+                    deltaTokens: tokens,
+                }) as Prisma.InputJsonValue,
+            },
         });
     });
 }

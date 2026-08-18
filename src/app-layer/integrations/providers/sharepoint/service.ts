@@ -14,6 +14,7 @@ import { assertCanAdmin } from '../../../policies/common';
 import { logEvent } from '../../../events/audit';
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { notFound, badRequest } from '@/lib/errors/types';
+import { validateProviderConfig } from '../../config-schema';
 import { Prisma } from '@prisma/client';
 import { SharePointClient, type SharePointConnectionConfig } from './client';
 import {
@@ -51,12 +52,20 @@ export async function completeSharePointConnect(
     return runInTenantContext(ctx, async (db) => {
         let row;
         try {
+            // This path creates the connection row DIRECTLY, bypassing
+            // upsertIntegrationConnection — so validation wired only at the
+            // usecase would read as complete while leaving SharePoint uncovered.
+            // tests/guards/config-write-path-coverage.test.ts enumerates every
+            // configJson writer so a new bypass cannot be added silently.
             row = await db.integrationConnection.create({
                 data: {
                     tenantId: ctx.tenantId,
                     provider: SHAREPOINT_PROVIDER,
                     name: input.name?.trim() || 'SharePoint',
-                    configJson: config as unknown as Prisma.InputJsonValue,
+                    configJson: validateProviderConfig(
+                        SHAREPOINT_PROVIDER,
+                        config as unknown as Record<string, unknown>,
+                    ) as unknown as Prisma.InputJsonValue,
                     secretEncrypted: encryptField(JSON.stringify(secret)),
                     isEnabled: true,
                 },
