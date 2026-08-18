@@ -25,6 +25,8 @@ describe('providerLabelFor — bounded cardinality', () => {
         ['https://admin.googleapis.com/admin/directory/v1/users', 'google-workspace'],
         ['https://acme.bamboohr.com/api/gateway.php/acme/v1/employees', 'bamboohr'],
         ['https://api.github.com/repos/x/y', 'github'],
+        ['https://wd2-impl-services1.workday.com/ccx/oauth2/acme/token', 'workday'],
+        ['https://wd5-services1.workdaysuv.com/ccx/service/customreport2/acme/Roster', 'workday'],
     ])('%s → %s', (url, label) => {
         expect(providerLabelFor(url)).toBe(label);
     });
@@ -61,6 +63,11 @@ describe('providerLabelFor — bounded cardinality', () => {
         // hosts and quietly merge two providers' series.
         expect(providerLabelFor('https://notokta.com/x')).toBe('other');
         expect(providerLabelFor('https://okta.com.attacker.test/x')).toBe('other');
+        // Same trap for the entries added with Workday: the label is metrics
+        // cardinality, not authorisation, but a lookalike host silently
+        // attributed to a real provider makes its error rate someone else's.
+        expect(providerLabelFor('https://evil-workday.com/x')).toBe('other');
+        expect(providerLabelFor('https://workday.com.attacker.test/x')).toBe('other');
     });
 });
 

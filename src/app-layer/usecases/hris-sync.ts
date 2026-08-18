@@ -32,7 +32,12 @@ export interface HrisSyncResult {
      * completed one in exactly the logs someone would check to ask why an
      * employee still shows as active. Mirrors IdentitySyncResult.
      */
-    status: 'PASSED' | 'ERROR' | 'PARTIAL';
+    /**
+     * `SKIPPED` is set by the JOB, not this usecase: another run already holds
+     * the connection's sync lock. Distinct from PASSED because nothing ran, and
+     * distinct from ERROR because nothing is wrong.
+     */
+    status: 'PASSED' | 'ERROR' | 'PARTIAL' | 'SKIPPED';
     /**
      * True when the queue must NOT immediately re-run this sync. Set for a
      * revoked credential, a throttle past the absorb budget, and a truncated
