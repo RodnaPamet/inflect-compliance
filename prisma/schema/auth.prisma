@@ -273,6 +273,7 @@ model Tenant {
   // Hub-and-spoke (Epic O-1).
   organization                      Organization?                      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   calendarConnections               UserCalendarConnection[]
+  calendarEventMappings             UserCalendarEventMapping[]
 
   @@index([organizationId])
   /// Per-region operational scans (e.g. "list every EU tenant").
@@ -988,6 +989,7 @@ model User {
   /// DSARs this user has handled as staff (distinct from ones they filed).
   dsarRequestsHandled           DataSubjectRequest[]            @relation("DsarHandler")
   calendarConnections           UserCalendarConnection[]
+  calendarEventMappings         UserCalendarEventMapping[]
 }
 
 model Account {
@@ -1346,6 +1348,64 @@ model UserCalendarConnection {
   @@index([tenantId])
   @@index([userId])
   @@index([tenantId, provider, revokedAt])
+}
+
+/// One pushed calendar event: (user, provider, deadline) -> remote event id.
+///
+/// ═══ WHY A NEW TABLE ═══
+///
+/// `IntegrationSyncMapping` has NO user dimension, and its two uniques make
+/// reuse impossible rather than merely awkward:
+/// `@@unique([tenantId, provider, localEntityType, localEntityId])` means two
+/// users' calendar copies of the same Task both key on
+/// (tenant, 'google-calendar', 'task', taskId) and collide.
+///
+/// ═══ THE ROW IS THE ONLY RECORD THE EVENT EXISTS ═══
+///
+/// Nothing else in this system knows an event was written into someone's
+/// personal calendar. So a remote delete that FAILS must not delete this row —
+/// the event would be orphaned in the user's calendar forever with nothing left
+/// to name it. It goes to PENDING_DELETE and the next sweep retries.
+///
+/// That is also why the DELETE direction must be driven from this table rather
+/// than by diffing regenerated output: a source the user has LOST is skipped
+/// entirely by the aggregation and never appears in a new generation, so
+/// "push the new set" leaves orphans nothing ever mentions again.
+model UserCalendarEventMapping {
+  id             String                 @id @default(cuid())
+  tenantId       String
+  userId         String
+  provider       String
+  /// Which of the calendar's sources this came from (e.g. 'task', 'incident').
+  sourceKey      String
+  /// The source row's id.
+  sourceEntityId String
+  /// The provider's id for the event. Empty until the first push succeeds.
+  remoteEventId  String
+  /// DETERMINISTIC id we supply at creation, derived from the identity columns.
+  /// It is what makes a retry a PATCH rather than a second event in someone's
+  /// personal calendar — the most visible way this feature can fail, because
+  /// the user sees it and we do not.
+  clientEventId  String
+  /// Hash of the event's pushed content, so a change is detected without
+  /// reading the remote back. Cheap, and the read would need a scope we do not
+  /// request.
+  contentHash    String
+  state          CalendarEventSyncState @default(PUSHED)
+  /// Truncated, operator-facing. Never a raw provider body.
+  lastError      String?
+  lastPushedAt   DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id])
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, provider, sourceKey, sourceEntityId])
+  @@index([tenantId])
+  @@index([userId])
+  /// Backs the sweep: "everything this user still has pushed", and
+  /// "everything awaiting deletion".
+  @@index([tenantId, userId, provider, state])
 }
 
 model TenantInvite {

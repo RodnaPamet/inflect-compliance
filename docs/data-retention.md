@@ -229,6 +229,7 @@ a `userId` but stores no contact PII).
 | `UserIdentityLink` | Security ephemeral | No | None today — cascade on parent/tenant delete only | DEFINED — expiry-driven |
 | `UserMfaEnrollment` | Security ephemeral | No | None today — cascade on parent/tenant delete only | DEFINED — expiry-driven |
 | `UserCalendarConnection` | Security ephemeral | No | Cascade on User delete; row RETAINED after revoke (token destroyed) so already-pushed events remain attributable for cleanup | DEFINED — revoke destroys the credential, the row survives |
+| `UserCalendarEventMapping` | Operational | No | Cascade on User delete; a row is deleted only once its remote calendar event is confirmed removed — a failed delete keeps the row in PENDING_DELETE so the orphan stays nameable | DEFINED — lifetime is the pushed event's |
 | `UserNotificationPreference` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `UserSession` | Security ephemeral | maybe | `expiresAt` expiry (security) | DEFINED — expiry-driven |
 | `Vendor` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |

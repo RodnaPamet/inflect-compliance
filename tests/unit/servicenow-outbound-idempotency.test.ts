@@ -215,12 +215,13 @@ describe('the correlation id is stable, scoped, and safe to write into a custome
         expect(correlationIdFor({ ...IDENTITY, localEntityId: 'f-124' })).not.toBe(base);
     });
 
-    it('does not collide when a component contains the separator', () => {
-        // ('a:b','c') vs ('a','b:c') hash identically under a ':' join, and
-        // entity TYPE names are free-form strings — a reachable collision, not
-        // a theoretical one.
-        const a = correlationIdFor({ ...IDENTITY, localEntityType: 'find:ing', localEntityId: 'x' });
-        const b = correlationIdFor({ ...IDENTITY, localEntityType: 'find', localEntityId: 'ing:x' });
+    it.each([[':'], ['\n'], ['|'], ['\u0000']])('does not collide on a %j in a component', (sep) => {
+        // Any separator-join collides when a component can contain the
+        // separator, and `localEntityType` is a free-form string. The `\n` case
+        // is not hypothetical — it was the shipped implementation, and its twin
+        // in the calendar reconciler failed exactly this assertion.
+        const a = correlationIdFor({ ...IDENTITY, localEntityType: `find${sep}ing`, localEntityId: 'x' });
+        const b = correlationIdFor({ ...IDENTITY, localEntityType: 'find', localEntityId: `ing${sep}x` });
         expect(a).not.toBe(b);
     });
 

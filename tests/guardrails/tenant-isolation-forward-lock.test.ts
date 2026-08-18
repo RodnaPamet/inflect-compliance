@@ -177,6 +177,7 @@ const ISOLATION_BASELINE: readonly string[] = [
     "UserIdentityLink",
     "UserMfaEnrollment",
     "UserCalendarConnection",
+    "UserCalendarEventMapping",
     "UserNotificationPreference",
     "UserSession",
     "Vendor",

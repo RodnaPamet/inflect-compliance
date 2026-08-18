@@ -903,6 +903,29 @@ enum IntegrationExecutionStatus {
   PARTIAL
 }
 
+/// Lifecycle of ONE pushed calendar event, per (user, provider, deadline).
+///
+/// A DEDICATED enum rather than reusing `SyncStatus`, and that was checked
+/// rather than assumed. `SyncStatus` models a BIDIRECTIONAL mapping: two of its
+/// five states — CONFLICT and STALE — describe a remote that changed under us,
+/// which cannot happen here because nothing is ever read back from the user's
+/// calendar. And the one state this lifecycle genuinely needs, PENDING_DELETE,
+/// is absent from it.
+///
+/// Reusing it would mean carrying two states that can never occur and adding a
+/// sixth to a shared enum for one consumer's benefit.
+enum CalendarEventSyncState {
+  /// Exists in the user's calendar and matches what we last generated.
+  PUSHED
+  /// Must be REMOVED remotely — the user lost the permission, the deadline is
+  /// gone, or they disconnected. The row survives until the remote delete
+  /// actually succeeds; see the note on the model.
+  PENDING_DELETE
+  /// A push or delete failed. Distinct from PENDING_DELETE because the
+  /// remedy differs: retry the same operation, rather than schedule a removal.
+  FAILED
+}
+
 enum SyncStatus {
   PENDING
   SYNCED
