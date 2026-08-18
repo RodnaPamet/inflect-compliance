@@ -197,6 +197,8 @@ const PROVIDER_BY_HOST_SUFFIX: ReadonlyArray<[string, string]> = [
     ['sharepoint.com', 'sharepoint'],
     ['googleapis.com', 'google-workspace'],
     ['bamboohr.com', 'bamboohr'],
+    ['workday.com', 'workday'],
+    ['workdaysuv.com', 'workday'],
     ['api.github.com', 'github'],
 ];
 

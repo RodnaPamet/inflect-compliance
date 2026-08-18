@@ -23,6 +23,7 @@ import { ActiveDirectoryProvider } from './providers/active-directory';
 import { AzurePostureProvider } from './providers/azure-posture-provider';
 import { GcpPostureProvider } from './providers/gcp-posture-provider';
 import { BambooHrProvider } from './providers/hris';
+import { WorkdayProvider } from './providers/workday';
 import { PersonnelProvider } from './providers/personnel';
 import { DeviceProvider } from './providers/device';
 import { TrainingProvider } from './providers/training';
@@ -62,6 +63,9 @@ registry.register(new GcpPostureProvider());
 
 // BambooHR — HRIS roster sync into the personnel hub.
 registry.register(new BambooHrProvider());
+
+// Workday — HRIS roster sync into the personnel hub (OAuth2 + paginated RaaS).
+registry.register(new WorkdayProvider());
 
 // Personnel — internal checks (offboarded access, onboarding SLA, manager coverage).
 registry.register(new PersonnelProvider());
