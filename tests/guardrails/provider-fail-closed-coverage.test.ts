@@ -46,6 +46,11 @@ const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: stri
     // Personnel + HRIS feed the personnel roster checks (empty roster → NA).
     personnel: { test: 'tests/unit/h2-fail-closed.test.ts', needle: 'runPersonnelCheck' },
     bamboohr: { test: 'tests/unit/h2-fail-closed.test.ts', needle: 'runPersonnelCheck' },
+    // Workday is sync-only (supportedChecks is empty), so its fail-closed
+    // surface is the sync path, not a check engine: a dead credential ERRORs,
+    // an incomplete roster never reports PASSED, and the unreachable runCheck
+    // still refuses to manufacture one.
+    workday: { test: 'tests/unit/workday-provider.test.ts', needle: 'runCheck' },
     // Device posture — no devices → NOT_APPLICABLE.
     device: { test: 'tests/unit/h2-fail-closed.test.ts', needle: 'runDeviceCheck' },
     // Training — no assignments → NOT_APPLICABLE; open-no-due does not silently PASS.

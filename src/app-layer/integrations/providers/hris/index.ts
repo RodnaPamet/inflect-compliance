@@ -57,15 +57,54 @@ export interface ListEmployeesResult {
     resumeToken?: string | null;
 }
 
+/**
+ * Side channels the sync gives a provider, beyond reading the roster.
+ *
+ * Exists because of ROTATING CREDENTIALS, which a static-API-key provider does
+ * not have and an OAuth2 one cannot live without. `listEmployees` receives a
+ * plain config object and returns a roster, so a provider that refreshes an
+ * access token mid-call has nowhere to put the new refresh token — and every
+ * OAuth2 provider worth the name invalidates the predecessor on rotation.
+ *
+ * Without this the failure is on a delay and reads as somebody else's problem:
+ * day 1 the stored access token is valid and the sync passes; day 2 it has
+ * expired, the provider refreshes, gets a fresh pair, uses it for that run and
+ * discards it; day 3 the stored refresh token is the one rotation already
+ * invalidated, and the connection reports revoked credentials — two days after
+ * the code that lost them ran, with a green execution in between.
+ *
+ * A CALLBACK rather than a `rotatedSecret` on the result, deliberately. A
+ * returned value is only persisted if the call returns, and the interesting
+ * case is precisely the one where the roster read throws AFTER the token
+ * rotated: the old refresh token is already dead, so losing the new one costs
+ * the connection. Persisting at the moment of rotation is the only ordering
+ * that survives it. `providers/sharepoint/token.ts` takes the same `persist`
+ * callback for the same reason.
+ */
+export interface HrisSyncDeps {
+    /**
+     * Merge `patch` into the connection's stored secret and persist it now.
+     *
+     * A PATCH, not a replacement: the provider is handed config and secrets
+     * merged into one object and cannot tell which key came from where, so
+     * asking it for the whole secret would write config fields into
+     * `secretEncrypted`. The sync owns that split and does the merge.
+     */
+    persistSecret?: (patch: Record<string, unknown>) => Promise<void>;
+}
+
 export interface HrisSyncProvider {
     /**
      * @param resumeFrom cursor from a previous partial run of the same pass,
      *   or null/undefined to start a fresh pass. Providers that cannot resume
      *   ignore it and never return a `resumeToken`.
+     * @param deps side channels — see HrisSyncDeps. Optional so a provider
+     *   with static credentials, and every existing test double, ignores it.
      */
     listEmployees(
         config: Record<string, unknown>,
         resumeFrom?: string | null,
+        deps?: HrisSyncDeps,
     ): Promise<ListEmployeesResult>;
 }
 
@@ -82,7 +121,7 @@ export interface HrisSyncProvider {
  * It lives here rather than in either consumer so neither owns it, and so
  * adding a provider is one edit in the same directory as the provider.
  */
-export const HRIS_PROVIDERS = ['bamboohr'] as const;
+export const HRIS_PROVIDERS = ['bamboohr', 'workday'] as const;
 
 /** Membership test for the usecase guard; the job needs the array for `in`. */
 export function isHrisProviderId(id: string): boolean {

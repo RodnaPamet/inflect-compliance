@@ -114,7 +114,7 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     {
         name: 'hris-sync-dispatch',
         pattern: '0 4 * * *',     // daily at 04:00 UTC
-        description: 'Fan out an hris-sync per enabled BambooHR connection (roster → Employee)',
+        description: 'Fan out an hris-sync per enabled HRIS connection — BambooHR, Workday (roster → Employee)',
         defaultPayload: {},
     },
     {

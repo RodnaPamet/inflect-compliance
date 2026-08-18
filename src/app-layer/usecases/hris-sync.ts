@@ -11,7 +11,7 @@ import { buildSystemContext } from '../context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
-import { decryptField } from '@/lib/security/encryption';
+import { decryptField, encryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 import { recordSyncTruncated } from '@/lib/observability/integration-metrics';
 import '../integrations/bootstrap'; // populate the provider registry in THIS module graph (see usecases/integrations)
@@ -88,7 +88,25 @@ export async function runHrisSync(input: {
         // what makes a multi-run pass reconcile correctly.
         const passStartedAt = conn.syncPassStartedAt ?? now;
         try {
-            const res = await resolved.listEmployees({ ...config, ...secrets }, conn.syncCursor);
+            const res = await resolved.listEmployees({ ...config, ...secrets }, conn.syncCursor, {
+                // Persist a rotated credential the MOMENT it rotates, not when
+                // the read returns. An OAuth2 provider invalidates the old
+                // refresh token on rotation, so if the roster read throws
+                // afterwards and we only persisted on success, the connection
+                // is left holding a dead token — and reports it two runs later
+                // as a revoked grant, long after the run that lost it.
+                //
+                // A PATCH merged over the decrypted secret: the provider was
+                // handed config and secrets merged and cannot tell them apart,
+                // so it states only what changed and the split stays here.
+                persistSecret: async (patch) => {
+                    Object.assign(secrets, patch);
+                    await db.integrationConnection.update({
+                        where: { id: conn.id },
+                        data: { secretEncrypted: encryptField(JSON.stringify(secrets)) },
+                    });
+                },
+            });
             roster = res.employees;
             complete = res.complete;
             resumeToken = res.resumeToken ?? null;
