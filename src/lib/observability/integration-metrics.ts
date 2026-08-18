@@ -24,6 +24,7 @@ type Histogram = ReturnType<ReturnType<typeof getMeter>['createHistogram']>;
 let _checkOutcome: Counter | null = null;
 let _checkDuration: Histogram | null = null;
 let _syncTruncated: Counter | null = null;
+let _syncConflict: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _identityDeprovisioned: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _deviceReport: Counter | null = null;
@@ -94,6 +95,31 @@ export function recordSyncTruncated(attrs: { provider: string }): void {
  * The size of an identity-sync deprovision reconcile batch. A spike is the H3
  * wrongful-mass-deprovision signature — alert on sudden jumps.
  */
+/**
+ * Two systems of record disagreed about the same entity, and something decided
+ * which one won.
+ *
+ * ALERTABLE ON PURPOSE, and deliberately NOT routed through the orchestrator's
+ * injectable `SyncEventLogger`. That logger defaults to `noopSyncLogger`, so a
+ * caller that constructs an orchestrator without one silences every conflict by
+ * omission — the failure being invisible is the entire problem, and a signal
+ * that can be turned off by forgetting to turn it on is not a signal.
+ *
+ * `resolution` distinguishes the three outcomes because they mean different
+ * things operationally: `manual` parks the mapping and needs a human, while
+ * `local_wins` / `remote_wins` DISCARD one side's value silently and are the
+ * ones worth watching a rate on. A steady remote_wins rate on an entity people
+ * edit locally means their edits are being thrown away every sync.
+ */
+export function recordSyncConflict(attrs: {
+    provider: string;
+    direction: string;
+    resolution: 'local_wins' | 'remote_wins' | 'manual';
+}): void {
+    if (!_syncConflict) _syncConflict = getMeter().createCounter('integration.sync.conflict', { description: 'Local/remote divergence on a synced entity, by how it was resolved', unit: '1' });
+    _syncConflict.add(1, { provider: attrs.provider, direction: attrs.direction, resolution: attrs.resolution });
+}
+
 /**
  * A scanner ingest discarded above-threshold findings at the materialisation
  * cap. Unlike the sync caps — which were removed in favour of draining — this

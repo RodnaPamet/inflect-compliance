@@ -56,6 +56,7 @@ import type {
     SyncEvent,
 } from './sync-types';
 import { enqueue } from '../jobs/queue';
+import { recordSyncConflict } from '@/lib/observability/integration-metrics';
 
 // ─── Sync Mapping Store ──────────────────────────────────────────────
 
@@ -251,7 +252,7 @@ export abstract class BaseSyncOrchestrator {
             // 2. Check for conflict
             const conflict = await this.checkForConflict(mapping, localData, 'PUSH');
             if (conflict.hasConflict && conflict.details) {
-                const resolution = this.resolveConflict(conflict.details);
+                const resolution = this.resolveConflict(conflict.details, 'PUSH');
                 if (resolution === 'manual') {
                     const updatedMapping = await this.store.updateStatus(mapping.id, 'CONFLICT', {
                         errorMessage: conflict.details.reason,
@@ -371,7 +372,7 @@ export abstract class BaseSyncOrchestrator {
             if (localData) {
                 const conflict = await this.checkForConflict(mapping, localData, 'PULL', remoteData);
                 if (conflict.hasConflict && conflict.details) {
-                    const resolution = this.resolveConflict(conflict.details);
+                    const resolution = this.resolveConflict(conflict.details, 'PULL');
                     if (resolution === 'manual') {
                         const updatedMapping = await this.store.updateStatus(mapping.id, 'CONFLICT', {
                             errorMessage: conflict.details.reason,
@@ -642,17 +643,52 @@ export abstract class BaseSyncOrchestrator {
     }
 
     /**
-     * Resolve a conflict using the configured strategy.
+     * Resolve a conflict using the configured strategy, and RECORD THAT IT
+     * HAPPENED.
+     *
+     * ═══ WHY THE METRIC IS HERE AND NOT IN THE CALLERS ═══
+     *
+     * A conflict is two systems of record disagreeing about the same entity,
+     * and resolving one means DISCARDING one side's value. In a product whose
+     * audit trail is hash-chained specifically because divergence matters, that
+     * cannot be a thing which happens quietly.
+     *
+     * It already was. The only trace was `logEvent(...)` → `this.logger`, which
+     * defaults to `noopSyncLogger` — so an orchestrator constructed without an
+     * explicit logger discarded every conflict, and the two wired callers each
+     * pass one only because someone remembered. A signal that is switched off
+     * by FORGETTING to switch it on is not a signal, and the failure it is
+     * meant to surface is invisibility itself.
+     *
+     * So the counter is emitted from the one place every resolution passes
+     * through, on a module import rather than an injected dependency. It cannot
+     * be omitted, and a new caller inherits it without knowing it exists.
+     *
+     * The structured log stays: it carries the fields and the mapping id, which
+     * a counter must not (unbounded label cardinality). They answer different
+     * questions — the metric says "this is happening, how often, and which way
+     * it is being resolved"; the log says "to what".
+     *
+     * `local_wins` / `remote_wins` are the ones worth watching a rate on,
+     * because they resolve SILENTLY. `manual` at least parks the mapping in
+     * CONFLICT where somebody will meet it.
      *
      * @returns Which side wins: 'remote_wins', 'local_wins', or 'manual'
      */
-    resolveConflict(conflict: ConflictDetails): Lowercase<ConflictStrategy> {
-        switch (conflict.strategy) {
-            case 'REMOTE_WINS': return 'remote_wins';
-            case 'LOCAL_WINS': return 'local_wins';
-            case 'MANUAL': return 'manual';
-            default: return 'remote_wins';
-        }
+    resolveConflict(conflict: ConflictDetails, direction: SyncDirection = 'PUSH'): Lowercase<ConflictStrategy> {
+        const resolution = ((): Lowercase<ConflictStrategy> => {
+            switch (conflict.strategy) {
+                case 'REMOTE_WINS': return 'remote_wins';
+                case 'LOCAL_WINS': return 'local_wins';
+                case 'MANUAL': return 'manual';
+                // An unrecognised strategy resolves REMOTE_WINS, matching the
+                // column default. Recorded like any other, so a bad value shows
+                // up as a rate rather than as silence.
+                default: return 'remote_wins';
+            }
+        })();
+        recordSyncConflict({ provider: this.provider, direction, resolution });
+        return resolution;
     }
 
     // ── Overridable Hooks ──

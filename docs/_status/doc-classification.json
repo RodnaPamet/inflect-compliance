@@ -2006,6 +2006,9 @@
         "docs/implementation-notes/2026-08-18-csp-nonce-patch-removal.md": {
             "class": "historical"
         },
+        "docs/implementation-notes/2026-08-18-sync-conflict-policy.md": {
+            "class": "historical"
+        },
         "docs/implementation-notes/2026-08-18-undici-dispatcher-version-coupling.md": {
             "class": "historical"
         },

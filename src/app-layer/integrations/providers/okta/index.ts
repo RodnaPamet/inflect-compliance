@@ -25,6 +25,7 @@ import {
 } from '../identity/types';
 import { logger } from '@/lib/observability/logger';
 import { resilientFetch, IntegrationAuthError, isAuthStatus } from '../../http-resilience';
+import { assertAllowedHost, OKTA_HOSTS } from '../../allowed-host';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
@@ -111,6 +112,30 @@ function normalizeOktaUser(u: OktaUser): NormalizedIdentityAccount {
     };
 }
 
+
+/**
+ * The validated base URL for a connection's Okta org.
+ *
+ * `orgUrl` comes from configJson, which `upsertIntegrationConnection` stores
+ * VERBATIM — no zod, no validation, for any provider — and all four
+ * credentialed call sites below send `SSWS <apiToken>` to whatever it says. A
+ * tenant admin could point it at a host they control and be handed the Okta API
+ * token.
+ *
+ * THE CURSOR GUARD BELOW ALREADY REASONED ABOUT THIS THREAT and got it right in
+ * form: the stored resume cursor is checked against `orgUrl` so "a tampered
+ * stored cursor would [not] point our credentialed request at an arbitrary
+ * host". It was then anchored to a value nobody validated. The defence was
+ * real; its anchor was free-floating, which is a more interesting failure than
+ * an absent check because it reads as covered.
+ *
+ * Returns `https://<host>` so the scheme cannot be re-supplied by config —
+ * `http://acme.okta.com` would otherwise send the token in clear text.
+ */
+function oktaBaseUrl(orgUrl: unknown): string {
+    return `https://${assertAllowedHost(String(orgUrl ?? ''), OKTA_HOSTS)}`;
+}
+
 export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvider {
     readonly id = 'okta';
     readonly displayName = 'Okta';
@@ -143,10 +168,17 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         config: Record<string, unknown>,
         secrets: Record<string, unknown>,
     ): Promise<ConnectionValidationResult> {
-        const orgUrl = String(config.orgUrl ?? '').replace(/\/$/, '');
         const apiToken = String(secrets.apiToken ?? '');
-        if (!orgUrl) return { valid: false, error: 'Okta org URL is required.' };
+        if (!String(config.orgUrl ?? '').trim()) return { valid: false, error: 'Okta org URL is required.' };
         if (!apiToken) return { valid: false, error: 'An Okta API token is required.' };
+        let orgUrl: string;
+        try {
+            // Before the fetch, and reported rather than thrown: an off-domain
+            // org URL must not reach the request that carries the token.
+            orgUrl = oktaBaseUrl(config.orgUrl);
+        } catch (err) {
+            return { valid: false, error: err instanceof Error ? err.message : 'Invalid Okta org URL.' };
+        }
         const doFetch = this.deps.fetchImpl ?? resilientFetch;
         try {
             const res = await doFetch(`${orgUrl}/api/v1/users?limit=1`, {
@@ -173,7 +205,7 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         config: Record<string, unknown>,
         resumeFrom?: string | null,
     ): Promise<ListAccountsResult> {
-        const orgUrl = String(config.orgUrl ?? '').replace(/\/$/, '');
+        const orgUrl = oktaBaseUrl(config.orgUrl);
         const apiToken = String((config as { apiToken?: string }).apiToken ?? '');
         const doFetch = this.deps.fetchImpl ?? resilientFetch;
         const out: NormalizedIdentityAccount[] = [];
@@ -182,6 +214,11 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         // reconstruction — but it MUST be checked against the configured org,
         // or a tampered stored cursor would point our credentialed request at
         // an arbitrary host.
+        //
+        // That check is only worth what its anchor is worth, and until
+        // `oktaBaseUrl` the anchor was an unvalidated config string: binding
+        // the cursor to `orgUrl` bound it to whatever the admin typed. It is
+        // now bound to a verified Okta origin.
         let url: string | null =
             resumeFrom && resumeFrom.startsWith(`${orgUrl}/`)
                 ? resumeFrom
