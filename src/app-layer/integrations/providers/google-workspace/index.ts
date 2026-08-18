@@ -97,10 +97,12 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
     readonly description =
         'Sync the Google Workspace directory and verify 2-Step Verification, dormant admins, admin count, and SSO.';
     readonly supportedChecks = [...IDENTITY_CHECKS];
-    // P2 — validateConnection only parses the SA JSON shape (no live token exchange).
-    readonly liveValidation = false;
+    // validateConnection performs a real token exchange AND a directory read, so
+    // a pass means the domain-wide-delegation grant is live and the impersonated
+    // admin is reachable — not merely that the pasted JSON parses.
+    readonly liveValidation = true;
     readonly setupGuide =
-        'Create a service account, enable domain-wide delegation, and authorise its client ID in the Admin console for the Directory + (optional) inbound-SSO read-only scopes. Paste the whole service-account key JSON below and the super-admin it impersonates above. Test connection validates the JSON shape only — it does not verify the delegation live.';
+        'Create a service account, enable domain-wide delegation, and authorise its client ID in the Admin console for the Directory + (optional) inbound-SSO read-only scopes. Paste the whole service-account key JSON below and the super-admin it impersonates above. Test connection performs a live token exchange and directory read, so it fails if the delegation has been revoked or the scopes are not authorised.';
 
     readonly configSchema: ConnectionConfigSchema = {
         configFields: [

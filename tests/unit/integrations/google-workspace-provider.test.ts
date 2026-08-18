@@ -49,7 +49,7 @@ async function accountsFrom(
 }
 
 describe('GoogleWorkspaceProvider — descriptor', () => {
-    it('declares the four shared identity checks and non-live validation', () => {
+    it('declares the four shared identity checks and LIVE validation', () => {
         const p = provider();
         expect(p.id).toBe('google-workspace');
         expect(p.supportedChecks).toEqual([
@@ -58,7 +58,13 @@ describe('GoogleWorkspaceProvider — descriptor', () => {
             'admin_count_within_threshold',
             'sso_enforced',
         ]);
-        expect(p.liveValidation).toBe(false);
+        // Flipped with the behaviour. validateConnection performs a real token
+        // exchange and directory read, and the admin UI reads this flag
+        // (admin/integrations/page.tsx:247) to tell the operator whether "Test
+        // connection" is a live check. Leaving it false made the product
+        // understate what the test proves — an operator seeing a pass had been
+        // told not to trust it.
+        expect(p.liveValidation).toBe(true);
         expect(p.configSchema.configFields.map((f) => f.key)).toEqual([
             'domain',
             'adminEmail',
