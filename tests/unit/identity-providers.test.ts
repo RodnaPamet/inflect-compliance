@@ -173,7 +173,24 @@ describe('GoogleWorkspaceProvider', () => {
     it('validateConnection rejects malformed service-account JSON', async () => {
         const bad = await provider.validateConnection({ domain: 'acme.com', adminEmail: 'a@acme.com' }, { serviceAccountJson: 'not json' });
         expect(bad.valid).toBe(false);
-        const ok = await provider.validateConnection(
+    });
+
+    it('validateConnection accepts a well-formed key only if the credentials actually work', async () => {
+        // Split out of the test above, which asserted valid:true on a
+        // well-formed key. That was true when validateConnection stopped at a
+        // shape check — and it is precisely why "Test connection" used to pass
+        // on a connection whose domain-wide-delegation grant had been revoked.
+        // It now performs a real token exchange and directory read, so reaching
+        // valid:true requires a transport.
+        const live = new GoogleWorkspaceProvider({
+            getAccessToken: async () => 'tok',
+            fetchImpl: (async () =>
+                new Response(JSON.stringify({ users: [] }), {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' },
+                })) as unknown as typeof fetch,
+        });
+        const ok = await live.validateConnection(
             { domain: 'acme.com', adminEmail: 'a@acme.com' },
             { serviceAccountJson: JSON.stringify({ client_email: 'x@y.iam', private_key: 'k' }) },
         );
