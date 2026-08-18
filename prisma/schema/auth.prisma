@@ -274,6 +274,7 @@ model Tenant {
   organization                      Organization?                      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   calendarConnections               UserCalendarConnection[]
   calendarEventMappings             UserCalendarEventMapping[]
+  calendarConsents                  TenantCalendarConsent[]
 
   @@index([organizationId])
   /// Per-region operational scans (e.g. "list every EU tenant").
@@ -990,6 +991,7 @@ model User {
   dsarRequestsHandled           DataSubjectRequest[]            @relation("DsarHandler")
   calendarConnections           UserCalendarConnection[]
   calendarEventMappings         UserCalendarEventMapping[]
+  calendarConsentsGranted       TenantCalendarConsent[]         @relation("CalendarConsentGrantedBy")
 }
 
 model Account {
@@ -1317,6 +1319,57 @@ model UserMfaEnrollment {
 /// asymmetric single-policy RLS form plus a SINGLE_POLICY_EXCEPTIONS entry, and
 /// the split-policy shape on a nullable column is what once let `app_user` NULL
 /// a row's tenantId and promote a private record into every tenant's view.
+/// A TENANT ADMIN's authorisation for a calendar provider, granted once for the
+/// whole tenant.
+///
+/// Microsoft only, in practice. Google's model is per-user consent and needs no
+/// tenant-level record; Microsoft's is `/adminconsent`, after which users
+/// connect without ever seeing a consent screen. The asymmetry is deliberate
+/// and lives in the provider column rather than in two tables.
+///
+/// ═══ WHY A RECORD AT ALL, RATHER THAN PROBING ═══
+///
+/// The settings UI has to know whether to offer a user "Connect" or "ask your
+/// administrator". The alternative is to attempt a connect and read the error —
+/// but that means every user in an unauthorised tenant runs a failed OAuth
+/// round trip to discover a fact the tenant already knows, and it makes the
+/// answer depend on a third party being reachable.
+///
+/// ═══ WHAT IT DOES NOT MEAN ═══
+///
+/// Not "these users may connect". Microsoft's tenant-wide grant admits ALL
+/// users unless the app requires assignment, so this row records that the door
+/// is open, not who walked through it. Per-user opt-in is `UserCalendarConnection`.
+///
+/// `revokedAt` is kept rather than deleting the row: an admin who withdraws
+/// consent should see that state, and every user's connection is invalidated at
+/// once — a fact the push path needs to distinguish from one user revoking.
+model TenantCalendarConsent {
+  id               String    @id @default(cuid())
+  tenantId         String
+  /// 'outlook-calendar'. Google is per-user and has no row here.
+  provider         String
+  /// The Entra tenant we were actually consented in, as returned by the
+  /// callback. May differ from anything we guessed, and is what subsequent
+  /// authorize URLs must use — guessing again would send users to the wrong
+  /// authority.
+  externalTenantId String?
+  grantedAt        DateTime  @default(now())
+  /// The admin who granted it. NOT NULL: a tenant-wide authorisation with no
+  /// recorded author is exactly the row an access review cannot act on.
+  grantedByUserId  String
+  revokedAt        DateTime?
+  revokedReason    String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  grantedBy        User      @relation("CalendarConsentGrantedBy", fields: [grantedByUserId], references: [id])
+
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+  @@index([grantedByUserId])
+}
+
 model UserCalendarConnection {
   id             String    @id @default(cuid())
   tenantId       String

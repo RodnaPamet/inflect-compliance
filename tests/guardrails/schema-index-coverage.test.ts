@@ -387,6 +387,7 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     AuditPackShareComment: 'listShareComments filters by (tenantId, auditPackId), orders by createdAt desc — covered by @@index([tenantId, auditPackId]); bounded take ≤500.',
     AuditPackShare: 'listPackShares filters by (tenantId, auditPackId), orders by createdAt desc — covered by @@index([tenantId, auditPackId]); bounded take ≤200.',
     AuditorAccount: 'listAuditors filters by tenantId, orders by createdAt desc — covered by @@unique([tenantId, emailHash]) tenantId-leading composite; bounded take ≤500.',
+    TenantCalendarConsent: 'getConsentStates filters by tenantId alone and is bounded by the provider count (1) — covered by the tenantId-leading @@unique([tenantId, provider]).',
     UserCalendarConnection: 'listCalendarConnections filters by (tenantId, userId) and orders by provider — covered by the tenantId-leading @@unique([tenantId, userId, provider]); bounded take = the provider count (2). The push fan-out\'s (tenantId, provider, revokedAt) scan has its own composite.',
     Employee: 'listEmployees filters by tenantId (+status) — covered by @@index([tenantId, status]); bounded take ≤500.',
     EvidenceReview: 'getLatestSubmitters (evidence review-gate SoD) filters by (tenantId, evidenceId IN […]) + action equality, orders by createdAt desc — covered by @@index([tenantId, evidenceId]); action is a small in-page equality filter; bounded by the evidenceId set (bulk cap ≤100).',

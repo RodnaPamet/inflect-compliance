@@ -71,6 +71,7 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'TenantCalendarConsent.revokedReason': 'A fixed operator-facing phrase written by our own code and capped at 200 chars ("withdrawn by administrator"), shown on the admin settings page — never a provider body and never user text. Encrypting it would hide the one field that page exists to display.',
     'UserCalendarEventMapping.contentHash': 'A truncated SHA-256 DIGEST of the pushed event fields, never the fields themselves — it exists so a change can be detected without reading the remote back. Encrypting a hash defeats the equality comparison that is its only use, and the plaintext it summarises is a compliance deadline title the user can already see in their own calendar.',
     'UserCalendarConnection.revokedReason': 'A fixed operator-facing phrase shown in account settings ("consent withdrawn", "refresh returned invalid_grant"), written by our own code and capped at 200 chars — never a provider response body, never user text. Encrypting it would hide the one field the settings surface exists to display.',
     // ── Heuristic false positives: the name matched but the column is an

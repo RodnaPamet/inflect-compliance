@@ -229,6 +229,7 @@ a `userId` but stores no contact PII).
 | `UserIdentityLink` | Security ephemeral | No | None today — cascade on parent/tenant delete only | DEFINED — expiry-driven |
 | `UserMfaEnrollment` | Security ephemeral | No | None today — cascade on parent/tenant delete only | DEFINED — expiry-driven |
 | `UserCalendarConnection` | Security ephemeral | No | Cascade on User delete; row RETAINED after revoke (token destroyed) so already-pushed events remain attributable for cleanup | DEFINED — revoke destroys the credential, the row survives |
+| `TenantCalendarConsent` | Regulatory artefact | No | RETAINED indefinitely, including after withdrawal — it records WHO authorised a third party to reach every user in the tenant, and the grantedBy FK is RESTRICT so offboarding the admin cannot erase it | DEFINED — kept as an access-review record |
 | `UserCalendarEventMapping` | Operational | No | Cascade on User delete; a row is deleted only once its remote calendar event is confirmed removed — a failed delete keeps the row in PENDING_DELETE so the orphan stays nameable | DEFINED — lifetime is the pushed event's |
 | `UserNotificationPreference` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `UserSession` | Security ephemeral | maybe | `expiresAt` expiry (security) | DEFINED — expiry-driven |
