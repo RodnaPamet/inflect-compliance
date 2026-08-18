@@ -252,16 +252,103 @@ export class ServiceNowClient extends BaseIntegrationClient<ServiceNowConnection
         return parts.join('^');
     }
 
-    async createRemoteObject(): Promise<RemoteObject<ServiceNowRow>> {
-        // S1 is inbound only. Outbound lands in S5, where the idempotency
-        // question (a retried POST must not open a second change request) is
-        // the whole design — so the seam stays closed rather than shipping a
-        // convenient create nobody has thought about retrying.
-        throw new Error('ServiceNow outbound writes are not enabled on this connection');
+    /**
+     * Find a record this platform already wrote, by its correlation id.
+     *
+     * The half of idempotency the database cannot provide. A retry that runs
+     * after the remote record was created but before its id was recorded finds
+     * it here and ADOPTS it, instead of creating a second one.
+     *
+     * Returns null when nothing matches, which is the first-attempt case.
+     * Ambiguity is treated as an error rather than resolved: see below.
+     */
+    async findByCorrelationId(correlationId: string): Promise<RemoteObject<ServiceNowRow> | null> {
+        const table = String(this.config.table ?? '');
+        if (!table) throw new Error('ServiceNow connection has no table configured');
+        const body = await this.getJson<{ result?: ServiceNowRow[] }>(
+            this.url(`/api/now/table/${encodeURIComponent(table)}`, {
+                // `=` not LIKE. A LIKE query on a hashed id would match a
+                // longer id sharing our prefix, and adopting the wrong record
+                // means writing our updates onto somebody else's incident.
+                sysparm_query: `correlation_id=${correlationId}`,
+                sysparm_limit: '2',
+                sysparm_display_value: 'all',
+            }),
+        );
+        const rows = body.result ?? [];
+        if (rows.length === 0) return null;
+        if (rows.length > 1) {
+            // Two records already carry this id, so a duplicate exists that we
+            // did not intend. Picking one would silently pick a side and hide
+            // the split. Refusing surfaces it while it is still two records
+            // rather than two divergent histories.
+            throw new Error(
+                `ServiceNow has more than one record with correlation_id ${correlationId}; refusing to adopt either.`,
+            );
+        }
+        return toRemoteObject(rows[0]);
     }
 
-    async updateRemoteObject(): Promise<RemoteObject<ServiceNowRow>> {
-        throw new Error('ServiceNow outbound writes are not enabled on this connection');
+    /**
+     * Create a record, stamped with the correlation id that makes the write
+     * findable by the retry that may follow it.
+     *
+     * `correlationId` is REQUIRED rather than optional. An optional one would
+     * be omitted by exactly the caller who most needs it — the one wiring a new
+     * outbound path in a hurry — and the resulting record is unfindable
+     * forever, so every subsequent retry creates another.
+     */
+    async createRemoteObject(
+        data: Record<string, unknown>,
+        correlationId?: string,
+    ): Promise<RemoteObject<ServiceNowRow>> {
+        if (!correlationId) {
+            throw new Error('ServiceNow creates require a correlation id — an unstamped record cannot be deduplicated');
+        }
+        const table = String(this.config.table ?? '');
+        if (!table) throw new Error('ServiceNow connection has no table configured');
+        const res = await this.request(this.url(`/api/now/table/${encodeURIComponent(table)}`), {
+            method: 'POST',
+            headers: {
+                Authorization: this.authHeader,
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ...data, correlation_id: correlationId }),
+        });
+        if (!res.ok) throw new Error(`ServiceNow create failed (HTTP ${res.status})`);
+        const body = (await res.json()) as { result?: ServiceNowRow };
+        if (!body.result) throw new Error('ServiceNow create returned no record');
+        return toRemoteObject(body.result);
+    }
+
+    async updateRemoteObject(
+        remoteId: string,
+        changes: Record<string, unknown>,
+    ): Promise<RemoteObject<ServiceNowRow>> {
+        const table = String(this.config.table ?? '');
+        if (!table) throw new Error('ServiceNow connection has no table configured');
+        if (!remoteId) throw new Error('ServiceNow updates require a remote id');
+        const res = await this.request(
+            this.url(`/api/now/table/${encodeURIComponent(table)}/${encodeURIComponent(remoteId)}`),
+            {
+                method: 'PATCH',
+                headers: {
+                    Authorization: this.authHeader,
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                // correlation_id is deliberately NOT re-sent. It is written
+                // once at creation and is the record's identity to us;
+                // rewriting it on every update would let a mapping edit
+                // silently re-point an existing incident.
+                body: JSON.stringify(changes),
+            },
+        );
+        if (!res.ok) throw new Error(`ServiceNow update failed (HTTP ${res.status})`);
+        const body = (await res.json()) as { result?: ServiceNowRow };
+        if (!body.result) throw new Error('ServiceNow update returned no record');
+        return toRemoteObject(body.result);
     }
 }
 

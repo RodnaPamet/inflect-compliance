@@ -200,11 +200,67 @@ describe('paging', () => {
     });
 });
 
-describe('outbound is closed until S5 designs retry idempotency', () => {
-    it('create and update refuse rather than shipping an unconsidered write', async () => {
-        const c = new ServiceNowClient(CFG, fetchStub([{}]) as unknown as typeof fetch);
-        await expect(c.createRemoteObject()).rejects.toThrow(/not enabled/);
-        await expect(c.updateRemoteObject()).rejects.toThrow(/not enabled/);
+describe('outbound writes carry the correlation id that makes a retry safe', () => {
+    it('a create without a correlation id is REFUSED, not silently unstamped', async () => {
+        // An optional correlation id would be omitted by exactly the caller who
+        // most needs it — someone wiring a new outbound path in a hurry — and
+        // the resulting record is unfindable forever, so every retry after it
+        // creates another.
+        const fetchImpl = noFetch();
+        const c = new ServiceNowClient(CFG, fetchImpl as unknown as typeof fetch);
+        await expect(c.createRemoteObject({ short_description: 'x' })).rejects.toThrow(/correlation id/i);
+        expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('stamps correlation_id onto the created record', async () => {
+        const fetchImpl = fetchStub([{ result: row() }]);
+        const c = new ServiceNowClient(CFG, fetchImpl as unknown as typeof fetch);
+        await c.createRemoteObject({ short_description: 'x' }, 'inflect:abc');
+        const init = fetchImpl.mock.calls[0][1] as RequestInit;
+        expect(init.method).toBe('POST');
+        expect(JSON.parse(String(init.body)).correlation_id).toBe('inflect:abc');
+    });
+
+    it('an update does NOT rewrite correlation_id', async () => {
+        // It is written once at creation and is the record's identity to us.
+        // Rewriting it on every update would let a mapping edit silently
+        // re-point an existing incident at a different local entity.
+        const fetchImpl = fetchStub([{ result: row() }]);
+        const c = new ServiceNowClient(CFG, fetchImpl as unknown as typeof fetch);
+        await c.updateRemoteObject('sid-1', { short_description: 'y' });
+        const init = fetchImpl.mock.calls[0][1] as RequestInit;
+        expect(init.method).toBe('PATCH');
+        expect(JSON.parse(String(init.body))).not.toHaveProperty('correlation_id');
+    });
+});
+
+describe('findByCorrelationId', () => {
+    it('queries with = rather than LIKE', async () => {
+        // A LIKE query on a hashed id matches a longer id sharing our prefix,
+        // and adopting the wrong record means writing our updates onto
+        // somebody else's incident.
+        const fetchImpl = fetchStub([{ result: [] }]);
+        const c = new ServiceNowClient(CFG, fetchImpl as unknown as typeof fetch);
+        await c.findByCorrelationId('inflect:abc');
+        const q = new URL(String(fetchImpl.mock.calls[0][0])).searchParams.get('sysparm_query') ?? '';
+        expect(q).toBe('correlation_id=inflect:abc');
+        expect(q).not.toMatch(/LIKE/i);
+    });
+
+    it('returns null when nothing matches — the first-attempt case', async () => {
+        const c = new ServiceNowClient(CFG, fetchStub([{ result: [] }]) as unknown as typeof fetch);
+        expect(await c.findByCorrelationId('inflect:abc')).toBeNull();
+    });
+
+    it('REFUSES when two records already carry the id, rather than picking one', async () => {
+        // A duplicate we did not intend already exists. Picking one silently
+        // picks a side and hides the split; refusing surfaces it while it is
+        // still two records rather than two divergent histories.
+        const c = new ServiceNowClient(
+            CFG,
+            fetchStub([{ result: [row({ sys_id: 'a' }), row({ sys_id: 'b' })] }]) as unknown as typeof fetch,
+        );
+        await expect(c.findByCorrelationId('inflect:abc')).rejects.toThrow(/more than one/i);
     });
 });
 
