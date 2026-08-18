@@ -15,8 +15,8 @@ import { runHrisSync, type HrisSyncResult } from '@/app-layer/usecases/hris-sync
 import type { HrisSyncPayload } from './types';
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
-
-const HRIS_PROVIDERS = ['bamboohr'];
+// One list, shared with usecases/hris-sync — see the note on its declaration.
+import { HRIS_PROVIDERS } from '../integrations/providers/hris';
 
 export async function runHrisSyncJob(payload: HrisSyncPayload): Promise<HrisSyncResult> {
     if (!payload.tenantId || !payload.connectionId) throw new Error('hris-sync requires tenantId + connectionId');
@@ -28,7 +28,7 @@ export async function runHrisSyncDispatch(): Promise<{ connections: number; disp
     // Was `take: 1000` with no signal — see ./drain-pages.
     const connections = await drainPages((cursor) =>
         prisma.integrationConnection.findMany({
-            where: { provider: { in: HRIS_PROVIDERS }, isEnabled: true },
+            where: { provider: { in: [...HRIS_PROVIDERS] }, isEnabled: true },
             select: { id: true, tenantId: true },
             orderBy: { id: 'asc' },
             take: DRAIN_PAGE_SIZE,

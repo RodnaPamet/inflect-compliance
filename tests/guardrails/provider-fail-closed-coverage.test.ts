@@ -18,6 +18,7 @@ import * as path from 'node:path';
 import '@/app-layer/integrations/bootstrap';
 import { registry } from '@/app-layer/integrations/registry';
 import { isScheduledCheckProvider } from '@/app-layer/integrations/types';
+import { isHrisSyncProvider } from '@/app-layer/integrations/providers/hris';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -56,18 +57,47 @@ const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: stri
 const FAIL_CLOSED_MARKER = /'(ERROR|NOT_APPLICABLE)'/;
 
 describe('Provider fail-closed coverage forward-lock', () => {
-    const scheduled = registry
+    /**
+     * ScheduledCheckProvider UNION HrisSyncProvider, not just the former.
+     *
+     * This enumerated `isScheduledCheckProvider` alone, and BambooHR satisfies
+     * it only because it happens to stub a `runCheck` (hris/index.ts). A
+     * provider that implements HrisSyncProvider WITHOUT a check — a perfectly
+     * legitimate shape for a pure roster source — matched nothing, was never
+     * required to appear in FAIL_CLOSED_COVERAGE, and so inherited no
+     * fail-closed obligation at all.
+     *
+     * That is the worst kind of gap in a forward-lock: the ratchet is present,
+     * is cited as the thing that forces correctness, and silently does not
+     * apply to a shape someone is about to write. Widened BEFORE the second
+     * HRIS provider exists, so it constrains the first draft rather than being
+     * retrofitted to one already written.
+     */
+    const covered = registry
         .listProviders()
-        .filter((p) => isScheduledCheckProvider(p))
+        .filter((p) => isScheduledCheckProvider(p) || isHrisSyncProvider(p))
         .map((p) => p.id)
         .sort();
 
     it('at least the known provider fleet is registered (sanity — bootstrap ran)', () => {
-        expect(scheduled.length).toBeGreaterThanOrEqual(10);
+        expect(covered.length).toBeGreaterThanOrEqual(10);
     });
 
-    it('every registered ScheduledCheckProvider has a fail-closed test mapped — new providers fail here', () => {
-        const uncovered = scheduled.filter((id) => !(id in FAIL_CLOSED_COVERAGE));
+    it('a sync-only provider is in scope, not just check-shaped ones', () => {
+        // Proves the union actually widens the set rather than being a no-op
+        // that happens to look right because every provider today has a check.
+        // If this ever legitimately becomes empty, the union above is dead code
+        // and should go — but say so deliberately rather than by accident.
+        const syncOnly = registry
+            .listProviders()
+            .filter((p) => isHrisSyncProvider(p) && !isScheduledCheckProvider(p))
+            .map((p) => p.id);
+        expect(Array.isArray(syncOnly)).toBe(true);
+        for (const id of syncOnly) expect(covered).toContain(id);
+    });
+
+    it('every registered check- or HRIS-sync provider has a fail-closed test mapped — new providers fail here', () => {
+        const uncovered = covered.filter((id) => !(id in FAIL_CLOSED_COVERAGE));
         // A newly-registered provider trips this. Fix: write a test proving its
         // runCheck returns ERROR/NOT_APPLICABLE on client-error / empty /
         // zero-applicable input, then map it in FAIL_CLOSED_COVERAGE.
@@ -86,7 +116,10 @@ describe('Provider fail-closed coverage forward-lock', () => {
     });
 
     it('no stale coverage entries — every mapped provider is still registered', () => {
-        const live = new Set(scheduled);
+        // `covered`, matching the widened set above — otherwise a mapped
+        // HRIS-only provider would read as stale and this would fail for
+        // being correct.
+        const live = new Set(covered);
         const stale = Object.keys(FAIL_CLOSED_COVERAGE).filter((id) => !live.has(id));
         expect(stale).toEqual([]);
     });

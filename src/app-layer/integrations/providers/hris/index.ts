@@ -49,6 +49,26 @@ export interface HrisSyncProvider {
     listEmployees(config: Record<string, unknown>): Promise<ListEmployeesResult>;
 }
 
+/**
+ * The provider ids the HRIS sync path will act on.
+ *
+ * ONE list, deliberately. It was two — `['bamboohr']` in jobs/hris-sync.ts and
+ * `new Set(['bamboohr'])` in usecases/hris-sync.ts — sitting either side of a
+ * job/usecase boundary and required to agree. Missing either half gives a
+ * provider that registers but never syncs (absent from the job's dispatch
+ * query) or one that syncs but is refused by the usecase guard. Both fail
+ * silently: nothing errors, the provider simply does nothing.
+ *
+ * It lives here rather than in either consumer so neither owns it, and so
+ * adding a provider is one edit in the same directory as the provider.
+ */
+export const HRIS_PROVIDERS = ['bamboohr'] as const;
+
+/** Membership test for the usecase guard; the job needs the array for `in`. */
+export function isHrisProviderId(id: string): boolean {
+    return (HRIS_PROVIDERS as readonly string[]).includes(id);
+}
+
 export function isHrisSyncProvider(p: unknown): p is HrisSyncProvider {
     return typeof p === 'object' && p !== null && typeof (p as HrisSyncProvider).listEmployees === 'function';
 }

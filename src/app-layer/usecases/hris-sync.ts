@@ -16,9 +16,7 @@ import { logger } from '@/lib/observability/logger';
 import { recordSyncTruncated } from '@/lib/observability/integration-metrics';
 import '../integrations/bootstrap'; // populate the provider registry in THIS module graph (see usecases/integrations)
 import { registry } from '../integrations/registry';
-import { isHrisSyncProvider, type HrisSyncProvider, type NormalizedEmployee } from '../integrations/providers/hris';
-
-const HRIS_PROVIDERS = new Set(['bamboohr']);
+import { isHrisSyncProvider, isHrisProviderId, type HrisSyncProvider, type NormalizedEmployee } from '../integrations/providers/hris';
 
 function makeSystemCtx(tenantId: string): RequestContext {
     return buildSystemContext({ tenantId, job: 'hris-sync' });
@@ -52,7 +50,7 @@ export async function runHrisSync(input: {
             where: { id: input.connectionId, tenantId: ctx.tenantId },
             select: { id: true, provider: true, configJson: true, secretEncrypted: true },
         });
-        if (!conn || !HRIS_PROVIDERS.has(conn.provider)) {
+        if (!conn || !isHrisProviderId(conn.provider)) {
             const execution = await db.integrationExecution.create({
                 data: { tenantId: ctx.tenantId, provider: conn?.provider ?? 'hris', automationKey: 'hris.sync', status: 'ERROR', errorMessage: 'HRIS connection not found', triggeredBy: 'scheduled', completedAt: now },
             });
@@ -125,7 +123,14 @@ export async function runHrisSync(input: {
                 data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, total: roster.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
             });
             logger.warn('hris-sync partial roster — departure reconcile skipped', { component: 'hris-sync', tenantId: ctx.tenantId, executionId: execution.id, upserted });
-            recordSyncTruncated({ provider: 'bamboohr' }); // H6 — alertable truncation signal
+            // conn.provider, not a literal. This was hardcoded 'bamboohr'
+            // while the identity twin (identity-sync.ts:191) passes the real
+            // one — invisible while the allowlist had a single member, and
+            // silently wrong the moment it has two: a Workday truncation
+            // would alert as bamboohr, so the page goes to whoever owns
+            // bamboohr and a real Workday truncation reads as someone else's
+            // problem.
+            recordSyncTruncated({ provider: conn.provider }); // H6 — alertable truncation signal
             // Loud, but NOT retryable: the cap is deterministic, so a retry
             // re-reads the same too-large roster and truncates identically.
             return { executionId: execution.id, status: 'ERROR', upserted, managersLinked, errorMessage: msg, noRetry: true };
