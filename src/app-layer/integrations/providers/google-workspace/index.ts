@@ -259,7 +259,23 @@ async function getGoogleAccessToken(config: Record<string, unknown>): Promise<st
     const signingInput = `${b64(header)}.${b64(claim)}`;
     const signature = crypto.sign('RSA-SHA256', Buffer.from(signingInput), sa.private_key).toString('base64url');
     const assertion = `${signingInput}.${signature}`;
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    // resilientFetch, not the global. This was a bare `await fetch(...)`: the
+    // DWD token exchange is an outbound call to Google like any other, but it
+    // sat outside the timeout + 429 handling every other call in this file goes
+    // through (see `deps.fetchImpl ?? resilientFetch` above). Its only caller
+    // passes no impl, so it was genuinely unbounded — a hung oauth2.googleapis
+    // .com would stall the sync indefinitely, and a 429 there surfaced as a
+    // generic failure the queue answered with three full re-syncs.
+    //
+    // What this does NOT buy, so nobody assumes it: credential revocation still
+    // does not mark the connection. OAuth2 signals credential failure with 400,
+    // not 401 (RFC 6749 §5.2 — `invalid_grant`), and a revoked DWD grant is the
+    // dominant failure here. 400 is in none of resilientFetch's sets (retryable
+    // 429/502/503/504, auth 401/403, terminal 404), so the Response passes
+    // through and the `!res.ok` throw below is a generic Error — which
+    // markAuthFailure deliberately no-ops on. Classifying an OAuth error BODY
+    // rather than a status is a separate design question.
+    const res = await resilientFetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),

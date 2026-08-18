@@ -34,11 +34,24 @@ const stripComments = (s: string) =>
     s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 /**
- * The shapes that mean "fall back to the global, unbounded fetch":
- *   `?? fetch`            `?? globalThis.fetch`         `= globalThis.fetch`
+ * The shapes that mean "reach the global, unbounded fetch".
+ *
+ * The first three were here from the start. The last two were added after both
+ * slipped past in review:
+ *
+ *   `?? fetch`   `?? globalThis.fetch`   `= globalThis.fetch`
+ *   `= fetch`         — entra-id's getEntraAccessToken. The arm above covered
+ *                       the qualified form and not the bare one, which is the
+ *                       shorter thing to type.
+ *   `await fetch(`    — google-workspace's DWD token exchange. Not a default at
+ *                       all: a direct call, so no amount of default-checking
+ *                       would have found it.
+ *
+ * `= resilientFetch` and `= fetchImpl` must NOT match: `=\s*fetch\b` requires
+ * the literal word, so the first fails at `r` and the second at the `\b`.
  */
 const UNBOUNDED_DEFAULT =
-    /(\?\?\s*(globalThis\.)?fetch\b)|(=\s*globalThis\.fetch\b)/;
+    /(\?\?\s*(globalThis\.)?fetch\b)|(=\s*(globalThis\.)?fetch\b)|(\bawait\s+fetch\s*\()/;
 
 const ALLOWED: Record<string, string> = {
     'src/app-layer/integrations/bounded-fetch.ts':

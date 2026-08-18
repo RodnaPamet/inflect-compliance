@@ -311,7 +311,17 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
  */
 export async function getEntraAccessToken(
     config: Record<string, unknown>,
-    doFetch: typeof fetch = fetch,
+    // Defaults to resilientFetch, not the global. Both live callers pass an
+    // impl, so this was latent rather than broken — but `getEntraAccessToken`
+    // is EXPORTED, so "both callers pass one" is only true of the callers that
+    // exist today. That is the argument for fixing the default rather than
+    // deleting it.
+    //
+    // Same caveat as the Google token exchange: this buys the deadline and the
+    // 429 handling, NOT auth classification. An expired client secret returns
+    // 400 `invalid_client` (RFC 6749 §5.2), which resilientFetch does not
+    // classify, so it still surfaces as a generic failure.
+    doFetch: typeof fetch = resilientFetch,
 ): Promise<string> {
     const tenantId = String(config.tenantId ?? '').trim();
     const clientId = String(config.clientId ?? '').trim();
