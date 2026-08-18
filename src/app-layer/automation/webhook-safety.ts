@@ -13,7 +13,11 @@
  */
 
 import { promises as dnsPromises } from 'node:dns';
-import { Agent } from 'undici';
+// `fetch` is imported from undici alongside `Agent` deliberately — see the
+// version-coupling note on `safeFetch`. Using the global `fetch` here pairs an
+// npm-undici dispatcher with Node's BUNDLED undici, and the two are only
+// compatible while their dispatcher-handler interfaces happen to match.
+import { Agent, fetch as undiciFetch } from 'undici';
 
 const PRIVATE_V4 = [
     /^10\./,
@@ -197,14 +201,25 @@ export async function safeFetch(rawUrl: string, init?: RequestInit): Promise<Res
         },
     } as unknown as ConstructorParameters<typeof Agent>[0]);
 
-    const res = await fetch(rawUrl, {
+    // undici's OWN fetch, not the global one. The dispatcher above comes from
+    // the npm `undici` package; the global `fetch` is served by the undici
+    // BUNDLED inside Node. Handing a dispatcher across that boundary only works
+    // while the two versions' handler interfaces agree, and undici 8 changed
+    // them — `fetch(url, { dispatcher })` against a v8 Agent on Node 22 throws
+    // `TypeError: fetch failed` / `invalid onRequestStart method` for EVERY
+    // request. Because this function is the egress path for signed audit-stream
+    // batches and every automation webhook, that failure mode is silent at the
+    // point of change and total at runtime: SIEM delivery stops and all webhook
+    // actions fail. Sourcing both halves from the same package removes the
+    // coupling entirely, so an undici major bump can no longer break egress.
+    const res = (await undiciFetch(rawUrl, {
         ...init,
         // Callers MUST NOT be able to opt back in — a spread of `init` after
         // this would let a caller reinstate 'follow' and reopen the hole, so
         // it is applied last.
         redirect: 'manual',
         dispatcher,
-    } as unknown as RequestInit);
+    } as unknown as Parameters<typeof undiciFetch>[1])) as unknown as Response;
 
     if (res.status >= 300 && res.status < 400) {
         throw new RedirectNotAllowedError(res.status, res.headers.get('location'));

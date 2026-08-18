@@ -13,6 +13,18 @@ const lookupMock = jest.fn((..._a: unknown[]) =>
     Promise.resolve([{ address: '93.184.216.34', family: 4 }]),
 );
 jest.mock('node:dns', () => ({ promises: { lookup: (...a: unknown[]) => lookupMock(...a) } }));
+
+// `safeFetch` calls undici's own fetch, not the global one — pairing an
+// npm-undici dispatcher with Node's bundled undici breaks on undici 8 (see
+// tests/unit/webhook-safety-dispatcher-egress.test.ts). Stubbing `global.fetch`
+// here would silently stop intercepting and let the webhook action attempt a
+// real outbound request. `Agent` stays real so the pinned dispatcher is still
+// constructed exactly as in production.
+const undiciFetchMock = jest.fn();
+jest.mock('undici', () => ({
+    ...jest.requireActual('undici'),
+    fetch: (...a: unknown[]) => undiciFetchMock(...a),
+}));
 // CREATE_TASK now delegates to the canonical createTask usecase (TP-1) so
 // the spawned task carries a TSK-N key + audit + automation event + bell.
 // Mock it to assert the executor calls it with the right shape.
@@ -75,7 +87,7 @@ function makeDb() {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    (global.fetch as any) = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    undiciFetchMock.mockResolvedValue({ ok: true, status: 200 });
 });
 
 describe('executeAction', () => {
@@ -133,8 +145,8 @@ describe('executeAction', () => {
             actionConfigJson: { url: 'https://example.com/hook', secretRef: 'shh' },
         }, baseEvent);
         expect(res.ok).toBe(true);
-        expect(global.fetch).toHaveBeenCalledTimes(1);
-        const [url, init] = (global.fetch as any).mock.calls[0];
+        expect(undiciFetchMock).toHaveBeenCalledTimes(1);
+        const [url, init] = undiciFetchMock.mock.calls[0];
         expect(url).toBe('https://example.com/hook');
         expect(init.method).toBe('POST');
         expect(init.headers['X-Inflect-Signature']).toMatch(/^sha256=/);
@@ -190,7 +202,7 @@ describe('PR-D hardening guards', () => {
         const db = makeDb();
         const res = await executeAction(db, ruleOf('WEBHOOK', { url: 'http://example.com/h' }), baseEvent);
         expect(res.ok).toBe(false);
-        expect(global.fetch).not.toHaveBeenCalled();
+        expect(undiciFetchMock).not.toHaveBeenCalled();
     });
 
     it('WEBHOOK blocks a host that resolves to a private IP (no fetch)', async () => {
@@ -199,7 +211,7 @@ describe('PR-D hardening guards', () => {
         const res = await executeAction(db, ruleOf('WEBHOOK', { url: 'https://evil.example.com/h' }), baseEvent);
         expect(res.ok).toBe(false);
         expect(res.summary).toMatch(/private/i);
-        expect(global.fetch).not.toHaveBeenCalled();
+        expect(undiciFetchMock).not.toHaveBeenCalled();
     });
 
     it('CREATE_TASK dedupes against an existing open task', async () => {
