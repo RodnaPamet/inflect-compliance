@@ -40,6 +40,7 @@ import {
     type NormalizedIdentityAccount,
 } from '../identity/types';
 import { logger } from '@/lib/observability/logger';
+import { fetchOAuthToken } from '../../oauth-token-fetch';
 import { resilientFetch } from '../../http-resilience';
 
 /** Max users pulled per sync — bounds a runaway directory. */
@@ -344,7 +345,10 @@ export async function getEntraAccessToken(
     if (!clientSecret) {
         throw new Error('Entra token exchange skipped: clientSecret is missing or failed to decrypt');
     }
-    const res = await doFetch(`${LOGIN_BASE}/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`, {
+    // fetchOAuthToken, not doFetch directly: an expired or rotated client secret
+    // answers 400 invalid_client, which resilientFetch passes through. This is
+    // what turns that into an IntegrationAuthError so the connection is marked.
+    const res = await fetchOAuthToken(`${LOGIN_BASE}/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
@@ -353,7 +357,7 @@ export async function getEntraAccessToken(
             client_secret: clientSecret,
             scope: 'https://graph.microsoft.com/.default',
         }),
-    });
+    }, doFetch);
     if (!res.ok) throw new Error(`Entra token exchange failed (HTTP ${res.status})`);
     const json = (await res.json()) as { access_token?: string };
     if (!json.access_token) throw new Error('Entra token exchange returned no access_token');

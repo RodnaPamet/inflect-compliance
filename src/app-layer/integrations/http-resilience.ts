@@ -79,10 +79,26 @@ export class IntegrationTerminalError extends Error {
  * terminal set later cannot silently start accusing working credentials.
  */
 export class IntegrationAuthError extends IntegrationTerminalError {
-    constructor(status: number, url: string) {
+    /**
+     * `reason` is an RFC 6749 error code and NOTHING ELSE.
+     *
+     * This message is persisted verbatim into
+     * `IntegrationConnection.authFailureReason`, which is exempt from field
+     * encryption on the recorded grounds that it is system-generated and
+     * URL-scrubbed by `safeUrl`. `safeUrl` scrubs URLs, not bodies — so a
+     * caller must pass a value from a fixed allowlist, never a provider's
+     * `error_description`, which can carry a client id, a service-account
+     * email or an assertion fragment.
+     */
+    readonly reason?: string;
+
+    constructor(status: number, url: string, reason?: string) {
         super(status, url);
         this.name = 'IntegrationAuthError';
-        this.message = `Integration auth failed (${status}): ${url}`;
+        this.reason = reason;
+        this.message = reason
+            ? `Integration auth failed (${status}, ${reason}): ${url}`
+            : `Integration auth failed (${status}): ${url}`;
     }
 }
 

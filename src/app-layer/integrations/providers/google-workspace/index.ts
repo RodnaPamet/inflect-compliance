@@ -28,6 +28,7 @@ import {
     type NormalizedIdentityAccount,
 } from '../identity/types';
 import { resilientFetch } from '../../http-resilience';
+import { fetchOAuthToken } from '../../oauth-token-fetch';
 
 const MAX_USERS = 5000;
 const PAGE_SIZE = 200;
@@ -291,11 +292,14 @@ export async function getGoogleAccessToken(
     // through and the `!res.ok` throw below is a generic Error — which
     // markAuthFailure deliberately no-ops on. Classifying an OAuth error BODY
     // rather than a status is a separate design question.
-    const res = await doFetch('https://oauth2.googleapis.com/token', {
+    // fetchOAuthToken, not doFetch directly: a revoked domain-wide-delegation
+    // grant answers 400 invalid_grant, which resilientFetch passes through. This
+    // is what turns that into an IntegrationAuthError so the connection is marked.
+    const res = await fetchOAuthToken('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
-    });
+    }, doFetch);
     if (!res.ok) throw new Error(`Google token exchange failed (HTTP ${res.status})`);
     const json = (await res.json()) as { access_token?: string };
     if (!json.access_token) throw new Error('Google token exchange returned no access_token');
