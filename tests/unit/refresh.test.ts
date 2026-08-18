@@ -9,6 +9,7 @@
 /**
  * Unit tests for OAuth token refresh logic.
  */
+import { IntegrationAuthError } from '@/app-layer/integrations/http-resilience';
 import {
     isTokenExpired,
     refreshGoogleToken,
@@ -85,16 +86,45 @@ describe('refreshGoogleToken', () => {
         expect(result.refreshToken).toBe('new-refresh-rotated');
     });
 
-    it('throws on refresh failure', async () => {
+    it('classifies a 401 as an auth failure rather than an anonymous Error', async () => {
+        // This assertion changed deliberately. These refreshes used to call the
+        // bare global `fetch`, so a genuine 401 came back as a plain Error
+        // reading "Google token refresh failed: 401" — indistinguishable, to any
+        // caller, from a network blip. `markAuthFailure` branches on
+        // `instanceof IntegrationAuthError`, so a revoked refresh token could
+        // never mark the connection.
+        //
+        // Routing through resilientFetch means 401/403 are classified before the
+        // `!response.ok` line is reached. The message is now produced by
+        // IntegrationAuthError, whose URL is scrubbed by safeUrl — worth keeping
+        // in mind if the assertion is ever tightened, because a token endpoint's
+        // query string must never end up in a persisted failure reason.
         mockFetch.mockResolvedValueOnce({
             ok: false,
             status: 401,
             text: async () => 'invalid_grant',
         });
 
-        await expect(refreshGoogleToken('bad-token')).rejects.toThrow(
-            'Google token refresh failed: 401'
-        );
+        const err = await refreshGoogleToken('bad-token').catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(IntegrationAuthError);
+        expect((err as Error).message).not.toMatch(/bad-token/);
+    });
+
+    it('leaves a 400 as a generic failure, since OAuth 400s are not all credential errors', async () => {
+        // 400 is in none of resilientFetch's status sets, so the Response passes
+        // through and the function's own `!response.ok` throw still runs. That
+        // is intentional: RFC 6749 signals several NON-credential conditions
+        // with 400 (invalid_request, unsupported_grant_type), and promoting all
+        // of them to an auth failure would mark healthy connections as revoked.
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 400,
+            text: async () => 'invalid_request',
+        });
+
+        const err = await refreshGoogleToken('bad-token').catch((e: unknown) => e);
+        expect(err).not.toBeInstanceOf(IntegrationAuthError);
+        expect((err as Error).message).toContain('Google token refresh failed: 400');
     });
 });
 
