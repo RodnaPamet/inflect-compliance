@@ -55,6 +55,10 @@ const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: stri
     device: { test: 'tests/unit/h2-fail-closed.test.ts', needle: 'runDeviceCheck' },
     // Training — no assignments → NOT_APPLICABLE; open-no-due does not silently PASS.
     training: { test: 'tests/unit/h2-fail-closed.test.ts', needle: 'runTrainingCheck' },
+    // ServiceNow — ERROR when the instance read fails, NOT_APPLICABLE when no
+    // non-standard change was implemented in the window, and a partial window
+    // is an ERROR rather than a score over the rows it happened to see.
+    servicenow: { test: 'tests/unit/servicenow-checks.test.ts', needle: 'change_approved_before_implementation' },
     // GitHub — runCheck returns ERROR when the API call fails.
     github: { test: 'tests/unit/github-integration.test.ts', needle: 'ERROR' },
 };
