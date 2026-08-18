@@ -47,6 +47,7 @@ const DISPATCHERS: ReadonlyArray<{ schedule: string; file: string }> = [
         schedule: 'compliance-posture-summary-dispatch',
         file: 'compliance-posture-summary.ts',
     },
+    { schedule: 'calendar-push-dispatch', file: 'calendar-push.ts' },
 ];
 
 /**

@@ -112,6 +112,16 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'calendar-push-dispatch',
+        pattern: '0 3 * * *',     // daily at 03:00 UTC
+        // NO `tz`. The bucket guard's parser reads only `pattern` and ignores
+        // tz, while dispatchJobId floors on UTC boundaries — so a zoned cron
+        // puts two firings 23h apart on the DST spring-forward day, which can
+        // land in one UTC bucket and silently skip a run.
+        description: 'Fan out a per-tenant calendar push per tenant with a live user calendar connection',
+        defaultPayload: {},
+    },
+    {
         name: 'hris-sync-dispatch',
         pattern: '0 4 * * *',     // daily at 04:00 UTC
         description: 'Fan out an hris-sync per enabled HRIS connection — BambooHR, Workday (roster → Employee)',
