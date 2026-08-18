@@ -67,6 +67,7 @@ interface TenantTrackerEntry {
 const TENANT_CHILD_TABLES: readonly string[] = [
     // Per-user calendar OAuth tokens. Cascades from User, but a tenant
     // teardown deletes the Tenant, not the Users, so it must be listed.
+    "UserCalendarEventMapping",
     "UserCalendarConnection",
     // Audit + identity
     'AuditLog',

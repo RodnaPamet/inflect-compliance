@@ -63,11 +63,23 @@ export interface CorrelationIdentity {
 /**
  * The id ServiceNow will be queried by, and written with.
  *
- * The components are joined with a character that cannot appear in any of
- * them. A separator a component CAN contain lets two different entities hash
- * identically — ('a:b', 'c') and ('a', 'b:c') collide under ':' — and entity
- * TYPE names are free-form strings, so that is a reachable collision rather
- * than a theoretical one. A newline is not a legal component character here.
+ * LENGTH-PREFIXED, not separator-joined.
+ *
+ * This shipped joined on `\n`, with a comment asserting that "a newline is not
+ * a legal component character here". That assertion was never verified, and its
+ * twin in the calendar reconciler was disproved by a test the same day:
+ * ('ta\nsk', 'x') and ('ta', 'sk\nx') hash identically. `localEntityType` is a
+ * free-form string, so the same input is constructible here.
+ *
+ * A separator only works when no component can contain it — which is a claim
+ * about every current AND future caller. Length-prefixing needs no such claim,
+ * so there is nothing left to be wrong about.
+ *
+ * The digest changes as a result. That is safe BECAUSE nothing has shipped: no
+ * outbound ServiceNow write has run in production, so no stored correlation_id
+ * exists to be orphaned. Were that not true this would need a migration, not an
+ * edit — a changed correlation id makes every existing remote record
+ * unfindable, and the next run would create a duplicate of each.
  */
 export function correlationIdFor(identity: CorrelationIdentity): string {
     const material = [
@@ -75,7 +87,9 @@ export function correlationIdFor(identity: CorrelationIdentity): string {
         identity.provider,
         identity.localEntityType,
         identity.localEntityId,
-    ].join('\n');
+    ]
+        .map((c) => `${c.length}:${c}`)
+        .join('');
     const digest = createHash('sha256').update(material).digest('hex');
     return `${CORRELATION_PREFIX}${digest.slice(0, HASH_LENGTH)}`;
 }
