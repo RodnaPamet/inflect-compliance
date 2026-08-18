@@ -90,8 +90,8 @@ describe('runHrisSync', () => {
         ]);
     });
 
-    function stub(roster: NormalizedEmployee[], complete = true) {
-        return { listEmployees: jest.fn(async () => ({ employees: roster, complete })) };
+    function stub(roster: NormalizedEmployee[], complete = true, resumeToken: string | null = null) {
+        return { listEmployees: jest.fn(async () => ({ employees: roster, complete, resumeToken })) };
     }
     function nEmp(over: Partial<NormalizedEmployee>): NormalizedEmployee {
         return { externalId: over.externalId ?? '1', fullName: over.fullName ?? 'X', workEmail: over.workEmail ?? 'x@x.com', status: over.status ?? 'ACTIVE', managerEmail: over.managerEmail ?? null, startDate: null, endDate: null };
@@ -125,8 +125,37 @@ describe('runHrisSync', () => {
         expect(mockDb.employee.updateMany).toHaveBeenCalled();
         const call = mockDb.employee.updateMany.mock.calls[0][0];
         expect(call.where).toMatchObject({ source: 'HRIS', status: { not: 'TERMINATED' } });
-        expect(call.where.workEmail.notIn).toContain('alice@x.com');
+        // Reconciles on the PASS START, not on `workEmail: { notIn: roster }`.
+        //
+        // The notIn form was correct only while a pass was a single run. Once
+        // a truncated roster can resume, `roster` is just the LAST run's
+        // slice, so notIn would terminate every employee upserted by every
+        // earlier run of the same pass. Anything untouched since the pass
+        // began was absent across all of its runs, so it is genuinely gone.
+        expect(call.where.syncedAt).toEqual({ lt: NOW });
+        expect(call.where.workEmail).toBeUndefined();
         expect(call.data.status).toBe('TERMINATED');
+    });
+
+    it('H3-2 — a truncated roster WITH a resume token is PARTIAL, stores the cursor, and skips the reconcile', async () => {
+        // The branch HRIS never had. Before this, any roster past the cap was
+        // a permanent ERROR+noRetry, so a customer large enough to exceed it
+        // had a provider that could never succeed on any run.
+        const provider = stub([nEmp({ workEmail: 'alice@x.com' })], false, 'cursor-500');
+        const r = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        expect(r.status).toBe('PARTIAL');
+        // Progress, not failure: what we saw is upserted...
+        expect(mockDb.employee.upsert).toHaveBeenCalled();
+        // ...the cursor is stored so the next run continues this pass...
+        expect(mockDb.integrationConnection.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ syncCursor: 'cursor-500' }),
+            }),
+        );
+        // ...and NOTHING is reconciled, because a partial pass has not seen
+        // the whole roster and cannot conclude anyone left.
+        expect(mockDb.employee.updateMany).not.toHaveBeenCalled();
     });
 
     it('H3 — a TRUNCATED roster fails ERROR and does NOT run the departure reconcile', async () => {
