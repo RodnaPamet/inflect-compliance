@@ -49,27 +49,17 @@ import { logger } from '@/lib/observability/logger';
  * Compile-time exhaustive — adding a new entry to `PermissionSet`
  * automatically widens this union; misspelled keys fail to compile.
  */
-export type PermissionKey = {
-    [Domain in keyof PermissionSet]: PermissionSet[Domain] extends Record<string, boolean>
-        ? `${Domain & string}.${keyof PermissionSet[Domain] & string}`
-        : never;
-}[keyof PermissionSet];
-
-/**
- * Look up a permission flag on a resolved `appPermissions` set.
- * Returns `false` for unknown keys (fail-closed).
- */
-export function hasPermission(
-    appPermissions: PermissionSet,
-    key: PermissionKey,
-): boolean {
-    const [domain, action] = key.split('.') as [
-        keyof PermissionSet,
-        string,
-    ];
-    const bag = appPermissions[domain] as Record<string, boolean> | undefined;
-    return Boolean(bag && bag[action] === true);
-}
+// `PermissionKey` and `hasPermission` now live in ./permission-key, a LEAF
+// module with no edge to `@/app-layer/context` → `@/lib/auth` → `@/auth`.
+//
+// Re-exported here so the ~40 request-side call sites keep their import, but a
+// module that runs in the BullMQ WORKER must import from './permission-key'
+// directly — importing them from here drags the whole NextAuth provider array
+// into a plain Node process, which fails at job EXECUTION rather than at boot.
+// See ./permission-key for the full failure and why it does not fail CI.
+export { hasPermission, type PermissionKey } from './permission-key';
+import { hasPermission } from './permission-key';
+import type { PermissionKey } from './permission-key';
 
 // ─── Handler signature plumbing ─────────────────────────────────────
 
