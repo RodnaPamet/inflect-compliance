@@ -188,10 +188,30 @@ export async function runHrisSync(input: {
         }
 
         // H3 — departed-employee reconcile: a source=HRIS employee absent from a
-        // COMPLETE roster was DELETED in BambooHR (not just terminated) and would
+        // COMPLETE roster was DELETED in the HRIS (not just terminated) and would
         // otherwise stay ACTIVE forever, invisible to offboarding. Mark them
-        // TERMINATED. Guarded on a non-empty roster so an empty-but-complete
-        // response (likely an API glitch) never mass-terminates.
+        // TERMINATED.
+        //
+        // GUARDED ON THE PASS SEEING ROWS, NOT THIS RUN. The guard used to read
+        // `roster.length > 0` — correct while a pass was exactly one run, and
+        // quietly wrong the moment resume made it several. `roster` now holds
+        // only the LAST run's slice, and the last run of a pass reads an empty
+        // final page whenever the roster size is an exact multiple of the
+        // per-run cap: the provider requests from an offset at the end of the
+        // report, gets zero rows, and correctly reports `complete: true` with
+        // nothing in hand.
+        //
+        // With the old guard that pass would clear its cursor, report PASSED,
+        // and NEVER reconcile — permanently, every night, for that tenant.
+        // Deleted employees stay ACTIVE forever, which is precisely the state
+        // this reconcile exists to prevent, and it fails silently on a roster
+        // size nobody would think to vary while debugging.
+        //
+        // `syncPassStartedAt` being set is the pass-level evidence the run-level
+        // count cannot give: an earlier run of THIS pass read a full page, so
+        // the API is answering and the empty final page is the end of the
+        // report rather than the glitch the guard was written for. A first-run
+        // empty roster still skips, which is the case that mattered originally.
         //
         // Reconciles on `syncedAt < passStartedAt`, NOT `workEmail: { notIn:
         // seenEmails }`. That was correct only while a pass was a single run.
@@ -205,7 +225,12 @@ export async function runHrisSync(input: {
         // callback is one RLS transaction, so upsert + reconcile commit
         // atomically.
         let departed = 0;
-        if (roster.length > 0) {
+        // Boolean(), not `!== null`: an earlier-run marker is absent as either
+        // null or undefined depending on the caller, and `!== null` reads
+        // undefined as "resumed" — which would make the guard unconditional
+        // and reinstate the mass-terminate it exists to prevent.
+        const passSawRows = roster.length > 0 || Boolean(conn.syncPassStartedAt);
+        if (passSawRows) {
             const res = await db.employee.updateMany({
                 where: { tenantId: ctx.tenantId, source: 'HRIS', status: { not: 'TERMINATED' }, syncedAt: { lt: passStartedAt } },
                 data: { status: 'TERMINATED', syncedAt: now },
