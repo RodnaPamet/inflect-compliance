@@ -3,73 +3,73 @@
 // Enums live in enums.prisma; relations resolve across the schema folder.
 
 model Evidence {
-  id                  String                    @id @default(cuid())
-  tenantId            String
+  id                   String                    @id @default(cuid())
+  tenantId             String
   // EP-3 — evidence↔control is now many-to-many via EvidenceControlLink.
   // Re-uploading the same artifact to N controls used to clone N Evidence
   // rows (singular `controlId`); one Evidence + N join rows is the fix.
   // Source task — set when this evidence was uploaded/linked from a
   // task's Evidence tab. Powers the task Evidence tab AND the
   // "uploaded from" back-reference on the evidence detail surface.
-  taskId              String?
+  taskId               String?
   // Source risk / asset — same pattern as taskId: set when uploaded
   // from that entity's Evidence tab; powers the attached-evidence tab
   // + the "uploaded from" back-reference.
-  riskId              String?
-  assetId             String?
-  type                EvidenceType
-  title               String
-  content             String?
-  fileName            String?
-  fileSize            Int?
-  category            String?
-  dateCollected       DateTime                  @default(now())
-  owner               String? // Legacy free-text — kept for backward compat
-  ownerUserId         String? // Real user FK — used for due-item routing & notifications
-  reviewCycle         ReviewCadence?
-  nextReviewDate      DateTime?
-  status              EvidenceStatus            @default(DRAFT)
-  createdAt           DateTime                  @default(now())
-  updatedAt           DateTime                  @updatedAt
-  deletedAt           DateTime?
-  deletedByUserId     String?
-  fileRecordId        String?
+  riskId               String?
+  assetId              String?
+  type                 EvidenceType
+  title                String
+  content              String?
+  fileName             String?
+  fileSize             Int?
+  category             String?
+  dateCollected        DateTime                  @default(now())
+  owner                String? // Legacy free-text — kept for backward compat
+  ownerUserId          String? // Real user FK — used for due-item routing & notifications
+  reviewCycle          ReviewCadence?
+  nextReviewDate       DateTime?
+  status               EvidenceStatus            @default(DRAFT)
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  deletedAt            DateTime?
+  deletedByUserId      String?
+  fileRecordId         String?
   // EP-3 Part 4 — file-version lineage. `replaceEvidenceFile` points
   // `fileRecordId` at a fresh FileRecord and bumps `fileVersion` so the
   // Evidence row (status/review/retention/links) is preserved instead of
   // spawning a new record. Prior FileRecords chain via
   // FileRecord.previousFileRecordId.
-  fileVersion         Int                       @default(1)
-  expiredAt           DateTime?
-  isArchived          Boolean                   @default(false)
-  retentionDays       Int?
-  retentionPolicy     RetentionPolicy           @default(NONE)
-  retentionUntil      DateTime?
+  fileVersion          Int                       @default(1)
+  expiredAt            DateTime?
+  isArchived           Boolean                   @default(false)
+  retentionDays        Int?
+  retentionPolicy      RetentionPolicy           @default(NONE)
+  retentionUntil       DateTime?
   /// B8 follow-up — free-text folder label (e.g. "SOC2/2026" or
   /// "Quarterly access reviews"). Mirrors the `VendorDocument.folder`
   /// pattern. Nullable; null/empty maps to "no folder" in the UI.
   /// Sanitised + trimmed at the usecase boundary.
-  folder              String?
-  testEvidenceLinks   ControlTestEvidenceLink[]
-  policyEvidenceItems PolicyEvidenceItem[]
+  folder               String?
+  testEvidenceLinks    ControlTestEvidenceLink[]
+  policyEvidenceItems  PolicyEvidenceItem[]
   // Epic G-3 — vendor questionnaire FILE_UPLOAD answers attach
   // their proof here.
-  vendorAnswers       VendorAssessmentAnswer[]  @relation("VendorAnswerEvidence")
+  vendorAnswers        VendorAssessmentAnswer[]  @relation("VendorAnswerEvidence")
   // EP-3 — the join replaces the singular `control` relation.
   evidenceControlLinks EvidenceControlLink[]
   evidenceRiskLinks    EvidenceRiskLink[]
   evidenceAssetLinks   EvidenceAssetLink[]
   tags                 EvidenceTag[]
-  task                Task?                     @relation(fields: [taskId], references: [id])
-  risk                Risk?                     @relation(fields: [riskId], references: [id])
-  asset               Asset?                    @relation(fields: [assetId], references: [id])
-  fileRecord          FileRecord?               @relation(fields: [fileRecordId], references: [id])
-  ownerUser           User?                     @relation("EvidenceOwner", fields: [ownerUserId], references: [id])
-  tenant              Tenant                    @relation(fields: [tenantId], references: [id])
-  reviews             EvidenceReview[]
-  findingLinks        FindingEvidence[]
-  incidentLinks       IncidentEvidence[]
-  reminderHistories   ReminderHistory[]
+  task                 Task?                     @relation(fields: [taskId], references: [id])
+  risk                 Risk?                     @relation(fields: [riskId], references: [id])
+  asset                Asset?                    @relation(fields: [assetId], references: [id])
+  fileRecord           FileRecord?               @relation(fields: [fileRecordId], references: [id])
+  ownerUser            User?                     @relation("EvidenceOwner", fields: [ownerUserId], references: [id])
+  tenant               Tenant                    @relation(fields: [tenantId], references: [id])
+  reviews              EvidenceReview[]
+  findingLinks         FindingEvidence[]
+  incidentLinks        IncidentEvidence[]
+  reminderHistories    ReminderHistory[]
 
   @@unique([id, tenantId])
   @@index([tenantId])
@@ -98,38 +98,38 @@ model Evidence {
 }
 
 model FileRecord {
-  id               String           @id @default(cuid())
-  tenantId         String
-  pathKey          String           @unique
-  originalName     String
-  mimeType         String
-  sizeBytes        Int
-  sha256           String
-  status           FileRecordStatus @default(PENDING)
-  uploadedByUserId String
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  storedAt         DateTime?
-  bucket           String?
-  domain           String           @default("general")
-  scanStatus       String           @default("PENDING")
-  storageProvider  String           @default("local")
-  scanDetails      String?
-  scannedAt        DateTime?
-  deletedAt        DateTime?
-  deletedByUserId  String?
-  retentionUntil   DateTime?
+  id                   String           @id @default(cuid())
+  tenantId             String
+  pathKey              String           @unique
+  originalName         String
+  mimeType             String
+  sizeBytes            Int
+  sha256               String
+  status               FileRecordStatus @default(PENDING)
+  uploadedByUserId     String
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  storedAt             DateTime?
+  bucket               String?
+  domain               String           @default("general")
+  scanStatus           String           @default("PENDING")
+  storageProvider      String           @default("local")
+  scanDetails          String?
+  scannedAt            DateTime?
+  deletedAt            DateTime?
+  deletedByUserId      String?
+  retentionUntil       DateTime?
   // EP-3 Part 4 — file-version lineage. When evidence's file is replaced
   // the new FileRecord points back at the one it superseded, so a doc's
   // history is a walkable chain rather than an orphaned unrelated row.
   previousFileRecordId String?
-  previousFileRecord   FileRecord?  @relation("FileRecordVersion", fields: [previousFileRecordId], references: [id])
-  supersededBy         FileRecord[] @relation("FileRecordVersion")
-  evidence         Evidence[]
-  tenant           Tenant           @relation(fields: [tenantId], references: [id])
-  uploadedBy       User             @relation("FileUploader", fields: [uploadedByUserId], references: [id])
+  previousFileRecord   FileRecord?      @relation("FileRecordVersion", fields: [previousFileRecordId], references: [id])
+  supersededBy         FileRecord[]     @relation("FileRecordVersion")
+  evidence             Evidence[]
+  tenant               Tenant           @relation(fields: [tenantId], references: [id])
+  uploadedBy           User             @relation("FileUploader", fields: [uploadedByUserId], references: [id])
   // Epic G-4 — campaigns whose evidence PDF this row carries.
-  accessReviews    AccessReview[]   @relation("AccessReviewEvidence")
+  accessReviews        AccessReview[]   @relation("AccessReviewEvidence")
 
   @@index([tenantId])
   @@index([tenantId, status])

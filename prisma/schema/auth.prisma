@@ -272,6 +272,7 @@ model Tenant {
   aiGovSelfAssessmentAnswers        AiGovSelfAssessmentAnswer[]
   // Hub-and-spoke (Epic O-1).
   organization                      Organization?                      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  calendarConnections               UserCalendarConnection[]
 
   @@index([organizationId])
   /// Per-region operational scans (e.g. "list every EU tenant").
@@ -985,7 +986,8 @@ model User {
   // DSAR (GDPR Art. 15/17) — data-subject export/erasure requests.
   dataSubjectRequests           DataSubjectRequest[]
   /// DSARs this user has handled as staff (distinct from ones they filed).
-  dsarRequestsHandled           DataSubjectRequest[]         @relation("DsarHandler")
+  dsarRequestsHandled           DataSubjectRequest[]            @relation("DsarHandler")
+  calendarConnections           UserCalendarConnection[]
 }
 
 model Account {
@@ -1210,44 +1212,44 @@ model UserIdentityLink {
 }
 
 model TenantSecuritySettings {
-  id                         String      @id @default(cuid())
-  tenantId                   String      @unique
-  mfaPolicy                  MfaPolicy   @default(DISABLED)
+  id                           String      @id @default(cuid())
+  tenantId                     String      @unique
+  mfaPolicy                    MfaPolicy   @default(DISABLED)
   /// Hard cap on JWT lifetime in minutes. When set, every newly minted
   /// session row's `expiresAt` is min(NextAuth max-age, now + this).
-  sessionMaxAgeMinutes       Int?
+  sessionMaxAgeMinutes         Int?
   /// Maximum number of concurrent active sessions allowed per user
   /// in this tenant. When reached, the oldest session (by
   /// `lastActiveAt` ASC) is revoked to make room for the new sign-in.
   /// Null = unlimited (legacy behaviour).
-  maxConcurrentSessions      Int?
+  maxConcurrentSessions        Int?
   /// Epic C.4 — outbound audit-event streaming.
   /// `auditStreamUrl`: HTTPS endpoint the audit streamer POSTs batched
   /// audit events to. Null disables streaming.
   /// `auditStreamSecretEncrypted`: HMAC-SHA256 secret used to sign
   /// each batch. Stored encrypted via the field-encryption manifest
   /// (added to `ENCRYPTED_FIELDS.TenantSecuritySettings`).
-  auditStreamUrl             String?
-  auditStreamSecretEncrypted String?
+  auditStreamUrl               String?
+  auditStreamSecretEncrypted   String?
   /// NIS2 Article 23 — the CSIRT / competent authority this tenant
   /// notifies for significant incidents. Jurisdiction-specific (e.g.
   /// "CCB (Belgium)", "NCSC-NL (Netherlands)", "BSI (Germany)"). Free
   /// text so any EU member-state authority can be configured; the
   /// incident view surfaces this as "notify: <authority>". Null = the
   /// tenant has not configured an authority yet.
-  incidentAuthority          String?
+  incidentAuthority            String?
   /// AI Guard enforcement posture for this tenant (prompt-injection +
   /// secret/exfil egress guard). Default BALANCED = allow-but-flag; STRICT
   /// blocks malicious input / secret egress; AUDIT logs only.
-  aiGuardMode                AiGuardMode @default(BALANCED)
+  aiGuardMode                  AiGuardMode @default(BALANCED)
   /// AI sovereignty (DS-1). EXTERNAL (default) allows the configured external
   /// provider; LOCAL_ONLY forces inference onto the tenant's own local gateway
   /// and refuses external providers. Optional per-tenant local-gateway override
   /// (else the AI_LOCAL_* env defaults). aiLocalBaseUrl is an internal URL, not
   /// a secret — not encrypted.
-  aiResidency                AiResidency @default(EXTERNAL)
-  aiLocalBaseUrl             String?
-  aiLocalModel               String?
+  aiResidency                  AiResidency @default(EXTERNAL)
+  aiLocalBaseUrl               String?
+  aiLocalModel                 String?
   /// Recipients outside the tenant's own membership that scheduled reports may
   /// be delivered to. A JSON array of exact addresses ("auditor@kpmg.com")
   /// and/or domain suffixes ("@kpmg.com").
@@ -1261,10 +1263,10 @@ model TenantSecuritySettings {
   /// Null or empty = no external recipients permitted; schedules may only be
   /// delivered to ACTIVE members of this tenant.
   reportRecipientAllowlistJson Json?
-  createdAt                  DateTime    @default(now())
-  updatedAt                  DateTime    @updatedAt
-  mfaFailClosed              Boolean     @default(false)
-  tenant                     Tenant      @relation(fields: [tenantId], references: [id])
+  createdAt                    DateTime    @default(now())
+  updatedAt                    DateTime    @updatedAt
+  mfaFailClosed                Boolean     @default(false)
+  tenant                       Tenant      @relation(fields: [tenantId], references: [id])
 }
 
 model UserMfaEnrollment {
@@ -1285,6 +1287,65 @@ model UserMfaEnrollment {
   @@unique([userId, tenantId, type])
   @@index([userId])
   @@index([tenantId])
+}
+
+/// A single user's consent to push THEIR compliance deadlines into THEIR
+/// personal Google or Outlook calendar.
+///
+/// PER-USER AND TENANT-SCOPED, which is the whole reason this is a new model
+/// rather than a reuse. The obvious candidates both fail on that pair:
+///   - `Account` holds per-user OAuth tokens but has NO tenantId — it is
+///     per-user-GLOBAL, while one user holds memberships in several tenants,
+///     so it cannot carry a tenant RLS policy and cannot distinguish "connected
+///     for Acme" from "connected for Globex".
+///   - `UserNotificationPreference` looks like the slot and is a DEAD model
+///     with zero src/ references; building on it would tie new token storage to
+///     something nothing else maintains.
+/// `UserMfaEnrollment` is the structural precedent that DOES fit, and this
+/// mirrors it deliberately: per-user + tenant-scoped, an explicit encrypted
+/// secret column, and a three-part unique.
+///
+/// `tokenEncrypted` is written with an EXPLICIT encryptField at the usecase,
+/// following IntegrationConnection rather than the Epic B manifest — see the
+/// note on `ENCRYPTED_FIELDS`. It holds the whole OAuth payload (access token,
+/// refresh token, expiry) as one ciphertext blob, so a partial write cannot
+/// leave a refresh token stranded without its expiry.
+///
+/// `tenantId` is NOT NULL on purpose. A nullable tenantId forces the D.1
+/// asymmetric single-policy RLS form plus a SINGLE_POLICY_EXCEPTIONS entry, and
+/// the split-policy shape on a nullable column is what once let `app_user` NULL
+/// a row's tenantId and promote a private record into every tenant's view.
+model UserCalendarConnection {
+  id             String    @id @default(cuid())
+  tenantId       String
+  userId         String
+  /// 'google-calendar' | 'outlook-calendar'.
+  provider       String
+  /// encryptField(JSON.stringify({ accessToken, refreshToken, expiresAt })).
+  tokenEncrypted String
+  /// The scopes actually GRANTED, which may be narrower than those requested —
+  /// a user can decline individual scopes on the Google consent screen, and a
+  /// push that assumes it got what it asked for fails per-event at write time
+  /// instead of once at connect time.
+  scopesGranted  String[]
+  connectedAt    DateTime  @default(now())
+  /// Set when consent is withdrawn or a refresh returns invalid_grant. The row
+  /// is KEPT rather than deleted so the settings UI can say "reconnect" instead
+  /// of silently showing a disconnected state, and so C4's cleanup still knows
+  /// which events were pushed under it.
+  revokedAt      DateTime?
+  /// Why it was revoked, for the settings surface. Never a raw provider body.
+  revokedReason  String?
+  lastPushedAt   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, provider])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([tenantId, provider, revokedAt])
 }
 
 model TenantInvite {

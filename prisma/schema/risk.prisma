@@ -326,38 +326,38 @@ model RiskAppetiteBreach {
 /// RQ-3 — a single Monte Carlo simulation execution. Immutable after
 /// completion; re-running creates a new row.
 model RiskSimulationRun {
-  id                 String    @id @default(cuid())
-  tenantId           String
-  triggeredBy        String    @default("manual") // manual | scheduled | scenario
-  createdByUserId    String?
-  iterations         Int       @default(10000)
-  confidenceLevels   Json      @default("[0.90, 0.95, 0.99]")
-  seed               Int?
-  riskFilterJson     Json?
-  correlationId      String?
+  id                  String    @id @default(cuid())
+  tenantId            String
+  triggeredBy         String    @default("manual") // manual | scheduled | scenario
+  createdByUserId     String?
+  iterations          Int       @default(10000)
+  confidenceLevels    Json      @default("[0.90, 0.95, 0.99]")
+  seed                Int?
+  riskFilterJson      Json?
+  correlationId       String?
   // ── Results ──
-  portfolioMean      Float?
-  portfolioP50       Float?
+  portfolioMean       Float?
+  portfolioP50        Float?
   /// RQ3-1 — VaR-80: the "likely bad year" marker on the simulated LEC.
-  portfolioP80       Float?
-  portfolioP90       Float?
-  portfolioP95       Float?
-  portfolioP99       Float?
-  portfolioStdDev    Float?
-  perRiskResultsJson Json?
-  lecPointsJson      Json?
-  convergenceDelta   Float?
-  executionMs        Int?
+  portfolioP80        Float?
+  portfolioP90        Float?
+  portfolioP95        Float?
+  portfolioP99        Float?
+  portfolioStdDev     Float?
+  perRiskResultsJson  Json?
+  lecPointsJson       Json?
+  convergenceDelta    Float?
+  executionMs         Int?
   /// PR-L — a correlation matrix was supplied but was non-PSD, so it was
   /// dropped and the sim sampled independently. Surfaced on the result so
   /// the operator knows their configured correlations were not applied.
-  correlationsDropped Boolean  @default(false)
-  status             String    @default("RUNNING") // RUNNING | COMPLETED | FAILED
-  errorMessage       String?
-  startedAt          DateTime  @default(now())
-  completedAt        DateTime?
-  createdAt          DateTime  @default(now())
-  tenant             Tenant    @relation(fields: [tenantId], references: [id])
+  correlationsDropped Boolean   @default(false)
+  status              String    @default("RUNNING") // RUNNING | COMPLETED | FAILED
+  errorMessage        String?
+  startedAt           DateTime  @default(now())
+  completedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  tenant              Tenant    @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
@@ -460,14 +460,14 @@ model KeyRiskIndicator {
 
 /// RQ-6 — a single KRI measurement; RAG computed at write time.
 model KriReading {
-  id         String           @id @default(cuid())
-  tenantId   String
-  kriId      String
-  value      Float
-  ragStatus  String? // GREEN | AMBER | RED
-  recordedAt DateTime         @default(now())
-  recordedBy String?
-  note       String?
+  id                String           @id @default(cuid())
+  tenantId          String
+  kriId             String
+  value             Float
+  ragStatus         String? // GREEN | AMBER | RED
+  recordedAt        DateTime         @default(now())
+  recordedBy        String?
+  note              String?
   /// The remediation task spawned when this reading crossed into RED
   /// (one per breach). Soft reference by design — deleting the task
   /// leaves a dangling id the reconciler treats as "no task". Read by
@@ -476,9 +476,9 @@ model KriReading {
   /// Stamped when the remediation task reaches a terminal RESOLVED/
   /// CLOSED state — the loop-closing signal an auditor reads to see the
   /// breach was actually worked, not just flagged.
-  addressedAt DateTime?
-  kri        KeyRiskIndicator @relation(fields: [kriId], references: [id], onDelete: Cascade)
-  tenant     Tenant           @relation(fields: [tenantId], references: [id])
+  addressedAt       DateTime?
+  kri               KeyRiskIndicator @relation(fields: [kriId], references: [id], onDelete: Cascade)
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
 
   @@index([kriId, recordedAt])
   @@index([tenantId, recordedAt])
