@@ -200,6 +200,8 @@ const PROVIDER_BY_HOST_SUFFIX: ReadonlyArray<[string, string]> = [
     ['workday.com', 'workday'],
     ['workdaysuv.com', 'workday'],
     ['api.github.com', 'github'],
+    ['service-now.com', 'servicenow'],
+    ['servicenowservices.com', 'servicenow'],
 ];
 
 export function providerLabelFor(url: string): string {
