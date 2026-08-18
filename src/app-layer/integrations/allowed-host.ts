@@ -80,8 +80,12 @@ export function assertAllowedHost(raw: string, allow: HostAllowlist): string {
         // Names the rejected host so an operator who fat-fingered their
         // instance URL can see what was refused, without hinting at how to get
         // around it.
+        // Phrased without an article before the vendor label — "not a Okta
+        // domain" is what the obvious wording produces, and an error message a
+        // customer sees while being told their credentials were withheld is
+        // the wrong place to look sloppy.
         throw new Error(
-            `Refusing to send ${allow.label} credentials to "${hostname}": not a ${allow.label} domain. ` +
+            `Refusing to send ${allow.label} credentials to "${hostname}": not a recognised ${allow.label} host. ` +
                 `Expected a host under ${allow.suffixes.join(' or ')}.`,
         );
     }
@@ -107,4 +111,20 @@ export const SERVICENOW_HOSTS: HostAllowlist = {
     label: 'ServiceNow',
     suffixes: ['.service-now.com', '.servicenowservices.com'],
     exact: ['service-now.com', 'servicenowservices.com'],
+};
+
+/**
+ * Okta org hosts, including the preview (sandbox) estate.
+ *
+ * Already the data behind `PROVIDER_BY_HOST_SUFFIX`'s okta entries — repeated
+ * here rather than shared with it because the two answer different questions.
+ * That table decides a metric LABEL and may reasonably grow entries for hosts
+ * we merely observe; this one decides where a credential may be SENT, and must
+ * only ever shrink or grow deliberately. Deriving one from the other would make
+ * an observability edit a security change.
+ */
+export const OKTA_HOSTS: HostAllowlist = {
+    label: 'Okta',
+    suffixes: ['.okta.com', '.oktapreview.com'],
+    exact: ['okta.com', 'oktapreview.com'],
 };

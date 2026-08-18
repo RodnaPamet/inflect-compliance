@@ -44,6 +44,27 @@
  * exist in the suffix table, the directory must still exist, and it must still
  * make HTTP calls. A stale entry fails. That is the difference from an
  * exemption list, whose entries assert nothing and therefore cannot be wrong.
+ *
+ * ═══ WHAT THIS DOES NOT CHECK, STATED SO THE NAME DOES NOT OVERSELL IT ═══
+ *
+ * It verifies that a declared label is WELL-FORMED — that it resolves through
+ * providerLabelFor rather than falling to `other`. It does NOT verify that the
+ * provider actually talks to that host.
+ *
+ * `hris` → `bamboohr` passes because a sample bamboohr.com URL resolves. If
+ * hris/ gains a second vendor, or migrates off BambooHR entirely, the entry
+ * keeps passing while real traffic labels as `other` — the same miss this test
+ * exists for, one level up.
+ *
+ * That is not cleanly fixable: for Workday and ServiceNow the host is BUILT
+ * FROM CONFIG at runtime, which is precisely why they need a host allowlist at
+ * all, so there is no static string to extract. A partial version could assert
+ * that the statically-known suffixes (bamboohr, github, okta, googleapis)
+ * appear somewhere in their provider's source — it would catch migrating AWAY
+ * from a host and miss migrating TO one, and the asymmetry buys little.
+ *
+ * Left unclosed deliberately. A guard whose stated scope matches what it checks
+ * is useful; one whose name implies more is how the next person is fooled.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';

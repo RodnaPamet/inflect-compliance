@@ -1,0 +1,157 @@
+/**
+ * The one idempotent outbound write.
+ *
+ * Every ServiceNow create goes through `ensureRemoteRecord`. It exists as a
+ * single function rather than as steps inside an orchestrator method because
+ * the ORDER of its three operations is the entire safety property, and an
+ * order that lives inline gets rearranged by someone tidying up.
+ *
+ * ═══ THE ORDER, AND WHY EACH STEP IS WHERE IT IS ═══
+ *
+ *   1. mapping already carries a remoteEntityId  → UPDATE that record.
+ *   2. otherwise, ASK THE REMOTE whether our correlation id already exists.
+ *      → if it does, ADOPT it: record the id, do not create.
+ *   3. only then, CREATE — stamped with the correlation id, so that if this
+ *      process dies before step 4, the next attempt finds it at step 2.
+ *   4. record the remote id.
+ *
+ * Step 2 is the whole fix. Without it the window between a successful POST and
+ * a recorded id is a duplicate factory, and BullMQ's `attempts: 3` with
+ * exponential backoff means that window is entered on every transient failure —
+ * retry is the NORMAL case here, not an edge case. A duplicate is a duplicate
+ * incident in somebody's ITSM queue, which a human will work before anyone
+ * notices it was ours.
+ *
+ * ═══ WHAT THIS IS NOT ═══
+ *
+ * It is NOT check-then-create in the racing sense. A check-then-create race
+ * needs two writers; the two things that would produce them are both already
+ * closed:
+ *
+ *   - BullMQ retries a job SEQUENTIALLY. Attempt 2 begins after attempt 1 has
+ *     ended, so a retry never races its own predecessor.
+ *   - Two different jobs touching one connection are serialised by the
+ *     per-connection sync lock (integrations/connection-lock.ts).
+ *
+ * So the read at step 2 is not a guess about a concurrent writer — it is a
+ * recovery of what THIS logical write already did. That distinction is why a
+ * remote-side unique index is not required for correctness here, and it is
+ * stated because "check-then-create races" is true often enough to be applied
+ * as a reflex to a case where it does not.
+ *
+ * If the remote is later written to concurrently by something outside this
+ * lock, `findByCorrelationId` refusing on multiple matches is what surfaces it.
+ *
+ * @module integrations/providers/servicenow/outbound
+ */
+import type { RemoteObject } from '../../base-client';
+import type { ServiceNowClient, ServiceNowRow } from './client';
+import { correlationIdFor, type CorrelationIdentity } from './correlation';
+import { assertMappingComplete } from './field-mapping';
+import type { FieldMappings } from '../../base-mapper';
+import { recordOutboundWrite } from '@/lib/observability/integration-metrics';
+
+export type OutboundAction = 'created' | 'adopted' | 'updated';
+
+export interface EnsureRemoteRecordResult {
+    remoteId: string;
+    action: OutboundAction;
+    record: RemoteObject<ServiceNowRow>;
+    correlationId: string;
+}
+
+export interface EnsureRemoteRecordInput {
+    client: Pick<ServiceNowClient, 'findByCorrelationId' | 'createRemoteObject' | 'updateRemoteObject'>;
+    identity: CorrelationIdentity;
+    /** The mapped remote fields to write. */
+    data: Record<string, unknown>;
+    /** Already-known remote id from the mapping row, when there is one. */
+    knownRemoteId?: string | null;
+    /**
+     * Persist the remote id against the mapping. Called immediately after a
+     * create or an adopt — never batched with anything else, because every
+     * instruction between the remote write and this call widens the window the
+     * whole design exists to close.
+     */
+    recordRemoteId: (remoteId: string) => Promise<void>;
+    /**
+     * The resolved outbound mapping and what kind of record it targets.
+     *
+     * Optional so the idempotency path can be exercised on its own, but when
+     * supplied the mapping is checked BEFORE anything is sent. A connection
+     * whose mapping omits a required target writes a record the instance cannot
+     * route — green on our side, invisible on theirs.
+     */
+    mapping?: { recordType: string; mappings: FieldMappings };
+}
+
+export async function ensureRemoteRecord(
+    input: EnsureRemoteRecordInput,
+): Promise<EnsureRemoteRecordResult> {
+    try {
+        return await ensureRemoteRecordInner(input);
+    } catch (err) {
+        // Counted at the OUTERMOST boundary so a refusal (mapping incomplete,
+        // ambiguous correlation) is counted the same as a transport failure.
+        // Both mean the write did not happen, and an operator watching this
+        // rate cares about that, not about which layer said no.
+        //
+        // Note what this deliberately cannot count: a write that SUCCEEDED and
+        // produced a useless record. Nothing can count those, which is why the
+        // mapping check refuses before the request rather than after it.
+        recordOutboundWrite({ provider: input.identity.provider, action: 'failed' });
+        throw err;
+    }
+}
+
+async function ensureRemoteRecordInner(
+    input: EnsureRemoteRecordInput,
+): Promise<EnsureRemoteRecordResult> {
+    // 0. BEFORE ANY NETWORK CALL. A mapping missing a required target produces
+    //    a record ServiceNow cannot route: no assignment rule matches it, so
+    //    nobody is paged and nobody knows it exists — while our side reports a
+    //    clean 201. Refusing here is strictly better than a partial record
+    //    afterwards, because the partial record is indistinguishable from a
+    //    real one once it is in the queue.
+    if (input.mapping) {
+        assertMappingComplete(input.mapping.recordType, input.mapping.mappings);
+    }
+
+    const correlationId = correlationIdFor(input.identity);
+
+    // 1. Known record → update in place.
+    if (input.knownRemoteId) {
+        const record = await input.client.updateRemoteObject(input.knownRemoteId, input.data);
+        recordOutboundWrite({ provider: input.identity.provider, action: 'updated' });
+        return { remoteId: input.knownRemoteId, action: 'updated', record, correlationId };
+    }
+
+    // 2. Recover a record a previous attempt of THIS write already created.
+    const existing = await input.client.findByCorrelationId(correlationId);
+    if (existing) {
+        await input.recordRemoteId(existing.remoteId);
+        // Deliberately NOT followed by an update. The caller asked to ensure the
+        // record exists; adopting and then immediately writing would turn a
+        // recovery into a second mutation, and the interesting case for adopt
+        // is a crash mid-create where the local data has not changed since.
+        // `adopted` is kept distinct from `created` on purpose — see the
+        // counter's own note. A rate here says retries are entering the window
+        // between a successful POST and a recorded id.
+        recordOutboundWrite({ provider: input.identity.provider, action: 'adopted' });
+        return { remoteId: existing.remoteId, action: 'adopted', record: existing, correlationId };
+    }
+
+    // 3. Create, stamped so step 2 can find it next time.
+    const created = await input.client.createRemoteObject(input.data, correlationId);
+    if (!created.remoteId) {
+        // A create that returns no sys_id leaves a record we can never find
+        // again by id — but it IS stamped, so the next attempt adopts it at
+        // step 2. Failing loudly is right: continuing would record an empty id
+        // and make the mapping permanently unlinkable.
+        throw new Error('ServiceNow create returned no sys_id');
+    }
+    // 4. Record it. Nothing between this and the create.
+    await input.recordRemoteId(created.remoteId);
+    recordOutboundWrite({ provider: input.identity.provider, action: 'created' });
+    return { remoteId: created.remoteId, action: 'created', record: created, correlationId };
+}

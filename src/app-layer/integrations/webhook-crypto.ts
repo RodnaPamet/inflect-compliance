@@ -83,6 +83,11 @@ export const PROVIDER_SIGNATURE_HEADERS: Record<string, string> = {
     gitlab: 'x-gitlab-token',
     azure: 'x-azure-signature',
     aws: 'x-amz-sns-signature',
+    // ServiceNow has no native webhook signing: a business rule composes the
+    // outbound REST call by hand, so the header name is OURS to choose and the
+    // customer's rule is configured to send it. Named for us rather than for
+    // ServiceNow because it is a header this platform defined.
+    servicenow: 'x-inflect-signature',
 };
 
 /**
