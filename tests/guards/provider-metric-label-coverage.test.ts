@@ -76,6 +76,23 @@ const PROVIDERS = path.join(INTEGRATIONS, 'providers');
 
 /** Directory → the metric label(s) its outbound traffic carries. */
 const PROVIDER_TRAFFIC_LABELS: Readonly<Record<string, readonly string[]>> = {
+    /**
+     * SHARED LABELS, and that is a property of the hosts rather than a gap.
+     *
+     * The calendar push talks to googleapis.com (token + Calendar API) and
+     * login.microsoftonline.com / graph.microsoft.com — the SAME hosts the
+     * google-workspace and entra-id directory providers already use. The label
+     * is derived from the host, so calendar traffic is not separable from
+     * directory-sync traffic in `integration.http.*`, and adding a narrower
+     * suffix would MISLABEL the other providers' token calls rather than fix it
+     * (oauth2.googleapis.com serves every Google OAuth client we have).
+     *
+     * Calendar-specific signal lives in the calendar-specific counters instead
+     * — `calendar.push.outcome` and `calendar.consent.revoked` — which is where
+     * it belongs anyway, since the questions worth asking about a push are
+     * about outcomes, not about HTTP.
+     */
+    calendar: ['google-workspace', 'microsoft-graph'],
     'entra-id': ['microsoft-graph'],
     github: ['github'],
     'google-workspace': ['google-workspace'],
