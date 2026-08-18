@@ -46,15 +46,23 @@ describe('checkWebhookUrl', () => {
 // There was no redirect test at all before this.
 
 describe('safeFetch — redirect handling', () => {
-    const realFetch = global.fetch;
     let lastInit: RequestInit | undefined;
+    /**
+     * The stub `safeFetch`'s egress is routed through. Assigned per test.
+     *
+     * This is installed on the `undici` module rather than on `global.fetch`,
+     * because `safeFetch` deliberately calls undici's own fetch — pairing an
+     * npm-undici dispatcher with Node's bundled undici breaks outright on
+     * undici 8. Mocking the global here would silently stop intercepting and
+     * these tests would attempt real network calls to hooks.example.com.
+     * See tests/unit/webhook-safety-dispatcher-egress.test.ts.
+     */
+    let fetchStub: (url: unknown, init?: RequestInit) => Promise<Response>;
 
     beforeEach(() => {
         jest.resetModules();
         lastInit = undefined;
-    });
-    afterEach(() => {
-        global.fetch = realFetch;
+        fetchStub = async () => new Response('ok', { status: 200 });
     });
 
     /** Stub DNS so the guard resolves to a public address without a network. */
@@ -68,15 +76,22 @@ describe('safeFetch — redirect handling', () => {
 
     async function loadSafeFetch() {
         mockPublicDns();
+        // `Agent` stays REAL: the pinned dispatcher must still be constructed
+        // exactly as production does, so a change that breaks its construction
+        // is not hidden by the mock. Only the transport is stubbed.
+        jest.doMock('undici', () => ({
+            ...jest.requireActual('undici'),
+            fetch: (url: unknown, init?: RequestInit) => fetchStub(url, init),
+        }));
         return await import('@/app-layer/automation/webhook-safety');
     }
 
     it('sends redirect:"manual" so fetch cannot follow a hop unchecked', async () => {
         const { safeFetch } = await loadSafeFetch();
-        global.fetch = jest.fn(async (_u: unknown, init?: RequestInit) => {
+        fetchStub = async (_u: unknown, init?: RequestInit) => {
             lastInit = init;
             return new Response('ok', { status: 200 });
-        }) as unknown as typeof fetch;
+        };
 
         await safeFetch('https://hooks.example.com/path', { method: 'POST' });
         expect(lastInit?.redirect).toBe('manual');
@@ -84,10 +99,10 @@ describe('safeFetch — redirect handling', () => {
 
     it('applies redirect:"manual" AFTER the caller init — a caller cannot opt back in', async () => {
         const { safeFetch } = await loadSafeFetch();
-        global.fetch = jest.fn(async (_u: unknown, init?: RequestInit) => {
+        fetchStub = async (_u: unknown, init?: RequestInit) => {
             lastInit = init;
             return new Response('ok', { status: 200 });
-        }) as unknown as typeof fetch;
+        };
 
         // A caller trying to restore the vulnerable behaviour must not win.
         await safeFetch('https://hooks.example.com/path', {
@@ -99,12 +114,11 @@ describe('safeFetch — redirect handling', () => {
 
     it.each([301, 302, 303, 307, 308])('refuses a %s redirect instead of following it', async (status) => {
         const { safeFetch, RedirectNotAllowedError } = await loadSafeFetch();
-        global.fetch = jest.fn(async () =>
+        fetchStub = async () =>
             new Response(null, {
                 status,
                 headers: { location: 'http://169.254.169.254/latest/meta-data/' },
-            }),
-        ) as unknown as typeof fetch;
+            });
 
         await expect(safeFetch('https://hooks.example.com/path')).rejects.toBeInstanceOf(
             RedirectNotAllowedError,
@@ -113,12 +127,11 @@ describe('safeFetch — redirect handling', () => {
 
     it('names the refused target so the operator can fix the endpoint', async () => {
         const { safeFetch } = await loadSafeFetch();
-        global.fetch = jest.fn(async () =>
+        fetchStub = async () =>
             new Response(null, {
                 status: 302,
                 headers: { location: 'http://169.254.169.254/latest/meta-data/' },
-            }),
-        ) as unknown as typeof fetch;
+            });
 
         await expect(safeFetch('https://hooks.example.com/path')).rejects.toThrow(
             /169\.254\.169\.254/,
@@ -127,7 +140,7 @@ describe('safeFetch — redirect handling', () => {
 
     it('passes a normal 2xx straight through', async () => {
         const { safeFetch } = await loadSafeFetch();
-        global.fetch = jest.fn(async () => new Response('body', { status: 201 })) as unknown as typeof fetch;
+        fetchStub = async () => new Response('body', { status: 201 });
 
         const res = await safeFetch('https://hooks.example.com/path');
         expect(res.status).toBe(201);
@@ -135,7 +148,7 @@ describe('safeFetch — redirect handling', () => {
 
     it('does NOT treat a 4xx/5xx as a redirect', async () => {
         const { safeFetch } = await loadSafeFetch();
-        global.fetch = jest.fn(async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
+        fetchStub = async () => new Response('nope', { status: 500 });
 
         const res = await safeFetch('https://hooks.example.com/path');
         expect(res.status).toBe(500);
