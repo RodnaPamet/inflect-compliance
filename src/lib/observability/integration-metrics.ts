@@ -26,6 +26,8 @@ let _checkDuration: Histogram | null = null;
 let _syncTruncated: Counter | null = null;
 let _syncConflict: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _outboundWrite: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+let _calendarPush: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+let _calendarRevoked: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _identityDeprovisioned: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _deviceReport: Counter | null = null;
@@ -141,6 +143,47 @@ export function recordOutboundWrite(attrs: {
 }): void {
     if (!_outboundWrite) _outboundWrite = getMeter().createCounter('integration.outbound.write', { description: 'Outbound writes to a remote system, by outcome', unit: '1' });
     _outboundWrite.add(1, { provider: attrs.provider, action: attrs.action });
+}
+
+/**
+ * One user's calendar push, by outcome.
+ *
+ * `revoked` and `throttled` are kept SEPARATE from `failed`, and that
+ * separation is the metric's whole value. A revocation is permanent and
+ * actionable only by the user; a throttle is temporary and actionable only by
+ * us; a failure is a bug. Collapsing them produces a single number that rises
+ * for three unrelated reasons and can be acted on for none.
+ *
+ * PER-USER PUSH MEANS REQUEST VOLUME SCALES WITH HEADCOUNT, not tenant count,
+ * so this is the surface most likely to meet a provider rate limit. A rising
+ * `throttled` rate is the early warning, and it arrives long before anything
+ * fails.
+ *
+ * Labelled by provider only. A userId label would be unbounded cardinality —
+ * one metric series per employee is how an observability change becomes the
+ * outage.
+ */
+export function recordCalendarPushOutcome(attrs: {
+    provider: string;
+    outcome: 'pushed' | 'nothing-to-do' | 'revoked' | 'throttled' | 'failed';
+}): void {
+    if (!_calendarPush) _calendarPush = getMeter().createCounter('calendar.push.outcome', { description: "One user's calendar push, by outcome", unit: '1' });
+    _calendarPush.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+}
+
+/**
+ * A user's consent was found withdrawn, and the connection stopped.
+ *
+ * Separate from the `revoked` push outcome above because they answer different
+ * questions: this fires ONCE per revocation and is the alertable event, while
+ * the push outcome fires on the run that discovered it. If a revoked connection
+ * were ever re-scheduled, the push counter would climb while this one stayed
+ * flat — which is precisely the "fails every night forever" state this whole
+ * module exists to prevent, made visible as a divergence between two series.
+ */
+export function recordCalendarConsentRevoked(attrs: { provider: string }): void {
+    if (!_calendarRevoked) _calendarRevoked = getMeter().createCounter('calendar.consent.revoked', { description: 'Calendar consent found withdrawn at the provider', unit: '1' });
+    _calendarRevoked.add(1, { provider: attrs.provider });
 }
 
 /**
