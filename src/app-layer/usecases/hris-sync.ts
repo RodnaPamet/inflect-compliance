@@ -24,7 +24,15 @@ function makeSystemCtx(tenantId: string): RequestContext {
 
 export interface HrisSyncResult {
     executionId: string;
-    status: 'PASSED' | 'ERROR';
+    /**
+     * `PARTIAL` is a truncated-but-RESUMABLE pass: rows were upserted, a cursor
+     * was stored, and the next scheduled run continues it. Deliberately not
+     * `PASSED` — the pass has not finished and no departure reconcile has run,
+     * so calling it passed would make a multi-run pass indistinguishable from a
+     * completed one in exactly the logs someone would check to ask why an
+     * employee still shows as active. Mirrors IdentitySyncResult.
+     */
+    status: 'PASSED' | 'ERROR' | 'PARTIAL';
     /**
      * True when the queue must NOT immediately re-run this sync. Set for a
      * revoked credential, a throttle past the absorb budget, and a truncated
@@ -48,7 +56,7 @@ export async function runHrisSync(input: {
     return runInTenantContext(ctx, async (db) => {
         const conn = await db.integrationConnection.findFirst({
             where: { id: input.connectionId, tenantId: ctx.tenantId },
-            select: { id: true, provider: true, configJson: true, secretEncrypted: true },
+            select: { id: true, provider: true, configJson: true, secretEncrypted: true, syncCursor: true, syncPassStartedAt: true },
         });
         if (!conn || !isHrisProviderId(conn.provider)) {
             const execution = await db.integrationExecution.create({
@@ -72,10 +80,18 @@ export async function runHrisSync(input: {
         const start = Date.now();
         let roster: NormalizedEmployee[];
         let complete: boolean;
+        let resumeToken: string | null = null;
+        // The pass this run belongs to. A stored syncPassStartedAt means an
+        // earlier run of the SAME pass is still in flight; only a fresh pass
+        // starts the clock now. This is the value the reconcile compares
+        // against, so getting it from the connection rather than from `now` is
+        // what makes a multi-run pass reconcile correctly.
+        const passStartedAt = conn.syncPassStartedAt ?? now;
         try {
-            const res = await resolved.listEmployees({ ...config, ...secrets });
+            const res = await resolved.listEmployees({ ...config, ...secrets }, conn.syncCursor);
             roster = res.employees;
             complete = res.complete;
+            resumeToken = res.resumeToken ?? null;
         } catch (e) {
             const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
             await db.integrationExecution.update({ where: { id: execution.id }, data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() } });
@@ -117,39 +133,117 @@ export async function runHrisSync(input: {
         // drive the departure reconcile (unseen employees would be wrongly
         // terminated). Upsert what we saw, skip departures, fail loudly.
         if (!complete) {
-            const msg = `Partial HRIS roster: hit the ${roster.length}-employee cap with more rows available. Departure reconcile skipped.`;
+            recordSyncTruncated({ provider: conn.provider }); // H6 — alertable truncation signal
+
+            if (resumeToken) {
+                // RESUMABLE — progress, not failure. HRIS only ever had the
+                // branch below, so a roster past MAX_EMPLOYEES was a PERMANENT
+                // `ERROR, noRetry: true`: for any customer large enough to
+                // exceed the cap the provider could never succeed, on any run,
+                // ever. identity-sync solved this (H3-2); HRIS never got the
+                // second branch.
+                //
+                // Upsert what we saw, store the cursor, and let the next
+                // scheduled run continue until the pass completes and
+                // reconciles. Reporting ERROR here would page someone nightly
+                // for a large roster working exactly as designed.
+                await db.integrationConnection.updateMany({
+                    where: { id: conn.id },
+                    data: { syncCursor: resumeToken, syncPassStartedAt: passStartedAt },
+                });
+                const msg = `Partial HRIS roster (${roster.length} employees this run); pass continues from the stored cursor on the next run.`;
+                await db.integrationExecution.update({
+                    where: { id: execution.id },
+                    data: {
+                        status: 'PASSED',
+                        errorMessage: null,
+                        resultJson: { upserted, managersLinked, departed: 0, total: roster.length, partial: true, resuming: true },
+                        durationMs: Date.now() - start,
+                        completedAt: new Date(),
+                    },
+                });
+                logger.info('hris-sync partial — cursor stored, pass continues', {
+                    component: 'hris-sync',
+                    tenantId: ctx.tenantId,
+                    provider: conn.provider,
+                    executionId: execution.id,
+                    upserted,
+                    passStartedAt,
+                });
+                await clearAuthFailure(db, conn.id, conn.provider);
+                return { executionId: execution.id, status: 'PARTIAL', upserted, managersLinked, errorMessage: msg };
+            }
+
+            // NOT resumable — unchanged behaviour. Loud and non-retryable,
+            // because re-reading truncates at the same place.
+            const msg = `Partial HRIS roster: hit the ${roster.length}-employee cap with more rows available, and this provider cannot resume. Departure reconcile skipped.`;
             await db.integrationExecution.update({
                 where: { id: execution.id },
                 data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, total: roster.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
             });
             logger.warn('hris-sync partial roster — departure reconcile skipped', { component: 'hris-sync', tenantId: ctx.tenantId, executionId: execution.id, upserted });
-            // conn.provider, not a literal. This was hardcoded 'bamboohr'
-            // while the identity twin (identity-sync.ts:191) passes the real
-            // one — invisible while the allowlist had a single member, and
-            // silently wrong the moment it has two: a Workday truncation
-            // would alert as bamboohr, so the page goes to whoever owns
-            // bamboohr and a real Workday truncation reads as someone else's
-            // problem.
-            recordSyncTruncated({ provider: conn.provider }); // H6 — alertable truncation signal
             // Loud, but NOT retryable: the cap is deterministic, so a retry
             // re-reads the same too-large roster and truncates identically.
             return { executionId: execution.id, status: 'ERROR', upserted, managersLinked, errorMessage: msg, noRetry: true };
         }
 
         // H3 — departed-employee reconcile: a source=HRIS employee absent from a
-        // COMPLETE roster was DELETED in BambooHR (not just terminated) and would
+        // COMPLETE roster was DELETED in the HRIS (not just terminated) and would
         // otherwise stay ACTIVE forever, invisible to offboarding. Mark them
-        // TERMINATED. Guarded on a non-empty roster so an empty-but-complete
-        // response (likely an API glitch) never mass-terminates.
+        // TERMINATED.
+        //
+        // GUARDED ON THE PASS SEEING ROWS, NOT THIS RUN. The guard used to read
+        // `roster.length > 0` — correct while a pass was exactly one run, and
+        // quietly wrong the moment resume made it several. `roster` now holds
+        // only the LAST run's slice, and the last run of a pass reads an empty
+        // final page whenever the roster size is an exact multiple of the
+        // per-run cap: the provider requests from an offset at the end of the
+        // report, gets zero rows, and correctly reports `complete: true` with
+        // nothing in hand.
+        //
+        // With the old guard that pass would clear its cursor, report PASSED,
+        // and NEVER reconcile — permanently, every night, for that tenant.
+        // Deleted employees stay ACTIVE forever, which is precisely the state
+        // this reconcile exists to prevent, and it fails silently on a roster
+        // size nobody would think to vary while debugging.
+        //
+        // `syncPassStartedAt` being set is the pass-level evidence the run-level
+        // count cannot give: an earlier run of THIS pass read a full page, so
+        // the API is answering and the empty final page is the end of the
+        // report rather than the glitch the guard was written for. A first-run
+        // empty roster still skips, which is the case that mattered originally.
+        //
+        // Reconciles on `syncedAt < passStartedAt`, NOT `workEmail: { notIn:
+        // seenEmails }`. That was correct only while a pass was a single run.
+        // Under resume `roster` holds just the LAST run's slice, so a notIn
+        // reconcile would terminate every employee upserted by every earlier
+        // run of the same pass — the wrongful-mass-termination failure this
+        // whole area exists to prevent, introduced BY the resume feature.
+        //
+        // Anything not touched since the pass BEGAN was absent from the roster
+        // across every run of that pass, so it is genuinely gone. The whole
+        // callback is one RLS transaction, so upsert + reconcile commit
+        // atomically.
         let departed = 0;
-        if (roster.length > 0) {
-            const seenEmails = roster.map((e) => e.workEmail).filter(Boolean);
+        // Boolean(), not `!== null`: an earlier-run marker is absent as either
+        // null or undefined depending on the caller, and `!== null` reads
+        // undefined as "resumed" — which would make the guard unconditional
+        // and reinstate the mass-terminate it exists to prevent.
+        const passSawRows = roster.length > 0 || Boolean(conn.syncPassStartedAt);
+        if (passSawRows) {
             const res = await db.employee.updateMany({
-                where: { tenantId: ctx.tenantId, source: 'HRIS', status: { not: 'TERMINATED' }, workEmail: { notIn: seenEmails } },
+                where: { tenantId: ctx.tenantId, source: 'HRIS', status: { not: 'TERMINATED' }, syncedAt: { lt: passStartedAt } },
                 data: { status: 'TERMINATED', syncedAt: now },
             });
             departed = res.count;
         }
+
+        // The pass is done — clear the cursor so the next run starts fresh.
+        // Left set, the next run would resume a pass that already reconciled.
+        await db.integrationConnection.updateMany({
+            where: { id: conn.id },
+            data: { syncCursor: null, syncPassStartedAt: null },
+        });
 
         await db.integrationExecution.update({
             where: { id: execution.id },
