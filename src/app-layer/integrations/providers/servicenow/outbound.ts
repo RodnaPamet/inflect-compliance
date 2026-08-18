@@ -49,6 +49,7 @@ import type { ServiceNowClient, ServiceNowRow } from './client';
 import { correlationIdFor, type CorrelationIdentity } from './correlation';
 import { assertMappingComplete } from './field-mapping';
 import type { FieldMappings } from '../../base-mapper';
+import { recordOutboundWrite } from '@/lib/observability/integration-metrics';
 
 export type OutboundAction = 'created' | 'adopted' | 'updated';
 
@@ -87,6 +88,25 @@ export interface EnsureRemoteRecordInput {
 export async function ensureRemoteRecord(
     input: EnsureRemoteRecordInput,
 ): Promise<EnsureRemoteRecordResult> {
+    try {
+        return await ensureRemoteRecordInner(input);
+    } catch (err) {
+        // Counted at the OUTERMOST boundary so a refusal (mapping incomplete,
+        // ambiguous correlation) is counted the same as a transport failure.
+        // Both mean the write did not happen, and an operator watching this
+        // rate cares about that, not about which layer said no.
+        //
+        // Note what this deliberately cannot count: a write that SUCCEEDED and
+        // produced a useless record. Nothing can count those, which is why the
+        // mapping check refuses before the request rather than after it.
+        recordOutboundWrite({ provider: input.identity.provider, action: 'failed' });
+        throw err;
+    }
+}
+
+async function ensureRemoteRecordInner(
+    input: EnsureRemoteRecordInput,
+): Promise<EnsureRemoteRecordResult> {
     // 0. BEFORE ANY NETWORK CALL. A mapping missing a required target produces
     //    a record ServiceNow cannot route: no assignment rule matches it, so
     //    nobody is paged and nobody knows it exists — while our side reports a
@@ -102,6 +122,7 @@ export async function ensureRemoteRecord(
     // 1. Known record → update in place.
     if (input.knownRemoteId) {
         const record = await input.client.updateRemoteObject(input.knownRemoteId, input.data);
+        recordOutboundWrite({ provider: input.identity.provider, action: 'updated' });
         return { remoteId: input.knownRemoteId, action: 'updated', record, correlationId };
     }
 
@@ -113,6 +134,10 @@ export async function ensureRemoteRecord(
         // record exists; adopting and then immediately writing would turn a
         // recovery into a second mutation, and the interesting case for adopt
         // is a crash mid-create where the local data has not changed since.
+        // `adopted` is kept distinct from `created` on purpose — see the
+        // counter's own note. A rate here says retries are entering the window
+        // between a successful POST and a recorded id.
+        recordOutboundWrite({ provider: input.identity.provider, action: 'adopted' });
         return { remoteId: existing.remoteId, action: 'adopted', record: existing, correlationId };
     }
 
@@ -127,5 +152,6 @@ export async function ensureRemoteRecord(
     }
     // 4. Record it. Nothing between this and the create.
     await input.recordRemoteId(created.remoteId);
+    recordOutboundWrite({ provider: input.identity.provider, action: 'created' });
     return { remoteId: created.remoteId, action: 'created', record: created, correlationId };
 }
