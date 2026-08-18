@@ -41,7 +41,9 @@ import {
     type ListAccountsResult,
     type NormalizedIdentityAccount,
 } from '../identity/types';
+import { promises as dnsPromises } from 'node:dns';
 import { logger } from '@/lib/observability/logger';
+import { isPrivateAddress } from '@/app-layer/automation/webhook-safety';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
@@ -67,6 +69,48 @@ const USER_ATTRIBUTES = [
 const USER_FILTER = '(&(objectCategory=person)(objectClass=user))';
 
 /** The minimal LDAP client surface this provider uses — satisfied by ldapts' Client. */
+/**
+ * Refuse to disable TLS verification for a host that is not internal.
+ *
+ * Bound to the RESOLVED address rather than the hostname, because an
+ * attacker-controlled name that resolves into RFC1918 would otherwise satisfy a
+ * name-shaped check while pointing wherever they like — and internal-range DNS
+ * entries are exactly what an AD deployment has in abundance.
+ *
+ * Residual window, stated rather than papered over: this resolves at
+ * client-construction time and ldapts opens the socket afterwards, so DNS can
+ * still move in between. Unlike the HTTP egress path there is no pinning seam in
+ * ldapts to close that gap. This narrows the exposure from "any host, forever"
+ * to "a host that was internal moments ago", which is a real reduction but not
+ * an elimination.
+ */
+async function assertPrivateLdapHost(rawUrl: string): Promise<void> {
+    let host: string;
+    try {
+        host = new URL(rawUrl).hostname;
+    } catch {
+        throw new Error('Active Directory URL is malformed.');
+    }
+    // An IP literal needs no lookup, and passing one to dns.lookup would
+    // succeed trivially by echoing it back.
+    if (isPrivateAddress(host)) return;
+
+    let addresses: { address: string }[];
+    try {
+        addresses = await dnsPromises.lookup(host, { all: true });
+    } catch {
+        throw new Error(
+            `Refusing to disable TLS verification: ${host} could not be resolved.`,
+        );
+    }
+    if (addresses.length === 0 || !addresses.every((a) => isPrivateAddress(a.address))) {
+        throw new Error(
+            `Refusing to disable TLS verification for ${host}, which resolves outside private address space. ` +
+                'Self-signed certificates are supported for internal directory hosts only.',
+        );
+    }
+}
+
 export interface LdapClientLike {
     bind(dn: string, password: string): Promise<void>;
     search(
@@ -232,7 +276,34 @@ export class ActiveDirectoryProvider implements ScheduledCheckProvider, Identity
 
     private async makeClient(config: Record<string, unknown>): Promise<LdapClientLike> {
         const url = String(config.url ?? '').trim();
-        const rejectUnauthorized = !truthy(config.allowSelfSignedTls, false);
+
+        // The ldaps:// check used to live only in validateConnection. But
+        // validateConnection is the path an OPERATOR exercises by hand, and
+        // listAccounts (:284) reaches this same factory unattended on every
+        // scheduled sync without going near it. A connection whose url was
+        // changed to ldap:// after its one successful test would therefore bind
+        // in clear text, with the service-account password on the wire, and
+        // nothing would say so. Enforcing at the factory covers both callers,
+        // because the factory is the only way a client is built.
+        if (!/^ldaps:\/\//i.test(url)) {
+            throw new Error('Active Directory URL must use ldaps:// (LDAP over TLS).');
+        }
+
+        const wantsSelfSigned = truthy(config.allowSelfSignedTls, false);
+        // `allowSelfSignedTls` disables certificate verification, which is the
+        // control that would otherwise make a redirected bind fail loudly. Since
+        // `url` is tenant-admin config with no vendor allowlist to check it
+        // against — an AD host is customer infrastructure, so there is no suffix
+        // to allow — the pair is the danger: redirect the bind AND remove the
+        // check that would catch it, in one form submission.
+        //
+        // The option itself is legitimate; its stated justification is an
+        // internal or enterprise CA. That justification applies, by definition,
+        // only to an internal host. So the exemption is bound to that condition
+        // rather than to the operator's assertion.
+        if (wantsSelfSigned) await assertPrivateLdapHost(url);
+
+        const rejectUnauthorized = !wantsSelfSigned;
         const opts: LdapClientOptions = {
             url,
             tlsOptions: { rejectUnauthorized },
