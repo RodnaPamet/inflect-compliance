@@ -30,6 +30,7 @@ import * as path from 'path';
  * Every route file listed here is checked for the centralized admin guard import.
  */
 const ADMIN_ONLY_ROUTES = [
+    'admin/calendar/consent/route.ts',
     // /admin/* routes
     'admin/members/route.ts',
     'admin/members/[membershipId]/route.ts',

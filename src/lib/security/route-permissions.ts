@@ -86,6 +86,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // request. Two rules rather than one so the GET stays readable to a
     // role that cannot mutate.
     {
+        // Tenant-wide calendar consent. `admin.manage`, not a calendar key:
+        // Microsoft's tenant-wide grant admits EVERY user in the tenant to a
+        // third-party calendar API, which is an admin authority rather than a
+        // calendar one. A weaker key here would be an UNLOGGED gate — the
+        // request would pass the middleware and be refused deeper, where
+        // nothing writes AUTHZ_DENIED.
+        path: new RegExp(`^${T}\\/admin\\/calendar\\/consent$`),
+        permission: 'admin.manage',
+        note: 'Grant, read or withdraw tenant-wide calendar consent (audited).',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/dsar-requests(\\/.*)?$`),
         methods: ['GET'],
         permission: 'admin.compliance_dsar_view',
