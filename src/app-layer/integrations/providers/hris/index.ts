@@ -43,10 +43,30 @@ export interface NormalizedEmployee {
 export interface ListEmployeesResult {
     employees: NormalizedEmployee[];
     complete: boolean;
+    /**
+     * Opaque cursor to continue THIS pass on the next scheduled run.
+     *
+     * Set only alongside `complete: false`, and only by providers that can
+     * genuinely resume across a process boundary. Its presence is what turns a
+     * truncated roster from a permanent failure into progress — see the two
+     * branches in usecases/hris-sync.
+     *
+     * Absent (or null) means "truncated and cannot resume", which stays a loud
+     * non-retryable error: re-reading would truncate at the same place.
+     */
+    resumeToken?: string | null;
 }
 
 export interface HrisSyncProvider {
-    listEmployees(config: Record<string, unknown>): Promise<ListEmployeesResult>;
+    /**
+     * @param resumeFrom cursor from a previous partial run of the same pass,
+     *   or null/undefined to start a fresh pass. Providers that cannot resume
+     *   ignore it and never return a `resumeToken`.
+     */
+    listEmployees(
+        config: Record<string, unknown>,
+        resumeFrom?: string | null,
+    ): Promise<ListEmployeesResult>;
 }
 
 /**
