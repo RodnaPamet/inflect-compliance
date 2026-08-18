@@ -35,6 +35,12 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
  * reason. A new executor job must be scheduled OR added here deliberately.
  */
 const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
+    // The per-tenant half of the calendar push. Deliberately NOT scheduled:
+    // JOB_DEFAULTS is inert for cron-fired jobs (registerSchedules passes no
+    // opts, so BullMQ falls back to the queue default of 3 exponential
+    // attempts), and this job talks to Google / Graph. Arriving via enqueue()
+    // is the only way its attempts:1 actually applies.
+    'calendar-push-tenant': 'dispatched by calendar-push-dispatch',
     // These three said 'dispatched by automation-runner' and nothing checked
     // it. It was false: automation-runner resolves a control's automationKey
     // and calls the PROVIDER's runCheck — it never enqueues these job names.

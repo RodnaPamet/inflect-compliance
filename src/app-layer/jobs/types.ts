@@ -636,6 +636,8 @@ export interface JobPayloadMap {
     'cloud-posture-collect-dispatch': CloudPostureCollectDispatchPayload;
     'azure-posture-collect': AzurePostureCollectPayload;
     'gcp-posture-collect': GcpPostureCollectPayload;
+    'calendar-push-dispatch': CalendarPushDispatchPayload;
+    'calendar-push-tenant': CalendarPushTenantPayload;
     'hris-sync': HrisSyncPayload;
     'hris-sync-dispatch': HrisSyncDispatchPayload;
 }
@@ -676,6 +678,17 @@ export interface IdentitySyncPayload {
 }
 
 /** identity-sync-dispatch — fan out an identity-sync per enabled connection. */
+/** calendar-push-dispatch — cron fan-out, one child per tenant with a connection. */
+export interface CalendarPushDispatchPayload {
+    // no fields — cron-triggered global fan-out
+    _?: never;
+}
+
+/** calendar-push-tenant — one tenant's connected users, visited in process. */
+export interface CalendarPushTenantPayload {
+    tenantId: string;
+}
+
 export interface IdentitySyncDispatchPayload {
     // no fields — cron-triggered global fan-out
     _?: never;
@@ -725,6 +738,33 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 50,
         removeOnFail: 200,
+    },
+    'calendar-push-dispatch': {
+        // One attempt. The dispatcher only enqueues; a transient Redis failure
+        // is picked up by tomorrow's run, and retrying a fan-out is how one
+        // blip becomes a second pass over everyone's calendar.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'calendar-push-tenant': {
+        // One attempt, and this entry is LOAD-BEARING in a way most are not:
+        // JOB_DEFAULTS is inert for cron-scheduled jobs (registerSchedules
+        // passes no opts, so BullMQ falls back to the queue default of 3
+        // exponential attempts). It applies here BECAUSE this job arrives via
+        // enqueue(). Collapsing the dispatcher and the child into one scheduled
+        // job silently restores 3 attempts against a rate-limited provider.
+        //
+        // One is also the right number on its own merits: runUserPushGuarded
+        // converts every failure into a recorded outcome and returns, so
+        // nothing reaches the queue to retry; and the sweep is idempotent by
+        // contentHash, with FAILED rows re-pushed and PENDING_DELETE rows
+        // re-deleted, so the next scheduled run IS the retry.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
     },
     'identity-sync': {
         // One attempt — a directory pull hits a rate-limited vendor API; a

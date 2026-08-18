@@ -1141,6 +1141,31 @@ executorRegistry.register('gcp-posture-collect', async (payload) => {
     return makeResult('gcp-posture-collect', startedAt, startMs, 1, r.evidenceCreated, 0, { executionId: r.executionId, status: r.status }, { status: r.status, errorMessage: r.errorMessage, noRetry: r.noRetry });
 });
 
+// C-roadmap — calendar-push-dispatch: fan out a per-tenant push per tenant with
+// a live user calendar connection.
+//
+// `async () =>` with NO parameter, deliberately: the tenant-isolation
+// regression guard bans `async (_payload)` on a dispatcher outright, with no
+// exemption list, because an unused payload parameter is how a cross-tenant job
+// acquires a tenantId nobody notices.
+executorRegistry.register('calendar-push-dispatch', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runCalendarPushDispatch } = await import('./calendar-push');
+    const r = await runCalendarPushDispatch({});
+    return makeResult('calendar-push-dispatch', startedAt, startMs, r.tenants, r.dispatched, 0, { tenants: r.tenants, failed: r.failed });
+});
+
+// C-roadmap — calendar-push-tenant: one tenant's connected users. Arrives via
+// enqueue(), which is the ONLY path that applies its JOB_DEFAULTS entry.
+executorRegistry.register('calendar-push-tenant', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runCalendarPushTenant } = await import('./calendar-push');
+    const r = await runCalendarPushTenant({ tenantId: payload.tenantId });
+    return makeResult('calendar-push-tenant', startedAt, startMs, r.connections, r.pushed, 0, { connections: r.connections });
+});
+
 // PR-4 — hris-sync: sync one BambooHR connection's roster.
 executorRegistry.register('hris-sync', async (payload) => {
     const startedAt = new Date().toISOString();

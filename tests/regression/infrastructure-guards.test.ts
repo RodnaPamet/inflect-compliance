@@ -75,7 +75,7 @@ describe('Infrastructure Regression Guards', () => {
         });
 
         test('exactly 29 scheduled jobs exist', () => {
-            expect(SCHEDULED_JOBS).toHaveLength(29);
+            expect(SCHEDULED_JOBS).toHaveLength(30);
         });
 
         test('scheduled job names match expected set', () => {
@@ -89,6 +89,10 @@ describe('Infrastructure Regression Guards', () => {
                 // campaigns approaching their dueAt.
                 'access-review-reminder',
                 'automation-runner',
+                // C-roadmap — cross-tenant fan-out for the per-user calendar
+                // push. The child (calendar-push-tenant) is enqueued, not
+                // scheduled, so only the dispatcher appears here.
+                'calendar-push-dispatch',
                 // The fan-out the three *-posture-collect executors never
                 // had — they were registered and enqueued by nothing, so the
                 // rolling-evidence collectors behind them were unreachable.
