@@ -1,12 +1,19 @@
 /**
  * H1 — provider-fleet runtime ignition ratchet.
  *
- * `src/app-layer/integrations/bootstrap.ts` registers all 13 providers as
+ * `src/app-layer/integrations/bootstrap.ts` registers every provider as
  * top-level side effects, but nothing imported it at runtime — so the registry
  * was empty in the running web + worker (dropdown empty, automation-runner
  * resolved no provider). This locks in:
  *   1. Both runtime entry points import the side-effecting bootstrap.
- *   2. Importing bootstrap actually populates the registry with all 13 ids.
+ *   2. Importing bootstrap actually populates the registry with all of them.
+ *
+ * The count is DERIVED from the list rather than written next to it. A number
+ * maintained beside its own source is the shape that merges silently wrong:
+ * two branches each adding a provider both bump 12 → 13, the identical lines
+ * do not conflict, git keeps one copy, and both PRs are green while the prose
+ * is off by one with no suspicious diff for a reviewer to catch. It happened
+ * on this very line, between the Workday and ServiceNow branches.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -39,7 +46,7 @@ describe('integration provider fleet — runtime wiring', () => {
         expect(worker).toMatch(/integrations\/bootstrap/);
     });
 
-    it('importing bootstrap populates the registry with all 13 provider ids', () => {
+    it(`importing bootstrap populates the registry with all ${EXPECTED_PROVIDER_IDS.length} provider ids`, () => {
         // Import the real registry + bootstrap side effect (no mocks) and assert
         // every provider actually registered.
         jest.isolateModules(() => {
