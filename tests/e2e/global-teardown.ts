@@ -65,6 +65,9 @@ interface TenantTrackerEntry {
  * spec writes to it and you want truly clean teardown.
  */
 const TENANT_CHILD_TABLES: readonly string[] = [
+    // Per-user calendar OAuth tokens. Cascades from User, but a tenant
+    // teardown deletes the Tenant, not the Users, so it must be listed.
+    "UserCalendarConnection",
     // Audit + identity
     'AuditLog',
     // Epic G-4 — children must come before TenantMembership (FK target).

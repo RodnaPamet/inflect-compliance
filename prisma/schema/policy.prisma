@@ -62,23 +62,23 @@ model Policy {
 }
 
 model PolicyVersion {
-  id               String                  @id @default(cuid())
+  id               String                            @id @default(cuid())
   policyId         String
   versionNumber    Int
-  contentType      PolicyContentType       @default(MARKDOWN)
+  contentType      PolicyContentType                 @default(MARKDOWN)
   contentText      String?
   externalUrl      String?
   changeSummary    String?
   createdById      String
-  createdAt        DateTime                @default(now())
+  createdAt        DateTime                          @default(now())
   tenantId         String
-  currentOfPolicy  Policy?                 @relation("CurrentVersion")
+  currentOfPolicy  Policy?                           @relation("CurrentVersion")
   acknowledgements PolicyAcknowledgement[]
   ackAssignments   PolicyAcknowledgementAssignment[]
   approvals        PolicyApproval[]
-  createdBy        User                    @relation("PolicyVersionCreator", fields: [createdById], references: [id])
-  policy           Policy                  @relation("PolicyVersions", fields: [policyId], references: [id], onDelete: Cascade)
-  tenant           Tenant                  @relation(fields: [tenantId], references: [id])
+  createdBy        User                              @relation("PolicyVersionCreator", fields: [createdById], references: [id])
+  policy           Policy                            @relation("PolicyVersions", fields: [policyId], references: [id], onDelete: Cascade)
+  tenant           Tenant                            @relation(fields: [tenantId], references: [id])
 
   @@unique([policyId, versionNumber])
   @@index([tenantId])

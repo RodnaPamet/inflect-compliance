@@ -19,52 +19,52 @@
 // ─────────────────────────────────────────────────────────────────
 
 model Vendor {
-  id                  String                 @id @default(cuid())
-  tenantId            String
-  name                String
-  legalName           String?
-  websiteUrl          String?
-  domain              String?
-  country             String?
-  description         String?
-  ownerUserId         String?
-  status              VendorStatus           @default(ONBOARDING)
-  criticality         VendorCriticality      @default(MEDIUM)
-  inherentRisk        VendorCriticality?
-  residualRisk        VendorCriticality?
-  nextReviewAt        DateTime?
+  id                       String                 @id @default(cuid())
+  tenantId                 String
+  name                     String
+  legalName                String?
+  websiteUrl               String?
+  domain                   String?
+  country                  String?
+  description              String?
+  ownerUserId              String?
+  status                   VendorStatus           @default(ONBOARDING)
+  criticality              VendorCriticality      @default(MEDIUM)
+  inherentRisk             VendorCriticality?
+  residualRisk             VendorCriticality?
+  nextReviewAt             DateTime?
   // Stamp written by the G-3 assessment review flow (reviewAssessment):
   // when a review completes, inherentRisk is set from the assessment's
   // derived rating and this records when. Distinct from nextReviewAt
   // (the manual review-cadence date) — drives the reassessment-overdue
   // metric and the highRiskNoAssessment / activation-gate checks.
   lastAssessmentReviewedAt DateTime?
-  contractRenewalAt   DateTime?
-  dataAccess          VendorDataAccess?
-  isSubprocessor      Boolean                @default(false)
-  tags                Json?
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  certificationsJson  Json?
-  enrichmentLastRunAt DateTime?
-  enrichmentStatus    String?
-  privacyPolicyUrl    String?
-  securityPageUrl     String?
-  deletedAt           DateTime?
-  deletedByUserId     String?
-  retentionUntil      DateTime?
-  owner               User?                  @relation("VendorOwner", fields: [ownerUserId], references: [id])
-  tenant              Tenant                 @relation(fields: [tenantId], references: [id])
-  assessments         VendorAssessment[]
-  contacts            VendorContact[]
-  documents           VendorDocument[]
-  docExtractions      VendorDocExtraction[]
-  monitors            VendorMonitor[]
-  postureEvents       VendorPostureEvent[]
-  evidenceBundles     VendorEvidenceBundle[]
-  links               VendorLink[]
-  primaryOf           VendorRelationship[]   @relation("PrimaryRelation")
-  subprocessorOf      VendorRelationship[]   @relation("SubprocessorRelation")
+  contractRenewalAt        DateTime?
+  dataAccess               VendorDataAccess?
+  isSubprocessor           Boolean                @default(false)
+  tags                     Json?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  certificationsJson       Json?
+  enrichmentLastRunAt      DateTime?
+  enrichmentStatus         String?
+  privacyPolicyUrl         String?
+  securityPageUrl          String?
+  deletedAt                DateTime?
+  deletedByUserId          String?
+  retentionUntil           DateTime?
+  owner                    User?                  @relation("VendorOwner", fields: [ownerUserId], references: [id])
+  tenant                   Tenant                 @relation(fields: [tenantId], references: [id])
+  assessments              VendorAssessment[]
+  contacts                 VendorContact[]
+  documents                VendorDocument[]
+  docExtractions           VendorDocExtraction[]
+  monitors                 VendorMonitor[]
+  postureEvents            VendorPostureEvent[]
+  evidenceBundles          VendorEvidenceBundle[]
+  links                    VendorLink[]
+  primaryOf                VendorRelationship[]   @relation("PrimaryRelation")
+  subprocessorOf           VendorRelationship[]   @relation("SubprocessorRelation")
 
   @@unique([tenantId, name])
   @@index([tenantId])
