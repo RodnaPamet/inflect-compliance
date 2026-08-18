@@ -83,6 +83,14 @@ The durable record an auditor can request, all retained for the life of the repo
   documented follow-up — it needs PR-metadata access that the current structural
   ratchets (file scanners) do not have, so it is intentionally not retrofitted
   here.
+- **Owner waiver for assistant-driven PRs** (2026-08-18). The repo owner has
+  instructed Claude Code sessions not to hold a green PR waiting on the owner's
+  `Sign-off:`, including SIGNIFICANT ones. Those PRs are merged once every
+  required check is present and passing. The rollback plan and the risk
+  assessment are still written into the PR — the waiver covers the wait for a
+  countersignature, not the analysis behind it. Human-authored PRs are
+  unaffected: the second-approver expectation above stands for them. See the
+  working agreements in `CLAUDE.md`.
 
 ## Emergency change procedure
 

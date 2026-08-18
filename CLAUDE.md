@@ -30,6 +30,22 @@ execution environment is ephemeral — only committed files survive.
   is NOT green. Never bypass a red/failing check or admin-merge past CI — a
   blocked PR gets driven to green (fix the failure) or the blocker gets
   surfaced, never force-merged.
+- **Do not hold a green PR for the owner's `Sign-off:`** (added 2026-08-18).
+  This resolves an ambiguity against the SIGNIFICANT-change rule in
+  [docs/change-management-policy.md](docs/change-management-policy.md): a green
+  PR is merged even when it is SIGNIFICANT (schema migration, security
+  middleware, dependency major bump). The owner waived the *wait*, not the
+  diligence — still write the rollback plan and the risk assessment into the PR
+  before merging, because that is the part that catches things. Worked example:
+  #1963 (undici 7→8) was fully green and would have taken every SIEM
+  audit-stream delivery and every automation webhook dark; the pre-merge read of
+  the diff, not the green tick, is what found it.
+
+  What "green" means is unchanged and remains the binding constraint: every
+  required check PRESENT and successful, nothing pending, nothing failing.
+  Verify by check NAME rather than a count — a check that never ran is
+  indistinguishable from one that passed — and re-verify freshly rather than
+  trusting an earlier read.
 
 ## Commands
 
