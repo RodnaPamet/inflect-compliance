@@ -47,6 +47,8 @@
 import type { RemoteObject } from '../../base-client';
 import type { ServiceNowClient, ServiceNowRow } from './client';
 import { correlationIdFor, type CorrelationIdentity } from './correlation';
+import { assertMappingComplete } from './field-mapping';
+import type { FieldMappings } from '../../base-mapper';
 
 export type OutboundAction = 'created' | 'adopted' | 'updated';
 
@@ -71,11 +73,30 @@ export interface EnsureRemoteRecordInput {
      * whole design exists to close.
      */
     recordRemoteId: (remoteId: string) => Promise<void>;
+    /**
+     * The resolved outbound mapping and what kind of record it targets.
+     *
+     * Optional so the idempotency path can be exercised on its own, but when
+     * supplied the mapping is checked BEFORE anything is sent. A connection
+     * whose mapping omits a required target writes a record the instance cannot
+     * route — green on our side, invisible on theirs.
+     */
+    mapping?: { recordType: string; mappings: FieldMappings };
 }
 
 export async function ensureRemoteRecord(
     input: EnsureRemoteRecordInput,
 ): Promise<EnsureRemoteRecordResult> {
+    // 0. BEFORE ANY NETWORK CALL. A mapping missing a required target produces
+    //    a record ServiceNow cannot route: no assignment rule matches it, so
+    //    nobody is paged and nobody knows it exists — while our side reports a
+    //    clean 201. Refusing here is strictly better than a partial record
+    //    afterwards, because the partial record is indistinguishable from a
+    //    real one once it is in the queue.
+    if (input.mapping) {
+        assertMappingComplete(input.mapping.recordType, input.mapping.mappings);
+    }
+
     const correlationId = correlationIdFor(input.identity);
 
     // 1. Known record → update in place.
