@@ -93,9 +93,24 @@ describe('GoogleWorkspaceProvider.validateConnection', () => {
         ).toEqual({ valid: false, error: 'A service-account JSON key is required.' });
     });
 
+    // validateConnection no longer stops at the shape check — it performs a real
+    // token exchange and directory read, because returning valid on a parsed
+    // string meant "Test connection" passed on a connection whose domain-wide-
+    // delegation grant had been revoked. These two still assert the PARSE branch
+    // (string vs already-parsed object); they now need a transport to reach it.
+    const live = () =>
+        provider({
+            getAccessToken: async () => 'tok',
+            fetchImpl: (async () =>
+                new Response(JSON.stringify({ users: [] }), {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' },
+                })) as unknown as typeof fetch,
+        });
+
     it('accepts a valid JSON string', async () => {
         expect(
-            await p.validateConnection(
+            await live().validateConnection(
                 { domain: 'acme.com', adminEmail: 'a@acme.com' },
                 { serviceAccountJson: sa },
             ),
@@ -104,7 +119,7 @@ describe('GoogleWorkspaceProvider.validateConnection', () => {
 
     it('accepts an already-parsed object', async () => {
         expect(
-            await p.validateConnection(
+            await live().validateConnection(
                 { domain: 'acme.com', adminEmail: 'a@acme.com' },
                 { serviceAccountJson: { client_email: 'x', private_key: 'y' } },
             ),

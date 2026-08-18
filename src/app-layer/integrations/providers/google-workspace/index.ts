@@ -27,7 +27,7 @@ import {
     type ListAccountsResult,
     type NormalizedIdentityAccount,
 } from '../identity/types';
-import { resilientFetch } from '../../http-resilience';
+import { IntegrationAuthError, resilientFetch } from '../../http-resilience';
 import { fetchOAuthToken } from '../../oauth-token-fetch';
 
 const MAX_USERS = 5000;
@@ -133,9 +133,51 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
             if (!sa.client_email || !sa.private_key) {
                 return { valid: false, error: 'Service-account JSON is missing client_email / private_key.' };
             }
-            return { valid: true };
         } catch {
             return { valid: false, error: 'Service-account JSON is not valid JSON.' };
+        }
+
+        // Everything above is a shape check on a string the operator pasted. It
+        // was ALSO the entire implementation — so "Test connection" returned
+        // valid on a connection whose domain-wide-delegation grant had been
+        // revoked, and the failure only appeared later in a background sync. A
+        // validateConnection that cannot fail is worse than none, because it
+        // launders an untested connection as verified.
+        //
+        // Two calls, because they fail for different reasons and an operator
+        // needs to know which:
+        //   the token exchange proves the DWD grant is live and the key valid;
+        //   the directory read proves adminEmail is impersonable and the scope
+        //   is actually authorised — a grant can exist with the wrong scopes.
+        const doFetch = this.deps.fetchImpl ?? resilientFetch;
+        try {
+            const token = this.deps.getAccessToken
+                ? await this.deps.getAccessToken({ ...config, ...secrets })
+                : await getGoogleAccessToken({ ...config, ...secrets }, doFetch);
+
+            const url = new URL(`${DIRECTORY_BASE}/users`);
+            url.searchParams.set('domain', String(config.domain ?? ''));
+            url.searchParams.set('maxResults', '1');
+            const res = await doFetch(url.toString(), {
+                headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            });
+            if (!res.ok) {
+                return {
+                    valid: false,
+                    error: `Google directory read failed (HTTP ${res.status}). Check that ${String(config.adminEmail ?? 'the admin email')} can be impersonated and the directory scope is authorised.`,
+                };
+            }
+            return { valid: true };
+        } catch (err) {
+            // IntegrationAuthError is the classified case — a revoked grant now
+            // answers 400 invalid_grant and arrives here as that class rather
+            // than as an anonymous Error. Its message is already URL-scrubbed by
+            // safeUrl and carries only an allowlisted RFC code, so it is safe to
+            // surface; an unclassified error is not, so it is not interpolated.
+            if (err instanceof IntegrationAuthError) {
+                return { valid: false, error: `Google rejected the credentials: ${err.message}` };
+            }
+            return { valid: false, error: 'Google connection test failed. Check the service-account key, the domain-wide-delegation grant and the authorised scopes.' };
         }
     }
 
