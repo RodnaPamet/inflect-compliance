@@ -29,6 +29,7 @@
  * @module integrations/providers/workday/token
  */
 import { resilientFetch } from '../../http-resilience';
+import { assertWorkdayHost } from './host';
 
 /**
  * Scopes requested from Workday.
@@ -73,15 +74,17 @@ export interface WorkdayOAuthClient {
  * so the `ccx/oauth2/<tenant>` shape is stated exactly once.
  */
 function tokenEndpoint(client: WorkdayOAuthClient): string {
-    const host = client.host.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-    if (!host) throw new Error('Workday host is required');
+    // assertWorkdayHost, not a string trim: this request carries the client
+    // credentials in a Basic header, and `host` comes from configJson, which
+    // upsertIntegrationConnection stores VERBATIM — no zod, no validation, for
+    // any provider. See ./host for what that would otherwise allow.
+    const host = assertWorkdayHost(client.host);
     if (!client.tenant) throw new Error('Workday tenant is required');
     return `https://${host}/ccx/oauth2/${encodeURIComponent(client.tenant)}/token`;
 }
 
 function authorizeEndpoint(client: WorkdayOAuthClient): string {
-    const host = client.host.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-    if (!host) throw new Error('Workday host is required');
+    const host = assertWorkdayHost(client.host);
     if (!client.tenant) throw new Error('Workday tenant is required');
     return `https://${host}/ccx/oauth2/${encodeURIComponent(client.tenant)}/authorize`;
 }
