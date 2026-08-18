@@ -11,7 +11,32 @@ import { dispatchJobId, MINUTE_MS } from '@/app-layer/jobs/fan-out';
  * `sharepoint-delta-sync` job and returns its id for polling. Gated by
  * `evidence.upload` (re-imports write evidence).
  */
-const Body = z.object({ connectionId: z.string().min(1) });
+/**
+ * `connectionId` is bounded in CHARSET and LENGTH, not merely non-empty.
+ *
+ * It is interpolated into the BullMQ job id below, which becomes a Redis key —
+ * and it reaches that interpolation before anything verifies the connection
+ * exists. `z.string().min(1)` therefore let a tenant member put arbitrary
+ * content of arbitrary length into a key: newlines, control characters, ten
+ * kilobytes of text, and whatever indexes or logs that key flows into.
+ *
+ * Bounded to the shape every id in this system actually has (cuid, and uuid or
+ * nanoid if that ever changes) rather than pinned to `cuid()` specifically, so
+ * an id-format migration does not silently start rejecting valid requests.
+ *
+ * It also removes a latent ambiguity: the job id nests this value inside a
+ * `:`-joined composite which `dispatchJobId` then `:`-joins again. That is not
+ * exploitable today — the other component is the authenticated tenant id, and
+ * cuids carry no colon — but the claim held only as long as no component was
+ * user-supplied, and this route was the first to make one so.
+ */
+const Body = z.object({
+    connectionId: z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[A-Za-z0-9_-]+$/, 'connectionId must be an opaque identifier'),
+});
 
 export const POST = withApiErrorHandling(
     requirePermission('evidence.upload', async (req: NextRequest, _routeArgs, ctx) => {
