@@ -326,6 +326,24 @@ export async function getEntraAccessToken(
     const tenantId = String(config.tenantId ?? '').trim();
     const clientId = String(config.clientId ?? '').trim();
     const clientSecret = String((config as { clientSecret?: unknown }).clientSecret ?? '');
+    // Fail BEFORE the request rather than posting an empty credential. Entra
+    // answers an empty client_secret with
+    //   401 {"error":"invalid_client","error_codes":[7000218],
+    //        "error_description":"AADSTS7000218: The request body must contain
+    //        client_assertion or client_secret"}
+    // — our own malformed request. But resilientFetch converts EVERY 401 into
+    // IntegrationAuthError, so that answer marks the connection
+    // credential-failed and suppresses the queue's retries. A secret that is
+    // missing because it failed to decrypt (rotation race, DEK issue) would
+    // therefore be recorded permanently as "your credentials are revoked".
+    //
+    // A plain Error is deliberate: it neither marks the connection nor bypasses
+    // the queue retry, so a transient decrypt failure still gets its attempts.
+    // Three wasted attempts on a genuinely unconfigured connection is much
+    // cheaper than skipping a sync until the next scheduled run.
+    if (!clientSecret) {
+        throw new Error('Entra token exchange skipped: clientSecret is missing or failed to decrypt');
+    }
     const res = await doFetch(`${LOGIN_BASE}/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

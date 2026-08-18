@@ -236,12 +236,28 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
  * (JWT bearer grant, impersonating `adminEmail`). Isolated so the live
  * token exchange is the only part requiring real Google credentials.
  */
-async function getGoogleAccessToken(config: Record<string, unknown>): Promise<string> {
+export async function getGoogleAccessToken(
+    config: Record<string, unknown>,
+    // Injectable for the same reason entra-id's exchange is: the assertion this
+    // builds is only observable from the request body, so without a seam the
+    // `exp` margin below cannot be asserted by a test.
+    doFetch: typeof fetch = resilientFetch,
+): Promise<string> {
     const crypto = await import('node:crypto');
     const saRaw = (config as { serviceAccountJson?: unknown }).serviceAccountJson;
     const sa = typeof saRaw === 'string' ? JSON.parse(saRaw) : (saRaw as { client_email: string; private_key: string });
     const adminEmail = String(config.adminEmail ?? '');
     const now = Math.floor(Date.now() / 1000);
+    // Google rejects an assertion whose `exp` is more than 3600s ahead of ITS
+    // clock, so asking for the documented maximum leaves zero margin: the
+    // assertion is accepted only while (our clock - Google's) <= request
+    // transit. A host running ~a second fast gets
+    //   400 {"error":"invalid_grant","error_description":"Invalid JWT: Token
+    //        must be a short-lived token (60 minutes) ..."}
+    // on EVERY sync, which reads as a revoked grant while the grant is fine.
+    // 55 minutes buys 5 minutes of skew tolerance and costs nothing — the token
+    // is used immediately and never cached to its expiry.
+    const ASSERTION_LIFETIME_SECONDS = 3300;
     const header = { alg: 'RS256', typ: 'JWT' };
     const claim = {
         iss: sa.client_email,
@@ -253,7 +269,7 @@ async function getGoogleAccessToken(config: Record<string, unknown>): Promise<st
         scope: 'https://www.googleapis.com/auth/admin.directory.user.readonly https://www.googleapis.com/auth/cloud-identity.inboundsso.readonly',
         aud: 'https://oauth2.googleapis.com/token',
         iat: now,
-        exp: now + 3600,
+        exp: now + ASSERTION_LIFETIME_SECONDS,
     };
     const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
     const signingInput = `${b64(header)}.${b64(claim)}`;
@@ -275,7 +291,7 @@ async function getGoogleAccessToken(config: Record<string, unknown>): Promise<st
     // through and the `!res.ok` throw below is a generic Error — which
     // markAuthFailure deliberately no-ops on. Classifying an OAuth error BODY
     // rather than a status is a separate design question.
-    const res = await resilientFetch('https://oauth2.googleapis.com/token', {
+    const res = await doFetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
