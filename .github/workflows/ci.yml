@@ -189,11 +189,26 @@ permissions:
 
 # ── CI runner sizing ──
 # Heavy jobs read `runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}`.
-# On Team / Enterprise plans, set the `LARGE_RUNNER` repository
-# variable (Settings → Variables → Actions) to a configured
-# GitHub-hosted larger-runner label (e.g. `ubuntu-4core`,
-# `ubuntu-8core`). Unset → workflow falls back to the free 2-vCPU
-# `ubuntu-latest`, so this file works on every plan.
+#
+# THE FALLBACK IS NOT 2-vCPU. This comment used to say so, and that was
+# wrong in the direction that matters: it understates the machine by half,
+# so anyone sizing a build against it budgets for a box we do not have.
+#
+# This repository is PUBLIC, and GitHub's standard runners are bigger for
+# public repos than private ones (docs: "GitHub-hosted runners reference"):
+#
+#     public   ubuntu-latest   4 vCPU   16 GB RAM   14 GB SSD   free, unlimited
+#     private  ubuntu-latest   2 vCPU    8 GB RAM   14 GB SSD
+#
+# So the unset-LARGE_RUNNER path already gets 4 vCPU / 16 GB here. Measure
+# against that before concluding a job needs a bigger machine.
+#
+# AND `LARGE_RUNNER` CANNOT BE SET ON THIS ACCOUNT. GitHub-hosted larger
+# runners require Team or Enterprise Cloud; this org is on the Free plan, so
+# no value of that variable resolves to a real larger runner. The
+# indirection is kept because it costs nothing and works the day the plan
+# changes — but do NOT file "set LARGE_RUNNER" as an actionable fix without
+# checking the plan first. It is not available.
 
 env:
   NODE_VERSION: "24"
@@ -942,6 +957,31 @@ jobs:
             ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-
             ${{ runner.os }}-next-test-
 
+      # ── Mode A instrumentation (2026-08-19) ──
+      # This build gets cancelled 1.5-4 min in, intermittently, with NO output
+      # beyond "Creating an optimized production build ...". Six occurrences
+      # across `build` and `e2e-bundle`. ONE logged "Next.js build worker
+      # exited with code: null and signal: SIGKILL"; the rest logged nothing.
+      #
+      # Four explanations were proposed and each disproven: a larger runner is
+      # unavailable on this plan; a warm .next/cache does NOT raise peak memory
+      # (measured cold 5.92 GB vs warm 5.75 GB, and webpack's restore is lazy);
+      # 6144 is a documented deterministic V8 OOM; and it is NOT
+      # branch-specific — a control branch failed inside the same window.
+      #
+      # Local sampling cannot settle it: two runs under IDENTICAL conditions
+      # gave 7.25 GB and 5.92 GB, so every local figure is a lower bound. This
+      # samples INSIDE the job so the next occurrence leaves evidence instead
+      # of silence. Cost is one background shell loop.
+      - name: Start memory sampler
+        run: |
+          nohup bash -c 'while true; do
+            echo "$(date -u +%H:%M:%S) $(free -m | awk "NR==2{print \$3, \$7}")"
+            sleep 2
+          done' > /tmp/mem-samples.log 2>/dev/null &
+          echo $! > /tmp/mem-sampler.pid
+          echo "sampler started; columns = time used_MB available_MB"
+
       - name: Build Next.js app
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
         run: npx next build --webpack
@@ -962,6 +1002,18 @@ jobs:
           # that keeps `waitForLoadState('networkidle')` from settling
           # within the 180s test timeout on slow CI runners.
           NEXT_PUBLIC_TEST_MODE: "1"
+
+      # Runs on cancellation too — the entire point, since this failure mode
+      # emits nothing else.
+      - name: Report peak memory
+        if: always()
+        run: |
+          kill "$(cat /tmp/mem-sampler.pid)" 2>/dev/null || true
+          if [ ! -s /tmp/mem-samples.log ]; then echo "no samples captured"; exit 0; fi
+          echo "samples: $(wc -l < /tmp/mem-samples.log)  (time used_MB available_MB)"
+          echo "── PEAK used:";        sort -k2 -n -r /tmp/mem-samples.log | head -5
+          echo "── LOWEST available:"; sort -k3 -n    /tmp/mem-samples.log | head -5
+          echo "── final 15 samples:"; tail -15 /tmp/mem-samples.log
 
       - name: Upload the test-mode bundle
         uses: actions/upload-artifact@v7
@@ -1171,6 +1223,21 @@ jobs:
 
       - name: Install Playwright system deps (cached)
         if: steps.pw-cache.outputs.cache-hit == 'true'
+        # BEST-EFFORT, and that is the whole point of this step now.
+        #
+        # It exists to top up system libraries when the BROWSER cache hit but
+        # the runner image might lack a shared object. The ubuntu-24.04 image
+        # already ships nearly all of them, so this is belt-and-braces — not a
+        # prerequisite. Yet it wraps apt-get, and on 2026-08-19 an apt mirror
+        # stall failed it FIVE times: #2004, #2005, #2007, and main twice,
+        # including on a plain re-run. A best-effort top-up must not be able
+        # to take the whole E2E job down with it.
+        #
+        # If a library really is missing, the failure surfaces immediately and
+        # unambiguously at browser launch ("error while loading shared
+        # libraries: ..."), which is a far better signal than a 5-minute apt
+        # timeout. So: keep the attempt, keep the bound, drop the veto.
+        continue-on-error: true
         # Bounded for a measured reason. Twice on 2026-08-19 (PRs #2004 and
         # #2005) this step stalled and the E2E job burned its ENTIRE 40-minute
         # budget without running a single test — `passed: 0  failed: 0`, with
