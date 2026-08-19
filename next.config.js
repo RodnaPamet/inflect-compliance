@@ -162,6 +162,23 @@ const defaultOptions = {
         // containers at all, which is what ruled out container contention
         // as the cause. Demand had to come down; this is the only lever
         // that reduces it rather than moving it around.
+        //
+        // ── FOLLOW-UP, 2026-08-19: both figures above are SINGLE-HEAP ──
+        // They were measured before this flag went on, which is the state
+        // this comment exists to describe. Turning the worker on splits the
+        // compile into a parent AND a worker, and `--max-old-space-size`
+        // arrives via NODE_OPTIONS, so BOTH inherit it — the effective
+        // ceiling doubles.
+        //
+        // CI kept the 8192 that was chosen for one heap, so the real ceiling
+        // silently became 16 GB on a 16 GB runner. In-job sampling caught it:
+        // 15783 MB used / 206 MB available at peak, on a run that PASSED.
+        // That is what produced the intermittent silent build cancellations
+        // (kernel OOM-kill -> "signal: SIGKILL" -> "operation was canceled").
+        // ci.yml now sets 6144 per process (~12 GB across two heaps).
+        //
+        // So do NOT read "6144 is a deterministic V8 OOM" as still binding.
+        // It was true for ONE heap doing all three compilations.
         webpackBuildWorker: true,
         // optimizePackageImports remains experimental in Next 15.
         // Barrel/submodule packages — let Next rewrite imports to the
