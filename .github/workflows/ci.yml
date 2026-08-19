@@ -189,11 +189,26 @@ permissions:
 
 # ── CI runner sizing ──
 # Heavy jobs read `runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}`.
-# On Team / Enterprise plans, set the `LARGE_RUNNER` repository
-# variable (Settings → Variables → Actions) to a configured
-# GitHub-hosted larger-runner label (e.g. `ubuntu-4core`,
-# `ubuntu-8core`). Unset → workflow falls back to the free 2-vCPU
-# `ubuntu-latest`, so this file works on every plan.
+#
+# THE FALLBACK IS NOT 2-vCPU. This comment used to say so, and that was
+# wrong in the direction that matters: it understates the machine by half,
+# so anyone sizing a build against it budgets for a box we do not have.
+#
+# This repository is PUBLIC, and GitHub's standard runners are bigger for
+# public repos than private ones (docs: "GitHub-hosted runners reference"):
+#
+#     public   ubuntu-latest   4 vCPU   16 GB RAM   14 GB SSD   free, unlimited
+#     private  ubuntu-latest   2 vCPU    8 GB RAM   14 GB SSD
+#
+# So the unset-LARGE_RUNNER path already gets 4 vCPU / 16 GB here. Measure
+# against that before concluding a job needs a bigger machine.
+#
+# AND `LARGE_RUNNER` CANNOT BE SET ON THIS ACCOUNT. GitHub-hosted larger
+# runners require Team or Enterprise Cloud; this org is on the Free plan, so
+# no value of that variable resolves to a real larger runner. The
+# indirection is kept because it costs nothing and works the day the plan
+# changes — but do NOT file "set LARGE_RUNNER" as an actionable fix without
+# checking the plan first. It is not available.
 
 env:
   NODE_VERSION: "24"
