@@ -222,39 +222,88 @@ export async function approveAgentProposal(
         await guardEgress(ctx, merged, { source: `agent-proposal-approve:${kind}:egress` }),
     );
 
-    // Run the REAL create-usecase — same validation/sanitisation/audit/cache
-    // path a human create takes. The proposal only becomes a record HERE.
-    let createdEntityId: string;
-    switch (kind) {
-        case 'RISK': {
-            const risk = await createRisk(ctx, CreateRiskSchema.parse(merged) as Parameters<typeof createRisk>[1]);
-            createdEntityId = risk.id;
-            break;
-        }
-        case 'CONTROL': {
-            const control = await createControl(ctx, CreateControlSchema.parse(merged) as Parameters<typeof createControl>[1]);
-            createdEntityId = control.id;
-            break;
-        }
-        case 'POLICY': {
-            const policy = await createPolicy(ctx, CreatePolicySchema.parse(merged) as Parameters<typeof createPolicy>[1]);
-            createdEntityId = policy.id;
-            break;
-        }
-        case 'FINDING': {
-            const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
-            createdEntityId = finding.id;
-            break;
-        }
-        default:
-            throw badRequest(`Unknown proposal kind: ${kind}`);
-    }
-
     const status: 'ACCEPTED' | 'EDITED' = parsedEdits ? 'EDITED' : 'ACCEPTED';
-    await runInTenantContext(ctx, (db) =>
+
+    // ═══ CLAIM BEFORE CREATING. THE ORDER IS THE WHOLE FIX. ═══
+    //
+    // This used to run the create-usecase first and mark the proposal
+    // afterwards. The marking `updateMany` was correctly predicated on
+    // `status: 'PENDING'`, so it looked atomic — and it is, but it ran too
+    // late to prevent anything. Two reviewers approving the same proposal
+    // concurrently both passed the PENDING read above, both created a live
+    // compliance record, and only then did one of them lose the update.
+    //
+    // The result was TWO risks (or controls, or policies) from one proposal,
+    // one of them orphaned — and the loser's `updateMany` returned count 0
+    // into a discarded value, so it reported success to its caller. A
+    // duplicate that nothing errors on is a duplicate nobody goes looking for.
+    //
+    // Claiming first makes the database the arbiter: exactly one caller can
+    // move the row out of PENDING, and only that caller proceeds to create.
+    // Same shape as `redeemInvite` — claim, then act.
+    const claim = await runInTenantContext(ctx, (db) =>
         db.agentProposal.updateMany({
             where: { id, tenantId: ctx.tenantId, status: 'PENDING' },
-            data: { status, reviewedByUserId: ctx.userId, reviewedAt: new Date(), createdEntityId },
+            data: { status, reviewedByUserId: ctx.userId, reviewedAt: new Date() },
+        }),
+    );
+    if (claim.count === 0) {
+        // Lost the race, or the proposal moved between the read above and
+        // here. Either way nothing has been created, which is the point.
+        throw badRequest('Proposal is no longer pending');
+    }
+
+    // Run the REAL create-usecase — same validation/sanitisation/audit/cache
+    // path a human create takes. The proposal only becomes a record HERE.
+    //
+    // From this point the claim is held. Anything that throws must hand it
+    // back, or a transient failure would burn the proposal permanently: it
+    // would read as ACCEPTED with nothing created and no way to retry.
+    let createdEntityId: string;
+    try {
+        switch (kind) {
+            case 'RISK': {
+                const risk = await createRisk(ctx, CreateRiskSchema.parse(merged) as Parameters<typeof createRisk>[1]);
+                createdEntityId = risk.id;
+                break;
+            }
+            case 'CONTROL': {
+                const control = await createControl(ctx, CreateControlSchema.parse(merged) as Parameters<typeof createControl>[1]);
+                createdEntityId = control.id;
+                break;
+            }
+            case 'POLICY': {
+                const policy = await createPolicy(ctx, CreatePolicySchema.parse(merged) as Parameters<typeof createPolicy>[1]);
+                createdEntityId = policy.id;
+                break;
+            }
+            case 'FINDING': {
+                const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
+                createdEntityId = finding.id;
+                break;
+            }
+            default:
+                throw badRequest(`Unknown proposal kind: ${kind}`);
+        }
+    } catch (err) {
+        // Hand the claim back so the proposal can be approved again. Scoped to
+        // the status THIS call wrote, so a concurrent actor who has since moved
+        // the row is never clobbered by our rollback.
+        await runInTenantContext(ctx, (db) =>
+            db.agentProposal.updateMany({
+                where: { id, tenantId: ctx.tenantId, status },
+                data: { status: 'PENDING', reviewedByUserId: null, reviewedAt: null },
+            }),
+        ).catch(() => undefined);
+        throw err;
+    }
+
+    // Attach the created entity to the claim we already hold. Predicated on
+    // that same status so this cannot revive a row someone else has moved.
+    await runInTenantContext(ctx, (db) =>
+        db.agentProposal.updateMany({
+            where: { id, tenantId: ctx.tenantId, status },
+            data: { createdEntityId },
         }),
     );
 
