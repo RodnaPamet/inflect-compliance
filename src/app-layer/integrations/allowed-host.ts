@@ -35,6 +35,27 @@ export interface HostAllowlist {
     readonly suffixes: readonly string[];
     /** Apex names that have no subdomain label of their own. */
     readonly exact: readonly string[];
+    /**
+     * ═══ THE NEXT TWO FIELDS ARE FOR TEST HARNESSES AND NOTHING ELSE ═══
+     *
+     * They exist so a test can point the REAL request stack at a local fake
+     * without replacing the transport. Injecting `fetchImpl` is the obvious
+     * alternative and it is worse: it asserts against a mock of the very code
+     * under test — deadlines, 429 absorption, socket release and 401-vs-404
+     * classification all live in the chain it would replace.
+     *
+     * They are DATA on an injected allowlist rather than a branch through the
+     * boundary, so the production path is not merely similar to the tested one,
+     * it is the same call with the same rejection and the same message.
+     *
+     * `tests/guardrails/vendor-origin-no-test-flags.test.ts` fails CI if any
+     * HostAllowlist exported from `src/` sets either. That test is the reason
+     * this is safe to have at all: it makes "someone relaxed the boundary in
+     * production" a red build rather than a quiet diff.
+     */
+    readonly allowInsecure?: boolean;
+    /** See `allowInsecure`. TEST ONLY. */
+    readonly allowPort?: boolean;
 }
 
 /**
@@ -90,6 +111,44 @@ export function assertAllowedHost(raw: string, allow: HostAllowlist): string {
         );
     }
     return hostname;
+}
+
+/**
+ * The allowed host, as a full origin ready to have a path appended.
+ *
+ * ═══ WHY THIS EXISTS SEPARATELY FROM assertAllowedHost ═══
+ *
+ * `assertAllowedHost` returns a HOSTNAME — `url.hostname`, which by definition
+ * carries no port and no scheme. Callers therefore wrote `https://${host}`,
+ * and that string concatenation was doing two security-relevant jobs silently:
+ * forcing TLS, and discarding any port the config supplied.
+ *
+ * Both are correct in production and neither was written down anywhere a test
+ * could reach. This function makes them explicit and gives the one legitimate
+ * exception — a test harness on 127.0.0.1:<random> — a way in that keeps the
+ * check itself running.
+ *
+ * Default behaviour is byte-identical to the concatenation it replaces:
+ * `https://` + the validated hostname, port dropped.
+ */
+export function resolveVendorOrigin(raw: string, allow: HostAllowlist): string {
+    // The boundary runs FIRST and unconditionally. The flags below can only
+    // widen what is emitted for a host that has already been admitted — they
+    // can never admit one. An allowlist that does not name the host still
+    // throws here regardless of how its flags are set.
+    const hostname = assertAllowedHost(raw, allow);
+
+    if (!allow.allowPort && !allow.allowInsecure) return `https://${hostname}`;
+
+    // Re-parse for the parts assertAllowedHost deliberately discarded. It has
+    // already proven this parses and that the host is admitted, so this cannot
+    // throw where the call above did not.
+    const trimmed = String(raw ?? '').trim();
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+
+    const scheme = allow.allowInsecure && url.protocol === 'http:' ? 'http' : 'https';
+    const port = allow.allowPort && url.port ? `:${url.port}` : '';
+    return `${scheme}://${hostname}${port}`;
 }
 
 /** Workday tenant hosts, including the SUV (implementation) estate. */
