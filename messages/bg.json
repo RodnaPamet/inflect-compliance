@@ -7155,8 +7155,6 @@
             "treatment-plan": "Планове за третиране"
         },
         "filterAria": "Филтриране на крайни срокове по категория",
-        "filterLegendLabel": "Филтър",
-        "legendAria": "Цветова легенда на събитията",
         "myDeadlines": "Моите крайни срокове",
         "filterClear": "Изчисти",
         "countTotal": "{count, plural, one {# събитие} other {# събития}}",

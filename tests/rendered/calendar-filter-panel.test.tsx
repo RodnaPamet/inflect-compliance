@@ -131,22 +131,31 @@ describe('calendar filter panel placement', () => {
         expect(panel!.querySelector('#calendar-filter-group')).toBeTruthy();
     });
 
-    it('keeps a colour key with the grid, OUTSIDE the panel', async () => {
+    it('carries the colour key on the filter rows, with no separate legend strip', async () => {
         const { container } = mount();
-        await waitFor(() => expect(container.querySelector('#calendar-legend')).toBeTruthy());
-        const panel = container.querySelector('#calendar-side-panel');
-        // Moving the chips wholesale would have taken the key away from the
-        // grid it explains.
-        expect(panel!.querySelector('#calendar-legend')).toBeNull();
+        await waitFor(() =>
+            expect(container.querySelector('#calendar-filter-group')).toBeTruthy(),
+        );
+
+        // The standalone strip above the grid is gone. Asserted by ID over the
+        // WHOLE container rather than inside the panel: a query scoped to the
+        // panel would have passed even while the strip still rendered above it,
+        // which is what the assertion it replaces actually checked.
+        expect(container.querySelector('#calendar-legend')).toBeNull();
+
+        // The key itself is not lost — every filter row still pairs a swatch
+        // with its label, from the same CATEGORY_TONES the event dots use. This
+        // is the assertion that makes the removal safe rather than merely done.
+        const group = container.querySelector('#calendar-filter-group')!;
+        const swatches = group.querySelectorAll('span.rounded-full');
+        expect(swatches.length).toBeGreaterThan(0);
     });
 
-    it('the legend is not interactive — the filter is', async () => {
+    it('the filter rows are interactive', async () => {
         const { container } = mount();
-        await waitFor(() => expect(container.querySelector('#calendar-legend')).toBeTruthy());
-        const legend = container.querySelector('#calendar-legend')!;
-        expect(legend.querySelectorAll('button')).toHaveLength(0);
-        expect(legend.querySelectorAll('input')).toHaveLength(0);
-        // …while the filter group carries the controls.
+        await waitFor(() =>
+            expect(container.querySelector('#calendar-filter-group')).toBeTruthy(),
+        );
         const group = container.querySelector('#calendar-filter-group')!;
         expect(group.querySelectorAll('[role="checkbox"], input').length).toBeGreaterThan(0);
     });
