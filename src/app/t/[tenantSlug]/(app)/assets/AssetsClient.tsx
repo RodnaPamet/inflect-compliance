@@ -203,6 +203,17 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         hasActive,
     });
 
+    // `kpiCounts` is computed by aggregate in AssetRepository.kpiCounts — NOT
+    // derived from `rows`, which is filter-scoped and backfill-capped. Optional
+    // because the SSR fallback and the deleted view do not carry it.
+    type AssetKpiCounts = {
+        total: number;
+        active: number;
+        critical: number;
+        retired: number;
+    };
+    type AssetListResponse = CappedList<AssetListRow> & { kpiCounts?: AssetKpiCounts };
+
     const assetsKey = useMemo(() => {
         const params = new URLSearchParams(fetchParams);
         // Deleted view is a distinct fetch — append the flag so the SWR key
@@ -214,7 +225,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // The route returns `{ rows, truncated }` (the shape every sibling list
     // uses). SSR seeds `truncated: false` because the server cap is well
     // below the backfill cap.
-    const assetsQuery = useTenantSWR<CappedList<AssetListRow>>(assetsKey, {
+    const assetsQuery = useTenantSWR<AssetListResponse>(assetsKey, {
         // The SSR initial payload never contains soft-deleted rows, so the
         // deleted view must always fetch fresh (no fallback).
         fallbackData:
@@ -477,20 +488,35 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // KPI's own key (status / criticality), so sibling filters
     // survive.
     type AssetKpiId = 'total' | 'active' | 'critical' | 'retired';
-    // These count the LOADED rows. That is exact until the backfill cap
-    // fires; past it the banner above the table says the list is partial,
-    // so the numbers are no longer presented as tenant totals without a
-    // signal (which is precisely what they were before).
-    // guardrail-ignore: KPI counts across the loaded page, not a refilter.
-    const totalAssets = assets.length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const activeAssets = assets.filter((a) => a.status === 'ACTIVE').length;
-    // "High/Critical" — count both the stored HIGH and CRITICAL enum bands so
-    // a 5/5/5 asset (→ CRITICAL) is included alongside HIGH ones.
-    // guardrail-ignore: KPI count, not a refilter.
-    const criticalAssets = assets.filter((a) => a.criticality === 'HIGH' || a.criticality === 'CRITICAL').length;
-    // guardrail-ignore: KPI count, not a refilter.
-    const retiredAssets = assets.filter((a) => a.status === 'RETIRED').length;
+    // Counts come from the SERVER, by aggregate. Deriving them from `assets`
+    // was wrong in the way a user actually notices: that array is
+    // FILTER-SCOPED (`assetsKey` carries the active filters), so every card
+    // counted inside the current filter. Clicking Retired refetched to RETIRED
+    // rows only, and Total then displayed the retired count — while Total's own
+    // click calls clearAll(). Each card is supposed to answer "how many rows
+    // will I see if I click this", and only `total` was ever visibly wrong
+    // because the others happened to agree with the filter they had just set.
+    //
+    // The aggregate is also correct PAST the backfill cap, which the row-derived
+    // version never was — the old comment treated that as the only defect.
+    //
+    // The client-derived branch below is the pre-hydration path only, and keeps
+    // the same shape so the cards do not flicker between two definitions.
+    const kpiCounts = useMemo(() => {
+        const server = assetsQuery.data?.kpiCounts;
+        if (server) return server;
+        return {
+            total: assets.length,
+            active: assets.filter((a) => a.status === 'ACTIVE').length,
+            // "High/Critical" — both stored bands, so a 5/5/5 asset (→ CRITICAL)
+            // is included alongside HIGH ones, matching what the card displays
+            // and what its click selects.
+            critical: assets.filter((a) => a.criticality === 'HIGH' || a.criticality === 'CRITICAL').length,
+            retired: assets.filter((a) => a.status === 'RETIRED').length,
+        };
+    }, [assetsQuery.data, assets]);
+    const { total: totalAssets, active: activeAssets, critical: criticalAssets, retired: retiredAssets } =
+        kpiCounts;
 
     // Sparkline data per KPI — cumulative count by `createdAt`, so each
     // tile shows how its current number was built up over time. Derived
