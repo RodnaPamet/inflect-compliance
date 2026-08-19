@@ -431,24 +431,25 @@ export function ReportsClient({
                             )}
                         </div>
 
-                        {/* Controls missing evidence */}
-                        {readiness.controlsMissingEvidence.length > 0 && (
-                            <div className={cardVariants({ density: 'none' })}>
-                                <Heading level={3} className="mb-3">
-                                    {tx('missingEvidenceHeading', { count: readiness.controlsMissingEvidence.length })}
-                                </Heading>
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {readiness.controlsMissingEvidence.map((c, i) => (
-                                        <div key={i} className="flex items-center gap-compact px-3 py-1.5 text-sm">
-                                            <code className="text-xs text-content-subtle font-mono w-16 sm:w-28 flex-shrink-0 truncate">
-                                                {c.code}
-                                            </code>
-                                            <span className="text-content-muted">{c.name}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        {/* The controls-missing-evidence list was removed from
+                            this report. #1924 was titled "missing-evidence moves
+                            to the dashboard" and added a tenant-wide count there,
+                            but never deleted this section — so the move shipped as
+                            a copy, and two surfaces showed the same label over
+                            different numbers (this one framework-scoped and
+                            uncapped, the dashboard's tenant-wide).
+
+                            `readiness.controlsMissingEvidence` DELIBERATELY
+                            REMAINS on the payload: the readiness CSV emits one
+                            "Missing Evidence" row per entry
+                            (`framework/coverage.ts`), so deleting the field would
+                            silently drop rows from an auditor-facing export — the
+                            same reason `overdueTasks` stayed below.
+                            `summary.missingEvidenceCount` also stays: it feeds
+                            `readinessScore`, which subtracts 2 points per entry.
+
+                            The drill-down now lives on the controls dashboard
+                            card, which links to /controls?evidence=missing. */}
 
                         {/* The overdue-tasks list was removed from this report.
                             Tasks have their own surface with filtering, sorting

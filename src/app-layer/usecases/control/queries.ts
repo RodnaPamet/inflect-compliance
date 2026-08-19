@@ -27,6 +27,11 @@ export interface ControlListInputFilters {
     ids?: string;
     /** Health verdict facet — resolved server-side to the matching control ids. */
     health?: string;
+    /** Controls-dashboard drill-downs. Applied as repo predicates, not id sets:
+     *  both are expressible in SQL, so resolving them to an id list first would
+     *  cap them at the scan limit the health facet needs. */
+    due?: string;
+    evidence?: string;
 }
 
 /**
@@ -65,6 +70,12 @@ function toRepoFilters(filters: ControlListInputFilters | undefined, ids: string
     return {
         status: filters.status, applicability: filters.applicability,
         ownerUserId: filters.ownerUserId, q: filters.q, ids,
+        // Narrowed from the URL's `string` to the repo's literal union. An
+        // unrecognised value becomes `undefined` (no filter) rather than
+        // throwing: a hand-edited query string should not 500, and silently
+        // widening to "all controls" is the honest fallback for a list.
+        due: filters.due === 'soon' ? 'soon' : undefined,
+        evidence: filters.evidence === 'missing' ? 'missing' : undefined,
     };
 }
 

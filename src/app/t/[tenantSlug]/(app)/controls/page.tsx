@@ -45,7 +45,13 @@ export default async function ControlsPage({
     // returned ~0 rows on a hard nav, while the same URL filtered correctly
     // after a client-side navigation. The client owns that facet; see the
     // note on `clientFilteredControls` in ControlsClient.
-    for (const key of ['q', 'status', 'applicability', 'ownerUserId', 'ids', 'health']) {
+    // `due` + `evidence` are the controls-dashboard drill-downs. They are here
+    // for the same reason as `ids`/`health`: a card links straight to this URL,
+    // so a hard navigation must land already filtered. Omitting them would show
+    // the full list on first paint and then silently narrow once the client
+    // rehydrated — the card's number and the visible rows disagreeing for the
+    // moment the reader is looking at them.
+    for (const key of ['q', 'status', 'applicability', 'ownerUserId', 'ids', 'health', 'due', 'evidence']) {
         const val = sp[key];
         if (typeof val === 'string' && val) filters[key] = val;
     }

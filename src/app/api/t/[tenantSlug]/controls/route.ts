@@ -24,6 +24,12 @@ const ControlsQuerySchema = z.object({
     // both resolved to a server-side `id: { in }` restriction in the usecase.
     ids: z.string().optional(),
     health: z.enum(['HEALTHY', 'DEGRADED', 'AT_RISK', 'NOT_APPLICABLE', 'UNKNOWN']).optional(),
+    // Controls-dashboard drill-downs. Enums rather than free strings: each has
+    // exactly one meaning, and the card that links here is the only caller, so
+    // a typo should 400 at the boundary instead of silently listing every
+    // control — which would show a number the card did not claim.
+    due: z.enum(['soon']).optional(),
+    evidence: z.enum(['missing']).optional(),
     includeDeleted: z.enum(['true', 'false']).optional(),
 }).strip();
 
@@ -43,6 +49,8 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
         q: query.q,
         ids: query.ids,
         health: query.health,
+        due: query.due,
+        evidence: query.evidence,
     };
 
     // If pagination params present, use paginated response
