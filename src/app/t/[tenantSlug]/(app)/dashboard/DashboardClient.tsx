@@ -632,6 +632,36 @@ function KpiTile({
             {children}
             <Link
                 href={drillHref}
+                // `prefetch={false}` is load-bearing, for two reasons.
+                //
+                // 1. COST. Every drill href here points at a force-dynamic
+                //    list route WITH a query string (e.g.
+                //    `/tasks?status=OPEN,TRIAGED,IN_PROGRESS,IN_REVIEW,BLOCKED`).
+                //    These tiles sit in the viewport on dashboard load, so the
+                //    default prefetch renders each of those filtered list
+                //    routes server-side on every dashboard view — for an arrow
+                //    icon that is rarely clicked. The sidebar's deliberate
+                //    full-RSC prefetch (nav-item.tsx) is the considered
+                //    "instant nav" lever; this is not, and never was.
+                //
+                // 2. IT BLOCKS THE NEXT 16.3 UPGRADE. Under 16.3.1 the RSC
+                //    prefetch of a query-string route NEVER RESOLVES.
+                //    Instrumented locally, same machine/DB/build, only `next`
+                //    differing:
+                //      16.2.12  networkidle settles, 0 requests in flight
+                //      16.3.1   never settles; 1 in flight at 44s —
+                //               `/t/<slug>/tasks?status=...&_rsc=<hash>`
+                //    `waitForLoadState('networkidle')` therefore never returns
+                //    and every E2E test that visits the dashboard burns its
+                //    full 180s timeout. The dashboard was the ONLY page
+                //    affected because it is the only one whose links carry a
+                //    query string — the sidebar prefetches 14 BARE paths, and
+                //    those resolve fine.
+                //
+                // This is a WORKAROUND for a framework bug, not a fix. Do not
+                // remove it as "unnecessary" when the upgrade lands without
+                // first re-running the check above.
+                prefetch={false}
                 aria-label={drillLabel}
                 data-kpi-drill
                 className="absolute right-1.5 top-1.5 z-10 inline-flex size-6 items-center justify-center rounded-md text-content-subtle opacity-60 transition hover:bg-bg-muted hover:text-content-default hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
