@@ -1216,9 +1216,9 @@ model UserIdentityLink {
 }
 
 model TenantSecuritySettings {
-  id                           String      @id @default(cuid())
-  tenantId                     String      @unique
-  mfaPolicy                    MfaPolicy   @default(DISABLED)
+  id                           String            @id @default(cuid())
+  tenantId                     String            @unique
+  mfaPolicy                    MfaPolicy         @default(DISABLED)
   /// Hard cap on JWT lifetime in minutes. When set, every newly minted
   /// session row's `expiresAt` is min(NextAuth max-age, now + this).
   sessionMaxAgeMinutes         Int?
@@ -1245,13 +1245,31 @@ model TenantSecuritySettings {
   /// AI Guard enforcement posture for this tenant (prompt-injection +
   /// secret/exfil egress guard). Default BALANCED = allow-but-flag; STRICT
   /// blocks malicious input / secret egress; AUDIT logs only.
-  aiGuardMode                  AiGuardMode @default(BALANCED)
+  /// JML identity-write authority, PER DIRECTION. Both default to DISABLED —
+  /// this product has never written to a customer directory, and turning that
+  /// on is a deliberate act, not a migration side effect.
+  ///
+  /// Separate fields rather than one setting because the two directions carry
+  /// different risk: a wrongful disable locks an employee out of their job for
+  /// as long as it takes someone to notice; a wrongful create spends money on a
+  /// licence and leaves an unowned account in the directory. A tenant may
+  /// rationally accept one unattended and not the other.
+  identityLeaverMode           IdentityWriteMode @default(DISABLED)
+  identityJoinerMode           IdentityWriteMode @default(DISABLED)
+  /// When the current DRY_RUN period began, per direction. The gate to PROPOSE
+  /// or AUTOMATIC reads this: dry-run is time-boxed and mandatory, so a tenant
+  /// cannot enable unattended writes the same afternoon it enables the feature.
+  /// Reset whenever a direction returns to DRY_RUN, so the clock measures the
+  /// CURRENT observation window rather than the first one ever started.
+  identityLeaverDryRunSince    DateTime?
+  identityJoinerDryRunSince    DateTime?
+  aiGuardMode                  AiGuardMode       @default(BALANCED)
   /// AI sovereignty (DS-1). EXTERNAL (default) allows the configured external
   /// provider; LOCAL_ONLY forces inference onto the tenant's own local gateway
   /// and refuses external providers. Optional per-tenant local-gateway override
   /// (else the AI_LOCAL_* env defaults). aiLocalBaseUrl is an internal URL, not
   /// a secret — not encrypted.
-  aiResidency                  AiResidency @default(EXTERNAL)
+  aiResidency                  AiResidency       @default(EXTERNAL)
   aiLocalBaseUrl               String?
   aiLocalModel                 String?
   /// Recipients outside the tenant's own membership that scheduled reports may
@@ -1267,10 +1285,10 @@ model TenantSecuritySettings {
   /// Null or empty = no external recipients permitted; schedules may only be
   /// delivered to ACTIVE members of this tenant.
   reportRecipientAllowlistJson Json?
-  createdAt                    DateTime    @default(now())
-  updatedAt                    DateTime    @updatedAt
-  mfaFailClosed                Boolean     @default(false)
-  tenant                       Tenant      @relation(fields: [tenantId], references: [id])
+  createdAt                    DateTime          @default(now())
+  updatedAt                    DateTime          @updatedAt
+  mfaFailClosed                Boolean           @default(false)
+  tenant                       Tenant            @relation(fields: [tenantId], references: [id])
 }
 
 model UserMfaEnrollment {

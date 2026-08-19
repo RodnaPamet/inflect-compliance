@@ -65,6 +65,7 @@ const ADMIN_ONLY_ROUTES = [
     'admin/trust-center/requests/[requestId]/approve/route.ts',
     'admin/key-rotation/route.ts',
     'admin/tenant-dek-rotation/route.ts',
+    'admin/identity-write-policy/route.ts',
     'admin/billing/plan/route.ts',
     'admin/rotate-dek/route.ts',
     'admin/sessions/route.ts',

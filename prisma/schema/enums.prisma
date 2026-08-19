@@ -1324,6 +1324,31 @@ enum AiSystemStatus {
 ///   BALANCED — (default) allow but flag + force human review; a secret
 ///              leak in outbound content is still blocked.
 ///   AUDIT    — log only; never enforce (deliberate triage opt-in).
+/// How far a tenant lets JML act on its identity directory, per DIRECTION
+/// (leaver/disable and joiner/create are configured separately — a tenant may
+/// reasonably want automatic disable but manual create, or the reverse).
+///
+/// The order is the rollout ladder from the JML safety prompt, and each step is
+/// a strictly wider authority than the one before:
+///   DISABLED   nothing is computed and nothing is written. The default.
+///   DRY_RUN    every intended action is computed and RECORDED; nothing is
+///              written to the directory and no proposal is raised. This is how
+///              a matching bug is found — against what HR and IT actually did.
+///   PROPOSE    intended actions become proposals for a human to approve. Still
+///              no unattended write.
+///   AUTOMATIC  actions execute unattended. OWNER-only, and the only mode that
+///              can disable or create a real account without a human in the loop.
+///
+/// Widening is gated (see usecases/identity-write-policy.ts): a tenant cannot
+/// jump straight to AUTOMATIC, because the dry-run cycle is what catches a wrong
+/// status mapping BEFORE it locks someone out of their account.
+enum IdentityWriteMode {
+  DISABLED
+  DRY_RUN
+  PROPOSE
+  AUTOMATIC
+}
+
 enum AiGuardMode {
   STRICT
   BALANCED
