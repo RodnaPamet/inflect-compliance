@@ -32,7 +32,14 @@ try {
   if (marker.perWorker) {
     const u = new URL(marker.baseUrl);
     const wid = process.env.JEST_WORKER_ID || '1';
-    u.pathname = '/' + marker.baseName + '_w' + wid;
+    // Take the name globalSetup RECORDED creating. This file is plain JS and
+    // cannot import the TS helper that owns the naming scheme, so the only
+    // alternative is re-deriving it here — which is how this site drifted in
+    // the first place: it spelled `baseName + '_w' + wid` while the helper
+    // moved on, and the worker then connected to a database nobody created.
+    // Reading the record cannot drift.
+    const recorded = Array.isArray(marker.workerDbs) ? marker.workerDbs[Number(wid) - 1] : null;
+    u.pathname = '/' + (recorded || marker.baseName + '_w' + wid);
     process.env.DATABASE_URL = u.toString();
     process.env.DIRECT_DATABASE_URL = u.toString();
   }

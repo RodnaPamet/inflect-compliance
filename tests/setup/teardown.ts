@@ -21,17 +21,26 @@ const teardown = async () => {
     try {
         const fs = await import('fs');
         const { Client } = await import('pg');
-        const { PER_WORKER_MARKER, adminConnectionString } = await import('../helpers/db');
+        const { PER_WORKER_MARKER, adminConnectionString, perWorkerDbName } = await import(
+            '../helpers/db'
+        );
         const marker = JSON.parse(fs.readFileSync(PER_WORKER_MARKER, 'utf8')) as {
-            perWorker: boolean; count: number; baseName: string;
+            perWorker: boolean; count: number; baseName: string; workerDbs?: string[];
         };
         if (marker.perWorker) {
+            // Drop exactly what globalSetup recorded creating. Recomputing
+            // is the fallback for markers written before workerDbs existed;
+            // preferring the record means a naming change can never leave
+            // databases behind that teardown no longer knows how to name.
+            const names =
+                marker.workerDbs ??
+                Array.from({ length: marker.count }, (_, i) =>
+                    perWorkerDbName(marker.baseName, i + 1),
+                );
             const admin = new Client({ connectionString: adminConnectionString() });
             await admin.connect();
-            for (let i = 1; i <= marker.count; i++) {
-                await admin
-                    .query(`DROP DATABASE IF EXISTS "${marker.baseName}_w${i}" WITH (FORCE)`)
-                    .catch(() => {});
+            for (const name of names) {
+                await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`).catch(() => {});
             }
             await admin.end();
         }

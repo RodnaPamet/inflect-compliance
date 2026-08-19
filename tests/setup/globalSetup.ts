@@ -16,6 +16,7 @@ import {
     getBaseTestDatabaseUrl,
     getDbName,
     adminConnectionString,
+    perWorkerDbName,
     PER_WORKER_MARKER,
 } from '../helpers/db';
 
@@ -65,14 +66,25 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
                  WHERE datname = $1 AND pid <> pg_backend_pid()`,
                 [baseName],
             );
+            // Named via perWorkerDbName so the tag that keeps two checkouts
+            // apart is applied here, in teardown, and at connect time from
+            // ONE definition. The DROP below is `WITH (FORCE)` — it
+            // terminates any attached session — which is precisely why the
+            // name must not be derivable by another checkout.
+            const workerDbs: string[] = [];
             for (let i = 1; i <= maxWorkers; i++) {
-                const wdb = `${baseName}_w${i}`;
+                const wdb = perWorkerDbName(baseName, i);
+                workerDbs.push(wdb);
                 await admin.query(`DROP DATABASE IF EXISTS "${wdb}" WITH (FORCE)`);
                 await admin.query(`CREATE DATABASE "${wdb}" TEMPLATE "${baseName}"`);
             }
             await admin.end();
-            marker = { perWorker: true, count: maxWorkers, baseName, baseUrl: base };
-            console.log(`[test-setup] Per-worker DB isolation: ${baseName}_w1..w${maxWorkers}`);
+            // Record the names actually created, so teardown drops exactly
+            // these rather than recomputing and possibly disagreeing.
+            marker = { perWorker: true, count: maxWorkers, baseName, baseUrl: base, workerDbs };
+            console.log(
+                `[test-setup] Per-worker DB isolation: ${workerDbs[0]}..w${maxWorkers}`,
+            );
         } catch (err) {
             // No CREATEDB / older Postgres / template busy — degrade to the
             // shared base DB (correct only when run serially, but never

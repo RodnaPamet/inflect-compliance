@@ -2017,6 +2017,9 @@
         },
         "docs/implementation-notes/2026-08-19-api-account-admin-permission-coverage.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-19-per-checkout-test-db-isolation.md": {
+            "class": "historical"
         }
     }
 }

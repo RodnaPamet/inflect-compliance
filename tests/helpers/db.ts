@@ -19,6 +19,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { execSync } from 'child_process';
 
 /**
@@ -59,9 +60,42 @@ export function getBaseTestDatabaseUrl(): string {
 // serially (`test:ci --runInBand`). Run in PARALLEL (`jest`), workers
 // truncate each other's data mid-test → deadlocks + data races. Fix:
 // when Jest runs >1 worker, globalSetup TEMPLATE-clones the migrated
-// base DB into one DB per worker (`<base>_w<id>`) and writes a marker;
-// each worker then targets its own DB. Serial runs (CI) skip this and
-// stay on the shared base DB — that path is unchanged.
+// base DB into one DB per worker and writes a marker; each worker then
+// targets its own DB. Serial runs (CI) skip this and stay on the shared
+// base DB — that path is unchanged.
+//
+// ─── Why the name carries a checkout tag (2026-08-19) ─────────────────
+//
+// The worker name used to be `<base>_w<id>` — a pure function of the
+// database name in the URL. Two CHECKOUTS of this repo on one machine
+// pointing at one Postgres therefore derive identical names, and
+// globalSetup drops them with:
+//
+//     DROP DATABASE IF EXISTS "<name>" WITH (FORCE)
+//
+// `FORCE` calls pg_terminate_backend on every attached session first. So
+// the second run to start does not race the first — it hangs up on it,
+// mid-transaction. The symptom is "Test suite failed to run" with ZERO
+// failed tests, in whichever DB-backed suite happened to be holding a
+// connection: a suite that never got to speak, in a file unrelated to
+// whatever either checkout was changing.
+//
+// The marker below is repo-local while the databases were global, so each
+// side kept a private record asserting ownership of a shared resource.
+//
+// The tag is derived from the REPO ROOT, deliberately, and not from the
+// URL: two checkouts can reach the same database by different routes
+// (one via `.env.test`, another via this file's own default), so any
+// scheme keyed on the connection string can agree by accident. The repo
+// root cannot.
+//
+// One checkout behaves exactly as before — the tag is stable per path.
+//
+// RESIDUAL, on purpose: the shared BASE/template DB is still terminated
+// before cloning (CREATE DATABASE ... TEMPLATE requires the template
+// idle). That can still interrupt a SERIAL run (`--runInBand`) in another
+// checkout, which stays on the base DB. Parallel-vs-parallel — the case
+// that actually bites, since `npm test` is parallel — is fully isolated.
 
 /**
  * Cross-process marker written by globalSetup describing the DB mode.
@@ -74,7 +108,64 @@ export const PER_WORKER_MARKER = path.resolve(
     '../../node_modules/.cache/inflect-test-perworker.json',
 );
 
-interface PerWorkerInfo { perWorker: boolean; count: number; baseName: string; baseUrl: string }
+interface PerWorkerInfo {
+    perWorker: boolean;
+    count: number;
+    baseName: string;
+    baseUrl: string;
+    /**
+     * The exact per-worker database names globalSetup created. Teardown
+     * drops THESE rather than recomputing them, so a future change to the
+     * naming scheme can never orphan a set of databases that a running
+     * teardown no longer knows how to name. Absent on markers written
+     * before 2026-08-19; readers fall back to recomputing.
+     */
+    workerDbs?: string[];
+}
+
+/**
+ * A short, stable tag for THIS checkout, folded into every per-worker
+ * database name so two checkouts on one machine never derive the same
+ * one. Derived from the repo root path — see the section comment above
+ * for why not from the connection URL.
+ */
+export function checkoutTag(): string {
+    return tagForRoot(path.resolve(__dirname, '../..'));
+}
+
+/**
+ * The pure half of `checkoutTag`, split out so the property that matters —
+ * two different roots never collide — is directly testable. Testing it
+ * through `checkoutTag()` alone could only ever assert that one checkout
+ * agrees with itself, which is the one thing that was never broken.
+ */
+export function tagForRoot(repoRoot: string): string {
+    return crypto.createHash('sha256').update(repoRoot).digest('hex').slice(0, 8);
+}
+
+/**
+ * The database name for one worker. The single place the scheme is
+ * spelled — globalSetup (create), teardown (drop) and getTestDatabaseUrl
+ * (connect) must agree, and three hand-rolled copies is how they stop
+ * agreeing.
+ *
+ * Postgres truncates identifiers at 63 bytes, silently. `inflect_test` +
+ * tag + suffix is ~24, but a long base name could reach the limit and
+ * two workers would then collapse onto ONE database — the exact bug this
+ * function exists to prevent, wearing a different hat. So it refuses
+ * instead of truncating.
+ */
+export function perWorkerDbName(baseName: string, workerId: string | number): string {
+    const name = `${baseName}_${checkoutTag()}_w${workerId}`;
+    if (Buffer.byteLength(name) > 63) {
+        throw new Error(
+            `Per-worker DB name exceeds Postgres' 63-byte identifier limit: ${name}. ` +
+                `Postgres would truncate it silently and two workers could share one database. ` +
+                `Shorten the base database name in the test DATABASE_URL.`,
+        );
+    }
+    return name;
+}
 
 /** Swap the database name in a Postgres URL, preserving everything else. */
 export function withDbName(url: string, dbName: string): string {
@@ -129,7 +220,7 @@ export function getTestDatabaseUrl(): string {
     if (!info.perWorker) return getBaseTestDatabaseUrl();
     const workerId = process.env.JEST_WORKER_ID || '1';
     const base = info.baseUrl || getBaseTestDatabaseUrl();
-    return withDbName(base, `${getDbName(base)}_w${workerId}`);
+    return withDbName(base, perWorkerDbName(getDbName(base), workerId));
 }
 
 /**
