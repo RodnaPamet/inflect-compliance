@@ -6,16 +6,22 @@
  * The obvious shape is one job per connection, copying `identity-sync`. Three
  * facts say otherwise, and the first is mechanical rather than aesthetic.
  *
- * 1. `JOB_DEFAULTS` IS INERT ON THE CRON PATH. `registerSchedules` calls
- *    `upsertJobScheduler(name, repeatOpts, { name, data })` with no `opts`, and
- *    BullMQ merges `Object.assign({}, this.jobsOpts, jobTemplate?.opts)` — so a
- *    directly-scheduled job runs the queue default (`attempts: 3`, exponential)
- *    whatever its JOB_DEFAULTS entry says. All 29 scheduled jobs are in that
- *    state today. `enqueue()` DOES apply the entry.
+ * 1. (HISTORICAL — FIXED.) `JOB_DEFAULTS` used to be INERT on the cron path:
+ *    `registerSchedules` called `upsertJobScheduler(name, repeatOpts,
+ *    { name, data })` with no `opts`, and BullMQ merges
+ *    `Object.assign({}, this.jobsOpts, jobTemplate?.opts)` — so a
+ *    directly-scheduled job ran the queue default (`attempts: 3`, exponential)
+ *    whatever its entry said, while `enqueue()` applied the entry.
  *
- *    So work that touches Google or Graph must arrive as an ENQUEUED CHILD, or
- *    it silently gets three attempts against a rate-limited provider. That
- *    alone forces two job names. (Filed separately as the general defect.)
+ *    That asymmetry was the ORIGINAL first reason for two job names: work
+ *    touching Google or Graph had to arrive as an enqueued child or it
+ *    silently got three attempts against a rate-limited provider.
+ *
+ *    `registerSchedules` now passes `opts`, so this reason is GONE. It is kept
+ *    here rather than deleted because the shape it produced is still the one in
+ *    the code, and a reader comparing this job to `identity-sync` deserves to
+ *    know which of its justifications are live. Reasons 2 and 3 are, and they
+ *    are sufficient on their own.
  *
  * 2. THE PER-TENANT SHAPE IS WHAT THE INDEX WAS BUILT FOR.
  *    `UserCalendarConnection` carries `@@index([tenantId, provider, revokedAt])`

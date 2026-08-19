@@ -749,12 +749,12 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 200,
     },
     'calendar-push-tenant': {
-        // One attempt, and this entry is LOAD-BEARING in a way most are not:
-        // JOB_DEFAULTS is inert for cron-scheduled jobs (registerSchedules
-        // passes no opts, so BullMQ falls back to the queue default of 3
-        // exponential attempts). It applies here BECAUSE this job arrives via
-        // enqueue(). Collapsing the dispatcher and the child into one scheduled
-        // job silently restores 3 attempts against a rate-limited provider.
+        // One attempt. This entry USED to be load-bearing for a second reason
+        // that no longer holds: JOB_DEFAULTS was inert for cron-scheduled jobs
+        // (registerSchedules passed no opts, so BullMQ fell back to the queue
+        // default of 3 exponential attempts), and this job got its 1 only
+        // because it arrives via enqueue(). registerSchedules now passes opts,
+        // so both paths honour this entry and the asymmetry is gone.
         //
         // One is also the right number on its own merits: runUserPushGuarded
         // converts every failure into a recorded outcome and returns, so

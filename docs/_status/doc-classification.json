@@ -2023,6 +2023,9 @@
         },
         "docs/implementation-notes/2026-08-19-e2e-render-probe-viewport-independent.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-19-scheduled-job-retry-policy.md": {
+            "class": "historical"
         }
     }
 }
