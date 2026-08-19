@@ -25,7 +25,7 @@ import {
 } from '../identity/types';
 import { logger } from '@/lib/observability/logger';
 import { resilientFetch, IntegrationAuthError, isAuthStatus } from '../../http-resilience';
-import { assertAllowedHost, OKTA_HOSTS } from '../../allowed-host';
+import { resolveVendorOrigin, OKTA_HOSTS, type HostAllowlist } from '../../allowed-host';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
@@ -46,6 +46,16 @@ interface OktaDeps {
     listAccounts?: (config: Record<string, unknown>) => Promise<NormalizedIdentityAccount[]>;
     /** Injectable fetch, for validateConnection ping tests. */
     fetchImpl?: typeof fetch;
+    /**
+     * Injectable host allowlist, for tests that drive the REAL request stack
+     * against a local fake.
+     *
+     * This is deliberately the allowlist and NOT a base URL. A `baseUrl` dep
+     * would skip the boundary altogether; this one makes the boundary run
+     * against a different list, so a regression in the check itself still
+     * fails these tests. Defaults to OKTA_HOSTS.
+     */
+    hostAllowlist?: HostAllowlist;
 }
 
 /** Run `fn` over `items` with at most `limit` in flight. */
@@ -132,8 +142,8 @@ function normalizeOktaUser(u: OktaUser): NormalizedIdentityAccount {
  * Returns `https://<host>` so the scheme cannot be re-supplied by config —
  * `http://acme.okta.com` would otherwise send the token in clear text.
  */
-function oktaBaseUrl(orgUrl: unknown): string {
-    return `https://${assertAllowedHost(String(orgUrl ?? ''), OKTA_HOSTS)}`;
+function oktaBaseUrl(orgUrl: unknown, allow: HostAllowlist = OKTA_HOSTS): string {
+    return resolveVendorOrigin(String(orgUrl ?? ''), allow);
 }
 
 export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvider {
@@ -175,7 +185,7 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         try {
             // Before the fetch, and reported rather than thrown: an off-domain
             // org URL must not reach the request that carries the token.
-            orgUrl = oktaBaseUrl(config.orgUrl);
+            orgUrl = oktaBaseUrl(config.orgUrl, this.deps.hostAllowlist);
         } catch (err) {
             return { valid: false, error: err instanceof Error ? err.message : 'Invalid Okta org URL.' };
         }
@@ -205,7 +215,7 @@ export class OktaProvider implements ScheduledCheckProvider, IdentitySyncProvide
         config: Record<string, unknown>,
         resumeFrom?: string | null,
     ): Promise<ListAccountsResult> {
-        const orgUrl = oktaBaseUrl(config.orgUrl);
+        const orgUrl = oktaBaseUrl(config.orgUrl, this.deps.hostAllowlist);
         const apiToken = String((config as { apiToken?: string }).apiToken ?? '');
         const doFetch = this.deps.fetchImpl ?? resilientFetch;
         const out: NormalizedIdentityAccount[] = [];
