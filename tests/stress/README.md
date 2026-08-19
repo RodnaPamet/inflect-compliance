@@ -1,8 +1,15 @@
 # Integrations stress suite (H3-3)
 
 A **blocking** stress suite for the integrations subsystem. Run it with
-`npm run stress`; CI runs it nightly and on every push to `main` via
-`.github/workflows/integration-stress.yml`.
+`npm run stress`; CI runs it nightly, on every pull request, and on every
+push to `main` via `.github/workflows/integration-stress.yml`.
+
+The pull-request trigger was added after this suite sat red on `main` for
+32 hours and ~20 merges: the Okta host allowlist in `e96b8fac5` refused
+the fake server's `127.0.0.1` origin, every test in
+`integration-http-hardening` failed including its sanity check, and nobody
+looked. A regression that turns `main` red only works if someone is
+watching, which is the thing a check exists to avoid needing.
 
 ```bash
 npm run stress                                          # all tiers

@@ -7,13 +7,35 @@
 #  a deadline on a hung socket, a throttle absorbed vs deferred, a lease
 #  reaped, a resumed pass that must not deprovision its own earlier runs.
 #
-#  ## Why `push: [main]` and NO continue-on-error
+#  ## Why `pull_request` AND `push: [main]`, and NO continue-on-error
 #
-#  Required status checks are a repo setting, and a workflow with no
-#  `pull_request` trigger produces no PR check context — so it can never
-#  literally be "required". `push: [main]` is what makes this a real gate:
-#  a regression turns main RED, which is the same strength `load-smoke`
-#  has in ci.yml.
+#  This ran on push-to-main only, on the reasoning that a red main is a
+#  real gate. It is not, and the evidence is this file's own history: the
+#  Okta host allowlist landed in e96b8fac5 and broke every test in
+#  integration-http-hardening — including its sanity check — and the suite
+#  stayed red for 32 hours across ~20 merges. Nobody looked. A regression
+#  that turns main red AFTER the merge only works if someone is watching,
+#  and the whole reason for a check is not having to.
+#
+#  So it now runs on PRs as well, which is also what makes it eligible to
+#  be a REQUIRED status check — a workflow with no `pull_request` trigger
+#  produces no PR check context and can never literally be required.
+#  Actually requiring it is a repo setting, currently blocked on the
+#  release bot having its own identity (ruleset #20952644 is configured and
+#  disabled). Until then this is a visible signal on the PR rather than a
+#  gate, which is still strictly better than a signal that arrives after
+#  the merge.
+#
+#  ## No `paths:` filter, deliberately
+#
+#  The obvious economy is to run this only when integrations change. The
+#  suite transitively imports 44 files across 19 areas of src/ — 13 under
+#  src/app-layer/integrations, the rest spread through src/lib/security,
+#  src/lib/observability, src/app-layer/jobs, soft-delete, prisma and env.
+#  A curated paths list would be wrong on the day someone edits one of the
+#  other 31, and wrong SILENTLY: the suite would simply not run, which
+#  looks identical to passing. A passing run costs 2-4 minutes. That is
+#  the cheaper side of the trade.
 #
 #  The absence of `continue-on-error` is the entire delta from
 #  load-test.yml, which is a trend-tracker. Do not "fix" it back in: an
@@ -47,7 +69,12 @@ on:
   # 03:30 load-test, 04:00 dast, 05:00 Sun dast-full, 06:00 Sun ci.
   schedule:
     - cron: '30 2 * * *'
-  # The real gate: a regression turns main red.
+  # On PRs: catch the regression BEFORE it lands, and produce the check
+  # context that lets this be required once branch protection is enabled.
+  pull_request:
+    branches: [main]
+  # Retained as the backstop — a PR merged while its run was stale, or a
+  # direct push, still turns main red.
   push:
     branches: [main]
   # A schedule/push-only workflow is otherwise unverifiable off main.
