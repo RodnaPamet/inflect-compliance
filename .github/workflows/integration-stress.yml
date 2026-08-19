@@ -73,6 +73,21 @@ on:
   # context that lets this be required once branch protection is enabled.
   pull_request:
     branches: [main]
+  # REQUIRED once `pull_request` exists — not optional, and not for
+  # symmetry. A job that skips reports `skipped` and branch protection
+  # counts it as a pass; a workflow that never TRIGGERS reports nothing,
+  # and the required check stays pending forever, hanging the queue and
+  # every merge in the repo with no error message anywhere. Locked by
+  # tests/guardrails/merge-queue-trigger-coverage.test.ts, which caught
+  # exactly that omission in the first draft of this change.
+  #
+  # This suite RUNS in the queue rather than skipping there. The queue is
+  # where the COMBINATION of two independently-green PRs is tested, and a
+  # combination is precisely how this suite last broke: a host allowlist
+  # landed in one PR and refused the fake server in a test file nobody
+  # touched. Two to four minutes is a fair price for the one gate that
+  # sees both changes at once.
+  merge_group:
   # Retained as the backstop — a PR merged while its run was stale, or a
   # direct push, still turns main red.
   push:
