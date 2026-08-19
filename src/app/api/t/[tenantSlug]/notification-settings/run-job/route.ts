@@ -17,8 +17,13 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
     const jobType = body.jobType;
 
     if (jobType === 'processOutbox') {
-        const stats = await processOutbox({ limit: 100 });
-        return jsonResponse({ success: true, stats, message: 'Outbox processed successfully (Global)' });
+        // Scoped to THIS tenant. It used to run globally — the message below
+        // even said "(Global)" — so an ADMIN of any tenant could drain every
+        // other tenant's outbox from their own settings page and see the
+        // combined total. `dailySweep` immediately below was already scoped;
+        // this is the outlier being brought into line.
+        const stats = await processOutbox({ limit: 100, tenantId: ctx.tenantId });
+        return jsonResponse({ success: true, stats, message: 'Outbox processed successfully' });
     }
 
     if (jobType === 'dailySweep') {
