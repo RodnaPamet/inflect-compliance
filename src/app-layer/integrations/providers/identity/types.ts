@@ -26,6 +26,25 @@ export interface NormalizedIdentityAccount {
     mfaEnrolled: boolean | null;
     /** Whether the account authenticates via federated SSO. `null` = unknown. */
     ssoEnrolled: boolean | null;
+    /**
+     * Whether this account is mastered ON-PREMISES and projected into the
+     * cloud directory by a sync agent (Azure AD Connect).
+     *
+     * `null` = the provider cannot determine it — the H2 three-state
+     * convention used by `isAdmin` / `mfaEnrolled` / `ssoEnrolled` above, and
+     * for the same reason: a hardcoded `false` would be a manufactured answer.
+     *
+     * THIS IS A WRITE-PATH SIGNAL, NOT A POSTURE ONE. Reading a hybrid
+     * directory through Graph is completely correct. WRITING to it is not: for
+     * a directory-synced account the source of authority is on-prem AD, and
+     * Azure AD Connect syncs one way, so a `PATCH accountEnabled: false`
+     * against Graph is either refused or silently reverted at the next cycle.
+     *
+     * An offboarding that does that reports success and then re-enables the
+     * account by itself, which is worse than failing, because the audit trail
+     * says the leaver was disabled.
+     */
+    onPremisesSyncEnabled: boolean | null;
     /** Group / role names. */
     groups: string[];
     lastActiveAt?: Date | null;

@@ -83,6 +83,9 @@ function normalizeGoogleUser(u: GoogleUser): NormalizedIdentityAccount {
         // report `null` (unknown) until that signal is fetched — sso_enforced is
         // then NOT_APPLICABLE for Google rather than a guaranteed pass.
         ssoEnrolled: null,
+        // Google Workspace has no Azure AD Connect equivalent in this model.
+        // `null` = not answerable here, per the H2 three-state convention.
+        onPremisesSyncEnabled: null,
         groups: [],
         lastActiveAt:
             u.lastLoginTime && u.lastLoginTime !== '1970-01-01T00:00:00.000Z'

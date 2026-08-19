@@ -28,6 +28,7 @@ function acct(over: Partial<NormalizedIdentityAccount>): NormalizedIdentityAccou
         isAdmin: over.isAdmin ?? false,
         mfaEnrolled: over.mfaEnrolled ?? true,
         ssoEnrolled: over.ssoEnrolled ?? true,
+        onPremisesSyncEnabled: null,
         groups: over.groups ?? [],
         lastActiveAt: 'lastActiveAt' in over ? (over.lastActiveAt ?? null) : NOW,
     };
@@ -332,7 +333,7 @@ describe('ActiveDirectoryProvider', () => {
     // Built literally (not via acct(), whose `?? true` fallback would coerce the
     // null MFA/SSO signals) so the NOT_APPLICABLE assertions are exercised.
     const adAccounts: NormalizedIdentityAccount[] = [
-        { externalUserId: 'a1', email: 'a1@corp.example.com', displayName: 'A1', status: 'ACTIVE', isAdmin: true, mfaEnrolled: null, ssoEnrolled: null, groups: ['Domain Admins'], lastActiveAt: NOW },
+        { externalUserId: 'a1', email: 'a1@corp.example.com', displayName: 'A1', status: 'ACTIVE', isAdmin: true, mfaEnrolled: null, ssoEnrolled: null, onPremisesSyncEnabled: false, groups: ['Domain Admins'], lastActiveAt: NOW },
     ];
     const provider = new ActiveDirectoryProvider({ listAccounts: async () => adAccounts });
 

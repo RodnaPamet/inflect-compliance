@@ -164,6 +164,9 @@ export async function runIdentitySync(input: {
                     status: a.status,
                     isAdmin: a.isAdmin ?? false,
                     mfaEnrolled: a.mfaEnrolled ?? false,
+                    // No `?? false` — nullable in the column too, because
+                    // "unknown" must not read as "safe to disable here".
+                    onPremisesSyncEnabled: a.onPremisesSyncEnabled,
                     groupsJson: a.groups,
                     lastActiveAt: a.lastActiveAt ?? null,
                     syncedAt: now,
@@ -174,6 +177,9 @@ export async function runIdentitySync(input: {
                     status: a.status,
                     isAdmin: a.isAdmin ?? false,
                     mfaEnrolled: a.mfaEnrolled ?? false,
+                    // No `?? false` — nullable in the column too, because
+                    // "unknown" must not read as "safe to disable here".
+                    onPremisesSyncEnabled: a.onPremisesSyncEnabled,
                     groupsJson: a.groups,
                     lastActiveAt: a.lastActiveAt ?? null,
                     syncedAt: now,

@@ -57,6 +57,7 @@ function acct(id: string): NormalizedIdentityAccount {
         isAdmin: false,
         mfaEnrolled: true,
         ssoEnrolled: true,
+        onPremisesSyncEnabled: null,
         groups: [],
         lastActiveAt: new Date(),
     };

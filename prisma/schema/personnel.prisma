@@ -20,6 +20,18 @@ model ConnectedIdentityAccount {
   status         ConnectedAccountStatus @default(ACTIVE)
   isAdmin        Boolean                @default(false)
   mfaEnrolled    Boolean                @default(false)
+  /// Whether this account is mastered ON-PREMISES and projected into the cloud
+  /// directory by Azure AD Connect. Null = the provider cannot answer it.
+  ///
+  /// A WRITE-PATH signal, not a posture one. Reading a hybrid directory through
+  /// Graph is correct; WRITING to it is not — for a synced account the source of
+  /// authority is on-prem AD and the sync runs one way, so disabling it via
+  /// Graph is reverted at the next cycle. An offboarding that does that reports
+  /// success and then re-enables the account by itself.
+  ///
+  /// Nullable rather than defaulted false: "we do not know" and "cloud-only" are
+  /// different answers, and only one of them is safe to write against.
+  onPremisesSyncEnabled Boolean?
   /// string[] of group / role names the account belongs to.
   groupsJson     Json                   @default("[]")
   lastActiveAt   DateTime?

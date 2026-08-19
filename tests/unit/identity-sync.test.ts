@@ -27,7 +27,7 @@ function stubProvider(accounts: NormalizedIdentityAccount[]) {
 }
 
 function acct(id: string): NormalizedIdentityAccount {
-    return { externalUserId: id, email: `${id}@acme.com`, status: 'ACTIVE', isAdmin: false, mfaEnrolled: true, ssoEnrolled: true, groups: [], lastActiveAt: NOW };
+    return { externalUserId: id, email: `${id}@acme.com`, status: 'ACTIVE', isAdmin: false, mfaEnrolled: true, ssoEnrolled: true, onPremisesSyncEnabled: null, groups: [], lastActiveAt: NOW };
 }
 
 beforeEach(() => {

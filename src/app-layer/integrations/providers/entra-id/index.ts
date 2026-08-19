@@ -6,11 +6,28 @@
  * runs the shared identity checks (`entra-id.mfa_enforced`,
  * `.no_dormant_admins`, `.admin_count_within_threshold`, `.sso_enforced`).
  *
- * Coverage note — this connector covers BOTH cloud Azure AD accounts and
- * on-premises Active Directory identities that are synced up to Entra via
+ * Coverage note — for READING, this connector covers BOTH cloud Azure AD
+ * accounts and on-premises Active Directory identities synced up to Entra via
  * Azure AD Connect (hybrid identity). Directory-synced accounts surface here
- * with `onPremisesSyncEnabled: true`; there is no separate on-prem LDAP
- * connector — hybrid AD is covered through this Graph connector by design.
+ * with `onPremisesSyncEnabled: true`.
+ *
+ * THAT COVERAGE IS READ-ONLY, AND THE DISTINCTION IS LOAD-BEARING.
+ *
+ * A directory-synced account is MASTERED ON-PREM. Azure AD Connect syncs one
+ * way, so a write against Graph — disabling a leaver, say — is either refused
+ * or silently reverted at the next cycle. The account reports disabled and then
+ * re-enables itself, which is worse than an outright failure because the audit
+ * trail says the offboarding succeeded.
+ *
+ * So `onPremisesSyncEnabled` is carried through to the stored account and
+ * consulted by `resolveWriteTarget` (usecases/identity-write-target.ts) before
+ * any write. Synced accounts are refused here and retargeted at the LDAPS
+ * connector below.
+ *
+ * There IS a separate on-prem connector — `providers/active-directory` (LDAPS),
+ * added 2026-07-15 — for estates whose AD is not projected into Entra. This
+ * file previously said no such connector existed, which was true when written
+ * and has been false since.
  *
  * Auth is the OAuth2 client-credentials grant against an app registration
  * (directory/tenant id + client id + client secret). Unlike Okta's per-user
@@ -106,6 +123,13 @@ function normalizeGraphUser(u: GraphUser): NormalizedIdentityAccount {
         // NOT_APPLICABLE rather than vacuously passing on a hardcoded false.
         isAdmin: null,
         mfaEnrolled: null,
+        // Already in the $select above, and until now discarded. This is the
+        // flag that decides whether a leaver write can land here at all: a
+        // directory-synced account is mastered on-prem, so disabling it via
+        // Graph is reverted by the next Azure AD Connect cycle.
+        // `?? null` keeps "Graph omitted the field" distinct from "Graph said
+        // false" — an absent property must not read as cloud-only.
+        onPremisesSyncEnabled: u.onPremisesSyncEnabled ?? null,
         // H2 — per-user SSO federation is derived from domain authenticationType
         // in the enrichment pass; unknown until then.
         ssoEnrolled: null,
@@ -126,7 +150,7 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
     // Graph users ping.
     readonly liveValidation = true;
     readonly setupGuide =
-        'In the Microsoft Entra admin center, register an application and grant it the application (not delegated) Microsoft Graph permissions User.Read.All, Directory.Read.All, and AuditLog.Read.All (the last enables MFA-registration + last-sign-in signals; without it those checks report Not applicable). Create a client secret, then paste the Directory (tenant) ID and Application (client) ID below with the secret. Test connection performs a live directory ping. On-prem Active Directory synced to Entra via Azure AD Connect is covered here — no separate AD connector is required. This connector runs directory/posture checks; it is separate from Entra SSO login.';
+        'In the Microsoft Entra admin center, register an application and grant it the application (not delegated) Microsoft Graph permissions User.Read.All, Directory.Read.All, and AuditLog.Read.All (the last enables MFA-registration + last-sign-in signals; without it those checks report Not applicable). Create a client secret, then paste the Directory (tenant) ID and Application (client) ID below with the secret. Test connection performs a live directory ping. On-prem Active Directory synced to Entra via Azure AD Connect is READ here for posture checks, but accounts mastered on-prem cannot be disabled through Graph — those writes are reverted by the next sync cycle, so offboarding them needs the separate on-prem Active Directory (LDAPS) connector. This connector runs directory/posture checks; it is separate from Entra SSO login.';
 
     readonly configSchema: ConnectionConfigSchema = {
         configFields: [
