@@ -1164,10 +1164,28 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
+        # Bounded: this shells out to apt-get, which can stall on the network
+        # with no timeout of its own. See the note on the cached step below.
+        timeout-minutes: 8
         run: npx playwright install --with-deps chromium
 
       - name: Install Playwright system deps (cached)
         if: steps.pw-cache.outputs.cache-hit == 'true'
+        # Bounded for a measured reason. Twice on 2026-08-19 (PRs #2004 and
+        # #2005) this step stalled and the E2E job burned its ENTIRE 40-minute
+        # budget without running a single test — `passed: 0  failed: 0`, with
+        # `npm exec playwright install-deps chromium` still alive as an orphan
+        # at cleanup.
+        #
+        # `playwright install-deps` is an apt-get wrapper and has no timeout of
+        # its own, so a package-mirror stall is indistinguishable from a slow
+        # test suite: both present as a 40-minute cancellation. That ambiguity
+        # is the real cost — the first one was misread as "the tests are slow"
+        # until the pass/fail counts were checked and turned out to be zero.
+        #
+        # 5 minutes is ~10x the observed healthy duration. Exceeding it fails
+        # the step with an unambiguous message instead of consuming the job.
+        timeout-minutes: 5
         run: npx playwright install-deps chromium
 
       # ── GAP-20: accessibility gate ──
