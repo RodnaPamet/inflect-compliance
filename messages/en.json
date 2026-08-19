@@ -7155,8 +7155,6 @@
             "treatment-plan": "Treatment plans"
         },
         "filterAria": "Filter deadlines by category",
-        "filterLegendLabel": "Filter",
-        "legendAria": "Event colour key",
         "myDeadlines": "My deadlines",
         "filterClear": "Clear",
         "countTotal": "{count, plural, one {# event} other {# events}}",

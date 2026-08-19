@@ -39,10 +39,10 @@ test.describe('Compliance Calendar', () => {
 
         const main = page.getByRole('main');
 
-        // The legend/filter split: a key beside the grid, the controls in the
-        // panel. Moving the chips wholesale would have left coloured events
-        // with no key anywhere.
-        await expect(main.locator('#calendar-legend')).toBeVisible();
+        // The standalone legend strip above the grid is gone; the colour key
+        // now lives on the filter rows themselves, which carry a swatch beside
+        // every category label from the same CATEGORY_TONES the event dots use.
+        await expect(main.locator('#calendar-legend')).toHaveCount(0);
         await expect(main.locator('#calendar-filter-group')).toBeVisible();
 
         // Containment, not co-existence — the filter must be INSIDE the panel.
@@ -50,11 +50,6 @@ test.describe('Compliance Calendar', () => {
             '#calendar-side-panel #calendar-filter-group',
         );
         await expect(filterInPanel).toHaveCount(1);
-
-        // …and the legend must NOT be.
-        await expect(
-            main.locator('#calendar-side-panel #calendar-legend'),
-        ).toHaveCount(0);
     });
 
     test('a category filter survives being put in the URL and reloaded', async ({

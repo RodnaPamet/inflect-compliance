@@ -493,37 +493,17 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
                 </div>
             </header>
 
-            {/* Colour legend ONLY — the interactive filter moved into the side
-                panel (see `#calendar-filter-group`).
+            {/* The colour legend that sat here was removed. It was kept when
+                the interactive filter moved into the side panel, on the
+                reasoning that "a grid of coloured events with no key anywhere
+                would be a regression" — but the panel's filter rows already
+                render the same swatch beside every category label, painted
+                from the same `CATEGORY_TONES`. The key was never lost by the
+                move; this strip was a second copy of it above the grid, and
+                the first thing between the header and the calendar itself.
 
-                These used to be the same control: chips that were both the key
-                to the dot colours AND the filter. Splitting them keeps the key
-                beside the grid it explains — a grid of coloured events with no
-                key anywhere would be a regression, whatever the filter gained.
-                Both halves render from `CATEGORY_TONES` so the swatch here and
-                the checkbox there cannot drift to different colours. */}
-            <div
-                className={cn(cardVariants({ density: 'none' }), 'flex flex-wrap items-center gap-compact px-4 py-2')}
-                role="group"
-                aria-label={t('legendAria')}
-                id="calendar-legend"
-            >
-                <span className="text-xs font-medium text-content-muted">
-                    {t('filterLegendLabel')}
-                </span>
-                {CALENDAR_EVENT_CATEGORIES.map((cat) => (
-                    <span
-                        key={cat}
-                        className="inline-flex items-center gap-1.5 text-xs text-content-muted"
-                    >
-                        <span
-                            className={cn('size-2 rounded-full', getCategoryTone(cat).bg)}
-                            aria-hidden="true"
-                        />
-                        {categoryLabel(t, cat)}
-                    </span>
-                ))}
-            </div>
+                `CATEGORY_TONES` remains the single source for both the event
+                dots and the panel swatches, so they still cannot drift. */}
 
             {/* Range navigation. Month has working prev/next; the fixed
                 windows (heatmap / gantt) render an explicit label instead. */}
