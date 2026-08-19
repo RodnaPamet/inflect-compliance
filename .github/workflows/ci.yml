@@ -1186,6 +1186,21 @@ jobs:
 
       - name: Install Playwright system deps (cached)
         if: steps.pw-cache.outputs.cache-hit == 'true'
+        # BEST-EFFORT, and that is the whole point of this step now.
+        #
+        # It exists to top up system libraries when the BROWSER cache hit but
+        # the runner image might lack a shared object. The ubuntu-24.04 image
+        # already ships nearly all of them, so this is belt-and-braces — not a
+        # prerequisite. Yet it wraps apt-get, and on 2026-08-19 an apt mirror
+        # stall failed it FIVE times: #2004, #2005, #2007, and main twice,
+        # including on a plain re-run. A best-effort top-up must not be able
+        # to take the whole E2E job down with it.
+        #
+        # If a library really is missing, the failure surfaces immediately and
+        # unambiguously at browser launch ("error while loading shared
+        # libraries: ..."), which is a far better signal than a 5-minute apt
+        # timeout. So: keep the attempt, keep the bound, drop the veto.
+        continue-on-error: true
         # Bounded for a measured reason. Twice on 2026-08-19 (PRs #2004 and
         # #2005) this step stalled and the E2E job burned its ENTIRE 40-minute
         # budget without running a single test — `passed: 0  failed: 0`, with
