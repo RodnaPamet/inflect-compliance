@@ -31,14 +31,14 @@ describe('assertWorkdayHost', () => {
 
     it('refuses a lookalike that a naive endsWith would accept', () => {
         // The two shapes a substring check waves through.
-        expect(() => assertWorkdayHost('evil-workday.com')).toThrow(/not a Workday domain/i);
-        expect(() => assertWorkdayHost('workday.com.attacker.net')).toThrow(/not a Workday domain/i);
+        expect(() => assertWorkdayHost('evil-workday.com')).toThrow(/not a recognised Workday host/i);
+        expect(() => assertWorkdayHost('workday.com.attacker.net')).toThrow(/not a recognised Workday host/i);
     });
 
     it('refuses an outright attacker host', () => {
-        expect(() => assertWorkdayHost('attacker.example')).toThrow(/not a Workday domain/i);
-        expect(() => assertWorkdayHost('localhost')).toThrow(/not a Workday domain/i);
-        expect(() => assertWorkdayHost('169.254.169.254')).toThrow(/not a Workday domain/i);
+        expect(() => assertWorkdayHost('attacker.example')).toThrow(/not a recognised Workday host/i);
+        expect(() => assertWorkdayHost('localhost')).toThrow(/not a recognised Workday host/i);
+        expect(() => assertWorkdayHost('169.254.169.254')).toThrow(/not a recognised Workday host/i);
     });
 
     it('refuses a host smuggling a real domain past a regex via userinfo', () => {
@@ -71,7 +71,7 @@ describe('the secret-bearing call sites refuse an off-domain host', () => {
                 },
                 { fetchImpl: evilFetch as unknown as typeof fetch },
             ),
-        ).rejects.toThrow(/not a Workday domain/i);
+        ).rejects.toThrow(/not a recognised Workday host/i);
         // The assertion that matters: no request was made at all.
         expect(evilFetch).not.toHaveBeenCalled();
     });
@@ -84,7 +84,7 @@ describe('the secret-bearing call sites refuse an off-domain host', () => {
                 null,
                 { fetchImpl: evilFetch as unknown as typeof fetch },
             ),
-        ).rejects.toThrow(/not a Workday domain/i);
+        ).rejects.toThrow(/not a recognised Workday host/i);
         expect(evilFetch).not.toHaveBeenCalled();
     });
 });
