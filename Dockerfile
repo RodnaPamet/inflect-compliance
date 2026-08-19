@@ -43,7 +43,23 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # started failing and prod stopped receiving new images. Match CI headroom
 # (runners have 16 GB) for both the Next build and the worker bundle.
 ENV NODE_OPTIONS="--max-old-space-size=8192"
-RUN npx next build --webpack
+# `.next/trace` is Next.js's BUILD-time telemetry trace, ~83 MB on this
+# project. Nothing reads it at runtime — there is no reference to it anywhere
+# in src/, scripts/ or deploy/.
+#
+# It was not merely dead weight. Trivy's secret scanner walks every file in
+# the image, and an 83 MB blob pushed the scan past its default 5-minute
+# deadline:
+#     FATAL run error: image scan error: ... context deadline exceeded
+# The job then produced no SARIF at all. A security gate that intermittently
+# TIMES OUT is worse than a slow one, because the cheapest response to it is
+# to re-run until it passes — which is how a gate stops being a gate.
+#
+# Deleted HERE, in the builder, rather than in the runner stage. The runner
+# does `COPY --from=builder /app/.next`, so removing it afterwards would
+# shrink the working tree while leaving the bytes sitting in the COPY layer,
+# and the image would still carry them.
+RUN npx next build --webpack && rm -rf .next/trace
 
 # Build the standalone BullMQ worker + scheduler bundles. esbuild is
 # a devDependency, so this MUST run before the prune below. Produces
