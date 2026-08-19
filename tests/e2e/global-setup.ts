@@ -47,7 +47,17 @@ export default async function globalSetup(config: FullConfig) {
     }
 
     // ── Phase 2: Pre-warm the dev server ──
-    const baseURL = config.projects[0]?.use?.baseURL || 'http://127.0.0.1:3006';
+    const baseURL = config.projects[0]?.use?.baseURL || 'https://127.0.0.1:3006';
+
+    // The harness is fronted by an HTTP/2 proxy with a self-signed throwaway
+    // cert (scripts/e2e-http2-proxy.mjs), so Playwright sets
+    // `ignoreHTTPSErrors`. Node's global `fetch` does NOT read that — it has
+    // its own trust store — so this pre-warm would fail every attempt with a
+    // bare "fetch failed" and then let the suite start against a cold server.
+    // Scoped to this process, which only ever talks to localhost.
+    if (baseURL.startsWith('https://')) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    }
     console.log(`[global-setup] Pre-warming dev server at ${baseURL}/login ...`);
 
     const maxRetries = 30;

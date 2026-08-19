@@ -3,7 +3,11 @@ import { defineConfig, devices } from '@playwright/test';
 const isCI = !!process.env.CI;
 // Always use a dedicated port for E2E tests to avoid conflicts with `npm run dev` on 3000.
 // This ensures E2E tests always start their own server with AUTH_TEST_MODE=1.
+// The port Playwright talks to. HTTPS, terminated by scripts/e2e-http2-proxy.mjs
+// so the harness speaks h2 like production does (deploy/caddy: `protocols h1 h2 h3`).
 const port = 3006;
+// `next start` moves behind the proxy. Nothing outside this file should need it.
+const upstreamPort = 3007;
 
 export default defineConfig({
     testDir: './tests/e2e',
@@ -48,7 +52,11 @@ export default defineConfig({
     workers: isCI ? 2 : undefined,
     reporter: isCI ? [['list'], ['html', { open: 'never' }]] : 'list',
     use: {
-        baseURL: process.env.URL || 'http://localhost:3006',
+        baseURL: process.env.URL || `https://localhost:${port}`,
+        // The proxy's cert is a self-signed throwaway generated at first run
+        // (see scripts/e2e-http2-proxy.mjs). Trusting it is the point; it is
+        // never used outside this harness.
+        ignoreHTTPSErrors: true,
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
         // Matches the two settings above it. `'on'` recorded video for
@@ -109,8 +117,29 @@ export default defineConfig({
         //     webserver hash `admin@acme.com` under different keys.
         // NOT a real secret; visible in source so no operator confuses it
         // for prod.
-        command: `DATA_ENCRYPTION_KEY=\${DATA_ENCRYPTION_KEY:-e2e-deterministic-test-encryption-key-32+-chars} npx cross-env NODE_ENV=test NODE_OPTIONS="--max-old-space-size=4096" NEXT_IGNORE_INCORRECT_LOCKFILE=1 AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 NEXT_PUBLIC_TEST_MODE=1 AUTH_URL=http://localhost:${port} NEXTAUTH_URL=http://localhost:${port} PORT=${port} npx next start -p ${port}`,
-        port,
+        //
+        // ── HTTP/2 (2026-08-19) ──
+        // `next start` now listens on ${upstreamPort} and a small h2 proxy
+        // fronts it on ${port}. Production terminates TLS at Caddy with
+        // `h1 h2 h3`; this harness was the only tier serving raw HTTP/1.1,
+        // whose SIX-connection-per-origin cap made the sidebar's 14-route
+        // prefetch burst queue until `networkidle` never settled (upstream
+        // vercel/next.js#96109). AUTH_URL/NEXTAUTH_URL move to https for the
+        // same reason they had to match the port: NextAuth rewrites the
+        // request origin to AUTH_URL, so a scheme mismatch reintroduces the
+        // MissingCSRF/stuck-login class this comment already warns about.
+        command:
+            `DATA_ENCRYPTION_KEY=\${DATA_ENCRYPTION_KEY:-e2e-deterministic-test-encryption-key-32+-chars} ` +
+            `npx cross-env NODE_ENV=test NODE_OPTIONS="--max-old-space-size=4096" ` +
+            `NEXT_IGNORE_INCORRECT_LOCKFILE=1 AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 NEXT_PUBLIC_TEST_MODE=1 ` +
+            `AUTH_URL=https://localhost:${port} NEXTAUTH_URL=https://localhost:${port} ` +
+            `AUTH_TRUST_HOST=true PORT=${upstreamPort} ` +
+            `npx next start -p ${upstreamPort} & ` +
+            `E2E_HTTPS_PORT=${port} E2E_UPSTREAM_PORT=${upstreamPort} node scripts/e2e-http2-proxy.mjs`,
+        // Playwright probes this URL (not just the port) so it waits for the
+        // PROXY to be up, not merely `next start`.
+        url: `https://localhost:${port}/login`,
+        ignoreHTTPSErrors: true,
         reuseExistingServer: !isCI,
         timeout: 120_000,
         stdout: 'pipe',
