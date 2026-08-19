@@ -1,4 +1,5 @@
 import { PrismaTx } from '@/lib/db-context';
+import { controlsDueSoonWhere, controlsMissingEvidenceWhere } from '@/lib/compliance/control-predicates';
 import { RequestContext } from '../types';
 import { Prisma, ControlStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
@@ -25,6 +26,16 @@ export interface ControlListFilters {
     applicability?: string;
     ownerUserId?: string;
     q?: string;
+    /**
+     * Drill-down facets backing the controls-dashboard cards. Both reuse the
+     * predicate the DASHBOARD counts with (`@/lib/compliance/control-predicates`)
+     * rather than restating it — a card that links to a list showing a different
+     * number is the failure this codebase already shipped once, when #1924
+     * unified the evidence DEFINITION but left two surfaces counting it over
+     * different scopes.
+     */
+    due?: 'soon';
+    evidence?: 'missing';
     /**
      * Restrict to an explicit control-id set — the server-side backing for the
      * consistency-check `?ids=` deep-link AND the resolved health-verdict facet
@@ -242,6 +253,11 @@ export class ControlRepository {
             if (applicability) and.push(applicability);
         }
         if (filters?.ownerUserId) where.ownerUserId = filters.ownerUserId;
+        // Dashboard drill-downs. Pushed onto `and` because each predicate can
+        // itself carry `OR`/`NOT`, and assigning at the top level would collide
+        // with the tenant-scope `OR` above.
+        if (filters?.due === 'soon') and.push(controlsDueSoonWhere());
+        if (filters?.evidence === 'missing') and.push(controlsMissingEvidenceWhere(ctx.tenantId));
         // Explicit id restriction (consistency `?ids=` deep-link + resolved
         // health facet). Filtered in-DB so it scales past the loaded page.
         // An EMPTY array is deliberate (a requested facet that matched nothing)

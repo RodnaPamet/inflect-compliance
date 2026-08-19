@@ -316,6 +316,16 @@ function ControlsPageInner({
         if (search) params.set('q', search);
         const idsParam = searchParams?.get('ids');
         if (idsParam) params.set('ids', idsParam);
+        // Controls-dashboard drill-downs. Threaded like `ids` rather than
+        // modelled as FilterToolbar facets: they are entry points, not things
+        // an operator composes from the toolbar, and adding them as facets
+        // would put two unremovable-looking chips in the picker for every user
+        // who never arrives from a card. Clearing them is the "Controls" nav
+        // link — a plain visit to the page.
+        for (const key of ['due', 'evidence'] as const) {
+            const v = searchParams?.get(key);
+            if (v) params.set(key, v);
+        }
         // #8a — `category` is the ONE facet still applied client-side (see
         // `clientFilteredControls`), so it must not reach the server query:
         // the Category column shows a DERIVED value while the server can only

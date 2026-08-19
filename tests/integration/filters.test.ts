@@ -79,6 +79,75 @@ describe('ControlRepository._buildWhere', () => {
         expect(where.status).toBe('IMPLEMENTED');
     });
 
+    // ─── Controls-dashboard drill-downs ───
+    //
+    // Each dashboard card links to this list filtered to the rows it counted.
+    // These assert the LIST asks the same question the CARD counted — if they
+    // drift, the card shows one number and the page it opens shows another,
+    // which is the defect #1924 shipped by moving a metric with a copy.
+
+    it('applies the due-soon predicate, scoped to applicable controls', async () => {
+        const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
+        const mockFindMany = jest.fn().mockResolvedValue([]);
+        const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await ControlRepository.list(mockDb, ctx, { due: 'soon' });
+
+        const where = mockFindMany.mock.calls[0][0].where;
+        const dueClause = (where.AND as Record<string, unknown>[]).find((c) => 'nextDueAt' in c);
+        expect(dueClause).toBeDefined();
+        // APPLICABLE scoping is load-bearing: a control excluded from scope has
+        // no meaningful review date, and counting it would inflate a number an
+        // operator reads as "work arriving".
+        expect(dueClause).toMatchObject({ applicability: 'APPLICABLE' });
+        expect((dueClause as { nextDueAt: { lte: Date } }).nextDueAt.lte).toBeInstanceOf(Date);
+    });
+
+    it('applies the missing-evidence predicate with tenant scope INSIDE the link filter', async () => {
+        const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
+        const mockFindMany = jest.fn().mockResolvedValue([]);
+        const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await ControlRepository.list(mockDb, ctx, { evidence: 'missing' });
+
+        const where = mockFindMany.mock.calls[0][0].where;
+        const clause = (where.AND as Record<string, unknown>[]).find((c) => 'NOT' in c) as {
+            status: unknown;
+            NOT: { evidenceControlLinks: { some: { tenantId: string; evidence: Record<string, unknown> } } };
+        };
+        expect(clause).toBeDefined();
+        // Keys on STATUS, not the `applicability` field a sibling scorer uses —
+        // picking the other one makes the list disagree with the card.
+        expect(clause.status).toEqual({ not: 'NOT_APPLICABLE' });
+
+        const link = clause.NOT.evidenceControlLinks.some;
+        // tenantId must sit INSIDE the relation filter: the soft-delete
+        // extension injects tenant scope at the top level only, so without this
+        // another tenant's link would count as evidence.
+        expect(link.tenantId).toBe('tenant-1');
+        // The shared qualifying-evidence rule, not an inlined copy.
+        expect(link.evidence).toMatchObject({ status: 'APPROVED', isArchived: false, deletedAt: null });
+    });
+
+    it('ignores an unrecognised drill-down value rather than listing everything', async () => {
+        const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
+        const mockFindMany = jest.fn().mockResolvedValue([]);
+        const mockDb = { control: { findMany: mockFindMany } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await ControlRepository.list(mockDb, ctx, {
+            due: 'whenever' as unknown as 'soon',
+            evidence: 'plenty' as unknown as 'missing',
+        });
+
+        const where = mockFindMany.mock.calls[0][0].where;
+        // No predicate added — and critically, the tenant-scope OR survives.
+        expect(where.AND ?? []).toHaveLength(0);
+        expect(where.OR).toEqual([{ tenantId: 'tenant-1' }, { tenantId: null }]);
+    });
+
     it('combines q + status + applicability', async () => {
         const { ControlRepository } = await import('@/app-layer/repositories/ControlRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);

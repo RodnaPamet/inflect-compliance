@@ -105,6 +105,15 @@ export default function ControlsDashboard() {
                 <div className={cardVariants({ density: 'compact' })}>
                     <KPIStat
                         id="implementation-progress"
+                        // The numerator's rows: implemented AND in scope.
+                        // `APPLICABLE,UNASSESSED` rather than `APPLICABLE`
+                        // alone — the UI shows three states over a two-value
+                        // column, and the count this card divides by keys on
+                        // the COLUMN, so linking to the decided-only subset
+                        // would land on fewer rows than the card counted.
+                        href={data.implementedCount > 0
+                            ? tenantHref('/controls?status=IMPLEMENTED&applicability=APPLICABLE,UNASSESSED')
+                            : undefined}
                         value={`${data.implementationProgress}%`}
                         label={t('dashboard.implementationProgress')}
                         tone="success"
@@ -121,6 +130,11 @@ export default function ControlsDashboard() {
                 <div className={cardVariants({ density: 'compact' })}>
                     <KPIStat
                         id="overdue-tasks"
+                        // Tasks, not controls — this counts open Tasks past due
+                        // that carry a controlId. /controls has no task facet,
+                        // and inventing one would answer a different question
+                        // than the number shown.
+                        href={data.overdueTasks > 0 ? tenantHref('/tasks?due=overdue') : undefined}
                         value={data.overdueTasks}
                         label={t('dashboard.overdueTasks')}
                         tone={data.overdueTasks > 0 ? 'critical' : 'default'}
@@ -130,6 +144,7 @@ export default function ControlsDashboard() {
                 <div className={cardVariants({ density: 'compact' })}>
                     <KPIStat
                         id="due-soon"
+                        href={data.controlsDueSoon > 0 ? tenantHref('/controls?due=soon') : undefined}
                         value={data.controlsDueSoon}
                         label={t('dashboard.controlsDueSoon')}
                         tone={data.controlsDueSoon > 0 ? 'attention' : 'default'}
@@ -138,6 +153,10 @@ export default function ControlsDashboard() {
                 </div>
                 <div className={cardVariants({ density: 'compact' })}>
                     <KPIStat
+                        id="applicability-applicable"
+                        href={data.applicabilityDistribution.applicable > 0
+                            ? tenantHref('/controls?applicability=APPLICABLE,UNASSESSED')
+                            : undefined}
                         value={data.applicabilityDistribution.applicable}
                         label={t('dashboard.applicability')}
                         description={t('dashboard.excludedNA', { count: data.applicabilityDistribution.notApplicable })}
@@ -152,6 +171,9 @@ export default function ControlsDashboard() {
                 <div className={cardVariants({ density: 'compact' })}>
                     <KPIStat
                         id="controls-missing-evidence"
+                        href={data.controlsMissingEvidence > 0
+                            ? tenantHref('/controls?evidence=missing')
+                            : undefined}
                         value={data.controlsMissingEvidence}
                         label={t('dashboard.missingEvidence')}
                         tone={data.controlsMissingEvidence > 0 ? 'attention' : 'default'}

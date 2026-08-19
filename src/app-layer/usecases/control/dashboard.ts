@@ -13,7 +13,7 @@ import { assertCanReadControls } from '../../policies/control.policies';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import type { TaskStatus } from '@prisma/client';
-import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
+import { controlsDueSoonWhere, controlsMissingEvidenceWhere } from '@/lib/compliance/control-predicates';
 
 // Non-terminal (active) work-item statuses — the unified-Task equivalent of
 // the legacy `status != 'DONE'` predicate the ControlTask dashboard used.
@@ -34,8 +34,6 @@ export async function getControlDashboard(ctx: RequestContext) {
 
     return runInTenantReadContext(ctx, async (db) => {
         const now = new Date();
-        const soonThreshold = new Date(now);
-        soonThreshold.setDate(soonThreshold.getDate() + 30);
 
         // #102 item 3 — the dashboard used to `findMany` every control
         // WITH its full `controlTasks` array (plus an unused `_count`)
@@ -71,11 +69,7 @@ export async function getControlDashboard(ctx: RequestContext) {
                 },
             }),
             db.control.count({
-                where: {
-                    tenantId: ctx.tenantId,
-                    applicability: 'APPLICABLE',
-                    nextDueAt: { not: null, lte: soonThreshold },
-                },
+                where: { tenantId: ctx.tenantId, ...controlsDueSoonWhere(now) },
             }),
             // Controls with no QUALIFYING evidence, tenant-wide.
             //
@@ -103,18 +97,7 @@ export async function getControlDashboard(ctx: RequestContext) {
             //   - the control's own soft-delete is handled by the extension
             //     (Control is in SOFT_DELETE_MODELS and `count` is wrapped).
             db.control.count({
-                where: {
-                    tenantId: ctx.tenantId,
-                    status: { not: 'NOT_APPLICABLE' },
-                    NOT: {
-                        evidenceControlLinks: {
-                            some: {
-                                tenantId: ctx.tenantId,
-                                evidence: coverageQualifyingEvidenceWhere(now),
-                            },
-                        },
-                    },
-                },
+                where: { tenantId: ctx.tenantId, ...controlsMissingEvidenceWhere(ctx.tenantId, now) },
             }),
             // Overdue = open (non-terminal) unified Task past its due date.
             // Scoped to tasks that carry the direct `controlId` FK so the
