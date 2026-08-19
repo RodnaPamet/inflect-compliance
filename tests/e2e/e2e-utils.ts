@@ -404,7 +404,7 @@ export interface CreateIsolatedTenantOptions {
     request?: APIRequestContext;
     /**
      * Optional base URL override. Defaults to `process.env.URL`
-     * then `'http://localhost:3006'` (matches the Playwright
+     * then `'https://localhost:3006'` (matches the Playwright
      * config's webServer port).
      */
     baseURL?: string;
@@ -416,7 +416,14 @@ export interface CreateIsolatedTenantOptions {
     namePrefix?: string;
 }
 
-const DEFAULT_BASE_URL = 'http://localhost:3006';
+// https, because the harness is fronted by an HTTP/2 proxy terminating TLS on
+// this port (scripts/e2e-http2-proxy.mjs) — matching production, which serves
+// `h1 h2 h3` via Caddy. A plain-http request to 3006 now gets a socket hang up.
+//
+// This default only applies on the EPHEMERAL path, where no caller-supplied
+// request context exists — which is exactly why it was missed when the harness
+// moved to https: every other path inherits Playwright's `baseURL`.
+const DEFAULT_BASE_URL = 'https://localhost:3006';
 
 function generateOwnerPassword(): string {
     // Strong entropy + mixed character classes so the password
@@ -471,7 +478,12 @@ export async function createIsolatedTenant(
     // cookies / fixtures with the rest of the test; otherwise spin
     // one up and dispose it inside this call.
     const request =
-        options.request ?? (await playwrightRequest.newContext({ baseURL }));
+        options.request ??
+        // `ignoreHTTPSErrors` does NOT come from playwright.config's `use:`
+        // block — that applies to fixtures, and this context is constructed by
+        // hand. The harness cert is a self-signed throwaway, so without this
+        // every ephemeral-path call fails with "socket hang up".
+        (await playwrightRequest.newContext({ baseURL, ignoreHTTPSErrors: true }));
     const ownsRequest = !options.request;
 
     try {
