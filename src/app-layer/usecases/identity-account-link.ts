@@ -1,0 +1,180 @@
+/**
+ * Matching workers to their directory accounts, while both sides are healthy.
+ *
+ * ═══ WHY MATCHING HAPPENS HERE AND NOT AT TERMINATION ═══
+ *
+ * The leaver flow needs to answer "which directory accounts belong to the
+ * person the HR feed just marked terminated?". The only bridge available
+ * between `Employee` and `ConnectedIdentityAccount` today is the email address,
+ * and email is precisely the attribute that stops being trustworthy at the
+ * moment of termination: the mailbox gets converted to shared, the address gets
+ * an `-ex` suffix or is released for reuse, the UPN changes, the HR row is
+ * scrubbed for privacy.
+ *
+ * So the pairing is observed continuously, during syncs where nothing is
+ * happening, and simply READ at termination. The disable path then acts on a
+ * fact recorded when it was verifiable rather than one inferred under time
+ * pressure on the unhappy path.
+ *
+ * ═══ EVERY AMBIGUITY RESOLVES TO NO LINK ═══
+ *
+ * This module writes a link only for an exact, case-normalised email match
+ * against exactly one employee. It does not do fuzzy matching, name matching,
+ * or "closest match" scoring, and it will not overwrite a link that points
+ * somewhere else.
+ *
+ * That is not caution for its own sake. An incorrect link, under JML, disables
+ * the wrong person's account — and does so with an audit trail asserting the
+ * offboarding succeeded. A missing link is a refusal that someone can see and
+ * fix. The two failure modes are not remotely symmetric, so every ambiguous
+ * case is resolved toward the visible one.
+ *
+ * The corollary belongs to the caller and is stated here because it is the
+ * whole point: the leaver path must treat a MISSING link as a refusal, never as
+ * licence to fall back to matching by email in the moment. That fallback would
+ * reintroduce the exact failure mode this module removes, on the one path where
+ * nobody is watching.
+ *
+ * @module usecases/identity-account-link
+ */
+import type { RequestContext } from '../types';
+import { runInTenantContext } from '@/lib/db-context';
+import { logger } from '@/lib/observability/logger';
+
+/** Bound on the employee population read in one matching pass. */
+const MAX_EMPLOYEES = 10_000;
+
+export interface LinkMatchResult {
+    /** Links newly created in this pass. */
+    readonly created: number;
+    /** Existing links re-observed and re-stamped. */
+    readonly verified: number;
+    /**
+     * Accounts that matched no employee, or matched one already linked to a
+     * different worker. Reported rather than resolved — see the module note.
+     */
+    readonly unmatched: number;
+}
+
+/** Normalised join key. Directory casing and HR casing routinely disagree. */
+function emailKey(raw: string | null | undefined): string | null {
+    const v = String(raw ?? '').trim().toLowerCase();
+    return v.length > 0 ? v : null;
+}
+
+/**
+ * Observe worker <-> account pairings for one provider and record them.
+ *
+ * Called after a CONFIRMED-COMPLETE directory enumeration. Running it on a
+ * partial one would be harmless for links it creates (each is independently
+ * verified) but the `unmatched` count would be meaningless, and that count is
+ * the signal an operator uses to notice that half their directory has no HR
+ * counterpart.
+ */
+export async function reconcileIdentityAccountLinks(
+    ctx: RequestContext,
+    provider: string,
+    now: Date = new Date(),
+): Promise<LinkMatchResult> {
+    return runInTenantContext(ctx, async (db) => {
+        // Two bounded reads, then all matching in memory. A per-account lookup
+        // here would be an N+1 over the whole directory.
+        const [employees, accounts] = await Promise.all([
+            db.employee.findMany({
+                where: { tenantId: ctx.tenantId },
+                select: { id: true, workEmail: true },
+                take: MAX_EMPLOYEES,
+            }),
+            db.connectedIdentityAccount.findMany({
+                where: { tenantId: ctx.tenantId, provider },
+                select: { id: true, email: true },
+                take: MAX_EMPLOYEES,
+            }),
+        ]);
+
+        // An email shared by two employee rows is not a match, it is a data
+        // problem. Mapping it to either row would be a coin flip that later
+        // disables someone.
+        const byEmail = new Map<string, string | null>();
+        for (const e of employees) {
+            const key = emailKey(e.workEmail);
+            if (!key) continue;
+            byEmail.set(key, byEmail.has(key) ? null : e.id);
+        }
+
+        const existing = await db.identityAccountLink.findMany({
+            where: { tenantId: ctx.tenantId, connectedAccountId: { in: accounts.map((a) => a.id) } },
+            select: { connectedAccountId: true, employeeId: true },
+            take: MAX_EMPLOYEES,
+        });
+        const linkedTo = new Map(existing.map((l) => [l.connectedAccountId, l.employeeId]));
+
+        const toCreate: Array<{
+            tenantId: string;
+            employeeId: string;
+            connectedAccountId: string;
+            matchMethod: 'EMAIL_EXACT';
+            lastVerifiedAt: Date;
+        }> = [];
+        const toVerify: string[] = [];
+        let unmatched = 0;
+
+        for (const account of accounts) {
+            const key = emailKey(account.email);
+            const employeeId = key ? byEmail.get(key) : undefined;
+
+            // No match, or an email claimed by more than one employee row.
+            if (!employeeId) {
+                unmatched += 1;
+                continue;
+            }
+
+            const current = linkedTo.get(account.id);
+            if (current === employeeId) {
+                toVerify.push(account.id);
+                continue;
+            }
+            if (current !== undefined) {
+                // Already linked to a DIFFERENT worker. Silently re-pointing it
+                // would move a future disable from one person to another, so
+                // the conflict is surfaced and left alone.
+                unmatched += 1;
+                continue;
+            }
+            toCreate.push({
+                tenantId: ctx.tenantId,
+                employeeId,
+                connectedAccountId: account.id,
+                matchMethod: 'EMAIL_EXACT',
+                lastVerifiedAt: now,
+            });
+        }
+
+        // `skipDuplicates` covers the race with a concurrent pass for the same
+        // tenant: the unique on connectedAccountId is the real arbiter, and
+        // losing that race is a no-op rather than an error.
+        const created = toCreate.length
+            ? (await db.identityAccountLink.createMany({ data: toCreate, skipDuplicates: true })).count
+            : 0;
+
+        const verified = toVerify.length
+            ? (
+                  await db.identityAccountLink.updateMany({
+                      where: { tenantId: ctx.tenantId, connectedAccountId: { in: toVerify } },
+                      data: { lastVerifiedAt: now },
+                  })
+              ).count
+            : 0;
+
+        logger.info('identity account links reconciled', {
+            component: 'identity-account-link',
+            tenantId: ctx.tenantId,
+            provider,
+            created,
+            verified,
+            unmatched,
+        });
+
+        return { created, verified, unmatched };
+    });
+}

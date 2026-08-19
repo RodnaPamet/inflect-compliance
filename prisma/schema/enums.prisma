@@ -1372,3 +1372,19 @@ enum AiResidency {
   EXTERNAL
   LOCAL_ONLY
 }
+
+/// How an Employee was matched to a directory account.
+///
+/// Recorded on every link so a later disable can state the BASIS of its
+/// decision rather than asserting a pairing it cannot justify. An offboarding
+/// that disabled the wrong person needs to be answerable with "matched on
+/// exact work-email during the sync of <date>", not "the system thought so".
+enum IdentityLinkMethod {
+  /// Exact, case-normalised work-email match. The only method a sync creates
+  /// on its own — see identity-account-link for why nothing fuzzier qualifies.
+  EMAIL_EXACT
+  /// The HRIS external id and the directory account agree.
+  EXTERNAL_ID
+  /// An administrator asserted the pairing by hand.
+  MANUAL
+}
