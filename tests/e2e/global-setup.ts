@@ -14,7 +14,10 @@
  */
 import type { FullConfig } from '@playwright/test';
 import { execSync } from 'child_process';
+import fs from 'fs';
 import path from 'path';
+
+import { Agent, setGlobalDispatcher } from 'undici';
 
 export default async function globalSetup(config: FullConfig) {
     const projectRoot = path.resolve(__dirname, '..', '..');
@@ -50,13 +53,32 @@ export default async function globalSetup(config: FullConfig) {
     const baseURL = config.projects[0]?.use?.baseURL || 'https://127.0.0.1:3006';
 
     // The harness is fronted by an HTTP/2 proxy with a self-signed throwaway
-    // cert (scripts/e2e-http2-proxy.mjs), so Playwright sets
-    // `ignoreHTTPSErrors`. Node's global `fetch` does NOT read that — it has
-    // its own trust store — so this pre-warm would fail every attempt with a
-    // bare "fetch failed" and then let the suite start against a cold server.
-    // Scoped to this process, which only ever talks to localhost.
+    // cert (scripts/e2e-http2-proxy.mjs). Playwright sets `ignoreHTTPSErrors`
+    // for its own contexts, but Node's global `fetch` has a separate trust
+    // store — without this, the pre-warm below fails every attempt with a bare
+    // "fetch failed" and the suite then starts against a COLD server.
+    //
+    // TRUST THE CERT; DO NOT DISABLE VALIDATION. The first version set
+    // NODE_TLS_REJECT_UNAUTHORIZED='0', which CodeQL correctly flagged
+    // (js/disabling-certificate-validation, CWE-295) — it switches off
+    // verification process-wide, for every host, not just this one. Adding the
+    // harness's own certificate to the CA set keeps verification ON and trusts
+    // exactly one throwaway localhost cert.
     if (baseURL.startsWith('https://')) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+        const caPath = path.resolve(
+            process.cwd(),
+            'node_modules/.cache/e2e-tls/cert.pem',
+        );
+        if (fs.existsSync(caPath)) {
+            setGlobalDispatcher(
+                new Agent({ connect: { ca: fs.readFileSync(caPath, 'utf8') } }),
+            );
+        } else {
+            console.warn(
+                `[global-setup] no harness cert at ${caPath} — the pre-warm may fail. ` +
+                    `It is generated on first run by scripts/e2e-http2-proxy.mjs.`,
+            );
+        }
     }
     console.log(`[global-setup] Pre-warming dev server at ${baseURL}/login ...`);
 
