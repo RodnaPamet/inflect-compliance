@@ -67,8 +67,22 @@ export function mapWorkdayStatus(
     now: Date = new Date(),
 ): NormalizedEmployee['status'] {
     const raw = String(row.workerStatus ?? '').toLowerCase();
-    if (raw.includes('terminat')) return 'TERMINATED';
-    if (raw.includes('leave')) return 'LEAVE';
+
+    // ── DATES FIRST. This ordering IS the rule stated above. ──
+    //
+    // The string checks used to sit here, above the dates, and returned
+    // immediately on 'terminat'/'leave' — the exact inversion of the documented
+    // rule, for the two tokens where it matters most. A worker whose
+    // administrator-customised status read "Terminated (Pending)" with a
+    // termination date a month out returned TERMINATED and never reached the
+    // OFFBOARDING branch below: the precise population the comment above says
+    // this derivation exists to catch.
+    //
+    // Harmless while the only consumer was `offboarded_access_removed`, which
+    // treats TERMINATED and OFFBOARDING alike (personnel/checks.ts:67). NOT
+    // harmless once a JML leaver flow disables accounts on TERMINATED — that
+    // would disable someone on their notice period, while they are still
+    // employed and working.
 
     // Pending termination — still employed, last day in the future.
     if (row.terminationDate) {
@@ -83,6 +97,16 @@ export function mapWorkdayStatus(
         const start = new Date(row.hireDate);
         if (!Number.isNaN(start.getTime()) && start > now) return 'ONBOARDING';
     }
+
+    // ── STATUS STRING SECOND, as the fallback it was meant to be. ──
+    //
+    // Deliberate consequence: a worker on leave who ALSO carries a termination
+    // date now resolves from the date (OFFBOARDING / TERMINATED) rather than
+    // LEAVE. They are leaving; the date is the actionable fact, and both
+    // outcomes are "still employed, do not disable yet" for a future date.
+    // Someone on leave with no dates still resolves to LEAVE, unchanged.
+    if (raw.includes('terminat')) return 'TERMINATED';
+    if (raw.includes('leave')) return 'LEAVE';
     if (raw.includes('pre-hire') || raw.includes('prehire') || raw.includes('onboard')) return 'ONBOARDING';
 
     // `activeStatus: false` with no dates is a worker Workday considers

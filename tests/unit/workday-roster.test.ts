@@ -69,6 +69,38 @@ describe('status derivation', () => {
         expect(mapWorkdayStatus({ workerStatus: 'Active', terminationDate: '2026-01-01' }, now)).toBe('TERMINATED');
     });
 
+    it('a "Terminated" STRING with a FUTURE date is OFFBOARDING — dates win', () => {
+        // The regression this ordering exists for, and the one the original
+        // tests could not catch because both passed workerStatus: 'Active',
+        // which never reaches the string branch.
+        //
+        // Workday's status string is administrator-customisable, so "Terminated
+        // (Pending)" / "Terminated - Notice" are ordinary values for a worker
+        // who is still employed and working out their notice. Returning
+        // TERMINATED here is what would disable that person's account while
+        // they are still coming to work.
+        expect(
+            mapWorkdayStatus({ workerStatus: 'Terminated (Pending)', terminationDate: '2026-07-01' }, now),
+        ).toBe('OFFBOARDING');
+    });
+
+    it('a "Terminated" string with a PAST date is still TERMINATED', () => {
+        // The mirror. Dates winning must not make a real termination softer.
+        expect(
+            mapWorkdayStatus({ workerStatus: 'Terminated', terminationDate: '2026-01-01' }, now),
+        ).toBe('TERMINATED');
+    });
+
+    it('a worker on leave with a future termination date resolves from the DATE', () => {
+        // Deliberate consequence of the ordering, asserted so it is a decision
+        // and not an accident: they are leaving, and the date is the actionable
+        // fact. Both LEAVE and OFFBOARDING mean "do not disable yet", so this is
+        // safe either way — but it must be predictable.
+        expect(
+            mapWorkdayStatus({ workerStatus: 'On Leave', terminationDate: '2026-07-01' }, now),
+        ).toBe('OFFBOARDING');
+    });
+
     it('recognises leave and explicit termination from the status string', () => {
         expect(mapWorkdayStatus({ workerStatus: 'On Leave' }, now)).toBe('LEAVE');
         expect(mapWorkdayStatus({ workerStatus: 'Terminated' }, now)).toBe('TERMINATED');
