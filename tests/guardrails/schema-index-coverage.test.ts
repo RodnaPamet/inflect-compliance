@@ -387,6 +387,7 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     AuditPackShareComment: 'listShareComments filters by (tenantId, auditPackId), orders by createdAt desc — covered by @@index([tenantId, auditPackId]); bounded take ≤500.',
     AuditPackShare: 'listPackShares filters by (tenantId, auditPackId), orders by createdAt desc — covered by @@index([tenantId, auditPackId]); bounded take ≤200.',
     AuditorAccount: 'listAuditors filters by tenantId, orders by createdAt desc — covered by @@unique([tenantId, emailHash]) tenantId-leading composite; bounded take ≤500.',
+    IdentityAccountLink: 'reconcileIdentityAccountLinks reads existing links by (tenantId, connectedAccountId IN [...]) to tell a re-verify from a new link — served by the field-level @unique on connectedAccountId, with @@index([tenantId, employeeId]) covering the leaver-path lookup by worker; bounded take \u2264 10000 (MAX_EMPLOYEES).',
     TenantCalendarConsent: 'getConsentStates filters by tenantId alone and is bounded by the provider count (1) — covered by the tenantId-leading @@unique([tenantId, provider]).',
     UserCalendarConnection: 'listCalendarConnections filters by (tenantId, userId) and orders by provider — covered by the tenantId-leading @@unique([tenantId, userId, provider]); bounded take = the provider count (2). The push fan-out\'s (tenantId, provider, revokedAt) scan has its own composite.',
     Employee: 'listEmployees filters by tenantId (+status) — covered by @@index([tenantId, status]); bounded take ≤500.',

@@ -29,6 +29,7 @@ model ConnectedIdentityAccount {
 
   tenant          Tenant                          @relation(fields: [tenantId], references: [id])
   reviewDecisions AccessReviewConnectedDecision[]
+  identityLink    IdentityAccountLink?
 
   @@unique([tenantId, provider, externalUserId])
   @@index([tenantId, provider])
@@ -153,14 +154,76 @@ model Employee {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  tenant              Tenant               @relation(fields: [tenantId], references: [id])
-  manager             Employee?            @relation("EmployeeManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
-  reports             Employee[]           @relation("EmployeeManager")
+  tenant              Tenant                @relation(fields: [tenantId], references: [id])
+  manager             Employee?             @relation("EmployeeManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
+  reports             Employee[]            @relation("EmployeeManager")
   devices             Device[]
   trainingAssignments TrainingAssignment[]
   backgroundChecks    BackgroundCheck[]
+  identityLinks       IdentityAccountLink[]
 
   @@unique([tenantId, workEmail])
   @@index([tenantId, status])
   @@index([tenantId, managerEmployeeId])
+}
+
+/// The worker <-> directory-account pairing, established while BOTH sides are
+/// healthy.
+///
+/// WHY A TABLE AND NOT A JOIN AT TERMINATION TIME
+///
+/// The leaver flow needs to answer "which directory accounts belong to the
+/// person Workday just marked terminated?". Computing that answer at
+/// termination is the worst possible moment to compute it: by then the account
+/// may have been renamed, its mail attribute cleared, its UPN changed, or the
+/// HR row already scrubbed. Email equality — the only bridge available today —
+/// is exactly what stops being reliable at the moment it is relied on.
+///
+/// So the pairing is observed continuously during healthy syncs and READ at
+/// termination. A disable then looks up a previously-verified fact instead of
+/// inferring a fresh one under time pressure.
+///
+/// ABSENCE OF A ROW IS A REFUSAL, NOT A FALLBACK
+///
+/// If no link exists the leaver path must refuse and escalate, never fall back
+/// to matching by email in the moment. That fallback would reintroduce the
+/// entire failure mode this table exists to remove, and it would do so only on
+/// the unhappy path where nobody is watching.
+model IdentityAccountLink {
+  id                 String             @id @default(cuid())
+  tenantId           String
+  employeeId         String
+  connectedAccountId String             @unique
+  /// The basis of the pairing, so a disable can justify itself.
+  matchMethod        IdentityLinkMethod
+
+  /// When this pairing was first observed.
+  firstLinkedAt  DateTime @default(now())
+  /// The most recent healthy sync that re-observed it. A link not re-verified
+  /// recently is stale evidence — the leaver path can require freshness rather
+  /// than trusting a pairing last seen months ago.
+  lastVerifiedAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant           Tenant                   @relation(fields: [tenantId], references: [id])
+  employee         Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  connectedAccount ConnectedIdentityAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+
+  /// `connectedAccountId` carries a field-level @unique (above), so an account
+  /// belongs to AT MOST ONE worker. Two workers claiming one account makes
+  /// "whose account is this?" unanswerable at exactly the moment it must be
+  /// answered, so the database refuses the state outright.
+  ///
+  /// Global rather than per-tenant, and that is stronger, not looser: a
+  /// ConnectedIdentityAccount row already belongs to exactly one tenant, so a
+  /// cross-tenant collision is impossible by construction and the narrower
+  /// composite would only have been redundant index cost on every write.
+  ///
+  /// Deliberately NOT unique on employeeId: one worker legitimately holds
+  /// several accounts (Entra + Okta + on-prem AD), and disabling all of them
+  /// is the point.
+  @@index([tenantId, employeeId])
+  @@index([tenantId, lastVerifiedAt])
 }

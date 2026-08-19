@@ -275,6 +275,7 @@ model Tenant {
   calendarConnections               UserCalendarConnection[]
   calendarEventMappings             UserCalendarEventMapping[]
   calendarConsents                  TenantCalendarConsent[]
+  identityAccountLinks              IdentityAccountLink[]
 
   @@index([organizationId])
   /// Per-region operational scans (e.g. "list every EU tenant").
