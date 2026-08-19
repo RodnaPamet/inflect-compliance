@@ -228,6 +228,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'is the only first-party plan-change path; OWNER-only.',
     },
 
+    // ── JML identity-write authority (per direction) ────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/identity-write-policy(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Decides whether this product may DISABLE or CREATE accounts ' +
+            'in the customer\'s own identity directory. Same OWNER-only key ' +
+            'as tenant deletion and DEK rotation because it is authority of ' +
+            'the same class — and ADMIN explicitly does not hold it. Every ' +
+            'other integration reads; this is the one that writes to a ' +
+            'system we do not own.',
+    },
+
     // ── Per-tenant DEK rotation (Epic F.2 follow-up) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/tenant-dek-rotation(\\/.*)?$`),
