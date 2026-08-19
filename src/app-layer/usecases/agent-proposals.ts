@@ -26,6 +26,7 @@ import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
+import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed } from '@/app-layer/ai/guard';
 import {
@@ -286,15 +287,65 @@ export async function approveAgentProposal(
                 throw badRequest(`Unknown proposal kind: ${kind}`);
         }
     } catch (err) {
-        // Hand the claim back so the proposal can be approved again. Scoped to
-        // the status THIS call wrote, so a concurrent actor who has since moved
-        // the row is never clobbered by our rollback.
-        await runInTenantContext(ctx, (db) =>
-            db.agentProposal.updateMany({
-                where: { id, tenantId: ctx.tenantId, status },
-                data: { status: 'PENDING', reviewedByUserId: null, reviewedAt: null },
-            }),
-        ).catch(() => undefined);
+        // ═══ THE CLAIM IS DELIBERATELY *NOT* HANDED BACK ═══
+        //
+        // An earlier version of this fix reverted the row to PENDING here, on
+        // the premise "the create threw, therefore nothing was committed".
+        // That premise is false across a transaction boundary, and it fails in
+        // exactly the direction this whole function exists to prevent.
+        //
+        // `runInTenantContext` is one `prisma.$transaction`, so the premise
+        // holds only INSIDE the create callback. Two real paths commit the
+        // entity and still reject the call:
+        //
+        //   1. Post-commit work. `createRisk` / `createControl` await
+        //      `bumpEntityCacheVersion` AFTER their transaction closes, and
+        //      `getRedis()` is called outside that helper's try/catch — so it
+        //      can reject with the row already written.
+        //   2. The in-doubt COMMIT. Runtime traffic goes through PgBouncer in
+        //      transaction mode; a server-connection drop during COMMIT
+        //      surfaces to the client as a rejected transaction while Postgres
+        //      has already committed.
+        //
+        // Reverting in either case re-arms the create path over a record that
+        // already exists, and the next approver makes a SECOND one. That is
+        // the original duplicate bug, reintroduced through the rollback.
+        //
+        // So the row stays claimed. The cost is a proposal that reads
+        // ACCEPTED/EDITED with a null `createdEntityId` and cannot be
+        // re-approved — recovery is a deliberate human act, not an automatic
+        // retry, precisely because we CANNOT tell "nothing was created" from
+        // "something was created and we lost the id".
+        //
+        // That is the same trade the rest of this function makes: a visible
+        // stuck row beats a silent duplicate compliance record.
+        //
+        // The failure is therefore recorded loudly rather than swallowed — a
+        // burned row nobody can see is the one outcome worse than either.
+        logger.error('agent proposal approval failed after claim', {
+            component: 'agent-proposals',
+            tenantId: ctx.tenantId,
+            proposalId: id,
+            kind,
+            status,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: 'USER',
+            entity: 'AgentProposal',
+            entityId: id,
+            action: 'AGENT_PROPOSAL_APPROVAL_FAILED',
+            requestId: ctx.requestId,
+            detailsJson: {
+                category: 'access',
+                kind,
+                claimedStatus: status,
+                error: err instanceof Error ? err.message : String(err),
+            },
+            metadataJson: { proposedByApiKeyId: proposal.proposedViaKeyId, needsManualReview: true },
+        }).catch(() => undefined);
         throw err;
     }
 

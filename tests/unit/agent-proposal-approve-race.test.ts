@@ -33,6 +33,9 @@ jest.mock('@/app-layer/usecases/control/mutations', () => ({ createControl: jest
 jest.mock('@/app-layer/usecases/policy', () => ({ createPolicy: jest.fn() }));
 jest.mock('@/app-layer/usecases/finding', () => ({ createFinding: jest.fn() }));
 jest.mock('@/lib/audit', () => ({ appendAuditEntry: (...a: unknown[]) => appendAuditEntry(...(a as [])) }));
+jest.mock('@/lib/observability/logger', () => ({
+    logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
+}));
 jest.mock('@/app-layer/ai/guard', () => ({
     guardUntrustedInput: jest.fn(async () => ({ allowed: true })),
     guardEgress: jest.fn(async () => ({ allowed: true })),
@@ -40,6 +43,7 @@ jest.mock('@/app-layer/ai/guard', () => ({
 }));
 
 import { approveAgentProposal } from '@/app-layer/usecases/agent-proposals';
+import { logger } from '@/lib/observability/logger';
 import { makeRequestContext } from '../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 't1', userId: 'reviewer-1' });
@@ -114,50 +118,82 @@ describe('losing the claim creates NOTHING', () => {
     });
 });
 
-describe('a failed create hands the claim back', () => {
-    it('reverts the proposal to PENDING so it can be approved again', async () => {
-        // Without this a transient failure burns the proposal permanently: it
-        // would read ACCEPTED with nothing created and no way to retry.
-        createRisk.mockRejectedValue(new Error('db blip'));
+describe('a failed create does NOT hand the claim back', () => {
+    /**
+     * An earlier version of this fix reverted to PENDING here. An adversarial
+     * review killed it, correctly: the revert rests on "the create threw, so
+     * nothing was committed", and that premise does not survive a transaction
+     * boundary.
+     *
+     *   - createRisk/createControl await bumpEntityCacheVersion AFTER their
+     *     transaction commits, and getRedis() is outside that helper's
+     *     try/catch, so it can reject with the row already written.
+     *   - Runtime traffic goes through PgBouncer in transaction mode, where a
+     *     connection drop during COMMIT rejects a transaction Postgres has
+     *     already committed.
+     *
+     * Reverting in either case re-arms the create over a record that already
+     * exists, and the next approver makes a second one — the original bug,
+     * reintroduced through the rollback.
+     */
+    it('leaves the proposal claimed rather than re-arming the create path', async () => {
+        createRisk.mockRejectedValue(new Error('commit lost'));
+        await expect(approveAgentProposal(ctx, 'p1')).rejects.toThrow(/commit lost/);
 
-        await expect(approveAgentProposal(ctx, 'p1')).rejects.toThrow(/db blip/);
-
-        const revert = db.agentProposal.updateMany.mock.calls.at(-1)![0];
-        expect(revert.data).toMatchObject({ status: 'PENDING', reviewedByUserId: null, reviewedAt: null });
+        const reverts = db.agentProposal.updateMany.mock.calls.filter(
+            (c) => (c[0] as any).data?.status === 'PENDING',
+        );
+        expect(reverts).toEqual([]);
     });
 
-    it('the revert is scoped to the status THIS call wrote', async () => {
-        // So a concurrent actor who has since moved the row is never clobbered
-        // back to PENDING by our rollback.
-        createRisk.mockRejectedValue(new Error('boom'));
+    it('records the failure loudly instead of swallowing it', async () => {
+        // A burned row nobody can see is worse than either failure mode. The
+        // previous version ended its revert in `.catch(() => undefined)` with
+        // no log, no metric, no audit entry — and a passing test asserted only
+        // the rethrow, which locked the silence in.
+        createRisk.mockRejectedValue(new Error('commit lost'));
         await expect(approveAgentProposal(ctx, 'p1')).rejects.toThrow();
 
-        const revert = db.agentProposal.updateMany.mock.calls.at(-1)![0];
-        expect(revert.where).toMatchObject({ id: 'p1', tenantId: 't1', status: 'ACCEPTED' });
+        expect(logger.error).toHaveBeenCalled();
+        const audited = appendAuditEntry.mock.calls.map((c: any[]) => c[0]?.action);
+        expect(audited).toContain('AGENT_PROPOSAL_APPROVAL_FAILED');
     });
 
-    it('rethrows the ORIGINAL error, not a rollback error', async () => {
-        // The caller needs to know why the create failed. A rollback failure
-        // masking it would make the real cause unrecoverable.
+    it('the failure audit marks the row as needing manual review', async () => {
+        // This is the only breadcrumb pointing at a proposal that is stuck
+        // ACCEPTED with no entity: the default queue view lists PENDING only.
+        createRisk.mockRejectedValue(new Error('commit lost'));
+        await expect(approveAgentProposal(ctx, 'p1')).rejects.toThrow();
+
+        const entry = appendAuditEntry.mock.calls
+            .map((c: any[]) => c[0])
+            .find((e: any) => e?.action === 'AGENT_PROPOSAL_APPROVAL_FAILED');
+        expect(entry.metadataJson).toMatchObject({ needsManualReview: true });
+        expect(entry.detailsJson).toMatchObject({ claimedStatus: 'ACCEPTED' });
+    });
+
+    it('rethrows the ORIGINAL error, not an audit-write error', async () => {
+        // The caller needs to know why the create failed; a bookkeeping
+        // failure masking it would make the real cause unrecoverable.
         createRisk.mockRejectedValue(new Error('validation exploded'));
-        db.agentProposal.updateMany
-            .mockResolvedValueOnce({ count: 1 })
-            .mockRejectedValueOnce(new Error('rollback also failed'));
+        appendAuditEntry.mockRejectedValueOnce(new Error('audit sink down'));
 
         await expect(approveAgentProposal(ctx, 'p1')).rejects.toThrow(/validation exploded/);
     });
 });
 
 describe('an edited approval claims as EDITED', () => {
-    it('claims with EDITED and reverts against EDITED', async () => {
+    it('claims with EDITED, and the failure audit says so', async () => {
         createRisk.mockRejectedValue(new Error('nope'));
         await expect(
             approveAgentProposal(ctx, 'p1', { title: 'Edited title' }),
         ).rejects.toThrow();
 
         expect(db.agentProposal.updateMany.mock.calls[0][0].data.status).toBe('EDITED');
-        const revert = db.agentProposal.updateMany.mock.calls.at(-1)![0];
-        expect(revert.where.status).toBe('EDITED');
+        const entry = appendAuditEntry.mock.calls
+            .map((c: any[]) => c[0])
+            .find((e: any) => e?.action === 'AGENT_PROPOSAL_APPROVAL_FAILED');
+        expect(entry.detailsJson.claimedStatus).toBe('EDITED');
     });
 });
 
