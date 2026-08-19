@@ -1197,8 +1197,20 @@ keeps the markers honest — pick the right class when you add a doc.
   Don't delete the file (inbound cross-links).
 
 When you add a doc, add its entry to `doc-classification.json` in the
-same PR — the ratchet's bidirectional cross-walk fails otherwise. Add ONLY
-the entry: the file carries no per-class `counts` header, and re-adding one
+same PR — the ratchet's bidirectional cross-walk fails otherwise.
+
+**Exception, and it covers the common case: an implementation note needs NO
+entry, and adding one now FAILS the ratchet.** `docs/implementation-notes/**`
+is classified BY PATH as `historical`, because that is what the subtree means
+— the class was never a per-file decision. It used to be stored anyway, at
+549 of 675 entries, and each new note appended to the same place in the file:
+adding a key rewrites the previous entry's `}` into `},`, so two PRs edit one
+line and conflict. That cost five rebases in a single night (2026-08-19),
+each discarding a green CI run. `docs/adr/` is deliberately NOT derived — a
+superseded ADR legitimately becomes `deprecated`, so its class is still a
+decision.
+
+For every other doc, add ONLY the entry: the file carries no per-class `counts` header, and re-adding one
 fails the ratchet even if the number is right. It was derived data stored
 beside its own source, and the way it broke is worth remembering — two
 branches each bumping `494 → 495` do not CONFLICT, so git keeps one copy,
