@@ -216,10 +216,24 @@ export async function loginAndGetTenant(
     const slug = match[1];
 
     // Verify the page actually rendered — reload if server was still compiling.
+    //
+    // The probe MUST be viewport-independent. It used to be `aside`, which is
+    // `display:none` below `md` BY DESIGN — that is exactly what the
+    // `sidebar hidden and hamburger visible` test asserts. So on every mobile
+    // viewport the probe could never succeed: each test exhausted all three
+    // retries and performed three redundant full navigations plus their
+    // networkidle waits, having already rendered correctly the first time.
+    //
+    // `main` is present at every viewport, so this asks the question the loop
+    // actually means: did the page render, not is this a wide screen.
+    //
+    // Measured on `responsive.spec.ts`, next 16.2.12: mobile tests went from
+    // ~10s to ~4.5s each. The wasted navigations were never visible as a
+    // failure — only as time — which is why this survived so long.
     let renderRetries = 3;
     while (renderRetries > 0) {
-        const hasSidebar = await page.locator('aside').isVisible().catch(() => false);
-        if (hasSidebar) break;
+        const rendered = await page.locator('main').isVisible().catch(() => false);
+        if (rendered) break;
         renderRetries--;
         if (renderRetries > 0) {
             await page.waitForLoadState('networkidle').catch(() => {});
