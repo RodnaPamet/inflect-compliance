@@ -957,6 +957,31 @@ jobs:
             ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-
             ${{ runner.os }}-next-test-
 
+      # ── Mode A instrumentation (2026-08-19) ──
+      # This build gets cancelled 1.5-4 min in, intermittently, with NO output
+      # beyond "Creating an optimized production build ...". Six occurrences
+      # across `build` and `e2e-bundle`. ONE logged "Next.js build worker
+      # exited with code: null and signal: SIGKILL"; the rest logged nothing.
+      #
+      # Four explanations were proposed and each disproven: a larger runner is
+      # unavailable on this plan; a warm .next/cache does NOT raise peak memory
+      # (measured cold 5.92 GB vs warm 5.75 GB, and webpack's restore is lazy);
+      # 6144 is a documented deterministic V8 OOM; and it is NOT
+      # branch-specific — a control branch failed inside the same window.
+      #
+      # Local sampling cannot settle it: two runs under IDENTICAL conditions
+      # gave 7.25 GB and 5.92 GB, so every local figure is a lower bound. This
+      # samples INSIDE the job so the next occurrence leaves evidence instead
+      # of silence. Cost is one background shell loop.
+      - name: Start memory sampler
+        run: |
+          nohup bash -c 'while true; do
+            echo "$(date -u +%H:%M:%S) $(free -m | awk "NR==2{print \$3, \$7}")"
+            sleep 2
+          done' > /tmp/mem-samples.log 2>/dev/null &
+          echo $! > /tmp/mem-sampler.pid
+          echo "sampler started; columns = time used_MB available_MB"
+
       - name: Build Next.js app
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
         run: npx next build --webpack
@@ -977,6 +1002,18 @@ jobs:
           # that keeps `waitForLoadState('networkidle')` from settling
           # within the 180s test timeout on slow CI runners.
           NEXT_PUBLIC_TEST_MODE: "1"
+
+      # Runs on cancellation too — the entire point, since this failure mode
+      # emits nothing else.
+      - name: Report peak memory
+        if: always()
+        run: |
+          kill "$(cat /tmp/mem-sampler.pid)" 2>/dev/null || true
+          if [ ! -s /tmp/mem-samples.log ]; then echo "no samples captured"; exit 0; fi
+          echo "samples: $(wc -l < /tmp/mem-samples.log)  (time used_MB available_MB)"
+          echo "── PEAK used:";        sort -k2 -n -r /tmp/mem-samples.log | head -5
+          echo "── LOWEST available:"; sort -k3 -n    /tmp/mem-samples.log | head -5
+          echo "── final 15 samples:"; tail -15 /tmp/mem-samples.log
 
       - name: Upload the test-mode bundle
         uses: actions/upload-artifact@v7
