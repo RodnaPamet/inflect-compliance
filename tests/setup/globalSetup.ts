@@ -19,6 +19,7 @@ import {
     perWorkerDbName,
     PER_WORKER_MARKER,
 } from '../helpers/db';
+import type { PerWorkerInfo } from '../helpers/db';
 
 interface GlobalConfig { maxWorkers?: number }
 
@@ -49,7 +50,9 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
     }
 
     const maxWorkers = globalConfig?.maxWorkers ?? 1;
-    let marker = { perWorker: false, count: 1, baseName, baseUrl: base };
+    // Annotated, not inferred: inferring from this initializer gives a type
+    // with no `workerDbs`, and the assignment below then fails to compile.
+    let marker: PerWorkerInfo = { perWorker: false, count: 1, baseName, baseUrl: base };
 
     if (maxWorkers > 1) {
         // TEMPLATE-clone the migrated base into one DB per worker. Fast

@@ -108,7 +108,7 @@ export const PER_WORKER_MARKER = path.resolve(
     '../../node_modules/.cache/inflect-test-perworker.json',
 );
 
-interface PerWorkerInfo {
+export interface PerWorkerInfo {
     perWorker: boolean;
     count: number;
     baseName: string;
