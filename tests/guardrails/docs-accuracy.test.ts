@@ -36,6 +36,42 @@ const CLASSIFICATION_PATH = path.join(DOCS_DIR, '_status', 'doc-classification.j
 const BANNER_EXEMPT_HISTORICAL_PREFIXES = ['docs/implementation-notes/', 'docs/adr/'];
 
 type DocClass = 'authoritative' | 'living' | 'historical' | 'deprecated';
+
+/**
+ * Classification derived from the PATH, for subtrees where the class is not a
+ * decision anyone makes per file.
+ *
+ * `docs/implementation-notes/` was 549 of 675 map entries — 81% — and every
+ * one said `historical`, which is what the subtree MEANS. Storing that
+ * constant cost one map edit per note, and the shape of that edit is the
+ * problem: a new key rewrites the previous entry's `}` into `},`, so two
+ * PRs touch the same line and conflict. On 2026-08-19 that forced five
+ * rebases in one night, each discarding a green CI run.
+ *
+ * The conflict was always LOUD, so this is friction rather than a
+ * correctness hazard — but it is friction paid on every note, forever.
+ *
+ * ═══ NOT THE SAME LIST AS BANNER_EXEMPT_HISTORICAL_PREFIXES ═══
+ *
+ * They look identical and must not be merged. The banner list also contains
+ * `docs/adr/`, and an ADR's class genuinely CHANGES over its life — a
+ * superseded ADR becomes `deprecated`. Deriving ADRs as historical would
+ * silently foreclose the normal ADR lifecycle. Two lists, adjacent, because
+ * they answer different questions: "does this need a banner?" and "is this
+ * doc's class a decision?".
+ */
+const PATH_DERIVED_CLASSES: ReadonlyArray<readonly [string, DocClass]> = [
+    ['docs/implementation-notes/', 'historical'],
+];
+
+/**
+ * Returns `undefined` outside the listed prefixes — deliberately, and this is
+ * load-bearing. A global default would make `every doc on disk is classified`
+ * unable to catch a new unclassified doc, and the whole ratchet decorative.
+ */
+function derivedClass(rel: string): DocClass | undefined {
+    return PATH_DERIVED_CLASSES.find(([prefix]) => rel.startsWith(prefix))?.[1];
+}
 interface Classification {
     counts?: Partial<Record<DocClass, number>>;
     docs: Record<string, { class: DocClass } & Record<string, unknown>>;
@@ -109,6 +145,10 @@ describe('docs accuracy', () => {
     const onDisk = listDocs();
     const classified = Object.keys(classification.docs);
 
+    /** Derived class wins over the map — see `path-derived subtrees carry no map entries`. */
+    const classOf = (rel: string): DocClass | undefined =>
+        derivedClass(rel) ?? classification.docs[rel]?.class;
+
     /**
      * There is no `counts` header any more, and re-adding one is the thing
      * this now guards against.
@@ -142,8 +182,24 @@ describe('docs accuracy', () => {
     });
 
     it('every doc on disk is classified', () => {
-        const missing = onDisk.filter((d) => !classification.docs[d]);
+        // Through `classOf`, so a doc under a derived prefix counts as
+        // classified — but a doc OUTSIDE those prefixes with no entry still
+        // fails here. That is the property the whole ratchet rests on.
+        const missing = onDisk.filter((d) => !classOf(d));
         expect(missing).toEqual([]);
+    });
+
+    it('path-derived subtrees carry no map entries', () => {
+        // Without this the file grows back: the next author adds a note, adds
+        // an entry out of habit, and the conflict returns one note at a time.
+        // Also forecloses an in-subtree override — deliberately. An
+        // implementation note is declared READ-ONLY and moment-in-time, so a
+        // live-reference note inside it is a category error; such a doc
+        // belongs at `docs/<name>.md`. Exactly one had drifted that way
+        // (2026-07-14-ep1-evidence-review-gate, marked `authoritative` while
+        // naming a source file that no longer exists).
+        const redundant = classified.filter((d) => derivedClass(d) !== undefined);
+        expect(redundant).toEqual([]);
     });
 
     it('every classified entry exists on disk', () => {
@@ -161,7 +217,7 @@ describe('docs accuracy', () => {
     // Per-class structural checks. Generate one test per doc so a failure
     // names the exact file.
     for (const rel of onDisk) {
-        const cls = classification.docs[rel]?.class;
+        const cls = classOf(rel);
         if (!cls) continue;
 
         if (cls === 'living') {
