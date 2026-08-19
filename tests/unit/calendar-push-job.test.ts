@@ -1,22 +1,26 @@
 /**
  * The calendar push fan-out: two jobs, and why that is not over-engineering.
  *
- * The shape is a cron DISPATCHER plus an ENQUEUED per-tenant child. The obvious
- * alternative — one scheduled job that does everything — is wrong for a reason
- * that is invisible in the source and mechanical rather than aesthetic:
+ * The shape is a cron DISPATCHER plus an ENQUEUED per-tenant child.
  *
- *   `registerSchedules` calls `upsertJobScheduler(name, repeatOpts, {name, data})`
- *   with NO `opts`, and BullMQ merges `Object.assign({}, jobsOpts, template.opts)`.
- *   With `opts` undefined that yields the QUEUE DEFAULT — attempts: 3,
- *   exponential — regardless of the job's JOB_DEFAULTS entry. All 29 scheduled
- *   jobs are in that state.
+ * ═══ ONE OF THE ORIGINAL REASONS IS NOW GONE ═══
  *
- *   `enqueue()` DOES apply JOB_DEFAULTS[name].
+ * This file used to open by explaining that `registerSchedules` passed no
+ * `opts`, so BullMQ's `Object.assign({}, jobsOpts, template.opts)` yielded the
+ * queue default (attempts: 3, exponential) for every scheduled job regardless
+ * of its JOB_DEFAULTS entry — while `enqueue()` applied the entry. Being a
+ * child was therefore the ONLY way this job's attempts:1 took effect.
  *
- * So the only way work that talks to Google or Graph actually gets attempts: 1
- * is for it to arrive as a child. Collapsing the two jobs silently restores
- * three attempts against a rate-limited provider, and nothing in the diff would
- * say so. The last test in this file is the one that would notice.
+ * `registerSchedules` now passes `opts`, so both paths honour JOB_DEFAULTS and
+ * that argument no longer distinguishes the two shapes.
+ *
+ * The two-job shape stands on its remaining reasons: the per-tenant scan is
+ * what the `[tenantId, provider, revokedAt]` index was built for, and each
+ * child carries a deterministic per-day job id so a re-dispatch inside the
+ * same bucket is a no-op rather than a second pass over everyone's calendar.
+ *
+ * The tests below are updated accordingly — 'both declare attempts: 1' still
+ * matters, but it no longer depends on WHICH path delivers the job.
  */
 const findMany = jest.fn<Promise<unknown[]>, [Record<string, unknown>]>();
 /**
@@ -144,9 +148,10 @@ describe('the per-tenant child', () => {
 
 describe('the two-job shape is what makes attempts:1 real', () => {
     it('the CHILD is enqueued, never scheduled', async () => {
-        // The load-bearing assertion. JOB_DEFAULTS is inert for cron-fired
-        // jobs, so a scheduled child would run 3 exponential attempts against
-        // Google/Graph no matter what its entry says.
+        // Still true and still worth pinning — a scheduled child would lose
+        // the deterministic per-day job id that makes re-dispatch a no-op —
+        // but no longer for the retry reason: registerSchedules passes opts
+        // now, so a scheduled child would honour attempts:1 too.
         const scheduled = SCHEDULED_JOBS.map((s) => s.name);
         expect(scheduled).toContain('calendar-push-dispatch');
         expect(scheduled).not.toContain('calendar-push-tenant');

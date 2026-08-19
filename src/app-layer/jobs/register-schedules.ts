@@ -23,9 +23,32 @@
  * This module is the single source of truth for the upsert shape — the
  * `tz` (DST-aware cron zone) and `limit` plumbing lives here once, not
  * duplicated across the two callers.
+ *
+ * ═══ WHY THE TEMPLATE CARRIES `opts` ═══
+ *
+ * It did not, and that made every job's `JOB_DEFAULTS` entry INERT on the
+ * cron path. BullMQ builds a scheduled job's options as:
+ *
+ *     Object.assign({}, this.jobsOpts, jobTemplate?.opts)     // queue.js
+ *
+ * With `opts` absent that is exactly `jobsOpts` — the queue-level
+ * `defaultJobOptions`, `attempts: 3` with exponential backoff. So all 30
+ * scheduled jobs ran three attempts regardless of what their entry said, and
+ * the entries read as policy while being documentation.
+ *
+ * `enqueue()` has always applied `JOB_DEFAULTS`, which is why the two paths
+ * disagreed and why the divergence was invisible: nothing compared them.
+ *
+ * The direction of the correction is one-way. Every entry declares FEWER
+ * attempts than the queue default (1 or 2, never more), so this can only
+ * reduce retry pressure — most sharply on the jobs whose entries explain, in
+ * writing, that retrying them is actively harmful: NVD's rate limit, a
+ * Powerpipe shell-out against live AWS, a calendar fan-out where one blip
+ * becomes a second pass over everyone's calendar.
  */
 import type { Queue } from 'bullmq';
 import { SCHEDULED_JOBS } from './schedules';
+import { JOB_DEFAULTS } from './types';
 
 /** Minimal structural logger both pino (worker/scheduler) shapes satisfy. */
 export interface ScheduleRegLogger {
@@ -55,6 +78,8 @@ export async function registerSchedules(
             {
                 name: schedule.name,
                 data: schedule.defaultPayload,
+                // Without this the entry is documentation. See the header.
+                opts: JOB_DEFAULTS[schedule.name],
             },
         );
         log?.info(

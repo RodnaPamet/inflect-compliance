@@ -1157,7 +1157,7 @@ executorRegistry.register('calendar-push-dispatch', async () => {
 });
 
 // C-roadmap — calendar-push-tenant: one tenant's connected users. Arrives via
-// enqueue(), which is the ONLY path that applies its JOB_DEFAULTS entry.
+// enqueue(). Both enqueue() and the cron path now apply JOB_DEFAULTS.
 executorRegistry.register('calendar-push-tenant', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();
