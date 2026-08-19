@@ -110,6 +110,32 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/assets/[id]/purge',
         why: 'Irreversible asset hard-delete — admin.manage, matching the usecase assertCanAdmin. Narrow leaf root so only the purge handler is in scope (its assets/[id] siblings are not).',
     },
+    // The PLATFORM admin surface — create a tenant, transfer its ownership,
+    // read process diagnostics. Its two tenant-lifecycle routes had carried
+    // EXCLUDED_ROUTES entries since Epic 1 PR 2, but no root covered the
+    // directory, so those entries excluded nothing and the scan never walked
+    // it. `/api/admin/diagnostics` sat there the whole time gated by a
+    // hand-rolled `ctx.permissions.canAdmin` check — a 403 that writes no
+    // AUTHZ_DENIED row, and one resolved against the CALLER'S OWN tenant.
+    {
+        relPath: 'src/app/api/admin',
+        why: 'Platform-admin surface — tenant creation, ownership transfer, process diagnostics. Authenticated by PLATFORM_ADMIN_API_KEY rather than a tenant role, so every route in it is excluded individually; the root is in scope so the next one cannot arrive unexamined.',
+    },
+    // NOT tenant-scoped, and that is exactly why it is here. Every other
+    // root above sits under `/api/t/[tenantSlug]/`; `/api/account` acts on
+    // the SESSION's user, so `requirePermission` — which resolves a tenant
+    // role — does not apply to the three routes in it today. That made the
+    // directory structurally invisible to this guardrail: not exempt, just
+    // never looked at. A route added here arrived with no gate and nothing
+    // to notice, which is the same hole `/issues` above was closed for.
+    //
+    // In scope so the triage is FORCED: a new route under `/api/account`
+    // either uses requirePermission or gets an EXCLUDED_ROUTES entry with a
+    // written reason. The three that exist today are excluded below.
+    {
+        relPath: 'src/app/api/account',
+        why: 'Self-service account surface (avatar, profile). Session-scoped rather than tenant-scoped, so the existing routes are excluded individually — the root is in scope so a future one cannot arrive unexamined.',
+    },
     {
         relPath: 'src/app/api/t/[tenantSlug]/vendors/[vendorId]/subprocessors',
         why: 'The GDPR Art.28 sub-processor register + its recursive nth-party chain. Reads gate on vendors.view, mutations on vendors.edit — matching the usecase asserts. In scope so denials audit at the C.1 layer and a future refactor cannot drop the usecase assert without failing here. Narrow leaf root: the other vendors/[vendorId] siblings are NOT privileged and stay on usecase-layer authorization.',
@@ -165,6 +191,10 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
         relPath: 'api/admin/tenants/[slug]/transfer-ownership/route.ts',
         reason: 'Platform-admin-key-gated: transfer-ownership — tenant-scope does not apply.',
     },
+    {
+        relPath: 'api/admin/diagnostics/route.ts',
+        reason: 'Platform-admin-key-gated: process/runtime diagnostics — server-wide, with no tenant dimension, so tenant-scope does not apply.',
+    },
     // Risk-report siblings pulled in by the `risks/reports` privileged root.
     // Only the POST /risks/reports generate handler is an export action (gated
     // on reports.export in the same file). These siblings are NOT exports:
@@ -183,6 +213,28 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
     {
         relPath: 'api/t/[tenantSlug]/risks/reports/[reportId]/download/route.ts',
         reason: 'Retrieval of an already-generated report run scoped to the tenant — a view-level action mirroring the /risks/reports page download affordance. The privileged export-GENERATION action is gated at POST /risks/reports.',
+    },
+    // `/api/account` — session-scoped, so there is no tenant role for
+    // `requirePermission` to resolve. Each authenticates via
+    // `getServerSession` and is described below by what it ACTUALLY
+    // authorises, not by the directory it sits in.
+    {
+        relPath: 'api/account/profile/route.ts',
+        reason: 'Self-service: PATCH MY profile. The handler writes to session.user.id and takes no user identifier from the request.',
+    },
+    {
+        relPath: 'api/account/avatar/route.ts',
+        reason: 'Self-service: upload/delete MY avatar. Both handlers key storage off session.user.id and take no user identifier from the request.',
+    },
+    {
+        relPath: 'api/account/avatar/[userId]/route.ts',
+        reason:
+            'Deliberately permissive read, NOT self-service: any authenticated ' +
+            'user may GET any userId\'s avatar. Avatars render across tenant ' +
+            'member lists and people-pickers, and the route is documented as a ' +
+            'low-sensitivity read. Recorded plainly because it is the one route ' +
+            'here that reads another user: it is unscoped by tenant, so tightening ' +
+            'it is a behaviour change to weigh separately, not a rename of this reason.',
     },
 ];
 
@@ -374,6 +426,58 @@ describe('Epic C.1 — API permission coverage guardrail', () => {
                     ``,
                     `Check the spelling against PermissionSet in src/lib/permissions.ts`,
                     `and against the keys returned by getPermissionsForRole('ADMIN').`,
+                ].join('\n'),
+            );
+        }
+    });
+
+    it('every EXCLUDED_ROUTES entry points at a route that still exists', () => {
+        // This list had no such check, which is the same shape of hole as the
+        // one that kept `/api/account` out of scope: an exemption nothing
+        // validates. A carve-out whose file was renamed or deleted stays on
+        // the list forever, and the next route to land on that path inherits
+        // an exemption written for different code — silently ungated, with a
+        // reason attached that no longer describes it.
+        //
+        // Deleting a route means deleting its entry, in the same diff.
+        const dangling = EXCLUDED_ROUTES.filter(
+            (e) => !fs.existsSync(path.join(REPO_ROOT, 'src/app', e.relPath)),
+        );
+
+        if (dangling.length > 0) {
+            throw new Error(
+                [
+                    `EXCLUDED_ROUTES lists routes that no longer exist:`,
+                    ...dangling.map((e) => `  - ${e.relPath}\n      reason: ${e.reason}`),
+                    ``,
+                    `If the route was deleted, delete its exclusion too.`,
+                    `If it moved, update the path — the exemption does not follow it.`,
+                ].join('\n'),
+            );
+        }
+    });
+
+    it('every EXCLUDED_ROUTES entry is actually reachable by the scan', () => {
+        // The mirror, and the half that matters more. An exclusion for a file
+        // under no PRIVILEGED_ROOT is dead text: the scan never reaches the
+        // route, so the entry excludes nothing and its reason is never read.
+        // It looks like a considered carve-out and is inert — which is how a
+        // reviewer concludes a directory was triaged when it was not.
+        const unreachable = EXCLUDED_ROUTES.filter(
+            (e) =>
+                !PRIVILEGED_ROUTES.some(
+                    (f) => path.relative(path.join(REPO_ROOT, 'src/app'), f) === e.relPath,
+                ),
+        );
+
+        if (unreachable.length > 0) {
+            throw new Error(
+                [
+                    `EXCLUDED_ROUTES entries that no PRIVILEGED_ROOT covers:`,
+                    ...unreachable.map((e) => `  - ${e.relPath}`),
+                    ``,
+                    `These exclude nothing. Either add the covering root to`,
+                    `PRIVILEGED_ROOTS, or drop the entry.`,
                 ].join('\n'),
             );
         }

@@ -152,7 +152,10 @@ OTEL_ENABLED=true npm run dev
 
 ## Diagnostics Endpoint
 
-`GET /api/admin/diagnostics` — admin-only, returns:
+`GET /api/admin/diagnostics` — authenticated by the **platform key**
+(`X-Platform-Admin-Key`, the same credential as the other `/api/admin` routes),
+not by a tenant role. The payload is server-wide and has no tenant dimension,
+so a tenant ADMIN is not the right authority for it. Returns:
 
 ```json
 {
@@ -161,6 +164,10 @@ OTEL_ENABLED=true npm run dev
   "runtime": { "nodeVersion": "v20.x", "memoryUsageMB": 128 }
 }
 ```
+
+Returns `503` when `PLATFORM_ADMIN_API_KEY` is unset on the deployment and
+`401` when the supplied key does not match — the two are kept distinct so an
+operator is not sent to rotate a credential that was never configured.
 
 ---
 

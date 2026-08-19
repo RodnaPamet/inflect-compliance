@@ -2014,6 +2014,9 @@
         },
         "docs/implementation-notes/2026-08-18-oauth-400-credential-classification.md": {
             "class": "historical"
+        },
+        "docs/implementation-notes/2026-08-19-api-account-admin-permission-coverage.md": {
+            "class": "historical"
         }
     }
 }
