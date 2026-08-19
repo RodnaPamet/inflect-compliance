@@ -505,15 +505,23 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     const kpiCounts = useMemo(() => {
         const server = assetsQuery.data?.kpiCounts;
         if (server) return server;
-        return {
-            total: assets.length,
-            active: assets.filter((a) => a.status === 'ACTIVE').length,
+        // One pass for all four counters rather than three `.filter().length`
+        // scans of the same array. That shape also cost three near-identical
+        // `guardrail-ignore: KPI count` suppressions, each re-explaining that
+        // counting is not refiltering — the no-client-side-filtering guard sees
+        // `.filter()` on server data and cannot tell the two apart. Counting in
+        // a loop needs no exemption, which is the better answer than three.
+        const counts = { total: assets.length, active: 0, critical: 0, retired: 0 };
+        for (const a of assets) {
+            if (a.status === 'ACTIVE') counts.active++;
+            else if (a.status === 'RETIRED') counts.retired++;
             // "High/Critical" — both stored bands, so a 5/5/5 asset (→ CRITICAL)
-            // is included alongside HIGH ones, matching what the card displays
-            // and what its click selects.
-            critical: assets.filter((a) => a.criticality === 'HIGH' || a.criticality === 'CRITICAL').length,
-            retired: assets.filter((a) => a.status === 'RETIRED').length,
-        };
+            // is counted alongside HIGH ones, matching what the card displays
+            // and what its click selects. Independent of status, so not an
+            // `else if`.
+            if (a.criticality === 'HIGH' || a.criticality === 'CRITICAL') counts.critical++;
+        }
+        return counts;
     }, [assetsQuery.data, assets]);
     const { total: totalAssets, active: activeAssets, critical: criticalAssets, retired: retiredAssets } =
         kpiCounts;
