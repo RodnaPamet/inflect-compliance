@@ -63,7 +63,10 @@ const tenantDb: any = {
     auditPack: { findFirst: jest.fn() },
     auditPackShare: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
     auditPackItem: { findFirst: jest.fn() },
-    auditPackShareComment: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+    // `updateMany` is the CLAIM materializeShareCommentFinding now takes before
+    // creating anything — see the claim-before-create fix. Without it here the
+    // stub returns undefined and the create path throws on `.count`.
+    auditPackShareComment: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     auditorAccount: { upsert: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
     auditorPackAccess: { create: jest.fn(), deleteMany: jest.fn() },
     // feat/audit-cycle-unify — materialize path reads for the finding cascade.
@@ -128,6 +131,7 @@ beforeEach(() => {
         tenantDb.auditPackItem.findFirst,
         tenantDb.auditPackShareComment.create, tenantDb.auditPackShareComment.findFirst,
         tenantDb.auditPackShareComment.findMany, tenantDb.auditPackShareComment.update,
+        tenantDb.auditPackShareComment.updateMany,
         tenantDb.auditorAccount.upsert, tenantDb.auditorAccount.findUnique, tenantDb.auditorAccount.findFirst, tenantDb.auditorAccount.findMany, tenantDb.auditorAccount.update,
         tenantDb.auditPackShare.findMany,
         tenantDb.auditorPackAccess.create, tenantDb.auditorPackAccess.deleteMany,
@@ -137,6 +141,11 @@ beforeEach(() => {
     ].forEach((m: any) => m.mockReset && m.mockReset());
     (assertCanSharePack as jest.Mock).mockImplementation(() => policyCalls.push('share'));
     (assertCanManageAuditors as jest.Mock).mockImplementation(() => policyCalls.push('manage'));
+    // materializeShareCommentFinding CLAIMS the comment before creating
+    // anything and requires count === 1 to proceed. mockReset above clears the
+    // resolution, so without this default the claim reads undefined.count. The
+    // race-specific assertions live in share-comment-claim-before-create.
+    tenantDb.auditPackShareComment.updateMany.mockResolvedValue({ count: 1 });
 });
 
 const ctx = makeRequestContext('ADMIN');
@@ -716,7 +725,12 @@ describe('materializeShareCommentFinding — auditor FINDING → real Finding+Ta
         // A remediation Task links the finding.
         expect(createTaskMock).toHaveBeenCalledWith(ctx, expect.objectContaining({ findingId: 'find-new', type: 'AUDIT_FINDING' }));
         // The comment is resolved + a materialization audit entry fires.
-        expect(tenantDb.auditPackShareComment.update.mock.calls[0][0].data.status).toBe('RESOLVED');
+        // Via `updateMany` predicated on status OPEN, not a bare `update`: the
+        // resolve is now the CLAIM that runs BEFORE the creates, so exactly one
+        // caller can proceed. Same outcome, and it is now also the interlock.
+        const resolve = tenantDb.auditPackShareComment.updateMany.mock.calls[0][0];
+        expect(resolve.data.status).toBe('RESOLVED');
+        expect(resolve.where.status).toBe('OPEN');
         expect(auditCalls.some((e) => e.action === 'AUDIT_SHARE_COMMENT_MATERIALIZED')).toBe(true);
     });
 

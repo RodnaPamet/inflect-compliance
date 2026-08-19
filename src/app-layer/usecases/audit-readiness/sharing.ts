@@ -308,7 +308,6 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
             select: { id: true, kind: true, body: true, status: true, auditPackItemId: true },
         });
         if (!comment) throw notFound('Return-channel entry not found');
-        if (comment.status === 'RESOLVED') throw badRequest('Entry already resolved');
         if (comment.kind !== 'FINDING' && comment.kind !== 'EVIDENCE_REQUEST') {
             throw badRequest('Only a FINDING or EVIDENCE_REQUEST can be turned into a finding');
         }
@@ -316,6 +315,22 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
             where: { tenantId: ctx.tenantId, sourceKind: AUDITOR_SHARE_COMMENT_SOURCE, sourceRef: commentId, deletedAt: null },
             select: { id: true },
         });
+        // The RESOLVED check runs AFTER the finding lookup, and only fires when
+        // there is no finding to point at.
+        //
+        // It used to run first, which made the resolved state unconditionally
+        // terminal — including in the one case that needs a retry: the comment
+        // was claimed, the create then failed, and nothing exists. Checking the
+        // finding first means a resolved comment that DID materialise returns
+        // its finding idempotently (below), and only the genuinely stuck
+        // combination is refused, by a message that says which one it is.
+        if (comment.status === 'RESOLVED' && !existing) {
+            throw badRequest(
+                'Entry is already resolved but no finding was materialised from it. This is the residue of a ' +
+                    'failed materialisation: the entry was claimed and the finding creation did not complete. ' +
+                    'Re-open the entry to retry it.',
+            );
+        }
         const pack = await tdb.auditPack.findFirst({ where: { id: packId, tenantId: ctx.tenantId, deletedAt: null }, select: { auditCycleId: true } });
         // Deterministic attachment point: the materialised finding needs an
         // audit so readiness's `audit.auditCycleId` join folds it into the
@@ -337,12 +352,13 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
         return { comment, existingFindingId: existing?.id ?? null, auditId: audit?.id ?? null, controlId };
     });
 
-    const markResolved = (findingId: string) =>
+    /**
+     * Record the materialisation event. Split from `markResolved` because the
+     * new path's status transition happens in the CLAIM, before anything is
+     * created — only the event is left to write once a findingId exists.
+     */
+    const recordMaterialised = (findingId: string) =>
         runInTenantContext(ctx, async (tdb) => {
-            await tdb.auditPackShareComment.update({
-                where: { id: commentId },
-                data: { status: 'RESOLVED', resolvedAt: new Date(), resolvedByUserId: ctx.userId },
-            });
             await logEvent(tdb, ctx, {
                 action: 'AUDIT_SHARE_COMMENT_MATERIALIZED',
                 entityType: 'AuditPackShareComment',
@@ -351,6 +367,24 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
                 detailsJson: { category: 'entity_lifecycle', operation: 'created', entityName: 'Finding', after: { findingId }, summary: `Auditor ${loaded.comment.kind} materialised into finding ${findingId}` },
             });
         });
+
+    /**
+     * The idempotent path: a finding already exists, so make sure the comment
+     * reflects that. Predicated on OPEN so an already-resolved comment is left
+     * exactly as it is rather than having its resolvedAt / resolvedByUserId
+     * rewritten by every repeat call.
+     */
+    const markResolved = async (findingId: string) => {
+        const moved = await runInTenantContext(ctx, (tdb) =>
+            tdb.auditPackShareComment.updateMany({
+                where: { id: commentId, tenantId: ctx.tenantId, auditPackId: packId, status: 'OPEN' },
+                data: { status: 'RESOLVED', resolvedAt: new Date(), resolvedByUserId: ctx.userId },
+            }),
+        );
+        // Only an actual transition is an event. Logging on every repeat call
+        // would teach a reviewer that the event means nothing.
+        if (moved.count > 0) await recordMaterialised(findingId);
+    };
 
     // Already materialised — ensure the comment is resolved, return the link.
     if (loaded.existingFindingId) {
@@ -361,6 +395,36 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
     const body = loaded.comment.body ?? '';
     const short = body.length > 120 ? `${body.slice(0, 117)}…` : (body || `Auditor ${loaded.comment.kind}`);
     const findingType = loaded.comment.kind === 'FINDING' ? 'NONCONFORMITY' : 'OBSERVATION';
+
+    // ═══ CLAIM THE COMMENT BEFORE CREATING ANYTHING ═══
+    //
+    // The completing write used to be `markResolved` at the very END — an
+    // `update({ where: { id } })` with no state predicate — so it RECORDED the
+    // materialisation without ever preventing a second one. Two concurrent
+    // callers both read status OPEN with no existing finding, both ran
+    // createFinding and createTask, and both returned alreadyExisted:false.
+    //
+    // Two OPEN findings for one auditor comment, each with its own remediation
+    // Task burning a TaskKeySequence number and firing TASK_CREATED, so every
+    // automation rule bound to that event ran twice. And it could not
+    // self-heal: the guard's findFirst matches one duplicate arbitrarily and
+    // reports alreadyExisted:true forever after, so the orphan was only
+    // clearable by hand-deleting a finding raised by an EXTERNAL AUDITOR.
+    //
+    // It also fed audit-readiness scoring, which folds open findings into the
+    // cycle score — a phantom nonconformity depressed it, and closing one of
+    // the pair left the other open.
+    const claim = await runInTenantContext(ctx, (tdb) =>
+        tdb.auditPackShareComment.updateMany({
+            where: { id: commentId, tenantId: ctx.tenantId, auditPackId: packId, status: 'OPEN' },
+            data: { status: 'RESOLVED', resolvedAt: new Date(), resolvedByUserId: ctx.userId },
+        }),
+    );
+    if (claim.count === 0) {
+        // Lost the race. The winner is creating, or has created; either way
+        // nothing has been created HERE, which is the point.
+        throw badRequest('Entry is already being materialised by another reviewer');
+    }
 
     const finding = await createFinding(ctx, {
         auditId: loaded.auditId,
@@ -384,7 +448,9 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
         metadataJson: { findingId: finding.id, auditId: loaded.auditId, shareCommentId: commentId },
     });
 
-    await markResolved(finding.id);
+    // The status transition already happened in the claim above; this records
+    // the event now that there is a findingId to name in it.
+    await recordMaterialised(finding.id);
     return { findingId: finding.id, alreadyExisted: false };
 }
 
