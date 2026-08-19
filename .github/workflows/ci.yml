@@ -812,6 +812,19 @@ jobs:
         # --webpack: nonce strict-CSP chunks (see Dockerfile + impl note).
         run: npx next build --webpack
         env:
+          # 8192, matching the `e2e-bundle` build step, and for the reason
+          # already measured there: 6144 OOMs a production Next build in this
+          # repo — "deterministically at Mark-Compact 6133.6 (6148.6) MB".
+          #
+          # This job inherited the global 6144 (raised for the JEST SHARDS, a
+          # different workload) and had been sitting just under that ceiling.
+          # The 2026-08-18 production dependency group pushed it over: OOM twice
+          # on fresh runners, while the SAME tree builds fine locally at 6144.
+          # Not a dependency defect — a build that had no headroom left.
+          #
+          # The two build steps in this file now agree. If a third appears, it
+          # needs this too; the global default is sized for Jest, not Next.
+          NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
 
       # Hand the compiled app to `load-smoke`, which builds the SAME
