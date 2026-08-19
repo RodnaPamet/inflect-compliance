@@ -91,7 +91,22 @@ export function requireStressDb(): void {
     // Asserted here so the failure names itself. `npm run stress` and the
     // workflow both set DATABASE_URL to the test database for this reason.
     const appUrl = process.env.DATABASE_URL ?? '';
-    const norm = (u: string) => u.replace(/\?.*$/, '').replace(/\/$/, '');
+    // Loopback is normalised because the two URLs legitimately arrive by
+    // different routes with different spellings of the same host: the
+    // `npm run stress` default writes 127.0.0.1, while a checkout with an
+    // .env.test typically sets localhost. A string compare then rejects a
+    // perfectly good pair and kills all 25 tests before a socket is opened.
+    //
+    // This is a usability fix, not a loosening: the point of the check is
+    // "are these the same DATABASE", and localhost / 127.0.0.1 / ::1 are the
+    // same database. Being awkward to run locally is not a neutral cost — it
+    // is part of why this suite sat red on main for 32 hours without anyone
+    // reproducing it.
+    const norm = (u: string) =>
+        u
+            .replace(/\?.*$/, '')
+            .replace(/\/$/, '')
+            .replace(/@(localhost|127\.0\.0\.1|\[::1\]|::1)(:|\/)/, '@localhost$2');
     if (norm(appUrl) !== norm(testUrl)) {
         throw new Error(
             'stress suite DB mismatch — the app singleton and the harness would use different databases.\n' +

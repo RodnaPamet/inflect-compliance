@@ -76,7 +76,28 @@ async function syncWith(opts: { maxAbsorbedRetryAfterMs: number; maxAttempts?: n
         maxAbsorbedRetryAfterMs: opts.maxAbsorbedRetryAfterMs,
         ...(opts.maxAttempts != null ? { maxAttempts: opts.maxAttempts } : {}),
     });
-    const provider = new OktaProvider({ fetchImpl });
+    // `hostAllowlist` is the test seam from #2015. The production allowlist
+    // (OKTA_HOSTS) refuses the fake server on two counts — 127.0.0.1 is not an
+    // Okta host, and `resolveVendorOrigin` returns `https://<hostname>`, which
+    // drops the random port. Both relaxations are DATA on the allowlist rather
+    // than a code branch, so `assertAllowedHost` still runs and still decides
+    // ADMISSION; the flags only widen what the admitted host resolves to. A
+    // guardrail fails CI if any allowlist exported from src/ carries them.
+    //
+    // Note what is NOT relaxed: `fetchImpl` is `shortStack`, which is the REAL
+    // resilientFetch over the REAL boundedFetch with short budgets. The
+    // deadline, the abort and the 429 absorption under test are genuine — only
+    // the clock is shortened.
+    const provider = new OktaProvider({
+        fetchImpl,
+        hostAllowlist: {
+            label: 'Okta',
+            exact: ['127.0.0.1'],
+            suffixes: [],
+            allowInsecure: true,
+            allowPort: true,
+        },
+    });
     const startedAt = Date.now();
     const result = await runIdentitySync({ tenantId: TENANT_ID, connectionId, provider });
     return { result, slept, elapsedMs: Date.now() - startedAt };
