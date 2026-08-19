@@ -6,6 +6,13 @@ import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { withDeleted } from '@/lib/soft-delete';
 import { parseEnumListFilter } from '../domain/list-filter';
 
+export interface AssetKpiCounts {
+    total: number;
+    active: number;
+    critical: number;
+    retired: number;
+}
+
 export interface AssetFilters {
     type?: string;
     status?: string;
@@ -101,6 +108,76 @@ export class AssetRepository {
 
         const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
         return { items: trimmedItems, pageInfo: { nextCursor, hasNextPage } };
+    }
+
+    /**
+     * Counts for the four KPI cards, resolved by AGGREGATE rather than from
+     * the loaded rows.
+     *
+     * Each number answers exactly one question: "how many rows will I see if I
+     * click this card". Deriving them from the fetched array cannot answer
+     * that, because the array is FILTER-SCOPED — `assetsKey` puts the active
+     * filters in the SWR key — so every card counted inside the current
+     * filter. Clicking Retired refetched to RETIRED rows only, and Total then
+     * displayed the retired count while its own click calls `clearAll()`.
+     *
+     * Two dimensions, not one, and each card is scoped to exclude the
+     * dimension it REPLACES:
+     *
+     *   total     — tenant only, NO filters. Its click clears everything, so
+     *               the only honest number is the whole register.
+     *   active /  — group over the other filters MINUS status, because both
+     *   retired     cards replace the status dimension. Counting inside an
+     *               already-status-filtered set makes one of them read 0
+     *               permanently.
+     *   critical  — count over the other filters MINUS criticality, for the
+     *               same reason, and over BOTH stored bands because that is
+     *               what the card displays and what its click selects.
+     *
+     * `withoutCriticality` is BELT-AND-BRACES today and deliberately kept.
+     * `_buildWhere` writes `where.criticality` as a top-level key, and the
+     * explicit `criticality: { in: [...] }` below is spread AFTER it, so the
+     * override already wins — a mutation test that passes `filters` here
+     * produces an identical clause and catches nothing. The redundancy exists
+     * because that is a property of ONE key's placement: the moment
+     * `criticality` moves into the `AND` array (as the `q` and OR handling
+     * already do), the spread stops overriding and the count silently narrows
+     * to whatever the user had filtered. Stating the scope explicitly is what
+     * survives that refactor.
+     */
+    static async kpiCounts(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters?: AssetFilters,
+    ): Promise<AssetKpiCounts> {
+        const withoutStatus: AssetFilters | undefined = filters
+            ? { ...filters, status: undefined }
+            : undefined;
+        const withoutCriticality: AssetFilters | undefined = filters
+            ? { ...filters, criticality: undefined }
+            : undefined;
+
+        const [byStatus, critical, total] = await Promise.all([
+            db.asset.groupBy({
+                by: ['status'],
+                where: AssetRepository._buildWhere(ctx, withoutStatus),
+                _count: { _all: true },
+            }),
+            db.asset.count({
+                where: {
+                    ...AssetRepository._buildWhere(ctx, withoutCriticality),
+                    criticality: { in: ['HIGH', 'CRITICAL'] },
+                },
+            }),
+            db.asset.count({ where: { tenantId: ctx.tenantId } }),
+        ]);
+
+        const of = (wanted: string) =>
+            byStatus
+                .filter((g) => (g.status as string) === wanted)
+                .reduce((n, g) => n + g._count._all, 0);
+
+        return { total, active: of('ACTIVE'), critical, retired: of('RETIRED') };
     }
 
     private static _buildWhere(ctx: RequestContext, filters?: AssetFilters): Prisma.AssetWhereInput {

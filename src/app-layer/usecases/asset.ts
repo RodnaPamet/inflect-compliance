@@ -103,6 +103,17 @@ export async function listAssets(
     });
 }
 
+/**
+ * KPI-card counts by aggregate. Separate from `listAssets` because the two
+ * answer different questions: the list is filter-scoped by design, and these
+ * deliberately are not — `total` ignores filters entirely, and each card
+ * excludes the dimension its click replaces.
+ */
+export async function listAssetKpiCounts(ctx: RequestContext, filters?: AssetFilters) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) => AssetRepository.kpiCounts(db, ctx, filters));
+}
+
 export async function listAssetsPaginated(ctx: RequestContext, params: AssetListParams) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>

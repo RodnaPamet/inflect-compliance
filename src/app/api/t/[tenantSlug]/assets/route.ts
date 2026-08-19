@@ -1,4 +1,4 @@
-import { listAssets, listAssetsPaginated, createAsset, listAssetsWithDeleted } from '@/app-layer/usecases/asset';
+import { listAssets, listAssetsPaginated, createAsset, listAssetsWithDeleted, listAssetKpiCounts } from '@/app-layer/usecases/asset';
 import { parseJsonBody } from '@/lib/validation/route';
 import { CreateAssetSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -68,13 +68,24 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
         { take: LIST_BACKFILL_CAP + 1 },
     );
     const result = applyBackfillCap(assets);
+    // Counts by AGGREGATE, alongside the (deliberately filter-scoped) rows.
+    // Derived from `result.rows` they would move with the active filter —
+    // clicking Retired made Total display the retired count, while Total's own
+    // click clears every filter. They are also correct past the backfill cap,
+    // which the row-derived version never was.
+    const kpiCounts = await listAssetKpiCounts(ctx, {
+        type: query.type,
+        status: query.status,
+        criticality: query.criticality,
+        q: query.q,
+    });
     recordListPageRowCount({
         entity: 'assets',
         count: result.rows.length,
         truncated: result.truncated,
         tenantId: ctx.tenantId,
     });
-    return jsonResponse(result);
+    return jsonResponse({ ...result, kpiCounts });
 }));
 
 export const POST = withApiErrorHandling(requirePermission<{ tenantSlug: string }>('assets.create', async (req, _routeArgs, ctx) => {

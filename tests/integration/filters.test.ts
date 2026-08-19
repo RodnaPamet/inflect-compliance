@@ -236,6 +236,74 @@ describe('AssetRepository._buildWhere', () => {
         );
     });
 
+    // ─── KPI-card counts ───
+    //
+    // These assert UNDER AN ACTIVE FILTER, which is the only state where the
+    // aggregate and the old row-derived version diverge. Asserting on an
+    // unfiltered page would pass against the bug: with no filter set, the
+    // loaded rows ARE the tenant, so every count happened to be right. That is
+    // exactly why this shipped and survived.
+
+    it('counts total over the tenant only — never the active filter', async () => {
+        const { AssetRepository } = await import('@/app-layer/repositories/AssetRepository');
+        const mockGroupBy = jest.fn().mockResolvedValue([]);
+        const mockCount = jest.fn().mockResolvedValue(0);
+        const mockDb = { asset: { groupBy: mockGroupBy, count: mockCount } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await AssetRepository.kpiCounts(mockDb, ctx, { status: 'RETIRED', q: 'db' });
+
+        // The Total card's click calls clearAll(), so its number must be the
+        // whole register. The reported bug was Total following the filter:
+        // clicking Retired made it display the retired count.
+        const totalWhere = mockCount.mock.calls.at(-1)![0].where;
+        expect(totalWhere).toEqual({ tenantId: 'tenant-1' });
+        expect(totalWhere.status).toBeUndefined();
+        expect(totalWhere.OR).toBeUndefined();
+    });
+
+    it('scopes the status cards outside the status dimension they replace', async () => {
+        const { AssetRepository } = await import('@/app-layer/repositories/AssetRepository');
+        const mockGroupBy = jest.fn().mockResolvedValue([]);
+        const mockCount = jest.fn().mockResolvedValue(0);
+        const mockDb = { asset: { groupBy: mockGroupBy, count: mockCount } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await AssetRepository.kpiCounts(mockDb, ctx, { status: 'ACTIVE', type: 'SYSTEM' });
+
+        // Active and Retired both REPLACE status, so grouping inside an
+        // existing status filter would make one of them read 0 permanently.
+        // Sibling filters must still apply — the card answers "how many rows
+        // will I see", and type=SERVER survives the click.
+        const arg = mockGroupBy.mock.calls[0][0];
+        expect(arg.by).toEqual(['status']);
+        expect(JSON.stringify(arg.where)).not.toContain('ACTIVE');
+        expect(JSON.stringify(arg.where)).toContain('SYSTEM');
+    });
+
+    it('scopes the criticality card outside the criticality dimension', async () => {
+        const { AssetRepository } = await import('@/app-layer/repositories/AssetRepository');
+        const mockGroupBy = jest.fn().mockResolvedValue([]);
+        const mockCount = jest.fn().mockResolvedValue(0);
+        const mockDb = { asset: { groupBy: mockGroupBy, count: mockCount } } as unknown as PrismaTx;
+        const ctx = { tenantId: 'tenant-1', userId: 'user-1' } as unknown as RequestContext;
+
+        await AssetRepository.kpiCounts(mockDb, ctx, { criticality: 'LOW', type: 'SYSTEM' });
+
+        // NOTE: this cannot fail by removing `withoutCriticality` — the
+        // explicit criticality below is spread after _buildWhere's top-level
+        // key and overrides it either way. That was verified by mutation, not
+        // assumed. What this DOES lock is the property a user sees: the card
+        // counts both bands, and sibling filters still apply.
+        //
+        // The critical count is the FIRST count call; total is the last.
+        const criticalWhere = mockCount.mock.calls[0][0].where;
+        expect(criticalWhere.criticality).toEqual({ in: ['HIGH', 'CRITICAL'] });
+        // The card displays both bands and its click selects both.
+        expect(JSON.stringify(criticalWhere)).toContain('SYSTEM');
+        expect(JSON.stringify(criticalWhere)).not.toContain('LOW');
+    });
+
     it('combines type + status + q', async () => {
         const { AssetRepository } = await import('@/app-layer/repositories/AssetRepository');
         const mockFindMany = jest.fn().mockResolvedValue([]);
