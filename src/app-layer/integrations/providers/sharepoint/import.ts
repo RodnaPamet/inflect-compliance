@@ -44,30 +44,114 @@ async function importOne(
     sel: { driveId: string; itemId: string; name?: string },
     target: { controlId?: string; category?: string; folder?: string },
 ): Promise<string> {
-    const item = await client.getItem(sel.driveId, sel.itemId);
-    const name = sel.name ?? item.name ?? 'sharepoint-file';
-    const mimeType = item.file?.mimeType ?? 'application/octet-stream';
-    const ab = await client.downloadItemContent(sel.driveId, sel.itemId);
-    const file = new File([ab], name, { type: mimeType });
+    const remoteEntityId = encodeRemoteId(sel.driveId, sel.itemId);
 
-    const evidence = await uploadEvidenceFile(ctx, file, {
-        title: name,
-        controlId: target.controlId ?? null,
-        category: target.category ?? null,
-        folder: target.folder ?? null,
-    });
+    // ═══ CLAIM THE DRIVE ITEM BEFORE DOWNLOADING OR STORING IT ═══
+    //
+    // `uploadEvidenceFile` is NOT idempotent: it AV-scans and stores a NEW
+    // object every time, and mints a new Evidence row. The mapping that would
+    // have deduped the item was written AFTERWARDS, so two overlapping delta
+    // syncs — or a delta sync overlapping a manual picker import — both
+    // downloaded the same file, both stored it, and both created evidence, with
+    // the mapping arriving too late to prevent either.
+    //
+    // The unique on (tenantId, provider, remoteEntityType, remoteEntityId) is
+    // the interlock. `createMany` with skipDuplicates makes the insert the
+    // claim: exactly one caller gets count 1, the loser gets 0 and does not
+    // download anything.
+    //
+    // `localEntityId` carries its OWN unique, so the placeholder has to be
+    // per-item rather than a shared sentinel — two different items claiming at
+    // once would otherwise collide on it. The upsert at the end of a successful
+    // import replaces it with the real evidence id.
+    const claimPlaceholder = `pending:${remoteEntityId}`;
+    const claim = await runInTenantContext(ctx, (db) =>
+        db.integrationSyncMapping.createMany({
+            data: [
+                {
+                    tenantId: ctx.tenantId,
+                    provider: 'sharepoint',
+                    connectionId,
+                    localEntityType: 'Evidence',
+                    localEntityId: claimPlaceholder,
+                    remoteEntityType: 'DriveItem',
+                    remoteEntityId,
+                    syncStatus: 'PENDING',
+                    lastSyncDirection: 'PULL',
+                },
+            ],
+            skipDuplicates: true,
+        }),
+    );
 
-    await upsertEvidenceMapping(ctx, {
-        connectionId,
-        evidenceId: evidence.id,
-        driveId: sel.driveId,
-        itemId: sel.itemId,
-        eTag: item.eTag,
-        cTag: item.cTag,
-        webUrl: item.webUrl,
-        remoteUpdatedAt: item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null,
-    });
-    return evidence.id;
+    if (claim.count === 0) {
+        // Already mapped, or being imported right now. A SYNCED row is the
+        // ordinary case — the item was imported on an earlier pass — and
+        // returning its evidence id makes a repeat sync the no-op it should
+        // always have been.
+        const existing = await runInTenantContext(ctx, (db) =>
+            db.integrationSyncMapping.findUnique({
+                where: {
+                    tenantId_provider_remoteEntityType_remoteEntityId: {
+                        tenantId: ctx.tenantId,
+                        provider: 'sharepoint',
+                        remoteEntityType: 'DriveItem',
+                        remoteEntityId,
+                    },
+                },
+                select: { localEntityId: true, syncStatus: true },
+            }),
+        );
+        if (existing && existing.syncStatus === 'SYNCED') return existing.localEntityId;
+        throw new Error(
+            `SharePoint item ${sel.itemId} is already being imported by another pass. Nothing was ` +
+                `downloaded or stored — retry once that pass has finished.`,
+        );
+    }
+
+    try {
+        const item = await client.getItem(sel.driveId, sel.itemId);
+        const name = sel.name ?? item.name ?? 'sharepoint-file';
+        const mimeType = item.file?.mimeType ?? 'application/octet-stream';
+        const ab = await client.downloadItemContent(sel.driveId, sel.itemId);
+        const file = new File([ab], name, { type: mimeType });
+
+        const evidence = await uploadEvidenceFile(ctx, file, {
+            title: name,
+            controlId: target.controlId ?? null,
+            category: target.category ?? null,
+            folder: target.folder ?? null,
+        });
+
+        await upsertEvidenceMapping(ctx, {
+            connectionId,
+            evidenceId: evidence.id,
+            driveId: sel.driveId,
+            itemId: sel.itemId,
+            eTag: item.eTag,
+            cTag: item.cTag,
+            webUrl: item.webUrl,
+            remoteUpdatedAt: item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null,
+        });
+        return evidence.id;
+    } catch (err) {
+        // Release the claim so a retry can proceed. Scoped to the placeholder,
+        // so this can only ever delete a row THIS call created — a claim that
+        // has already been resolved into a real mapping no longer matches, and
+        // a successful import by anyone else is never undone here.
+        await runInTenantContext(ctx, (db) =>
+            db.integrationSyncMapping.deleteMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    provider: 'sharepoint',
+                    remoteEntityType: 'DriveItem',
+                    remoteEntityId,
+                    localEntityId: claimPlaceholder,
+                },
+            }),
+        ).catch(() => undefined);
+        throw err;
+    }
 }
 
 /** Create/refresh the Evidence ↔ DriveItem sync mapping (keyed on the remote id). */

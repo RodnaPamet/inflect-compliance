@@ -13,7 +13,14 @@
  *   - format fallback (null → 'PDF') + template name fallback.
  */
 const prismaMock = {
-    reportSchedule: { findMany: jest.fn(), update: jest.fn() },
+    reportSchedule: {
+        findMany: jest.fn(),
+        // The CLAIM. runReportDelivery now advances the cursor BEFORE
+        // generating, predicated on the schedule still being due, so two
+        // overlapping ticks cannot both deliver. count 1 = this tick won.
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn(),
+    },
     tenantMembership: { findFirst: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: prismaMock }));
@@ -55,6 +62,10 @@ function schedule(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    // Re-stated every test on purpose: `clearAllMocks` resets CALLS, not
+    // implementations, so a `mockResolvedValue({ count: 0 })` set by the
+    // lost-claim test below would otherwise leak into every test after it.
+    prismaMock.reportSchedule.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
     riskReport.generateReport.mockResolvedValue({ id: 'run1' });
     riskReport.deliverReportByEmail.mockResolvedValue(1);
@@ -67,13 +78,41 @@ it('returns zeros when nothing is due', async () => {
     expect(res).toEqual({ due: 0, generated: 0, delivered: 0, pushed: 0, failed: 0 });
 });
 
+it('LOSING the claim generates and delivers NOTHING', async () => {
+    // The whole point of claiming. Two overlapping ticks both select the same
+    // due schedule; only one may act. Without this assertion the claim's return
+    // value could be ignored entirely and every other test here would still
+    // pass — which is exactly what a surviving mutation showed.
+    //
+    // What duplicates otherwise leaves the tenant: per the schema these are
+    // recurring OUTBOUND feeds whose recipients can include a board, an audit
+    // committee or external auditors, and the two emails carry differently-named
+    // attachments, so it reads as two distinct reports rather than a resend.
+    prismaMock.reportSchedule.findMany.mockResolvedValue([schedule()]);
+    prismaMock.reportSchedule.updateMany.mockResolvedValue({ count: 0 });
+
+    const res = await runReportDelivery(payload);
+
+    expect(riskReport.generateReport).not.toHaveBeenCalled();
+    expect(riskReport.deliverReportByEmail).not.toHaveBeenCalled();
+    expect(riskReport.deliverReportToSharePoint).not.toHaveBeenCalled();
+    // Not counted as a failure either — a healthy overlap must not read as an
+    // outage on the job's own stats.
+    expect(res).toEqual({ due: 1, generated: 0, delivered: 0, pushed: 0, failed: 0 });
+});
+
 it('happy path counts generated/delivered/pushed and advances nextRunAt', async () => {
     prismaMock.reportSchedule.findMany.mockResolvedValue([schedule()]);
     const res = await runReportDelivery(payload);
     expect(res).toEqual({ due: 1, generated: 1, delivered: 1, pushed: 1, failed: 0 });
-    expect(prismaMock.reportSchedule.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 's1' } }),
-    );
+    // The cursor moves in the CLAIM, before anything is generated, and the
+    // `nextRunAt: { lte: now }` predicate is what makes it an interlock rather
+    // than a record: a second overlapping tick matches zero rows and delivers
+    // nothing.
+    const claim = prismaMock.reportSchedule.updateMany.mock.calls[0][0];
+    expect(claim.where).toMatchObject({ id: 's1' });
+    expect(claim.where.nextRunAt).toHaveProperty('lte');
+    expect(claim.data).toHaveProperty('nextRunAt');
     // format default + parameters passed through, and the run is attributed to
     // the SCHEDULE'S AUTHOR rather than to a borrowed admin identity.
     expect(riskReport.generateReport).toHaveBeenCalledWith(
@@ -117,9 +156,14 @@ it('still runs — and still advances nextRunAt — for a tenant with no active 
     prismaMock.tenantMembership.findFirst.mockResolvedValue(null);
     const res = await runReportDelivery(payload);
     expect(res.generated).toBe(1);
-    expect(prismaMock.reportSchedule.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 's1' } }),
-    );
+    // The cursor moves in the CLAIM, before anything is generated, and the
+    // `nextRunAt: { lte: now }` predicate is what makes it an interlock rather
+    // than a record: a second overlapping tick matches zero rows and delivers
+    // nothing.
+    const claim = prismaMock.reportSchedule.updateMany.mock.calls[0][0];
+    expect(claim.where).toMatchObject({ id: 's1' });
+    expect(claim.where.nextRunAt).toHaveProperty('lte');
+    expect(claim.data).toHaveProperty('nextRunAt');
 });
 
 it('does not count delivery when email sent=0 and sharePoint null', async () => {
@@ -145,7 +189,9 @@ it('counts a failure but still advances nextRunAt', async () => {
     const res = await runReportDelivery(payload);
     expect(res.failed).toBe(1);
     expect(res.generated).toBe(0);
-    expect(prismaMock.reportSchedule.update).toHaveBeenCalled();
+    // Claimed before any work, so the cursor moved even though generation
+    // failed — a permanently-broken schedule must not re-run every tick.
+    expect(prismaMock.reportSchedule.updateMany).toHaveBeenCalled();
 });
 
 it('filters non-string recipients via asRecipients', async () => {

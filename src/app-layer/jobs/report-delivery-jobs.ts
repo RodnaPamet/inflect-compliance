@@ -99,6 +99,38 @@ export async function runReportDelivery(_payload: ReportDeliveryPayload) {
     let generated = 0, delivered = 0, pushed = 0, failed = 0;
     for (const s of due) {
         const ctx = buildSystemCtx(s.tenantId);
+
+        // ═══ CLAIM THE SCHEDULE BEFORE GENERATING ANYTHING ═══
+        //
+        // The cursor advance used to sit at the BOTTOM of this loop, with a
+        // WHERE carrying only the id. It therefore recorded that the run
+        // happened without ever preventing a second one: two overlapping ticks
+        // both selected the same due schedule, both generated a ReportRun, both
+        // emailed it, both pushed it to SharePoint, and both advanced the
+        // cursor.
+        //
+        // What duplicates is customer-visible and leaves the tenant. Per the
+        // schema these are recurring OUTBOUND feeds whose recipient list can
+        // include external addresses — a board, an audit committee, external
+        // auditors — and the two emails carry differently-named attachments
+        // (the run id is in the filename), so it reads as two distinct reports
+        // rather than an obvious resend. SharePoint keeps both files for the
+        // same reason.
+        //
+        // `nextRunAt` is the optimistic-concurrency token: the claim matches
+        // only while the schedule is still due, so the loser sees count 0 and
+        // does nothing.
+        const claimed = await prisma.reportSchedule.updateMany({
+            where: { id: s.id, nextRunAt: { lte: now } },
+            data: { lastRunAt: now, nextRunAt: computeNextRun(s.cadence, now) },
+        });
+        if (claimed.count === 0) {
+            // Another tick owns this cycle. Not an error and not a failure —
+            // counting it as either would make a healthy overlap look like an
+            // outage on the job's own stats.
+            continue;
+        }
+
         try {
             const run = await generateReport(
                 ctx,
@@ -126,10 +158,12 @@ export async function runReportDelivery(_payload: ReportDeliveryPayload) {
                 error: err instanceof Error ? err.message : String(err),
             });
         }
-        await prisma.reportSchedule.update({
-            where: { id: s.id },
-            data: { lastRunAt: now, nextRunAt: computeNextRun(s.cadence, now) },
-        });
+        // The cursor was advanced by the claim above, before any work. That
+        // also settles what used to be an unremarked quirk: this update sat
+        // OUTSIDE the try/catch, so a schedule that failed to generate burned
+        // its cycle anyway. That behaviour is deliberate and now explicit — a
+        // permanently-broken schedule must not re-run on every tick — but it is
+        // now a consequence of claiming rather than an accident of placement.
     }
     return { due: due.length, generated, delivered, pushed, failed };
 }

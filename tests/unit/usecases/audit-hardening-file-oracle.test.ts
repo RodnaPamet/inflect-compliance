@@ -185,7 +185,10 @@ describe('storeExportArtifact — freeze integrity (TASK 2)', () => {
             .mockImplementationOnce(async () => ({ id: 'p1', status: 'DRAFT' } as never))
             // auditPackItem.create
             .mockImplementationOnce(async (_ctx: any, fn: any) =>
-                fn({ auditPackItem: { create: jest.fn().mockResolvedValue({}) } }),
+                fn({ // storeExportArtifact re-verifies the pack is still DRAFT, holding
+                    // its row, before creating the item.
+                    auditPack: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+                    auditPackItem: { create: jest.fn().mockResolvedValue({}) } }),
             )
             // logEvent wrapper
             .mockImplementationOnce(async (_ctx: any, fn: any) => fn({}));
