@@ -28,6 +28,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CONTROL_CATEGORY_THEMES } from '@/lib/controls/control-categories';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { extractMutationError } from '@/lib/mutations';
 import { useToastWithUndo, useToast } from '@/components/ui/hooks';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
@@ -162,6 +163,9 @@ export default function ControlDetailPage() {
     const tenantHref = useTenantHref();
     const { permissions, tenantSlug } = useTenantContext();
     const controlId = params?.controlId as string;
+    // Ordered ids for the prev/next stepper beside the name — list order,
+    // so stepping walks the sequence the user just saw.
+    const controlIds = useEntityListIds(CACHE_KEYS.controls.list());
     const triggerUndoToast = useToastWithUndo();
     const toast = useToast();
 
@@ -942,6 +946,12 @@ export default function ControlDetailPage() {
                 { label: control.name },
             ]}
             title={<span id="control-title">{control.name}</span>}
+            prevNext={{
+                ids: controlIds,
+                currentId: controlId,
+                hrefFor: (id) => tenantHref(`/controls/${id}`),
+                labelSingular: 'control',
+            }}
             meta={headerMeta}
             actions={headerActions}
             tabs={tabs}

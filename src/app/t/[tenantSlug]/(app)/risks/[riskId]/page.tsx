@@ -1,6 +1,8 @@
 'use client';
 import { useTranslations } from 'next-intl';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
+import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { formatDate } from '@/lib/format-date';
 import { SkeletonCard, SkeletonDetailPage } from '@/components/ui/skeleton';
 import { useMemo, useState } from 'react';
@@ -152,6 +154,9 @@ export default function RiskDetailPage() {
     const tenant = useTenantContext();
     const apiUrl = useTenantApiUrl();
     const href = useTenantHref();
+    // Ordered ids for the prev/next stepper beside the name — list order,
+    // so stepping walks the sequence the user just saw.
+    const riskIds = useEntityListIds(CACHE_KEYS.risks.list());
     // B1-4 — the tenant's configured symbol. This page formatted the ALE with
     // the raw helper, which defaults to €, so the risk header disagreed with
     // the dashboard for any tenant not on euros.
@@ -396,6 +401,12 @@ export default function RiskDetailPage() {
             onTabChange={(k) => setActiveTab(k)}
 
             title={<span id="risk-title-heading">{risk.title}</span>}
+            prevNext={{
+                ids: riskIds,
+                currentId: riskId,
+                hrefFor: (id) => href(`/risks/${id}`),
+                labelSingular: 'risk',
+            }}
             meta={
                 <MetaStrip
                     items={[

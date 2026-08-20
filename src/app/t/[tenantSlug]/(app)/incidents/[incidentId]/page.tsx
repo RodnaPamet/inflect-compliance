@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { EntityDetailLayout, type EntityDetailTab } from '@/components/layout/EntityDetailLayout';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { MetaStrip, type MetaItem } from '@/components/ui/meta-strip';
@@ -115,6 +116,9 @@ export default function IncidentDetailPage() {
     const params = useParams<{ tenantSlug: string; incidentId: string }>();
     const tenantSlug = params.tenantSlug;
     const incidentId = params.incidentId;
+    // Ordered ids for the prev/next stepper beside the name — list order,
+    // so stepping walks the sequence the user just saw.
+    const incidentIds = useEntityListIds(CACHE_KEYS.incidents.list());
     const now = useHydratedNow();
     const [activeTab, setActiveTab] = useState<TabKey>('overview');
     const [busy, setBusy] = useState(false);
@@ -223,6 +227,12 @@ export default function IncidentDetailPage() {
                 { label: incident.reference },
             ]}
             title={`[${incident.reference}] ${incident.title}`}
+            prevNext={{
+                ids: incidentIds,
+                currentId: incidentId,
+                hrefFor: (id) => `/t/${tenantSlug}/incidents/${id}`,
+                labelSingular: 'incident',
+            }}
             meta={
                 <MetaStrip
                     items={[

@@ -120,6 +120,23 @@ export interface PageHeaderProps {
     /** Optional DOM id placed on the title <Heading> element (E2E anchor). */
     titleId?: string;
     /**
+     * Small interactive cluster rendered as a SIBLING of the title
+     * <Heading>, on the same baseline — today the detail-page prev/next
+     * stepper.
+     *
+     * A sibling, deliberately, rather than something the caller folds into
+     * `title`. Anything inside `title` lands inside the `<h1>`, and per the
+     * accname spec a control's `aria-label` there is concatenated into the
+     * HEADING's accessible name: a screen reader announces the page title as
+     * "Ransomware on the billing cluster Previous incident Next incident".
+     * jsdom will not catch a regression here — `dom-accessibility-api`
+     * knowingly deviates from the spec for descendant controls (see its
+     * `skipToStep2E` / accname issue 64 comment), so testing-library computes
+     * the bare title and passes. Real browsers concatenate; Chromium's AX
+     * tree was the thing that showed it.
+     */
+    titleAdornment?: React.ReactNode;
+    /**
      * Optional descriptive sentence below the title. One sentence,
      * ≤ 80 chars per the v2 polish copy convention.
      */
@@ -150,6 +167,7 @@ export function PageHeader({
     eyebrow,
     title,
     titleId,
+    titleAdornment,
     description,
     meta,
     actions,
@@ -218,14 +236,37 @@ export function PageHeader({
                     subtitle, not a large H1. SUBPAGES keep a visible H1 —
                     removing it outright would strip the landmark + break the
                     h1/page-header contract. See titleHidden above. */}
-                <Heading
-                    level={1}
-                    id={titleId}
-                    className={titleHidden ? "sr-only" : cn(back && "mt-1")}
-                    data-testid="page-header-title"
-                >
-                    {title}
-                </Heading>
+                {titleAdornment && !titleHidden ? (
+                    // Flex row, not a wrapper INSIDE the heading — see
+                    // `titleAdornment`'s docstring for why that distinction
+                    // is load-bearing. The heading's own top margin moves to
+                    // the row so the baseline is unchanged.
+                    <div
+                        className={cn(
+                            "flex items-center gap-2.5",
+                            back && "mt-1",
+                        )}
+                        data-testid="page-header-title-row"
+                    >
+                        <Heading
+                            level={1}
+                            id={titleId}
+                            data-testid="page-header-title"
+                        >
+                            {title}
+                        </Heading>
+                        {titleAdornment}
+                    </div>
+                ) : (
+                    <Heading
+                        level={1}
+                        id={titleId}
+                        className={titleHidden ? "sr-only" : cn(back && "mt-1")}
+                        data-testid="page-header-title"
+                    >
+                        {title}
+                    </Heading>
+                )}
                 {description !== undefined && description !== null && (
                     <Caption data-testid="page-header-description">
                         {description}
