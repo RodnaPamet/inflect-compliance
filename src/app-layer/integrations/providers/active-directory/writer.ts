@@ -54,9 +54,13 @@
  * DC — would be meaningless as a change token.
  *
  * So this writer holds ONE bound connection across `readState` + `disable`. That
- * also avoids up to 2,000 simple binds per batch (`disableAccountsForLeaver`
- * iterates sequentially over up to MAX_CANDIDATES = 1,000 candidates, twice
- * each).
+ * also avoids one simple bind per account: `disableAccountsForLeaver` iterates
+ * sequentially, and the blast-radius breaker refuses any batch over
+ * MAX_DISABLES_PER_RUN = 50, so the ceiling is 100 binds rather than one. (An
+ * earlier version of this note said 2,000, reasoning from MAX_CANDIDATES = 1,000
+ * — but a batch that large never reaches a writer; the breaker refuses it whole.)
+ * `MAX_CONNECT_ATTEMPTS` bounds the FAILING case, which is the one that would
+ * otherwise lock the bind account out.
  *
  * Holding one CLIENT is not the same as holding one CONNECTION, and this is the
  * gap the earlier version of this file described but did not close. ldapts
@@ -179,6 +183,28 @@ const PROVEN_REFUSAL_RESULT_CODES: ReadonlySet<number> = new Set([
     53, // unwillingToPerform
     65, // objectClassViolation
 ]);
+
+/**
+ * Bind attempts before this writer stops trying, for the life of the connection.
+ *
+ * The hazard is self-inflicted and it is not rate limiting. `connect()` memoises
+ * SUCCESS only — a rejected bind leaves nothing behind — so without a budget
+ * every candidate in a batch re-runs the whole connect path. A service-account
+ * password rotated out from under us therefore produces one rejected simple bind
+ * PER CANDIDATE, in seconds, unattended, every night. Domains commonly lock an
+ * account out at five to ten bad passwords.
+ *
+ * That failure does not stay contained either. `writeBindDN` falls back to the
+ * connection's read bind, so the account locked out is usually the one the daily
+ * identity sync authenticates with — and once the sync stops, `lastVerifiedAt`
+ * goes stale and every later leaver pass refuses for NO_FRESH_LINKS. The product
+ * would lock out a customer's service account and then silently stop offboarding
+ * anyone, with each half looking like a separate problem.
+ *
+ * Three, not one: a single blip should not latch a writer that would have worked
+ * on the next candidate.
+ */
+const MAX_CONNECT_ATTEMPTS = 3;
 
 const LDAP_NO_SUCH_ATTRIBUTE = 16;
 const LDAP_NO_SUCH_OBJECT = 32;
@@ -492,6 +518,10 @@ export function createActiveDirectoryWriter(
 
     let client: LdapClientLike | null = null;
     let connecting: Promise<LdapClientLike> | null = null;
+    /** Consecutive failed bind attempts. Reset by any success, and by close(). */
+    let connectFailures = 0;
+    /** Latched once the budget is spent — every later call throws this. */
+    let connectRefusal: Error | null = null;
     /** RootDSE `dnsHostName` — which DC this socket is actually talking to. */
     let boundDc: string | null = null;
     /**
@@ -561,14 +591,38 @@ export function createActiveDirectoryWriter(
         }
     }
 
+    /** Count one failed bind, and latch the writer once the budget is spent. */
+    function noteConnectFailure(err: unknown): void {
+        connectFailures += 1;
+        if (connectFailures < MAX_CONNECT_ATTEMPTS) return;
+        const detail = err instanceof Error ? err.message : String(err);
+        // Deliberately NOT phrased as "your account is being locked out". This
+        // same counter catches the pre-network config failures above — no URL,
+        // no base DN, no credentials — and telling an operator their bind is
+        // under attack when the base DN is blank sends them to the wrong screen
+        // entirely. Quote what actually failed, state the batch-level fact, and
+        // leave the lockout reasoning to MAX_CONNECT_ATTEMPTS' own comment.
+        connectRefusal = new Error(
+            `Active Directory writer stopped after ${MAX_CONNECT_ATTEMPTS} failed connection attempts: ` +
+                `${detail}. This is a failure of the CONNECTION, not of any one account, so no remaining ` +
+                'candidate in this run can succeed while it holds — retrying each of them would repeat one ' +
+                'failed bind per account against the same directory. Nothing was read and nothing was ' +
+                'written. The next run opens a fresh connection.',
+        );
+    }
+
     async function connect(): Promise<LdapClientLike> {
         if (client) return client;
+        // Latched. Every candidate after the budget is spent fails here, before
+        // a socket is opened and before a credential is offered.
+        if (connectRefusal) throw connectRefusal;
         // Shared promise: two overlapping callers must not open two sockets to
         // two different DCs, which is the exact split this writer exists to
         // avoid.
         if (connecting) return connecting;
 
         connecting = (async () => {
+          try {
             if (!url) throw new Error('Active Directory writer needs an LDAPS URL.');
             if (!baseDN) throw new Error('Active Directory writer needs a base DN.');
             if (!bindDN || !bindPassword) {
@@ -613,7 +667,19 @@ export function createActiveDirectoryWriter(
             boundDc = await readRootDseDc(c);
             sessionSeq += 1;
             client = c;
+            // A healthy connection clears the history: three failures spread
+            // across three separate blips are not the pattern this defends
+            // against, and a stale count would latch a working writer later.
+            connectFailures = 0;
             return c;
+          } catch (err) {
+            // Counted HERE rather than in the outer catch below. The two are
+            // equivalent only because a concurrent second caller early-returns
+            // on `connecting` and never enters that try — an equivalence that
+            // should not be load-bearing for a counter guarding a lockout.
+            noteConnectFailure(err);
+            throw err;
+          }
         })();
 
         try {
@@ -646,7 +712,17 @@ export function createActiveDirectoryWriter(
                 provider: AD_PROVIDER_ID,
                 previousDc: boundDc,
             });
-            await c.bind(bindDN, bindPassword);
+            // Same credential, same lockout hazard — and this path never goes
+            // through connect(), so without its own accounting a writer that
+            // reconnects on every call would spend the budget invisibly.
+            try {
+                await c.bind(bindDN, bindPassword);
+                connectFailures = 0;
+            } catch (err) {
+                client = null;
+                noteConnectFailure(err);
+                throw err;
+            }
             boundDc = await readRootDseDc(c);
             sessionSeq += 1;
         }
@@ -935,6 +1011,11 @@ export function createActiveDirectoryWriter(
             const c = client;
             client = null;
             boundDc = null;
+            // The latch describes ONE connection's history. A caller that closes
+            // and reopens is starting again — most often the next scheduled run,
+            // by which time a rotated credential may well have been corrected.
+            connectFailures = 0;
+            connectRefusal = null;
             // A capture taken on the closed session must not be able to satisfy
             // the same-session test against a socket opened later — `sessionSeq`
             // already makes that impossible, and clearing here keeps the map from

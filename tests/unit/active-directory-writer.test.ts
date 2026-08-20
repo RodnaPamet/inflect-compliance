@@ -93,6 +93,10 @@ interface FakeOptions {
     modifyThrows?: unknown;
     /** Simulate a read-only client — the interface makes `modify` optional. */
     omitModify?: boolean;
+    /** Every bind rejects with this. Models a rotated service-account password. */
+    bindRejects?: unknown;
+    /** Per-attempt control: return an error to reject, or null to let it succeed. */
+    bindRejectsUntil?: () => unknown;
 }
 
 function fakeAd(options: FakeOptions = {}) {
@@ -108,7 +112,13 @@ function fakeAd(options: FakeOptions = {}) {
         clientsBuilt.push(opts);
         const client: LdapClientLike = {
             bind: async (dn, password) => {
+                // Recorded BEFORE the rejection, so a test can count the binds
+                // a directory actually received — which is the whole point when
+                // the hazard is a lockout counter on the other side.
                 binds.push({ dn, password });
+                if (options.bindRejects) throw options.bindRejects;
+                const e = options.bindRejectsUntil?.();
+                if (e) throw e;
             },
             get isBound() {
                 return options.isBound?.();
@@ -694,6 +704,84 @@ describe('the base DN is the scope this writer is entitled to', () => {
 
         const state = await makeWriter(fake).readState(escapedDn);
         expect(state.priorState.distinguishedName).toBe(escapedDn);
+    });
+});
+
+describe('the connect budget — not rate limiting, a lockout defence', () => {
+    // connect() memoises SUCCESS only: a rejected bind leaves nothing behind, so
+    // without a budget every candidate in a batch re-runs the whole connect
+    // path. A rotated service-account password then produces one rejected simple
+    // bind PER CANDIDATE, in seconds, unattended, nightly — and domains commonly
+    // lock out at five.
+    it('stops after three failed binds instead of one per candidate', async () => {
+        const fake = fakeAd({ bindRejects: new Error('49 - invalid credentials') });
+        const writer = makeWriter(fake);
+
+        for (let i = 0; i < 50; i += 1) {
+            await writer.readState(GUID).catch(() => undefined);
+        }
+
+        expect(fake.binds.length).toBe(3);
+    });
+
+    it('says the failure is the CONNECTION, not the account', async () => {
+        const fake = fakeAd({ bindRejects: new Error('49 - invalid credentials') });
+        const writer = makeWriter(fake);
+        for (let i = 0; i < 3; i += 1) await writer.readState(GUID).catch(() => undefined);
+
+        const err = await writer.readState(GUID).catch((e: unknown) => e);
+
+        expect((err as Error).message).toMatch(/failure of the CONNECTION, not of any one account/);
+        // Quotes what actually failed. The same counter catches a blank baseDN,
+        // and telling that operator their bind is being locked out would send
+        // them to the wrong screen entirely.
+        expect((err as Error).message).toContain('invalid credentials');
+    });
+
+    it('does not latch on a single blip that then recovers', async () => {
+        let n = 0;
+        const fake = fakeAd({
+            bindRejectsUntil: () => (n++ < 2 ? new Error('transient') : null),
+        });
+        const writer = makeWriter(fake);
+
+        await writer.readState(GUID).catch(() => undefined);
+        await writer.readState(GUID).catch(() => undefined);
+        await expect(writer.readState(GUID)).resolves.toBeDefined();
+    });
+
+    it('counts a failed RE-bind too — that path never goes through connect()', async () => {
+        // session() re-binds directly when ldapts reports the socket was
+        // re-established. Same credential, same lockout counter on the other
+        // side — so a writer whose socket keeps dropping would otherwise spend
+        // the whole budget invisibly, one bad password at a time, forever.
+        let n = 0;
+        const fake = fakeAd({
+            isBound: () => false,
+            bindRejectsUntil: () => (n++ === 0 ? null : new Error('49 - invalid credentials')),
+        });
+        const writer = makeWriter(fake);
+
+        for (let i = 0; i < 10; i += 1) {
+            await writer.readState(GUID).catch(() => undefined);
+        }
+
+        // One good bind, then three rejected ones, then the latch. Without the
+        // re-bind accounting this climbs with every call.
+        expect(fake.binds.length).toBe(4);
+    });
+
+    it('starts again after close() — the latch describes one connection', async () => {
+        const fake = fakeAd({ bindRejects: new Error('49 - invalid credentials') });
+        const writer = makeWriter(fake);
+        for (let i = 0; i < 4; i += 1) await writer.readState(GUID).catch(() => undefined);
+        expect(fake.binds.length).toBe(3);
+
+        await writer.close();
+        await writer.readState(GUID).catch(() => undefined);
+
+        // By the next scheduled run a rotated credential may well be corrected.
+        expect(fake.binds.length).toBe(4);
     });
 });
 
