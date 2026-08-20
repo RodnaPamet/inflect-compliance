@@ -123,7 +123,7 @@ normal operation, gets filtered into a folder nobody opens, and takes the
 | `INDETERMINATE` | ✅ | ✅ | Nobody knows whether it happened. The one a human must act on — every other row in this table exists to keep this one readable. |
 | `REFUSED_TARGET` | ✅ | ❌ | Account still live, but "Azure AD Connect masters this object" is not a sentence a manager can act on. |
 | `REFUSED_PROTECTED` | ✅ | ❌ | Same shape — the account is live — but the refusal is permanent rather than a rung to climb, so silence would leave a real leaver enabled with nobody told. |
-| `FAILED` | ✅ | ❌ | Provider proved it rejected the write. Telling the manager would assert a non-fact about a live account. |
+| `FAILED` | ✅ | ❌ | Provider **proved** it rejected the write. Telling the manager would assert a non-fact about a live account. Only ever written where that proof exists — an unclassified throw settles `INDETERMINATE`, because "the directory is unchanged" is a claim, not a default. |
 | `REFUSED_MODE` | ❌ | ❌ | Normal for every tenant climbing the ladder — at least seven days by policy. Notifying means one mail per candidate per run for the whole evaluation period. |
 | `DRY_RUN` | ❌ | ❌ | Nothing happened, by design. |
 | `ALREADY_DISABLED` | ❌\* | ❌\* | Steady state. \*Unless the read **reconciled** an earlier unconfirmed write — then it answers a question a human was sent away to investigate, and goes out as a `DISABLED` mail flagged `RECONCILED`. |
@@ -212,23 +212,47 @@ every silence rule above is protecting.
   all time. The pre-journal refusals fall back to the link id and therefore get
   per-day dedupe, which is the property that matters there: a daily pass over a
   hybrid-synced account would otherwise mail IT on every run forever.
-- **A configured `complianceMailbox` replaces the OWNER/ADMIN fan-out rather than
-  adding to it.** It exists so a tenant can point this traffic at one monitored
-  queue; sending to both delivers the same message twice to the people most
-  likely to be watching both, which is how a channel earns a filter rule.
-- **`OWNER` as well as `ADMIN` in the fallback.** `createTenantWithOwner` mints an
-  OWNER and nothing else, so a role filter of `ADMIN` alone resolves zero
-  recipients for the shape every tenant starts in.
+- **A configured `complianceMailbox` does NOT replace the OWNER/ADMIN fan-out** —
+  and the first draft of this module had it the other way round, on a rationale
+  that inverts on inspection. `processOutbox` already sets that field as `bcc:`
+  on *every* outbound message, and its only operator-facing label is "Compliance
+  Mailbox (BCC)". Substituting it for the fan-out therefore mails the queue twice
+  (To and Bcc) — the exact duplicate the substitution was avoiding — and tells no
+  administrator at all, so a tenant that set up an archive would have silently
+  opted out of every offboarding alert. The mailbox survives as the fallback for
+  the one case the fan-out cannot cover: no privileged member holds an address,
+  and a Bcc still needs a row to ride on.
+- **`OWNER` as well as `ADMIN`, ordered.** `createTenantWithOwner` mints an OWNER
+  and nothing else, so a role filter of `ADMIN` alone resolves zero recipients for
+  the shape every tenant starts in. The query is ordered because `take` without
+  `orderBy` lets the recipient set drift between passes once a tenant has more
+  privileged members than the cap.
 - **The manager is best-effort; IT is not.** `linkId` is nullable on the journal
   row, `managerEmployeeId` is nullable, and a manager row can carry no usable
-  email. Each resolves to "no manager mail", never "no mail". Three additional
+  email. Each resolves to "no manager mail", never "no mail". Five additional
   suppressions are real HR-feed shapes: a self-managing employee, a manager whose
-  work email *is* the leaver's, and an unresolvable link.
+  work email *is* the leaver's, an unresolvable link, a manager who is themselves
+  `TERMINATED` (their mailbox was disabled by an earlier pass), and a manager who
+  is one of *this* batch's own leavers — a team wound down together offboards its
+  lead in the same run. `OFFBOARDING` is deliberately still mailed: that is
+  somebody working their notice, and still the right person to tell.
 - **The audience is resolved once per batch, not per account.** Three queries for
   a 50-candidate run instead of 150, on the one code path already spending a
   customer's directory rate limit — and it keeps reads out of the disable loop.
 - **Enqueue, never send.** A leaver pass must not inherit SMTP latency or SMTP
   failure. The outbox already claims a row before sending it.
+- **Provider error text is redacted, sanitised and clamped.** Redaction is the
+  half that was missing at first draft and matters most: Graph answers a stale
+  link with `Resource 'dana@acme.test' does not exist` and LDAP with a whole DN,
+  so passing the text through verbatim broke the identifier rule three sections
+  up, in the one place where breaking it reaches a line manager's inbox. UPN, DN
+  and GUID go by shape; the account's own `externalUserId` goes by exact match,
+  which is the only way to catch a `sAMAccountName` — it has no shape to match.
+  The order is sanitise-then-redact, against the usual rule, because the
+  sanitiser DECODES entities: redacting first would inspect `dana&#64;acme.test`
+  and hand the decoded address straight through. Safe in this direction only
+  because redaction exclusively removes, substituting fixed literals that cannot
+  carry markup back in.
 - **Provider error text is sanitised and clamped to 300 characters.** It
   originates with a system we do not control and is persisted on the outbox row
   that a mail client, an operator surface, and any future SDK consumer read back
