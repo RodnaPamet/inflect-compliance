@@ -103,9 +103,33 @@ export class FileRepository {
     }
 
     /**
-     * Find a STORED FileRecord with the same SHA-256 hash for a tenant (dedup).
+     * Find the FileRecord that already owns a SHA-256 hash for a tenant (dedup).
+     *
+     * Two dispositions claim a hash, and the lookup has to see BOTH:
+     *
+     *   STORED    the canonical copy. A later identical upload reuses this row
+     *             instead of storing the same bytes twice.
+     *   INFECTED  quarantined. The AV webhook moves `scanStatus` to INFECTED
+     *             and `status` to FAILED in one atomic write, so a quarantined
+     *             row no longer reads STORED — and a STORED-only lookup
+     *             therefore dropped it straight out of the dedup index. The
+     *             identical bytes could then be re-uploaded as a brand-new
+     *             PENDING row, with the verdict already in the table and no
+     *             longer attached to anything. A condemned hash stays
+     *             condemned; this query is where that is decided.
+     *
+     * Infected is matched FIRST, deliberately. The same bytes may have been
+     * stored before the signature that catches them shipped, in which case both
+     * rows exist — and then the verdict has to win rather than whichever row
+     * `findFirst` happened to reach. Two narrow queries rather than one `OR`
+     * because that ordering must not depend on the planner.
      */
     static async findBySha256(db: PrismaTx, tenantId: string, sha256: string) {
+        const quarantined = await db.fileRecord.findFirst({
+            where: { tenantId, sha256, scanStatus: 'INFECTED' },
+        });
+        if (quarantined) return quarantined;
+
         return db.fileRecord.findFirst({
             where: { tenantId, sha256, status: 'STORED' },
         });
