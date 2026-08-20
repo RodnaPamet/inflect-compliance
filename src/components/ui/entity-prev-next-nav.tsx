@@ -68,16 +68,30 @@ export function EntityPrevNextNav({
         if (id) router.replace(hrefFor(id));
     };
 
-    // Keyboard: ↑ = previous, ↓ = next sibling. The hook is typing-safe
-    // (skips when an input/textarea is focused). Hooks must run
-    // unconditionally, so they're gated via `enabled` rather than placed
-    // after the early return below.
+    // Keyboard: alt+↑ = previous, alt+↓ = next sibling.
+    //
+    // The modifier is load-bearing, not decoration. `useKeyboardShortcut`
+    // defaults `preventDefault` to true and binds on `window`, so a BARE
+    // ArrowUp/ArrowDown binding stops the arrow keys scrolling the detail
+    // page and navigates instead — on a page whose primary interaction IS
+    // scrolling. That was latent rather than visible only because this
+    // component rendered nothing (its `ids` were always empty), so the
+    // `enabled` flag below was permanently false and the binding never
+    // registered. Fixing the ids without fixing this would have shipped the
+    // feature and the regression in one commit.
+    //
+    // `matchShortcut` compares `event.altKey` strictly, so bare arrows no
+    // longer match at all and keep their native scroll behaviour. alt+arrow
+    // also matches the browser's own navigation idiom (alt+←/→ = back/forward).
+    //
+    // Hooks must run unconditionally, so they're gated via `enabled` rather
+    // than placed after the early return below.
     const navDisabled = idx < 0 || ids.length <= 1;
-    useKeyboardShortcut('ArrowUp', () => go(prevId), {
+    useKeyboardShortcut('alt+ArrowUp', () => go(prevId), {
         enabled: !navDisabled && prevId != null,
         description: `Previous ${labelSingular}`,
     });
-    useKeyboardShortcut('ArrowDown', () => go(nextId), {
+    useKeyboardShortcut('alt+ArrowDown', () => go(nextId), {
         enabled: !navDisabled && nextId != null,
         description: `Next ${labelSingular}`,
     });

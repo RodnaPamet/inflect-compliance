@@ -35,6 +35,8 @@ import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { ProcessNodeReverseLookupModal } from '@/components/processes/ProcessNodeReverseLookupModal';
 import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
+import { idsFromCappedList, type CappedList } from '@/lib/list-backfill-cap';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { EditAssetModal } from '../EditAssetModal';
@@ -371,16 +373,23 @@ export default function AssetDetailPage() {
         !!asset && !asset.cpe && !asset.vendor && !asset.product;
 
     // B5 — ordered asset-id list for the prev/next nav beside the name.
-    // The default list order so the up/down buttons walk the same sequence
-    // the list page shows. Best-effort: failures just hide the affordance.
-    const assetListQuery = useTenantSWR<Array<{ id?: string }>>('/assets');
+    //
+    // Read through `idsFromCappedList`, NOT a hand-rolled `Array.isArray`
+    // check. `/assets` returned a bare array until it moved to the
+    // `{ rows, truncated }` backfill-cap envelope; the isArray guard here
+    // then silently resolved to `[]` and the nav hid itself, so the feature
+    // looked deleted. The helper tolerates BOTH shapes on purpose — sibling
+    // routes disagree (most return the envelope, `incidents` still returns a
+    // bare array) — and its own docstring names this exact regression class,
+    // which had already bitten the "Link a CVE" modal the same way.
+    //
+    // Memoised on the RAW cache value: the helper returns a fresh array each
+    // call, so keying the memo on its result would defeat it.
+    const assetListQuery = useTenantSWR<
+        CappedList<{ id?: string }> | Array<{ id?: string }>
+    >(CACHE_KEYS.assets.list());
     const assetIds = useMemo(
-        () =>
-            Array.isArray(assetListQuery.data)
-                ? assetListQuery.data
-                      .map((r) => r?.id)
-                      .filter((id): id is string => Boolean(id))
-                : [],
+        () => idsFromCappedList(assetListQuery.data),
         [assetListQuery.data],
     );
 
