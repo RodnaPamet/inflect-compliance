@@ -320,10 +320,14 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     // per-connection *-posture-collect, each of which carries the tenantId it
     // read. The dispatcher itself selects only { id, tenantId, provider } — no
     // tenant CONTENT — which is what makes the cross-tenant read safe.
+    // identity-leaver-dispatch is the same class again, and the read is the
+    // narrowest of the three: only { id, tenantId, provider } for enabled
+    // entra-id / active-directory connections. It enqueues a per-(tenant,
+    // provider) identity-leaver-pass, which IS tenant-scoped and is NOT exempt.
     const EXEMPT_JOBS = [
     // Cross-tenant fan-out: it DISCOVERS tenants and enqueues a child per
     // tenant. The child (calendar-push-tenant) carries tenantId and is not exempt.
-    'calendar-push-dispatch','health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'dau-mau-aggregator', 'onboarding-abandonment-sweep', 'nvd-cve-sync', 'compliance-posture-summary-dispatch', 'identity-sync-dispatch', 'hris-sync-dispatch', 'cloud-posture-collect-dispatch'];
+    'calendar-push-dispatch','health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'dau-mau-aggregator', 'onboarding-abandonment-sweep', 'nvd-cve-sync', 'compliance-posture-summary-dispatch', 'identity-sync-dispatch', 'hris-sync-dispatch', 'cloud-posture-collect-dispatch', 'identity-leaver-dispatch'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -396,7 +400,7 @@ describe('Payload Type Contract — tenantId field audit', () => {
     // CompliancePostureDispatchPayload (daily fan-out cron) has no single
     // tenantId — it enqueues per-tenant CompliancePostureSummaryPayload jobs.
     const EXEMPT_PAYLOADS = [
-    'CalendarPushDispatchPayload','HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'DauMauAggregatorPayload', 'OnboardingAbandonmentPayload', 'NvdCveSyncPayload', 'CompliancePostureDispatchPayload', 'IdentitySyncDispatchPayload', 'HrisSyncDispatchPayload', 'CloudPostureCollectDispatchPayload'];
+    'CalendarPushDispatchPayload','HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'DauMauAggregatorPayload', 'OnboardingAbandonmentPayload', 'NvdCveSyncPayload', 'CompliancePostureDispatchPayload', 'IdentitySyncDispatchPayload', 'HrisSyncDispatchPayload', 'CloudPostureCollectDispatchPayload', 'IdentityLeaverDispatchPayload'];
 
     test('every non-exempt payload interface has tenantId field', () => {
         // Extract all payload interfaces

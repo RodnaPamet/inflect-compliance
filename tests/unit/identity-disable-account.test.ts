@@ -406,6 +406,43 @@ describe('a failed write is settled FAILED, with its reason', () => {
     });
 });
 
+describe('evidence a live read did not produce cannot settle the journal', () => {
+    // The already-disabled branch doubles as the reconciler for a write whose
+    // result was never confirmed: "it is disabled now, and the only write anyone
+    // made was ours, so ours landed". That inference is sound against the
+    // directory and unsound against a stored observation — an account an admin
+    // re-enabled this morning still reads disabled in last night's enumeration.
+    const staleReader = () =>
+        fakeWriter({
+            readState: async () => ({
+                enabled: false,
+                priorState: { source: 'SNAPSHOT', staleEvidence: true },
+            }),
+        });
+
+    it('does not reconcile an INDETERMINATE row from stale evidence', async () => {
+        const r = await disableAccount(ctx, staleReader(), input());
+
+        expect(r.outcome).toBe('ALREADY_DISABLED');
+        expect(r.journalId).toBeUndefined();
+        // The settle's own read never happens, so nothing can be moved.
+        expect(db.identityWriteJournal.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('still reconciles from a LIVE read of a disabled account', async () => {
+        db.identityWriteJournal.findFirst.mockResolvedValue({ id: 'j-old', outcome: 'INDETERMINATE' });
+        db.identityWriteJournal.updateMany.mockResolvedValue({ count: 1 });
+        const live = fakeWriter({
+            readState: async () => ({ enabled: false, priorState: { accountEnabled: false } }),
+        });
+
+        const r = await disableAccount(ctx, live, input());
+
+        expect(r.outcome).toBe('ALREADY_DISABLED');
+        expect(db.identityWriteJournal.findFirst).toHaveBeenCalled();
+    });
+});
+
 describe('a failure to READ is contained, and the directory is untouched', () => {
     /**
      * readState was previously called outside the try. A transient read failure

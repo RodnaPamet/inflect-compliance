@@ -306,7 +306,22 @@ async function decideAndDisable(
         // turns the retry — which previously returned before journalling and
         // sealed the ambiguity forever — into the mechanism that resolves it,
         // and restores its captured prior state to the restore path.
-        const settled = await settleIndeterminateAsApplied(ctx, writer.provider, input.externalUserId);
+        // ...but ONLY from evidence a live read produced. Settling asserts "our
+        // earlier write landed", inferred from the account being disabled NOW.
+        // That inference is sound against the directory and unsound against a
+        // stored observation: an account an admin re-enabled this morning still
+        // reads disabled in last night's enumeration, so a snapshot-backed pass
+        // would settle the row APPLIED and report ALREADY_DISABLED for an
+        // account that is live — mis-resolving the one ambiguity the journal
+        // exists to hold open, and telling an operator comparing a dry run
+        // against reality that nothing needed doing for exactly the person who
+        // did. The reader marks its own evidence; the decision is not the mode's
+        // to make, because a future caller could read stale data in any mode.
+        const staleEvidence =
+            (state.priorState as { staleEvidence?: unknown } | null)?.staleEvidence === true;
+        const settled = staleEvidence
+            ? null
+            : await settleIndeterminateAsApplied(ctx, writer.provider, input.externalUserId);
         return {
             outcome: 'ALREADY_DISABLED',
             reason: settled

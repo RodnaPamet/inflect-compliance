@@ -112,6 +112,15 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'identity-leaver-dispatch',
+        pattern: '0 5 * * *',     // daily at 05:00 UTC
+        // AFTER identity-sync-dispatch (03:00) on purpose: the pass acts only on
+        // links a COMPLETE sync re-observed, so running it before the sync would
+        // read yesterday's evidence and refuse for the wrong reason.
+        description: 'Fan out a leaver pass per (tenant, writable directory provider). Clamped at DRY_RUN: it decides what a disable would do and writes nothing to any directory.',
+        defaultPayload: {},
+    },
+    {
         name: 'calendar-push-dispatch',
         pattern: '0 3 * * *',     // daily at 03:00 UTC
         // NO `tz`. The bucket guard's parser reads only `pattern` and ignores

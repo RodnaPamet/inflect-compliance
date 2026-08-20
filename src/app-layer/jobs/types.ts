@@ -633,6 +633,8 @@ export interface JobPayloadMap {
     'compliance-posture-summary-dispatch': CompliancePostureDispatchPayload;
     'identity-sync': IdentitySyncPayload;
     'identity-sync-dispatch': IdentitySyncDispatchPayload;
+    'identity-leaver-pass': IdentityLeaverPassPayload;
+    'identity-leaver-dispatch': IdentityLeaverDispatchPayload;
     'cloud-posture-collect-dispatch': CloudPostureCollectDispatchPayload;
     'azure-posture-collect': AzurePostureCollectPayload;
     'gcp-posture-collect': GcpPostureCollectPayload;
@@ -675,6 +677,28 @@ export interface HrisSyncDispatchPayload {
 export interface IdentitySyncPayload {
     tenantId: string;
     connectionId: string;
+}
+
+export interface IdentityLeaverPassPayload {
+    tenantId: string;
+    /**
+     * The DIRECTORY, not the connection.
+     *
+     * `ConnectedIdentityAccount` carries no connectionId, so a pass is scoped to
+     * a (tenant, provider) — the writer factory refuses outright when that pair
+     * has more than one enabled connection, rather than addressing a disable at
+     * a forest the account may not live in.
+     */
+    provider: string;
+}
+
+/**
+ * No tenantId, deliberately — this is the cross-tenant fan-out, and the tenant
+ * is what it DISCOVERS. Its child `IdentityLeaverPassPayload` carries one and is
+ * not exempt from the isolation audit.
+ */
+export interface IdentityLeaverDispatchPayload {
+    [key: string]: never;
 }
 
 /** identity-sync-dispatch — fan out an identity-sync per enabled connection. */
@@ -765,6 +789,28 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 200,
         removeOnFail: 500,
+    },
+    'identity-leaver-pass': {
+        // ONE attempt, and this is a correctness constraint rather than
+        // rate-limit courtesy. The journal's INDETERMINATE handling assumes one
+        // dispatch per decision: a write whose result was never confirmed leaves
+        // a row a LATER pass reconciles by re-reading the account. Three
+        // attempts in ~35 seconds would mint a fresh set of journal rows per
+        // try, and the second and third could not tell their own predecessors'
+        // rows from a real unconfirmed write. Retrying here destroys the
+        // evidence the retry would need. Tomorrow's dispatch picks it up.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'identity-leaver-dispatch': {
+        // The dispatcher only enqueues, and its job ids are deterministic per
+        // (tenant, provider, UTC day) — so a retry cannot double-dispatch.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
     },
     'identity-sync': {
         // One attempt — a directory pull hits a rate-limited vendor API; a
