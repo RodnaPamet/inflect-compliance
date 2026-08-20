@@ -35,6 +35,14 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
     recordIdentityWriteOutcome: (...a: unknown[]) => recordOutcome(...a),
     recordIdentityBatchRefused: (...a: unknown[]) => recordBatchRefused(...a),
     recordIdentityWritesUnsettled: jest.fn(),
+    // The batch path reaches notifyLeaverOutcome, which counts each recipient.
+    // A factory mock lists functions ONE BY ONE, so a counter added to the real
+    // module is `undefined` here — and calling undefined throws inside
+    // notifyLeaverOutcome, whose contract is never to throw, so the notification
+    // is swallowed and the mail simply does not appear. The test that breaks is
+    // the one asserting a mail, several files away from the change.
+    recordLeaverNotification: jest.fn(),
+    recordLeaverPassOutcome: jest.fn(),
 }));
 
 import {
