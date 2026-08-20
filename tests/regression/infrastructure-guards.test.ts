@@ -11,10 +11,72 @@
  * These tests run WITHOUT live infrastructure (no Redis, no S3, no ClamAV).
  * They validate code-level guarantees only.
  */
+import { execSync } from 'child_process';
+import path from 'path';
+import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { QUEUE_NAME, JOB_DEFAULTS, SCHEDULED_JOBS } from '../helpers/job-imports';
 
 // ─── Re-export helpers to avoid path alias issues in Jest ───
 // We use relative imports from src/ directly
+
+/**
+ * Boot the REAL env schema in a subprocess and read back what it resolved.
+ *
+ * Two in-process routes were tried first and neither observes the schema:
+ *   • `import { env } from '@/env'` resolves to `tests/mocks/env.ts` via
+ *     `moduleNameMapper` — a Proxy with its own hardcoded fallbacks. It
+ *     answers `AV_SCAN_MODE` with 'strict' whatever `src/env.ts` says, so a
+ *     test against it passes even if the schema default were deleted.
+ *   • `require('../../src/env')` throws "Cannot use import statement outside a
+ *     module" — `@t3-oss/env-nextjs` is ESM and untransformed, which is the
+ *     reason that mock exists at all.
+ * Spawning is the honest option, and `tests/unit/env.test.ts` already uses
+ * exactly this harness.
+ */
+const ENV_SCRIPT = path.resolve(__dirname, '../../scripts/print-env-ok.ts');
+
+/** Everything `src/env.ts` requires, so validation reaches the defaults. */
+const VALID_ENV: Record<string, string> = {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgres://user:password@localhost:5432/db',
+    NEXTAUTH_URL: 'http://localhost:3000',
+    AUTH_URL: 'http://localhost:3000',
+    AUTH_SECRET: 'supersecretstringthatis16charplus', // pragma: allowlist secret — test fixture (mirrors REPO_BASELINE in tests/guardrails/no-secrets.test.ts)
+    JWT_SECRET: 'supersecretstringthatis16charplus', // pragma: allowlist secret — test fixture (mirrors REPO_BASELINE)
+    GOOGLE_CLIENT_ID: 'google-client-id',
+    GOOGLE_CLIENT_SECRET: 'google-secret',
+    MICROSOFT_CLIENT_ID: 'ms-client-id',
+    MICROSOFT_CLIENT_SECRET: 'ms-secret',
+};
+
+interface ResolvedEnv {
+    STORAGE_PROVIDER?: string;
+    AV_SCAN_MODE?: string;
+    UPLOAD_DIR?: string;
+}
+
+function resolveEnvSchema(overrides: Record<string, string | undefined>): ResolvedEnv {
+    const childEnv: Record<string, string | undefined> = {
+        ...process.env,
+        ...VALID_ENV,
+        ...overrides,
+        // Empty string is falsy for `!!process.env.SKIP_ENV_VALIDATION`, so
+        // this turns validation back ON inside the child.
+        SKIP_ENV_VALIDATION: '',
+    };
+    for (const key of Object.keys(childEnv)) {
+        if (childEnv[key] === undefined) delete childEnv[key];
+    }
+
+    const output = execSync(`npx tsx ${ENV_SCRIPT}`, {
+        env: childEnv as NodeJS.ProcessEnv,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+    });
+    const line = output.split('\n').find((l) => l.startsWith('RESOLVED '));
+    if (!line) throw new Error(`env script printed no RESOLVED line:\n${output}`);
+    return JSON.parse(line.slice('RESOLVED '.length)) as ResolvedEnv;
+}
 
 describe('Infrastructure Regression Guards', () => {
 
@@ -23,17 +85,44 @@ describe('Infrastructure Regression Guards', () => {
     // ═══════════════════════════════════════════════════════════════
 
     describe('Production Defaults', () => {
-        test('STORAGE_PROVIDER defaults to s3 in env schema', () => {
-            // The env.ts schema has: STORAGE_PROVIDER: z.enum(["local", "s3"]).default("s3")
-            // We verify the fallback in the storage index module
-            // When STORAGE_PROVIDER is not set, getStorageProvider should try s3
-            expect(true).toBe(true); // Schema-level — validated at build time
+        // Both of these tests were `expect(true).toBe(true)` with a comment
+        // reading "Schema-level — validated at build time". Nothing about a
+        // Jest assertion is validated at build time, and one of them was cited
+        // in review as the protection for the strict AV default — a default
+        // whose absence makes every PENDING (i.e. never actually scanned) file
+        // downloadable. They now boot the schema and read the value back.
+        const ABSENT = { STORAGE_PROVIDER: undefined, AV_SCAN_MODE: undefined };
+        const SENTINEL_UPLOAD_DIR = '/tmp/env-default-probe';
+        let resolved: ResolvedEnv;
+
+        beforeAll(() => {
+            resolved = resolveEnvSchema({ ...ABSENT, UPLOAD_DIR: SENTINEL_UPLOAD_DIR });
+        }, 120_000);
+
+        test('the probe reflects the environment it was given (not a constant)', () => {
+            // Without this, a harness that silently returned `{}` would make
+            // both assertions below fail loudly rather than pass vacuously —
+            // and if the defaults ever changed to match a stale hardcoding,
+            // this is what says the reading is live.
+            expect(resolved.UPLOAD_DIR).toBe(SENTINEL_UPLOAD_DIR);
         });
 
-        test('AV_SCAN_MODE defaults to strict in env schema', () => {
-            // The env.ts schema has: AV_SCAN_MODE: z.enum(["strict", "permissive", "disabled"]).default("strict")
-            expect(true).toBe(true); // Schema-level — validated at build time
+        test('STORAGE_PROVIDER resolves to s3 when the variable is absent', () => {
+            expect(resolved.STORAGE_PROVIDER).toBe('s3');
         });
+
+        test('AV_SCAN_MODE resolves to strict when the variable is absent', () => {
+            expect(resolved.AV_SCAN_MODE).toBe('strict');
+        });
+
+        test('an explicit value still wins over the default', () => {
+            const explicit = resolveEnvSchema({
+                STORAGE_PROVIDER: 'local',
+                AV_SCAN_MODE: 'permissive',
+            });
+            expect(explicit.STORAGE_PROVIDER).toBe('local');
+            expect(explicit.AV_SCAN_MODE).toBe('permissive');
+        }, 120_000);
     });
 
     // ═══════════════════════════════════════════════════════════════
@@ -162,16 +251,41 @@ describe('Infrastructure Regression Guards', () => {
     // 3. AV Download Gate
     // ═══════════════════════════════════════════════════════════════
 
-    describe('AV Download Gate (strict mode)', () => {
-        // Import is tested separately in av-scan.test.ts
-        // Here we just guard the contract
+    describe('AV Download Gate', () => {
+        // This was `expect(true).toBe(true)` under a comment that both
+        // described the invariant WRONGLY ("returns false for INFECTED in ALL
+        // modes except disabled" — disabled is precisely the mode where that
+        // must still hold) and deferred enforcement to another file. It now
+        // calls the predicate.
+        const MODES = ['strict', 'permissive', 'disabled', undefined] as const;
 
-        test('infected files must never be downloadable in production config', () => {
-            // This is the central safety invariant of the AV system.
-            // The isDownloadAllowed function returns false for INFECTED
-            // in ALL modes except disabled.
-            // This is a documentation test — enforced by av-scan.test.ts
-            expect(true).toBe(true);
+        test.each(MODES)('INFECTED is refused with AV_SCAN_MODE=%s', (mode) => {
+            const previous = process.env.AV_SCAN_MODE;
+            try {
+                if (mode === undefined) delete process.env.AV_SCAN_MODE;
+                else process.env.AV_SCAN_MODE = mode;
+                expect(isDownloadAllowed('INFECTED')).toBe(false);
+            } finally {
+                if (previous === undefined) delete process.env.AV_SCAN_MODE;
+                else process.env.AV_SCAN_MODE = previous;
+            }
+        });
+
+        test('strict mode refuses an unscanned (PENDING / absent) file', () => {
+            // The other half of "defaults to strict": the default only buys
+            // anything if strict actually blocks the never-scanned state, which
+            // is where every FileRecord sits until a scanner writes a verdict.
+            const previous = process.env.AV_SCAN_MODE;
+            process.env.AV_SCAN_MODE = 'strict';
+            try {
+                expect(isDownloadAllowed('PENDING')).toBe(false);
+                expect(isDownloadAllowed(undefined)).toBe(false);
+                expect(isDownloadAllowed(null)).toBe(false);
+                expect(isDownloadAllowed('CLEAN')).toBe(true);
+            } finally {
+                if (previous === undefined) delete process.env.AV_SCAN_MODE;
+                else process.env.AV_SCAN_MODE = previous;
+            }
         });
     });
 
