@@ -417,6 +417,29 @@ function describeWritesEnabled(value: unknown): string {
     );
 }
 
+/**
+ * What a capture knows about a leaver's group memberships.
+ *
+ * A UNION rather than a list plus a boolean, because the two-field shape could
+ * state something untrue and did: both unreadable branches returned
+ * `memberOfTruncated: false` next to a null list — a positive claim of
+ * COMPLETENESS about a list that was never fetched. A reader consulting the flag
+ * whose entire job is completeness would have been told the record was whole.
+ *
+ * `'complete'` and `'truncated'` carry a list; `'unavailable'` carries null and
+ * cannot be spelled with one. So "we did not read them" can no longer be
+ * mistaken for "they had none", and completeness cannot be asserted about
+ * something unread — the same discipline `disable` applies one field over, where
+ * an unknown `onPremisesSyncEnabled` refuses rather than defaulting permissive.
+ *
+ * Changed while `IdentityWriteJournal` holds zero rows anywhere, which is the
+ * only time a persisted shape is free to change. Nothing reads it yet; the point
+ * is that when something does, it cannot read it wrongly.
+ */
+export type MembershipCapture =
+    | { readonly memberOf: 'unavailable'; readonly memberOfGroupIds: null }
+    | { readonly memberOf: 'complete' | 'truncated'; readonly memberOfGroupIds: string[] };
+
 /** Config the writer needs. Shaped like `{...configJson, ...decryptedSecrets}`. */
 export interface EntraWriterConfig {
     readonly tenantId?: unknown;
@@ -902,10 +925,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
      * Never fails the capture: `null` records "we could not read them", which a
      * later reader can tell apart from `[]` ("they had none").
      */
-    private async captureMemberships(
-        id: string,
-        token: string,
-    ): Promise<{ memberOfGroupIds: string[] | null; memberOfTruncated: boolean }> {
+    private async captureMemberships(id: string, token: string): Promise<MembershipCapture> {
         try {
             const res = await this.get(
                 `${GRAPH_BASE}/users/${encodeURIComponent(id)}/memberOf/microsoft.graph.group` +
@@ -913,7 +933,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                 token,
                 id,
             );
-            if (!res.ok) return { memberOfGroupIds: null, memberOfTruncated: false };
+            if (!res.ok) return { memberOfGroupIds: null, memberOf: 'unavailable' };
             const body = (await res.json()) as {
                 value?: Array<{ id?: string }>;
                 '@odata.nextLink'?: string;
@@ -921,12 +941,16 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             const ids = (body.value ?? [])
                 .map((g) => g.id)
                 .filter((g): g is string => typeof g === 'string');
-            // ONE page, and `memberOfTruncated` says so. This is a record of
-            // what a disable displaced, not an inventory, and a leaver batch is
-            // already 1000 accounts of sequential Graph traffic.
-            return { memberOfGroupIds: ids, memberOfTruncated: Boolean(body['@odata.nextLink']) };
+            // ONE page. This is a record of what a disable displaced, not an
+            // inventory — and the blast-radius breaker refuses any batch over
+            // MAX_DISABLES_PER_RUN = 50, so the traffic ceiling is 50 sequential
+            // Graph calls rather than the 1,000 an earlier note here assumed.
+            return {
+                memberOfGroupIds: ids,
+                memberOf: body['@odata.nextLink'] ? 'truncated' : 'complete',
+            };
         } catch {
-            return { memberOfGroupIds: null, memberOfTruncated: false };
+            return { memberOfGroupIds: null, memberOf: 'unavailable' };
         }
     }
 

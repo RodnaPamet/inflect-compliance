@@ -433,7 +433,43 @@ describe('readState', () => {
         // null and [] mean different things, and a restore reading the journal
         // has to be able to tell them apart.
         expect(state.priorState.memberOfGroupIds).toBeNull();
+        // And the capture must not CLAIM completeness about a list it never
+        // read. This branch used to answer `memberOfTruncated: false` — a
+        // positive statement of wholeness, on the one flag whose entire job is
+        // to report wholeness.
+        expect(state.priorState.memberOf).toBe('unavailable');
         expect(state.enabled).toBe(true);
+    });
+
+    it('says complete only when the whole page came back', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [{ id: 'group-a' }] }) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const state = await writer.readState(USER_ID);
+
+        expect(state.priorState).toMatchObject({ memberOf: 'complete', memberOfGroupIds: ['group-a'] });
+    });
+
+    it('says truncated when Graph offered another page', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            {
+                when: isMemberOf,
+                reply: () => json({ value: [{ id: 'group-a' }], '@odata.nextLink': 'https://graph/next' }),
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const state = await writer.readState(USER_ID);
+
+        // One page is deliberate — this is a record of what a disable displaced,
+        // not an inventory — so the record has to say it is partial.
+        expect(state.priorState.memberOf).toBe('truncated');
     });
 
     it('falls back past a refused assignedLicenses rather than failing the read', async () => {
@@ -1065,4 +1101,3 @@ describe('a 403 on the READ is not a write-permission problem', () => {
         expect((err as Error).message).toMatch(/re-consent the application/);
     });
 });
-
