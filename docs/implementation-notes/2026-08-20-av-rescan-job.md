@@ -38,11 +38,16 @@ above is a consequence.
 
 The single most dangerous case is the synthetic CLEAN. `scanBuffer`
 manufactures `{ status: 'CLEAN', engine: 'disabled' }` when `CLAMAV_HOST` is
-unset, and `isDownloadAllowed` serves CLEAN in **every** mode. One unattended
-run on a dev or CI box would therefore stamp CLEAN across every PENDING row in
-the tenant, permanently, surviving a later switch back to `strict`. It is
-blocked twice — a mode check before enumerating anything, and an engine check
-after the scan — mirroring the inline path at `file-scan.ts:76` and `:136-138`.
+unset **and** `AV_SCAN_MODE` is `disabled` (`av-scan.ts:74-86`); with the host
+unset in any other mode it returns `{ status: 'ERROR', engine: 'none' }`, which
+this job treats as "leave it PENDING". `isDownloadAllowed` serves CLEAN in
+**every** mode, so one unattended run on a dev or CI box would stamp CLEAN
+across every PENDING row in the tenant, permanently, surviving a later switch
+back to `strict`. It is blocked twice — a mode check before enumerating
+anything, and an engine check after the scan — mirroring the inline path at
+`file-scan.ts:76` and `:136-138`. Because the fabricated verdict needs both
+conditions, the mode check is what stops it in practice and the engine check is
+what survives a later rework of the mode logic.
 
 ## Files
 
@@ -102,6 +107,21 @@ after the scan — mirroring the inline path at `file-scan.ts:76` and `:136-138`
   `attempts: 1` for the same reason: the interesting failures (scanner down,
   storage unreadable) are not fixed by a 5-second backoff, and every attempt
   re-reads every object.
+
+- **Guard 1 tests for the mode that fabricates a verdict, not for the mode
+  that is fully configured.** Written as `AV_SCAN_MODE !== 'strict'` the check
+  reads as a tightening but is an outage: every `permissive` deployment gets a
+  silent no-op, the operator sees `scanned: 0` and concludes the backlog is
+  empty when nothing was examined. The condition is `=== 'disabled'` and the
+  suite pins a full run under `permissive`.
+
+- **A bad row costs one row, not the page.** The storage read is the only
+  operation in the loop that can throw, and it is caught per row. If it escaped,
+  every row ordered after the bad one would go unexamined — and since nothing
+  was written, the next run would select the same page and die on the same row,
+  so the backlog would never drain. Each leave-pending branch also bumps
+  `leftPending` alongside its own reason counter, so the reasons sum to it
+  exactly and `scanned == clean + infected + leftPending + lostClaim`.
 
 - **`scanStatus` is the only column written.** The quarantine column (`status`)
   belongs to the webhook path; this job must never be what flips it. The test

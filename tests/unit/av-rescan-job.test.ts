@@ -477,3 +477,84 @@ describe('the sweep is bounded and tenant-scoped', () => {
         expect(findMany.mock.calls[0][0].take).toBe(AV_RESCAN_MAX_LIMIT);
     });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// Resilience of the sweep itself
+// ════════════════════════════════════════════════════════════════════
+//
+// The blocks above all pin what the job must not WRITE. These pin that it
+// keeps running and keeps counting honestly — the failures that cost an
+// operator a whole page of rows without ever producing a wrong verdict.
+
+describe('the sweep survives a bad row and reports honestly', () => {
+    it('runs in permissive mode — only "disabled" stops the sweep', async () => {
+        // Guard 1 must test for the one mode that fabricates a verdict, not
+        // for the one mode that is fully configured. Written as
+        // `!== 'strict'` it becomes a silent no-op on every permissive
+        // deployment: the operator triggers a rescan, gets `scanned: 0`, and
+        // concludes the backlog is empty when nothing was ever examined.
+        mockEnv.AV_SCAN_MODE = 'permissive';
+        findMany.mockResolvedValue([pendingRow({ id: 'file-permissive' })]);
+
+        const { runAvRescan } = loadJob();
+        const result = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        expect(scanBufferMock).toHaveBeenCalledTimes(1);
+        expect(result.scanned).toBe(1);
+        expect(result.clean).toBe(1);
+    });
+
+    it('leaves an unreadable object pending without abandoning the rest of the page', async () => {
+        // A single missing or permission-denied object must cost one row, not
+        // the page. If the read throw escapes the loop, every row ordered
+        // after it goes unexamined for that run — and because nothing was
+        // written, the next run selects the same page and dies on the same
+        // row. The backlog never drains.
+        const before = pendingRow({ id: 'file-before' });
+        const gone = pendingRow({ id: 'file-gone' });
+        const after = pendingRow({ id: 'file-after' });
+        storageBytes.delete(gone.pathKey); // storage no longer has the object
+        findMany.mockResolvedValue([before, gone, after]);
+
+        const { runAvRescan } = loadJob();
+        const result = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        expect(result.readError).toBe(1);
+        expect(result.clean).toBe(2);
+        expect(writtenPayloads().map((d) => d.scanStatus)).toEqual(['CLEAN', 'CLEAN']);
+        // The row after the failure was reached at all.
+        expect(scanBufferMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('accounts for every selected row exactly once', async () => {
+        // `leftPending` is what an operator reads to decide whether to re-run,
+        // and the per-reason counters are what they read to decide whether to
+        // page someone. A branch that forgets to bump one of them makes the
+        // summary quietly wrong in the direction of "looks finished".
+        const huge = pendingRow({ id: 'r-huge', sizeBytes: 40 * 1024 * 1024 });
+        const gone = pendingRow({ id: 'r-gone' });
+        const torn = pendingRow({ id: 'r-torn' });
+        const errd = pendingRow({ id: 'r-errd' });
+        const good = pendingRow({ id: 'r-good' });
+        storageBytes.delete(gone.pathKey);
+        storageBytes.set(torn.pathKey, Buffer.from('truncated'));
+        findMany.mockResolvedValue([huge, gone, torn, errd, good]);
+        scanBufferMock.mockImplementation(async (buf: Buffer) =>
+            buf.toString() === 'payload-of-r-errd'
+                ? { status: 'ERROR' as const, engine: 'none', durationMs: 1 }
+                : { status: 'CLEAN' as const, engine: 'clamav', durationMs: 2 },
+        );
+
+        const { runAvRescan } = loadJob();
+        const r = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        expect(r.oversize).toBe(1);
+        expect(r.readError).toBe(1);
+        expect(r.integrityMismatch).toBe(1);
+        expect(r.scannerError).toBe(1);
+        expect(r.leftPending).toBe(
+            r.oversize + r.readError + r.integrityMismatch + r.scannerError + r.refusedSyntheticClean,
+        );
+        expect(r.scanned).toBe(r.clean + r.infected + r.leftPending + r.lostClaim);
+    });
+});
