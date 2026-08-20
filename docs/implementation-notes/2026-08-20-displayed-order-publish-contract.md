@@ -1,6 +1,6 @@
 # 2026-08-20 — the record stepper walks the displayed order (#107)
 
-**Commit:** `<pending> fix(lists): step the order the list displayed, not the order the server returned`
+**Commit:** `5bfb73971 test(lists): prove a real list client publishes the order it displayed` (on `fix/stepper-walks-displayed-order`, atop the publish/read implementation)
 
 ## The bug
 
