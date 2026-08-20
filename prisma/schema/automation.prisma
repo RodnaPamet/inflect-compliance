@@ -142,6 +142,7 @@ model IntegrationConnection {
   tenant            Tenant                   @relation(fields: [tenantId], references: [id])
   executions        IntegrationExecution[]
   syncMappings      IntegrationSyncMapping[]
+  identityAccounts  ConnectedIdentityAccount[]
 
   @@unique([tenantId, provider, name])
   @@index([tenantId])

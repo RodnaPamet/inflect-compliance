@@ -76,10 +76,13 @@ export type WriterRefusal =
     /**
      * More than one enabled connection for this (tenant, provider).
      *
-     * Refused rather than guessed. `ConnectedIdentityAccount` carries no
-     * `connectionId`, so with two connections there is no way to say which
-     * directory an account came from — and picking either means a disable
-     * addressed at a forest the account may not live in.
+     * Refused rather than guessed. `ConnectedIdentityAccount` now carries a
+     * `connectionId`, but it is NULLABLE and nothing here selects a connection
+     * per account yet: a row observed before that column existed, or one whose
+     * connection was deleted, cannot say which directory it came from. Until
+     * the column is NOT NULL and this factory resolves a writer per account
+     * rather than per (tenant, provider), picking either connection still means
+     * a disable addressed at a forest the account may not live in.
      */
     | 'AMBIGUOUS_CONNECTION'
     /** The connection's secrets did not decrypt. */
@@ -240,9 +243,11 @@ export async function resolveDirectoryWriter(
             kind: 'none',
             refusal: 'AMBIGUOUS_CONNECTION',
             detail:
-                `${conns.length} enabled ${provider} connections. A directory account carries no ` +
-                'connection id, so there is no way to tell which of them an account belongs to — and ' +
-                'choosing either would address a disable at a directory the account may not live in.',
+                `${conns.length} enabled ${provider} connections. A directory account records which ` +
+                'connection last observed it, but that record is not yet mandatory — an account synced ' +
+                'before it existed, or one whose connection was removed, cannot say which of them it ' +
+                'belongs to. Choosing either would address a disable at a directory the account may ' +
+                'not live in, so this refuses instead. Leave one connection enabled for this provider.',
         };
     }
 

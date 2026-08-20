@@ -5,6 +5,7 @@
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
 import { formatDate } from '@/lib/format-date';
+import { coerceDeclaredBooleans } from '@/lib/integrations/config-form-values';
 import { useEffect, useState, useCallback } from 'react';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Trash2, CheckCircle, XCircle, Loader2, Link2, Eye, EyeOff, RefreshCw, Activity, Pencil } from 'lucide-react';
@@ -171,10 +172,21 @@ export default function AdminIntegrationsPage() {
         setSaving(true);
         setMessage(null);
         try {
+            // Form state is all strings; the API needs real JSON booleans for the
+            // fields a provider declares boolean. See coerceDeclaredBooleans for
+            // why a ticked checkbox otherwise saved as the string 'true' and left
+            // the feature off with no error anywhere.
+            const declaredBoolean = new Set(
+                (providers.find(p => p.id === formProvider)?.configSchema.configFields ?? [])
+                    .filter(f => f.type === 'boolean')
+                    .map(f => f.key),
+            );
+            const configJson = coerceDeclaredBooleans(formConfig, declaredBoolean);
+
             const body: Record<string, unknown> = {
                 provider: formProvider,
                 name: formName,
-                configJson: formConfig,
+                configJson,
             };
             if (editingId) body.id = editingId;
 
@@ -220,6 +232,12 @@ export default function AdminIntegrationsPage() {
         setEditingId(conn.id);
         setFormProvider(conn.provider);
         setFormName(conn.name);
+        // `String(v)` is a DOWNGRADE for a stored boolean, and it is safe only
+        // because handleSave converts declared boolean fields back on the way
+        // out: true -> 'true' -> checkbox ticked -> true. Break that pairing and
+        // editing an unrelated field on a working connection silently turns its
+        // booleans into strings, which is how a connection that was writing
+        // stops writing with nothing to show for it.
         setFormConfig(Object.fromEntries(Object.entries(conn.configJson ?? {}).map(([k, v]) => [k, v == null ? '' : String(v)])));
         setFormSecrets({});
         setShowSecrets(false);

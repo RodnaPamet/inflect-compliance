@@ -32,6 +32,20 @@ model ConnectedIdentityAccount {
   /// Nullable rather than defaulted false: "we do not know" and "cloud-only" are
   /// different answers, and only one of them is safe to write against.
   onPremisesSyncEnabled Boolean?
+  /// The connection whose sync observed this account.
+  ///
+  /// One tenant may hold SEVERAL connections for one provider — IntegrationConnection
+  /// is unique on (tenantId, provider, NAME), so two AD forests or two Entra tenants
+  /// are a supported configuration. Without this column the nightly deprovision
+  /// reconcile could only scope itself by `provider`, so every connection marked
+  /// every OTHER connection's accounts DEPROVISIONED, both passes reporting PASSED.
+  ///
+  /// NULLABLE, and the null means something specific: "observed before this column
+  /// existed, or the observing connection has since been deleted". It is NOT "belongs
+  /// to every connection" — code that treats it that way re-creates the bug. See the
+  /// reconcile in identity-sync.ts for the one place null is deliberately included,
+  /// and why that is only safe when the tenant has a single connection.
+  connectionId          String?
   /// string[] of group / role names the account belongs to.
   groupsJson            Json                   @default("[]")
   lastActiveAt          DateTime?
@@ -40,12 +54,22 @@ model ConnectedIdentityAccount {
   updatedAt             DateTime               @updatedAt
 
   tenant          Tenant                          @relation(fields: [tenantId], references: [id])
+  connection      IntegrationConnection?          @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   reviewDecisions AccessReviewConnectedDecision[]
   identityLink    IdentityAccountLink?
 
+  // DELIBERATELY still keyed on `provider`, not `connectionId`, and this is a
+  // transitional state rather than the end state. Old containers in a rolling
+  // deploy upsert through this exact compound key; dropping it in the same
+  // release that introduces the column would fail their writes outright. The
+  // swap to [tenantId, connectionId, externalUserId] + NOT NULL is a second,
+  // separate migration, and it is the one that also has to scope
+  // createSnapshotWriter's readState — which is unambiguous ONLY while this
+  // unique stands.
   @@unique([tenantId, provider, externalUserId])
   @@index([tenantId, provider])
   @@index([tenantId, status])
+  @@index([tenantId, connectionId])
 }
 
 /// A security-awareness training course (PR-6). Provider-synced (KnowBe4) or

@@ -161,15 +161,20 @@ export async function runIdentitySync(input: {
 
         // Upsert each account idempotently by (tenantId, provider, externalUserId).
         let upserted = 0;
-        const seen: string[] = [];
+        // No `seen` list is accumulated. It existed to feed
+        // `externalUserId: { notIn: seen }`, which the resume work replaced with
+        // the `syncedAt < passStartedAt` predicate below; the array outlived its
+        // only reader and was still being built every pass. Left as a comment
+        // rather than deleted silently, because its ABSENCE is what the
+        // reconcile's correctness now rests on.
         for (const a of accounts) { // guardrail-allow: n+1 — per-account upsert, bounded by MAX_USERS
             if (!a.externalUserId) continue;
-            seen.push(a.externalUserId);
             await db.connectedIdentityAccount.upsert({
                 where: { tenantId_provider_externalUserId: { tenantId: ctx.tenantId, provider: conn.provider, externalUserId: a.externalUserId } },
                 create: {
                     tenantId: ctx.tenantId,
                     provider: conn.provider,
+                    connectionId: conn.id,
                     externalUserId: a.externalUserId,
                     email: a.email,
                     displayName: a.displayName ?? null,
@@ -184,6 +189,13 @@ export async function runIdentitySync(input: {
                     syncedAt: now,
                 },
                 update: {
+                    // Claimed on EVERY pass, not only on create. A row that
+                    // predates the column, or whose connection was deleted, is
+                    // adopted by whichever connection can still see the account
+                    // — which is the only evidence available about where it
+                    // lives. Ownership therefore converges on the truth instead
+                    // of being frozen at whatever ran first.
+                    connectionId: conn.id,
                     email: a.email,
                     displayName: a.displayName ?? null,
                     status: a.status,
@@ -278,10 +290,44 @@ export async function runIdentitySync(input: {
         // account from every earlier run of the same pass. That is the
         // wrongful-mass-deprovision failure this whole area is built to avoid,
         // and it would have been introduced BY the resume feature.
+        // SCOPED TO THE CONNECTION, NOT THE PROVIDER — and that is the whole
+        // point of the column. `IntegrationConnection` is unique on
+        // (tenantId, provider, NAME), so two AD forests or two Entra tenants
+        // under one customer are supported. Matching on `provider` meant
+        // connection A's pass marked every account belonging to connection B
+        // DEPROVISIONED — it touched only its own accounts, then swept
+        // everything for that provider it had not touched — and B's next pass
+        // did the reverse. Both reported PASSED. No write permission, no
+        // consent, no bind — one admin adding a second connection triggered it.
+        //
+        // THE NULL ARM, and why it is conditional. A row observed before the
+        // column existed, or one whose connection was deleted, carries NULL.
+        // Excluding those outright would silently stop deprovisioning them, and
+        // the silence is the dangerous part: `recordIdentityDeprovisioned`
+        // would report 0, which reads exactly like a healthy directory.
+        // Including them unconditionally would re-create the original bug in a
+        // new spelling, because in a two-connection tenant a NULL row may
+        // belong to the OTHER connection.
+        //
+        // So they are included only when this tenant has exactly ONE connection
+        // for this provider — the case where "the other connection" does not
+        // exist and the attribution is therefore not in doubt. That is also
+        // every tenant in the field today, so the behaviour they see is
+        // unchanged; the narrowing bites only for the configuration that was
+        // broken anyway.
+        const connectionsForProvider = await db.integrationConnection.count({
+            where: { tenantId: ctx.tenantId, provider: conn.provider },
+        });
+        const ownership =
+            connectionsForProvider <= 1
+                ? { OR: [{ connectionId: conn.id }, { connectionId: null }] }
+                : { connectionId: conn.id };
+
         const reconcile = await db.connectedIdentityAccount.updateMany({
             where: {
                 tenantId: ctx.tenantId,
                 provider: conn.provider,
+                ...ownership,
                 status: { not: 'DEPROVISIONED' },
                 syncedAt: { lt: passStartedAt },
             },
