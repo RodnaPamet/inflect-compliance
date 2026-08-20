@@ -212,7 +212,6 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/ui/date-picker/date-range-picker.tsx',
     'src/components/ui/date-picker/trigger.tsx',
     'src/components/ui/empty-state.tsx',
-    'src/components/ui/entity-prev-next-nav.tsx',
     'src/components/ui/error-state.tsx',
     'src/components/ui/filter/filter-list.tsx',
     'src/components/ui/filter/filter-select.tsx',

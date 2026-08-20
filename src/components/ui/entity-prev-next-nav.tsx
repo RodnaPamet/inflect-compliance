@@ -15,6 +15,7 @@
  * entity's ordered id list + `hrefFor`.
  */
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import { cn } from '@/lib/cn';
@@ -26,7 +27,12 @@ export interface EntityPrevNextNavProps {
     currentId: string;
     /** Build the tenant-prefixed href for a neighbour id. */
     hrefFor: (id: string) => string;
-    /** Noun for the a11y labels / tooltips (e.g. "asset"). */
+    /**
+     * Which entity this stepper walks — a KEY under `ui.recordStepper`, not a
+     * display noun. Callers pass the lowercase entity slug they already used
+     * (`'asset'`, `'policy'`, …); the component resolves the whole phrase from
+     * the catalog. An entity with no entry falls back to `item`.
+     */
     labelSingular?: string;
     className?: string;
 }
@@ -49,6 +55,33 @@ function Chevron({ dir }: { dir: 'up' | 'down' }) {
     );
 }
 
+/**
+ * Entity slugs the catalog carries a phrase pair for. Anything else falls back
+ * to the generic record phrase.
+ *
+ * This is a local set rather than a `t.has()` probe on purpose. `t.has` is a
+ * real next-intl API, but 40 of the repo's 50 hand-rolled `jest.mock('next-intl')`
+ * factories implement only `t` and `t.rich` — so a `t.has` call crashes every
+ * page-level suite that mounts a detail page carrying this nav, and the stepper
+ * is on thirteen of them. Those local factories exist for a genuine reason (the
+ * global mock returns a fresh `t` per render, which makes page-level suites
+ * loop), so they will keep being written incomplete.
+ *
+ * The set is also the stronger invariant: `t.has` asks the CURRENT locale, so a
+ * key present in en and missing in bg degrades silently to "item" for Bulgarian
+ * readers. `stepper-entities-have-both-locales` pins every slug here against
+ * both catalogs instead, which fails the build rather than the user.
+ */
+export const STEPPER_ENTITIES: ReadonlySet<string> = new Set([
+    'asset',
+    'control',
+    'incident',
+    'policy',
+    'risk',
+    'task',
+    'vendor',
+]);
+
 export function EntityPrevNextNav({
     ids,
     currentId,
@@ -57,6 +90,19 @@ export function EntityPrevNextNav({
     className,
 }: EntityPrevNextNavProps) {
     const router = useRouter();
+    // Whole PHRASES per entity per direction, not an adjective interpolated
+    // into a noun. Bulgarian adjectives agree in gender, so one
+    // `"Предишен {entity}"` template renders "Предишен политика" for
+    // политика (f) and "Предишен задача" for задача (f) — both ungrammatical.
+    // Two catalog lookups per direction is the cheap, correct shape; the
+    // catalog also keeps every locale free to phrase the pair its own way.
+    const t = useTranslations('ui.recordStepper');
+    const phraseFor = (direction: 'previous' | 'next') => {
+        const slug = STEPPER_ENTITIES.has(labelSingular) ? labelSingular : 'item';
+        return t(`${direction}.${slug}`);
+    };
+    const prevLabel = phraseFor('previous');
+    const nextLabel = phraseFor('next');
     const idx = ids.indexOf(currentId);
     const prevId = idx > 0 ? ids[idx - 1] : null;
     const nextId = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : null;
@@ -89,11 +135,11 @@ export function EntityPrevNextNav({
     const navDisabled = idx < 0 || ids.length <= 1;
     useKeyboardShortcut('alt+ArrowUp', () => go(prevId), {
         enabled: !navDisabled && prevId != null,
-        description: `Previous ${labelSingular}`,
+        description: prevLabel,
     });
     useKeyboardShortcut('alt+ArrowDown', () => go(nextId), {
         enabled: !navDisabled && nextId != null,
-        description: `Next ${labelSingular}`,
+        description: nextLabel,
     });
 
     // Nothing to step through (single item, or the current id isn't in the
@@ -131,8 +177,8 @@ export function EntityPrevNextNav({
             className={cn('inline-flex flex-col -my-1', className)}
             data-testid="entity-prev-next-nav"
         >
-            {step(prevId, 'up', `Previous ${labelSingular}`)}
-            {step(nextId, 'down', `Next ${labelSingular}`)}
+            {step(prevId, 'up', prevLabel)}
+            {step(nextId, 'down', nextLabel)}
         </div>
     );
 }

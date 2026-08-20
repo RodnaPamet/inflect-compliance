@@ -5252,6 +5252,28 @@
         "form": {
             "required": "Required",
             "invalid": "Invalid"
+        },
+        "recordStepper": {
+            "previous": {
+                "item": "Previous item",
+                "asset": "Previous asset",
+                "control": "Previous control",
+                "incident": "Previous incident",
+                "policy": "Previous policy",
+                "risk": "Previous risk",
+                "task": "Previous task",
+                "vendor": "Previous vendor"
+            },
+            "next": {
+                "item": "Next item",
+                "asset": "Next asset",
+                "control": "Next control",
+                "incident": "Next incident",
+                "policy": "Next policy",
+                "risk": "Next risk",
+                "task": "Next task",
+                "vendor": "Next vendor"
+            }
         }
     },
     "vendors": {
