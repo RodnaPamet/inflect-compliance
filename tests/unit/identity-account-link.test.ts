@@ -165,6 +165,75 @@ describe('every ambiguity resolves to NO link', () => {
     });
 });
 
+describe('an unresolved account is IDENTIFIED, not just counted', () => {
+    /**
+     * `unmatched` was only ever a number. "37 unmatched" tells an operator
+     * nothing about WHICH accounts, and the three reasons want different
+     * responses: a service account should be excluded, a shared address is a
+     * data problem to fix, and an account linked to someone else is a conflict
+     * to resolve.
+     *
+     * It matters most during a leaver rollout, because an account with no HR
+     * counterpart is one the offboarding will never disable — and nobody would
+     * know which.
+     */
+    it('names the account and says NO_EMPLOYEE when nobody holds the address', async () => {
+        db.employee.findMany.mockResolvedValue([{ id: 'e1', workEmail: 'ada@acme.com' }]);
+        db.connectedIdentityAccount.findMany.mockResolvedValue([{ id: 'a-svc', email: 'svc-backup@acme.com' }]);
+
+        const r = await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
+        expect(r.unmatched).toBe(1);
+        expect(r.unresolved).toEqual([{ connectedAccountId: 'a-svc', reason: 'NO_EMPLOYEE' }]);
+    });
+
+    it('distinguishes AMBIGUOUS_EMPLOYEE from NO_EMPLOYEE', async () => {
+        // They look identical downstream and are not: one is a data problem to
+        // fix, the other is usually a service account to exclude.
+        db.employee.findMany.mockResolvedValue([
+            { id: 'e1', workEmail: 'shared@acme.com' },
+            { id: 'e2', workEmail: 'shared@acme.com' },
+        ]);
+        db.connectedIdentityAccount.findMany.mockResolvedValue([{ id: 'a1', email: 'shared@acme.com' }]);
+
+        const r = await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
+        expect(r.unresolved).toEqual([{ connectedAccountId: 'a1', reason: 'AMBIGUOUS_EMPLOYEE' }]);
+    });
+
+    it('reports LINKED_ELSEWHERE for an account already bound to another worker', async () => {
+        db.employee.findMany.mockResolvedValue([{ id: 'e2', workEmail: 'ada@acme.com' }]);
+        db.connectedIdentityAccount.findMany.mockResolvedValue([{ id: 'a1', email: 'ada@acme.com' }]);
+        db.identityAccountLink.findMany.mockResolvedValue([{ connectedAccountId: 'a1', employeeId: 'e1' }]);
+        db.identityAccountLink.updateMany.mockResolvedValue({ count: 1 });
+
+        const r = await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
+        expect(r.unresolved).toEqual([{ connectedAccountId: 'a1', reason: 'LINKED_ELSEWHERE' }]);
+    });
+
+    it('carries the account id, never the email address', async () => {
+        // The id identifies the row for an operator who can look it up under
+        // tenant scope. The email would put a person's address into a log line
+        // that is neither encrypted nor tenant-scoped.
+        db.employee.findMany.mockResolvedValue([]);
+        db.connectedIdentityAccount.findMany.mockResolvedValue([{ id: 'a1', email: 'ada@acme.com' }]);
+
+        const r = await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
+        expect(JSON.stringify(r.unresolved)).not.toContain('ada@acme.com');
+    });
+
+    it('is BOUNDED — a directory with no HR data at all cannot produce a second dataset', async () => {
+        db.employee.findMany.mockResolvedValue([]);
+        db.connectedIdentityAccount.findMany.mockResolvedValue(
+            Array.from({ length: 300 }, (_, i) => ({ id: `a${i}`, email: `u${i}@acme.com` })),
+        );
+
+        const r = await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
+        expect(r.unmatched).toBe(300);
+        // The COUNT stays true while the sample is capped — losing the true
+        // count would be worse than losing the ids.
+        expect(r.unresolved.length).toBeLessThanOrEqual(50);
+    });
+});
+
 describe('re-observing an existing link refreshes its evidence', () => {
     it('re-stamps lastVerifiedAt rather than creating a duplicate', async () => {
         db.employee.findMany.mockResolvedValue([{ id: 'e1', workEmail: 'ada@acme.com' }]);
@@ -227,7 +296,7 @@ describe('the reads are bounded and tenant-scoped', () => {
         const r = await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
         expect(db.identityAccountLink.createMany).not.toHaveBeenCalled();
         expect(db.identityAccountLink.updateMany).not.toHaveBeenCalled();
-        expect(r).toEqual({ created: 0, verified: 0, unmatched: 0, contradicted: 0 });
+        expect(r).toEqual({ created: 0, verified: 0, unmatched: 0, contradicted: 0, unresolved: [] });
     });
 
     it('tolerates a concurrent pass creating the same link', async () => {
