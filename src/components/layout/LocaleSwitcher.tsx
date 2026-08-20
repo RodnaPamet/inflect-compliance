@@ -16,8 +16,17 @@
  * with `UnrecognizedActionError` (a 404 on the current route). Writing the
  * cookie in the browser has no such coupling and is immune to deploy skew.
  *
- * Options are labelled with endonyms ("English" / "Български") — each language
- * in its own tongue — so the control is legible whichever locale is active.
+ * Options show the SHORT CODE ("EN" / "БГ") because the control sits in a
+ * 240px popover row beside the theme toggle, where the full endonyms
+ * ("English" / "Български") crowd it. The endonym is not dropped — it is
+ * rendered `sr-only` so it remains the ACCESSIBLE NAME of each radio;
+ * `<ToggleGroupOption>` has no per-option aria-label, and the accessible name
+ * of a `role="radio"` is computed from its contents, so a bare short code
+ * would otherwise leave screen readers announcing "EN".
+ *
+ * Both strings are interpolated from constants rather than written as literal
+ * JSX text. A literal `>English<` text node would newly trip the i18n
+ * adoption ratchet, which this file is (correctly) not baselined in.
  */
 
 import { useLocale } from 'next-intl';
@@ -28,6 +37,7 @@ import { ToggleGroup } from '@/components/ui/toggle-group';
 import {
     SUPPORTED_LOCALES,
     LOCALE_LABELS,
+    LOCALE_SHORT_LABELS,
     LOCALE_COOKIE,
     resolveLocale,
 } from '@/lib/locale-constants';
@@ -38,7 +48,12 @@ export interface LocaleSwitcherProps {
 
 const OPTIONS = SUPPORTED_LOCALES.map((locale) => ({
     value: locale,
-    label: LOCALE_LABELS[locale],
+    label: (
+        <>
+            <span aria-hidden="true">{LOCALE_SHORT_LABELS[locale]}</span>
+            <span className="sr-only">{LOCALE_LABELS[locale]}</span>
+        </>
+    ),
 }));
 
 /** 1 year — mirrors the theme cookie + the old server-action `max-age`. */
