@@ -67,6 +67,16 @@ export interface WriteHandle {
     failed(detail: string): Promise<void>;
     /** A previously applied change has been undone from the captured state. */
     reverted(detail: string): Promise<void>;
+    /**
+     * The call did not report back — we do not know whether the directory
+     * changed.
+     *
+     * Distinct from `failed`, which positively asserts it did NOT. Rows settled
+     * here stay in `listUnsettledWrites` because a human still has to look, and
+     * remain visible to `findRestorableState` because the captured prior state
+     * may be the only surviving copy.
+     */
+    indeterminate(detail: string): Promise<void>;
 }
 
 /**
@@ -105,7 +115,7 @@ export async function beginWrite(ctx: RequestContext, input: BeginWriteInput): P
     );
 
     const settle = async (
-        outcome: 'APPLIED' | 'FAILED' | 'REVERTED',
+        outcome: 'APPLIED' | 'FAILED' | 'REVERTED' | 'INDETERMINATE',
         detail?: string,
     ): Promise<void> => {
         // `detail` is not always machine-generated. A provider rejection is,
@@ -139,6 +149,7 @@ export async function beginWrite(ctx: RequestContext, input: BeginWriteInput): P
         applied: (detail) => settle('APPLIED', detail),
         failed: (detail) => settle('FAILED', detail),
         reverted: (detail) => settle('REVERTED', detail),
+        indeterminate: (detail) => settle('INDETERMINATE', detail),
     };
 }
 
@@ -153,18 +164,35 @@ export async function findRestorableState(
     ctx: RequestContext,
     provider: string,
     externalUserId: string,
-): Promise<{ journalId: string; priorState: Record<string, unknown>; attemptedAt: Date } | null> {
+): Promise<{
+    journalId: string;
+    priorState: Record<string, unknown>;
+    attemptedAt: Date;
+    /** APPLIED = the write is known to have landed. INDETERMINATE = it may have. */
+    outcome: 'APPLIED' | 'INDETERMINATE';
+} | null> {
     return runInTenantContext(ctx, async (db) => {
         const row = await db.identityWriteJournal.findFirst({
-            where: { tenantId: ctx.tenantId, provider, externalUserId, outcome: 'APPLIED' },
+            // INDETERMINATE is included deliberately. Its capture may be the
+            // ONLY surviving copy of the prior state, and excluding it would
+            // make a real, committed capture unreachable for exactly the writes
+            // whose result nobody could confirm. The outcome is returned so a
+            // restore can warn rather than silently assume.
+            where: {
+                tenantId: ctx.tenantId,
+                provider,
+                externalUserId,
+                outcome: { in: ['APPLIED', 'INDETERMINATE'] },
+            },
             orderBy: { attemptedAt: 'desc' },
-            select: { id: true, priorStateJson: true, attemptedAt: true },
+            select: { id: true, priorStateJson: true, attemptedAt: true, outcome: true },
         });
         if (!row) return null;
         return {
             journalId: row.id,
             priorState: row.priorStateJson as Record<string, unknown>,
             attemptedAt: row.attemptedAt,
+            outcome: row.outcome as 'APPLIED' | 'INDETERMINATE',
         };
     });
 }
@@ -182,13 +210,76 @@ const MAX_UNSETTLED = 200;
 export async function listUnsettledWrites(ctx: RequestContext, olderThan: Date) {
     return runInTenantContext(ctx, (db) =>
         db.identityWriteJournal.findMany({
-            where: { tenantId: ctx.tenantId, outcome: 'PENDING', attemptedAt: { lt: olderThan } },
+            // Both unsettled states: PENDING (we crashed before reporting) and
+            // INDETERMINATE (the call never reported back). They mean the same
+            // thing to a human — go and look at the directory.
+            where: {
+                tenantId: ctx.tenantId,
+                outcome: { in: ['PENDING', 'INDETERMINATE'] },
+                attemptedAt: { lt: olderThan },
+            },
             orderBy: { attemptedAt: 'asc' },
             take: MAX_UNSETTLED,
             select: {
                 id: true, provider: true, externalUserId: true, action: true,
-                mode: true, attemptedAt: true, linkId: true,
+                mode: true, attemptedAt: true, linkId: true, outcome: true, detail: true,
             },
         }),
     );
+}
+
+
+/**
+ * Resolve an earlier unconfirmed write, now that the directory has been read
+ * and agrees with it.
+ *
+ * Only ever promotes INDETERMINATE (or a stranded PENDING) to APPLIED, and only
+ * when the caller has just OBSERVED the intended end state. That observation is
+ * the evidence the original call never got.
+ *
+ * Returns the journal id it settled, or null if there was nothing outstanding —
+ * so an ordinary already-disabled account stays an ordinary no-op.
+ */
+export async function settleIndeterminateAsApplied(
+    ctx: RequestContext,
+    provider: string,
+    externalUserId: string,
+): Promise<string | null> {
+    return runInTenantContext(ctx, async (db) => {
+        const row = await db.identityWriteJournal.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                provider,
+                externalUserId,
+                outcome: { in: ['INDETERMINATE', 'PENDING'] },
+            },
+            orderBy: { attemptedAt: 'desc' },
+            select: { id: true },
+        });
+        if (!row) return null;
+
+        // Predicated on the unsettled states so this cannot rewrite a row some
+        // other actor has already resolved.
+        const moved = await db.identityWriteJournal.updateMany({
+            where: {
+                id: row.id,
+                tenantId: ctx.tenantId,
+                outcome: { in: ['INDETERMINATE', 'PENDING'] },
+            },
+            data: {
+                outcome: 'APPLIED',
+                settledAt: new Date(),
+                detail: 'Reconciled: a later read observed the account disabled, so the earlier write landed.',
+            },
+        });
+        if (moved.count === 0) return null;
+
+        logger.info('reconciled an unconfirmed identity write', {
+            component: 'identity-write-journal',
+            tenantId: ctx.tenantId,
+            provider,
+            journalId: row.id,
+        });
+        return row.id;
+    });
 }

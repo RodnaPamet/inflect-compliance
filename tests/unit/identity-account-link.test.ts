@@ -109,18 +109,45 @@ describe('every ambiguity resolves to NO link', () => {
         expect(r.unmatched).toBe(1);
     });
 
-    it('an account already linked to a DIFFERENT worker is left alone', async () => {
+    it('an account already linked to a DIFFERENT worker is not re-pointed, but IS marked', async () => {
         // Silently re-pointing it would move a future disable from one person
-        // to another — the single worst thing this module could do quietly.
+        // to another — still refused.
+        //
+        // But leaving it entirely untouched was its own defect, found by
+        // adversarial review: `lastVerifiedAt` is only ever set to `now`, so a
+        // pairing this pass DISPROVED kept a recent stamp and stayed eligible
+        // for a leaver disable for the rest of its freshness window. It is now
+        // marked contradicted, and the candidate query excludes that.
         db.employee.findMany.mockResolvedValue([{ id: 'e2', workEmail: 'ada@acme.com' }]);
         db.connectedIdentityAccount.findMany.mockResolvedValue([{ id: 'a1', email: 'ada@acme.com' }]);
         db.identityAccountLink.findMany.mockResolvedValue([{ connectedAccountId: 'a1', employeeId: 'e1' }]);
+        db.identityAccountLink.updateMany.mockResolvedValue({ count: 1 });
 
         const r = await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
         expect(r.created).toBe(0);
         expect(r.unmatched).toBe(1);
+        expect(r.contradicted).toBe(1);
         expect(db.identityAccountLink.createMany).not.toHaveBeenCalled();
-        expect(db.identityAccountLink.updateMany).not.toHaveBeenCalled();
+
+        // Marked, NOT re-pointed and NOT deleted: the link is the record of a
+        // pairing we once had good reason to believe.
+        const mark = db.identityAccountLink.updateMany.mock.calls[0][0];
+        expect(mark.data).toEqual({ contradictedAt: NOW });
+        expect(mark.where.connectedAccountId).toEqual({ in: ['a1'] });
+        expect(mark.where.contradictedAt).toBeNull();
+    });
+
+    it('re-confirming a pairing CLEARS a previous contradiction', async () => {
+        // The evidence that disproved it has itself been superseded.
+        db.employee.findMany.mockResolvedValue([{ id: 'e1', workEmail: 'ada@acme.com' }]);
+        db.connectedIdentityAccount.findMany.mockResolvedValue([{ id: 'a1', email: 'ada@acme.com' }]);
+        db.identityAccountLink.findMany.mockResolvedValue([{ connectedAccountId: 'a1', employeeId: 'e1' }]);
+        db.identityAccountLink.updateMany.mockResolvedValue({ count: 1 });
+
+        await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
+        expect(db.identityAccountLink.updateMany.mock.calls[0][0].data).toEqual({
+            lastVerifiedAt: NOW, contradictedAt: null,
+        });
     });
 
     it('an account with a blank email matches nothing', async () => {
@@ -200,7 +227,7 @@ describe('the reads are bounded and tenant-scoped', () => {
         const r = await reconcileIdentityAccountLinks(ctx, 'okta', NOW);
         expect(db.identityAccountLink.createMany).not.toHaveBeenCalled();
         expect(db.identityAccountLink.updateMany).not.toHaveBeenCalled();
-        expect(r).toEqual({ created: 0, verified: 0, unmatched: 0 });
+        expect(r).toEqual({ created: 0, verified: 0, unmatched: 0, contradicted: 0 });
     });
 
     it('tolerates a concurrent pass creating the same link', async () => {

@@ -11,7 +11,7 @@
  */
 const db = {
     tenantSecuritySettings: { findUnique: jest.fn() },
-    identityWriteJournal: { create: jest.fn(), updateMany: jest.fn() },
+    identityWriteJournal: { create: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
     identityAccountLink: { findMany: jest.fn() },
 };
 
@@ -23,6 +23,7 @@ jest.mock('@/lib/observability/logger', () => ({
 }));
 
 import {
+    DirectoryWriteError,
     disableAccount,
     disableAccountsForLeaver,
     findLeaverCandidates,
@@ -65,6 +66,7 @@ beforeEach(() => {
     setMode('AUTOMATIC');
     db.identityWriteJournal.create.mockResolvedValue({ id: 'j1' });
     db.identityWriteJournal.updateMany.mockResolvedValue({ count: 1 });
+    db.identityWriteJournal.findFirst.mockResolvedValue(null);
     db.identityAccountLink.findMany.mockResolvedValue([]);
 });
 
@@ -187,9 +189,88 @@ describe('DRY_RUN decides everything and writes nothing', () => {
     });
 });
 
+describe('a LOST RESPONSE is never recorded as a refusal', () => {
+    /**
+     * Found by adversarial review, and it was worse than the bug it sat next
+     * to. FAILED is a POSITIVE claim that the directory is unchanged. A write
+     * that reached the provider, was applied, and then lost its response throws
+     * exactly like a 403 does — and recording that as FAILED files the row
+     * under the one outcome BOTH readers exclude: findRestorableState reads
+     * APPLIED, listUnsettledWrites reads PENDING/INDETERMINATE. The captured
+     * prior state becomes unreachable and nobody is told to look.
+     *
+     * A crash at the same instant leaves PENDING, which honestly means "go and
+     * look". A timeout is the same epistemic state and must not be downgraded
+     * to a certainty.
+     */
+    it('a timeout settles INDETERMINATE, not FAILED', async () => {
+        const w = fakeWriter({ disable: async () => { throw new Error('fetch failed: ETIMEDOUT'); } });
+        const r = await disableAccount(ctx, w, input());
+
+        expect(r.outcome).toBe('INDETERMINATE');
+        expect(db.identityWriteJournal.updateMany.mock.calls[0][0].data.outcome).toBe('INDETERMINATE');
+    });
+
+    it('an untyped error is treated as indeterminate — the safe default', async () => {
+        // A writer must opt IN to claiming the directory is unchanged.
+        const w = fakeWriter({ disable: async () => { throw new Error('something odd'); } });
+        expect((await disableAccount(ctx, w, input())).outcome).toBe('INDETERMINATE');
+    });
+
+    it('a DirectoryWriteError that does NOT prove non-application is indeterminate', async () => {
+        const w = fakeWriter({
+            disable: async () => { throw new DirectoryWriteError('502 from the proxy'); },
+        });
+        expect((await disableAccount(ctx, w, input())).outcome).toBe('INDETERMINATE');
+    });
+
+    it('only a proven refusal settles FAILED', async () => {
+        const w = fakeWriter({
+            disable: async () => {
+                throw new DirectoryWriteError('Graph 403: insufficient privileges', {
+                    definitivelyNotApplied: true,
+                });
+            },
+        });
+        const r = await disableAccount(ctx, w, input());
+        expect(r.outcome).toBe('FAILED');
+        expect(db.identityWriteJournal.updateMany.mock.calls[0][0].data.outcome).toBe('FAILED');
+    });
+});
+
+describe('the retry RESOLVES an unconfirmed write instead of sealing it', () => {
+    it('reconciles a prior INDETERMINATE row when the account is now disabled', async () => {
+        // This path used to return before journalling, which made the ambiguity
+        // permanent: every later run reproduced ALREADY_DISABLED and nothing
+        // ever corrected the row. The read IS the evidence the first call never
+        // got.
+        db.identityWriteJournal.findFirst.mockResolvedValue({ id: 'j-old' });
+        const w = fakeWriter({ readState: async () => ({ enabled: false, priorState: { accountEnabled: false } }) });
+
+        const r = await disableAccount(ctx, w, input());
+        expect(r.outcome).toBe('ALREADY_DISABLED');
+        expect(r.journalId).toBe('j-old');
+        expect(db.identityWriteJournal.updateMany.mock.calls[0][0].data.outcome).toBe('APPLIED');
+    });
+
+    it('an ordinary already-disabled account stays an ordinary no-op', async () => {
+        db.identityWriteJournal.findFirst.mockResolvedValue(null);
+        const w = fakeWriter({ readState: async () => ({ enabled: false, priorState: {} }) });
+
+        const r = await disableAccount(ctx, w, input());
+        expect(r.outcome).toBe('ALREADY_DISABLED');
+        expect(r.journalId).toBeUndefined();
+        expect(db.identityWriteJournal.create).not.toHaveBeenCalled();
+    });
+});
+
 describe('a failed write is settled FAILED, with its reason', () => {
     it('records the failure against the journal row and returns it', async () => {
-        const w = fakeWriter({ disable: async () => { throw new Error('Graph returned 403'); } });
+        const w = fakeWriter({
+            disable: async () => {
+                throw new DirectoryWriteError('Graph returned 403', { definitivelyNotApplied: true });
+            },
+        });
         const r = await disableAccount(ctx, w, input());
 
         expect(r.outcome).toBe('FAILED');
@@ -201,7 +282,7 @@ describe('a failed write is settled FAILED, with its reason', () => {
 
     it('does NOT rethrow — one account failing is not the batch failing', async () => {
         const w = fakeWriter({ disable: async () => { throw new Error('boom'); } });
-        await expect(disableAccount(ctx, w, input())).resolves.toMatchObject({ outcome: 'FAILED' });
+        await expect(disableAccount(ctx, w, input())).resolves.toMatchObject({ outcome: 'INDETERMINATE' });
     });
 });
 
@@ -231,7 +312,9 @@ describe('the batch gate', () => {
     it('one failure does not stop the rest', async () => {
         let n = 0;
         const w = fakeWriter({
-            disable: async () => { if (n++ === 0) throw new Error('first fails'); },
+            disable: async () => {
+                if (n++ === 0) throw new DirectoryWriteError('first refused', { definitivelyNotApplied: true });
+            },
         });
         const candidates = [input({ externalUserId: 'a' }), input({ externalUserId: 'b' })];
         const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
@@ -246,6 +329,14 @@ describe('the batch gate', () => {
 });
 
 describe('candidate selection demands FRESH link evidence', () => {
+    it('EXCLUDES links a sync has disproved', async () => {
+        // Freshness alone was never a witness that a pairing is still true —
+        // only a bound on how long ago it last was. The reconciler marks the
+        // ones it disproved; this must respect the mark.
+        await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        expect(db.identityAccountLink.findMany.mock.calls[0][0].where.contradictedAt).toBeNull();
+    });
+
     it('filters on lastVerifiedAt and the provider, bounded', async () => {
         // A pairing last confirmed months ago is evidence about a directory
         // that has since changed — acting on it is the failure the link model

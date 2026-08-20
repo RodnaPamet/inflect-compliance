@@ -33,6 +33,7 @@ import { resolveWriteTarget } from './identity-write-target';
 import { beginWrite } from './identity-write-journal';
 import { getIdentityWritePolicy } from './identity-write-policy';
 import { checkDisableBlastRadius } from './identity-write-breaker';
+import { settleIndeterminateAsApplied } from './identity-write-journal';
 
 /**
  * Why a disable did not happen, or how it did.
@@ -51,8 +52,14 @@ export type DisableOutcome =
     | 'ALREADY_DISABLED'
     /** DRY_RUN: everything was decided, nothing was written. */
     | 'DRY_RUN'
-    /** The provider rejected the write. */
-    | 'FAILED';
+    /** The provider rejected the write BEFORE changing anything. */
+    | 'FAILED'
+    /**
+     * The call did not report back. We do not know whether the directory
+     * changed, and saying either "done" or "failed" would be a guess with
+     * teeth — see DirectoryWriteError.
+     */
+    | 'INDETERMINATE';
 
 export interface DisableResult {
     readonly outcome: DisableOutcome;
@@ -82,6 +89,34 @@ export interface DirectoryWriter {
     readState(externalUserId: string): Promise<DirectoryAccountState>;
     /** Perform the disable. Resolves on success, throws on refusal. */
     disable(externalUserId: string, prior: DirectoryAccountState): Promise<void>;
+}
+
+/**
+ * A provider's refusal, carrying the one thing the orchestrator cannot infer.
+ *
+ * `definitivelyNotApplied` may be true ONLY when the provider proved it
+ * evaluated and rejected the request before mutating anything — an HTTP 400 /
+ * 401 / 403 / 404 with a response body, an LDAP result code. It must be false
+ * for every lost response: ETIMEDOUT, ECONNRESET, EPIPE, an abort, a 408, any
+ * 5xx, and anything unrecognised.
+ *
+ * The default is false, and that direction is deliberate. A writer has to opt
+ * IN to claiming the directory is unchanged, because that claim is what makes
+ * a FAILED row safe to trust — and an untrue one hides the write from the
+ * restore path and the operator sweep simultaneously.
+ */
+export class DirectoryWriteError extends Error {
+    readonly definitivelyNotApplied: boolean;
+    constructor(message: string, opts: { definitivelyNotApplied?: boolean } = {}) {
+        super(message);
+        this.name = 'DirectoryWriteError';
+        this.definitivelyNotApplied = opts.definitivelyNotApplied ?? false;
+    }
+}
+
+/** True only for an error that PROVED nothing was mutated. */
+function provenNotApplied(err: unknown): boolean {
+    return err instanceof DirectoryWriteError && err.definitivelyNotApplied;
 }
 
 export interface DisableAccountInput {
@@ -134,7 +169,22 @@ export async function disableAccount(
         // Already disabled. Writing again would journal a "prior state" of
         // disabled, which is the state a later restore would then restore TO —
         // turning a no-op into a permanent loss of the real prior state.
-        return { outcome: 'ALREADY_DISABLED', reason: 'The account is already disabled in the directory.' };
+        //
+        // But this is ALSO the path that closes the loop on a write whose
+        // result was never confirmed. If the previous attempt timed out and
+        // actually landed, this read is the evidence: the account is disabled,
+        // and the only write anyone made to it was ours. Settling that row here
+        // turns the retry — which previously returned before journalling and
+        // sealed the ambiguity forever — into the mechanism that resolves it,
+        // and restores its captured prior state to the restore path.
+        const settled = await settleIndeterminateAsApplied(ctx, writer.provider, input.externalUserId);
+        return {
+            outcome: 'ALREADY_DISABLED',
+            reason: settled
+                ? 'The account is already disabled; an earlier unconfirmed write has been reconciled as applied.'
+                : 'The account is already disabled in the directory.',
+            journalId: settled ?? undefined,
+        };
     }
 
     if (policy.mode === 'DRY_RUN') {
@@ -165,8 +215,33 @@ export async function disableAccount(
         await writer.disable(input.externalUserId, state);
     } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        await handle.failed(detail);
-        logger.error('leaver disable failed', {
+
+        // FAILED is a POSITIVE claim that the directory is unchanged, so it is
+        // only written when the provider proved that. A lost response — a
+        // timeout, a reset, a 5xx from something in front of the provider — is
+        // epistemically identical to crashing here, and crashing correctly
+        // leaves the row unsettled for a human to resolve.
+        //
+        // Collapsing the two would be worse than either: a FAILED row whose
+        // write actually landed is invisible to findRestorableState (which
+        // reads APPLIED) AND to listUnsettledWrites (which reads PENDING and
+        // INDETERMINATE), so the captured prior state becomes unreachable and
+        // nobody is told to look.
+        if (provenNotApplied(err)) {
+            await handle.failed(detail);
+            logger.error('leaver disable refused by provider', {
+                component: 'identity-disable-account',
+                tenantId: ctx.tenantId,
+                provider: writer.provider,
+                externalUserId: input.externalUserId,
+                journalId: handle.journalId,
+                error: detail,
+            });
+            return { outcome: 'FAILED', reason: detail, journalId: handle.journalId };
+        }
+
+        await handle.indeterminate(detail);
+        logger.error('leaver disable outcome UNKNOWN — verify in the directory', {
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
             provider: writer.provider,
@@ -174,7 +249,7 @@ export async function disableAccount(
             journalId: handle.journalId,
             error: detail,
         });
-        return { outcome: 'FAILED', reason: detail, journalId: handle.journalId };
+        return { outcome: 'INDETERMINATE', reason: detail, journalId: handle.journalId };
     }
 
     await handle.applied();
@@ -250,6 +325,11 @@ export async function findLeaverCandidates(
                 tenantId: ctx.tenantId,
                 employeeId: { in: [...employeeIds] },
                 lastVerifiedAt: { gte: staleBefore },
+                // A link a sync has DISPROVED is excluded outright. Freshness
+                // alone was never a witness that a pairing is still true — only
+                // a bound on how long ago it last was — and the reconciler
+                // already knows which ones it disproved.
+                contradictedAt: null,
                 connectedAccount: { provider },
             },
             select: {
