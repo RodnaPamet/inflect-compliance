@@ -30,13 +30,33 @@ export const DEFAULT_LOCALE: Locale = 'en';
 export const LOCALE_COOKIE = 'inflect_locale';
 
 /**
- * Display names shown in the language switcher. Endonyms — each language is
- * labelled in its OWN language (standard i18n practice), so these are NOT
- * translated through the catalog.
+ * Full endonyms — each language named in its OWN language (standard i18n
+ * practice), so these are NOT translated through the catalog.
+ *
+ * These are no longer the VISIBLE label: the switcher shows the short code
+ * from `LOCALE_SHORT_LABELS` and renders the endonym `sr-only`, so it stays
+ * the ACCESSIBLE NAME of each radio. A two-letter visible label would
+ * otherwise leave assistive tech announcing "EN" / "БГ".
  */
 export const LOCALE_LABELS: Record<Locale, string> = {
     en: 'English',
     bg: 'Български',
+};
+
+/**
+ * Short codes shown in the language switcher.
+ *
+ * Authored UPPERCASE deliberately: the ToggleGroup option carries
+ * `capitalize`, which uppercases only the first letter of a word — a
+ * lowercase 'en' would render as 'En'. `i18n-locale-infrastructure.test.ts`
+ * asserts the uppercase invariant so a future edit cannot reintroduce that.
+ *
+ * 'БГ' is Cyrillic, matching the endonym register rather than the Latin
+ * ISO 639-1 code.
+ */
+export const LOCALE_SHORT_LABELS: Record<Locale, string> = {
+    en: 'EN',
+    bg: 'БГ',
 };
 
 /** Type guard: is `value` one of the supported locales? */

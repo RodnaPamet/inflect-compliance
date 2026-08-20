@@ -21,6 +21,7 @@ import {
     SUPPORTED_LOCALES,
     DEFAULT_LOCALE,
     LOCALE_LABELS,
+    LOCALE_SHORT_LABELS,
     isSupportedLocale,
     resolveLocale,
 } from '@/lib/locale-constants';
@@ -35,9 +36,20 @@ describe('locale constants + resolver', () => {
         expect(DEFAULT_LOCALE).toBe('en');
     });
 
-    it('every supported locale has an endonym label', () => {
+    it('every supported locale has an endonym label AND a short code', () => {
         for (const l of SUPPORTED_LOCALES) {
             expect(LOCALE_LABELS[l]?.length).toBeGreaterThan(0);
+            expect(LOCALE_SHORT_LABELS[l]?.length).toBeGreaterThan(0);
+        }
+    });
+
+    it('short codes are authored uppercase', () => {
+        // The ToggleGroup option carries `capitalize`, which uppercases only
+        // the FIRST letter of a word — a lowercase 'en' would render as 'En'.
+        // Authoring uppercase is the only thing preventing that, so pin it.
+        for (const l of SUPPORTED_LOCALES) {
+            const code = LOCALE_SHORT_LABELS[l];
+            expect(code).toBe(code.toUpperCase());
         }
     });
 
