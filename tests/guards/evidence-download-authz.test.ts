@@ -138,6 +138,8 @@ const NON_SERVING_READS: Record<string, string> = {
         'Reads back a snapshot this process wrote moments earlier; never serves it to a caller.',
     'src/app-layer/usecases/audit-hardening.ts':
         'Reads to compute a SHA-256 integrity hash. The bytes are consumed by crypto.createHash and discarded; hashing an infected file is safe precisely because nothing is served.',
+    'src/app-layer/jobs/av-rescan.ts':
+        'Reads bytes back only to hash them and hand them to the scanner; both consume the buffer and it is discarded. AvRescanResult is counters only — no bytes, no pathKey, no signed URL. Gating on isDownloadAllowed would deadlock it, because the verdict that gate reads is the thing this job exists to produce for rows that have none.',
 };
 
 /**
