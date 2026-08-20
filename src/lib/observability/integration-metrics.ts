@@ -31,6 +31,7 @@ let _calendarRevoked: ReturnType<ReturnType<typeof getMeter>['createCounter']> |
 let _identityDeprovisioned: Counter | null = null;
 let _identityLinkReconcile: Counter | null = null;
 let _leaverPassOutcome: Counter | null = null;
+let _leaverNotification: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
@@ -338,6 +339,52 @@ export function recordIdentityLinkReconcile(attrs: {
             unit: '1',
         });
     _identityLinkReconcile.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+}
+
+/**
+ * One leaver notification, per recipient, by what became of it.
+ *
+ * Emitted from `notifyLeaverOutcome` itself rather than from its caller, for the
+ * same reason `identity.write.unsettled` is emitted from the reader that
+ * produces the number: a counter incremented by the caller can drift from what
+ * the function actually did, and the drift is invisible precisely when it
+ * matters.
+ *
+ * `failed` is the one that needs an alert. A dropped notification is otherwise a
+ * log line and nothing else — and the failure mode is not evenly distributed:
+ * the enqueue happens inside a leaver batch already holding a customer's
+ * directory rate limit, and the fault most likely to break the insert (Postgres
+ * unavailable) is the same one that produces the INDETERMINATE outcome the
+ * message exists to report. The message most worth delivering is the one most
+ * likely to be lost.
+ *
+ * `suppressed` is NOT a failure: the outbox dedupes per (tenant, type, toEmail,
+ * entity, day), so a second pass over the same journal row is correctly silent.
+ * Counted separately so a rising suppressed rate is legible as dedupe rather
+ * than mistaken for delivery.
+ *
+ * `no_recipient` is the quietest failure of the four and the reason this is not
+ * simply a failure counter: a tenant whose privileged members hold no email
+ * address, or a leaver with no manager in the org chart, produces no row, no
+ * error, and no retry. Nobody is told, and until now nothing said so.
+ *
+ * No tenant label — cardinality is four results x two audiences.
+ */
+export function recordLeaverNotification(attrs: {
+    provider: string;
+    audience: 'IT' | 'MANAGER';
+    result: 'enqueued' | 'suppressed' | 'failed' | 'no_recipient';
+}): void {
+    if (!_leaverNotification)
+        _leaverNotification = getMeter().createCounter('identity.leaver.notification', {
+            description: 'Leaver notifications by audience and delivery result',
+            unit: '1',
+        });
+    _leaverNotification.add(1, {
+        provider: attrs.provider,
+        audience: attrs.audience,
+        result: attrs.result,
+    });
 }
 
 export function recordIdentityDeprovisioned(attrs: { provider: string; count: number }): void {
