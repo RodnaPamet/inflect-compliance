@@ -118,6 +118,13 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         tenantId: { kind: 'inert' },
         clientId: { kind: 'inert' },
         clientSecret: { kind: 'inert' },
+        // Inert as a STRING — it reaches no host and carries no query. It is
+        // nonetheless the most consequential field on this connection: the
+        // Entra writer refuses to construct unless it is exactly `true`, so
+        // this is what keeps a tenant that consented Graph write permissions
+        // for some other purpose from being silently upgraded into one whose
+        // leaver runs can disable any account in the directory.
+        writesEnabled: { kind: 'inert' },
         enrichMfa: { kind: 'inert' },
         enrichFederation: { kind: 'inert' },
         dormantDays: { kind: 'inert' },

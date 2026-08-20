@@ -1401,8 +1401,19 @@ enum IdentityWriteOutcome {
   PENDING
   /// The provider accepted the change.
   APPLIED
-  /// The provider refused, or the call failed. The directory is unchanged.
+  /// The provider refused BEFORE mutating anything. A positive claim that the
+  /// directory is unchanged — only usable when the provider proved it, e.g. a
+  /// 403 or an LDAP result code, never a lost response.
   FAILED
+  /// The call did not report back. We do not know whether the directory
+  /// changed.
+  ///
+  /// This exists because collapsing a lost response into FAILED is a LIE with
+  /// teeth: FAILED means "unchanged", and a restore filtering on APPLIED would
+  /// then never see the captured prior state, while the PENDING sweep would
+  /// never surface the row either. The write would be invisible to both
+  /// readers at once.
+  INDETERMINATE
   /// A previously APPLIED change has been undone from the captured state.
   REVERTED
 }

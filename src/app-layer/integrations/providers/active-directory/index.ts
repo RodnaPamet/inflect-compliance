@@ -44,13 +44,21 @@ import {
 import { promises as dnsPromises } from 'node:dns';
 import { logger } from '@/lib/observability/logger';
 import { isPrivateAddress } from '@/app-layer/automation/webhook-safety';
+// Type-only: erased at compile time, so `ldapts` stays out of the module graph.
+import type { SearchOptions } from 'ldapts';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
 /** LDAP paged-search page size. */
 const PAGE_SIZE = 1000;
-/** userAccountControl ACCOUNTDISABLE flag (0x0002). */
-const UAC_ACCOUNTDISABLE = 0x2;
+/**
+ * userAccountControl ACCOUNTDISABLE flag (0x0002).
+ *
+ * Exported because the leaver writer sets exactly this bit and must not
+ * re-declare `0x2` for itself: two spellings of one flag is how a future edit
+ * changes the read's idea of "disabled" without changing the write's.
+ */
+export const UAC_ACCOUNTDISABLE = 0x2;
 /** Default privileged groups (direct membership) treated as admin. */
 const DEFAULT_ADMIN_GROUPS = 'Domain Admins,Enterprise Admins,Administrators,Schema Admins';
 /** Attributes requested from each user object. */
@@ -84,7 +92,7 @@ const USER_FILTER = '(&(objectCategory=person)(objectClass=user))';
  * to "a host that was internal moments ago", which is a real reduction but not
  * an elimination.
  */
-async function assertPrivateLdapHost(rawUrl: string): Promise<void> {
+export async function assertPrivateLdapHost(rawUrl: string): Promise<void> {
     let host: string;
     try {
         host = new URL(rawUrl).hostname;
@@ -111,12 +119,37 @@ async function assertPrivateLdapHost(rawUrl: string): Promise<void> {
     }
 }
 
+/**
+ * One element of a ModifyRequest, in plain data.
+ *
+ * Deliberately NOT ldapts' `Change` / `Attribute`. Those are classes, and
+ * naming them here would drag `ldapts` into the static module graph of every
+ * caller — the exact thing `lazyLdaptsClient` exists to avoid. It also makes a
+ * test fake a plain object literal instead of something that has to construct
+ * library types to be inspected.
+ */
+export interface LdapModification {
+    readonly operation: 'add' | 'delete' | 'replace';
+    readonly type: string;
+    /** Values as their LDAP string form — `userAccountControl` is an integer written as digits. */
+    readonly values: readonly string[];
+}
+
 export interface LdapClientLike {
     bind(dn: string, password: string): Promise<void>;
     search(
         baseDN: string,
         options: Record<string, unknown>,
     ): Promise<{ searchEntries: Array<Record<string, unknown>> }>;
+    /**
+     * Apply every modification as ONE ModifyRequest, which the DC applies
+     * atomically. Optional on the interface rather than required: existing
+     * injected read-only fakes satisfy this type today, and making it mandatory
+     * would break them at compile time for the benefit of a path they never
+     * take. The writer refuses at runtime when it is absent, which is the
+     * honest place to notice a client that cannot write.
+     */
+    modify?(dn: string, changes: readonly LdapModification[]): Promise<void>;
     unbind(): Promise<void>;
 }
 
@@ -270,6 +303,16 @@ export class ActiveDirectoryProvider implements ScheduledCheckProvider, Identity
         secretFields: [
             { key: 'bindDN', label: 'Bind DN (service account)', type: 'string', required: true, description: 'A read-only service account DN or userPrincipalName, e.g. CN=svc-inflect,OU=Service,DC=corp,DC=example,DC=com.' },
             { key: 'bindPassword', label: 'Bind password', type: 'string', required: true, description: 'Password for the bind service account.' },
+            // Least privilege for the write path. The bind above authenticates
+            // the scheduled enumeration — thousands of users, unattended, on a
+            // schedule — and it is documented and provisioned as read-only.
+            // Granting IT write on userAccountControl would put that privilege
+            // behind every one of those binds. These two are optional and used
+            // ONLY by the leaver writer, so the enumeration keeps the read-only
+            // account and pulling the write credential is a clean rollback that
+            // leaves reads working.
+            { key: 'writeBindDN', label: 'Write bind DN (optional)', type: 'string', required: false, description: 'Separate service account used only for offboarding writes. Needs Write permission on the userAccountControl property of user objects, delegated at the OU holding them — NOT Account Operators and NOT Domain Admins. Leave blank to reuse the read bind.' },
+            { key: 'writeBindPassword', label: 'Write bind password (optional)', type: 'string', required: false, description: 'Password for the write service account. Required if a write bind DN is set.' },
         ],
     };
 
@@ -278,7 +321,18 @@ export class ActiveDirectoryProvider implements ScheduledCheckProvider, Identity
         this.deps = deps;
     }
 
-    private async makeClient(config: Record<string, unknown>): Promise<LdapClientLike> {
+    /**
+     * The ONLY way an LDAP client is built for this provider — read or write.
+     *
+     * Public rather than private on purpose. The leaver writer needs a client
+     * too, and the natural alternative (a second factory next to the writer)
+     * would silently lose both gates enforced below: the `ldaps://` scheme
+     * check and the private-host condition on the TLS bypass. Those live here
+     * precisely because "the factory is the only way a client is built" is the
+     * argument that makes them cover the unattended paths, and that argument
+     * survives only while it stays true.
+     */
+    async makeClient(config: Record<string, unknown>): Promise<LdapClientLike> {
         const url = String(config.url ?? '').trim();
 
         // The ldaps:// check used to live only in validateConnection. But
@@ -433,6 +487,29 @@ async function safeUnbind(client: LdapClientLike): Promise<void> {
 async function lazyLdaptsClient(opts: LdapClientOptions): Promise<LdapClientLike> {
     // Deferred import keeps ldapts out of the static module graph (test env +
     // bundling) — it is only pulled in when a real LDAPS enumeration runs.
-    const { Client } = await import('ldapts');
-    return new Client(opts) as unknown as LdapClientLike;
+    const { Client, Change, Attribute } = await import('ldapts');
+    const client = new Client(opts);
+    // An adapter rather than a cast, because `modify` is the one method whose
+    // shape differs: the interface speaks plain data and ldapts speaks classes.
+    // Translating in one place keeps every caller — and every test fake — free
+    // of the library.
+    return {
+        bind: (dn, password) => client.bind(dn, password),
+        search: async (baseDN, options) => {
+            const result = await client.search(baseDN, options as unknown as SearchOptions);
+            return { searchEntries: result.searchEntries as unknown as Array<Record<string, unknown>> };
+        },
+        modify: (dn, changes) =>
+            client.modify(
+                dn,
+                changes.map(
+                    (c) =>
+                        new Change({
+                            operation: c.operation,
+                            modification: new Attribute({ type: c.type, values: [...c.values] }),
+                        }),
+                ),
+            ),
+        unbind: () => client.unbind(),
+    };
 }

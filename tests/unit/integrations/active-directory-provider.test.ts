@@ -162,7 +162,22 @@ describe('ActiveDirectoryProvider — descriptor', () => {
         expect(p.configSchema.secretFields.map((f) => f.key)).toEqual([
             'bindDN',
             'bindPassword',
+            'writeBindDN',
+            'writeBindPassword',
         ]);
+    });
+
+    it('keeps the write credentials OPTIONAL, so the read-only enumeration still configures', () => {
+        // The offboarding writer needs a credential that can write
+        // userAccountControl; the scheduled enumeration must not. Separating
+        // them is the point — but making either required would break every
+        // connection provisioned before the writer existed, and turn a
+        // posture-only AD integration into one that demands write rights.
+        const p = new ActiveDirectoryProvider();
+        const byKey = Object.fromEntries(p.configSchema.secretFields.map((f) => [f.key, f]));
+        expect(byKey.bindDN.required).toBe(true);
+        expect(byKey.writeBindDN.required).toBe(false);
+        expect(byKey.writeBindPassword.required).toBe(false);
     });
 });
 

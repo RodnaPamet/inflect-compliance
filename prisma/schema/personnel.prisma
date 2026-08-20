@@ -8,18 +8,18 @@
 /// offboarded-access checks. `groupsJson` is a string[] of group names.
 /// Not encrypted — directory metadata (email + status flags), not content.
 model ConnectedIdentityAccount {
-  id             String                 @id @default(cuid())
-  tenantId       String
+  id                    String                 @id @default(cuid())
+  tenantId              String
   /// Provider prefix — 'okta' | 'google-workspace' | 'entra-id' | 'active-directory'. Matches the
   /// ScheduledCheckProvider id so `{provider}.{check}` routing lines up.
-  provider       String
+  provider              String
   /// Stable id of the user in the provider's directory.
-  externalUserId String
-  email          String
-  displayName    String?
-  status         ConnectedAccountStatus @default(ACTIVE)
-  isAdmin        Boolean                @default(false)
-  mfaEnrolled    Boolean                @default(false)
+  externalUserId        String
+  email                 String
+  displayName           String?
+  status                ConnectedAccountStatus @default(ACTIVE)
+  isAdmin               Boolean                @default(false)
+  mfaEnrolled           Boolean                @default(false)
   /// Whether this account is mastered ON-PREMISES and projected into the cloud
   /// directory by Azure AD Connect. Null = the provider cannot answer it.
   ///
@@ -33,11 +33,11 @@ model ConnectedIdentityAccount {
   /// different answers, and only one of them is safe to write against.
   onPremisesSyncEnabled Boolean?
   /// string[] of group / role names the account belongs to.
-  groupsJson     Json                   @default("[]")
-  lastActiveAt   DateTime?
-  syncedAt       DateTime
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  groupsJson            Json                   @default("[]")
+  lastActiveAt          DateTime?
+  syncedAt              DateTime
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   tenant          Tenant                          @relation(fields: [tenantId], references: [id])
   reviewDecisions AccessReviewConnectedDecision[]
@@ -210,11 +210,24 @@ model IdentityAccountLink {
   matchMethod        IdentityLinkMethod
 
   /// When this pairing was first observed.
-  firstLinkedAt  DateTime @default(now())
+  firstLinkedAt  DateTime  @default(now())
   /// The most recent healthy sync that re-observed it. A link not re-verified
   /// recently is stale evidence — the leaver path can require freshness rather
   /// than trusting a pairing last seen months ago.
   lastVerifiedAt DateTime
+  /// Set when a sync OBSERVED this pairing to be contradicted — the account's
+  /// current email now resolves to a different worker, to none, or to an
+  /// ambiguous one.
+  ///
+  /// Without it, `lastVerifiedAt` is not a witness that the pairing is still
+  /// true; it is only a bound on how long ago it was last true. The reconciler
+  /// already computes the contradiction and correctly refuses to re-point the
+  /// link — but a disproven link with a recent stamp would otherwise stay in
+  /// the leaver candidate set for the rest of its freshness window, which is
+  /// precisely the wrong-person write everything else here exists to prevent.
+  ///
+  /// Cleared when a later sync re-confirms the pairing.
+  contradictedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -239,6 +252,7 @@ model IdentityAccountLink {
   /// is the point.
   @@index([tenantId, employeeId])
   @@index([tenantId, lastVerifiedAt])
+  @@index([tenantId, contradictedAt])
 }
 
 /// One attempted write to a customer's directory, with the state it replaced.

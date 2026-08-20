@@ -132,10 +132,12 @@ describe('what a restore reads', () => {
     it('returns the most recent APPLIED write for the account', async () => {
         const when = new Date('2026-08-20T00:00:00Z');
         db.identityWriteJournal.findFirst.mockResolvedValue({
-            id: 'j9', priorStateJson: { userAccountControl: 512 }, attemptedAt: when,
+            id: 'j9', priorStateJson: { userAccountControl: 512 }, attemptedAt: when, outcome: 'APPLIED',
         });
         const r = await findRestorableState(ctx, 'active-directory', 'ext-9');
-        expect(r).toEqual({ journalId: 'j9', priorState: { userAccountControl: 512 }, attemptedAt: when });
+        expect(r).toEqual({
+            journalId: 'j9', priorState: { userAccountControl: 512 }, attemptedAt: when, outcome: 'APPLIED',
+        });
     });
 
     it('looks up by provider + account, NOT by link', async () => {
@@ -151,7 +153,9 @@ describe('what a restore reads', () => {
         // A FAILED write changed nothing, so restoring "from" it would write a
         // state the directory never left.
         await findRestorableState(ctx, 'entra-id', 'ext-1');
-        expect(db.identityWriteJournal.findFirst.mock.calls[0][0].where.outcome).toBe('APPLIED');
+        expect(db.identityWriteJournal.findFirst.mock.calls[0][0].where.outcome).toEqual({
+            in: ['APPLIED', 'INDETERMINATE'],
+        });
     });
 
     it('takes the newest, not an arbitrary one', async () => {
@@ -165,13 +169,16 @@ describe('what a restore reads', () => {
 });
 
 describe('unsettled writes are findable', () => {
-    it('lists PENDING rows older than a cutoff, bounded and oldest-first', async () => {
-        // A crash between capture and settle leaves PENDING, which means "the
-        // directory may or may not have changed". Those rows need a human.
+    it('lists BOTH unsettled states older than a cutoff, bounded and oldest-first', async () => {
+        // A crash between capture and settle leaves PENDING; a lost response
+        // leaves INDETERMINATE. They mean the same thing to a human — the
+        // directory may or may not have changed, go and look — so the sweep
+        // must surface both or the second kind is invisible.
         const cutoff = new Date('2026-08-20T00:00:00Z');
         await listUnsettledWrites(ctx, cutoff);
         const q = db.identityWriteJournal.findMany.mock.calls[0][0];
-        expect(q.where).toMatchObject({ tenantId: 't1', outcome: 'PENDING' });
+        expect(q.where.tenantId).toBe('t1');
+        expect(q.where.outcome).toEqual({ in: ['PENDING', 'INDETERMINATE'] });
         expect(q.where.attemptedAt).toEqual({ lt: cutoff });
         expect(q.orderBy).toEqual({ attemptedAt: 'asc' });
         expect(typeof q.take).toBe('number');

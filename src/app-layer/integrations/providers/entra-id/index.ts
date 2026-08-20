@@ -150,7 +150,7 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
     // Graph users ping.
     readonly liveValidation = true;
     readonly setupGuide =
-        'In the Microsoft Entra admin center, register an application and grant it the application (not delegated) Microsoft Graph permissions User.Read.All, Directory.Read.All, and AuditLog.Read.All (the last enables MFA-registration + last-sign-in signals; without it those checks report Not applicable). Create a client secret, then paste the Directory (tenant) ID and Application (client) ID below with the secret. Test connection performs a live directory ping. On-prem Active Directory synced to Entra via Azure AD Connect is READ here for posture checks, but accounts mastered on-prem cannot be disabled through Graph — those writes are reverted by the next sync cycle, so offboarding them needs the separate on-prem Active Directory (LDAPS) connector. This connector runs directory/posture checks; it is separate from Entra SSO login.';
+        'In the Microsoft Entra admin center, register an application and grant it the application (not delegated) Microsoft Graph permissions User.Read.All, Directory.Read.All, and AuditLog.Read.All (the last enables MFA-registration + last-sign-in signals; without it those checks report Not applicable). Create a client secret, then paste the Directory (tenant) ID and Application (client) ID below with the secret. Test connection performs a live directory ping. On-prem Active Directory synced to Entra via Azure AD Connect is READ here for posture checks, but accounts mastered on-prem cannot be disabled through Graph — those writes are reverted by the next sync cycle, so offboarding them needs the separate on-prem Active Directory (LDAPS) connector. This connector runs directory/posture checks; it is separate from Entra SSO login. If you also want leaver offboarding to DISABLE accounts here, turn on "Allow offboarding writes" and grant the application permission User.EnableDisableAccount.All — none of the three read permissions above permits a write, Directory.Read.All included, and client-credentials tokens carry exactly what an administrator has already consented, so an existing connection keeps failing every disable until that consent is granted.';
 
     readonly configSchema: ConnectionConfigSchema = {
         configFields: [
@@ -160,6 +160,16 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
             { key: 'dormantDays', label: 'Dormant admin threshold (days)', type: 'number', required: false, description: 'Admin considered dormant after this many days idle (default 90).' },
             { key: 'enrichMfa', label: 'MFA registration enrichment', type: 'boolean', required: false, description: 'Read the authentication-methods registration report so the MFA check reflects real enrolment (default on; needs AuditLog.Read.All).' },
             { key: 'enrichFederation', label: 'SSO federation enrichment', type: 'boolean', required: false, description: 'Derive per-user SSO from each domain’s authentication type so the SSO check reflects real federation (default on).' },
+            // Defaults OFF, and the writer refuses to construct without an
+            // explicit `true`. With client credentials the token exchange asks
+            // for `.default`, which is not a request at all — it returns exactly
+            // the set an admin has already consented. So there is no way to
+            // scope a token down at call time, and the instant a tenant consents
+            // Graph write permissions for any reason this application would gain
+            // standing power to disable any user in that directory. This flag is
+            // the per-connection statement that they asked for that, so a
+            // read-only tenant cannot be upgraded by an edit to the copy below.
+            { key: 'writesEnabled', label: 'Allow offboarding writes', type: 'boolean', required: false, description: 'Let leaver offboarding DISABLE accounts in this directory. Off by default. Additionally requires an administrator to consent the application permission User.EnableDisableAccount.All — the three read permissions above do not permit a write.' },
         ],
         secretFields: [
             { key: 'clientSecret', label: 'Client secret', type: 'string', required: true, description: 'A client secret for the app registration.' },

@@ -54,6 +54,8 @@ export interface LinkMatchResult {
      * different worker. Reported rather than resolved — see the module note.
      */
     readonly unmatched: number;
+    /** Existing links this pass DISPROVED and marked ineligible for writes. */
+    readonly contradicted: number;
 }
 
 /** Normalised join key. Directory casing and HR casing routinely disagree. */
@@ -117,6 +119,18 @@ export async function reconcileIdentityAccountLinks(
             lastVerifiedAt: Date;
         }> = [];
         const toVerify: string[] = [];
+        /**
+         * Accounts whose link this pass DISPROVED — the email now resolves to a
+         * different worker, to none, or ambiguously.
+         *
+         * Refusing to re-point such a link was always right. Leaving it
+         * otherwise untouched was not: `lastVerifiedAt` is only ever set to
+         * `now` and never cleared, so a disproven pairing kept a recent stamp
+         * and stayed eligible for a leaver disable for the rest of its
+         * freshness window. The freshness filter was a bound on how long ago
+         * the link was last true, not a witness that it still is.
+         */
+        const contradicted: string[] = [];
         let unmatched = 0;
 
         for (const account of accounts) {
@@ -125,6 +139,10 @@ export async function reconcileIdentityAccountLinks(
 
             // No match, or an email claimed by more than one employee row.
             if (!employeeId) {
+                // Only a contradiction if a link EXISTS to contradict. An
+                // unlinked account matching nothing is just an unlinked
+                // account — a service account, most often.
+                if (linkedTo.has(account.id)) contradicted.push(account.id);
                 unmatched += 1;
                 continue;
             }
@@ -137,7 +155,10 @@ export async function reconcileIdentityAccountLinks(
             if (current !== undefined) {
                 // Already linked to a DIFFERENT worker. Silently re-pointing it
                 // would move a future disable from one person to another, so
-                // the conflict is surfaced and left alone.
+                // the link is left pointing where it does — but it is now
+                // MARKED, because a pairing this pass actively disproved must
+                // not keep driving writes on the strength of an old stamp.
+                contradicted.push(account.id);
                 unmatched += 1;
                 continue;
             }
@@ -161,7 +182,25 @@ export async function reconcileIdentityAccountLinks(
             ? (
                   await db.identityAccountLink.updateMany({
                       where: { tenantId: ctx.tenantId, connectedAccountId: { in: toVerify } },
-                      data: { lastVerifiedAt: now },
+                      // Re-confirmation CLEARS a previous contradiction: the
+                      // evidence that disproved it has itself been superseded.
+                      data: { lastVerifiedAt: now, contradictedAt: null },
+                  })
+              ).count
+            : 0;
+
+        // Marked, not deleted. The link is the record of a pairing we once had
+        // good reason to believe, and an auditor asking "why was this account
+        // treated as this person's?" needs it to still exist.
+        const marked = contradicted.length
+            ? (
+                  await db.identityAccountLink.updateMany({
+                      where: {
+                          tenantId: ctx.tenantId,
+                          connectedAccountId: { in: contradicted },
+                          contradictedAt: null,
+                      },
+                      data: { contradictedAt: now },
                   })
               ).count
             : 0;
@@ -173,8 +212,9 @@ export async function reconcileIdentityAccountLinks(
             created,
             verified,
             unmatched,
+            marked,
         });
 
-        return { created, verified, unmatched };
+        return { created, verified, unmatched, contradicted: marked };
     });
 }
