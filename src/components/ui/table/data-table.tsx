@@ -384,7 +384,12 @@ export function DataTable<T>({
         // The JS whole-row clip in table.tsx adds an inline
         // max-height when content exceeds the viewport allocation,
         // overriding this max-h-full to a row-aligned value.
-        "md:max-h-full md:min-h-0 md:overflow-y-auto",
+        // `overscroll-contain`: this wrapper scrolls INSIDE AppShell's own
+        // `md:overflow-y-auto` content div, so without containment a wheel
+        // gesture that reaches either end chains outward and starts moving
+        // the page behind the table. Set here rather than only in table.tsx
+        // so the VirtualTable branch is covered by the same rule.
+        "md:max-h-full md:min-h-0 md:overflow-y-auto overscroll-contain",
         scrollWrapperClassName,
       )
     : scrollWrapperClassName;

@@ -864,14 +864,25 @@ export function Table<T>({
               // unaffected (their rows are > 0 anyway when populated).
               numRows === 0 && "min-h-[400px]",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)]/40",
-              // Scroll-snap so rows align cleanly with the sticky
-              // header instead of stopping mid-row. `snap-proximity`
-              // only snaps when you stop near a snap point, so free
-              // scrolling still feels natural — half-row positions
-              // get a gentle nudge to align. `scroll-pt-[37px]`
-              // matches the sticky header height so a row's "start"
-              // snap point lands BELOW the header, not under it.
-              "snap-y snap-proximity scroll-pt-[37px]",
+              // NO scroll-snap here. Every row used to be a `snap-start`
+              // point inside a `snap-y snap-proximity` container — snap
+              // targets ~37px apart, which the browser re-evaluates
+              // continuously through a momentum scroll, so the list
+              // grabbed and settled instead of scrolling freely. The
+              // `scroll-pt-[37px]` padding did not match the real sticky
+              // header height either (py-2.5 + leading-6 + border-b is
+              // ~45px), so a snapped row landed ~8px UNDER the header —
+              // the alignment the snap existed to provide.
+              //
+              // Whole-row alignment is already handled, and handled
+              // correctly, by the max-height clip below: the wrapper is
+              // clamped to floor(avail / rowH) * rowH so the card never
+              // cuts a row in half at its bottom edge.
+              //
+              // `overscroll-contain` stops a wheel gesture that reaches
+              // either end from chaining out to AppShell's own
+              // `md:overflow-y-auto` content div.
+              "overscroll-contain",
               scrollWrapperClassName,
             )}
             // maxHeight clamps the wrapper to a whole number of rows
@@ -887,7 +898,13 @@ export function Table<T>({
               ref={tableElRef}
               className={cn(
                 [
-                  "group/table w-full border-separate border-spacing-0 transition-[border-spacing,margin-top]",
+                  // No `transition-[border-spacing,margin-top]` here. Neither
+                  // property ever changes on this element — `border-spacing`
+                  // is pinned to 0, and the only `-mt-` in the file is on the
+                  // pagination footer, not the table — so the transition never
+                  // ran. All it did was mark the table as animatable on
+                  // properties whose change invalidates the whole table layout.
+                  "group/table w-full border-separate border-spacing-0",
                   "[&_tr>*:first-child]:border-l-transparent",
                   "[&_tr>*:last-child]:border-r-transparent",
                   "[&_tr>*:last-child]:border-r-transparent",
@@ -1091,13 +1108,6 @@ export function Table<T>({
                     <tr
                       className={cn(
                         "group/row",
-                        // Each row is a snap point — combined with
-                        // the scroll wrapper's `snap-y
-                        // snap-proximity scroll-pt-[37px]`, this
-                        // makes rows align cleanly with the bottom
-                        // edge of the sticky header instead of
-                        // stopping half-row up or down.
-                        "snap-start",
                         // R13-PR13 — the brand-coloured 2-px left
                         // edge moved from row-level to the FIRST
                         // non-utility cell in `tableCellClassName`
