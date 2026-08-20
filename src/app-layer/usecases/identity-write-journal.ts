@@ -30,6 +30,7 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { IdentityWriteMode } from './identity-write-policy';
 
 export type IdentityWriteAction =
@@ -107,13 +108,20 @@ export async function beginWrite(ctx: RequestContext, input: BeginWriteInput): P
         outcome: 'APPLIED' | 'FAILED' | 'REVERTED',
         detail?: string,
     ): Promise<void> => {
+        // `detail` is not always machine-generated. A provider rejection is,
+        // but a REVERTED reason is written by a person, and this row is read
+        // back by an operator surface and an auditor export. Sanitised at the
+        // WRITE path, per Epic C.5 — render-time escaping alone would leave the
+        // stored row dangerous to the PDF export and any SDK consumer reading
+        // it verbatim.
+        const safeDetail = detail === undefined ? null : sanitizePlainText(detail);
         // Predicated on PENDING so a settle cannot overwrite an outcome another
         // actor already recorded, and a double-settle is a no-op rather than a
         // rewrite of history in an append-only journal.
         const moved = await runInTenantContext(ctx, (db) =>
             db.identityWriteJournal.updateMany({
                 where: { id: row.id, tenantId: ctx.tenantId, outcome: 'PENDING' },
-                data: { outcome, detail: detail ?? null, settledAt: new Date() },
+                data: { outcome, detail: safeDetail, settledAt: new Date() },
             }),
         );
         if (moved.count === 0) {

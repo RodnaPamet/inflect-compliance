@@ -65,6 +65,14 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/task.ts'],
         sanitizer: 'sanitizePlainText',
     },
+    // `detail` is mixed provenance: a provider rejection message is machine
+    // -generated, but a REVERTED reason is written by a person, and the row is
+    // read back by an operator surface and an auditor export. Sanitised in
+    // `settle` rather than trusted because of the second case.
+    IdentityWriteJournal: {
+        usecases: ['src/app-layer/usecases/identity-write-journal.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     Finding: { usecases: ['src/app-layer/usecases/finding.ts'], sanitizer: 'sanitizePlainText' },
     Risk: { usecases: ['src/app-layer/usecases/risk.ts'], sanitizer: 'sanitizePlainText' },
     // MCP agent proposals — payloadJson (proposed entity content) + rationale

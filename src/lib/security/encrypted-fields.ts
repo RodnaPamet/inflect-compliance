@@ -148,6 +148,24 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  documenting it as "never the raw secret".
     AutomationRule: ['webhookSecretEncrypted'],
 
+    // ─── JML identity writes ───────────────────────────
+    //  `detail` is free text about a NAMED person's access change: the
+    //  provider's rejection message for a failed disable, or the human reason a
+    //  change was reverted. Provider errors routinely echo the UPN and object
+    //  id back, and a reverted-on-rehire note is written by a person.
+    //
+    //  No backfill was needed — the table shipped with this entry, so no row
+    //  ever held plaintext here.
+    //
+    //  `priorStateJson` is NOT here and cannot be: this manifest encrypts
+    //  STRING fields only. It holds structured directory attributes
+    //  (`accountEnabled`, `userAccountControl`, group names) rather than
+    //  credentials, and the table is RLS-scoped. If a provider is ever added
+    //  whose prior state includes a secret, that field must move to the
+    //  explicit `secretEncrypted` shape IntegrationConnection uses, not into
+    //  this list.
+    IdentityWriteJournal: ['detail'],
+
     // ─── Risk ──────────────────────────────────────────
     //  `description` omitted — searched via RiskRepository `contains`.
     Risk: ['treatmentNotes', 'threat', 'vulnerability'],
