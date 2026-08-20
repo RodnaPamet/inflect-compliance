@@ -782,6 +782,52 @@ export async function uploadEvidenceFile(
     const readable = Readable.from(buffer);
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
+    // A hash that was ever quarantined stays poisoned.
+    //
+    // The scan above reports what the engine knows at this instant. The whole
+    // reason the AV webhook exists is that a verdict can arrive later — and a
+    // verdict that arrives later has to survive the NEXT upload of the same
+    // bytes. It did not: quarantine moves the row to `status: 'FAILED'`, the
+    // dedup lookup matched STORED only, so the condemned hash fell out of the
+    // index and the identical bytes re-entered as a fresh PENDING row that
+    // nothing had scanned. `findBySha256` now returns the quarantined row
+    // (the fix is there, not in the quarantine, which stays atomic); this is
+    // where the re-upload is refused.
+    //
+    // The gate sits OUTSIDE the transaction below on purpose. The refusal is a
+    // security event, and an audit row written inside a transaction that then
+    // throws rolls back with it — the same reason `scanUploadOrRefuse` audits
+    // before it throws.
+    const knownInfected = await runInTenantContext(ctx, async (db) => {
+        const known = await FileRepository.findBySha256(db, ctx.tenantId, writeResult.sha256);
+        if (known?.scanStatus !== 'INFECTED') return null;
+        await logEvent(db, ctx, {
+            // Same action string the webhook and the upload-time refusal use,
+            // so one SIEM rule catches every disposition of the same threat.
+            action: 'FILE_QUARANTINED',
+            entityType: 'FileRecord',
+            entityId: known.id,
+            details: `Refused re-upload of quarantined content: ${originalName}`,
+            detailsJson: {
+                category: 'access',
+                operation: 'login',
+                detail: `Refused re-upload of quarantined content: ${originalName}`,
+                sha256: writeResult.sha256,
+                sizeBytes: writeResult.sizeBytes,
+                disposition: 'refused_known_infected_hash',
+            },
+        });
+        return known;
+    });
+    if (knownInfected) {
+        // The bytes are in the bucket already — drop that copy rather than
+        // leave known malware behind. Best-effort, as on the dedup path: a
+        // failed delete leaks one orphan for the GC sweep and must not change
+        // the refusal the caller sees.
+        try { await storage.delete(pathKey); } catch { /* best-effort orphan cleanup — see reason above */ }
+        throw badRequest('FILE_INFECTED', 'This file was rejected by the malware scanner.');
+    }
+
     // EP-3 — normalise the control association (many-to-many + legacy single).
     const requestedControlIds = normalizeControlIds(metadata.controlIds, metadata.controlId);
 
