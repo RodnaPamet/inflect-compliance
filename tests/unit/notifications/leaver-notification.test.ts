@@ -140,15 +140,34 @@ describe('planLeaverNotifications', () => {
 // ─── Audience resolution ───
 
 describe('buildLeaverAudienceBook', () => {
-    it('prefers a configured compliance mailbox over the admin fan-out', async () => {
+    it('does NOT let a compliance mailbox displace the admin fan-out', async () => {
         db.tenantNotificationSettings.findUnique.mockResolvedValue({
             complianceMailbox: 'security@acme.test',
         });
         const b = await book();
+        // processOutbox already Bccs complianceMailbox on every message — the
+        // field's only operator-facing label is literally "Compliance Mailbox
+        // (BCC)". Routing here INSTEAD of the admins would mail the queue twice
+        // and every administrator not at all.
+        expect(b.it.map((r) => r.email)).toEqual(['it@acme.test']);
+        expect(b.it.map((r) => r.email)).not.toContain('security@acme.test');
+        expect(db.tenantMembership.findMany).toHaveBeenCalled();
+    });
+
+    it('falls back to the compliance mailbox only when no admin has an address', async () => {
+        db.tenantNotificationSettings.findUnique.mockResolvedValue({
+            complianceMailbox: 'security@acme.test',
+        });
+        db.tenantMembership.findMany.mockResolvedValue([]);
+        const b = await book();
+        // A Bcc needs a row and a row needs a To, so with no fan-out the
+        // mailbox is the only way the message exists at all.
         expect(b.it).toEqual([{ email: 'security@acme.test', name: 'security' }]);
-        // The point of the mailbox is ONE monitored queue — the admin query
-        // must not run at all, or the same message lands twice.
-        expect(db.tenantMembership.findMany).not.toHaveBeenCalled();
+    });
+
+    it('orders the admin fan-out, so the capped recipient set cannot drift between passes', async () => {
+        await book();
+        expect(db.tenantMembership.findMany.mock.calls[0][0].orderBy).toEqual({ createdAt: 'asc' });
     });
 
     it('falls back to OWNER and ADMIN, not ADMIN alone', async () => {
@@ -209,6 +228,72 @@ describe('buildLeaverAudienceBook', () => {
         expect((await book()).byLink.get('link-1')?.manager).toBeNull();
     });
 
+    it('does not mail a manager who is themselves TERMINATED', async () => {
+        db.identityAccountLink.findMany.mockResolvedValue([
+            linkRow({
+                employee: {
+                    id: 'emp-1',
+                    fullName: 'Dana Okafor',
+                    workEmail: 'dana@acme.test',
+                    manager: {
+                        id: 'emp-9',
+                        fullName: 'Sam Reid',
+                        workEmail: 'sam@acme.test',
+                        // An earlier pass already disabled this mailbox.
+                        status: 'TERMINATED',
+                    },
+                },
+            }),
+        ]);
+        expect((await book()).byLink.get('link-1')?.manager).toBeNull();
+    });
+
+    it('still mails a manager who is OFFBOARDING — they are working their notice', async () => {
+        db.identityAccountLink.findMany.mockResolvedValue([
+            linkRow({
+                employee: {
+                    id: 'emp-1',
+                    fullName: 'Dana Okafor',
+                    workEmail: 'dana@acme.test',
+                    manager: {
+                        id: 'emp-9',
+                        fullName: 'Sam Reid',
+                        workEmail: 'sam@acme.test',
+                        status: 'OFFBOARDING',
+                    },
+                },
+            }),
+        ]);
+        expect((await book()).byLink.get('link-1')?.manager?.email).toBe('sam@acme.test');
+    });
+
+    it('does not mail a manager this very batch is offboarding', async () => {
+        // A team wound down together offboards its lead in the same run. The
+        // mail would land in a mailbox this pass is closing.
+        db.identityAccountLink.findMany.mockResolvedValue([
+            linkRow({
+                id: 'link-1',
+                employee: {
+                    id: 'emp-1',
+                    fullName: 'Dana Okafor',
+                    workEmail: 'dana@acme.test',
+                    manager: { id: 'emp-9', fullName: 'Sam Reid', workEmail: 'sam@acme.test' },
+                },
+            }),
+            linkRow({
+                id: 'link-2',
+                employee: {
+                    id: 'emp-9',
+                    fullName: 'Sam Reid',
+                    workEmail: 'sam@acme.test',
+                    manager: null,
+                },
+            }),
+        ]);
+        const b = await buildLeaverAudienceBook(ctx, ['link-1', 'link-2']);
+        expect(b.byLink.get('link-1')?.manager).toBeNull();
+    });
+
     it('uses the request context slug without a lookup when it has one', async () => {
         const slugged = makeRequestContext('ADMIN', { tenantId: 't1', tenantSlug: 'from-ctx' });
         const b = await buildLeaverAudienceBook(slugged, ['link-1']);
@@ -229,7 +314,7 @@ describe('notifyLeaverOutcome', () => {
             occurredAt: new Date('2026-08-20T09:00:00Z'),
         });
 
-        expect(result).toEqual({ enqueued: 2, silent: false });
+        expect(result).toEqual({ enqueued: 2, failed: 0, silent: false });
         const rows = created();
         expect(rows.map((r) => r.toEmail).sort()).toEqual(['it@acme.test', 'sam@acme.test']);
         expect(rows.every((r) => r.type === 'IDENTITY_LEAVER_DISABLED')).toBe(true);
@@ -322,7 +407,7 @@ describe('notifyLeaverOutcome', () => {
                 outcome,
                 reason: 'leaver writes are switched off for this tenant',
             });
-            expect(result).toEqual({ enqueued: 0, silent: true });
+            expect(result).toEqual({ enqueued: 0, failed: 0, silent: true });
             expect(db.notificationOutbox.create).not.toHaveBeenCalled();
         },
     );
@@ -439,7 +524,67 @@ describe('notifyLeaverOutcome', () => {
                 outcome: 'DISABLED',
                 journalId: 'jrnl-77',
             }),
-        ).resolves.toEqual({ enqueued: 0, silent: false });
+            // Both recipients attempted, both lost, and the count says so —
+            // "0 enqueued" and "0 enqueued, 2 lost" are different facts.
+        ).resolves.toEqual({ enqueued: 0, failed: 2, silent: false });
+    });
+
+    it('one failing recipient does not take the others down with it', async () => {
+        // IT is enumerated before the manager, so a shared try around the loop
+        // would let the first administrator's failing insert silently delete
+        // the manager's mail. And "the next pass re-enqueues it" is no rescue:
+        // a DISABLED mail's dedupe entity is the journal row, minted once.
+        let n = 0;
+        db.notificationOutbox.create.mockImplementation(async (args: { data: CreatedRow }) => {
+            if (n++ === 0) throw new Error('first insert is on fire');
+            return { id: 'outbox-2', ...args.data };
+        });
+        const result = await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+        expect(result).toEqual({ enqueued: 1, failed: 1, silent: false });
+        expect(db.notificationOutbox.create).toHaveBeenCalledTimes(2);
+        expect(created()[1].toEmail).toBe('sam@acme.test');
+    });
+
+    it.each([
+        ["a UPN in a Graph error", "Resource 'dana.okafor@acme.test' does not exist", 'dana.okafor@acme.test'],
+        ['a DN in an LDAP error', 'no such object: CN=Dana Okafor,OU=Leavers,DC=acme,DC=test', 'CN=Dana Okafor'],
+        [
+            'an object id',
+            'PATCH /users/3f2504e0-4f89-11d3-9a0c-0305e82c3301 failed',
+            '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
+        ],
+    ])('strips %s out of the provider text before it reaches an inbox', async (_label, reason, leaked) => {
+        // Half the audience are line managers who are often not tenant members,
+        // and the IT copy commonly lands in a shared queue that forwards
+        // outside the tenant. A message pairing "this person has left" with
+        // their username is one sentence from a phishing template.
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'FAILED',
+            reason,
+        });
+        const body = created()[0].bodyText;
+        expect(body).not.toContain(leaked);
+        expect(body).toContain('{account}');
+    });
+
+    it("strips the account's own id, which has no shape to match on", async () => {
+        // A sAMAccountName is just a word. Only the caller knows it, which is
+        // why the id is passed in at all — it is never rendered.
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'active-directory',
+            outcome: 'FAILED',
+            reason: 'insufficientAccessRights modifying d.okafor',
+            externalUserId: 'd.okafor',
+        });
+        expect(created()[0].bodyText).not.toContain('d.okafor');
     });
 
     it('enqueues rather than sending — no mail transport is touched', async () => {

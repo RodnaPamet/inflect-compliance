@@ -444,6 +444,42 @@ describe('a failure to READ is contained, and the directory is untouched', () =>
         expect(w.disabled).toEqual(['b']);
     });
 
+    it('settles an unclassified throw as INDETERMINATE, never as FAILED', async () => {
+        // FAILED is a POSITIVE claim that the directory is unchanged, and the
+        // batch's catch-all has no proof of that. The throw it is most likely
+        // to see is the settle itself failing AFTER the write landed — and
+        // calling that FAILED tells an operator the account is still live, and
+        // to go and disable it by hand, about an account that is already off.
+        const w = fakeWriter();
+        db.identityWriteJournal.updateMany.mockRejectedValueOnce(new Error('the database went away'));
+
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ externalUserId: 'a' })],
+            population: 500,
+        });
+
+        // The directory WAS written to. Anything other than "we do not know"
+        // would be a guess with teeth.
+        expect(w.disabled).toEqual(['a']);
+        expect(r.results[0].outcome).toBe('INDETERMINATE');
+    });
+
+    it('tells IT it could not be confirmed, not that the account is still live', async () => {
+        const w = fakeWriter();
+        db.identityWriteJournal.updateMany.mockRejectedValueOnce(new Error('the database went away'));
+
+        await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ externalUserId: 'a' })],
+            population: 500,
+        });
+
+        const types = db.notificationOutbox.create.mock.calls.map(
+            (c) => (c[0] as { data: { type: string } }).data.type,
+        );
+        expect(types).toContain('IDENTITY_LEAVER_UNCONFIRMED');
+        expect(types).not.toContain('IDENTITY_LEAVER_NEEDS_ACTION');
+    });
+
     it('an unexpected THROW from the per-account path still continues the batch', async () => {
         // disableAccount is written to return rather than throw, but "written
         // to" is not "guaranteed to" — a provider-writer bug must not abandon

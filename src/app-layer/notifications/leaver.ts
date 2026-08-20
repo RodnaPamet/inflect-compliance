@@ -166,7 +166,12 @@ export async function buildLeaverAudienceBook(
                                   id: true,
                                   fullName: true,
                                   workEmail: true,
-                                  manager: { select: { id: true, fullName: true, workEmail: true } },
+                                  // `status` because a manager can themselves be
+                              // gone: TERMINATED means the mailbox this would
+                              // be sent to is one a previous pass disabled.
+                              manager: {
+                                  select: { id: true, fullName: true, workEmail: true, status: true },
+                              },
                               },
                           },
                       },
@@ -174,51 +179,76 @@ export async function buildLeaverAudienceBook(
                   }),
         ]);
 
-        // A configured compliance mailbox REPLACES the admin fan-out rather than
-        // adding to it. It exists precisely so a tenant can point offboarding
-        // traffic at one monitored queue; sending to the queue AND to every
-        // OWNER/ADMIN would deliver the same message twice to the people most
-        // likely to be watching both, which is how a channel earns a filter
-        // rule. Admins are the fallback for a tenant that never set one.
+        // The OWNER/ADMIN fan-out IS the IT audience, and a configured
+        // compliance mailbox does not replace it.
+        //
+        // `TenantNotificationSettings.complianceMailbox` has one established
+        // meaning in this product and it is not "route here instead":
+        // `processOutbox` sets it as `bcc:` on EVERY outbound message, and the
+        // only operator-facing label the field has says so — "Compliance
+        // Mailbox (BCC)". Substituting it for the fan-out therefore inverts its
+        // own rationale twice over. The mailbox receives each message TWICE (To
+        // and Bcc), which is the duplicate the substitution was meant to avoid;
+        // and no human administrator receives it AT ALL, so a tenant that set
+        // up an archive would have silently opted out of every offboarding
+        // alert it will ever get.
+        //
+        // It stays as the FALLBACK for the one case the fan-out cannot cover —
+        // no privileged member holds an address — because a Bcc still needs a
+        // row to ride on, and a row needs a To.
+        const admins = await db.tenantMembership.findMany({
+            // OWNER as well as ADMIN. Epic 1 made OWNER strictly superior, and
+            // `createTenantWithOwner` mints an OWNER and nothing else — a role
+            // filter of ADMIN alone resolves ZERO recipients for the shape
+            // every tenant starts in.
+            where: { tenantId: ctx.tenantId, role: { in: ['OWNER', 'ADMIN'] }, status: 'ACTIVE' },
+            select: { user: { select: { email: true, name: true } } },
+            // Deterministic, so the recipient set does not silently change
+            // between passes when a tenant has more privileged members than the
+            // cap: `take` without `orderBy` leaves the choice to the planner.
+            orderBy: { createdAt: 'asc' },
+            take: MAX_IT_RECIPIENTS,
+        });
+        let it: LeaverRecipient[] = admins.flatMap((m) => {
+            const email = normaliseEmail(m.user?.email);
+            if (!email) return [];
+            return [{ email, name: m.user?.name ?? localPart(email) }];
+        });
         const mailbox = normaliseEmail(settings?.complianceMailbox);
-        let it: LeaverRecipient[];
-        if (mailbox) {
+        if (it.length === 0 && mailbox) {
             it = [{ email: mailbox, name: localPart(mailbox) }];
-        } else {
-            const admins = await db.tenantMembership.findMany({
-                // OWNER as well as ADMIN. Epic 1 made OWNER strictly superior,
-                // and `createTenantWithOwner` mints an OWNER and nothing else —
-                // a role filter of ADMIN alone resolves ZERO recipients for the
-                // shape every tenant starts in.
-                where: { tenantId: ctx.tenantId, role: { in: ['OWNER', 'ADMIN'] }, status: 'ACTIVE' },
-                select: { user: { select: { email: true, name: true } } },
-                take: MAX_IT_RECIPIENTS,
-            });
-            it = admins.flatMap((m) => {
-                const email = normaliseEmail(m.user?.email);
-                if (!email) return [];
-                return [{ email, name: m.user?.name ?? localPart(email) }];
-            });
         }
+
+        // Everybody this batch is about to offboard. Read once, so the
+        // manager test below is a set lookup rather than a query per link.
+        const leavingEmployeeIds = new Set(links.map((l) => l.employee.id));
 
         const byLink = new Map<string, LeaverSubject>();
         for (const link of links) {
             const worker = link.employee;
             const managerEmail = normaliseEmail(worker.manager?.workEmail);
             const workerEmail = normaliseEmail(worker.workEmail);
-            // Three ways the org chart produces a recipient that must not be
+            // Five ways the org chart produces a recipient that must not be
             // used, all of them observed in real HR feeds:
             //   - no manager at all (top of the tree, or an unmapped row);
             //   - a row that is its own manager, which is how some feeds encode
             //     "reports to nobody";
             //   - a manager whose work email IS the leaver's, i.e. the mailbox
-            //     this pass has just disabled or is about to.
+            //     this pass has just disabled or is about to;
+            //   - a manager who is TERMINATED, whose own mailbox an earlier
+            //     pass already disabled. Not OFFBOARDING, which is somebody
+            //     working their notice and still the right person to tell;
+            //   - a manager who is one of THIS batch's own leavers. A team
+            //     wound down together offboards its lead in the same run, and
+            //     the mail would land in a mailbox this very pass is closing.
             // Each yields a null manager, and the IT mail is unaffected.
             const usable =
                 managerEmail !== null &&
                 worker.manager !== null &&
                 worker.manager.id !== worker.id &&
-                managerEmail.toLowerCase() !== (workerEmail ?? '').toLowerCase();
+                managerEmail.toLowerCase() !== (workerEmail ?? '').toLowerCase() &&
+                worker.manager.status !== 'TERMINATED' &&
+                !leavingEmployeeIds.has(worker.manager.id);
 
             byLink.set(link.id, {
                 workerName: worker.fullName,
@@ -305,10 +335,60 @@ export function planLeaverNotifications(
     }
 }
 
+/**
+ * Directory identifiers, removed from provider text before it reaches an inbox.
+ *
+ * `detail` is the provider's own error string. Graph answers a stale link with
+ * "Resource 'dana.okafor@acme.test' does not exist"; LDAP answers with
+ * "no such object: CN=Dana Okafor,OU=Leavers,DC=acme,DC=test". Rendering either
+ * verbatim breaks this subsystem's identifier rule (see the header of
+ * `leaver-templates.ts`) in the worst possible place: half the audience are line
+ * managers who are frequently not tenant members, and the IT copy commonly lands
+ * in a shared ticket queue that forwards and archives outside the tenant's
+ * control. A message pairing "this person has left" with their username is one
+ * sentence away from a phishing template, from a sender the recipient trusts.
+ *
+ * Runs AFTER `sanitizePlainText`, deliberately. The sanitiser decodes entities,
+ * so an identifier arriving as `dana&#64;acme.test` is only visible as an
+ * address once it has run — redacting first would inspect the encoded form and
+ * pass the decoded one straight through. The reverse order is safe here because
+ * redaction only ever REMOVES, substituting fixed literals that cannot carry
+ * markup back in.
+ */
+const EMAIL_LIKE_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+const DN_LIKE_RE = /\b(?:CN|OU|DC|UID)=[^,\s"']+(?:\s*,\s*(?:CN|OU|DC|UID)=[^,\s"']+)*/gi;
+const GUID_LIKE_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+function redactDirectoryIdentifiers(text: string, externalUserId?: string | null): string {
+    let out = text;
+    // The account's own id first and by exact match, because it is the one
+    // identifier we can remove with certainty rather than by shape — and a
+    // sAMAccountName carries no shape at all, so nothing else here would catch
+    // it.
+    const own = (externalUserId ?? '').trim();
+    if (own.length >= 3) {
+        const escaped = own.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        out = out.replace(new RegExp(escaped, 'gi'), '{account}');
+    }
+    return out
+        .replace(DN_LIKE_RE, '{account}')
+        .replace(EMAIL_LIKE_RE, '{account}')
+        .replace(GUID_LIKE_RE, '{account}');
+}
+
 export interface NotifyLeaverInput {
     /** The link the write acted through, when there was one. */
     readonly linkId: string | null;
     readonly provider: string;
+    /**
+     * The directory id the write was addressed to.
+     *
+     * Passed ONLY so it can be removed from the provider's error text, and
+     * never rendered into a body — see `redactDirectoryIdentifiers`. The rule
+     * that no notification carries a directory identifier is what makes this
+     * field's presence look contradictory and is exactly why it is here.
+     */
+    readonly externalUserId?: string | null;
     readonly outcome: DisableOutcome;
     /** Provider or refusal text. Sanitised and clamped here, not by the caller. */
     readonly reason?: string;
@@ -319,6 +399,14 @@ export interface NotifyLeaverInput {
 export interface NotifyLeaverResult {
     /** Rows actually written to the outbox (duplicates and disabled count 0). */
     readonly enqueued: number;
+    /**
+     * Recipients whose row could not be written. Non-zero means somebody who
+     * should have been told was not — reported rather than thrown, because a
+     * notification must never stop a leaver batch, and counted rather than
+     * swallowed, because "0 enqueued" and "3 enqueued, 2 lost" are different
+     * facts and only one of them needs a human.
+     */
+    readonly failed: number;
     /** True when the plan said say nothing. Not a failure. */
     readonly silent: boolean;
 }
@@ -339,7 +427,7 @@ export async function notifyLeaverOutcome(
 ): Promise<NotifyLeaverResult> {
     const journalRef = input.journalId ?? null;
     const plan = planLeaverNotifications(input.outcome, journalRef !== null);
-    if (!plan.it && !plan.manager) return { enqueued: 0, silent: true };
+    if (!plan.it && !plan.manager) return { enqueued: 0, failed: 0, silent: true };
 
     try {
         const subject = input.linkId ? book.byLink.get(input.linkId) : undefined;
@@ -355,7 +443,10 @@ export async function notifyLeaverOutcome(
         // outbox row that a mail client, an operator surface and any future SDK
         // consumer all read back verbatim. Escaping at render time alone would
         // leave the stored row dangerous to everything that is not an escaper.
-        const cleaned = sanitizePlainText(input.reason ?? '').trim();
+        const cleaned = redactDirectoryIdentifiers(
+            sanitizePlainText(input.reason ?? '').trim(),
+            input.externalUserId,
+        );
         const detail =
             cleaned.length > 0
                 ? cleaned.slice(0, MAX_DETAIL_CHARS)
@@ -375,12 +466,14 @@ export async function notifyLeaverOutcome(
             targets.push({ type: plan.manager, to: subject.manager, audience: 'MANAGER' });
         }
 
-        // DISABLED and UNCONFIRMED are only ever planned for an outcome that
-        // journalled, so this placeholder is unreachable by construction. It
-        // exists rather than a throw because the failure it would cover — a
-        // future outcome wired into the plan without a journal row — must not
-        // silence the most important message in the subsystem. Loud in the log,
-        // still delivered.
+        // A journal-bearing mail with no journal id. Rare and real rather than
+        // impossible: `disableAccountsForLeaver` settles an unclassified throw
+        // as INDETERMINATE, and a throw from `beginWrite` itself never produced
+        // a row to quote. That case is precisely the one where the message
+        // matters most — we may have written and cannot even name what we
+        // wrote — so it is logged loudly and still DELIVERED, rather than
+        // thrown away for want of a reference. `listUnsettledWrites` is how the
+        // row is found without one.
         const wantsRef = targets.some((t) => t.type !== 'IDENTITY_LEAVER_NEEDS_ACTION');
         if (journalRef === null && wantsRef) {
             logger.warn('leaver notification planned a journal-bearing mail with no journal id', {
@@ -392,6 +485,7 @@ export async function notifyLeaverOutcome(
         const quotedRef = journalRef ?? '(none recorded)';
 
         let enqueued = 0;
+        let failed = 0;
         for (const target of targets) {
             const base = {
                 recipientName: target.to.name,
@@ -423,26 +517,58 @@ export async function notifyLeaverOutcome(
                             ...base,
                             journalRef,
                             detail,
+                            // Every non-FAILED outcome reaching NEEDS_ACTION
+                            // is a refusal taken before a write was attempted,
+                            // which is exactly what the REFUSED_TARGET copy
+                            // says — "refused before any write was attempted".
+                            // REFUSED_PROTECTED lands here too and the sentence
+                            // stays true for it; the specific cause travels in
+                            // `detail`, which is where a reader looks anyway.
                             outcome:
                                 input.outcome === 'FAILED'
                                     ? ('FAILED' as const)
                                     : ('REFUSED_TARGET' as const),
                         };
 
-            // One transaction per row rather than one for the batch: the outbox
-            // insert is idempotent on `dedupeKey`, so a partial failure loses at
-            // most the row it was writing and the next pass re-enqueues it.
-            const row = await runInTenantContext(ctx, (db) =>
-                enqueueEmail(db, {
+            // One transaction per row rather than one for the batch, AND one
+            // try per row rather than one for the loop.
+            //
+            // The containment is the load-bearing half. `enqueueEmail` re-throws
+            // anything that is not a duplicate-key violation, so a single
+            // failing insert under a shared try would abandon every recipient
+            // after it — and IT is enumerated before the manager, so the first
+            // administrator's row failing would take the manager's mail down
+            // with it. Nor does "the next pass re-enqueues it" rescue that: for
+            // a DISABLED or UNCONFIRMED mail the dedupe entity is the journal
+            // row, which is minted once and never revisited, so a lost row is
+            // lost for good.
+            try {
+                const row = await runInTenantContext(ctx, (db) =>
+                    enqueueEmail(db, {
+                        tenantId: ctx.tenantId,
+                        type: target.type,
+                        toEmail: target.to.email,
+                        entityId,
+                        payload,
+                        requestId: ctx.requestId,
+                    }),
+                );
+                if (row) enqueued++;
+            } catch (err) {
+                failed++;
+                logger.error('leaver notification recipient could not be enqueued', {
+                    component: 'notifications-leaver',
                     tenantId: ctx.tenantId,
+                    provider: input.provider,
+                    outcome: input.outcome,
+                    // The audience, never the address: this line is neither
+                    // encrypted nor tenant-scoped.
+                    audience: target.audience,
                     type: target.type,
-                    toEmail: target.to.email,
-                    entityId,
-                    payload,
-                    requestId: ctx.requestId,
-                }),
-            );
-            if (row) enqueued++;
+                    journalId: journalRef,
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
         }
 
         if (plan.manager && !subject?.manager) {
@@ -458,7 +584,7 @@ export async function notifyLeaverOutcome(
             });
         }
 
-        return { enqueued, silent: false };
+        return { enqueued, failed, silent: false };
     } catch (err) {
         logger.error('leaver notification could not be enqueued', {
             component: 'notifications-leaver',
@@ -468,6 +594,6 @@ export async function notifyLeaverOutcome(
             journalId: journalRef,
             error: err instanceof Error ? err.message : String(err),
         });
-        return { enqueued: 0, silent: false };
+        return { enqueued: 0, failed: 0, silent: false };
     }
 }

@@ -476,7 +476,21 @@ export async function disableAccountsForLeaver(
                 externalUserId: candidate.externalUserId,
                 error: detail,
             });
-            result = { outcome: 'FAILED', reason: detail };
+            // INDETERMINATE, not FAILED. FAILED is a POSITIVE claim that the
+            // directory is unchanged (see the outcome's own doc above), and it
+            // is only honest when the provider PROVED it — which is what
+            // `provenNotApplied` decides inside `disableAccount`. A throw that
+            // escapes to here proved nothing: the most likely one is
+            // `handle.applied()` failing on a database blip AFTER the write
+            // landed, and labelling that FAILED tells an operator the account
+            // is still live and to go disable it by hand, about an account that
+            // is already off.
+            //
+            // "We do not know" already has an outcome, and it is the one whose
+            // whole job is to say so: the journal row stays PENDING for
+            // `listUnsettledWrites` to surface, and the notification says the
+            // write could not be confirmed rather than asserting a non-fact.
+            result = { outcome: 'INDETERMINATE', reason: detail };
         }
         results.push(result);
 
@@ -497,6 +511,9 @@ export async function disableAccountsForLeaver(
                 outcome: result.outcome,
                 reason: result.reason,
                 journalId: result.journalId,
+                // Not for rendering — the notification layer uses it to strip
+                // the id back out of the provider's error text.
+                externalUserId: candidate.externalUserId,
             });
         } catch (err) {
             logger.error('leaver notification threw unexpectedly; continuing the batch', {
