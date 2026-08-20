@@ -30,6 +30,7 @@ import {
   HTMLAttributes,
   memo,
   MouseEvent,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -744,71 +745,155 @@ export function Table<T>({
   // Strategy: measure the outer card's height (= wrapper's intended
   // height, set by flex-1 in the chain) and the first row's height,
   // then set the wrapper's max-height to floor(avail / rowH) * rowH.
-  // ResizeObserver watches the OUTER CARD (not the wrapper) so my
-  // max-height update doesn't loop — the card's size is determined
-  // by flex-1 above, independent of my max-height below.
   const numRows = table.getRowModel().rows.length;
   const [maxScrollHeight, setMaxScrollHeight] = useState<number | undefined>();
-  // useLayoutEffect runs synchronously after DOM commit and BEFORE
-  // the browser paints — eliminates the "first paint shows clipped
-  // wrong, then re-renders correctly" flicker. Also more reliable
-  // under Next.js fast-refresh than plain useEffect.
+
+  // The clip pass reads three layout properties back to back — the
+  // first row's height, the allocation ancestor's height, the tbody's
+  // content height — and may then commit state. Running that
+  // synchronously on every row-count change is what made
+  // load-on-scroll stall: appending a batch happens WHILE the scroll
+  // gesture is live, and a layout effect runs after commit and before
+  // paint, so the browser was forced into a full re-layout in the
+  // middle of the gesture.
+  //
+  // So the pass is SCHEDULED onto an animation frame instead. At most
+  // one frame is in flight, which collapses a burst of appends into a
+  // single measurement that runs once layout has already settled
+  // rather than forcing it. The one deliberate exception is the FIRST
+  // pass (see the layout effect below): deferring that one would paint
+  // the card unclipped for a frame and then snap, which is the flicker
+  // the layout effect existed to remove.
+  const clipFrameRef = useRef<number | null>(null);
+  const clipMeasuredRef = useRef(false);
+  const clipObserverRef = useRef<ResizeObserver | null>(null);
+  const clipObservedCardRef = useRef<Element | null>(null);
+  const clipObservedRowRef = useRef<Element | null>(null);
+
+  const measureRowClip = useCallback(() => {
+    clipFrameRef.current = null;
+    const wrapper = scrollWrapperRef.current;
+    const card = wrapper?.parentElement;
+    if (!wrapper || !card) return;
+
+    const tbody = wrapper.querySelector("tbody");
+    const firstRow = tbody?.querySelector("tr") as HTMLElement | null;
+    if (!firstRow) {
+      // Empty state: no rows to clip against. Let CSS take over
+      // (min-h-96 floor on the empty-state container).
+      setMaxScrollHeight(undefined);
+      return;
+    }
+    const rowH = firstRow.offsetHeight;
+    if (rowH <= 0) return; // not yet laid out — wait for next RO tick
+    // A real measurement has landed, so every later pass can be
+    // deferred to a frame without risking a visible correction.
+    clipMeasuredRef.current = true;
+
+    // The viewport allocation lives on an ancestor up the chain
+    // (ListPageShell.Body, which is flex-1 of ListPageShell). Since
+    // the card has no flex-1 anymore, card.clientHeight = card's
+    // natural size (= content). Walk up to the ListPageShell.Body
+    // (the closest ancestor with the data-list-page-shell-body
+    // marker — fall back to the second ancestor if the marker is
+    // absent on a non-shell page).
+    const allocAncestor =
+      (wrapper.closest("[data-list-page-body]") as HTMLElement | null) ??
+      card.parentElement;
+    const availH = allocAncestor?.clientHeight ?? card.clientHeight;
+
+    // tbody.scrollHeight is the actual content height (sum of all
+    // rows + any borders/padding). If it fits within the
+    // allocation, no clip — CSS max-h-full naturally caps to
+    // parent and content is shorter than that.
+    const contentH = tbody?.scrollHeight ?? 0;
+    if (contentH <= availH) {
+      setMaxScrollHeight((prev) => (prev === undefined ? prev : undefined));
+      return;
+    }
+
+    // Content overflows. Clip to whole rows.
+    const wholeRows = Math.max(Math.floor(availH / rowH), 1);
+    const newMax = wholeRows * rowH;
+    setMaxScrollHeight((prev) => (prev === newMax ? prev : newMax));
+  }, []);
+
+  const scheduleRowClip = useCallback(() => {
+    // SSR / bare-Node: measure inline so the clip never silently
+    // stops updating in an environment without a frame loop.
+    if (typeof requestAnimationFrame === "undefined") {
+      measureRowClip();
+      return;
+    }
+    // Already queued for this frame — the pending callback reads the
+    // freshest layout anyway, so a second frame would measure the
+    // same numbers twice.
+    if (clipFrameRef.current !== null) return;
+    clipFrameRef.current = requestAnimationFrame(measureRowClip);
+  }, [measureRowClip]);
+
+  // Teardown is unmount-only. Deliberately NOT the cleanup of the
+  // layout effect below: that effect re-runs on every row-count
+  // change, and disconnecting there is what made an append tear the
+  // observer down and rebuild it around the very same two elements.
+  useEffect(
+    () => () => {
+      clipObserverRef.current?.disconnect();
+      clipObserverRef.current = null;
+      clipObservedCardRef.current = null;
+      clipObservedRowRef.current = null;
+      if (
+        clipFrameRef.current !== null &&
+        typeof cancelAnimationFrame !== "undefined"
+      ) {
+        cancelAnimationFrame(clipFrameRef.current);
+      }
+      clipFrameRef.current = null;
+    },
+    [],
+  );
+
   useLayoutEffect(() => {
     const wrapper = scrollWrapperRef.current;
     const card = wrapper?.parentElement;
     if (!wrapper || !card) return;
 
-    const compute = () => {
-      const tbody = wrapper.querySelector("tbody");
-      const firstRow = tbody?.querySelector("tr") as HTMLElement | null;
-      if (!firstRow) {
-        // Empty state: no rows to clip against. Let CSS take over
-        // (min-h-96 floor on the empty-state container).
-        setMaxScrollHeight(undefined);
-        return;
-      }
-      const rowH = firstRow.offsetHeight;
-      if (rowH <= 0) return; // not yet laid out — wait for next RO tick
+    // The ResizeObserver watches the OUTER CARD (not the wrapper) so
+    // the max-height write below can't loop — the card's size is
+    // fixed by the flex chain above it, independent of the wrapper's
+    // max-height. It is created once and kept: the card's height
+    // changes when the viewport resizes or the chrome above it
+    // changes, and neither of those is a row-count event.
+    let ro = clipObserverRef.current;
+    if (!ro) {
+      ro = new ResizeObserver(scheduleRowClip);
+      clipObserverRef.current = ro;
+    }
+    // Re-register a target only when it is genuinely a DIFFERENT
+    // element. Appending rows replaces neither the card nor the
+    // leading row, so an append re-registers nothing; a filter that
+    // swaps the leading row, or an empty list filling in, does.
+    if (card !== clipObservedCardRef.current) {
+      if (clipObservedCardRef.current) ro.unobserve(clipObservedCardRef.current);
+      ro.observe(card);
+      clipObservedCardRef.current = card;
+    }
+    // The first row's height changes when content reflows, e.g. a
+    // webfont landing.
+    const firstRow = wrapper.querySelector("tbody tr");
+    if (firstRow !== clipObservedRowRef.current) {
+      if (clipObservedRowRef.current) ro.unobserve(clipObservedRowRef.current);
+      if (firstRow) ro.observe(firstRow);
+      clipObservedRowRef.current = firstRow;
+    }
 
-      // The viewport allocation lives on an ancestor up the chain
-      // (ListPageShell.Body, which is flex-1 of ListPageShell). Since
-      // the card has no flex-1 anymore, card.clientHeight = card's
-      // natural size (= content). Walk up to the ListPageShell.Body
-      // (the closest ancestor with the data-list-page-shell-body
-      // marker — fall back to the second ancestor if the marker is
-      // absent on a non-shell page).
-      const allocAncestor =
-        (wrapper.closest("[data-list-page-body]") as HTMLElement | null) ??
-        card.parentElement;
-      const availH = allocAncestor?.clientHeight ?? card.clientHeight;
-
-      // tbody.scrollHeight is the actual content height (sum of all
-      // rows + any borders/padding). If it fits within the
-      // allocation, no clip — CSS max-h-full naturally caps to
-      // parent and content is shorter than that.
-      const contentH = tbody?.scrollHeight ?? 0;
-      if (contentH <= availH) {
-        setMaxScrollHeight((prev) => (prev === undefined ? prev : undefined));
-        return;
-      }
-
-      // Content overflows. Clip to whole rows.
-      const wholeRows = Math.max(Math.floor(availH / rowH), 1);
-      const newMax = wholeRows * rowH;
-      setMaxScrollHeight((prev) => (prev === newMax ? prev : newMax));
-    };
-
-    compute();
-    // Observe BOTH the card (its height changes when the viewport
-    // resizes or the chrome above it changes) AND the first row
-    // (its height changes when content reflows, e.g. font load).
-    const ro = new ResizeObserver(compute);
-    ro.observe(card);
-    const tbody = wrapper.querySelector("tbody");
-    const firstRow = tbody?.querySelector("tr");
-    if (firstRow) ro.observe(firstRow);
-    return () => ro.disconnect();
-  }, [numRows]);
+    if (clipMeasuredRef.current) {
+      scheduleRowClip();
+    } else {
+      // First real pass stays synchronous — see the note above.
+      measureRowClip();
+    }
+  }, [numRows, scheduleRowClip, measureRowClip]);
 
   const utilityColumnWidths = new Map(
     visibleColumns.map((column) => [column.id, column.getSize()]),
