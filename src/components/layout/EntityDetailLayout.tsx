@@ -216,30 +216,38 @@ export function EntityDetailLayout<TKey extends string = string>({
     // the PageHeader was rendered, leaving the user without any
     // navigation affordance for the duration of the data fetch.
     // The header is now always present; only the body changes.
-    // The nav rides WITH the title through the same loading/error/empty
-    // suppression below — otherwise the arrows flash beside an empty heading
-    // while the entity is still loading.
-    const titleNode =
+    //
+    // The nav is suppressed by the SAME loading/error/empty check as the
+    // title — otherwise the arrows flash beside an empty heading while the
+    // entity is still loading.
+    //
+    // It goes through PageHeader's `titleAdornment` slot, which renders it as
+    // a SIBLING of the <h1> rather than inside it. Folding it into `title`
+    // (as this did originally) puts two <button aria-label="Previous …">
+    // inside the heading, and the accname spec concatenates a descendant
+    // control's label into the heading's own accessible name — Chromium
+    // announces the page title as "<entity name> Previous risk Next risk".
+    // jsdom cannot see this: dom-accessibility-api deliberately skips
+    // step 2C for descendant controls, so a testing-library query for the
+    // bare title still passes. Keep the nav OUT of the title node.
+    const stepperNode =
         prevNext !== undefined ? (
-            <span className="inline-flex items-center gap-2.5">
-                {title}
-                <EntityPrevNextNav
-                    ids={prevNext.ids}
-                    currentId={prevNext.currentId}
-                    hrefFor={prevNext.hrefFor}
-                    labelSingular={prevNext.labelSingular}
-                />
-            </span>
-        ) : (
-            title
-        );
+            <EntityPrevNextNav
+                ids={prevNext.ids}
+                currentId={prevNext.currentId}
+                hrefFor={prevNext.hrefFor}
+                labelSingular={prevNext.labelSingular}
+            />
+        ) : undefined;
+    const suppressed = loading || error || empty;
     const headerNode = (
         <PageHeader
             breadcrumbs={breadcrumbs}
             back={back}
-            title={loading || error || empty ? '' : titleNode}
-            meta={loading || error || empty ? undefined : meta}
-            actions={loading || error || empty ? undefined : actions}
+            title={suppressed ? '' : title}
+            titleAdornment={suppressed ? undefined : stepperNode}
+            meta={suppressed ? undefined : meta}
+            actions={suppressed ? undefined : actions}
             data-testid="entity-detail-header"
         />
     );
