@@ -1958,6 +1958,22 @@ jobs:
           severity: "CRITICAL,HIGH"
           ignore-unfixed: true
           vuln-type: "os,library"
+          # Trivy's own default is 5m, and on 2026-08-20 the scan hit it
+          # exactly (10:43:47 -> 10:48:47, `context deadline exceeded`) and
+          # took main red. No CVE was involved: the scan never finished, so
+          # no SARIF was written and the upload step failed after it with
+          # "Path does not exist".
+          #
+          # A timeout on a security gate fails in the worst direction. The
+          # step is `always()` and the upload is deliberately NOT
+          # `continue-on-error`, so a slow runner turns a clean image into a
+          # red build that reads exactly like a CVE finding — which invites
+          # re-running until it is green, and a re-run that passes proves
+          # only that the runner was faster that time.
+          #
+          # 15m is ~3x the observed scan window with the severity gate
+          # unchanged. This raises the patience, never the threshold.
+          timeout: "15m"
 
       - name: Upload Trivy SARIF to GitHub Security
         if: ${{ always() && vars.CODE_SCANNING_ENABLED == 'true' }}
