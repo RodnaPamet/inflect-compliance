@@ -44,6 +44,23 @@ import { logger } from '@/lib/observability/logger';
 /** Bound on the employee population read in one matching pass. */
 const MAX_EMPLOYEES = 10_000;
 
+/** Why an account could not be linked. Each wants a different response. */
+export type UnresolvedReason =
+    /** No employee holds this address — often a service or shared account. */
+    | 'NO_EMPLOYEE'
+    /** Two or more employee rows claim the address, so matching either is a guess. */
+    | 'AMBIGUOUS_EMPLOYEE'
+    /** The account is already linked to a DIFFERENT worker than the address implies. */
+    | 'LINKED_ELSEWHERE';
+
+export interface UnresolvedAccount {
+    readonly connectedAccountId: string;
+    readonly reason: UnresolvedReason;
+}
+
+/** Bound on the sample carried back. Enough to act on, not a second dataset. */
+const MAX_UNRESOLVED_REPORTED = 50;
+
 export interface LinkMatchResult {
     /** Links newly created in this pass. */
     readonly created: number;
@@ -54,6 +71,21 @@ export interface LinkMatchResult {
      * different worker. Reported rather than resolved — see the module note.
      */
     readonly unmatched: number;
+    /**
+     * WHICH accounts, and why — bounded.
+     *
+     * The count alone was unactionable: "37 unmatched" tells an operator
+     * nothing about which accounts, and the three reasons below want different
+     * responses. A leaver rollout is exactly when this matters, because an
+     * account with no HR counterpart is one the offboarding will never disable,
+     * and nobody would know which.
+     *
+     * Carries the ACCOUNT ID rather than the email address. The id identifies
+     * the row for an operator who can look it up under tenant scope; the email
+     * would put a person's address into a log line that is neither encrypted
+     * nor tenant-scoped.
+     */
+    readonly unresolved: readonly UnresolvedAccount[];
     /** Existing links this pass DISPROVED and marked ineligible for writes. */
     readonly contradicted: number;
 }
@@ -131,7 +163,14 @@ export async function reconcileIdentityAccountLinks(
          * the link was last true, not a witness that it still is.
          */
         const contradicted: string[] = [];
+        const unresolved: UnresolvedAccount[] = [];
         let unmatched = 0;
+        const noteUnresolved = (connectedAccountId: string, reason: UnresolvedReason): void => {
+            unmatched += 1;
+            if (unresolved.length < MAX_UNRESOLVED_REPORTED) {
+                unresolved.push({ connectedAccountId, reason });
+            }
+        };
 
         for (const account of accounts) {
             const key = emailKey(account.email);
@@ -143,7 +182,11 @@ export async function reconcileIdentityAccountLinks(
                 // unlinked account matching nothing is just an unlinked
                 // account — a service account, most often.
                 if (linkedTo.has(account.id)) contradicted.push(account.id);
-                unmatched += 1;
+                // `byEmail` holds null for an address two employees claim, and
+                // is simply absent for one nobody holds. The two look identical
+                // downstream and are not: one is a data problem to fix, the
+                // other is usually a service account to exclude.
+                noteUnresolved(account.id, key && byEmail.has(key) ? 'AMBIGUOUS_EMPLOYEE' : 'NO_EMPLOYEE');
                 continue;
             }
 
@@ -159,7 +202,7 @@ export async function reconcileIdentityAccountLinks(
                 // MARKED, because a pairing this pass actively disproved must
                 // not keep driving writes on the strength of an old stamp.
                 contradicted.push(account.id);
-                unmatched += 1;
+                noteUnresolved(account.id, 'LINKED_ELSEWHERE');
                 continue;
             }
             toCreate.push({
@@ -213,8 +256,15 @@ export async function reconcileIdentityAccountLinks(
             verified,
             unmatched,
             marked,
+            // A breakdown rather than the ids, which would make a routine log
+            // line unbounded. The ids travel in the RESULT, for a caller that
+            // means to act on them.
+            unresolvedByReason: unresolved.reduce<Record<string, number>>((acc, u) => {
+                acc[u.reason] = (acc[u.reason] ?? 0) + 1;
+                return acc;
+            }, {}),
         });
 
-        return { created, verified, unmatched, contradicted: marked };
+        return { created, verified, unmatched, contradicted: marked, unresolved };
     });
 }
