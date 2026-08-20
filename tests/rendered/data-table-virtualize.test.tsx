@@ -440,3 +440,75 @@ describe("DataTable — virtualized sort buttons", () => {
         expect(onSortChange).toHaveBeenCalledTimes(1);
     });
 });
+
+// ─── #103 — load-on-scroll survives the virtualization swap ──────────
+//
+// `onReachEnd` used to be forwarded ONLY to the non-virtualized
+// <Table>, which renders an <InfiniteScrollSentinel> in its scroll
+// wrapper. That made the bug self-inflicting: load-on-scroll is exactly
+// what carries a table ACROSS the threshold — appending a batch at a
+// time, a list eventually passes VIRTUALIZE_DEFAULT_THRESHOLD and swaps
+// to <VirtualTable> mid-session — and at that moment loading silently
+// stopped, stranding every row past the crossing.
+//
+// The sentinel does not transplant: react-window absolutely-positions
+// children inside an inner element sized to itemCount * itemSize, so a
+// sentinel appended to the scroll container sits at the TOP of the
+// scrolled content and would intersect immediately, firing forever.
+// The virtual path reads react-window's own reported visible range
+// instead, which is the thing the sentinel exists to infer.
+
+describe("DataTable — onReachEnd on the virtualized path (#103)", () => {
+    it("fires when the windowed viewport reaches the end of the data", () => {
+        const onReachEnd = jest.fn();
+        // 12 rows at 44px inside a 600px viewport — the whole list is
+        // within VIRTUAL_REACH_END_ROW_MARGIN of the last row.
+        renderTable({ data: makeRows(12), onReachEnd });
+        expect(onReachEnd).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT fire while the end is still far below the viewport", () => {
+        const onReachEnd = jest.fn();
+        // 150 rows, ~14 visible from the top: nowhere near the last row.
+        renderTable({ data: makeRows(150), onReachEnd });
+        expect(onReachEnd).not.toHaveBeenCalled();
+    });
+
+    it("fires at most once per row count, and re-arms when rows are appended", () => {
+        const onReachEnd = jest.fn();
+        const { rerender } = renderTable({ data: makeRows(12), onReachEnd });
+        expect(onReachEnd).toHaveBeenCalledTimes(1);
+
+        // react-window re-reports its rendered range on every window
+        // change, so without the row-count latch a user parked at the
+        // bottom would re-fire on each nudge. A re-render carrying the
+        // SAME rows must not produce a second call.
+        rerender(
+            <DataTable<ThingRow>
+                data={makeRows(12)}
+                columns={thingColumns}
+                getRowId={(r) => r.id}
+                virtualHeight={600}
+                selectionEnabled={false}
+                virtualize
+                onReachEnd={onReachEnd}
+            />,
+        );
+        expect(onReachEnd).toHaveBeenCalledTimes(1);
+
+        // A load that APPENDS changes the count, which unlatches the
+        // guard — otherwise loading would stop dead after one batch.
+        rerender(
+            <DataTable<ThingRow>
+                data={makeRows(14)}
+                columns={thingColumns}
+                getRowId={(r) => r.id}
+                virtualHeight={600}
+                selectionEnabled={false}
+                virtualize
+                onReachEnd={onReachEnd}
+            />,
+        );
+        expect(onReachEnd).toHaveBeenCalledTimes(2);
+    });
+});

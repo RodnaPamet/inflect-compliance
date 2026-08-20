@@ -137,11 +137,25 @@ export interface DataTableProps<T> {
    */
   renderAlignedSubRows?: (row: Row<T>, columnIds: string[]) => React.ReactNode;
   /**
-   * Infinite-scroll (load-on-scroll). Forwarded to the non-virtualized
-   * `<Table>`, which renders a bottom sentinel inside the scroll
-   * wrapper and fires `onReachEnd` when it scrolls into view. Pair with
-   * `useThresholdLoadMore`: `onReachEnd={hasMore ? loadMore : undefined}`.
-   * Replaces the `<TableLoadMoreFooter>` button.
+   * Infinite-scroll (load-on-scroll). Pair with `useThresholdLoadMore`:
+   * `onReachEnd={hasMore ? loadMore : undefined}`. Replaces the
+   * `<TableLoadMoreFooter>` button.
+   *
+   * Honoured by BOTH renderers, which matters because load-on-scroll
+   * is exactly what carries a table ACROSS the virtualization
+   * threshold: appending 50 rows at a time, a list that starts at 50
+   * eventually passes `VIRTUALIZE_DEFAULT_THRESHOLD` and swaps to
+   * `<VirtualTable>` mid-session. When only `<Table>` was wired, that
+   * crossing silently ended load-on-scroll and the rows past the
+   * threshold became unreachable.
+   *
+   * The two renderers detect "at the end" differently — `<Table>`
+   * renders an `<InfiniteScrollSentinel>` in its scroll wrapper,
+   * `<VirtualTable>` reads react-window's reported visible range (see
+   * the note in `virtual-table-body.tsx`) — but the consumer contract
+   * is identical: fired when the user nears the last row, once per
+   * batch, and the parent stops passing the callback when the data is
+   * exhausted.
    */
   onReachEnd?: () => void;
 
@@ -573,6 +587,7 @@ export function DataTable<T>({
           sortBy={sortBy}
           sortOrder={sortOrder}
           onSortChange={onSortChange}
+          onReachEnd={onReachEnd}
           containerClassName={filledContainerClassName}
           scrollWrapperClassName={filledScrollWrapperClassName}
         />

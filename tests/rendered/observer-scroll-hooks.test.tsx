@@ -260,6 +260,23 @@ describe('useScroll', () => {
 // ── useScrollProgress ──────────────────────────────────────────────────
 
 describe('useScrollProgress', () => {
+    /**
+     * Run the frame the hook queued.
+     *
+     * `updateScrollProgress` only SCHEDULES the measurement — it collapses an
+     * event storm to one rAF so a scroll gesture cannot thrash layout or
+     * commit a render per event. The consequence for tests is that progress
+     * reflects a call on the NEXT frame, not the same tick, so every
+     * assertion below flushes one first.
+     */
+    const flushFrame = async () => {
+        await act(async () => {
+            await new Promise<void>((resolve) =>
+                requestAnimationFrame(() => resolve()),
+            );
+        });
+    };
+
     function makeScrollableRef(opts: {
         scrollTop?: number;
         scrollHeight?: number;
@@ -283,7 +300,7 @@ describe('useScrollProgress', () => {
         expect(result.current.scrollProgress).toBe(1);
     });
 
-    it('updateScrollProgress computes 0..1 progress', () => {
+    it('updateScrollProgress computes 0..1 progress', async () => {
         const ref = makeScrollableRef({
             scrollTop: 0,
             scrollHeight: 500,
@@ -295,22 +312,25 @@ describe('useScrollProgress', () => {
         // but the ResizeObserver hasn't fired yet so state is still 1
         // (the documented SSR-safe default). After manual update:
         act(() => result.current.updateScrollProgress());
+        await flushFrame();
         expect(result.current.scrollProgress).toBe(0);
 
         act(() => {
             (ref.current as unknown as { scrollTop: number }).scrollTop = 200;
             result.current.updateScrollProgress();
         });
+        await flushFrame();
         expect(result.current.scrollProgress).toBe(0.5);
 
         act(() => {
             (ref.current as unknown as { scrollTop: number }).scrollTop = 400;
             result.current.updateScrollProgress();
         });
+        await flushFrame();
         expect(result.current.scrollProgress).toBe(1);
     });
 
-    it('clamps progress to [0, 1] for overscroll / negative scroll', () => {
+    it('clamps progress to [0, 1] for overscroll / negative scroll', async () => {
         const ref = makeScrollableRef({
             scrollTop: -50,
             scrollHeight: 500,
@@ -318,16 +338,18 @@ describe('useScrollProgress', () => {
         });
         const { result } = renderHook(() => useScrollProgress(ref));
         act(() => result.current.updateScrollProgress());
+        await flushFrame();
         expect(result.current.scrollProgress).toBe(0);
 
         act(() => {
             (ref.current as unknown as { scrollTop: number }).scrollTop = 9999;
             result.current.updateScrollProgress();
         });
+        await flushFrame();
         expect(result.current.scrollProgress).toBe(1);
     });
 
-    it('direction: "horizontal" reads scrollLeft / scrollWidth', () => {
+    it('direction: "horizontal" reads scrollLeft / scrollWidth', async () => {
         const el = document.createElement('div');
         Object.defineProperty(el, 'scrollLeft', { value: 100, writable: true });
         Object.defineProperty(el, 'scrollWidth', { value: 500, writable: true });
@@ -340,8 +362,128 @@ describe('useScrollProgress', () => {
             useScrollProgress(ref, { direction: 'horizontal' }),
         );
         act(() => result.current.updateScrollProgress());
+        await flushFrame();
         // 100 / (500 - 100) = 0.25
         expect(result.current.scrollProgress).toBe(0.25);
+    });
+
+    // ── #104: the batching itself ──────────────────────────────────────
+
+    it('collapses an event storm within one frame to a SINGLE layout read', async () => {
+        // Counts the LAYOUT READS, not the renders.
+        //
+        // Render count is the wrong assertion here and would pass against the
+        // unbatched hook: React 18 auto-batches every setState inside one
+        // act()/event scope, so twenty synchronous commits still yield one
+        // render. What batching actually buys is that the hook stops
+        // MEASURING per event — each measure reads scrollTop/scrollHeight/
+        // clientHeight while the consumer writes the result back out as an
+        // inline opacity, so an unbatched storm interleaves read/write/read
+        // /write within one frame. That is the layout thrash, and it is
+        // visible only in the read count.
+        let reads = 0;
+        const el = document.createElement('div');
+        Object.defineProperty(el, 'scrollTop', {
+            get() {
+                reads += 1;
+                return 300;
+            },
+        });
+        Object.defineProperty(el, 'scrollHeight', { value: 500 });
+        Object.defineProperty(el, 'clientHeight', { value: 100 });
+        const ref = { current: el };
+
+        const { result } = renderHook(() => useScrollProgress(ref));
+        reads = 0;
+
+        act(() => {
+            for (let i = 0; i < 20; i += 1) result.current.updateScrollProgress();
+        });
+        await flushFrame();
+
+        // One measurement for the whole storm, carrying the final position.
+        expect(reads).toBe(1);
+        expect(result.current.scrollProgress).toBe(0.75);
+    });
+
+    it('commits nothing when the progress delta is below the epsilon', async () => {
+        const ref = makeScrollableRef({
+            scrollTop: 200,
+            scrollHeight: 500,
+            clientHeight: 100,
+        });
+        let renders = 0;
+        const { result } = renderHook(() => {
+            renders += 1;
+            return useScrollProgress(ref);
+        });
+        act(() => result.current.updateScrollProgress());
+        await flushFrame();
+        expect(result.current.scrollProgress).toBe(0.5);
+        const settled = renders;
+
+        // 0.5 -> 0.5001. The value drives an opacity of 1 - p², so this is
+        // two orders of magnitude below anything visible — exactly the
+        // sub-pixel churn a momentum scroll produces.
+        act(() => {
+            (ref.current as unknown as { scrollTop: number }).scrollTop = 200.04;
+            result.current.updateScrollProgress();
+        });
+        await flushFrame();
+
+        expect(result.current.scrollProgress).toBe(0.5);
+        expect(renders).toBe(settled);
+    });
+
+    it('still commits at the ends of travel, however small the step', async () => {
+        const ref = makeScrollableRef({
+            scrollTop: 400,
+            scrollHeight: 500,
+            clientHeight: 100,
+        });
+        const { result } = renderHook(() => useScrollProgress(ref));
+        act(() => result.current.updateScrollProgress());
+        await flushFrame();
+        expect(result.current.scrollProgress).toBe(1);
+
+        // A sub-epsilon step AWAY from the boundary is suppressed, but the
+        // boundary itself must always land — otherwise the fade settles at a
+        // residual opacity instead of disappearing at the bottom.
+        act(() => {
+            (ref.current as unknown as { scrollTop: number }).scrollTop = 399.99;
+            result.current.updateScrollProgress();
+        });
+        await flushFrame();
+        expect(result.current.scrollProgress).toBe(1);
+
+        act(() => {
+            (ref.current as unknown as { scrollTop: number }).scrollTop = 0;
+            result.current.updateScrollProgress();
+        });
+        await flushFrame();
+        expect(result.current.scrollProgress).toBe(0);
+    });
+
+    it('cancels a queued frame on unmount so it cannot set state after teardown', async () => {
+        const ref = makeScrollableRef({
+            scrollTop: 200,
+            scrollHeight: 500,
+            clientHeight: 100,
+        });
+        const { result, unmount } = renderHook(() => useScrollProgress(ref));
+
+        const errors: unknown[] = [];
+        const spy = jest.spyOn(console, 'error').mockImplementation((...a) => {
+            errors.push(a);
+        });
+        act(() => result.current.updateScrollProgress());
+        unmount();
+        await flushFrame();
+        spy.mockRestore();
+
+        // React warns "state update on an unmounted component" if the frame
+        // survived the teardown.
+        expect(errors).toEqual([]);
     });
 
     it('tears down its resize observer on unmount', () => {
