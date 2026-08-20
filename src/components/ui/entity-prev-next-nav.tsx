@@ -55,6 +55,33 @@ function Chevron({ dir }: { dir: 'up' | 'down' }) {
     );
 }
 
+/**
+ * Entity slugs the catalog carries a phrase pair for. Anything else falls back
+ * to the generic record phrase.
+ *
+ * This is a local set rather than a `t.has()` probe on purpose. `t.has` is a
+ * real next-intl API, but 40 of the repo's 50 hand-rolled `jest.mock('next-intl')`
+ * factories implement only `t` and `t.rich` — so a `t.has` call crashes every
+ * page-level suite that mounts a detail page carrying this nav, and the stepper
+ * is on thirteen of them. Those local factories exist for a genuine reason (the
+ * global mock returns a fresh `t` per render, which makes page-level suites
+ * loop), so they will keep being written incomplete.
+ *
+ * The set is also the stronger invariant: `t.has` asks the CURRENT locale, so a
+ * key present in en and missing in bg degrades silently to "item" for Bulgarian
+ * readers. `stepper-entities-have-both-locales` pins every slug here against
+ * both catalogs instead, which fails the build rather than the user.
+ */
+export const STEPPER_ENTITIES: ReadonlySet<string> = new Set([
+    'asset',
+    'control',
+    'incident',
+    'policy',
+    'risk',
+    'task',
+    'vendor',
+]);
+
 export function EntityPrevNextNav({
     ids,
     currentId,
@@ -71,8 +98,8 @@ export function EntityPrevNextNav({
     // catalog also keeps every locale free to phrase the pair its own way.
     const t = useTranslations('ui.recordStepper');
     const phraseFor = (direction: 'previous' | 'next') => {
-        const key = `${direction}.${labelSingular}`;
-        return t.has(key) ? t(key) : t(`${direction}.item`);
+        const slug = STEPPER_ENTITIES.has(labelSingular) ? labelSingular : 'item';
+        return t(`${direction}.${slug}`);
     };
     const prevLabel = phraseFor('previous');
     const nextLabel = phraseFor('next');

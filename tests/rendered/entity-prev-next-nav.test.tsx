@@ -29,11 +29,13 @@
 import { fireEvent, render, within } from '@testing-library/react';
 import * as React from 'react';
 
-import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
+import {
+    EntityPrevNextNav,
+    STEPPER_ENTITIES,
+} from '@/components/ui/entity-prev-next-nav';
 import {
     KeyboardShortcutProvider,
     useRegisteredShortcuts,
-    type RegisteredShortcut,
 } from '@/lib/hooks/use-keyboard-shortcut';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { idsFromCappedList } from '@/lib/list-backfill-cap';
@@ -213,18 +215,24 @@ describe('EntityPrevNextNav — arrow keys need alt, so the page still scrolls',
 });
 
 
-// A probe that reports whatever the shortcut registry currently holds. The
-// keyboard `description` never reaches the DOM, so it is invisible to any
-// query over the rendered markup — this is the only way to assert that the
-// command-palette label got localised alongside the tooltip.
-let registered: readonly RegisteredShortcut[] = [];
+// A probe that RENDERS whatever the shortcut registry currently holds. The
+// keyboard `description` never reaches the nav's own markup, so it is
+// invisible to any query over that — but a probe can put it somewhere
+// queryable, which is how tests/rendered/keyboard-shortcut-hook.test.tsx
+// introspects the registry. Rendering beats reassigning a module-scope
+// binding from inside a component, which the React Compiler rule refuses.
 function ShortcutProbe() {
-    registered = useRegisteredShortcuts();
-    return null;
+    const list = useRegisteredShortcuts();
+    return (
+        <ul data-testid="shortcut-registry">
+            {list.map((s) => (
+                <li key={s.id}>{s.description ?? '(none)'}</li>
+            ))}
+        </ul>
+    );
 }
 
 function mountWithProbe(labelSingular: string) {
-    registered = [];
     return render(
         <TooltipProvider delayDuration={0}>
             <KeyboardShortcutProvider>
@@ -303,8 +311,11 @@ describe('EntityPrevNextNav — labels come from the catalog, per locale', () =>
 
     it('localises the keyboard-shortcut descriptions too', () => {
         mockLocale.current = 'bg';
-        mountWithProbe('task');
-        const descriptions = registered.map((s) => s.description).sort();
+        const r = mountWithProbe('task');
+        const probe = within(r.container).getByTestId('shortcut-registry');
+        const descriptions = Array.from(probe.querySelectorAll('li'))
+            .map((li) => li.textContent)
+            .sort();
         expect(descriptions).toEqual(['Предишна задача', 'Следваща задача']);
     });
 
@@ -319,5 +330,48 @@ describe('EntityPrevNextNav — labels come from the catalog, per locale', () =>
         expect(bg.nav.tasks).toBe('План');
         expect(bg.ui.recordStepper.previous.task).toBe('Предишна задача');
         expect(bg.ui.recordStepper.next.task).toBe('Следваща задача');
+    });
+});
+
+
+// The component gates on a local slug set instead of probing the catalog with
+// `t.has`, so the set and the catalogs have to be pinned to each other from
+// BOTH directions — otherwise the gate silently drops an entity ("item" for a
+// reader who should have seen "Предишна политика") or an added catalog phrase
+// never gets used.
+describe('the stepper entity set and the catalogs agree', () => {
+    const en = require('../../messages/en.json') as Record<string, never>;
+    const bg = require('../../messages/bg.json') as Record<string, never>;
+    const stepper = (m: Record<string, never>) =>
+        (m as unknown as {
+            ui: { recordStepper: Record<'previous' | 'next', Record<string, string>> };
+        }).ui.recordStepper;
+
+    it.each(['previous', 'next'] as const)(
+        'every registered entity has a %s phrase in en AND bg',
+        (direction) => {
+            const missing: string[] = [];
+            for (const slug of [...STEPPER_ENTITIES, 'item']) {
+                if (!stepper(en)[direction][slug]) missing.push(`en.${direction}.${slug}`);
+                if (!stepper(bg)[direction][slug]) missing.push(`bg.${direction}.${slug}`);
+            }
+            expect(missing).toEqual([]);
+        },
+    );
+
+    it('every catalog phrase belongs to a registered entity', () => {
+        const registered = new Set([...STEPPER_ENTITIES, 'item']);
+        const orphans = ['previous', 'next'].flatMap((d) =>
+            Object.keys(stepper(en)[d as 'previous']).filter((k) => !registered.has(k)),
+        );
+        expect(orphans).toEqual([]);
+    });
+
+    it('en and bg carry the same keys', () => {
+        for (const direction of ['previous', 'next'] as const) {
+            expect(Object.keys(stepper(bg)[direction]).sort()).toEqual(
+                Object.keys(stepper(en)[direction]).sort(),
+            );
+        }
     });
 });
