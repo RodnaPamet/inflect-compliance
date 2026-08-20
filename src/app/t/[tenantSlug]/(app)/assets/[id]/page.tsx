@@ -34,7 +34,6 @@ import { criticalityBadgeVariant } from '@/lib/asset-criticality';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { ProcessNodeReverseLookupModal } from '@/components/processes/ProcessNodeReverseLookupModal';
-import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { idsFromCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { cardVariants } from '@/components/ui/card';
@@ -505,18 +504,13 @@ export default function AssetDetailPage() {
                 </>
             }
 
-            title={
-                <span className="inline-flex items-center gap-2.5">
-                    <span id="asset-title-heading">{asset.name}</span>
-                    {/* B5 — step to the prev/next asset in list order. */}
-                    <EntityPrevNextNav
-                        ids={assetIds}
-                        currentId={assetId}
-                        hrefFor={(id) => tenantHref(`/assets/${id}`)}
-                        labelSingular="asset"
-                    />
-                </span>
-            }
+            title={<span id="asset-title-heading">{asset.name}</span>}
+            prevNext={{
+                ids: assetIds,
+                currentId: assetId,
+                hrefFor: (id) => tenantHref(`/assets/${id}`),
+                labelSingular: 'asset',
+            }}
             meta={
                 <MetaStrip
                     items={[
