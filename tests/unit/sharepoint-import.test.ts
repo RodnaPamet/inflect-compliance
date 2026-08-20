@@ -8,7 +8,15 @@
 const mockUpload = jest.fn();
 const mockGetClient = jest.fn();
 const mockDb = {
-    integrationSyncMapping: { upsert: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+    integrationSyncMapping: {
+        upsert: jest.fn(), findMany: jest.fn(), update: jest.fn(),
+        // The CLAIM importOne now takes before it downloads anything.
+        // `createMany({ skipDuplicates })` returning count 1 means this
+        // caller won the item; 0 means another pass owns it.
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue(null),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     integrationConnection: { findFirst: jest.fn(), update: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => ({
@@ -52,11 +60,46 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockUpload.mockResolvedValue({ id: 'ev-new' });
     mockDb.integrationSyncMapping.upsert.mockResolvedValue({});
+    // Restated every test: `clearAllMocks` resets CALLS, not implementations,
+    // so the lost-claim test's `{ count: 0 }` would otherwise leak into every
+    // test after it.
+    mockDb.integrationSyncMapping.createMany.mockResolvedValue({ count: 1 });
+    mockDb.integrationSyncMapping.findUnique.mockResolvedValue(null);
+    mockDb.integrationSyncMapping.deleteMany.mockResolvedValue({ count: 1 });
     mockDb.integrationConnection.findFirst.mockResolvedValue({ configJson: {} });
     mockDb.integrationConnection.update.mockResolvedValue({});
 });
 
 describe('importSharePointItems', () => {
+    it('LOSING the claim downloads and stores NOTHING', async () => {
+        // uploadEvidenceFile is NOT idempotent — it AV-scans and stores a new
+        // object and mints a new Evidence row every time. Before the claim, two
+        // overlapping delta syncs both downloaded and both stored, with the
+        // mapping that would have deduped them arriving too late to prevent
+        // either.
+        //
+        // Asserted explicitly because a surviving mutation showed the claim's
+        // return value could be ignored entirely while every other test in this
+        // file still passed.
+        mockGetClient.mockResolvedValue(fakeClient());
+        mockDb.integrationSyncMapping.createMany.mockResolvedValue({ count: 0 });
+        mockDb.integrationSyncMapping.findUnique.mockResolvedValue({
+            localEntityId: 'ev-already-imported',
+            syncStatus: 'SYNCED',
+        });
+
+        const r = await importSharePointItems(ctx, {
+            connectionId: 'c1',
+            items: [{ driveId: 'd1', itemId: 'a' }],
+        });
+
+        expect(mockUpload).not.toHaveBeenCalled();
+        // An already-imported item is a no-op that reports success — a repeat
+        // sync should be boring, not a failure.
+        expect(r.imported).toBe(1);
+        expect(r.failed).toBe(0);
+    });
+
     it('downloads, uploads, and maps each item', async () => {
         mockGetClient.mockResolvedValue(fakeClient());
         const r = await importSharePointItems(ctx, {

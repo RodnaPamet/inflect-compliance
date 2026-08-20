@@ -105,6 +105,9 @@ describe('storeExportArtifact', () => {
             // Second call — auditPackItem.create
             .mockImplementationOnce(async (_ctx, fn) =>
                 fn({
+                    // storeExportArtifact re-verifies the pack is still DRAFT, holding
+                    // its row, before creating the item.
+                    auditPack: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
                     auditPackItem: { create: jest.fn().mockResolvedValue({}) },
                 } as never),
             )
@@ -173,6 +176,34 @@ describe('storeExportArtifact', () => {
         // attached while the pack is still DRAFT; freezing then locks them.
     });
 
+    it('REFUSES when the pack was frozen while the export was being written', async () => {
+        // The original DRAFT check ran in its own transaction, which committed
+        // before the object-store write. Nothing re-checked afterwards, so a
+        // freeze landing in that window produced an item row attached to a
+        // FROZEN pack — inverting the immutability guarantee, on the artefact
+        // an unauthenticated external auditor is served.
+        //
+        // The re-verify is a predicated updateMany precisely so it takes the
+        // pack's row lock; count 0 means the freeze got there first.
+        const itemCreate = jest.fn();
+        mockRunInTx
+            .mockImplementationOnce(async () => ({ id: 'p1', status: 'DRAFT' }) as never)
+            .mockImplementationOnce(async (_ctx, fn) =>
+                fn({
+                    auditPack: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+                    auditPackItem: { create: itemCreate },
+                } as never),
+            );
+
+        await expect(
+            storeExportArtifact(makeRequestContext('ADMIN'), 'p1', 'x', 'f.json', 'application/json'),
+        ).rejects.toThrow(/frozen while this export was being written/i);
+
+        // The bytes are orphaned in the object store — unreferenced, and the
+        // cheaper of the two mistakes. What must NOT happen is the row.
+        expect(itemCreate).not.toHaveBeenCalled();
+    });
+
     it('persists AuditPackItem with sha256 + size in snapshotJson and emits AUDIT_EXPORT_GENERATED', async () => {
         let capturedItemArgs: any;
         mockRunInTx
@@ -181,6 +212,9 @@ describe('storeExportArtifact', () => {
             )
             .mockImplementationOnce(async (_ctx, fn) =>
                 fn({
+                    // storeExportArtifact re-verifies the pack is still DRAFT, holding
+                    // its row, before creating the item.
+                    auditPack: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
                     auditPackItem: {
                         create: jest.fn().mockImplementation((args: any) => {
                             capturedItemArgs = args;
@@ -270,6 +304,11 @@ describe('clonePackForRetest', () => {
             .mockImplementationOnce(async (_ctx, fn) =>
                 fn({
                     auditPack: {
+            // storeExportArtifact RE-VERIFIES the pack is still DRAFT before
+            // creating the item, holding the pack row so a concurrent freeze
+            // cannot slip between the original check and the insert. count 1
+            // = still a draft.
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
                         create: jest.fn().mockResolvedValue({
                             id: 'clone-1',
                             auditCycleId: 'cyc-1',
@@ -292,6 +331,9 @@ describe('clonePackForRetest', () => {
             // 4. createMany items
             .mockImplementationOnce(async (_ctx, fn) =>
                 fn({
+                    // storeExportArtifact re-verifies the pack is still DRAFT, holding
+                    // its row, before creating the item.
+                    auditPack: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
                     auditPackItem: {
                         createMany: jest.fn().mockImplementation((args: any) => {
                             createManyArgs = args;
@@ -355,7 +397,10 @@ describe('clonePackForRetest', () => {
                 fn({ task: { findMany: jest.fn().mockResolvedValue([]) } } as never),
             )
             .mockImplementationOnce(async (_ctx, fn) =>
-                fn({ auditPackItem: { createMany: jest.fn().mockResolvedValue({ count: 1 }) } } as never),
+                fn({ // storeExportArtifact re-verifies the pack is still DRAFT, holding
+                    // its row, before creating the item.
+                    auditPack: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+                    auditPackItem: { createMany: jest.fn().mockResolvedValue({ count: 1 }) } } as never),
             )
             .mockImplementationOnce(async (_ctx, fn) => fn({} as never)); // PACK_CLONED only
 

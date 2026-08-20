@@ -109,9 +109,36 @@ export async function storeExportArtifact(
     const { Readable } = await import('stream');
     await storage.write(pathKey, Readable.from(buffer), { mimeType });
 
-    // Add as AuditPackItem
-    await runInTenantContext(ctx, (tdb) =>
-        tdb.auditPackItem.create({
+    // ═══ RE-VERIFY THE PACK IS STILL A DRAFT, HOLDING ITS ROW ═══
+    //
+    // The DRAFT check above ran in its OWN transaction, which committed before
+    // the object-store write. Nothing re-checked it afterwards, so a freeze
+    // landing in that window produced an item row attached to a FROZEN pack —
+    // inverting the immutability guarantee described a few lines up, and doing
+    // it to the artefact an unauthenticated external auditor is served.
+    //
+    // The predicated `updateMany` is what makes this an interlock rather than
+    // another look: it takes a row lock on the pack, so a concurrent freeze
+    // waits for this transaction and then sees the item, or gets there first
+    // and this matches zero rows and refuses. A bare re-read would have the
+    // same race as the original check.
+    //
+    // Cost of refusing here: the bytes written above are orphaned in the object
+    // store. They are unreferenced — no item row points at them — which is the
+    // cheaper of the two mistakes, and the opposite order would mean holding a
+    // database transaction open across an object-store write.
+    await runInTenantContext(ctx, async (tdb) => {
+        const stillDraft = await tdb.auditPack.updateMany({
+            where: { id: packId, tenantId: ctx.tenantId, status: 'DRAFT' },
+            data: { updatedAt: new Date() },
+        });
+        if (stillDraft.count === 0) {
+            throw forbidden(
+                'Cannot attach exports to a non-DRAFT pack — the pack was frozen while this export was ' +
+                    'being written, so the attachment was refused rather than added to an immutable snapshot.',
+            );
+        }
+        return tdb.auditPackItem.create({
             data: {
                 tenantId: ctx.tenantId,
                 auditPackId: packId,
@@ -127,8 +154,8 @@ export async function storeExportArtifact(
                 }),
                 sortOrder: 900,
             },
-        })
-    );
+        });
+    });
 
     await runInTenantContext(ctx, (tdb) =>
         logEvent(tdb, ctx, {
