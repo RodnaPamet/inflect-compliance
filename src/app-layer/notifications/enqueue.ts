@@ -35,6 +35,14 @@ import {
     type AccessReviewOverdueEscalationPayload,
     type ExceptionExpiringPayload,
 } from './templates';
+import {
+    buildIdentityLeaverDisabledEmail,
+    buildIdentityLeaverUnconfirmedEmail,
+    buildIdentityLeaverNeedsActionEmail,
+    type IdentityLeaverDisabledPayload,
+    type IdentityLeaverUnconfirmedPayload,
+    type IdentityLeaverNeedsActionPayload,
+} from './leaver-templates';
 
 export interface EnqueueEmailInput {
     tenantId: string;
@@ -52,7 +60,10 @@ export interface EnqueueEmailInput {
         | VendorAssessmentReviewedPayload
         | AccessReviewReminderPayload
         | AccessReviewOverdueEscalationPayload
-        | ExceptionExpiringPayload;
+        | ExceptionExpiringPayload
+        | IdentityLeaverDisabledPayload
+        | IdentityLeaverUnconfirmedPayload
+        | IdentityLeaverNeedsActionPayload;
     sendAfter?: Date;
     requestId?: string;
 }
@@ -147,7 +158,10 @@ function buildEmailContent(
         | VendorAssessmentReviewedPayload
         | AccessReviewReminderPayload
         | AccessReviewOverdueEscalationPayload
-        | ExceptionExpiringPayload,
+        | ExceptionExpiringPayload
+        | IdentityLeaverDisabledPayload
+        | IdentityLeaverUnconfirmedPayload
+        | IdentityLeaverNeedsActionPayload,
 ): { subject: string; bodyText: string; bodyHtml: string } {
     switch (type) {
         case 'TASK_ASSIGNED':
@@ -187,6 +201,23 @@ function buildEmailContent(
         case 'EXCEPTION_EXPIRING':
             return buildExceptionExpiringEmail(
                 payload as ExceptionExpiringPayload,
+            );
+        // JML leaver offboarding. Three types rather than one because the
+        // outbox dedupe key includes the type, and the "we could not confirm
+        // it" mail and the later "we have now confirmed it" mail address the
+        // SAME journal row — collapsing them would suppress the resolution,
+        // which is the half a human is waiting on.
+        case 'IDENTITY_LEAVER_DISABLED':
+            return buildIdentityLeaverDisabledEmail(
+                payload as IdentityLeaverDisabledPayload,
+            );
+        case 'IDENTITY_LEAVER_UNCONFIRMED':
+            return buildIdentityLeaverUnconfirmedEmail(
+                payload as IdentityLeaverUnconfirmedPayload,
+            );
+        case 'IDENTITY_LEAVER_NEEDS_ACTION':
+            return buildIdentityLeaverNeedsActionEmail(
+                payload as IdentityLeaverNeedsActionPayload,
             );
         default:
             throw new Error(`Unknown notification type: ${type}`);

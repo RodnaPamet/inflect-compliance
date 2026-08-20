@@ -37,3 +37,23 @@ export {
     type DispatchDigestOptions,
     type DispatchDigestResult,
 } from './digest-dispatcher';
+export {
+    buildIdentityLeaverDisabledEmail,
+    buildIdentityLeaverUnconfirmedEmail,
+    buildIdentityLeaverNeedsActionEmail,
+    type LeaverAudience,
+    type IdentityLeaverDisabledPayload,
+    type IdentityLeaverUnconfirmedPayload,
+    type IdentityLeaverNeedsActionPayload,
+} from './leaver-templates';
+export {
+    buildLeaverAudienceBook,
+    notifyLeaverOutcome,
+    planLeaverNotifications,
+    type LeaverAudienceBook,
+    type LeaverNotificationPlan,
+    type LeaverRecipient,
+    type LeaverSubject,
+    type NotifyLeaverInput,
+    type NotifyLeaverResult,
+} from './leaver';

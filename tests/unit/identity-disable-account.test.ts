@@ -13,6 +13,14 @@ const db = {
     tenantSecuritySettings: { findUnique: jest.fn() },
     identityWriteJournal: { create: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
     identityAccountLink: { findMany: jest.fn() },
+    // Reached only by the leaver NOTIFICATION the batch path now enqueues.
+    // Present so the batch tests exercise a working notification lookup rather
+    // than its fail-open branch — a suite that silently runs the error path
+    // proves nothing about the happy one.
+    tenantNotificationSettings: { findUnique: jest.fn() },
+    tenantMembership: { findMany: jest.fn() },
+    tenant: { findUnique: jest.fn() },
+    notificationOutbox: { create: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -75,6 +83,10 @@ beforeEach(() => {
     db.identityWriteJournal.updateMany.mockResolvedValue({ count: 1 });
     db.identityWriteJournal.findFirst.mockResolvedValue(null);
     db.identityAccountLink.findMany.mockResolvedValue([]);
+    db.tenantNotificationSettings.findUnique.mockResolvedValue({ complianceMailbox: 'it@acme.test' });
+    db.tenantMembership.findMany.mockResolvedValue([]);
+    db.tenant.findUnique.mockResolvedValue({ slug: 'acme' });
+    db.notificationOutbox.create.mockImplementation(async (a: { data: unknown }) => ({ id: 'o1', ...(a.data as object) }));
 });
 
 describe('the happy path writes, and journals what it replaced', () => {
@@ -432,6 +444,42 @@ describe('a failure to READ is contained, and the directory is untouched', () =>
         expect(w.disabled).toEqual(['b']);
     });
 
+    it('settles an unclassified throw as INDETERMINATE, never as FAILED', async () => {
+        // FAILED is a POSITIVE claim that the directory is unchanged, and the
+        // batch's catch-all has no proof of that. The throw it is most likely
+        // to see is the settle itself failing AFTER the write landed — and
+        // calling that FAILED tells an operator the account is still live, and
+        // to go and disable it by hand, about an account that is already off.
+        const w = fakeWriter();
+        db.identityWriteJournal.updateMany.mockRejectedValueOnce(new Error('the database went away'));
+
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ externalUserId: 'a' })],
+            population: 500,
+        });
+
+        // The directory WAS written to. Anything other than "we do not know"
+        // would be a guess with teeth.
+        expect(w.disabled).toEqual(['a']);
+        expect(r.results[0].outcome).toBe('INDETERMINATE');
+    });
+
+    it('tells IT it could not be confirmed, not that the account is still live', async () => {
+        const w = fakeWriter();
+        db.identityWriteJournal.updateMany.mockRejectedValueOnce(new Error('the database went away'));
+
+        await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ externalUserId: 'a' })],
+            population: 500,
+        });
+
+        const types = db.notificationOutbox.create.mock.calls.map(
+            (c) => (c[0] as { data: { type: string } }).data.type,
+        );
+        expect(types).toContain('IDENTITY_LEAVER_UNCONFIRMED');
+        expect(types).not.toContain('IDENTITY_LEAVER_NEEDS_ACTION');
+    });
+
     it('an unexpected THROW from the per-account path still continues the batch', async () => {
         // disableAccount is written to return rather than throw, but "written
         // to" is not "guaranteed to" — a provider-writer bug must not abandon
@@ -489,6 +537,42 @@ describe('the batch gate', () => {
         const r = await disableAccountsForLeaver(ctx, fakeWriter(), { candidates: [], population: 500 });
         expect(r.refused).toBeUndefined();
         expect(r.results).toEqual([]);
+    });
+
+    it('enqueues the leaver notification for each disable, and sends nothing itself', async () => {
+        const w = fakeWriter();
+        const candidates = [input({ externalUserId: 'a' }), input({ externalUserId: 'b' })];
+        await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+
+        // One IT mail per disable, into the OUTBOX. The pass is holding a
+        // customer's directory rate limit; it must not also be holding an SMTP
+        // connection.
+        expect(db.notificationOutbox.create).toHaveBeenCalledTimes(2);
+        const first = db.notificationOutbox.create.mock.calls[0][0].data;
+        expect(first.type).toBe('IDENTITY_LEAVER_DISABLED');
+        expect(first.toEmail).toBe('it@acme.test');
+    });
+
+    it('a broken notification path does not stop the batch', async () => {
+        // The account writes are the product; the mail about them is not. A
+        // notification-layer failure must cost a message, never a leaver.
+        db.notificationOutbox.create.mockRejectedValue(new Error('outbox is on fire'));
+        const w = fakeWriter();
+        const candidates = [input({ externalUserId: 'a' }), input({ externalUserId: 'b' })];
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+
+        expect(r.results.map((x) => x.outcome)).toEqual(['DISABLED', 'DISABLED']);
+        expect(w.disabled).toEqual(['a', 'b']);
+    });
+
+    it('an audience lookup that throws is fail-open — the batch still runs', async () => {
+        db.tenantNotificationSettings.findUnique.mockRejectedValue(new Error('settings unreadable'));
+        const w = fakeWriter();
+        const candidates = [input({ externalUserId: 'a' })];
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+
+        expect(r.results.map((x) => x.outcome)).toEqual(['DISABLED']);
+        expect(db.notificationOutbox.create).not.toHaveBeenCalled();
     });
 });
 
