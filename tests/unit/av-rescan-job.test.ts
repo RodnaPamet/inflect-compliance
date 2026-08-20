@@ -100,7 +100,7 @@ const readStream = jest.fn((pathKey: string) => {
     if (!bytes) throw new Error(`no such object: ${pathKey}`);
     return Readable.from([bytes]);
 });
-const getProviderByNameMock = jest.fn(() => ({ name: 'local', readStream }));
+const getProviderByNameMock = jest.fn((_name: string) => ({ name: 'local', readStream }));
 jest.mock('@/lib/storage', () => ({
     __esModule: true,
     getProviderByName: (n: string) => getProviderByNameMock(n),
@@ -133,7 +133,7 @@ jest.mock('@/lib/storage/av-scan', () => ({
 
 // ─── Audit ──────────────────────────────────────────────────────────
 
-const appendAuditEntryMock = jest.fn(async () => undefined);
+const appendAuditEntryMock = jest.fn(async (_entry: unknown) => undefined);
 jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntry: (entry: unknown) => {
         order.push('audit');
