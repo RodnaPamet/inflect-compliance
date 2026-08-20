@@ -219,9 +219,24 @@ env:
   # `workerIdleMemoryLimit` is inert in-band), and the coverage job runs
   # the full suite in-band. As the suite grew, the heaviest shard
   # partitions began exceeding Node's default old-space ceiling and OOM'd
-  # ("Ineffective mark-compacts near heap limit"). Raise the heap to 6 GB
-  # (runners have 16 GB) so suite growth has headroom.
-  NODE_OPTIONS: "--max-old-space-size=6144"
+  # ("Ineffective mark-compacts near heap limit"). Raise the heap so suite
+  # growth has headroom.
+  #
+  # 6144 was that headroom until 2026-08-19, when `Test (shard 1/4)` OOM'd
+  # again on PR #2021 — exit 134, while shards 2-4 passed. The suite simply
+  # grew into the ceiling. 8192 is the next step, and the runners have 16 GB:
+  # every in-band job is ONE heap, so this is a per-job ceiling and not a
+  # reservation.
+  #
+  # Note what makes this fail confusingly. `--shard` is a deterministic hash
+  # over file paths, so ADDING a test file reshuffles which files land on
+  # which shard and tips whichever one was closest to the edge. The failure
+  # therefore looks like "the new test broke CI" when the shard merely ran out
+  # of room — the innocent test is the one that gets suspected.
+  #
+  # The `Build` job overrides this locally (6144 PER PROCESS, because
+  # `webpackBuildWorker` gives it two heaps) and is unaffected.
+  NODE_OPTIONS: "--max-old-space-size=8192"
   # ── Dummy secrets (CI-only — no real credentials) ──
   AUTH_SECRET: ci-auth-secret-that-is-long-enough
   JWT_SECRET: ci-jwt-secret-that-is-long-enough
