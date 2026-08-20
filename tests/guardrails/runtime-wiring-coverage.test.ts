@@ -77,6 +77,11 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     'health-check': 'liveness probe / on-demand diagnostic',
     'deadline-monitor': 'on-demand deadline recompute (superseded on cron by incident-notification-deadlines)',
     'evidence-expiry-monitor': 'on-demand expiry recompute (superseded on cron by daily-evidence-expiry)',
+    // Deliberately not scheduled. It re-reads every candidate object out of
+    // storage and pays a clamd round trip per row, so it is an operator tool
+    // run against one tenant at a time — a cron would turn a backlog into
+    // recurring load on both storage and the scanner.
+    'av-rescan': 'operator-triggered one-off rescan of PENDING FileRecords',
 };
 
 function registeredExecutorJobs(): string[] {
