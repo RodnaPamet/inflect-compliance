@@ -1,4 +1,5 @@
 import { PrismaTx } from '@/lib/db-context';
+import { badRequest } from '@/lib/errors/types';
 import { env } from '@/env';
 import { RequestContext } from '../types';
 
@@ -125,28 +126,144 @@ export class FileRepository {
 
     // ─── AV Scan Lifecycle ───
 
+    /**
+     * Record a scan verdict.
+     *
+     * INFECTED IS TERMINAL ON THIS PATH. This used to be an unconditional
+     * `update`, which made the repository a general-purpose setter that could
+     * walk a row from INFECTED back to CLEAN. The download gates trust
+     * `scanStatus` alone, so that transition is a served-malware bug — and it
+     * needed no attacker, only a rescan job posting a later verdict.
+     *
+     * The write is now a conditional `updateMany` claim, the same shape
+     * `av-webhook/route.ts` already uses and for the same reason: a
+     * read-then-write would let two racing scan results both pass a prior
+     * read of the current verdict. The predicate makes the database settle it
+     * in one statement.
+     *
+     * @returns the updated row, or `null` when the claim was refused — the
+     *   row is already INFECTED, or no longer exists. Refusal is a value
+     *   rather than a throw so a batch rescan can count and log reversal
+     *   attempts instead of aborting the batch. It is NOT silence: a caller
+     *   must never read `null` as success.
+     *
+     * Clearing a false-positive quarantine is deliberately not reachable from
+     * here. See {@link clearInfectedVerdict}.
+     */
     static async updateScanStatus(
         db: PrismaTx,
         id: string,
         scanStatus: 'PENDING' | 'CLEAN' | 'INFECTED' | 'SKIPPED',
         scanDetails?: string,
     ) {
-        return db.fileRecord.update({
-            where: { id },
+        const claimed = await db.fileRecord.updateMany({
+            where: { id, scanStatus: { not: 'INFECTED' } },
             data: {
                 scanStatus,
                 ...(scanDetails ? { scanDetails } : {}),
                 updatedAt: new Date(),
             },
         });
+        if (claimed.count === 0) return null;
+        return db.fileRecord.findUnique({ where: { id } });
     }
 
+    /** @returns `null` if the row is already INFECTED — see {@link updateScanStatus}. */
     static async markScanClean(db: PrismaTx, id: string) {
         return FileRepository.updateScanStatus(db, id, 'CLEAN');
     }
 
     static async markScanInfected(db: PrismaTx, id: string, details?: string) {
         return FileRepository.updateScanStatus(db, id, 'INFECTED', details);
+    }
+
+    /**
+     * THE SANCTIONED ESCAPE HATCH from a terminal INFECTED verdict.
+     *
+     * This is the only way a quarantined FileRecord returns to service, and
+     * it exists for exactly one consumer: an admin clearing a false positive.
+     * It is deliberately not a general-purpose setter — the ordinary path,
+     * {@link updateScanStatus}, cannot reach CLEAN from INFECTED at all, and
+     * this one cannot reach anything except CLEAN, from INFECTED, once.
+     *
+     * CONTRACT FOR THE CALLING USECASE (authorization and the audit chain
+     * live above this layer, so the repository cannot enforce them itself —
+     * what it enforces is that you cannot call it without having done them):
+     *
+     *   1. AUTHORIZE FIRST. Gate the route with
+     *      `requirePermission('admin.tenant_lifecycle', …)`. Returning
+     *      suspected malware to circulation is an OWNER-grade decision, not
+     *      an evidence-editor one.
+     *   2. WRITE THE AUDIT ROW FIRST, through the canonical hash-chained
+     *      writer — `appendAuditEntry({ action: 'FILE_QUARANTINE_CLEARED',
+     *      entity: 'FileRecord', entityId: id, … })` — and pass its id as
+     *      `auditLogId`. The ordering is deliberate: the audit entry records
+     *      that the decision was TAKEN, so it must survive even when this
+     *      write then refuses. Requiring the id in the signature is what
+     *      makes "audited" a compile-time obligation rather than a
+     *      convention the next caller forgets.
+     *   3. CAPTURE A HUMAN `reason`. It is stamped into `scanDetails`, so the
+     *      row carries the provenance of its own reversal — nobody reading
+     *      the FileRecord later sees a bare CLEAN with no history.
+     *
+     * The transition is exact and atomic. The predicate names the source
+     * state and the data block moves both columns together, mirroring the
+     * webhook's fold-both-writes-into-one-statement rule: there is no window
+     * in which the row is readable as CLEAN-but-still-quarantined. A DELETED
+     * row is excluded from the predicate so clearing a verdict can never
+     * resurrect a deleted file.
+     *
+     * @returns the restored row, or `null` when there was nothing to clear —
+     *   the row was not INFECTED, was DELETED, or belongs to another tenant.
+     */
+    static async clearInfectedVerdict(
+        db: PrismaTx,
+        id: string,
+        override: {
+            /** Tenant that owns the row. Defence in depth beside RLS. */
+            tenantId: string;
+            /** The admin who took the decision. */
+            clearedByUserId: string;
+            /** Human justification. Stamped into `scanDetails`. */
+            reason: string;
+            /** Id of the `AuditLog` row written BEFORE this call. */
+            auditLogId: string;
+        },
+    ) {
+        if (!override.reason.trim()) {
+            throw badRequest('clearInfectedVerdict requires a reason for the reversal');
+        }
+        if (!override.auditLogId.trim()) {
+            throw badRequest(
+                'clearInfectedVerdict requires the id of the audit entry recording the decision',
+            );
+        }
+
+        const cleared = await db.fileRecord.updateMany({
+            where: {
+                id,
+                tenantId: override.tenantId,
+                scanStatus: 'INFECTED',
+                // Quarantine lifts in the same statement, and only from a
+                // state that can hold a live file. DELETED stays DELETED.
+                status: { in: ['FAILED', 'STORED'] },
+            },
+            data: {
+                scanStatus: 'CLEAN',
+                status: 'STORED',
+                scanDetails: JSON.stringify({
+                    result: 'false_positive_cleared',
+                    reason: override.reason,
+                    clearedByUserId: override.clearedByUserId,
+                    auditLogId: override.auditLogId,
+                    clearedAt: new Date().toISOString(),
+                }),
+                scannedAt: new Date(),
+                updatedAt: new Date(),
+            },
+        });
+        if (cleared.count === 0) return null;
+        return db.fileRecord.findUnique({ where: { id } });
     }
 
     static async findPendingScan(db: PrismaTx, tenantId?: string) {

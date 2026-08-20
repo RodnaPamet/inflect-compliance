@@ -155,16 +155,168 @@ describeFn('FileRepository (integration — real DB)', () => {
         const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
         await FileRepository.markStored(prisma, CTX_A, rec.id);
 
+        // These now return `FileRecord | null` — `null` is the refusal
+        // signal added with the INFECTED-is-terminal guard below.
         const withDetails = await FileRepository.updateScanStatus(prisma, rec.id, 'SKIPPED', 'no scanner');
-        expect(withDetails.scanStatus).toBe('SKIPPED');
-        expect(withDetails.scanDetails).toBe('no scanner');
+        expect(withDetails?.scanStatus).toBe('SKIPPED');
+        expect(withDetails?.scanDetails).toBe('no scanner');
 
         const clean = await FileRepository.markScanClean(prisma, rec.id);
-        expect(clean.scanStatus).toBe('CLEAN');
+        expect(clean?.scanStatus).toBe('CLEAN');
 
         const infected = await FileRepository.markScanInfected(prisma, rec.id, 'EICAR');
-        expect(infected.scanStatus).toBe('INFECTED');
-        expect(infected.scanDetails).toBe('EICAR');
+        expect(infected?.scanStatus).toBe('INFECTED');
+        expect(infected?.scanDetails).toBe('EICAR');
+    });
+
+    // ── INFECTED is terminal on the ordinary path ────────────────────
+    //
+    // The download gates trust `scanStatus` alone, so a row that walks
+    // back from INFECTED to CLEAN is a served-malware bug. The webhook
+    // already refuses the reversal with a conditional claim; these three
+    // tests assert the repository primitive refuses it too, since the
+    // repository is the surface a future rescan job would reach for.
+
+    it('updateScanStatus refuses to move an INFECTED row back to CLEAN', async () => {
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+        await FileRepository.markScanInfected(prisma, rec.id, 'EICAR-Test-Signature');
+
+        // Refusal is reported, not swallowed: null means "did not apply".
+        expect(await FileRepository.updateScanStatus(prisma, rec.id, 'CLEAN')).toBeNull();
+
+        // And the stored row never moved.
+        const after = await prisma.fileRecord.findUniqueOrThrow({ where: { id: rec.id } });
+        expect(after.scanStatus).toBe('INFECTED');
+        expect(after.scanDetails).toBe('EICAR-Test-Signature');
+    });
+
+    it('updateScanStatus refuses every other exit from INFECTED (SKIPPED / PENDING)', async () => {
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+        await FileRepository.markScanInfected(prisma, rec.id, 'EICAR-Test-Signature');
+
+        expect(await FileRepository.updateScanStatus(prisma, rec.id, 'SKIPPED', 'no scanner')).toBeNull();
+        expect(await FileRepository.updateScanStatus(prisma, rec.id, 'PENDING')).toBeNull();
+
+        const after = await prisma.fileRecord.findUniqueOrThrow({ where: { id: rec.id } });
+        expect(after.scanStatus).toBe('INFECTED');
+        expect(after.scanDetails).toBe('EICAR-Test-Signature');
+    });
+
+    it('markScanClean refuses on an INFECTED row', async () => {
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+        await FileRepository.markScanInfected(prisma, rec.id, 'EICAR-Test-Signature');
+
+        expect(await FileRepository.markScanClean(prisma, rec.id)).toBeNull();
+        expect(
+            (await prisma.fileRecord.findUniqueOrThrow({ where: { id: rec.id } })).scanStatus,
+        ).toBe('INFECTED');
+    });
+
+    it('forward scan transitions still apply (PENDING -> CLEAN -> INFECTED)', async () => {
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+
+        expect((await FileRepository.markScanClean(prisma, rec.id))?.scanStatus).toBe('CLEAN');
+        const infected = await FileRepository.markScanInfected(prisma, rec.id, 'EICAR');
+        expect(infected?.scanStatus).toBe('INFECTED');
+        expect(infected?.scanDetails).toBe('EICAR');
+    });
+
+    // ── The sanctioned escape hatch: clearInfectedVerdict ────────────
+    //
+    // Task #123 (un-quarantining a false positive) is its only legitimate
+    // consumer. These tests pin the door's shape so that task can be built
+    // against it: audited-by-signature, tenant-scoped, one exact transition,
+    // and no resurrection of deleted rows.
+
+    /** STORED + FAILED + INFECTED — the shape the AV webhook leaves behind. */
+    async function quarantinedRecord() {
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+        await FileRepository.markFailed(prisma, CTX_A, rec.id);
+        await FileRepository.markScanInfected(prisma, rec.id, 'EICAR-Test-Signature');
+        return rec;
+    }
+
+    const override = {
+        tenantId: TENANT_A,
+        clearedByUserId: 'admin-user',
+        reason: 'Vendor confirmed the signature is a false positive',
+        auditLogId: 'audit-row-1',
+    };
+
+    it('clearInfectedVerdict lifts scan verdict and quarantine in one transition, stamping provenance', async () => {
+        const rec = await quarantinedRecord();
+
+        const restored = await FileRepository.clearInfectedVerdict(prisma, rec.id, {
+            ...override,
+            clearedByUserId: userId,
+        });
+
+        expect(restored?.scanStatus).toBe('CLEAN');
+        // Quarantine lifts in the SAME statement — never CLEAN-but-FAILED.
+        expect(restored?.status).toBe('STORED');
+
+        // The row carries the provenance of its own reversal.
+        const details = JSON.parse(restored?.scanDetails ?? '{}');
+        expect(details.result).toBe('false_positive_cleared');
+        expect(details.reason).toBe(override.reason);
+        expect(details.clearedByUserId).toBe(userId);
+        expect(details.auditLogId).toBe('audit-row-1');
+    });
+
+    it('clearInfectedVerdict refuses a row that is not INFECTED', async () => {
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+        await FileRepository.markScanClean(prisma, rec.id);
+
+        expect(await FileRepository.clearInfectedVerdict(prisma, rec.id, override)).toBeNull();
+    });
+
+    it('clearInfectedVerdict never resurrects a DELETED row', async () => {
+        const rec = await quarantinedRecord();
+        await FileRepository.markDeleted(prisma, CTX_A, rec.id);
+
+        expect(await FileRepository.clearInfectedVerdict(prisma, rec.id, override)).toBeNull();
+
+        const after = await prisma.fileRecord.findUniqueOrThrow({ where: { id: rec.id } });
+        expect(after.status).toBe('DELETED');
+        expect(after.scanStatus).toBe('INFECTED');
+    });
+
+    it('clearInfectedVerdict is tenant-scoped: a foreign tenantId clears nothing', async () => {
+        const rec = await quarantinedRecord();
+
+        expect(
+            await FileRepository.clearInfectedVerdict(prisma, rec.id, {
+                ...override,
+                tenantId: TENANT_B,
+            }),
+        ).toBeNull();
+
+        expect(
+            (await prisma.fileRecord.findUniqueOrThrow({ where: { id: rec.id } })).scanStatus,
+        ).toBe('INFECTED');
+    });
+
+    it('clearInfectedVerdict demands a reason and the id of the audit row recording the decision', async () => {
+        const rec = await quarantinedRecord();
+
+        await expect(
+            FileRepository.clearInfectedVerdict(prisma, rec.id, { ...override, reason: '   ' }),
+        ).rejects.toThrow(/reason/i);
+
+        await expect(
+            FileRepository.clearInfectedVerdict(prisma, rec.id, { ...override, auditLogId: '' }),
+        ).rejects.toThrow(/audit/i);
+
+        // Neither rejected call touched the row.
+        expect(
+            (await prisma.fileRecord.findUniqueOrThrow({ where: { id: rec.id } })).scanStatus,
+        ).toBe('INFECTED');
     });
 
     it('findPendingScan returns STORED+PENDING-scan rows, optionally tenant-filtered', async () => {
