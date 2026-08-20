@@ -15,6 +15,7 @@ import { LifeRing } from '@/components/ui/icons/nucleo/life-ring';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
 import { createColumns } from '@/components/ui/table';
+import { useThresholdLoadMore } from '@/components/ui/hooks';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -114,6 +115,17 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
         const crits = (state.criticality ?? []) as string[];
         return initialRows.filter((r) => (crits.length ? crits.includes(r.criticality) : true));
     }, [initialRows, state.criticality]);
+    // Render a window, not the whole backfill-capped set. Without this the
+    // page mounts every row it fetched and never virtualizes — the default
+    // threshold is 1000, so a tenant can sit under it and still re-render
+    // hundreds of rows on every filter or sort change. `onReachEnd` extends
+    // the window on scroll, the same contract the other list pages use.
+    const {
+        visibleRows: visibleBiaRows,
+        hasMore: hasMoreBiaRows,
+        loadMore: loadMoreBiaRows,
+    } = useThresholdLoadMore(rows);
+
 
     const summary = useMemo(() => {
         const critical = initialRows.filter((r) => r.criticality === 'CRITICAL').length;
@@ -219,7 +231,8 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
                 }}
                 filters={{ defs: filterDefs }}
                 table={{
-                    data: rows,
+                    data: visibleBiaRows,
+                    onReachEnd: hasMoreBiaRows ? loadMoreBiaRows : undefined,
                     columns,
                     getRowId: getBiaRowId,
                     onRowClick: handleBiaRowClick,

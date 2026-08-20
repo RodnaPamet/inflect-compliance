@@ -3,6 +3,7 @@ import { useCallback, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useThresholdLoadMore } from '@/components/ui/hooks';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ownerDisplayName } from '@/lib/owner-display';
@@ -95,6 +96,17 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
         { fallbackData: { rows: initialFindings, truncated: false } },
     );
     const findings = findingsQuery.data?.rows ?? [];
+    // Render a window, not the whole backfill-capped set. Without this the
+    // page mounts every row it fetched and never virtualizes — the default
+    // threshold is 1000, so a tenant can sit under it and still re-render
+    // hundreds of rows on every filter or sort change. `onReachEnd` extends
+    // the window on scroll, the same contract the other list pages use.
+    const {
+        visibleRows: visibleFindings,
+        hasMore: hasMoreFindings,
+        loadMore: loadMoreFindings,
+    } = useThresholdLoadMore(findings);
+
     const truncated = findingsQuery.data?.truncated ?? false;
 
     // Optimistic status flip on the static findings list key: the hook
@@ -316,7 +328,8 @@ export function FindingsClient({ initialFindings, tenantSlug, translations: t }:
                 </div>
                 <DataTable
                     fillBody
-                    data={findings}
+                    data={visibleFindings}
+                    onReachEnd={hasMoreFindings ? loadMoreFindings : undefined}
                     columns={orderedFindingColumns}
                     getRowId={getFindingRowId}
                     columnVisibility={columnVisibility}

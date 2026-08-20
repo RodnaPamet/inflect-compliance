@@ -86,7 +86,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // them and the payload reconciled to empty, deleting every tag), and a
 // half-succeeded save reporting WHICH half — both asserted on the
 // request payload, because a source scan passes against either bug.
-const RENDERED_TEST_FLOOR = 230;
+const RENDERED_TEST_FLOOR = 238;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

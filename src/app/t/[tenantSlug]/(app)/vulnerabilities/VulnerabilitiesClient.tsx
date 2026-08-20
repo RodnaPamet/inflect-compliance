@@ -32,7 +32,7 @@ import { InfoTooltip } from '@/components/ui/tooltip';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
-import { useToast, useEnterSubmit } from '@/components/ui/hooks';
+import { useToast, useEnterSubmit, useThresholdLoadMore } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks';
 import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { formatDate } from '@/lib/format-date';
@@ -160,6 +160,17 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             return true;
         });
     }, [rowData, state.status, state.severity]);
+    // Render a window, not the whole backfill-capped set. Without this the
+    // page mounts every row it fetched and never virtualizes — the default
+    // threshold is 1000, so a tenant can sit under it and still re-render
+    // hundreds of rows on every filter or sort change. `onReachEnd` extends
+    // the window on scroll, the same contract the other list pages use.
+    const {
+        visibleRows: visibleVulnRows,
+        hasMore: hasMoreVulnRows,
+        loadMore: loadMoreVulnRows,
+    } = useThresholdLoadMore(rows);
+
 
     const applyOverride = useCallback(
         (id: string, patch: Partial<VulnRow>) =>
@@ -599,7 +610,8 @@ function VulnerabilitiesInner({ initialRows, tenantSlug, canWrite }: Props) {
             }}
             filters={{ defs: filterDefs }}
             table={{
-                data: rows,
+                data: visibleVulnRows,
+                onReachEnd: hasMoreVulnRows ? loadMoreVulnRows : undefined,
                 columns,
                 getRowId: (r) => r.id,
                 resourceName: (plural) => (plural ? t('resourcePlural') : t('resourceSingular')),
