@@ -191,17 +191,22 @@ export class FileRepository {
      * what it enforces is that you cannot call it without having done them):
      *
      *   1. AUTHORIZE FIRST. Gate the route with
-     *      `requirePermission('admin.tenant_lifecycle', …)`. Returning
-     *      suspected malware to circulation is an OWNER-grade decision, not
-     *      an evidence-editor one.
+     *      `requirePermission('admin.tenant_lifecycle', …)` from
+     *      `@/lib/security/permission-middleware`. Returning suspected
+     *      malware to circulation is an OWNER-grade decision, not an
+     *      evidence-editor one — `admin.tenant_lifecycle` is the key ADMIN
+     *      is explicitly denied and only OWNER carries.
      *   2. WRITE THE AUDIT ROW FIRST, through the canonical hash-chained
      *      writer — `appendAuditEntry({ action: 'FILE_QUARANTINE_CLEARED',
-     *      entity: 'FileRecord', entityId: id, … })` — and pass its id as
-     *      `auditLogId`. The ordering is deliberate: the audit entry records
-     *      that the decision was TAKEN, so it must survive even when this
-     *      write then refuses. Requiring the id in the signature is what
-     *      makes "audited" a compile-time obligation rather than a
-     *      convention the next caller forgets.
+     *      entity: 'FileRecord', entityId: id, … })` from `@/lib/audit` —
+     *      and pass the returned `id` as `auditLogId`. Use that writer, not
+     *      `logEvent` from `@/app-layer/events/audit`: `logEvent` resolves
+     *      to void, so it cannot hand you the id this signature demands.
+     *      The ordering is deliberate: the audit entry records that the
+     *      decision was TAKEN, so it must survive even when this write then
+     *      refuses. Requiring the id in the signature is what makes
+     *      "audited" a compile-time obligation rather than a convention the
+     *      next caller forgets.
      *   3. CAPTURE A HUMAN `reason`. It is stamped into `scanDetails`, so the
      *      row carries the provenance of its own reversal — nobody reading
      *      the FileRecord later sees a bare CLEAN with no history.
