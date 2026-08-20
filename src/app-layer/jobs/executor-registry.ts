@@ -1207,6 +1207,45 @@ executorRegistry.register('hris-sync', async (payload) => {
     return makeResult('hris-sync', startedAt, startMs, r.upserted, r.upserted, r.managersLinked, { executionId: r.executionId, status: r.status }, { status: r.status, errorMessage: r.errorMessage, noRetry: r.noRetry });
 });
 
+// ── av-rescan ────────────────────────────────────────────────────────
+//
+// Operator-triggered, single-tenant, bounded. NOT scheduled: it re-reads
+// every candidate object from storage and pays a clamd round trip per row,
+// so it runs when someone decides it should, not on a clock. See
+// `av-rescan.ts` for why every guard in it is load-bearing.
+executorRegistry.register('av-rescan', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAvRescan } = await import('./av-rescan');
+    const r = await runAvRescan({
+        tenantId: payload.tenantId,
+        initiatedByUserId: payload.initiatedByUserId,
+        limit: payload.limit,
+        requestId: payload.requestId,
+    });
+    return makeResult(
+        'av-rescan',
+        startedAt,
+        startMs,
+        r.scanned,
+        r.clean + r.infected,
+        r.leftPending + r.lostClaim,
+        {
+            tenantId: r.tenantId,
+            jobRunId: r.jobRunId,
+            clean: r.clean,
+            infected: r.infected,
+            leftPending: r.leftPending,
+            integrityMismatch: r.integrityMismatch,
+            oversize: r.oversize,
+            scannerError: r.scannerError,
+            readError: r.readError,
+            refusedSyntheticClean: r.refusedSyntheticClean,
+            lostClaim: r.lostClaim,
+        },
+    );
+});
+
 // PR-4 — hris-sync-dispatch: fan out a sync per enabled HRIS connection.
 executorRegistry.register('hris-sync-dispatch', async () => {
     const startedAt = new Date().toISOString();

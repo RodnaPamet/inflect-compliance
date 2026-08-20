@@ -588,6 +588,25 @@ export interface CompliancePostureDispatchPayload {
     requestId?: string;
 }
 
+/**
+ * `av-rescan` — bounded, operator-triggered catch-up scan of FileRecords
+ * stuck at `scanStatus: 'PENDING'`.
+ *
+ * Single-tenant on purpose: each row costs a full object read plus a clamd
+ * round trip, so this is never a cross-tenant sweep and never a cron. The
+ * job clamps `limit` to its own hard ceiling — the payload cannot widen the
+ * blast radius past what the job allows.
+ */
+export interface AvRescanPayload {
+    /** REQUIRED — the sweep is deliberately scoped to one tenant. */
+    tenantId: string;
+    /** Operator who triggered the run; the actor on every audit row. */
+    initiatedByUserId: string;
+    /** Rows to examine this run. Clamped by the job to its hard cap. */
+    limit?: number;
+    requestId?: string;
+}
+
 export interface JobPayloadMap {
     'health-check': HealthCheckPayload;
     'nvd-cve-sync': NvdCveSyncPayload;
@@ -642,6 +661,7 @@ export interface JobPayloadMap {
     'calendar-push-tenant': CalendarPushTenantPayload;
     'hris-sync': HrisSyncPayload;
     'hris-sync-dispatch': HrisSyncDispatchPayload;
+    'av-rescan': AvRescanPayload;
 }
 
 /** aws-posture connector — run one tenant connection's benchmark + collect evidence. */
@@ -859,6 +879,18 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 20,
         removeOnFail: 50,
+    },
+    'av-rescan': {
+        // No auto-retry. The job is idempotent — a row that got a verdict is
+        // no longer PENDING and is no longer selected — so a retry is safe
+        // but pointless: the interesting failures here (scanner down, storage
+        // unreadable) are exactly the ones a 5-second backoff will not have
+        // fixed, and every attempt re-reads every object. The operator reads
+        // the counters and re-enqueues.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 100,
     },
     'automation-runner': {
         attempts: 3,
