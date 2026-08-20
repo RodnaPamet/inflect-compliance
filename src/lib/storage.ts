@@ -26,6 +26,7 @@ export {
     parseTenantKey,
     // Validation
     FILE_MAX_SIZE_BYTES,
+    FILE_MAX_SIZE_DEFAULT_BYTES,
     FILE_ALLOWED_MIME,
     isAllowedMime,
     isAllowedSize,

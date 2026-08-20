@@ -224,7 +224,25 @@ export function parseTenantKey(pathKey: string): { tenantId: string; domain: Sto
 
 // ─── Validation ───
 
-const FILE_MAX_SIZE_BYTES = env.FILE_MAX_SIZE_BYTES || (50 * 1024 * 1024);
+/**
+ * Upload ceiling applied when `FILE_MAX_SIZE_BYTES` is unset — 50 MB.
+ *
+ * Named and exported so the gap between "what an upload accepts" and "what the
+ * AV scanner will look at" is a quantity other modules and tests can name.
+ * `AV_SCAN_MAX_BYTES` (25 MB, `@/app-layer/services/file-scan`) is deliberately
+ * BELOW this: clamd's own StreamMaxLength aborts past 25 MB, so anything larger
+ * is skipped locally and stored with `scanStatus: 'PENDING'`. Sizes in
+ * (AV_SCAN_MAX_BYTES, FILE_MAX_SIZE_BYTES] are therefore uploadable and
+ * unscannable at once — a real, populated band, not a rounding artefact.
+ *
+ * While it lived only inside the `||` expression below, the band's width was
+ * whatever a deployment's env happened to make it and no test could state it.
+ * The band is asserted in `tests/unit/unscannable-upload-band.test.ts`; changing
+ * EITHER limit changes that band and must be reasoned about there.
+ */
+export const FILE_MAX_SIZE_DEFAULT_BYTES = 50 * 1024 * 1024;
+
+const FILE_MAX_SIZE_BYTES = env.FILE_MAX_SIZE_BYTES || FILE_MAX_SIZE_DEFAULT_BYTES;
 
 const FILE_ALLOWED_MIME = (env.FILE_ALLOWED_MIME || [
     'application/pdf',
