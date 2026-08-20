@@ -514,6 +514,25 @@ export function createActiveDirectoryWriter(
     return {
         provider: AD_PROVIDER_ID,
 
+        /**
+         * The bind DN — the account this connection authenticates AS.
+         *
+         * Surfaced so the orchestrator can refuse to disable it. On LDAP the
+         * bind identity IS a directory account, so a leaver feed naming it is
+         * an ordinary input, not a contrived one: service accounts appear in HR
+         * exports, and the link model matches on email, which a service account
+         * with a human-looking address satisfies exactly as well as a human.
+         *
+         * Disabling it would lock the product out of this directory by its own
+         * hand — the next bind fails, so nothing here could reach the account
+         * to put it back.
+         *
+         * The WRITE bind is preferred when configured, because that is the
+         * credential this writer actually authenticates with; the read bind is
+         * the fallback for the same reason.
+         */
+        selfAccountId: writeBindDN || bindDN || null,
+
         async readState(externalUserId: string): Promise<DirectoryAccountState> {
             const entry = await findAccount(externalUserId);
 

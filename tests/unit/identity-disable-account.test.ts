@@ -21,6 +21,13 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
+const recordOutcome = jest.fn();
+const recordBatchRefused = jest.fn();
+jest.mock('@/lib/observability/integration-metrics', () => ({
+    recordIdentityWriteOutcome: (...a: unknown[]) => recordOutcome(...a),
+    recordIdentityBatchRefused: (...a: unknown[]) => recordBatchRefused(...a),
+    recordIdentityWritesUnsettled: jest.fn(),
+}));
 
 import {
     DirectoryWriteError,
@@ -93,6 +100,107 @@ describe('the happy path writes, and journals what it replaced', () => {
     it('settles the journal APPLIED on success', async () => {
         await disableAccount(ctx, fakeWriter(), input());
         expect(db.identityWriteJournal.updateMany.mock.calls[0][0].data.outcome).toBe('APPLIED');
+    });
+});
+
+describe('SELF-LOCKOUT — the one refusal that comes before everything', () => {
+    /**
+     * Disabling the account this connection binds with locks the product out of
+     * the customer's directory by its own hand. Nothing afterwards recovers it:
+     * the next sync cannot authenticate, so the journal's restore path cannot
+     * reach the account to put it back.
+     *
+     * A plausible input, not a contrived one — service accounts appear in HR
+     * exports, and the link model matches on email, which a service account
+     * with a human-looking address satisfies exactly as well as a human does.
+     */
+    it('refuses to disable the account the writer authenticates as', async () => {
+        const w = fakeWriter({ selfAccountId: 'ext-1' });
+        const r = await disableAccount(ctx, w, input({ externalUserId: 'ext-1' }));
+
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+        expect(r.reason).toMatch(/lock the product out/i);
+        expect(w.disabled).toEqual([]);
+    });
+
+    it('compares case- and whitespace-insensitively', async () => {
+        // A bind DN and a roster value routinely differ in case.
+        const w = fakeWriter({ selfAccountId: '  CN=Svc,DC=acme  ' });
+        const r = await disableAccount(ctx, w, input({ externalUserId: 'cn=svc,dc=acme' }));
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+    });
+
+    it('refuses BEFORE the ladder — a tenant in AUTOMATIC has not consented to this', async () => {
+        setMode('AUTOMATIC');
+        const readState = jest.fn();
+        const w = fakeWriter({ selfAccountId: 'ext-1', readState });
+        await disableAccount(ctx, w, input({ externalUserId: 'ext-1' }));
+        expect(readState).not.toHaveBeenCalled();
+    });
+
+    it('still refuses in DRY_RUN, so the danger is visible before go-live', async () => {
+        setMode('DRY_RUN', new Date('2026-08-01T00:00:00Z'));
+        const w = fakeWriter({ selfAccountId: 'ext-1' });
+        expect((await disableAccount(ctx, w, input({ externalUserId: 'ext-1' }))).outcome).toBe(
+            'REFUSED_PROTECTED',
+        );
+    });
+
+    it('does not refuse a DIFFERENT account', async () => {
+        const w = fakeWriter({ selfAccountId: 'ext-svc' });
+        expect((await disableAccount(ctx, w, input({ externalUserId: 'ext-1' }))).outcome).toBe('DISABLED');
+    });
+
+    it('a writer with no account identity refuses nothing', async () => {
+        // An Entra app registration is not a user; null must not match a blank
+        // externalUserId or anything else.
+        const w = fakeWriter({ selfAccountId: null });
+        expect((await disableAccount(ctx, w, input())).outcome).toBe('DISABLED');
+    });
+
+    it('an account marked protected is refused too', async () => {
+        const w = fakeWriter();
+        const r = await disableAccount(ctx, w, input({ isProtected: true }));
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+        expect(r.reason).toMatch(/break-glass|policy/i);
+        expect(w.disabled).toEqual([]);
+    });
+});
+
+describe('every outcome is counted, including the refusals', () => {
+    it('counts a successful disable', async () => {
+        await disableAccount(ctx, fakeWriter(), input());
+        expect(recordOutcome).toHaveBeenCalledWith(
+            expect.objectContaining({ action: 'disable', outcome: 'DISABLED' }),
+        );
+    });
+
+    it('counts each refusal DISTINCTLY, not as one bucket', async () => {
+        // An operator's next action differs per refusal: REFUSED_MODE is normal
+        // for a tenant climbing the ladder; REFUSED_PROTECTED on any volume
+        // means the roster is naming service accounts.
+        setMode('DISABLED');
+        await disableAccount(ctx, fakeWriter(), input());
+        expect(recordOutcome).toHaveBeenCalledWith(
+            expect.objectContaining({ outcome: 'REFUSED_MODE' }),
+        );
+
+        recordOutcome.mockClear();
+        setMode('AUTOMATIC');
+        await disableAccount(ctx, fakeWriter({ selfAccountId: 'ext-1' }), input({ externalUserId: 'ext-1' }));
+        expect(recordOutcome).toHaveBeenCalledWith(
+            expect.objectContaining({ outcome: 'REFUSED_PROTECTED' }),
+        );
+    });
+
+    it('a refused BATCH is its own counter, not N per-account refusals', async () => {
+        // One decision about a batch. Folding it into the per-account counter
+        // would make a single bad roster look like a hundred problems.
+        const candidates = Array.from({ length: 400 }, (_, i) => input({ externalUserId: `e${i}` }));
+        await disableAccountsForLeaver(ctx, fakeWriter(), { candidates, population: 500 });
+
+        expect(recordBatchRefused).toHaveBeenCalledTimes(1);
+        expect(recordOutcome).not.toHaveBeenCalled();
     });
 });
 
