@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useThresholdLoadMore } from '@/components/ui/hooks';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
@@ -78,6 +79,18 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
 
     const reviews = reviewsQuery.data?.rows ?? [];
     const truncated = reviewsQuery.data?.truncated ?? false;
+
+    // Render a window, not the whole backfill-capped set. Without this the
+    // page mounts every row it fetched — up to `LIST_BACKFILL_CAP` — and
+    // never virtualizes, because `VIRTUALIZE_DEFAULT_THRESHOLD` is 1000 and
+    // a tenant can sit under it while still rendering hundreds of rows on
+    // every re-render. `onReachEnd` extends the window as the user scrolls,
+    // which is the same contract every other list page here already uses.
+    const {
+        visibleRows: visibleReviews,
+        hasMore: hasMoreReviews,
+        loadMore: loadMoreReviews,
+    } = useThresholdLoadMore(reviews);
 
     const columns = useMemo(
         () =>
@@ -205,7 +218,8 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                     <div data-testid="access-reviews-table">
                         <DataTable
                             fillBody
-                            data={reviews}
+                            data={visibleReviews}
+                            onReachEnd={hasMoreReviews ? loadMoreReviews : undefined}
                             columns={columns}
                             getRowId={(r) => r.id}
                             resourceName={(plural) =>
@@ -213,9 +227,13 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                             }
                         />
                         {/* Per-row testid markers for downstream tests
-                         *  that don't reach into DataTable internals. */}
+                         *  that don't reach into DataTable internals.
+                         *  Mirrors `visibleReviews`, not `reviews` — these
+                         *  stand in for rendered rows, so keying them on the
+                         *  full set would report rows the table never
+                         *  mounted. */}
                         <div hidden>
-                            {reviews.map((r) => (
+                            {visibleReviews.map((r) => (
                                 <span
                                     key={r.id}
                                     data-testid={`access-review-row-${r.id}`}

@@ -32,6 +32,7 @@ import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { ErrorState } from '@/components/ui/error-state';
 import { useToast } from '@/components/ui/hooks/use-toast';
+import { useThresholdLoadMore } from '@/components/ui/hooks/use-threshold-load-more';
 import { useToastWithUndo } from '@/components/ui/hooks/use-toast-with-undo';
 import { Heading } from '@/components/ui/typography';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
@@ -283,6 +284,15 @@ function TestsRollupContent() {
         view === 'checks' ? CACHE_KEYS.tests.checks() : null,
     );
     const checks = useMemo(() => checksData?.checks ?? [], [checksData]);
+    // Render a window, not the whole set. This page never virtualizes at its
+    // real row counts (the default threshold is 1000), so without a window it
+    // re-renders every row on each filter, sort or KPI-card click.
+    const {
+        visibleRows: visibleChecks,
+        hasMore: hasMoreChecks,
+        loadMore: loadMoreChecks,
+    } = useThresholdLoadMore(checks);
+
 
     // ─── Bulk actions (canonical BulkActionBar) ───
     const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -535,6 +545,11 @@ function TestsRollupContent() {
         () => sortRowsByDisplay(filteredPlans, sortAccessors, sortBy, sortOrder),
         [filteredPlans, sortAccessors, sortBy, sortOrder],
     );
+    const {
+        visibleRows: visiblePlans,
+        hasMore: hasMorePlans,
+        loadMore: loadMorePlans,
+    } = useThresholdLoadMore(sortedPlans);
 
     // KPI-card counts — total + the three TestPlanStatus buckets.
     //
@@ -938,7 +953,8 @@ function TestsRollupContent() {
                 ) : view === 'checks' ? (
                     <DataTable
                         fillBody
-                        data={checks}
+                        data={visibleChecks}
+                        onReachEnd={hasMoreChecks ? loadMoreChecks : undefined}
                         columns={checkColumns}
                         getRowId={(c) => c.id}
                         loading={checksLoading}
@@ -953,7 +969,8 @@ function TestsRollupContent() {
                 ) : (
                 <DataTable
                     fillBody
-                    data={sortedPlans}
+                    data={visiblePlans}
+                    onReachEnd={hasMorePlans ? loadMorePlans : undefined}
                     columns={planColumns}
                     sortableColumns={sortableColumns}
                     sortBy={sortBy}

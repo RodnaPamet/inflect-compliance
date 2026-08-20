@@ -28,7 +28,7 @@ import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { useToast } from '@/components/ui/hooks';
+import { useToast, useThresholdLoadMore } from '@/components/ui/hooks';
 import { formatDateTime } from '@/lib/format-date';
 import {
     buildScannerFilters,
@@ -253,6 +253,17 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
             return true;
         });
     }, [findingRows, state.source, state.severity, state.status]);
+    // Render a window, not the whole backfill-capped set. Without this the
+    // page mounts every row it fetched and never virtualizes — the default
+    // threshold is 1000, so a tenant can sit under it and still re-render
+    // hundreds of rows on every filter or sort change. `onReachEnd` extends
+    // the window on scroll, the same contract the other list pages use.
+    const {
+        visibleRows: visibleSecFindings,
+        hasMore: hasMoreSecFindings,
+        loadMore: loadMoreSecFindings,
+    } = useThresholdLoadMore(rows);
+
 
     const openCritical = useMemo(
         () => findingRows.filter((r) => r.severity === 'CRITICAL' && r.status === 'OPEN').length,
@@ -473,7 +484,8 @@ function SecurityTestingInner({ initialFindings, runs, tenantSlug, canWrite }: P
             tableFooter={runsHistory}
             table={{
                 fillBody: false,
-                data: rows,
+                data: visibleSecFindings,
+                onReachEnd: hasMoreSecFindings ? loadMoreSecFindings : undefined,
                 columns,
                 getRowId: (r) => r.id,
                 resourceName: (plural) => (plural ? t('resourceFindings') : t('resourceFinding')),

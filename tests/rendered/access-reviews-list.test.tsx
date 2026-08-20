@@ -70,6 +70,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { AccessReviewsClient } from '@/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient';
+import { DEFAULT_LOAD_MORE_THRESHOLD } from '@/components/ui/hooks/use-threshold-load-more';
 
 function withClient(ui: React.ReactNode) {
     // Fresh per-test SWR cache. (React Query fully removed — the nested
@@ -185,5 +186,63 @@ describe('AccessReviewsClient', () => {
         expect(screen.getByTestId('access-review-new-error').textContent).toMatch(
             /required/i,
         );
+    });
+});
+
+// ─── #105 — the page renders a WINDOW, not the whole fetched set ──────
+//
+// This page had no windowing, no pagination and no virtualization: it
+// mounted every row `/access-reviews` returned, bounded only by
+// `LIST_BACKFILL_CAP` (5000). Virtualization does not save it —
+// `VIRTUALIZE_DEFAULT_THRESHOLD` is 1000, so a tenant can sit well under
+// that and still re-render hundreds of rows on every filter or sort.
+//
+// The assertion is on the DOM row COUNT rather than on the hook, because
+// the bounded DOM is the property that matters and it is what regresses
+// if someone hands `reviews` straight back to the table.
+
+describe('AccessReviewsClient — windowing (#105)', () => {
+    beforeEach(() => {
+        (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async () => ({
+            ok: true,
+            json: async () => ({ rows: [], truncated: false }),
+        }));
+    });
+
+    const many = (n: number) =>
+        Array.from({ length: n }, (_, i) =>
+            sample({ id: `rev_${i}`, name: `Review ${i}` }),
+        );
+
+    it('caps rendered rows at the load-more threshold', () => {
+        const { container } = render(
+            withClient(
+                <AccessReviewsClient tenantSlug="acme" initialReviews={many(120)} />,
+            ),
+        );
+
+        // Assert on the real table rows — the marker spans below mirror
+        // them, but the <tr> count is the thing the user pays for.
+        const tableRows = container.querySelectorAll('tbody tr');
+        expect(tableRows.length).toBe(DEFAULT_LOAD_MORE_THRESHOLD);
+
+        const rows = container.querySelectorAll('[data-testid^="access-review-row-"]');
+        expect(rows.length).toBe(DEFAULT_LOAD_MORE_THRESHOLD);
+
+        // The first row is present and the 100th is not — i.e. the window is
+        // a prefix of the list, not an arbitrary subset.
+        expect(screen.queryByTestId('access-review-row-rev_0')).toBeTruthy();
+        expect(screen.queryByTestId('access-review-row-rev_100')).toBeNull();
+    });
+
+    it('renders every row when the set is under the threshold', () => {
+        const { container } = render(
+            withClient(
+                <AccessReviewsClient tenantSlug="acme" initialReviews={many(7)} />,
+            ),
+        );
+        expect(container.querySelectorAll('tbody tr').length).toBe(7);
+        const rows = container.querySelectorAll('[data-testid^="access-review-row-"]');
+        expect(rows.length).toBe(7);
     });
 });
