@@ -17,6 +17,40 @@ import { join } from 'path';
 const ROOT = join(__dirname, '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
+/**
+ * Strip comments, so prose ABOUT a thing never registers as the thing.
+ *
+ * Both the block form and the line form go. The line form is anchored at
+ * start-of-line-or-whitespace rather than only at the start of a line, so a
+ * TRAILING `// isDownloadAllowed(...) is handled upstream` is stripped too —
+ * that is a comment as much as a full-line one is. Requiring whitespace before
+ * the slashes is what keeps a URL intact (in `https://…` the slashes follow a
+ * colon): over-stripping would be the same failure in the other direction,
+ * silently shrinking the set of files the scan looks at.
+ */
+const stripComments = (s: string) =>
+    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+
+/**
+ * Does this source actually CALL the download gate?
+ *
+ * This used to be `source.includes('isDownloadAllowed')` — a substring test
+ * against RAW source, in a file that strips comments before deciding which
+ * files are storage readers in the first place. Those two halves disagreed:
+ * a file whose only mention of the predicate sat in a docstring was found by
+ * the (comment-stripped) reader scan and then certified as gated by the (raw)
+ * substring test — no call, no allowlist entry, no failure. That is not
+ * hypothetical prose: `src/app-layer/services/file-scan.ts` and
+ * `src/lib/evidence-scan.ts` both mention the predicate in comments today and
+ * would have satisfied the old check for free the day either one grew a
+ * `readStream` call.
+ *
+ * Requiring the open-paren means the assertion is about conduct — a call —
+ * rather than about the file containing a word.
+ */
+const callsDownloadGate = (source: string): boolean =>
+    /\bisDownloadAllowed\s*\(/.test(stripComments(source));
+
 const FILE_USECASE = 'src/app-layer/usecases/file.ts';
 const EVIDENCE = 'src/app-layer/usecases/evidence.ts';
 const FILE_REPO = 'src/app-layer/repositories/FileRepository.ts';
@@ -139,10 +173,9 @@ describe('R5-P1 (4b) every storage read is gated or declared non-serving', () =>
         return out;
     }
 
-    /** Strip comments so prose about `readStream` doesn't register as a call. */
-    const stripComments = (s: string) =>
-        s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-
+    // `stripComments` is hoisted to module scope alongside `callsDownloadGate`
+    // — the reader scan and the gate check MUST see the same text, and keeping
+    // one of them local to this block is how they drifted apart.
     const callers = walk('src')
         // The provider implementations DEFINE these primitives; they are the
         // thing being gated, not a caller of it.
@@ -157,14 +190,68 @@ describe('R5-P1 (4b) every storage read is gated or declared non-serving', () =>
         expect(callers).toContain(EVIDENCE);
     });
 
-    it('every storage reader gates on isDownloadAllowed or is a declared non-serving read', () => {
+    it('every storage reader CALLS isDownloadAllowed or is a declared non-serving read', () => {
         const ungated = callers.filter(
             (f) =>
-                !read(f).includes('isDownloadAllowed') &&
+                !callsDownloadGate(read(f)) &&
                 !(f in NON_SERVING_READS) &&
                 !(f in SERVES_UNSCANNED_BY_DESIGN),
         );
         expect(ungated).toEqual([]);
+    });
+
+    /**
+     * In-memory regression proof for the detector itself.
+     *
+     * The gate check above is only worth its name if a MENTION cannot satisfy
+     * it. These cases run the detector over source strings rather than repo
+     * files, so the proof holds even after every real file changes.
+     */
+    describe('the gate detector requires a call, not a mention', () => {
+        it('a comment-only mention reports as UNGATED', () => {
+            const commentOnly = [
+                '/**',
+                ' * The gate (`isDownloadAllowed`) is applied on every serving path.',
+                ' */',
+                "import { provider } from '@/lib/storage';",
+                'export async function serve(key: string) {',
+                '    // isDownloadAllowed(record.scanStatus) is handled by the caller',
+                '    return provider.readStream(key); // isDownloadAllowed() upstream',
+                '}',
+            ].join('\n');
+
+            // The token IS present — this is exactly the shape the old
+            // substring check certified as gated.
+            expect(commentOnly.includes('isDownloadAllowed')).toBe(true);
+            expect(callsDownloadGate(commentOnly)).toBe(false);
+        });
+
+        it('a real call reports as GATED', () => {
+            const realCall =
+                'if (!isDownloadAllowed(fileRecord.scanStatus)) {\n' +
+                '    throw forbidden(getBlockedReason(fileRecord.scanStatus));\n' +
+                '}';
+            expect(callsDownloadGate(realCall)).toBe(true);
+            // whitespace before the paren is still a call
+            expect(callsDownloadGate('if (!isDownloadAllowed (s)) return;')).toBe(true);
+        });
+
+        it('the repo file that mentions the predicate in prose is not counted as gating', () => {
+            // src/app-layer/services/file-scan.ts describes the gate in its
+            // header docstring and never calls it. It is not a storage reader
+            // today, so nothing is wrong — it is the live proof that the trap
+            // was reachable, and it is asserted here so a future edit that
+            // turns that file into a serving path has to face the gate.
+            const src = read('src/app-layer/services/file-scan.ts');
+            expect(src.includes('isDownloadAllowed')).toBe(true);
+            expect(callsDownloadGate(src)).toBe(false);
+        });
+
+        it('a URL is not mistaken for a comment (the stripper does not over-strip)', () => {
+            const withUrl =
+                "const docs = 'https://example.test/av'; if (!isDownloadAllowed(s)) return;";
+            expect(callsDownloadGate(withUrl)).toBe(true);
+        });
     });
 
     it('the trust-center public download gates on scan + lifecycle', () => {
@@ -192,7 +279,11 @@ describe('R5-P1 (4b) every storage read is gated or declared non-serving', () =>
                 declared,
                 exists: true,
             });
-            expect(read(declared).includes('isDownloadAllowed')).toBe(false);
+            // "still ungated" means it does not CALL the predicate. Asking
+            // whether the word appears would fail the moment someone explains
+            // in a comment why this file cannot gate — the very reason the
+            // entry exists.
+            expect(callsDownloadGate(read(declared))).toBe(false);
         }
     });
 
