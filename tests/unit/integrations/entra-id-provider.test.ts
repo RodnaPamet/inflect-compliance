@@ -88,7 +88,24 @@ describe('EntraIdProvider — descriptor', () => {
             'dormantDays',
             'enrichMfa',
             'enrichFederation',
+            // The offboarding write opt-in. Every field here must also carry a
+            // rule in CONFIG_FIELD_RULES — validateProviderConfig rejects an
+            // undeclared key outright — so this list and that map move together.
+            'writesEnabled',
         ]);
+    });
+
+    it('the write opt-in defaults off, so a read-only tenant stays read-only', () => {
+        const field = provider().configSchema.configFields.find((f) => f.key === 'writesEnabled');
+        // With client credentials the token exchange asks for `.default`, which
+        // returns exactly what an admin already consented rather than what we
+        // request. So consent granted for any other purpose would otherwise hand
+        // this application standing power to disable any user in the directory;
+        // `required: false` plus the writer's explicit `=== true` check is what
+        // keeps that an opt-in rather than a side effect.
+        expect(field).toBeDefined();
+        expect(field!.type).toBe('boolean');
+        expect(field!.required).toBe(false);
     });
 });
 

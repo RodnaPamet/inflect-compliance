@@ -389,13 +389,31 @@ export async function findLeaverCandidates(
     });
 }
 
-/** Raised when a provider refuses for lack of consented permission. */
-export class InsufficientDirectoryPermission extends Error {
+/**
+ * Raised when a provider refuses for lack of consented permission.
+ *
+ * Extends DirectoryWriteError with `definitivelyNotApplied: true`, and that is
+ * load-bearing rather than tidy typing. A permission refusal is evaluated by
+ * the provider BEFORE anything is mutated, so it is one of the few failures
+ * that genuinely proves the directory is unchanged.
+ *
+ * It extended plain Error in the first version, which meant `provenNotApplied`
+ * — an `instanceof DirectoryWriteError` check — returned false for it, and a
+ * PROVEN refusal settled as INDETERMINATE. Harmless in isolation, and exactly
+ * the kind of harmless that fills an operator's must-investigate queue with
+ * rows that need no investigation, until the queue is ignored.
+ *
+ * Both provider writers hit this independently while implementing against the
+ * contract, and both worked around it rather than reporting a clean fit —
+ * which is the signal that the contract was wrong, not their usage.
+ */
+export class InsufficientDirectoryPermission extends DirectoryWriteError {
     constructor(provider: string, needed: string) {
         super(
             `${provider} refused the write for lack of permission. The connection was consented for READ ` +
                 `only; disabling an account additionally requires ${needed}. An administrator must re-consent ` +
                 `the application with that permission before offboarding can write to this directory.`,
+            { definitivelyNotApplied: true },
         );
         this.name = 'InsufficientDirectoryPermission';
     }
