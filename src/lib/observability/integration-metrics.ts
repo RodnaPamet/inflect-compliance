@@ -29,6 +29,7 @@ let _outboundWrite: ReturnType<ReturnType<typeof getMeter>['createCounter']> | u
 let _calendarPush: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _calendarRevoked: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _identityDeprovisioned: Counter | null = null;
+let _identityLinkReconcile: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
@@ -279,6 +280,32 @@ export function recordScannerFindingsTruncated(attrs: { source: string; dropped:
     if (attrs.dropped <= 0) return;
     if (!_scannerFindingsTruncated) _scannerFindingsTruncated = getMeter().createCounter('scanner.findings.truncated', { description: 'Above-threshold scanner findings dropped at the materialisation cap', unit: '1' });
     _scannerFindingsTruncated.add(attrs.dropped, { source: attrs.source });
+}
+
+/**
+ * One worker<->directory-account link-reconciliation pass.
+ *
+ * Emitted on EVERY terminal path including `skipped`, because the failure this
+ * counter exists to catch is the pass not running at all — and a counter that
+ * fires only on success makes "nothing reconciled last night" indistinguishable
+ * from "nothing needed reconciling". `findLeaverCandidates` reads link
+ * freshness, so a silently-stopped reconciler empties the leaver candidate set
+ * without emptying any log: the leaver pass would run, report success, and
+ * disable nobody.
+ *
+ * No tenant label — cardinality stays at roughly three outcomes x four
+ * providers, and a tenant that stops reconciling shows up as a rate change.
+ */
+export function recordIdentityLinkReconcile(attrs: {
+    provider: string;
+    outcome: 'reconciled' | 'skipped' | 'error';
+}): void {
+    if (!_identityLinkReconcile)
+        _identityLinkReconcile = getMeter().createCounter('identity.link.reconcile', {
+            description: 'Worker<->directory-account link reconciliation passes by outcome',
+            unit: '1',
+        });
+    _identityLinkReconcile.add(1, { provider: attrs.provider, outcome: attrs.outcome });
 }
 
 export function recordIdentityDeprovisioned(attrs: { provider: string; count: number }): void {

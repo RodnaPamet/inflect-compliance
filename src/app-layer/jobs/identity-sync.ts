@@ -19,7 +19,10 @@ import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
 import { runInTenantContext } from '@/lib/db-context';
 import { buildSystemContext } from '@/app-layer/context-system';
+import type { RequestContext } from '@/app-layer/types';
 import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
+import { reconcileIdentityAccountLinks } from '@/app-layer/usecases/identity-account-link';
+import { recordIdentityLinkReconcile } from '@/lib/observability/integration-metrics';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 
@@ -46,13 +49,94 @@ export async function runIdentitySyncJob(payload: IdentitySyncPayload): Promise<
         // Returned whole rather than field-by-field. The old shim re-listed four
         // fields, so `errorMessage` and `noRetry` were silently dropped on the way
         // to the queue — the classification existed and never arrived.
-        return await runIdentitySync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
+        const result = await runIdentitySync({ tenantId: payload.tenantId, connectionId: payload.connectionId });
+        await reconcileLinksAfterSync(ctx, result);
+        return result;
     } finally {
         // `finally`, so a throw releases the lock rather than wedging the
         // connection until the lease expires.
         await runInTenantContext(ctx, (db) =>
             releaseSyncLock(db, payload.connectionId!, token),
         );
+    }
+}
+
+
+/**
+ * Re-observe which directory account belongs to which worker, after a sync that
+ * enumerated the whole directory.
+ *
+ * ═══ WHY THIS HOOK EXISTS AT ALL ═══
+ *
+ * `reconcileIdentityAccountLinks` had no production caller. `IdentityAccountLink`
+ * is therefore empty in the field, and `findLeaverCandidates` requires
+ * `lastVerifiedAt >= staleBefore` — a column nothing else writes. So the leaver
+ * candidate set was permanently empty, and a leaver pass shipped without this
+ * would have run, reported success, and disabled nobody. That is worse than not
+ * shipping it: an offboarding that silently does nothing looks exactly like an
+ * offboarding that works.
+ *
+ * ═══ ONLY AFTER A CONFIRMED-COMPLETE ENUMERATION ═══
+ *
+ * Gated on the sync's own returned `status === 'PASSED'`, which is returned
+ * ONLY from the arm that finished a full traversal. A resumable page-by-page run
+ * returns `PARTIAL`; a directory past the enumeration cap returns `ERROR`.
+ *
+ * The distinction is the whole point. Matching is by email against the accounts
+ * this tenant has on record, and an account absent from a TRUNCATED slice is
+ * indistinguishable from one that no longer exists — so reconciling a partial
+ * pass would stamp `lastVerifiedAt` on links whose accounts were never observed,
+ * and mark others `contradictedAt` on the strength of a directory read that
+ * never finished. Freshness would then certify a fact nobody checked, and the
+ * rail whose whole job is to refuse a stale pairing would be attesting to one.
+ *
+ * ═══ WHY IT CANNOT FAIL THE SYNC ═══
+ *
+ * Its own try/catch. The sync genuinely succeeded — accounts were upserted and
+ * deprovisioned — and reporting ERROR because a follow-on bookkeeping pass threw
+ * would make the queue retry a full directory enumeration to fix a link table.
+ * The failure is loud in the log and in `identity.link.reconcile{outcome=error}`
+ * instead, which is where a stopped reconciler has to be visible: nothing else
+ * downstream reports its absence, it just quietly yields no leaver candidates.
+ *
+ * Placed AFTER `runIdentitySync` returns rather than inside it, so it opens its
+ * own `runInTenantContext` transaction instead of nesting one inside the sync's
+ * — two held PgBouncer connections for one logical unit of work is how a
+ * transaction-mode pooler runs out of them. Still inside the caller's `try`, so
+ * it runs under the per-connection lock that a concurrent sync would otherwise
+ * be free to interleave with.
+ */
+async function reconcileLinksAfterSync(
+    ctx: RequestContext,
+    result: IdentitySyncResult,
+): Promise<void> {
+    // No provider means the connection never resolved, so there was no
+    // enumeration to reconcile against.
+    if (!result.provider) return;
+    if (result.status !== 'PASSED') {
+        recordIdentityLinkReconcile({ provider: result.provider, outcome: 'skipped' });
+        return;
+    }
+    try {
+        const r = await reconcileIdentityAccountLinks(ctx, result.provider);
+        recordIdentityLinkReconcile({ provider: result.provider, outcome: 'reconciled' });
+        logger.info('identity link reconcile complete', {
+            component: 'identity-sync',
+            tenantId: ctx.tenantId,
+            provider: result.provider,
+            created: r.created,
+            verified: r.verified,
+            contradicted: r.contradicted,
+            unmatched: r.unmatched,
+        });
+    } catch (err) {
+        recordIdentityLinkReconcile({ provider: result.provider, outcome: 'error' });
+        logger.error('identity link reconcile failed; the sync itself succeeded', {
+            component: 'identity-sync',
+            tenantId: ctx.tenantId,
+            provider: result.provider,
+            error: err instanceof Error ? err.message : String(err),
+        });
     }
 }
 
