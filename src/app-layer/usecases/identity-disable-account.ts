@@ -39,6 +39,11 @@ import {
     recordIdentityWritesUnsettled,
 } from '@/lib/observability/integration-metrics';
 import { settleIndeterminateAsApplied } from './identity-write-journal';
+import {
+    buildLeaverAudienceBook,
+    notifyLeaverOutcome,
+    type LeaverAudienceBook,
+} from '../notifications/leaver';
 
 /**
  * Why a disable did not happen, or how it did.
@@ -423,6 +428,29 @@ export async function disableAccountsForLeaver(
         return { refused: verdict.reason, results: [] };
     }
 
+    // Resolved ONCE, before the loop, for the whole batch: the compliance
+    // mailbox (or the OWNER/ADMIN fallback), the tenant slug, and every
+    // candidate's manager. Per-account resolution would be an N+1 over the org
+    // chart on the one code path already spending a customer's directory rate
+    // limit, and it would put reads inside this loop.
+    //
+    // Outside the per-candidate try on purpose. If the audience cannot be
+    // resolved at all the batch still runs — offboarding must not be blocked by
+    // a notification lookup — so a failure here yields an empty book and
+    // `notifyLeaverOutcome` logs each undeliverable message individually.
+    const audience: LeaverAudienceBook = await buildLeaverAudienceBook(
+        ctx,
+        input.candidates.map((c) => c.linkId),
+    ).catch((err: unknown) => {
+        logger.error('leaver notification audience could not be resolved; continuing without it', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return { tenantSlug: null, it: [], byLink: new Map<string, never>() };
+    });
+
     const results: DisableResult[] = [];
     for (const candidate of input.candidates) {
         // Sequential on purpose. These are writes to a customer's directory
@@ -436,8 +464,9 @@ export async function disableAccountsForLeaver(
         // otherwise abandon every REMAINING candidate silently. Half a leaver
         // batch, with no record of which half, is the shape of outage this is
         // least able to explain afterwards.
+        let result: DisableResult;
         try {
-            results.push(await disableAccount(ctx, writer, candidate));
+            result = await disableAccount(ctx, writer, candidate);
         } catch (err) {
             const detail = err instanceof Error ? err.message : String(err);
             logger.error('leaver disable threw unexpectedly; continuing the batch', {
@@ -447,7 +476,36 @@ export async function disableAccountsForLeaver(
                 externalUserId: candidate.externalUserId,
                 error: detail,
             });
-            results.push({ outcome: 'FAILED', reason: detail });
+            result = { outcome: 'FAILED', reason: detail };
+        }
+        results.push(result);
+
+        // Tell the people who need to know — which is NOT everyone, on NOT
+        // every outcome. `notifyLeaverOutcome` owns that decision and is
+        // contracted never to throw; the try is here anyway because this file's
+        // whole posture is that "written not to throw" is not "guaranteed not
+        // to", and a notification must never be the reason a leaver batch
+        // stops half-done.
+        //
+        // Enqueued rather than sent: the outbox already claims a row before
+        // sending it, so a broken SMTP relay delays a message instead of
+        // failing an offboarding.
+        try {
+            await notifyLeaverOutcome(ctx, audience, {
+                linkId: candidate.linkId,
+                provider: writer.provider,
+                outcome: result.outcome,
+                reason: result.reason,
+                journalId: result.journalId,
+            });
+        } catch (err) {
+            logger.error('leaver notification threw unexpectedly; continuing the batch', {
+                component: 'identity-disable-account',
+                tenantId: ctx.tenantId,
+                provider: writer.provider,
+                outcome: result.outcome,
+                error: err instanceof Error ? err.message : String(err),
+            });
         }
     }
     return { results };

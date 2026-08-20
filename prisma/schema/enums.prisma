@@ -615,6 +615,26 @@ enum EmailNotificationType {
   // dedupe at the outbox layer prevents double-fires; the
   // calendar-day trigger condition is the spam guard.
   EXCEPTION_EXPIRING
+  // JML leaver offboarding (2026-08-20). THREE types rather than one, because
+  // the outbox dedupe key is (tenantId, type, toEmail, entityId, day): a single
+  // shared type would make the "we could not confirm it" mail and the later
+  // "we have now confirmed it" mail collide on the same journal row, and the
+  // resolution — the one that closes a human investigation — would be the half
+  // that got silently dropped.
+  //
+  /// The account is off: either the write landed, or a later read confirmed an
+  /// earlier unconfirmed one landed. Reaches IT and the leaver's manager.
+  IDENTITY_LEAVER_DISABLED
+  /// The provider never reported back, so the directory may or may not have
+  /// changed. The only outcome a human MUST act on, and the only one whose
+  /// ambiguity is carried verbatim to both audiences rather than resolved into
+  /// a comfortable-sounding guess.
+  IDENTITY_LEAVER_UNCONFIRMED
+  /// A refusal or a provider rejection that leaves the account LIVE. IT only:
+  /// a manager can do nothing about a Graph permission error or an Azure AD
+  /// Connect topology, and mail they cannot act on is what teaches an audience
+  /// to stop reading the channel the UNCONFIRMED mail also arrives on.
+  IDENTITY_LEAVER_NEEDS_ACTION
 }
 
 enum EmailOutboxStatus {
