@@ -24,6 +24,7 @@ import {
     unwrapCappedList,
     LIST_BACKFILL_CAP,
     type CappedList,
+    idsFromCappedList,
 } from '@/lib/list-backfill-cap';
 
 interface Row {
@@ -88,5 +89,59 @@ describe('unwrapCappedList', () => {
         expect(over.truncated).toBe(true);
         // Unwrapping a truncated list yields the clamped rows, not the input.
         expect(unwrapCappedList(over)).toHaveLength(LIST_BACKFILL_CAP);
+    });
+});
+
+// ─── idsFromCappedList ─────────────────────────────────────────────────
+//
+// The regression this exists to prevent: `/assets` moved from a bare array
+// to `{ rows, truncated }` (dd0a9127e, PR #1788) and the asset detail page's
+// hand-rolled `Array.isArray(data) ? … : []` silently produced `[]`, hiding
+// the prev/next nav for two weeks. Every shape below is one a real list route
+// returns TODAY, so this fails if any of them stops being handled.
+
+describe('idsFromCappedList — every shape the list routes actually return', () => {
+    it('reads the { rows, truncated } envelope (assets, tasks)', () => {
+        expect(
+            idsFromCappedList({
+                rows: [{ id: 'a' }, { id: 'b' }],
+                truncated: false,
+            }),
+        ).toEqual(['a', 'b']);
+    });
+
+    it('reads the envelope spread beside extra keys (risks, controls, policies, vendors)', () => {
+        // These routes return `{ ...result, kpiCounts }`.
+        const payload = {
+            rows: [{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }],
+            truncated: true,
+            kpiCounts: { total: 3, open: 2 },
+        };
+        expect(idsFromCappedList(payload)).toEqual(['r1', 'r2', 'r3']);
+    });
+
+    it('still reads a bare array (incidents)', () => {
+        expect(idsFromCappedList([{ id: 'x' }, { id: 'y' }])).toEqual(['x', 'y']);
+    });
+
+    it('preserves list order — the nav walks the sequence the list showed', () => {
+        expect(
+            idsFromCappedList({ rows: [{ id: 'c' }, { id: 'a' }, { id: 'b' }], truncated: false }),
+        ).toEqual(['c', 'a', 'b']);
+    });
+
+    it('drops rows with no usable id rather than emitting holes', () => {
+        expect(
+            idsFromCappedList({
+                rows: [{ id: 'a' }, {}, { id: '' }, { id: 'b' }],
+                truncated: false,
+            }),
+        ).toEqual(['a', 'b']);
+    });
+
+    it('degrades to [] on undefined / malformed bodies so the nav hides', () => {
+        expect(idsFromCappedList(undefined)).toEqual([]);
+        expect(idsFromCappedList(null)).toEqual([]);
+        expect(idsFromCappedList({ rows: [], truncated: false })).toEqual([]);
     });
 });

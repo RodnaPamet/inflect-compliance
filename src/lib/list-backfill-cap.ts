@@ -77,3 +77,29 @@ export function unwrapCappedList<T>(
     }
     return [];
 }
+
+/**
+ * Ordered entity ids out of a list response, for the detail-page prev/next
+ * nav (`<EntityPrevNextNav>`).
+ *
+ * Exists as a named helper rather than an inline memo on each page because
+ * the inline version is what broke: the asset detail page hand-rolled
+ * `Array.isArray(data) ? data.map(...) : []`, and when `/assets` moved to the
+ * `{ rows, truncated }` envelope that guard silently produced `[]` — the nav
+ * hid itself and the feature looked deleted for two weeks. Thirteen detail
+ * pages are due to mount the same nav; thirteen copies of that guard is
+ * thirteen chances to repeat it.
+ *
+ * Tolerates every shape the list routes actually return: a bare array
+ * (`incidents`), the plain envelope (`assets`, `tasks`), and the envelope
+ * spread alongside extra keys (`risks`, `controls`, `policies`, `vendors`
+ * all return `{ ...result, kpiCounts }`). Anything else yields `[]`, which
+ * makes the nav hide rather than render arrows that point nowhere.
+ */
+export function idsFromCappedList(
+    data: CappedList<{ id?: string }> | Array<{ id?: string }> | null | undefined,
+): string[] {
+    return unwrapCappedList(data)
+        .map((row) => row?.id)
+        .filter((id): id is string => Boolean(id));
+}
