@@ -21,14 +21,73 @@
  * accname step 2C for descendant controls, so testing-library reports the
  * bare title either way and a nesting regression would sail through. The
  * containment assertion below is the thing that actually holds the line.
+ *
+ * The last case checks the third property of the composition: the stepper's
+ * labels are catalog-resolved, and that survives the shell. `prevNext`
+ * carries the entity KEY (`'asset'`, `'policy'`), so nothing here depends on
+ * the shell's prop shape — only on the key reaching the nav intact.
  */
 
-import { render } from '@testing-library/react';
+import { render, within } from '@testing-library/react';
 import * as React from 'react';
 
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
 import { TooltipProvider } from '@/components/ui/tooltip';
+
+/**
+ * Locale the local `next-intl` mock resolves against. A ref object rather
+ * than a bare `let` — the factory below is hoisted above every declaration
+ * in this file, so `.current` must be read lazily, at render time.
+ */
+const mockLocale: { current: 'en' | 'bg' } = { current: 'en' };
+
+/**
+ * Local `next-intl` mock. The repo-wide `__mocks__/next-intl.js` is pinned to
+ * `messages/en.json` (this suite needs bg too) and returns a FRESH `t` from
+ * every `useTranslations()` call — a consumer that feeds `t` output into a
+ * hook dependency then re-registers forever and the suite TIMES OUT instead
+ * of failing. One memoised `t` per (locale, namespace) removes both hazards.
+ */
+jest.mock('next-intl', () => {
+    const catalogs: Record<string, unknown> = {
+        en: jest.requireActual('../../messages/en.json'),
+        bg: jest.requireActual('../../messages/bg.json'),
+    };
+    type Translator = ((key: string) => string) & { has: (key: string) => boolean };
+    const build = (locale: string, ns: string): Translator => {
+        const resolve = (key: string): unknown =>
+            `${ns}.${key}`
+                .split('.')
+                .reduce<unknown>(
+                    (o, k) =>
+                        o && typeof o === 'object'
+                            ? (o as Record<string, unknown>)[k]
+                            : undefined,
+                    catalogs[locale],
+                );
+        return Object.assign(
+            (key: string) => {
+                const v = resolve(key);
+                return typeof v === 'string' ? v : key;
+            },
+            { has: (key: string) => typeof resolve(key) === 'string' },
+        );
+    };
+    const cache = new Map<string, Translator>();
+    return {
+        useTranslations: (ns: string): Translator => {
+            const cacheKey = `${mockLocale.current}:${ns}`;
+            let t = cache.get(cacheKey);
+            if (!t) {
+                t = build(mockLocale.current, ns);
+                cache.set(cacheKey, t);
+            }
+            return t;
+        },
+        useLocale: () => mockLocale.current,
+    };
+});
 
 jest.mock('next/navigation', () => ({
     useRouter: () => ({
@@ -66,6 +125,10 @@ function mount(extra: Record<string, unknown> = {}) {
         </TooltipProvider>,
     );
 }
+
+beforeEach(() => {
+    mockLocale.current = 'en';
+});
 
 describe('EntityDetailLayout prevNext', () => {
     it('renders the stepper beside the title', () => {
@@ -135,5 +198,25 @@ describe('EntityDetailLayout prevNext', () => {
             prevNext: { ...PREV_NEXT, ids: ['only'], currentId: 'only' },
         });
         expect(queryByTestId('entity-prev-next-nav')).toBeNull();
+    });
+
+    it('carries the entity key through to catalog-resolved, localised labels', () => {
+        // `labelSingular` is a key under `ui.recordStepper`, so the shell can
+        // keep forwarding the same lowercase slugs the detail pages already
+        // pass. Bulgarian is the proof the phrase is looked up rather than
+        // built from an English template — and `policy` is feminine
+        // (политика), so an interpolated adjective would read "Предишен
+        // политика" here.
+        mockLocale.current = 'bg';
+        const { container } = mount({
+            prevNext: { ...PREV_NEXT, labelSingular: 'policy' },
+        });
+        const q = within(container);
+        expect(q.getByTestId('entity-nav-prev').getAttribute('aria-label')).toBe(
+            'Предишна политика',
+        );
+        expect(q.getByTestId('entity-nav-next').getAttribute('aria-label')).toBe(
+            'Следваща политика',
+        );
     });
 });

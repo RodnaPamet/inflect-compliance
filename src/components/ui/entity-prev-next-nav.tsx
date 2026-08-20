@@ -15,6 +15,7 @@
  * entity's ordered id list + `hrefFor`.
  */
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import { cn } from '@/lib/cn';
@@ -26,7 +27,12 @@ export interface EntityPrevNextNavProps {
     currentId: string;
     /** Build the tenant-prefixed href for a neighbour id. */
     hrefFor: (id: string) => string;
-    /** Noun for the a11y labels / tooltips (e.g. "asset"). */
+    /**
+     * Which entity this stepper walks — a KEY under `ui.recordStepper`, not a
+     * display noun. Callers pass the lowercase entity slug they already used
+     * (`'asset'`, `'policy'`, …); the component resolves the whole phrase from
+     * the catalog. An entity with no entry falls back to `item`.
+     */
     labelSingular?: string;
     className?: string;
 }
@@ -57,6 +63,19 @@ export function EntityPrevNextNav({
     className,
 }: EntityPrevNextNavProps) {
     const router = useRouter();
+    // Whole PHRASES per entity per direction, not an adjective interpolated
+    // into a noun. Bulgarian adjectives agree in gender, so one
+    // `"Предишен {entity}"` template renders "Предишен политика" for
+    // политика (f) and "Предишен задача" for задача (f) — both ungrammatical.
+    // Two catalog lookups per direction is the cheap, correct shape; the
+    // catalog also keeps every locale free to phrase the pair its own way.
+    const t = useTranslations('ui.recordStepper');
+    const phraseFor = (direction: 'previous' | 'next') => {
+        const key = `${direction}.${labelSingular}`;
+        return t.has(key) ? t(key) : t(`${direction}.item`);
+    };
+    const prevLabel = phraseFor('previous');
+    const nextLabel = phraseFor('next');
     const idx = ids.indexOf(currentId);
     const prevId = idx > 0 ? ids[idx - 1] : null;
     const nextId = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : null;
@@ -89,11 +108,11 @@ export function EntityPrevNextNav({
     const navDisabled = idx < 0 || ids.length <= 1;
     useKeyboardShortcut('alt+ArrowUp', () => go(prevId), {
         enabled: !navDisabled && prevId != null,
-        description: `Previous ${labelSingular}`,
+        description: prevLabel,
     });
     useKeyboardShortcut('alt+ArrowDown', () => go(nextId), {
         enabled: !navDisabled && nextId != null,
-        description: `Next ${labelSingular}`,
+        description: nextLabel,
     });
 
     // Nothing to step through (single item, or the current id isn't in the
@@ -131,8 +150,8 @@ export function EntityPrevNextNav({
             className={cn('inline-flex flex-col -my-1', className)}
             data-testid="entity-prev-next-nav"
         >
-            {step(prevId, 'up', `Previous ${labelSingular}`)}
-            {step(nextId, 'down', `Next ${labelSingular}`)}
+            {step(prevId, 'up', prevLabel)}
+            {step(nextId, 'down', nextLabel)}
         </div>
     );
 }
