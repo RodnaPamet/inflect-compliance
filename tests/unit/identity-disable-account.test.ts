@@ -27,14 +27,37 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_c: unknown, fn: (d: unknown) => unknown) => fn(db),
 }));
 jest.mock('@/lib/observability/logger', () => ({
-    logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
+    // EVERY level, not the three this file happens to assert on. `enqueueEmail`
+    // calls logger.debug; with debug absent the call threw INSIDE the
+    // per-recipient try, so every notification in this file was counted as
+    // `failed` — while the test that asserts the happy path stayed green,
+    // because it asserts the outbox row was CREATED and the throw comes after.
+    // A mock that lists a subset of an interface is a mock that decides which
+    // half of the code under test runs. Same shape as the metrics mock below.
+    logger: {
+        trace: jest.fn(),
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        fatal: jest.fn(),
+    },
 }));
+import { logger } from '@/lib/observability/logger';
 const recordOutcome = jest.fn();
 const recordBatchRefused = jest.fn();
 jest.mock('@/lib/observability/integration-metrics', () => ({
     recordIdentityWriteOutcome: (...a: unknown[]) => recordOutcome(...a),
     recordIdentityBatchRefused: (...a: unknown[]) => recordBatchRefused(...a),
     recordIdentityWritesUnsettled: jest.fn(),
+    // The batch path reaches notifyLeaverOutcome, which counts each recipient.
+    // A factory mock lists functions ONE BY ONE, so a counter added to the real
+    // module is `undefined` here — and calling undefined throws inside
+    // notifyLeaverOutcome, whose contract is never to throw, so the notification
+    // is swallowed and the mail simply does not appear. The test that breaks is
+    // the one asserting a mail, several files away from the change.
+    recordLeaverNotification: jest.fn(),
+    recordLeaverPassOutcome: jest.fn(),
 }));
 
 import {
@@ -600,6 +623,38 @@ describe('the batch gate', () => {
 
         expect(r.results.map((x) => x.outcome)).toEqual(['DISABLED', 'DISABLED']);
         expect(w.disabled).toEqual(['a', 'b']);
+    });
+
+    it('totals the lost notifications once for the batch, not once per candidate', async () => {
+        // The regression this locks: `failed` was returned by notifyLeaverOutcome
+        // and thrown away, so "3 of 50 leavers were never announced" existed
+        // nowhere. A per-candidate line would not fix it either — nobody totals
+        // fifty log lines. One line, with both numbers, or the fact is not
+        // reportable.
+        db.notificationOutbox.create.mockRejectedValue(new Error('outbox is on fire'));
+        const w = fakeWriter();
+        const candidates = [input({ externalUserId: 'a' }), input({ externalUserId: 'b' })];
+        await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+
+        const batchWarns = (logger.warn as jest.Mock).mock.calls.filter(
+            (c) => c[0] === 'leaver notifications were lost during the batch',
+        );
+        expect(batchWarns).toHaveLength(1);
+        expect(batchWarns[0][1]).toMatchObject({ lost: 2, candidates: 2 });
+    });
+
+    it('says nothing when every notification landed', async () => {
+        // The counterpart that keeps the line above honest: a warn that fires on
+        // a clean run is noise, and noise is how a real one gets ignored.
+        const w = fakeWriter();
+        const candidates = [input({ externalUserId: 'a' })];
+        await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+
+        expect(
+            (logger.warn as jest.Mock).mock.calls.filter(
+                (c) => c[0] === 'leaver notifications were lost during the batch',
+            ),
+        ).toHaveLength(0);
     });
 
     it('an audience lookup that throws is fail-open — the batch still runs', async () => {

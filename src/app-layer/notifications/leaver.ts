@@ -96,6 +96,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { enqueueEmail } from './enqueue';
+import { recordLeaverNotification } from '@/lib/observability/integration-metrics';
 
 /** One addressable human (or shared mailbox). */
 export interface LeaverRecipient {
@@ -429,6 +430,13 @@ export async function notifyLeaverOutcome(
     const plan = planLeaverNotifications(input.outcome, journalRef !== null);
     if (!plan.it && !plan.manager) return { enqueued: 0, failed: 0, silent: true };
 
+    // Declared OUTSIDE the try because the catch reads it. Which audiences
+    // reached an insert attempt: the catch covers throws from payload
+    // construction, which happens inside the loop but outside the per-recipient
+    // try — so without this a mid-loop throw would either miss the recipients it
+    // never reached or double-count the ones it did.
+    const attemptedAudiences = new Set<'IT' | 'MANAGER'>();
+
     try {
         const subject = input.linkId ? book.byLink.get(input.linkId) : undefined;
         // The worker's name is display copy, not an identifier, so an unresolved
@@ -462,6 +470,15 @@ export async function notifyLeaverOutcome(
 
         const targets: Array<{ type: EmailNotificationType; to: LeaverRecipient; audience: 'IT' | 'MANAGER' }> = [];
         if (plan.it) for (const to of book.it) targets.push({ type: plan.it, to, audience: 'IT' });
+        // Planned but undeliverable. No row, no error, no retry — nobody is told
+        // and nothing said so, which is the quietest way this subsystem can
+        // fail. It needs a number, not just the log line at audience-build time.
+        if (plan.it && book.it.length === 0) {
+            recordLeaverNotification({ provider: input.provider, audience: 'IT', result: 'no_recipient' });
+        }
+        if (plan.manager && !subject?.manager) {
+            recordLeaverNotification({ provider: input.provider, audience: 'MANAGER', result: 'no_recipient' });
+        }
         if (plan.manager && subject?.manager) {
             targets.push({ type: plan.manager, to: subject.manager, audience: 'MANAGER' });
         }
@@ -542,6 +559,7 @@ export async function notifyLeaverOutcome(
             // a DISABLED or UNCONFIRMED mail the dedupe entity is the journal
             // row, which is minted once and never revisited, so a lost row is
             // lost for good.
+            attemptedAudiences.add(target.audience);
             try {
                 const row = await runInTenantContext(ctx, (db) =>
                     enqueueEmail(db, {
@@ -554,8 +572,23 @@ export async function notifyLeaverOutcome(
                     }),
                 );
                 if (row) enqueued++;
+                // `suppressed`, not a failure: the outbox dedupes per
+                // (tenant, type, toEmail, entity, day), so a second pass over
+                // the same journal row is correctly silent. Counted apart from
+                // `enqueued` so a rising suppressed rate reads as dedupe rather
+                // than as delivery.
+                recordLeaverNotification({
+                    provider: input.provider,
+                    audience: target.audience,
+                    result: row ? 'enqueued' : 'suppressed',
+                });
             } catch (err) {
                 failed++;
+                recordLeaverNotification({
+                    provider: input.provider,
+                    audience: target.audience,
+                    result: 'failed',
+                });
                 logger.error('leaver notification recipient could not be enqueued', {
                     component: 'notifications-leaver',
                     tenantId: ctx.tenantId,
@@ -586,6 +619,18 @@ export async function notifyLeaverOutcome(
 
         return { enqueued, failed, silent: false };
     } catch (err) {
+        // Everything planned that never reached an insert attempt is lost here —
+        // a payload that could not be built, or an audience read that threw.
+        // Counted per audience so "the mail never happened" is a number rather
+        // than an inference from a missing one.
+        let lost = 0;
+        for (const audience of ['IT', 'MANAGER'] as const) {
+            const planned = audience === 'IT' ? plan.it : plan.manager;
+            if (planned && !attemptedAudiences.has(audience)) {
+                lost++;
+                recordLeaverNotification({ provider: input.provider, audience, result: 'failed' });
+            }
+        }
         logger.error('leaver notification could not be enqueued', {
             component: 'notifications-leaver',
             tenantId: ctx.tenantId,
@@ -594,6 +639,12 @@ export async function notifyLeaverOutcome(
             journalId: journalRef,
             error: err instanceof Error ? err.message : String(err),
         });
-        return { enqueued: 0, failed: 0, silent: false };
+        // `lost`, not 0. This arm already counts each unreached audience into
+        // the metric; returning zero told the CALLER the opposite of what the
+        // counter said, and the caller is what produces the batch line an
+        // operator reads. The drift would have hidden precisely the worst case —
+        // an audience read or payload build that threw, so nobody was told at
+        // all — behind a clean "0 lost".
+        return { enqueued: 0, failed: lost, silent: false };
     }
 }

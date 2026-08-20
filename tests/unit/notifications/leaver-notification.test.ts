@@ -23,6 +23,10 @@ const db = {
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_c: unknown, fn: (d: unknown) => unknown) => fn(db),
 }));
+const notifMetric = jest.fn();
+jest.mock('@/lib/observability/integration-metrics', () => ({
+    recordLeaverNotification: (...a: unknown[]) => notifMetric(...a),
+}));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
@@ -585,6 +589,120 @@ describe('notifyLeaverOutcome', () => {
             externalUserId: 'd.okafor',
         });
         expect(created()[0].bodyText).not.toContain('d.okafor');
+    });
+
+    it('counts each recipient by what became of it', async () => {
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        expect(notifMetric).toHaveBeenCalledWith({ provider: 'entra-id', audience: 'IT', result: 'enqueued' });
+        expect(notifMetric).toHaveBeenCalledWith({ provider: 'entra-id', audience: 'MANAGER', result: 'enqueued' });
+    });
+
+    it('counts a deduped row as suppressed, not as delivered', async () => {
+        // The outbox dedupes per (tenant, type, toEmail, entity, day). A second
+        // pass over the same journal row is correctly silent — but a rising
+        // suppressed rate must be legible as dedupe rather than as delivery.
+        // A duplicate is a P2002 that enqueueEmail swallows into a null return,
+        // NOT a null row — the distinction matters, because a null return from
+        // create() is a throw on the way out and would be counted as failed.
+        db.notificationOutbox.create.mockRejectedValue(
+            Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }),
+        );
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        expect(notifMetric).toHaveBeenCalledWith({ provider: 'entra-id', audience: 'IT', result: 'suppressed' });
+    });
+
+    it('counts a lost row as failed — the one that needs an alert', async () => {
+        db.notificationOutbox.create.mockRejectedValue(new Error('outbox is on fire'));
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        const failures = notifMetric.mock.calls.filter((c) => (c[0] as { result: string }).result === 'failed');
+        expect(failures).toHaveLength(2);
+    });
+
+    it('counts "there was nobody to tell" — no row, no error, no retry', async () => {
+        // The quietest way this subsystem fails: a tenant whose privileged
+        // members hold no address produces nothing at all.
+        db.tenantMembership.findMany.mockResolvedValue([]);
+        db.tenantNotificationSettings.findUnique.mockResolvedValue({ complianceMailbox: null });
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        expect(notifMetric).toHaveBeenCalledWith({
+            provider: 'entra-id',
+            audience: 'IT',
+            result: 'no_recipient',
+        });
+    });
+
+    it('counts a manager who does not exist, not just a log line', async () => {
+        db.identityAccountLink.findMany.mockResolvedValue([
+            linkRow({
+                employee: { id: 'emp-1', fullName: 'Dana Okafor', workEmail: 'dana@acme.test', manager: null },
+            }),
+        ]);
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        expect(notifMetric).toHaveBeenCalledWith({
+            provider: 'entra-id',
+            audience: 'MANAGER',
+            result: 'no_recipient',
+        });
+    });
+
+    it('counts what was planned but never reached an insert attempt', async () => {
+        // The outer catch covers a throw before or between recipients — here an
+        // unrepresentable date, which blows up building the payload. Both
+        // audiences were planned and neither was attempted, so both must be
+        // counted; anything less makes a wholly-lost notification invisible.
+        //
+        // This assertion used to read `failed: 0` while asserting the metric had
+        // counted two — pinning a drift between what this function REPORTS and
+        // what it COUNTS as though it were the contract. The caller builds its
+        // batch line from the return value, so the zero hid the worst case
+        // (nobody told at all) behind a clean total.
+        const r = await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+            occurredAt: new Date(NaN),
+        });
+
+        expect(r).toEqual({ enqueued: 0, failed: 2, silent: false });
+        const failed = notifMetric.mock.calls
+            .map((c) => c[0] as { audience: string; result: string })
+            .filter((a) => a.result === 'failed');
+        expect(failed.map((a) => a.audience).sort()).toEqual(['IT', 'MANAGER']);
     });
 
     it('enqueues rather than sending — no mail transport is touched', async () => {

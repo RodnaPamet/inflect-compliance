@@ -467,6 +467,9 @@ export async function disableAccountsForLeaver(
     });
 
     const results: DisableResult[] = [];
+    // Accumulated across the batch rather than reported per candidate — see the
+    // single warn after the loop for why.
+    let notificationsLost = 0;
     for (const candidate of input.candidates) {
         // Sequential on purpose. These are writes to a customer's directory
         // under a rate-limited API, and a failure part-way through a serial
@@ -520,7 +523,7 @@ export async function disableAccountsForLeaver(
         // sending it, so a broken SMTP relay delays a message instead of
         // failing an offboarding.
         try {
-            await notifyLeaverOutcome(ctx, audience, {
+            const notified = await notifyLeaverOutcome(ctx, audience, {
                 linkId: candidate.linkId,
                 provider: writer.provider,
                 outcome: result.outcome,
@@ -530,7 +533,13 @@ export async function disableAccountsForLeaver(
                 // the id back out of the provider's error text.
                 externalUserId: candidate.externalUserId,
             });
+            notificationsLost += notified.failed;
         } catch (err) {
+            // A throw tells us nothing about how many recipients it reached, and
+            // `notifyLeaverOutcome` is contracted never to get here. Count the
+            // candidate once so the batch line cannot read cleaner than the run
+            // actually was.
+            notificationsLost += 1;
             logger.error('leaver notification threw unexpectedly; continuing the batch', {
                 component: 'identity-disable-account',
                 tenantId: ctx.tenantId,
@@ -540,6 +549,22 @@ export async function disableAccountsForLeaver(
             });
         }
     }
+
+    // One line for the batch, not one per candidate. "3 of 50 leavers were never
+    // announced" is the fact an operator acts on; three warnings scattered
+    // through a fifty-candidate run is the same fact in a form nobody totals up.
+    // WARN, not ERROR: the directory writes themselves succeeded, and their
+    // outcomes are already counted — what was lost is the telling.
+    if (notificationsLost > 0) {
+        logger.warn('leaver notifications were lost during the batch', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+            lost: notificationsLost,
+            candidates: results.length,
+        });
+    }
+
     return { results };
 }
 
