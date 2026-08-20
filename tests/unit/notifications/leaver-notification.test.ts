@@ -684,6 +684,12 @@ describe('notifyLeaverOutcome', () => {
         // unrepresentable date, which blows up building the payload. Both
         // audiences were planned and neither was attempted, so both must be
         // counted; anything less makes a wholly-lost notification invisible.
+        //
+        // This assertion used to read `failed: 0` while asserting the metric had
+        // counted two — pinning a drift between what this function REPORTS and
+        // what it COUNTS as though it were the contract. The caller builds its
+        // batch line from the return value, so the zero hid the worst case
+        // (nobody told at all) behind a clean total.
         const r = await notifyLeaverOutcome(ctx, await book(), {
             linkId: 'link-1',
             provider: 'entra-id',
@@ -692,7 +698,7 @@ describe('notifyLeaverOutcome', () => {
             occurredAt: new Date(NaN),
         });
 
-        expect(r).toEqual({ enqueued: 0, failed: 0, silent: false });
+        expect(r).toEqual({ enqueued: 0, failed: 2, silent: false });
         const failed = notifMetric.mock.calls
             .map((c) => c[0] as { audience: string; result: string })
             .filter((a) => a.result === 'failed');
