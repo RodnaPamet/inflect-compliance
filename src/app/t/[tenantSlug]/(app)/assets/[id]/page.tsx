@@ -34,8 +34,8 @@ import { criticalityBadgeVariant } from '@/lib/asset-criticality';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { ProcessNodeReverseLookupModal } from '@/components/processes/ProcessNodeReverseLookupModal';
-import { idsFromCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { EditAssetModal } from '../EditAssetModal';
@@ -372,25 +372,9 @@ export default function AssetDetailPage() {
         !!asset && !asset.cpe && !asset.vendor && !asset.product;
 
     // B5 — ordered asset-id list for the prev/next nav beside the name.
-    //
-    // Read through `idsFromCappedList`, NOT a hand-rolled `Array.isArray`
-    // check. `/assets` returned a bare array until it moved to the
-    // `{ rows, truncated }` backfill-cap envelope; the isArray guard here
-    // then silently resolved to `[]` and the nav hid itself, so the feature
-    // looked deleted. The helper tolerates BOTH shapes on purpose — sibling
-    // routes disagree (most return the envelope, `incidents` still returns a
-    // bare array) — and its own docstring names this exact regression class,
-    // which had already bitten the "Link a CVE" modal the same way.
-    //
-    // Memoised on the RAW cache value: the helper returns a fresh array each
-    // call, so keying the memo on its result would defeat it.
-    const assetListQuery = useTenantSWR<
-        CappedList<{ id?: string }> | Array<{ id?: string }>
-    >(CACHE_KEYS.assets.list());
-    const assetIds = useMemo(
-        () => idsFromCappedList(assetListQuery.data),
-        [assetListQuery.data],
-    );
+    // Shape-tolerance and memo-keying both live in the hook; see its
+    // docstring for the two regressions that put them there.
+    const assetIds = useEntityListIds(CACHE_KEYS.assets.list());
 
     // Item 29 — brand-color status action on the asset detail header.
     // AssetStatus is a two-state lifecycle (ACTIVE / RETIRED).

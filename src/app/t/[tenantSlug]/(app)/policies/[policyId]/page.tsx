@@ -5,6 +5,8 @@
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
 import { formatDate } from '@/lib/format-date';
+import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -139,6 +141,9 @@ export default function PolicyDetailPage() {
     const tenant = useTenantContext();
     const toast = useToast();
     const policyId = params?.policyId as string;
+    // Ordered ids for the prev/next stepper beside the name — list order,
+    // so stepping walks the sequence the user just saw.
+    const policyIds = useEntityListIds(CACHE_KEYS.policies.list());
 
     const [policy, setPolicy] = useState<PolicyDetailDTO | null>(null);
     const [loading, setLoading] = useState(true);
@@ -628,6 +633,12 @@ export default function PolicyDetailPage() {
             activeTab={tab}
             onTabChange={setTab}
             title={<span className="truncate" id="policy-title">{policy.title}</span>}
+            prevNext={{
+                ids: policyIds,
+                currentId: policyId,
+                hrefFor: (id) => tenantHref(`/policies/${id}`),
+                labelSingular: 'policy',
+            }}
             meta={
                 <MetaStrip
                     items={[

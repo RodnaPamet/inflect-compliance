@@ -5,6 +5,8 @@
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
 import { formatDate } from '@/lib/format-date';
+import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useEffect, useMemo, useState, useCallback, use } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -235,6 +237,9 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     const DOC_TYPE_FILTER_OPTIONS = buildDocTypeFilterOptions(tx, DOC_TYPE_CB_OPTIONS);
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    // Ordered ids for the prev/next stepper beside the name — list order,
+    // so stepping walks the sequence the user just saw.
+    const vendorIds = useEntityListIds(CACHE_KEYS.vendors.list());
     const { permissions } = useTenantContext();
     const canWrite = permissions?.canWrite;
     const triggerUndoToast = useToastWithUndo();
@@ -719,6 +724,12 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             breadcrumbs={breadcrumbs}
 
             title={<span id="vendor-detail-name">{vendor.name}</span>}
+            prevNext={{
+                ids: vendorIds,
+                currentId: params.vendorId,
+                hrefFor: (id) => tenantHref(`/vendors/${id}`),
+                labelSingular: 'vendor',
+            }}
             meta={
                 <MetaStrip
                     items={[

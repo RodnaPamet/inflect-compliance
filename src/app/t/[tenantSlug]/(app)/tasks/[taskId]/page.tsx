@@ -10,6 +10,7 @@ import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
@@ -260,6 +261,9 @@ export default function TaskDetailPage() {
     const tenantHref = useTenantHref();
     const { permissions, role, tenantSlug, userId } = useTenantContext();
     const taskId = params?.taskId as string;
+    // Ordered ids for the prev/next stepper beside the name — list order,
+    // so stepping walks the sequence the user just saw.
+    const taskIds = useEntityListIds(CACHE_KEYS.tasks.list());
     const triggerUndoToast = useToastWithUndo();
     const toast = useToast();
 
@@ -977,6 +981,12 @@ export default function TaskDetailPage() {
             breadcrumbs={breadcrumbs}
 
             title={<span id="task-title">{task.title}</span>}
+            prevNext={{
+                ids: taskIds,
+                currentId: taskId,
+                hrefFor: (id) => tenantHref(`/tasks/${id}`),
+                labelSingular: 'task',
+            }}
             meta={
                 <MetaStrip
                     items={[
