@@ -163,7 +163,31 @@ export async function disableAccount(
     }
 
     // ── 3. Read the current state. First network call, and the capture. ──
-    const state = await writer.readState(input.externalUserId);
+    //
+    // Inside its own try: this is a NETWORK call, and it was previously
+    // unguarded, so a transient read failure propagated out of disableAccount
+    // as a throw. That mattered less for one account than for the batch — see
+    // disableAccountsForLeaver, where an unguarded throw ended the entire pass.
+    //
+    // A read failure is INDETERMINATE-shaped in the same sense as a lost write
+    // response: we do not know the account's state. But nothing was attempted,
+    // so there is no journal row to settle and no ambiguity about the
+    // directory — it is untouched. FAILED is the honest outcome here, and it is
+    // safe precisely because no write was issued.
+    let state: DirectoryAccountState;
+    try {
+        state = await writer.readState(input.externalUserId);
+    } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        logger.error('leaver disable could not read account state', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+            externalUserId: input.externalUserId,
+            error: detail,
+        });
+        return { outcome: 'FAILED', reason: `Could not read the account before writing: ${detail}` };
+    }
 
     if (!state.enabled) {
         // Already disabled. Writing again would journal a "prior state" of
@@ -297,7 +321,26 @@ export async function disableAccountsForLeaver(
         // under a rate-limited API, and a failure part-way through a serial
         // pass leaves a comprehensible half-done state; the same failure under
         // concurrency leaves an arbitrary one.
-        results.push(await disableAccount(ctx, writer, candidate));
+        //
+        // Contained per item. disableAccount is written to return rather than
+        // throw, but "written to" is not "guaranteed to" — a bug in a provider
+        // writer, or anything thrown before the inner try is reached, would
+        // otherwise abandon every REMAINING candidate silently. Half a leaver
+        // batch, with no record of which half, is the shape of outage this is
+        // least able to explain afterwards.
+        try {
+            results.push(await disableAccount(ctx, writer, candidate));
+        } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            logger.error('leaver disable threw unexpectedly; continuing the batch', {
+                component: 'identity-disable-account',
+                tenantId: ctx.tenantId,
+                provider: writer.provider,
+                externalUserId: candidate.externalUserId,
+                error: detail,
+            });
+            results.push({ outcome: 'FAILED', reason: detail });
+        }
     }
     return { results };
 }

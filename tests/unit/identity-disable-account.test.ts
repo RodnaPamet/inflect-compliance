@@ -286,6 +286,62 @@ describe('a failed write is settled FAILED, with its reason', () => {
     });
 });
 
+describe('a failure to READ is contained, and the directory is untouched', () => {
+    /**
+     * readState was previously called outside the try. A transient read failure
+     * therefore propagated out of disableAccount as a throw — and the batch loop
+     * did not wrap the call either, so one unreadable account abandoned every
+     * remaining candidate in the pass, with no record of which ones.
+     *
+     * FAILED is honest here in a way it is NOT for a lost write response:
+     * nothing was attempted, so the directory is genuinely unchanged.
+     */
+    it('returns FAILED rather than throwing', async () => {
+        const w = fakeWriter({ readState: async () => { throw new Error('Graph 503'); } });
+        const r = await disableAccount(ctx, w, input());
+        expect(r.outcome).toBe('FAILED');
+        expect(r.reason).toMatch(/could not read the account/i);
+    });
+
+    it('journals nothing — there was no write to record', async () => {
+        const w = fakeWriter({ readState: async () => { throw new Error('Graph 503'); } });
+        await disableAccount(ctx, w, input());
+        expect(db.identityWriteJournal.create).not.toHaveBeenCalled();
+    });
+
+    it('one unreadable account does not abandon the rest of the batch', async () => {
+        let n = 0;
+        const w = fakeWriter({
+            readState: async () => {
+                if (n++ === 0) throw new Error('Graph 503');
+                return { enabled: true, priorState: { accountEnabled: true } };
+            },
+        });
+        const candidates = [input({ externalUserId: 'a' }), input({ externalUserId: 'b' })];
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+
+        expect(r.results.map((x) => x.outcome)).toEqual(['FAILED', 'DISABLED']);
+        expect(w.disabled).toEqual(['b']);
+    });
+
+    it('an unexpected THROW from the per-account path still continues the batch', async () => {
+        // disableAccount is written to return rather than throw, but "written
+        // to" is not "guaranteed to" — a provider-writer bug must not abandon
+        // the remaining candidates silently.
+        let n = 0;
+        const w = fakeWriter({
+            readState: async () => {
+                if (n++ === 0) throw { weird: 'not an Error' };
+                return { enabled: true, priorState: { accountEnabled: true } };
+            },
+        });
+        const candidates = [input({ externalUserId: 'a' }), input({ externalUserId: 'b' })];
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+        expect(r.results).toHaveLength(2);
+        expect(r.results[1].outcome).toBe('DISABLED');
+    });
+});
+
 describe('the batch gate', () => {
     it('refuses the WHOLE batch when the blast radius is implausible', async () => {
         // 400 of 500 is a broken feed, not a departure wave. Nothing is
