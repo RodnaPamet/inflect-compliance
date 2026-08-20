@@ -17,7 +17,7 @@ const NOW = new Date('2026-07-07T00:00:00Z');
 const fakeExec = (stdout: string, ok = true, missing = false) => async () => ({ ok, stdout, stderr: ok ? '' : 'boom', missing });
 
 function acct(over: Partial<NormalizedIdentityAccount> = {}): NormalizedIdentityAccount {
-    return { externalUserId: 'u1', email: 'a@x.com', status: 'ACTIVE', isAdmin: false, mfaEnrolled: true, ssoEnrolled: true, groups: [], lastActiveAt: NOW, ...over };
+    return { externalUserId: 'u1', email: 'a@x.com', status: 'ACTIVE', isAdmin: false, mfaEnrolled: true, ssoEnrolled: true, onPremisesSyncEnabled: null, groups: [], lastActiveAt: NOW, ...over };
 }
 
 describe('H2 — collectors fail closed', () => {

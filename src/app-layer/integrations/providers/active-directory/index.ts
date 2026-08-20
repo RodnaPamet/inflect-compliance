@@ -228,6 +228,10 @@ function normalizeAdEntry(
         // rather than a manufactured pass.
         mfaEnrolled: null,
         ssoEnrolled: null,
+        // This IS the on-prem directory. Accounts read here are mastered
+        // HERE, so a write lands where authority lives — the one provider
+        // where `false` is an observation rather than an assumption.
+        onPremisesSyncEnabled: false,
         groups: groupCns,
         lastActiveAt: fileTimeToDate(entry.lastLogonTimestamp),
     };

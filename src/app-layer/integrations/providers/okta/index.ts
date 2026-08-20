@@ -117,6 +117,10 @@ function normalizeOktaUser(u: OktaUser): NormalizedIdentityAccount {
         // Okta federated / social login accounts authenticate via SSO — a real
         // per-account signal from the credentials provider type.
         ssoEnrolled: providerType === 'FEDERATION' || providerType === 'SOCIAL',
+        // Okta is a cloud directory with no on-prem sync projection of this
+        // kind. Not `false` by assumption — Okta simply does not answer the
+        // question, and the leaver path must treat unknown as "do not write".
+        onPremisesSyncEnabled: null,
         groups: [],
         lastActiveAt: u.lastLogin ? new Date(u.lastLogin) : null,
     };

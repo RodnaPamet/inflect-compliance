@@ -1,0 +1,14 @@
+-- Whether a directory account is mastered on-premises and projected into the
+-- cloud directory by Azure AD Connect.
+--
+-- The Entra provider has always requested this field in its $select and thrown
+-- it away. It is the flag that decides whether a leaver write can land at all:
+-- for a directory-synced account the source of authority is on-prem AD and the
+-- sync runs one way, so PATCHing accountEnabled=false via Graph is reverted at
+-- the next cycle — an offboarding that reports success and then re-enables the
+-- account by itself.
+--
+-- NULLABLE on purpose. "We do not know" and "cloud-only" are different answers
+-- and only one of them is safe to write against, so there is no DEFAULT: every
+-- existing row reads NULL (unknown) until its next sync observes the truth.
+ALTER TABLE "ConnectedIdentityAccount" ADD COLUMN "onPremisesSyncEnabled" BOOLEAN;
