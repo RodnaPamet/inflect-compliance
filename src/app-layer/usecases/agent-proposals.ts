@@ -26,6 +26,7 @@ import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
+import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed } from '@/app-layer/ai/guard';
 import {
@@ -222,39 +223,138 @@ export async function approveAgentProposal(
         await guardEgress(ctx, merged, { source: `agent-proposal-approve:${kind}:egress` }),
     );
 
-    // Run the REAL create-usecase — same validation/sanitisation/audit/cache
-    // path a human create takes. The proposal only becomes a record HERE.
-    let createdEntityId: string;
-    switch (kind) {
-        case 'RISK': {
-            const risk = await createRisk(ctx, CreateRiskSchema.parse(merged) as Parameters<typeof createRisk>[1]);
-            createdEntityId = risk.id;
-            break;
-        }
-        case 'CONTROL': {
-            const control = await createControl(ctx, CreateControlSchema.parse(merged) as Parameters<typeof createControl>[1]);
-            createdEntityId = control.id;
-            break;
-        }
-        case 'POLICY': {
-            const policy = await createPolicy(ctx, CreatePolicySchema.parse(merged) as Parameters<typeof createPolicy>[1]);
-            createdEntityId = policy.id;
-            break;
-        }
-        case 'FINDING': {
-            const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
-            createdEntityId = finding.id;
-            break;
-        }
-        default:
-            throw badRequest(`Unknown proposal kind: ${kind}`);
-    }
-
     const status: 'ACCEPTED' | 'EDITED' = parsedEdits ? 'EDITED' : 'ACCEPTED';
-    await runInTenantContext(ctx, (db) =>
+
+    // ═══ CLAIM BEFORE CREATING. THE ORDER IS THE WHOLE FIX. ═══
+    //
+    // This used to run the create-usecase first and mark the proposal
+    // afterwards. The marking `updateMany` was correctly predicated on
+    // `status: 'PENDING'`, so it looked atomic — and it is, but it ran too
+    // late to prevent anything. Two reviewers approving the same proposal
+    // concurrently both passed the PENDING read above, both created a live
+    // compliance record, and only then did one of them lose the update.
+    //
+    // The result was TWO risks (or controls, or policies) from one proposal,
+    // one of them orphaned — and the loser's `updateMany` returned count 0
+    // into a discarded value, so it reported success to its caller. A
+    // duplicate that nothing errors on is a duplicate nobody goes looking for.
+    //
+    // Claiming first makes the database the arbiter: exactly one caller can
+    // move the row out of PENDING, and only that caller proceeds to create.
+    // Same shape as `redeemInvite` — claim, then act.
+    const claim = await runInTenantContext(ctx, (db) =>
         db.agentProposal.updateMany({
             where: { id, tenantId: ctx.tenantId, status: 'PENDING' },
-            data: { status, reviewedByUserId: ctx.userId, reviewedAt: new Date(), createdEntityId },
+            data: { status, reviewedByUserId: ctx.userId, reviewedAt: new Date() },
+        }),
+    );
+    if (claim.count === 0) {
+        // Lost the race, or the proposal moved between the read above and
+        // here. Either way nothing has been created, which is the point.
+        throw badRequest('Proposal is no longer pending');
+    }
+
+    // Run the REAL create-usecase — same validation/sanitisation/audit/cache
+    // path a human create takes. The proposal only becomes a record HERE.
+    //
+    // From this point the claim is held. Anything that throws must hand it
+    // back, or a transient failure would burn the proposal permanently: it
+    // would read as ACCEPTED with nothing created and no way to retry.
+    let createdEntityId: string;
+    try {
+        switch (kind) {
+            case 'RISK': {
+                const risk = await createRisk(ctx, CreateRiskSchema.parse(merged) as Parameters<typeof createRisk>[1]);
+                createdEntityId = risk.id;
+                break;
+            }
+            case 'CONTROL': {
+                const control = await createControl(ctx, CreateControlSchema.parse(merged) as Parameters<typeof createControl>[1]);
+                createdEntityId = control.id;
+                break;
+            }
+            case 'POLICY': {
+                const policy = await createPolicy(ctx, CreatePolicySchema.parse(merged) as Parameters<typeof createPolicy>[1]);
+                createdEntityId = policy.id;
+                break;
+            }
+            case 'FINDING': {
+                const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
+                createdEntityId = finding.id;
+                break;
+            }
+            default:
+                throw badRequest(`Unknown proposal kind: ${kind}`);
+        }
+    } catch (err) {
+        // ═══ THE CLAIM IS DELIBERATELY *NOT* HANDED BACK ═══
+        //
+        // An earlier version of this fix reverted the row to PENDING here, on
+        // the premise "the create threw, therefore nothing was committed".
+        // That premise is false across a transaction boundary, and it fails in
+        // exactly the direction this whole function exists to prevent.
+        //
+        // `runInTenantContext` is one `prisma.$transaction`, so the premise
+        // holds only INSIDE the create callback. Two real paths commit the
+        // entity and still reject the call:
+        //
+        //   1. Post-commit work. `createRisk` / `createControl` await
+        //      `bumpEntityCacheVersion` AFTER their transaction closes, and
+        //      `getRedis()` is called outside that helper's try/catch — so it
+        //      can reject with the row already written.
+        //   2. The in-doubt COMMIT. Runtime traffic goes through PgBouncer in
+        //      transaction mode; a server-connection drop during COMMIT
+        //      surfaces to the client as a rejected transaction while Postgres
+        //      has already committed.
+        //
+        // Reverting in either case re-arms the create path over a record that
+        // already exists, and the next approver makes a SECOND one. That is
+        // the original duplicate bug, reintroduced through the rollback.
+        //
+        // So the row stays claimed. The cost is a proposal that reads
+        // ACCEPTED/EDITED with a null `createdEntityId` and cannot be
+        // re-approved — recovery is a deliberate human act, not an automatic
+        // retry, precisely because we CANNOT tell "nothing was created" from
+        // "something was created and we lost the id".
+        //
+        // That is the same trade the rest of this function makes: a visible
+        // stuck row beats a silent duplicate compliance record.
+        //
+        // The failure is therefore recorded loudly rather than swallowed — a
+        // burned row nobody can see is the one outcome worse than either.
+        logger.error('agent proposal approval failed after claim', {
+            component: 'agent-proposals',
+            tenantId: ctx.tenantId,
+            proposalId: id,
+            kind,
+            status,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: 'USER',
+            entity: 'AgentProposal',
+            entityId: id,
+            action: 'AGENT_PROPOSAL_APPROVAL_FAILED',
+            requestId: ctx.requestId,
+            detailsJson: {
+                category: 'access',
+                kind,
+                claimedStatus: status,
+                error: err instanceof Error ? err.message : String(err),
+            },
+            metadataJson: { proposedByApiKeyId: proposal.proposedViaKeyId, needsManualReview: true },
+        }).catch(() => undefined);
+        throw err;
+    }
+
+    // Attach the created entity to the claim we already hold. Predicated on
+    // that same status so this cannot revive a row someone else has moved.
+    await runInTenantContext(ctx, (db) =>
+        db.agentProposal.updateMany({
+            where: { id, tenantId: ctx.tenantId, status },
+            data: { createdEntityId },
         }),
     );
 
