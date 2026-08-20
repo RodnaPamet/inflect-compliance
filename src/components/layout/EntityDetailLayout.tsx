@@ -37,6 +37,7 @@
 import { type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { cardVariants } from '@/components/ui/card';
+import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { Button } from '@/components/ui/button';
 
 import { cn } from '@/lib/cn';
@@ -81,6 +82,27 @@ export interface EntityDetailLayoutProps<TKey extends string = string> {
         | { smart: true };
     /** Title of the detail page. Plain string OR rich element. */
     title: ReactNode;
+    /**
+     * Prev/next record stepper rendered INLINE beside the title.
+     *
+     * Pass this rather than hand-composing `<span className="inline-flex
+     * items-center gap-2.5">{title}<EntityPrevNextNav/></span>` in the page.
+     * The nav is going onto every entity detail page, and the one page that
+     * hand-rolled it is also the page where it silently broke: its caller fed
+     * the component an empty id list for two weeks and the arrows just never
+     * rendered. One composition site is one place for that to go wrong.
+     *
+     * Ids must be in the order the LIST showed them — see `idsFromCappedList`
+     * in `@/lib/list-backfill-cap` for reading them out of a list response.
+     * The nav hides itself when there is nothing to step through, so passing a
+     * short or empty list is safe.
+     */
+    prevNext?: {
+        ids: ReadonlyArray<string>;
+        currentId: string;
+        hrefFor: (id: string) => string;
+        labelSingular: string;
+    };
     /**
      * Meta row beneath the title — typically a row of status badges
      * (status / applicability / sync state). Optional.
@@ -172,6 +194,7 @@ export function EntityDetailLayout<TKey extends string = string>({
     breadcrumbs,
     back,
     title,
+    prevNext,
     meta,
     actions,
     loading,
@@ -193,11 +216,28 @@ export function EntityDetailLayout<TKey extends string = string>({
     // the PageHeader was rendered, leaving the user without any
     // navigation affordance for the duration of the data fetch.
     // The header is now always present; only the body changes.
+    // The nav rides WITH the title through the same loading/error/empty
+    // suppression below — otherwise the arrows flash beside an empty heading
+    // while the entity is still loading.
+    const titleNode =
+        prevNext !== undefined ? (
+            <span className="inline-flex items-center gap-2.5">
+                {title}
+                <EntityPrevNextNav
+                    ids={prevNext.ids}
+                    currentId={prevNext.currentId}
+                    hrefFor={prevNext.hrefFor}
+                    labelSingular={prevNext.labelSingular}
+                />
+            </span>
+        ) : (
+            title
+        );
     const headerNode = (
         <PageHeader
             breadcrumbs={breadcrumbs}
             back={back}
-            title={loading || error || empty ? '' : title}
+            title={loading || error || empty ? '' : titleNode}
             meta={loading || error || empty ? undefined : meta}
             actions={loading || error || empty ? undefined : actions}
             data-testid="entity-detail-header"
