@@ -67,11 +67,15 @@ const mockDb = {
             return table.find((r) => matches(r, where)) ?? null;
         }),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
-            const row: Row = {
+            // Partial, then assert. A create payload carries an arbitrary
+            // subset, so typing the spread as a whole Row tells tsc the id and
+            // scanStatus above are always overwritten (TS2783) — which is the
+            // opposite of what this fake means them to be.
+            const row = {
                 id: `fr-new-${++nextId}`,
                 scanStatus: 'PENDING',
-                ...(data as unknown as Row),
-            };
+                ...(data as unknown as Partial<Row>),
+            } as Row;
             table.push(row);
             return row;
         }),
