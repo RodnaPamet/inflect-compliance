@@ -98,6 +98,58 @@ describe('ENCRYPTED_FIELDS manifest', () => {
     });
 });
 
+describe('IdentityWriteJournal.detail round-trips through the middleware', () => {
+    /**
+     * Step 3 of the manifest's own "Adding a new field" checklist.
+     *
+     * `detail` carries the provider's rejection message for a failed disable —
+     * which routinely echoes back the UPN and object id — and the human reason
+     * a change was reverted. Free text about a NAMED person's access change.
+     */
+    it('is declared in the manifest', () => {
+        expect(getEncryptedFields('IdentityWriteJournal')).toContain('detail');
+        expect(isEncryptedModel('IdentityWriteJournal')).toBe(true);
+    });
+
+    it('encrypts on write', () => {
+        const data: Record<string, unknown> = {
+            detail: 'Graph returned 403 for user ada@acme.com (id 8f2c)',
+        };
+        encryptDataNode(data, 'IdentityWriteJournal', null);
+        expect(isEncryptedValue(data.detail as string)).toBe(true);
+        expect(data.detail as string).not.toContain('ada@acme.com');
+    });
+
+    it('decrypts on read, recovering the original text', () => {
+        const plain = 'reverted: rehired 2026-09-01';
+        const data: Record<string, unknown> = { detail: plain };
+        encryptDataNode(data, 'IdentityWriteJournal', null);
+        expect(data.detail).not.toBe(plain);
+        decryptResultNode(data, 'IdentityWriteJournal', { primary: null, previous: null, reason: 'by-design' });
+        expect(data.detail).toBe(plain);
+    });
+
+    it('leaves a null detail alone', () => {
+        // The column is nullable — a settled-clean APPLIED write has no detail,
+        // and encrypting null would turn "nothing to say" into ciphertext.
+        const data: Record<string, unknown> = { detail: null };
+        encryptDataNode(data, 'IdentityWriteJournal', null);
+        expect(data.detail).toBeNull();
+    });
+
+    it('does NOT touch priorStateJson', () => {
+        // The manifest encrypts STRING fields only, so the JSON capture cannot
+        // be listed there. It holds structured directory attributes, not
+        // credentials — see the note in encrypted-fields.ts.
+        const data: Record<string, unknown> = {
+            detail: 'x',
+            priorStateJson: { accountEnabled: true },
+        };
+        encryptDataNode(data, 'IdentityWriteJournal', null);
+        expect(data.priorStateJson).toEqual({ accountEnabled: true });
+    });
+});
+
 describe('encryptDataNode', () => {
     it('encrypts listed fields and leaves others alone', () => {
         const data: Record<string, unknown> = {

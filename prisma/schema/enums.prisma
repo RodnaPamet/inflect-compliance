@@ -1388,3 +1388,30 @@ enum IdentityLinkMethod {
   /// An administrator asserted the pairing by hand.
   MANUAL
 }
+
+/// What became of an attempted identity write.
+///
+/// The row is created PENDING and COMMITTED *before* the provider call, so a
+/// crash mid-write leaves PENDING — which honestly means "we may or may not
+/// have changed the directory, go and look". Any scheme that recorded the
+/// outcome only afterwards would lose exactly that case, and it is the one
+/// case a human has to investigate.
+enum IdentityWriteOutcome {
+  /// Written to the journal; the provider call has not reported back.
+  PENDING
+  /// The provider accepted the change.
+  APPLIED
+  /// The provider refused, or the call failed. The directory is unchanged.
+  FAILED
+  /// A previously APPLIED change has been undone from the captured state.
+  REVERTED
+}
+
+/// What an identity write was trying to do.
+enum IdentityWriteAction {
+  DISABLE_ACCOUNT
+  ENABLE_ACCOUNT
+  CREATE_ACCOUNT
+  ASSIGN_GROUP
+  REMOVE_GROUP
+}

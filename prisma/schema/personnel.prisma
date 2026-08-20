@@ -221,6 +221,7 @@ model IdentityAccountLink {
 
   tenant           Tenant                   @relation(fields: [tenantId], references: [id])
   employee         Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  writeJournal     IdentityWriteJournal[]
   connectedAccount ConnectedIdentityAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
 
   /// `connectedAccountId` carries a field-level @unique (above), so an account
@@ -238,4 +239,74 @@ model IdentityAccountLink {
   /// is the point.
   @@index([tenantId, employeeId])
   @@index([tenantId, lastVerifiedAt])
+}
+
+/// One attempted write to a customer's directory, with the state it replaced.
+///
+/// ═══ WHY THE PRIOR STATE IS CAPTURED, AND WHY *BEFORE* ═══
+///
+/// Disabling an account destroys the evidence of what it was. On-prem AD packs
+/// the answer into a single `userAccountControl` integer whose other bits
+/// (password-never-expires, smartcard-required, …) are gone the moment it is
+/// overwritten; Entra's `accountEnabled` is recoverable in principle but says
+/// nothing about the group memberships a disable may have taken with it.
+///
+/// So "undo the offboarding" is answerable only if the answer was written down
+/// first. A row here is created and COMMITTED before the provider call — never
+/// after — because a capture that happens after a successful write does not
+/// exist for the write that crashed halfway.
+///
+/// ═══ WHY A JOURNAL AND NOT A COLUMN ON THE LINK ═══
+///
+/// A single `priorState` on IdentityAccountLink would hold one outstanding
+/// disable and be overwritten by the next. Rehire → disable → rehire is an
+/// ordinary sequence, and the second cycle would silently destroy the first
+/// cycle's record. Append-only also matches what this is: evidence, in a
+/// compliance product, that an automated system changed a person's access.
+model IdentityWriteJournal {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The link this write acted through. Nullable so the journal OUTLIVES the
+  /// link: an employee row deleted for privacy must not erase the record that
+  /// their access was revoked, which is often the evidence an auditor wants.
+  linkId String?
+
+  /// Denormalised target, so a restore can still find the account after the
+  /// link or the employee is gone. Deliberately duplicated rather than joined.
+  provider       String
+  externalUserId String
+
+  /// What was attempted, and under which rung of the write-mode ladder.
+  action IdentityWriteAction
+  mode   IdentityWriteMode
+
+  /// The provider-shaped state this write replaced — `userAccountControl` for
+  /// AD, `accountEnabled` (+ groups where touched) for Entra. Opaque here on
+  /// purpose: the provider that captured it is the only thing that can
+  /// meaningfully interpret it, and freezing a schema would date badly.
+  priorStateJson Json
+
+  outcome IdentityWriteOutcome @default(PENDING)
+  /// Why a FAILED write failed, or why a REVERTED one was undone.
+  detail  String?
+
+  attemptedAt DateTime  @default(now())
+  settledAt   DateTime?
+
+  /// Who or what caused it. Null for a scheduled run with no human behind it.
+  actorUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant               @relation(fields: [tenantId], references: [id])
+  link   IdentityAccountLink? @relation(fields: [linkId], references: [id], onDelete: SetNull)
+
+  /// The restore lookup: "what did we last do to this account?"
+  @@index([tenantId, provider, externalUserId])
+  /// The operator sweep: "what is still PENDING and needs a human to look?"
+  @@index([tenantId, outcome])
+  @@index([tenantId, attemptedAt])
+  @@index([linkId])
 }
