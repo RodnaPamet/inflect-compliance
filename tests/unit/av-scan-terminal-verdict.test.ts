@@ -89,8 +89,11 @@ describe('AV webhook — INFECTED is terminal', () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toMatchObject({ ignored: 'already_infected' });
         // And critically: the quarantine side effects must not run in reverse.
-        // `status: 'FAILED'` is only ever set, never unset, by this route.
+        // `status: 'FAILED'` is only ever set, never unset, by this route —
+        // and the refused claim wrote no column at all, so `status` is
+        // absent from the one statement the route issued.
         expect(updateMock).not.toHaveBeenCalled();
+        expect(updateManyMock.mock.calls[0][0].data).not.toHaveProperty('status');
     });
 
     it('reports 200 on a refused overwrite so a retrying scanner stops', async () => {
@@ -110,11 +113,13 @@ describe('AV webhook — INFECTED is terminal', () => {
 
         await POST(post({ fileId: 'file-1', status: 'infected', details: 'Eicar-Test-Signature' }));
 
+        // Quarantine still marks the record FAILED and writes the audit entry
+        // — but both columns now ride the SAME conditional statement, so the
+        // verdict and the download block can never be observed apart. The
+        // atomicity itself is proved in av-webhook-quarantine-atomicity.
         expect(updateManyMock.mock.calls[0][0].data.scanStatus).toBe('INFECTED');
-        // Quarantine still marks the record FAILED and writes the audit entry.
-        expect(updateMock).toHaveBeenCalledWith(
-            expect.objectContaining({ data: { status: 'FAILED' } }),
-        );
+        expect(updateManyMock.mock.calls[0][0].data.status).toBe('FAILED');
+        expect(updateMock).not.toHaveBeenCalled();
         expect(appendAuditEntryMock).toHaveBeenCalledWith(
             expect.objectContaining({ action: 'FILE_QUARANTINED' }),
         );
