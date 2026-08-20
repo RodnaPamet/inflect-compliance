@@ -164,3 +164,46 @@ describe('trust-center download — blocked is indistinguishable from absent', (
         expect(createSignedDownloadUrlMock).not.toHaveBeenCalled();
     });
 });
+
+describe('trust-center download — the signed URL is short-lived', () => {
+    // The token is single-use and already consumed by the time the URL is
+    // minted, so from that point the SIGNED URL is the bearer credential:
+    // shareable, replayable, visible to intermediaries, and outside our
+    // revocation. Its lifetime is the whole exposure window for a document a
+    // human explicitly approved for one named requester.
+    //
+    // The route used to pass no `expiresIn` at all and took the s3-provider's
+    // `?? 3600` fallback, so the only UNAUTHENTICATED serving path in the repo
+    // minted URLs outliving the AUTHENTICATED evidence download's by 12x. That
+    // was an omission rather than a decision, which is why these assert a
+    // BOUND — comparing against a constant the route also owns would pass no
+    // matter what number the route chose.
+    const PROVIDER_DEFAULT_TTL_SECONDS = 3600; // s3-provider.ts: expiresIn ?? 3600
+    const AUTHENTICATED_EVIDENCE_TTL_SECONDS = 300; // evidence.ts: expiresIn: 300
+
+    const optsFromFirstCall = () => createSignedDownloadUrlMock.mock.calls[0][1];
+
+    it('asks for an explicit expiry instead of inheriting the provider default', async () => {
+        findUniqueMock.mockResolvedValue(servable);
+        await GET(req(), ctx);
+
+        const opts = optsFromFirstCall();
+        // `undefined` here IS the bug: the provider reads a missing expiry as
+        // "use 3600". An expiry that is absent is not an expiry that is short.
+        expect(typeof opts?.expiresIn).toBe('number');
+        expect(opts.expiresIn).toBeLessThan(PROVIDER_DEFAULT_TTL_SECONDS);
+    });
+
+    it('is no more generous than the authenticated evidence download', async () => {
+        findUniqueMock.mockResolvedValue(servable);
+        await GET(req(), ctx);
+
+        const expiresIn = optsFromFirstCall()?.expiresIn;
+        // A public path may be stricter than its authenticated sibling; it may
+        // never be looser. Tightening this number keeps the test green.
+        expect(expiresIn).toBeLessThanOrEqual(AUTHENTICATED_EVIDENCE_TTL_SECONDS);
+        // Seconds, not milliseconds — the value goes straight to the S3
+        // presigner, where 300_000 would read as ~3.5 days.
+        expect(expiresIn).toBeGreaterThan(0);
+    });
+});

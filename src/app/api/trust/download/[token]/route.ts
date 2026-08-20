@@ -7,6 +7,25 @@ import { getStorageProvider } from '@/lib/storage';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { logger } from '@/lib/observability/logger';
 
+/**
+ * Lifetime of the signed URL this route redirects to, in SECONDS — the unit
+ * `DownloadUrlOptions.expiresIn` takes, forwarded verbatim to the S3
+ * presigner (`s3-provider.ts::createSignedDownloadUrl`).
+ *
+ * Spelled out because the provider's fallback is `?? 3600`, and taking it by
+ * OMISSION is what made the repo's only unauthenticated serving path twelve
+ * times more generous than its authenticated sibling: `downloadEvidenceFile`
+ * asks for 300 explicitly. Nothing here justified the asymmetry — it was the
+ * absence of an argument, not a decision.
+ *
+ * The single-use token is already consumed by the time we get here, so from
+ * this point the signed URL IS the bearer credential: shareable, replayable by
+ * anyone who sees it, recorded in intermediary logs, and outside our
+ * revocation. It must never outlive the authenticated path's, so it matches
+ * it. Shortening this is safe; lengthening it needs a reason written here.
+ */
+const TRUST_DOWNLOAD_URL_TTL_SECONDS = 300;
+
 /** PR-8 — PUBLIC: download a gated document via a single-use, expiring token. */
 export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }: { params: Promise<{ token: string }> }) => {
     const { token } = await p;
@@ -43,6 +62,9 @@ export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }:
         return jsonResponse({ error: 'not_found' }, { status: 404 });
     }
 
-    const url = await getStorageProvider().createSignedDownloadUrl(file.pathKey, { downloadFilename: file.originalName });
+    const url = await getStorageProvider().createSignedDownloadUrl(file.pathKey, {
+        expiresIn: TRUST_DOWNLOAD_URL_TTL_SECONDS,
+        downloadFilename: file.originalName,
+    });
     return NextResponse.redirect(url, { status: 302, headers: { 'Cache-Control': 'private, no-store' } });
 });
