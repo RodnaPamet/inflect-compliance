@@ -137,6 +137,62 @@ describeFn('FileRepository (integration — real DB)', () => {
         expect((await FileRepository.findBySha256(prisma, TENANT_A, sha))?.id).toBe(rec.id);
     });
 
+    it('findBySha256 still finds the record after quarantine moves it to FAILED', async () => {
+        // A quarantined hash must not fall out of the dedup index — otherwise
+        // the identical bytes re-enter as a fresh PENDING row that nothing has
+        // scanned. The unit suite proves this against an in-memory table; this
+        // is the same claim against the real column types and the real planner.
+        const sha = randomUUID().replace(/-/g, '');
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData({ sha256: sha }));
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+
+        // Byte-for-byte the AV webhook's quarantine write: both columns move
+        // in ONE conditional statement. Reproduced rather than imported so a
+        // change to that shape shows up here as a failure, not a silent skip.
+        const claimed = await prisma.fileRecord.updateMany({
+            where: { id: rec.id, scanStatus: { not: 'INFECTED' } },
+            data: { scanStatus: 'INFECTED', scanDetails: 'EICAR', status: 'FAILED' },
+        });
+        expect(claimed.count).toBe(1);
+
+        const found = await FileRepository.findBySha256(prisma, TENANT_A, sha);
+        expect(found?.id).toBe(rec.id);
+        expect(found?.scanStatus).toBe('INFECTED');
+        expect(found?.status).toBe('FAILED');
+    });
+
+    it('findBySha256 prefers the quarantined row over a clean STORED twin', async () => {
+        // The same bytes can already be STORED from before the signature that
+        // catches them shipped. The verdict has to win regardless of which row
+        // the planner would reach first, so the clean row is inserted FIRST.
+        const sha = randomUUID().replace(/-/g, '');
+        const clean = await FileRepository.createPending(prisma, CTX_A, pendingData({ sha256: sha }));
+        await FileRepository.markStored(prisma, CTX_A, clean.id);
+        await FileRepository.markScanClean(prisma, clean.id);
+
+        const bad = await FileRepository.createPending(prisma, CTX_A, pendingData({ sha256: sha }));
+        await FileRepository.markStored(prisma, CTX_A, bad.id);
+        await prisma.fileRecord.updateMany({
+            where: { id: bad.id, scanStatus: { not: 'INFECTED' } },
+            data: { scanStatus: 'INFECTED', scanDetails: 'EICAR', status: 'FAILED' },
+        });
+
+        const found = await FileRepository.findBySha256(prisma, TENANT_A, sha);
+        expect(found?.id).toBe(bad.id);
+    });
+
+    it('a quarantined hash in another tenant does not poison this one', async () => {
+        const sha = randomUUID().replace(/-/g, '');
+        const ctxB = makeRequestContext('ADMIN', { tenantId: TENANT_B, userId });
+        const bad = await FileRepository.createPending(prisma, ctxB, pendingData({ sha256: sha }));
+        await prisma.fileRecord.updateMany({
+            where: { id: bad.id },
+            data: { scanStatus: 'INFECTED', status: 'FAILED' },
+        });
+
+        expect(await FileRepository.findBySha256(prisma, TENANT_A, sha)).toBeNull();
+    });
+
     it('findPendingOlderThan returns old PENDING records', async () => {
         const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
         // Back-date it so the lt filter matches.

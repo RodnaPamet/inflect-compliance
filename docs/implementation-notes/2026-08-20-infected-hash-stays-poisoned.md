@@ -48,6 +48,7 @@ quarantined row, and it is now unreachable with one.
 | `src/app-layer/repositories/FileRepository.ts` | `findBySha256` matches the quarantined row too, INFECTED first |
 | `src/app-layer/usecases/evidence.ts` | `uploadEvidenceFile` refuses known-infected bytes, audits, drops the copy |
 | `tests/unit/evidence-infected-hash-dedup.test.ts` | drives the real usecase + repository against an in-memory FileRecord table |
+| `tests/integration/repositories/FileRepository.test.ts` | the same claim against the real column types — quarantine written the way the webhook writes it |
 
 ## Decisions
 
