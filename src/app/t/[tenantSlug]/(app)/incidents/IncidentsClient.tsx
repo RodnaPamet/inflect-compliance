@@ -4,6 +4,7 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
@@ -154,6 +155,10 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
             return true;
         });
     }, [incidents, state, search]);
+    // #107 — publish the rendered order so the detail page's prev/next
+    // stepper walks what the user saw. Incidents filter entirely client-side,
+    // so the list cache holds rows the table is not showing.
+    usePublishDisplayedOrder(CACHE_KEYS.incidents.list(), filtered);
 
     // KPI summary — open incidents, reportable, deadlines due/overdue.
     const openCount = incidents.filter((i) => i.phase !== 'CLOSED').length;

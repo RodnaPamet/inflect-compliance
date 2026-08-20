@@ -7,6 +7,7 @@ import { NewPolicyModal } from './NewPolicyModal';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
@@ -288,6 +289,10 @@ function PoliciesPageInner({
         () => sortRowsByDisplay(policies, sortAccessors, sortBy, sortOrder),
         [policies, sortAccessors, sortBy, sortOrder],
     );
+    // #107 — publish the rendered order so the detail page's prev/next
+    // stepper walks what the user saw. The sorted+filtered set, not the
+    // load-on-scroll window.
+    usePublishDisplayedOrder(CACHE_KEYS.policies.list(), sortedPolicies);
 
     // Load-on-scroll windowing — render the first batch, append more as
     // the user nears the bottom (DataTable onReachEnd sentinel).

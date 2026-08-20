@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { DataTable, createColumns, useColumnsDropdown, sortRowsByDisplay, type SortAccessors } from '@/components/ui/table';
 import {
@@ -280,6 +281,10 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         () => sortRowsByDisplay(assets, sortAccessors, sortBy, sortOrder),
         [assets, sortAccessors, sortBy, sortOrder],
     );
+    // #107 — publish the rendered order so the detail page's prev/next
+    // stepper walks what the user saw. The sorted+filtered set, not the
+    // load-on-scroll window.
+    usePublishDisplayedOrder(CACHE_KEYS.assets.list(), sortedAssets);
 
     // Load-on-scroll windowing — render the first batch, append more as
     // the user nears the bottom (DataTable onReachEnd sentinel).

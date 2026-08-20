@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { mutate as globalMutate } from 'swr';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { UserCombobox } from '@/components/ui/user-combobox';
@@ -550,6 +551,10 @@ function RisksPageInner({
         () => sortRowsByDisplay(rawRisks, sortAccessors, sortBy, sortOrder),
         [rawRisks, sortAccessors, sortBy, sortOrder],
     );
+    // #107 — hand the detail page's prev/next stepper the order actually
+    // rendered. `risks` (not `visibleRisks`) is the published set: the
+    // load-on-scroll window is a rendering budget, not a filter.
+    usePublishDisplayedOrder(CACHE_KEYS.risks.list(), risks);
     const sortableRiskColumns = useMemo(
         () => ['title', 'asset', 'inherentScore', 'residual', 'ale', 'treatment', 'status'],
         [],

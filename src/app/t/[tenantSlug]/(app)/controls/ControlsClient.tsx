@@ -23,6 +23,7 @@ import { ControlTaskRows, type ControlTask } from '@/components/controls-shared/
 import { ControlEditPanel } from './ControlEditPanel';
 import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { ownerDisplayName } from '@/lib/owner-display';
@@ -506,6 +507,12 @@ function ControlsPageInner({
         // silently dropped. `flaggedIds` is retained only to drive the banner.
         return sortRowsByDisplay(clientFilteredControls, sortAccessors, sortBy, sortOrder);
     }, [clientFilteredControls, sortAccessors, sortBy, sortOrder]);
+    // #107 — publish the rendered order for the detail page's prev/next
+    // stepper. This page is the reason the stepper could not read the list
+    // cache: the `category` facet is deliberately dropped from the SWR key
+    // and applied client-side, so the cache entry holds controls the user
+    // filtered out of view.
+    usePublishDisplayedOrder(CACHE_KEYS.controls.list(), controls);
     const sortableColumns = useMemo(
         () => ['code', 'name', 'status', 'category', 'frequency', 'owner'],
         [],
