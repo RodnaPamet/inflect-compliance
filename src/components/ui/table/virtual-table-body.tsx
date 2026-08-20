@@ -38,6 +38,19 @@
  *   - row click + middle-click handlers, with interactive-child guard
  *   - keyboard reachability (scroll container is `tabIndex=0` +
  *     `role=region` with an aria-label)
+ *   - load-on-scroll (`onReachEnd`) — see the note below on why this
+ *     one is implemented differently here
+ *
+ * Load-on-scroll: `<Table>` renders an `<InfiniteScrollSentinel>` at
+ * the bottom of its scroll wrapper. That does not transplant here —
+ * react-window absolutely-positions every child inside an inner
+ * element sized to `itemCount * itemSize`, so a sentinel appended to
+ * the scroll container sits at the TOP of the scrolled content (it
+ * would intersect immediately and fire forever) unless it is manually
+ * positioned at the computed content height, which then has to be
+ * recomputed on every append. The windowing library already reports
+ * exactly what the sentinel exists to infer, so this component reads
+ * `onItemsRendered`'s `visibleStopIndex` instead.
  */
 import * as React from "react";
 import {
@@ -53,6 +66,17 @@ import { Tooltip } from "../tooltip";
 import { cn, isClickOnInteractiveChild } from "./table-utils";
 
 export const DEFAULT_VIRTUAL_ROW_HEIGHT = 44;
+
+/**
+ * How close to the end of the data the visible window must get before
+ * `onReachEnd` fires, in rows.
+ *
+ * Calibrated against the non-virtualized path: `<InfiniteScrollSentinel>`
+ * pre-loads with a 320px bottom `rootMargin`, which at the default 44px
+ * row height is ~7 rows. 10 keeps the same "load before the user gets
+ * there" feel on the taller row heights some tables configure.
+ */
+export const VIRTUAL_REACH_END_ROW_MARGIN = 10;
 
 export interface VirtualTableProps<T> {
     /** TanStack table instance from `useTable`. */
@@ -96,6 +120,18 @@ export interface VirtualTableProps<T> {
         sortBy?: string;
         sortOrder?: "asc" | "desc";
     }) => void;
+    /**
+     * Infinite-scroll (load-on-scroll). Fires when the windowed
+     * viewport comes within {@link VIRTUAL_REACH_END_ROW_MARGIN} rows
+     * of the last row, at most ONCE per row count — so a load that
+     * appends rows re-arms it, and a load that appends nothing does
+     * not spin.
+     *
+     * Same consumer contract as the non-virtualized `<Table>`: the
+     * PARENT owns "is there more", by passing
+     * `onReachEnd={hasMore ? loadMore : undefined}`.
+     */
+    onReachEnd?: () => void;
     /** Class on the outer container (mirrors `Table`'s `containerClassName`). */
     containerClassName?: string;
     /** Class on the inner scroll container. */
@@ -305,6 +341,7 @@ export function VirtualTable<T>({
     sortBy,
     sortOrder,
     onSortChange,
+    onReachEnd,
     containerClassName,
     scrollWrapperClassName,
     "aria-label": ariaLabel = "Table contents (scrollable)",
@@ -438,6 +475,29 @@ export function VirtualTable<T>({
     }, []);
     /* eslint-enable react-hooks/refs */
 
+    // Load-on-scroll. `firedForRowCountRef` is what keeps this to one
+    // call per batch: react-window re-reports the rendered range on
+    // every window change, so without it a user parked at the bottom
+    // would re-fire `onReachEnd` on each nudge. Keying the guard on
+    // the ROW COUNT (rather than a plain boolean) is what re-arms it:
+    // a load that appends rows changes the count and unlocks the next
+    // fire, while a load that appends nothing leaves it latched — no
+    // request loop at the true end of the data.
+    const firedForRowCountRef = React.useRef<number | null>(null);
+    const rowCount = rows.length;
+    const handleItemsRendered = React.useCallback(
+        ({ visibleStopIndex }: { visibleStopIndex: number }) => {
+            if (!onReachEnd || rowCount === 0) return;
+            if (visibleStopIndex < rowCount - 1 - VIRTUAL_REACH_END_ROW_MARGIN) {
+                return;
+            }
+            if (firedForRowCountRef.current === rowCount) return;
+            firedForRowCountRef.current = rowCount;
+            onReachEnd();
+        },
+        [onReachEnd, rowCount],
+    );
+
     const renderInner = (h: number, w: number | string) => (
         <FixedSizeList
             height={h}
@@ -447,6 +507,7 @@ export function VirtualTable<T>({
             overscanCount={overscanCount}
             outerElementType={OuterElement}
             itemData={itemData}
+            onItemsRendered={onReachEnd ? handleItemsRendered : undefined}
         >
             {VirtualRow as React.ComponentType<{
                 index: number;
