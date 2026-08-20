@@ -48,6 +48,17 @@ export interface IdentitySyncResult {
      * Without it the classification dies here and the queue retries anyway.
      */
     noRetry?: boolean;
+    /**
+     * The provider this run synced, once the connection resolved.
+     *
+     * Optional because the two earliest failure arms return before a provider
+     * is known — a connection that does not exist has none. Every arm that ran
+     * against a real connection carries it, which is what the caller needs:
+     * `reconcileIdentityAccountLinks` is keyed by provider, and re-reading the
+     * connection to recover a string this function already held would be a
+     * second query for a fact that was in scope.
+     */
+    provider?: string;
 }
 
 /**
@@ -81,7 +92,7 @@ export async function runIdentitySync(input: {
                     completedAt: now,
                 },
             });
-            return { executionId: execution.id, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Identity connection not found' };
+            return { executionId: execution.id, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Identity connection not found', provider: conn?.provider };
         }
 
         const automationKey = `${conn.provider}.sync`;
@@ -101,7 +112,7 @@ export async function runIdentitySync(input: {
                 where: { id: execution.id },
                 data: { status: 'ERROR', errorMessage: `Provider ${conn.provider} does not support identity sync`, completedAt: new Date() },
             });
-            return { executionId: execution.id, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Provider does not support identity sync' };
+            return { executionId: execution.id, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Provider does not support identity sync', provider: conn.provider };
         }
 
         const start = Date.now();
@@ -139,6 +150,7 @@ export async function runIdentitySync(input: {
                 upserted: 0,
                 deprovisioned: 0,
                 errorMessage: msg,
+                provider: conn.provider,
                 // Preserve the retry classification across the usecase boundary.
                 // This function CATCHES the provider error, so without this the
                 // queue-level bypass could never see it and a revoked credential
@@ -226,7 +238,7 @@ export async function runIdentitySync(input: {
                     passStartedAt,
                 });
                 await clearAuthFailure(db, conn.id, conn.provider);
-                return { executionId: execution.id, status: 'PARTIAL', upserted, deprovisioned: 0, errorMessage: msg };
+                return { executionId: execution.id, status: 'PARTIAL', upserted, deprovisioned: 0, errorMessage: msg, provider: conn.provider };
             }
 
             // NOT resumable (Active Directory: ldapjs paged search uses a
@@ -245,6 +257,7 @@ export async function runIdentitySync(input: {
                 upserted,
                 deprovisioned: 0,
                 errorMessage: msg,
+                provider: conn.provider,
                 // Deterministic: re-running enumerates the same too-large
                 // directory and truncates identically, so three retries mean
                 // three more full enumerations for the same outcome.
@@ -300,6 +313,6 @@ export async function runIdentitySync(input: {
 
         recordIdentityDeprovisioned({ provider: conn.provider, count: reconcile.count }); // H6 — spike = wrongful mass-deprovision
         logger.info('identity-sync complete', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted, deprovisioned: reconcile.count });
-        return { executionId: execution.id, status: 'PASSED', upserted, deprovisioned: reconcile.count };
+        return { executionId: execution.id, status: 'PASSED', upserted, deprovisioned: reconcile.count, provider: conn.provider };
     });
 }
