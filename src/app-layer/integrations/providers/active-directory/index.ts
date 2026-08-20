@@ -78,7 +78,46 @@ const USER_FILTER = '(&(objectCategory=person)(objectClass=user))';
 
 /** The minimal LDAP client surface this provider uses — satisfied by ldapts' Client. */
 /**
- * Refuse to disable TLS verification for a host that is not internal.
+ * Why a caller is demanding that this host sit inside private address space.
+ *
+ * The two callers reach the same conclusion for genuinely different reasons,
+ * and the message an operator reads has to be the one matching what they
+ * actually configured:
+ *
+ *   `tls-bypass`       `allowSelfSignedTls` was turned on, so certificate
+ *                      verification is about to be DISABLED. The private-host
+ *                      condition is what keeps that exemption bound to the
+ *                      internal-CA justification it was granted for.
+ *
+ *   `directory-write`  the leaver writer is about to MODIFY a customer's
+ *                      directory. TLS verification is fully ON there, so a
+ *                      message about disabling it describes something that is
+ *                      not happening — and sends the operator hunting for a TLS
+ *                      toggle that is already in the safe position, rather than
+ *                      for the network path the refusal is actually about.
+ */
+export type LdapPrivateHostPurpose = 'tls-bypass' | 'directory-write';
+
+/** The operator-facing halves of the refusal, per reason for demanding it. */
+const PRIVATE_HOST_COPY: Record<LdapPrivateHostPurpose, { lead: string; tail: string }> = {
+    'tls-bypass': {
+        lead: 'Refusing to disable TLS verification',
+        tail: 'Self-signed certificates are supported for internal directory hosts only.',
+    },
+    'directory-write': {
+        lead: 'Refusing to write to an Active Directory host',
+        tail:
+            'TLS verification is already ON for this write and is not what is in question: a valid ' +
+            'certificate proves the host is who its own certificate says it is, not that it is the ' +
+            "customer's domain controller. A disable issued to an attacker-chosen LDAPS server is " +
+            'answered with success while the real account stays enabled, and the offboarding audit trail ' +
+            'records it as done. The remedy is a VPN or private link to the domain controller, not a ' +
+            'configuration toggle.',
+    },
+};
+
+/**
+ * Refuse a directory host that cannot be placed inside private address space.
  *
  * Bound to the RESOLVED address rather than the hostname, because an
  * attacker-controlled name that resolves into RFC1918 would otherwise satisfy a
@@ -91,8 +130,16 @@ const USER_FILTER = '(&(objectCategory=person)(objectClass=user))';
  * ldapts to close that gap. This narrows the exposure from "any host, forever"
  * to "a host that was internal moments ago", which is a real reduction but not
  * an elimination.
+ *
+ * `purpose` changes ONLY the wording. The condition is deliberately identical
+ * either way: two spellings of one host check is how a future edit relaxes it on
+ * one path while everybody reads the other one and concludes it is still tight.
  */
-export async function assertPrivateLdapHost(rawUrl: string): Promise<void> {
+export async function assertPrivateLdapHost(
+    rawUrl: string,
+    purpose: LdapPrivateHostPurpose = 'tls-bypass',
+): Promise<void> {
+    const { lead, tail } = PRIVATE_HOST_COPY[purpose];
     let host: string;
     try {
         host = new URL(rawUrl).hostname;
@@ -107,15 +154,10 @@ export async function assertPrivateLdapHost(rawUrl: string): Promise<void> {
     try {
         addresses = await dnsPromises.lookup(host, { all: true });
     } catch {
-        throw new Error(
-            `Refusing to disable TLS verification: ${host} could not be resolved.`,
-        );
+        throw new Error(`${lead}: ${host} could not be resolved to any address.`);
     }
     if (addresses.length === 0 || !addresses.every((a) => isPrivateAddress(a.address))) {
-        throw new Error(
-            `Refusing to disable TLS verification for ${host}, which resolves outside private address space. ` +
-                'Self-signed certificates are supported for internal directory hosts only.',
-        );
+        throw new Error(`${lead}: ${host} resolves outside private address space. ${tail}`);
     }
 }
 
@@ -151,6 +193,33 @@ export interface LdapClientLike {
      */
     modify?(dn: string, changes: readonly LdapModification[]): Promise<void>;
     unbind(): Promise<void>;
+    /**
+     * False once the CURRENT socket has not completed a bind — which ldapts
+     * documents as the way to notice a connection that was transparently
+     * re-established underneath you.
+     *
+     * This is the only signal available that the socket changed, and the leaver
+     * writer's whole compare-and-swap rests on read and write reaching the SAME
+     * domain controller. `ldaps://dc.corp.example.com` conventionally resolves
+     * to every DC in the domain, so a reconnect is a coin toss over which
+     * replica answers next.
+     *
+     * There is a second hazard behind the same flag. `lazyLdaptsClient` does not
+     * pass `autoRebind`, so after a transparent reconnect the session is
+     * ANONYMOUS: the next modify is refused with insufficientAccessRights, and
+     * the writer's own copy for result 50 sends the operator off to widen a
+     * delegation that was never the problem. Leaving `autoRebind` off is the
+     * right call — an auto-replayed bind would let a write proceed silently on a
+     * socket to an unknown replica, which is exactly what must not happen — so
+     * the writer re-binds deliberately and re-establishes which DC it reached.
+     *
+     * OPTIONAL on the interface, matching `modify` and for the same reason:
+     * every injected read-only fake in the suite satisfies this type today, and
+     * a required member would break them at compile time for a path they never
+     * take. `undefined` means "this client cannot say", which the writer treats
+     * as no reconnect having been DETECTED rather than as proof of none.
+     */
+    readonly isBound?: boolean;
 }
 
 export interface LdapClientOptions {
@@ -495,6 +564,13 @@ async function lazyLdaptsClient(opts: LdapClientOptions): Promise<LdapClientLike
     // of the library.
     return {
         bind: (dn, password) => client.bind(dn, password),
+        // A GETTER, not a snapshot. The adapter object is built once and reused
+        // for the life of the connection, so a copied boolean would freeze the
+        // answer at construction time — i.e. always report the state before the
+        // first bind, which is the one moment it is guaranteed to be wrong.
+        get isBound() {
+            return client.isBound;
+        },
         search: async (baseDN, options) => {
             const result = await client.search(baseDN, options as unknown as SearchOptions);
             return { searchEntries: result.searchEntries as unknown as Array<Record<string, unknown>> };

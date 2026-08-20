@@ -72,6 +72,23 @@ interface FakeOptions {
     entries?: Array<Record<string, unknown>>;
     rootDse?: Record<string, unknown> | null;
     rootDseThrows?: boolean;
+    /**
+     * RootDSE answers consumed IN ORDER, the last repeating.
+     *
+     * This is what lets a test model the thing the writer's whole
+     * compare-and-swap rests on: `ldaps://dc.corp.example.com` resolves to every
+     * DC in the domain, so a socket that is re-opened underneath ldapts can come
+     * back attached to a different replica. A single fixed answer cannot express
+     * that, which is why the affinity refusal was previously unreachable except
+     * by hand-forging a capture.
+     */
+    rootDseSequence?: Array<Record<string, unknown> | null>;
+    /**
+     * Drives `LdapClientLike.isBound` — ldapts' tell for a transparently
+     * re-established socket. Absent models a client that cannot report, which is
+     * every other fake in this file.
+     */
+    isBound?: () => boolean;
     /** Thrown by `modify` AFTER the call is recorded, so the CAS shape stays assertable. */
     modifyThrows?: unknown;
     /** Simulate a read-only client — the interface makes `modify` optional. */
@@ -85,16 +102,27 @@ function fakeAd(options: FakeOptions = {}) {
     const modifies: Array<{ dn: string; changes: readonly LdapModification[] }> = [];
     let unbinds = 0;
 
+    let rootDseReads = 0;
+
     const createClient = (opts: LdapClientOptions): LdapClientLike => {
         clientsBuilt.push(opts);
         const client: LdapClientLike = {
             bind: async (dn, password) => {
                 binds.push({ dn, password });
             },
+            get isBound() {
+                return options.isBound?.();
+            },
             search: async (base, searchOptions) => {
                 searches.push({ base, options: searchOptions });
                 if (base === '') {
                     if (options.rootDseThrows) throw new Error('RootDSE unavailable');
+                    if (options.rootDseSequence) {
+                        const seq = options.rootDseSequence;
+                        const answer = seq[Math.min(rootDseReads, seq.length - 1)];
+                        rootDseReads += 1;
+                        return { searchEntries: answer === null ? [] : [answer] };
+                    }
                     if (options.rootDse === null) return { searchEntries: [] };
                     return {
                         searchEntries: [options.rootDse ?? { dnsHostName: 'dc01.corp.example.com' }],
@@ -312,11 +340,19 @@ describe('the write is a compare-and-swap, not a replace', () => {
         const fake = fakeAd();
         const writer = makeWriter(fake);
         const state = await writer.readState(GUID);
-        const searchesAfterRead = fake.searches.length;
+        const accountReads = () => fake.searches.filter((s) => s.base !== '').length;
+        const readsAfterRead = accountReads();
 
         await writer.disable(GUID, state);
 
-        expect(fake.searches).toHaveLength(searchesAfterRead);
+        // Counting ACCOUNT reads specifically. `disable` does take one more
+        // round trip — a RootDSE base search confirming which domain controller
+        // is answering the socket it is about to write through — and that one is
+        // required, not incidental: without it the affinity check compares
+        // `capturedFromDc` against the variable it was copied from. What must
+        // never happen is a re-read of the ACCOUNT, which would let the write
+        // succeed while making the journal's committed claim false.
+        expect(accountReads()).toBe(readsAfterRead);
         expect(fake.modifies[0].changes[0].values).toEqual([String(state.priorState.userAccountControl)]);
     });
 
@@ -374,6 +410,40 @@ describe('the write path refuses a directory host it cannot place inside private
         await expect(makeWriter(fake).readState(GUID)).rejects.toThrow(/private address space/);
         expect(fake.clientsBuilt).toEqual([]);
         expect(fake.binds).toEqual([]);
+    });
+
+    it('says what is actually being refused — a write, not a TLS downgrade', async () => {
+        // The write path asserts the private-host condition UNCONDITIONALLY,
+        // while the read path asserts it only when `allowSelfSignedTls` is on.
+        // Both used one message, written for the read case, so an operator whose
+        // disable was refused here was told the product was "refusing to disable
+        // TLS verification" — which is not happening; verification is ON — and
+        // went looking for a TLS toggle already in the safe position instead of
+        // for the network path the refusal is about.
+        lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+        const fake = fakeAd();
+
+        const err = await makeWriter(fake).readState(GUID).catch((e: unknown) => e);
+        const message = (err as Error).message;
+
+        expect(message).toMatch(/private address space/);
+        expect(message).not.toMatch(/disable TLS verification/i);
+        expect(message).toMatch(/Refusing to write to an Active Directory host/);
+        expect(message).toMatch(/VPN or private link/);
+    });
+
+    it('leaves the TLS-bypass wording where it belongs — on the self-signed path', async () => {
+        // The two refusals share one condition on purpose (two spellings of one
+        // host check is how a future edit relaxes it on one path while everyone
+        // reads the other). Only the copy differs, and it has to keep differing.
+        lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+
+        const err = await new ActiveDirectoryProvider()
+            .makeClient({ url: CONNECTION.url, allowSelfSignedTls: true })
+            .catch((e: unknown) => e);
+
+        expect((err as Error).message).toMatch(/Refusing to disable TLS verification/);
+        expect((err as Error).message).toMatch(/private address space/);
     });
 
     it('still goes through the provider factory, so ldap:// is refused there', async () => {
@@ -562,3 +632,168 @@ describe('refusals taken before anything is sent', () => {
         expect(fake.modifies).toEqual([]);
     });
 });
+
+describe('the base DN is the scope this writer is entitled to', () => {
+    const FOREIGN_DN = 'CN=Someone Else,OU=Staff,DC=other,DC=example,DC=com';
+
+    it('refuses a DN-shaped account id that does not lie beneath the configured base DN', async () => {
+        // `externalUserId` is the objectGUID only USUALLY: `normalizeAdEntry`
+        // falls back to the DN whenever the raw 16 bytes will not format, so the
+        // DN shape is a real stored identifier. The GUID branch is contained by
+        // construction — it is a filtered search UNDER baseDN — but the DN
+        // branch reads whatever DN it is handed, base-scoped, anywhere in the
+        // directory including other naming contexts.
+        const fake = fakeAd();
+
+        const err = await makeWriter(fake).readState(FOREIGN_DN).catch((e: unknown) => e);
+
+        expect((err as Error).message).toMatch(/does not lie beneath the base DN/);
+        expect((err as Error).message).toContain(CONNECTION.baseDN);
+        // Refused BEFORE the read, not after it: an object outside the scope an
+        // operator configured is not one to go and look at first.
+        expect(fake.searches.filter((s) => s.base !== '')).toEqual([]);
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it('accepts a DN-shaped id that does lie beneath it', async () => {
+        const fake = fakeAd();
+        const state = await makeWriter(fake).readState(DN);
+        expect(state.enabled).toBe(true);
+        expect(fake.searches.find((s) => s.base !== '')?.base).toBe(DN);
+    });
+
+    it('re-checks the DN the ModifyRequest is addressed to, which came back out of the journal', async () => {
+        // The DN that reaches `c.modify(...)` is read from
+        // `IdentityWriteJournal.priorStateJson` — a plaintext column that has
+        // been through Postgres since the read — so it is not necessarily the DN
+        // this process resolved. This is the only check between a tampered or
+        // foreign capture and a ModifyRequest addressed anywhere in the tree.
+        const fake = fakeAd();
+        const writer = makeWriter(fake);
+        const state = await writer.readState(GUID);
+
+        const err = await writer
+            .disable(GUID, {
+                enabled: true,
+                priorState: { ...state.priorState, distinguishedName: FOREIGN_DN },
+            })
+            .catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/does not lie beneath the base DN/);
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it('is not confused by an escaped comma inside a common name', async () => {
+        // `CN=Bloggs\, Jo,OU=Staff,DC=corp,...` is three components, not four.
+        // A naive split would make an ordinary surname look like an out-of-scope
+        // DN and refuse a perfectly legitimate account.
+        const escapedDn = 'CN=Bloggs\, Jo,OU=Staff,DC=corp,DC=example,DC=com';
+        const fake = fakeAd({ entries: [userEntry({ distinguishedName: escapedDn })] });
+
+        const state = await makeWriter(fake).readState(escapedDn);
+        expect(state.priorState.distinguishedName).toBe(escapedDn);
+    });
+});
+
+describe('one connection, one domain controller — enforced rather than asserted', () => {
+    const DC01 = { dnsHostName: 'dc01.corp.example.com' };
+    const DC02 = { dnsHostName: 'dc02.corp.example.com' };
+
+    it('confirms the DC on the socket it is about to write through, not the one recorded at bind time', async () => {
+        // THE defect this suite exists for. `capturedFromDc` was copied from
+        // `boundDc`, and the refusal then compared `capturedFromDc` against
+        // `boundDc` — the same variable, so equal by construction. The check
+        // existed, read convincingly, and could not fire: the only way to reach
+        // it was to hand-forge a capture, which is what its original test did.
+        //
+        // Here the socket answers dc01 for the read and dc02 for the write, with
+        // no reconnect signal at all — the case a client that cannot report
+        // `isBound` leaves entirely to this check.
+        const fake = fakeAd({ rootDseSequence: [DC01, DC02] });
+        const writer = makeWriter(fake);
+        const state = await writer.readState(GUID);
+        expect(state.priorState.capturedFromDc).toBe('dc01.corp.example.com');
+
+        const err = await writer.disable(GUID, state).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/multi-master/);
+        expect((err as Error).message).toContain('dc01.corp.example.com');
+        expect((err as Error).message).toContain('dc02.corp.example.com');
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it('re-binds deliberately when ldapts reports the socket was re-established', async () => {
+        // `autoRebind` is deliberately OFF — an auto-replayed bind would let a
+        // write proceed silently on a socket to an unknown replica. The cost of
+        // leaving it off is that after a transparent reconnect the session is
+        // ANONYMOUS, so the modify comes back result 50 and the writer's own
+        // copy for that code sends an operator to widen a delegation that was
+        // never the problem. Re-binding here is what closes that.
+        let reconnected = false;
+        const fake = fakeAd({ rootDseSequence: [DC01], isBound: () => !reconnected });
+        const writer = makeWriter(fake);
+        const state = await writer.readState(GUID);
+        reconnected = true;
+
+        await writer.disable(GUID, state);
+
+        expect(fake.binds).toHaveLength(2);
+        // Same DC either side, positively confirmed — so a reconnect is not by
+        // itself a reason to refuse. Over-tightening here would fail a batch for
+        // an idle-timeout the directory did not even notice.
+        expect(fake.modifies).toHaveLength(1);
+    });
+
+    it('refuses when the re-established socket landed on a different replica', async () => {
+        let reconnected = false;
+        const fake = fakeAd({ rootDseSequence: [DC01, DC02], isBound: () => !reconnected });
+        const writer = makeWriter(fake);
+        const state = await writer.readState(GUID);
+        reconnected = true;
+
+        const err = await writer.disable(GUID, state).catch((e: unknown) => e);
+
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/multi-master/);
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it('refuses a reconnect it cannot place, rather than writing on no evidence at all', async () => {
+        // A RootDSE that will not answer is tolerated on the READ — the capture
+        // records null and says so, costing the change token its comparability.
+        // Tolerating it HERE would mean writing with neither of the two pieces
+        // of evidence that the read and the write share a domain controller.
+        let reconnected = false;
+        const fake = fakeAd({ rootDseThrows: true, isBound: () => !reconnected });
+        const writer = makeWriter(fake);
+        const state = await writer.readState(GUID);
+        expect(state.priorState.capturedFromDc).toBeNull();
+        reconnected = true;
+
+        const err = await writer.disable(GUID, state).catch((e: unknown) => e);
+
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/could not be confirmed/);
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it('still writes on an unidentifiable DC when the connection never broke', async () => {
+        // The other half of the previous test, and the reason it is worded as
+        // "re-established AND unconfirmable" rather than just "unconfirmable".
+        // A directory whose RootDSE is restricted is an ordinary deployment, not
+        // a fault, and refusing every disable in it would be a regression
+        // dressed as rigour.
+        const fake = fakeAd({ rootDseThrows: true });
+        const writer = makeWriter(fake);
+        const state = await writer.readState(GUID);
+
+        await writer.disable(GUID, state);
+
+        expect(fake.modifies).toHaveLength(1);
+    });
+});
+
