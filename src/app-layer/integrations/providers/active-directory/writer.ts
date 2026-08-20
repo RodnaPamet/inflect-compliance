@@ -44,7 +44,7 @@
  * a CAS miss routes to `FAILED`, whose documented meaning — the directory is
  * unchanged — is then accurate.
  *
- * ═══ ONE CONNECTION, ONE DOMAIN CONTROLLER ═══
+ * ═══ ONE CONNECTION, ONE DOMAIN CONTROLLER — CHECKED, NOT ASSUMED ═══
  *
  * `ldaps://dc.corp.example.com` conventionally resolves to EVERY DC in the
  * domain, and AD is multi-master with minutes of inter-site replication lag. A
@@ -53,10 +53,49 @@
  * DC, and `uSNChanged` — which is per-DC and comparable only against the same
  * DC — would be meaningless as a change token.
  *
- * So this writer holds ONE bound connection across `readState` + `disable`, and
- * records which DC answered. That also avoids up to 2,000 simple binds per
- * batch (`disableAccountsForLeaver` iterates sequentially over up to
- * MAX_CANDIDATES = 1,000 candidates, twice each).
+ * So this writer holds ONE bound connection across `readState` + `disable`. That
+ * also avoids up to 2,000 simple binds per batch (`disableAccountsForLeaver`
+ * iterates sequentially over up to MAX_CANDIDATES = 1,000 candidates, twice
+ * each).
+ *
+ * Holding one CLIENT is not the same as holding one CONNECTION, and this is the
+ * gap the earlier version of this file described but did not close. ldapts
+ * re-opens the socket transparently when the server drops an idle one, so the
+ * affinity was an assumption dressed as an invariant: `capturedFromDc` was read
+ * once at bind time and then compared, at write time, against THE SAME
+ * VARIABLE. Two reads of one variable are equal by construction, so the refusal
+ * below could not fire for the situation it was written for. It was reachable
+ * only by hand-forging a capture.
+ *
+ * Two mechanisms make it real, and they answer different halves:
+ *
+ *   1. `session()` watches `LdapClientLike.isBound`, which ldapts sets false
+ *      once the current socket has not completed a bind. That is the library's
+ *      documented tell for a transparent reconnect. On seeing it the writer
+ *      re-binds DELIBERATELY and re-reads the RootDSE, so `boundDc` describes
+ *      the socket in hand rather than a socket that is gone. Re-binding also
+ *      closes a second hazard: `autoRebind` is off (correctly — an auto-replayed
+ *      bind would let a write proceed on a socket to an unknown replica), so
+ *      without this the next modify runs ANONYMOUSLY and comes back result 50,
+ *      whose operator copy sends someone to widen a delegation that was never
+ *      the problem.
+ *
+ *   2. `disable` re-reads the RootDSE on the connection it is about to write
+ *      through, and compares THAT against `capturedFromDc`. One extra
+ *      round trip on an already-open socket, and unlike (1) it does not depend
+ *      on a client remembering to expose `isBound` — it is positive evidence
+ *      about the server answering right now.
+ *
+ * What is NOT closed, stated plainly rather than implied: ldapts exposes no way
+ * to pin a socket, and no way to ask which server answered a given response, so
+ * a reconnect can still occur between the confirmation and the ModifyRequest
+ * that follows it. The window went from "the whole read → journal-commit →
+ * write span", which contains a Postgres commit, down to one round trip on an
+ * open connection. In that residual window the CAS is what remains, and it fails
+ * closed: a value-specific delete against a replica that has not converged is
+ * refused with noSuchAttribute (16), and an anonymous modify after a reconnect
+ * is refused with insufficientAccessRights (50). Both are proven refusals, so
+ * the directory is unchanged and the journal says so.
  *
  * `DirectoryWriter` has no disposal hook, so this factory returns a writer that
  * ALSO exposes `close()`, and the caller is responsible for calling it around a
@@ -243,6 +282,64 @@ function resultCodeOf(err: unknown): number | null {
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Split a DN on its RDN separators, respecting backslash escaping.
+ *
+ * `CN=Smith\, Jane,OU=Staff,DC=corp` is THREE components, not four. A naive
+ * `split(',')` on a DN carrying an escaped comma produces fragments that match
+ * nothing, which would turn the containment check below into a refusal of a
+ * perfectly ordinary account name.
+ */
+function splitDn(dn: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    for (let i = 0; i < dn.length; i += 1) {
+        const ch = dn[i];
+        if (ch === '\\') {
+            current += ch + (dn[i + 1] ?? '');
+            i += 1;
+            continue;
+        }
+        if (ch === ',') {
+            parts.push(current);
+            current = '';
+            continue;
+        }
+        current += ch;
+    }
+    parts.push(current);
+    return parts;
+}
+
+/** Lower-case, trim each RDN, drop empties. Enough for a containment test. */
+function normalizeDn(dn: string): string {
+    return splitDn(dn)
+        .map((part) => part.trim().toLowerCase())
+        .filter((part) => part !== '')
+        .join(',');
+}
+
+/**
+ * Whether `dn` names an object strictly beneath `baseDN`.
+ *
+ * Deliberately a SUFFIX test on normalised components rather than a real DN
+ * parse: AD compares DN components case-insensitively and ignores the optional
+ * whitespace after a separator, and those two are the whole difference between
+ * two spellings of one object. Anything this cannot place confidently reads as
+ * "not contained", which is the fail-closed direction — the remedy for a false
+ * refusal is a correctly formed `baseDN` on the connection, and the alternative
+ * is acting on an object nobody scoped.
+ *
+ * The base itself returns false. It is a naming context, not a user object, and
+ * a disable aimed at it is not a case worth admitting.
+ */
+function isUnderBaseDn(dn: string, baseDN: string): boolean {
+    const target = normalizeDn(dn);
+    const root = normalizeDn(baseDN);
+    if (target === '' || root === '') return false;
+    return target.endsWith(`,${root}`);
+}
+
+/**
  * Render a canonical GUID string as an LDAP search-filter assertion.
  *
  * The inverse of `formatObjectGuid`: AD stores the first three groups
@@ -397,6 +494,53 @@ export function createActiveDirectoryWriter(
     let connecting: Promise<LdapClientLike> | null = null;
     /** RootDSE `dnsHostName` — which DC this socket is actually talking to. */
     let boundDc: string | null = null;
+    /**
+     * Bumped on every bind this writer performs, including the re-bind that
+     * follows a detected reconnect.
+     *
+     * This is the identity of the SOCKET SESSION, and it is what `capturedFromDc`
+     * cannot supply on its own: a DC name can be null (a RootDSE that will not
+     * answer is tolerated, deliberately), and two different sockets to the same
+     * host are indistinguishable by name. A capture and a write carrying the same
+     * seq were unquestionably taken on one connection.
+     */
+    let sessionSeq = 0;
+    /**
+     * externalUserId → the session its capture was read in.
+     *
+     * In-memory and per-writer on purpose: it exists to answer "was this capture
+     * taken on the connection I am holding right now", which is a question about
+     * this process and this socket. Entries are consumed by `disable` and dropped
+     * by `close()`, so it is bounded by the accounts in flight rather than by the
+     * batch.
+     */
+    const readSessions = new Map<string, number>();
+
+    /**
+     * A DN this writer is willing to address, or a refusal.
+     *
+     * `externalUserId` is not always a GUID — `normalizeAdEntry` falls back to
+     * the DN whenever `formatObjectGuid` cannot format the raw bytes — so the DN
+     * shape is a real, stored identifier and not a curiosity. The GUID path is
+     * contained by construction (it is a filtered search UNDER `baseDN`); the DN
+     * path was not, and a base-scoped read takes whatever DN it is handed,
+     * anywhere in the directory, including other naming contexts.
+     *
+     * That matters most one step later. The DN the ModifyRequest is addressed to
+     * comes back out of `IdentityWriteJournal.priorStateJson`, a plaintext column
+     * that has been through Postgres since the read, so the value that reaches
+     * `c.modify(...)` is not necessarily the value this process resolved.
+     */
+    function assertUnderBaseDn(dn: string, what: string): void {
+        if (isUnderBaseDn(dn, baseDN)) return;
+        throw new Error(
+            `Refusing to act on ${what} ${dn}: it does not lie beneath the base DN configured for this ` +
+                `connection (${baseDN}). The scope an operator configured is the scope this writer is ` +
+                'entitled to, and an identifier naming an object outside it is either misconfiguration or ' +
+                'an identifier that did not come from this directory. Nothing was read and nothing was ' +
+                'written.',
+        );
+    }
 
     /** Ask the connection which DC it reached. Best effort; a null is recorded honestly. */
     async function readRootDseDc(c: LdapClientLike): Promise<string | null> {
@@ -453,7 +597,13 @@ export function createActiveDirectoryWriter(
             // written to. That is a deliberate, stated refusal, and the remedy
             // is a VPN or private link — not a config toggle, which would
             // restore the hole in one form submission.
-            await assertPrivateLdapHost(url);
+            //
+            // `'directory-write'` picks the copy that matches what is happening.
+            // The default wording is about DISABLING TLS verification, which on
+            // this path is not what the refusal is about at all — verification is
+            // on — and it sends an operator hunting for a TLS toggle that is
+            // already in the safe position.
+            await assertPrivateLdapHost(url, 'directory-write');
 
             // Through the provider's factory, never around it: that is where
             // the ldaps:// scheme check lives, and a second factory here would
@@ -461,6 +611,7 @@ export function createActiveDirectoryWriter(
             const c = await provider.makeClient(connection);
             await c.bind(bindDN, bindPassword);
             boundDc = await readRootDseDc(c);
+            sessionSeq += 1;
             client = c;
             return c;
         })();
@@ -472,26 +623,65 @@ export function createActiveDirectoryWriter(
         }
     }
 
-    async function findAccount(externalUserId: string): Promise<Record<string, unknown>> {
+    /**
+     * One socket session: the client, the DC answering it, and its identity.
+     *
+     * `isBound` is ldapts' documented tell for a socket that was transparently
+     * re-established — the library reports false once the CURRENT connection has
+     * not completed a bind. Seeing it means two things at once, and both need
+     * acting on: the session is anonymous (`autoRebind` is deliberately off), and
+     * the DC recorded for the previous socket is no longer known to be the DC on
+     * the other end of this one.
+     *
+     * `undefined` — a client that cannot report, which is every read-only fake in
+     * the suite — is treated as "no reconnect DETECTED", not as proof none
+     * happened. That is why `disable` does not rest on this alone: it confirms
+     * the DC positively before writing.
+     */
+    async function session(): Promise<{ client: LdapClientLike; dc: string | null; seq: number }> {
         const c = await connect();
+        if (c.isBound === false) {
+            logger.warn('active directory connection was re-established — re-binding before continuing', {
+                component: 'integration-active-directory-writer',
+                provider: AD_PROVIDER_ID,
+                previousDc: boundDc,
+            });
+            await c.bind(bindDN, bindPassword);
+            boundDc = await readRootDseDc(c);
+            sessionSeq += 1;
+        }
+        return { client: c, dc: boundDc, seq: sessionSeq };
+    }
+
+    async function findAccount(externalUserId: string): Promise<Record<string, unknown>> {
+        const c = (await session()).client;
         const id = externalUserId.trim();
         if (!id) throw new Error('Active Directory writer was given an empty account id.');
 
         // `normalizeAdEntry` sets externalUserId to the objectGUID, or falls
         // back to the DN when the GUID could not be formatted. Both shapes are
         // in the database, so both have to resolve.
-        const { searchEntries } = GUID_PATTERN.test(id)
-            ? await c.search(baseDN, {
-                  scope: 'sub',
-                  filter: objectGuidFilter(id),
-                  attributes: CAPTURE_ATTRIBUTES,
-                  sizeLimit: 2,
-              })
-            : await c.search(id, {
-                  scope: 'base',
-                  filter: '(objectClass=*)',
-                  attributes: CAPTURE_ATTRIBUTES,
-              });
+        //
+        // The GUID branch searches UNDER `baseDN`, so it cannot reach an object
+        // the operator did not scope. The DN branch reads whatever DN it is
+        // given, base-scoped, and had no such containment — so it is checked
+        // here, before the read rather than after it.
+        let searchEntries: Array<Record<string, unknown>>;
+        if (GUID_PATTERN.test(id)) {
+            ({ searchEntries } = await c.search(baseDN, {
+                scope: 'sub',
+                filter: objectGuidFilter(id),
+                attributes: CAPTURE_ATTRIBUTES,
+                sizeLimit: 2,
+            }));
+        } else {
+            assertUnderBaseDn(id, 'the account');
+            ({ searchEntries } = await c.search(id, {
+                scope: 'base',
+                filter: '(objectClass=*)',
+                attributes: CAPTURE_ATTRIBUTES,
+            }));
+        }
 
         if (searchEntries.length === 0) {
             throw new Error(
@@ -535,6 +725,10 @@ export function createActiveDirectoryWriter(
 
         async readState(externalUserId: string): Promise<DirectoryAccountState> {
             const entry = await findAccount(externalUserId);
+            // AFTER the read, not before. `findAccount` is what establishes (or
+            // re-establishes) the connection, so this is the session the entry
+            // above actually came from.
+            const { dc, seq } = await session();
 
             const uac = parseUac(entry.userAccountControl);
             if (uac === null) {
@@ -572,10 +766,16 @@ export function createActiveDirectoryWriter(
                 userPrincipalName: firstValue(entry.userPrincipalName) ?? null,
                 uSNChanged: firstValue(entry.uSNChanged) ?? null,
                 whenChanged: firstValue(entry.whenChanged) ?? null,
-                capturedFromDc: boundDc,
+                capturedFromDc: dc,
                 capturedAt: new Date().toISOString(),
                 adminCount: Number.isFinite(adminCountParsed) ? adminCountParsed : null,
             };
+
+            // Which SOCKET produced this capture, kept beside it in memory
+            // rather than in the capture. A restore reading this row a year from
+            // now has no use for a counter from a process that ended; `disable`,
+            // minutes later in the same process, has the only use there is.
+            readSessions.set(trimmedId, seq);
 
             return {
                 // Derived from the SAME integer the CAS will compare against —
@@ -616,7 +816,7 @@ export function createActiveDirectoryWriter(
                 );
             }
 
-            const c = await connect();
+            const { client: c, dc: sessionDc, seq } = await session();
             if (!c.modify) {
                 throw new DirectoryWriteError(
                     'The configured Active Directory client cannot perform a modify, so no disable was attempted.',
@@ -624,22 +824,78 @@ export function createActiveDirectoryWriter(
                 );
             }
 
-            if (
-                captured.capturedFromDc !== null &&
-                boundDc !== null &&
-                captured.capturedFromDc !== boundDc
-            ) {
-                // The capture came from a different domain controller than this
-                // socket is bound to. AD is multi-master and eventually
+            try {
+                // The DN that reaches `modify` came back out of a plaintext
+                // journal column, so it is not necessarily the DN this process
+                // resolved. Re-checking containment here is not paranoia about
+                // our own read — it is the only check standing between a
+                // tampered or foreign capture and a ModifyRequest addressed
+                // anywhere in the directory.
+                assertUnderBaseDn(captured.distinguishedName, "the capture's DN");
+            } catch (err) {
+                throw new DirectoryWriteError(
+                    err instanceof Error ? err.message : String(err),
+                    { definitivelyNotApplied: true },
+                );
+            }
+
+            // ── Which DC is on the other end of this socket, RIGHT NOW. ──
+            //
+            // Not `boundDc`, which is what the previous version compared
+            // against and which — within one writer instance — is the same
+            // variable `capturedFromDc` was copied from. Comparing a variable
+            // with itself is always equal, so the refusal below existed but
+            // could not fire; the only way to reach it was to hand-forge a
+            // capture, which is what its test did.
+            //
+            // A RootDSE base search on an already-open connection is one small
+            // round trip, taken after every free refusal above has had its
+            // chance, so nothing pays for it except a disable that is really
+            // going to be attempted.
+            const dcNow = await readRootDseDc(c);
+            if (dcNow !== null) boundDc = dcNow;
+
+            const capturedDc = captured.capturedFromDc;
+            const readSeq = readSessions.get(externalUserId.trim());
+            readSessions.delete(externalUserId.trim());
+            const sameSession = readSeq !== undefined && readSeq === seq;
+            const dcKnownBoth = capturedDc !== null && dcNow !== null;
+
+            if (dcKnownBoth && capturedDc !== dcNow) {
+                // The capture came from a different domain controller than the
+                // one answering this socket. AD is multi-master and eventually
                 // consistent, so the comparand may simply not have replicated
                 // here — a CAS against it would fail spuriously, or (worse, if
                 // it HAS replicated while a later change has not) succeed while
-                // reverting something this DC has not seen yet.
+                // reverting something this DC has not seen yet. `uSNChanged` in
+                // the capture is per-DC too, so the journal row would claim a
+                // change token that means nothing against the DC it names.
                 throw new DirectoryWriteError(
-                    `Refusing to disable: the prior state was captured from ${captured.capturedFromDc} but this ` +
-                        `connection is bound to ${boundDc}. Active Directory is multi-master, so a ` +
-                        'compare-and-swap across two domain controllers is not a comparison. Retry the batch on a ' +
-                        'single connection.',
+                    `Refusing to disable: the prior state was captured from ${capturedDc} but the connection ` +
+                        `about to be written through is answered by ${dcNow}. Active Directory is multi-master, ` +
+                        'so a compare-and-swap across two domain controllers is not a comparison. The socket was ' +
+                        'most likely re-established mid-batch; retry, which re-reads the account on whichever ' +
+                        'connection it then holds.',
+                    { definitivelyNotApplied: true },
+                );
+            }
+
+            if (!sameSession && !dcKnownBoth) {
+                // The capture was taken on a different socket session, and the
+                // DC identity cannot be compared to rule out that this is a
+                // different replica — either the capture recorded no DC or the
+                // RootDSE will not answer now. Tolerating a null DC on the READ
+                // is right (it costs the change token its comparability and the
+                // capture says so honestly); tolerating it HERE would mean
+                // writing with neither of the two pieces of evidence that the
+                // read and the write share a domain controller.
+                throw new DirectoryWriteError(
+                    'Refusing to disable: the connection was re-established between reading this account and ' +
+                        `writing it (capture from ${capturedDc ?? 'an unidentified DC'}, now ` +
+                        `${dcNow ?? 'an unidentified DC'}), and the domain controller could not be confirmed to ` +
+                        'be the same one. Active Directory is multi-master, so a compare-and-swap that spans two ' +
+                        'replicas is not a comparison. Retry: the next pass re-reads the account on the ' +
+                        'connection it will write through.',
                     { definitivelyNotApplied: true },
                 );
             }
@@ -671,7 +927,7 @@ export function createActiveDirectoryWriter(
                 externalUserId,
                 priorUserAccountControl: captured.userAccountControl,
                 userAccountControl: target,
-                dc: boundDc,
+                dc: dcNow ?? sessionDc,
             });
         },
 
@@ -679,6 +935,11 @@ export function createActiveDirectoryWriter(
             const c = client;
             client = null;
             boundDc = null;
+            // A capture taken on the closed session must not be able to satisfy
+            // the same-session test against a socket opened later — `sessionSeq`
+            // already makes that impossible, and clearing here keeps the map from
+            // outliving the connection it describes.
+            readSessions.clear();
             if (!c) return;
             try {
                 await c.unbind();

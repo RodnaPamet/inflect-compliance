@@ -54,6 +54,18 @@
  *     encryption ON THE GROUNDS that it is system-generated and URL-scrubbed.
  *     The write path would be the first thing to break that premise.
  *
+ * The cloak takes 403 and 404 back from the classifier, which leaves 401 — and
+ * 401 was reaching `readState`'s caller as a RAW `IntegrationAuthError` carrying
+ * `.../users/<objectId>` in its message. Nothing calls `markAuthFailure` on this
+ * path TODAY only because no `connectionId` is threaded here yet; production
+ * wiring is what would arm it, and by then the leak would be a behaviour someone
+ * has to notice rather than a shape someone has to add. So `get` now converts
+ * every escaping `IntegrationAuthError` into this module's own
+ * `DirectoryWriteError` family — and rebuilds the retained `cause` with the
+ * object id replaced by a placeholder, so that the one seam this file
+ * deliberately leaves open (unwrap the cause, decide at the call site whether a
+ * 401 should mark the connection) is safe to actually use.
+ *
  * So the transport here is `createResilientFetch` composed OVER a cloak that
  * turns a 403 — and a 404, for the separate reason given at
  * `LOCALLY_CLASSIFIED_STATUS` — into an inspectable response before the
@@ -126,7 +138,7 @@ import {
     type DirectoryAccountState,
     type DirectoryWriter,
 } from '@/app-layer/usecases/identity-disable-account';
-import { createBoundedFetch } from '../../bounded-fetch';
+import { createBoundedFetch, safeUrl } from '../../bounded-fetch';
 import {
     createResilientFetch,
     IntegrationAuthError,
@@ -238,6 +250,21 @@ const CLOAK_HEADER = 'x-inflect-cloaked-status';
 
 /** A GUID, in the 8-4-4-4-12 shape Entra object ids always take. */
 const OBJECT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The same shape, unanchored and global, for removing an id from a URL.
+ *
+ * Only ever used with `String.replace`, which resets `lastIndex` on a global
+ * regex. It must never be handed to `.test()`, where the retained `lastIndex`
+ * makes alternate calls return false — the classic footgun, and the reason this
+ * is a second constant rather than a flag on `OBJECT_ID_RE`.
+ */
+const ANY_OBJECT_ID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Host + path, with any object id replaced. Safe to persist and to render. */
+function scrubbedUrl(url: string): string {
+    return safeUrl(url).replace(ANY_OBJECT_ID_RE, '{objectId}');
+}
 
 /**
  * The version stamp on every capture this file writes.
@@ -356,6 +383,38 @@ export class EntraCredentialRejectedError extends DirectoryWriteError {
         // message or code, which names no account.
         this.cause = cause;
     }
+}
+
+/**
+ * The trailing half of the writes-disabled refusal, when the stored value is
+ * the reason rather than the absence of one.
+ *
+ * Returns '' for a plainly absent opt-in (undefined / null / false / missing),
+ * where the base message already says everything there is to say. The extra
+ * sentence is earned only by a value that an operator would reasonably read as
+ * an opt-in, because that is the case where repeating "turn it on" describes
+ * something they have already done.
+ */
+function describeWritesEnabled(value: unknown): string {
+    if (value === undefined || value === null || value === false) return '';
+    const shown = typeof value === 'string' ? JSON.stringify(value) : String(value);
+    const looksAffirmative =
+        (typeof value === 'string' && ['true', 'yes', 'on', '1'].includes(value.trim().toLowerCase())) ||
+        value === 1;
+    if (!looksAffirmative) {
+        return (
+            ` (This connection stores writesEnabled as ${typeof value} ${shown}, which is not an opt-in: ` +
+            'the flag is compared strictly against the boolean true.)'
+        );
+    }
+    return (
+        ` (This connection stores writesEnabled as the ${typeof value} ${shown} rather than the boolean ` +
+        'true, so the flag reads as ON in the admin UI and OFF here — writes are compared strictly, on ' +
+        'purpose, because a value that merely looks affirmative is not a deliberate grant of standing ' +
+        'power to disable accounts. Other booleans on this same connection are read through a ' +
+        'string-coercing helper and WILL be on, which is why this one looks inconsistent. Re-save the ' +
+        'connection, or correct the stored value to a JSON boolean.)'
+    );
 }
 
 /** Config the writer needs. Shaped like `{...configJson, ...decryptedSecrets}`. */
@@ -568,17 +627,29 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             throw new Error('Entra writer skipped: clientSecret is missing or failed to decrypt');
         }
         if (config.writesEnabled !== true) {
-            // Fail CLOSED. `.default` on a client-credentials grant returns
-            // whatever an admin has already consented, so the moment a tenant
-            // re-consents for one purpose this application gains standing power
-            // to disable any user in that directory — including tenants that
-            // only ever wanted posture checks. This flag is the per-connection
-            // statement that they asked for more than reading, and it is why a
-            // setup-guide edit alone cannot upgrade a read-only tenant.
+            // Fail CLOSED, and STRICTLY — `!== true`, not a coercion. `.default`
+            // on a client-credentials grant returns whatever an admin has
+            // already consented, so the moment a tenant re-consents for one
+            // purpose this application gains standing power to disable any user
+            // in that directory, including tenants that only ever wanted posture
+            // checks. This flag is the per-connection statement that they asked
+            // for more than reading, and it is why a setup-guide edit alone
+            // cannot upgrade a read-only tenant. A value that merely LOOKS true
+            // is not that statement.
+            //
+            // The strictness is right and the silence was not. Sibling booleans
+            // on this very connection — `enrichMfa`, `enrichFederation` in
+            // index.ts — are read through a string-coercing `truthy` helper, so
+            // a config row that stored "true" as a string has those ON while
+            // this one is OFF. The operator sees a checkbox they ticked, an
+            // error telling them to tick it, and no way to tell those apart. So
+            // when the stored value is truthy-shaped but not the boolean, say
+            // exactly that instead of repeating the instruction they followed.
             throw new Error(
                 'Entra writer refused: this connection is not enabled for directory writes. Turn on ' +
                     '"Allow offboarding writes" on the connection, and make sure an administrator has ' +
-                    `consented the application permission ${LEAST_PRIVILEGE_WRITE_ROLE}.`,
+                    `consented the application permission ${LEAST_PRIVILEGE_WRITE_ROLE}.` +
+                    describeWritesEnabled(config.writesEnabled),
             );
         }
 
@@ -685,6 +756,13 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
     /**
      * Read the account, and capture what a restore would need.
      *
+     * Every Graph call below goes through `get`, which is where the containment
+     * promised by the module docblock is actually enforced: an
+     * `IntegrationAuthError` raised by the shared classifier — the class
+     * `markAuthFailure` keys on, carrying `/users/<objectId>` in a message that
+     * would be persisted into an unencrypted, UI-rendered column — cannot leave
+     * this object.
+     *
      * NOTE ON CONTAINMENT: the orchestrator calls this OUTSIDE its try/catch, so
      * anything thrown here aborts the whole batch rather than failing one
      * account. That is why a 404 RESOLVES rather than throwing (below) — a
@@ -699,7 +777,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         const token = await this.token();
 
         let selectUsed = WRITE_SELECT_FULL;
-        let res = await this.get(this.userUrl(id, selectUsed), token.token);
+        let res = await this.get(this.userUrl(id, selectUsed), token.token, id);
 
         if (trueStatus(res) === 404) {
             // Deleted from the directory since the last sync. The account cannot
@@ -738,7 +816,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                 },
             );
             selectUsed = WRITE_SELECT_MINIMAL;
-            res = await this.get(this.userUrl(id, selectUsed), token.token);
+            res = await this.get(this.userUrl(id, selectUsed), token.token, id);
         }
 
         if (!res.ok) {
@@ -833,6 +911,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                 `${GRAPH_BASE}/users/${encodeURIComponent(id)}/memberOf/microsoft.graph.group` +
                     `?$select=id&$top=${MEMBER_OF_PAGE}`,
                 token,
+                id,
             );
             if (!res.ok) return { memberOfGroupIds: null, memberOfTruncated: false };
             const body = (await res.json()) as {
@@ -993,6 +1072,48 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         const status = trueStatus(res);
         const { code, message } = await readGraphError(res);
 
+        if (status === 403 && phase === 'read') {
+            // A 403 on the GET is not a statement about the WRITE permission,
+            // and the difference sends an operator to a different screen.
+            //
+            // This used to fall into the discriminator below, so a refused read
+            // was reported as "the connection was consented for READ only;
+            // disabling additionally requires User.EnableDisableAccount.All" —
+            // advice that cannot help, because the request that failed was a
+            // read. The operator grants directory write, watches the same
+            // failure, and is left holding a broader grant for nothing. That is
+            // the exact harm the privileged-target branch was written to avoid,
+            // arriving through the other door.
+            //
+            // What a read 403 actually means: this connection's read consent is
+            // demonstrably working — it is what every posture sync on it runs
+            // on — so the refusal is about THIS object. Restricted-management
+            // administrative units and privileged directory roles both produce
+            // it. The token's roles claim is reported as a diagnostic rather
+            // than as a diagnosis, because it describes the write permission and
+            // the write is not what was refused.
+            const hasRole = EntraIdDirectoryWriter.hasWriteRole(token.roles);
+            const roleNote =
+                hasRole === null
+                    ? "The application's token could not be decoded, so its consented permissions are unknown."
+                    : hasRole
+                      ? 'The application does hold a consented write permission, for what it is worth here — ' +
+                        'the request that was refused is a read.'
+                      : 'The application holds no consented write permission, but granting one would not ' +
+                        'change this: the request that was refused is a read.';
+            return new DirectoryWriteError(
+                `Entra refused to READ account ${id} with 403 ${code ?? 'Authorization_RequestDenied'}` +
+                    `${message ? `: ${message}` : ''}. Nothing was written, and nothing was attempted. This ` +
+                    `connection's read permissions are evidently in place — its scheduled directory syncs use ` +
+                    `them — so a refusal on a single account points at the account: a target holding a ` +
+                    `privileged directory role, or one inside a restricted-management administrative unit, ` +
+                    `which hides its members from applications that are not scoped to that unit. ${roleNote} ` +
+                    `Scope the application to the administrative unit, or offboard this account in the Entra ` +
+                    `admin center.`,
+                { definitivelyNotApplied: true },
+            );
+        }
+
         if (status === 403) {
             // The discriminator. See the module docblock: the BODY is identical
             // for a missing consent and a privileged target, and only the
@@ -1127,7 +1248,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
     private async readEnabledQuietly(id: string): Promise<boolean | null> {
         try {
             const token = await this.token();
-            const res = await this.get(this.userUrl(id, 'id,accountEnabled'), token.token);
+            const res = await this.get(this.userUrl(id, 'id,accountEnabled'), token.token, id);
             if (!res.ok) return null;
             const user = (await res.json()) as GraphWriteUser;
             return typeof user.accountEnabled === 'boolean' ? user.accountEnabled : null;
@@ -1162,10 +1283,57 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         return this.writeFetch(url, init);
     }
 
-    private get(url: string, token: string): Promise<Response> {
-        return this.doFetch(url, {
-            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-        });
+    /**
+     * Every Graph GET this writer makes, and the only place an
+     * `IntegrationAuthError` can escape from.
+     *
+     * `doFetch` is the resilient transport, which throws that class on a 401
+     * (403 and 404 are cloaked away before the classifier sees them). Two things
+     * make letting it out of this object unacceptable, and they compound:
+     *
+     *   • `markAuthFailure` no-ops on anything that is not an
+     *     `IntegrationAuthError`, so the CLASS is the trigger. A caller that
+     *     catches whatever a leaver pass threw and hands it to `markAuthFailure`
+     *     — the shape every other sync in this codebase already has — marks the
+     *     connection credential-revoked from the offboarding path.
+     *
+     *   • Its message is `Integration auth failed (401):
+     *     https://graph.microsoft.com/v1.0/users/<objectId>`, and
+     *     `markAuthFailure` persists that verbatim into
+     *     `IntegrationConnection.authFailureReason` — a column left out of the
+     *     field-encryption manifest on the recorded grounds that integration URLs
+     *     are system-generated and hold no identifiers. This path is the first
+     *     one where that premise is false.
+     *
+     * So a 401 becomes `EntraCredentialRejectedError` (a `DirectoryWriteError`,
+     * which is what `provenNotApplied` reads, and 401 genuinely proves the
+     * request was refused at the edge without being processed). The retained
+     * `cause` is REBUILT with the object id replaced rather than kept verbatim:
+     * the docblock deliberately leaves unwrapping-and-marking as a decision for a
+     * future call site, and a seam that is only safe if nobody uses it is not a
+     * seam.
+     *
+     * Any other status wearing that class — none today, since 403 is cloaked, but
+     * `AUTH_STATUS` is one edit from growing — is wrapped without being diagnosed
+     * as a credential problem, and inherits `definitivelyNotApplied` from the
+     * same allowlist every other response is judged by.
+     */
+    private async get(url: string, token: string, id: string): Promise<Response> {
+        try {
+            return await this.doFetch(url, {
+                headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            });
+        } catch (err) {
+            if (!(err instanceof IntegrationAuthError)) throw err;
+            const scrubbed = new IntegrationAuthError(err.status, scrubbedUrl(url), err.reason);
+            if (err.status === 401) throw new EntraCredentialRejectedError(id, scrubbed);
+            const wrapped = new DirectoryWriteError(
+                `Entra refused a directory read for account ${id} (HTTP ${err.status}) at ${scrubbedUrl(url)}.`,
+                { definitivelyNotApplied: PROVEN_UNAPPLIED_STATUS.has(err.status) },
+            );
+            wrapped.cause = scrubbed;
+            throw wrapped;
+        }
     }
 
     /**

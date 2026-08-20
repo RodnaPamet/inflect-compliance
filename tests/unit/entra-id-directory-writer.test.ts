@@ -28,7 +28,12 @@ import {
     type EntraWriterDeps,
 } from '@/app-layer/integrations/providers/entra-id/writer';
 import { IntegrationTimeoutError } from '@/app-layer/integrations/bounded-fetch';
-import { IntegrationRateLimitedError } from '@/app-layer/integrations/http-resilience';
+import {
+    IntegrationAuthError,
+    IntegrationRateLimitedError,
+} from '@/app-layer/integrations/http-resilience';
+import { markAuthFailure } from '@/app-layer/integrations/connection-health';
+import type { PrismaTx } from '@/lib/db-context';
 
 // ── fixtures ────────────────────────────────────────────────────────────
 
@@ -230,6 +235,47 @@ describe('construction refuses once, not once per account', () => {
         expect(() =>
             createEntraIdWriter({ ...BASE_CONFIG, writesEnabled: 'yes' }, deps(impl)),
         ).toThrow(/not enabled for directory writes/);
+    });
+
+    it('says WHY when the stored flag is a truthy-looking string, instead of repeating the instruction', async () => {
+        // The strict `!== true` is right and its silence was not. Sibling
+        // booleans on this same connection — enrichMfa, enrichFederation in
+        // index.ts — are read through a string-coercing `truthy` helper, so a
+        // config row holding "true" as a string has those ON and this one OFF.
+        // The operator sees a checkbox they ticked and an error telling them to
+        // tick it, with nothing distinguishing that from having forgotten.
+        const { impl } = scriptedFetch([]);
+        const err = (() => {
+            try {
+                createEntraIdWriter({ ...BASE_CONFIG, writesEnabled: 'true' }, deps(impl));
+                return null;
+            } catch (e) {
+                return e as Error;
+            }
+        })();
+
+        expect(err).toBeInstanceOf(Error);
+        expect(err?.message).toMatch(/not enabled for directory writes/);
+        expect(err?.message).toMatch(/stores writesEnabled as the string "true"/);
+        expect(err?.message).toMatch(/string-coercing helper/);
+    });
+
+    it('does not append the diagnostic when the flag is simply absent', () => {
+        // Nothing to explain: the base message already says everything there is
+        // to say, and a paragraph about string coercion would just be noise on
+        // the overwhelmingly common case.
+        const { impl } = scriptedFetch([]);
+        const err = (() => {
+            try {
+                createEntraIdWriter({ ...BASE_CONFIG, writesEnabled: undefined }, deps(impl));
+                return null;
+            } catch (e) {
+                return e as Error;
+            }
+        })();
+
+        expect(err?.message).toMatch(/not enabled for directory writes/);
+        expect(err?.message).not.toMatch(/stores writesEnabled/);
     });
 });
 
@@ -871,3 +917,152 @@ describe('preflight', () => {
         expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
     });
 });
+
+// ── the classes that must not escape this file ──────────────────────────
+
+describe('an IntegrationAuthError never leaves the writer', () => {
+    /** Enough of a PrismaTx for markAuthFailure's early return; explodes if reached. */
+    const explodingDb = {
+        integrationConnection: {
+            updateMany: () => {
+                throw new Error('markAuthFailure reached the database');
+            },
+        },
+    } as unknown as PrismaTx;
+
+    function readWith401() {
+        return scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isUserGet,
+                reply: () =>
+                    json({ error: { code: 'InvalidAuthenticationToken', message: 'expired' } }, 401),
+            },
+        ]);
+    }
+
+    it('converts a 401 on the READ, which the cloak does not take back from the classifier', async () => {
+        // The cloak reclaims 403 and 404. 401 is deliberately left to the shared
+        // classifier — and `readState` is called OUTSIDE the usecase's
+        // try/catch, so what the classifier throws propagates out of the leaver
+        // pass exactly as it is.
+        const { impl } = readWith401();
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const err = await writer.readState(USER_ID).catch((e: unknown) => e);
+
+        expect(err).not.toBeInstanceOf(IntegrationAuthError);
+        expect(err).toBeInstanceOf(EntraCredentialRejectedError);
+        // 401 proves the request was refused at the edge without being
+        // processed, which is what the contract wants said out loud.
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+    });
+
+    it('is inert to markAuthFailure, which keys on the class alone', async () => {
+        // The real mechanism, asserted against the real function rather than
+        // against a name. `markAuthFailure` no-ops on anything that is not an
+        // IntegrationAuthError — so the class IS the trigger, and a caller that
+        // catches whatever the leaver pass threw and passes it along (the shape
+        // every other sync in this codebase already has) would otherwise mark
+        // the connection credential-revoked from the offboarding path, raise the
+        // UI banner, and have shouldBypassQueueRetry take the tenant's READ
+        // syncs down with it.
+        const { impl } = readWith401();
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const err = await writer.readState(USER_ID).catch((e: unknown) => e);
+
+        await expect(markAuthFailure(explodingDb, 'conn-1', err)).resolves.toBe(false);
+    });
+
+    it('scrubs the object id out of the cause it deliberately keeps', async () => {
+        // The writer keeps the original so a future call site holding a
+        // connectionId can unwrap it and decide whether THIS 401 should mark the
+        // connection — a decision the module docblock leaves open on purpose. A
+        // seam that is only safe while nobody uses it is not a seam: the
+        // retained error's message is what markAuthFailure would persist into
+        // `IntegrationConnection.authFailureReason`, a column left out of the
+        // field-encryption manifest on the recorded grounds that integration
+        // URLs are system-generated and carry no identifiers. `/users/<objectId>`
+        // is the first thing on any path here that makes that false.
+        const { impl } = readWith401();
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const err = await writer.readState(USER_ID).catch((e: unknown) => e);
+
+        const cause = (err as Error).cause;
+        expect(cause).toBeInstanceOf(IntegrationAuthError);
+        expect((cause as IntegrationAuthError).status).toBe(401);
+        expect((cause as Error).message).not.toContain(USER_ID);
+        expect((cause as Error).message).toContain('{objectId}');
+        // Still recognisable as the same event, so unwrapping it stays useful.
+        expect((cause as Error).message).toContain('graph.microsoft.com');
+    });
+});
+
+describe('a 403 on the READ is not a write-permission problem', () => {
+    function forbiddenRead(token: string) {
+        return scriptedFetch([
+            tokenRoute(token),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isUserGet, reply: () => graphForbidden() },
+        ]);
+    }
+
+    it('does not send the operator to consent a permission that would not fix it', async () => {
+        // The request that failed is a GET. Telling this operator "the
+        // connection was consented for READ only; disabling additionally
+        // requires User.EnableDisableAccount.All" has them grant directory
+        // write, watch the identical failure, and keep the broader grant — the
+        // exact harm the privileged-target branch was written to avoid,
+        // arriving through the other door.
+        const { impl, calls } = forbiddenRead(TOKEN_READ_ONLY);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const err = await writer.readState(USER_ID).catch((e: unknown) => e);
+        const message = (err as Error).message;
+
+        expect(err).not.toBeInstanceOf(EntraWritePermissionMissingError);
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect(message).toMatch(/refused to READ/);
+        expect(message).toMatch(/restricted-management administrative unit/);
+        expect(message).not.toMatch(/re-consent/i);
+        expect(message).not.toContain('User.EnableDisableAccount.All');
+        // Nothing was written, and the read never got past its own retry.
+        expect(calls.filter(isPatch)).toHaveLength(0);
+    });
+
+    it('reports the role claim as a diagnostic, never as the diagnosis', async () => {
+        // Having the write role says nothing about why a READ was refused, so
+        // it is reported and then explicitly discounted rather than used to pick
+        // a cause.
+        const { impl } = forbiddenRead(TOKEN_WITH_WRITE);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const err = await writer.readState(USER_ID).catch((e: unknown) => e);
+        const message = (err as Error).message;
+
+        expect(err).not.toBeInstanceOf(EntraPrivilegedTargetError);
+        expect(message).toMatch(/the request that was refused is a read/);
+        expect(message).not.toMatch(/re-consent/i);
+    });
+
+    it('leaves the WRITE 403 discriminator exactly as it was', async () => {
+        // The whole point is that the two phases now differ. If a 403 on the
+        // PATCH stopped naming consent, this change would have traded one wrong
+        // answer for another.
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_READ_ONLY),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => graphForbidden() },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(EntraWritePermissionMissingError);
+        expect((err as Error).message).toMatch(/re-consent the application/);
+    });
+});
+
