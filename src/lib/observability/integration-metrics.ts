@@ -201,7 +201,7 @@ export function recordCalendarConsentRevoked(attrs: { provider: string }): void 
  * is naming service accounts, and INDETERMINATE means somebody must go and look
  * at the directory.
  *
- * ALERT ON: any INDETERMINATE at all, and REFUSED_PROTECTED above single
+ * ALERT ON — even one INDETERMINATE, and REFUSED_PROTECTED above single
  * figures.
  */
 export function recordIdentityWriteOutcome(attrs: {
@@ -224,7 +224,7 @@ export function recordIdentityWriteOutcome(attrs: {
  * into the per-account counter would make a single bad roster look like a
  * hundred separate problems.
  *
- * ALERT ON: any occurrence. The breaker firing means an input looked like a
+ * ALERT ON — every occurrence. The breaker firing means an input looked like a
  * broken feed, which is worth a human either way.
  */
 export function recordIdentityBatchRefused(attrs: {
@@ -257,7 +257,7 @@ export function recordIdentityBatchRefused(attrs: {
  * capture-before-write rail invisible in production — a rail nobody can see is
  * one nobody acts on.
  *
- * ALERT ON: any sustained non-zero.
+ * ALERT ON — a sustained non-zero.
  */
 export function recordIdentityWritesUnsettled(attrs: { tenantId: string; count: number }): void {
     getMeter()
