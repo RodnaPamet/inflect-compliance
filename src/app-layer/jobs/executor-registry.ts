@@ -1108,6 +1108,38 @@ executorRegistry.register('identity-sync-dispatch', async () => {
     });
 });
 
+// identity-leaver-pass: one DRY_RUN leaver pass for one (tenant, provider).
+executorRegistry.register('identity-leaver-pass', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runIdentityLeaverPassJob } = await import('./identity-leaver');
+    const r = await runIdentityLeaverPassJob({ tenantId: payload.tenantId, provider: payload.provider });
+    return makeResult(
+        'identity-leaver-pass',
+        startedAt,
+        startMs,
+        r.candidates,
+        // "Actioned" is deliberately the count of accounts a real run WOULD have
+        // disabled, which under the DRY_RUN clamp is always zero writes.
+        // Reporting candidates here would read as work performed.
+        r.counts.DISABLED ?? 0,
+        r.candidates - (r.counts.DISABLED ?? 0),
+        { mode: r.mode, refusal: r.refusal, counts: r.counts, population: r.population },
+        { status: r.status, errorMessage: r.errorMessage },
+    );
+});
+
+// identity-leaver-dispatch: fan out a pass per (tenant, writable provider).
+executorRegistry.register('identity-leaver-dispatch', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runIdentityLeaverDispatch } = await import('./identity-leaver');
+    const r = await runIdentityLeaverDispatch();
+    return makeResult('identity-leaver-dispatch', startedAt, startMs, r.units, r.dispatched, 0, {
+        units: r.units,
+    });
+});
+
 // ── cloud-posture-collect-dispatch ───────────────────────────────────
 // The fan-out the three *-posture-collect executors never had: they were
 // registered here and enqueued by nothing, so the rolling-evidence collectors

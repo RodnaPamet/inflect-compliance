@@ -44,6 +44,13 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     // this job's attempts:1 applied. registerSchedules now passes opts and
     // both paths honour the entry.
     'calendar-push-tenant': 'dispatched by calendar-push-dispatch',
+    // The per-(tenant, provider) half of the leaver pass. Not scheduled on its
+    // own: the unit is a directory, not a clock, and the dispatcher is what
+    // knows which tenants have one. The job id is deterministic per
+    // (tenant, provider, UTC day), so a re-dispatch inside the same bucket is a
+    // no-op — which matters more here than for a sync, because a second pass
+    // would mint a second set of journal rows.
+    'identity-leaver-pass': 'dispatched by identity-leaver-dispatch',
     // These three said 'dispatched by automation-runner' and nothing checked
     // it. It was false: automation-runner resolves a control's automationKey
     // and calls the PROVIDER's runCheck — it never enqueues these job names.

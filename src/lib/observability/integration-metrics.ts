@@ -30,6 +30,7 @@ let _calendarPush: ReturnType<ReturnType<typeof getMeter>['createCounter']> | un
 let _calendarRevoked: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _identityDeprovisioned: Counter | null = null;
 let _identityLinkReconcile: Counter | null = null;
+let _leaverPassOutcome: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
@@ -296,6 +297,37 @@ export function recordScannerFindingsTruncated(attrs: { source: string; dropped:
  * No tenant label — cardinality stays at roughly three outcomes x four
  * providers, and a tenant that stops reconciling shows up as a rate change.
  */
+/**
+ * One leaver pass, by how it ended.
+ *
+ * Emitted on EVERY terminal path — including the refusals and the boring
+ * `no_terminated` — because the failure most likely to go unnoticed here is the
+ * pass silently not running. Every other identity counter fires only when work
+ * happens, so a scheduler that stopped dispatching would look exactly like a
+ * quiet week. A flat non-zero rate is the signal that it is alive.
+ *
+ * No tenant label: roughly eight outcomes x two writable providers.
+ */
+export function recordLeaverPassOutcome(attrs: {
+    provider: string;
+    outcome:
+        | 'completed'
+        | 'batch_refused'
+        | 'mode_disabled'
+        | 'mode_above_clamp'
+        | 'no_terminated'
+        | 'no_fresh_links'
+        | 'writer_refused'
+        | 'error';
+}): void {
+    if (!_leaverPassOutcome)
+        _leaverPassOutcome = getMeter().createCounter('identity.leaver.pass', {
+            description: 'Leaver passes by terminal outcome',
+            unit: '1',
+        });
+    _leaverPassOutcome.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+}
+
 export function recordIdentityLinkReconcile(attrs: {
     provider: string;
     outcome: 'reconciled' | 'skipped' | 'error';

@@ -82,7 +82,7 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // per-tenant `{tenantId}` calendar-push-tenant for each. The child
             // scopes every query to payload.tenantId; the dispatcher's whole
             // job is to discover which tenants exist, so it cannot have one.
-            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'dau-mau-aggregator', 'onboarding-abandonment-sweep', 'nvd-cve-sync', 'compliance-posture-summary-dispatch', 'identity-sync-dispatch', 'hris-sync-dispatch', 'cloud-posture-collect-dispatch', 'calendar-push-dispatch'].includes(jobName)) continue;
+            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'dau-mau-aggregator', 'onboarding-abandonment-sweep', 'nvd-cve-sync', 'compliance-posture-summary-dispatch', 'identity-sync-dispatch', 'hris-sync-dispatch', 'cloud-posture-collect-dispatch', 'identity-leaver-dispatch', 'calendar-push-dispatch'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {

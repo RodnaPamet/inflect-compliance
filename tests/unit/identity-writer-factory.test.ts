@@ -1,0 +1,209 @@
+/**
+ * One seam from a connection to a writer — and what it refuses.
+ *
+ * The load-bearing assertion in here is that DRY_RUN never constructs a real
+ * writer. `decideAndDisable` reads state BEFORE it consults the mode, so an
+ * observation pass would otherwise have to build a live Entra writer — whose
+ * constructor demands `writesEnabled`, the very flag the ladder exists to
+ * withhold until a tenant has watched a dry run. Requiring it in order to
+ * observe would invert the ladder; forcing it on inside the factory would route
+ * around a control by pretending to satisfy it.
+ */
+jest.mock('@/lib/observability/logger', () => ({
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+jest.mock('@/lib/db-context', () => ({
+    runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),
+}));
+jest.mock('@/lib/security/encryption', () => ({
+    decryptField: jest.fn((v: string) => {
+        if (v === 'BROKEN') throw new Error('auth tag mismatch');
+        return v;
+    }),
+}));
+const createEntra = jest.fn();
+const createAd = jest.fn();
+jest.mock('@/app-layer/integrations/providers/entra-id/writer', () => ({
+    createEntraIdWriter: (...a: unknown[]) => createEntra(...a),
+}));
+jest.mock('@/app-layer/integrations/providers/active-directory/writer', () => ({
+    createActiveDirectoryWriter: (...a: unknown[]) => createAd(...a),
+}));
+
+import {
+    resolveDirectoryWriter,
+    createSnapshotWriter,
+    isWritableIdentityProvider,
+} from '@/app-layer/integrations/identity-writer-factory';
+import { DirectoryWriteError } from '@/app-layer/usecases/identity-disable-account';
+import { makeRequestContext } from '../helpers/make-context';
+
+const mockDb = {
+    integrationConnection: { findMany: jest.fn() },
+    connectedIdentityAccount: { findFirst: jest.fn() },
+};
+
+const ctx = makeRequestContext('ADMIN', { tenantId: 't1' });
+
+function conn(over: Record<string, unknown> = {}) {
+    return { id: 'conn-1', configJson: { url: 'ldaps://dc.corp.internal' }, secretEncrypted: null, ...over };
+}
+
+beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb.integrationConnection.findMany.mockResolvedValue([conn()]);
+    mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
+        status: 'ACTIVE',
+        updatedAt: new Date('2026-08-20T03:00:00.000Z'),
+        onPremisesSyncEnabled: false,
+    });
+    createEntra.mockReturnValue({ provider: 'entra-id' });
+    createAd.mockReturnValue({ provider: 'active-directory', close: jest.fn(async () => undefined) });
+});
+
+describe('DRY_RUN never touches the directory', () => {
+    it.each(['entra-id', 'active-directory'])('resolves a snapshot reader for %s', async (provider) => {
+        const r = await resolveDirectoryWriter({ ctx, provider, mode: 'DRY_RUN' });
+
+        expect(r.kind).toBe('snapshot');
+        // The proof: neither real writer was constructed, so no consent is
+        // needed to observe and no Graph token is minted.
+        expect(createEntra).not.toHaveBeenCalled();
+        expect(createAd).not.toHaveBeenCalled();
+    });
+
+    it('does not even read the connection — observation needs no credentials', async () => {
+        await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'DRY_RUN' });
+        expect(mockDb.integrationConnection.findMany).not.toHaveBeenCalled();
+    });
+});
+
+describe('the snapshot reader', () => {
+    it('reports enabled from the observed status, for both writable providers', async () => {
+        const w = createSnapshotWriter(ctx, 'entra-id');
+        expect((await w.readState('ext-1')).enabled).toBe(true);
+
+        mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
+            status: 'SUSPENDED',
+            updatedAt: new Date(),
+            onPremisesSyncEnabled: false,
+        });
+        expect((await w.readState('ext-1')).enabled).toBe(false);
+    });
+
+    it('treats DEPROVISIONED as not enabled, matching the live writer on a 404', async () => {
+        mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
+            status: 'DEPROVISIONED',
+            updatedAt: new Date(),
+            onPremisesSyncEnabled: null,
+        });
+        expect((await createSnapshotWriter(ctx, 'entra-id').readState('ext-1')).enabled).toBe(false);
+    });
+
+    it('marks its evidence stale, so nothing settles a journal row from it', async () => {
+        // Settling INDETERMINATE -> APPLIED asserts "our earlier write landed",
+        // inferred from the account being disabled NOW. Sound from a live read;
+        // unsound from data up to a day old — an account re-enabled this
+        // morning still reads SUSPENDED in last night's snapshot.
+        const state = await createSnapshotWriter(ctx, 'entra-id').readState('ext-1');
+        expect(state.priorState).toMatchObject({ source: 'SNAPSHOT', staleEvidence: true });
+    });
+
+    it('refuses an account the last complete sync never saw', async () => {
+        mockDb.connectedIdentityAccount.findFirst.mockResolvedValue(null);
+        await expect(createSnapshotWriter(ctx, 'entra-id').readState('ghost')).rejects.toBeInstanceOf(
+            DirectoryWriteError,
+        );
+    });
+
+    it('THROWS on disable rather than quietly doing nothing', async () => {
+        // A silent no-op would make a mode bug — a pass above DRY_RUN handed the
+        // observation writer — look exactly like a successful dry run.
+        const err = await createSnapshotWriter(ctx, 'entra-id')
+            .disable('ext-1', { enabled: true, priorState: {} })
+            .catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+    });
+});
+
+describe('refusals, cheapest first', () => {
+    it('refuses a provider that has no writer, without reading anything', async () => {
+        const r = await resolveDirectoryWriter({ ctx, provider: 'okta', mode: 'AUTOMATIC' });
+        expect(r).toMatchObject({ kind: 'none', refusal: 'UNSUPPORTED_PROVIDER' });
+        expect(mockDb.integrationConnection.findMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses when no enabled connection exists', async () => {
+        mockDb.integrationConnection.findMany.mockResolvedValue([]);
+        const r = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
+        expect(r).toMatchObject({ kind: 'none', refusal: 'NO_CONNECTION' });
+    });
+
+    it('refuses TWO enabled connections rather than picking one', async () => {
+        // A directory account carries no connectionId, so with two forests there
+        // is no way to say which one an account belongs to.
+        mockDb.integrationConnection.findMany.mockResolvedValue([conn(), conn({ id: 'conn-2' })]);
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'AUTOMATIC' });
+        expect(r).toMatchObject({ kind: 'none', refusal: 'AMBIGUOUS_CONNECTION' });
+        expect(createAd).not.toHaveBeenCalled();
+    });
+
+    it('refuses by name when the secrets do not decrypt', async () => {
+        mockDb.integrationConnection.findMany.mockResolvedValue([conn({ secretEncrypted: 'BROKEN' })]);
+        const r = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
+        // Not a `catch → {}`: an empty secret bag builds a writer that fails
+        // once per account with nothing said about why.
+        expect(r).toMatchObject({ kind: 'none', refusal: 'SECRETS_UNREADABLE' });
+    });
+
+    it('names a writes-not-enabled connection distinctly from a broken one', async () => {
+        createEntra.mockImplementation(() => {
+            throw new Error('Entra writer refused: this connection is not enabled for directory writes.');
+        });
+        const r = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
+        expect(r).toMatchObject({ kind: 'none', refusal: 'WRITES_NOT_ENABLED' });
+    });
+
+    it('falls back to WRITER_REFUSED for any other constructor refusal', async () => {
+        createAd.mockImplementation(() => {
+            throw new Error('The URL must use ldaps:// (LDAP over TLS).');
+        });
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'AUTOMATIC' });
+        expect(r).toMatchObject({ kind: 'none', refusal: 'WRITER_REFUSED' });
+    });
+});
+
+describe('disposal is in the type, not in a convention', () => {
+    it('gives every resolution a close(), so the caller’s finally is unconditional', async () => {
+        const dry = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'DRY_RUN' });
+        const entra = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
+        const ad = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'AUTOMATIC' });
+
+        for (const r of [dry, entra, ad]) {
+            expect(r.kind).not.toBe('none');
+            if (r.kind !== 'none') await expect(r.close()).resolves.toBeUndefined();
+        }
+    });
+
+    it('closes the real LDAP socket for the live AD arm', async () => {
+        const closed = jest.fn(async () => undefined);
+        createAd.mockReturnValue({ provider: 'active-directory', close: closed });
+
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'AUTOMATIC' });
+        if (r.kind !== 'none') await r.close();
+
+        expect(closed).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('the provider allowlist', () => {
+    it.each([
+        ['entra-id', true],
+        ['active-directory', true],
+        ['okta', false],
+        ['google-workspace', false],
+    ])('%s writable = %s', (p, expected) => {
+        expect(isWritableIdentityProvider(p)).toBe(expected);
+    });
+});
