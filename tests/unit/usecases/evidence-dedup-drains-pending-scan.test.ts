@@ -15,7 +15,8 @@
  * the usecase against an in-memory `fileRecord.updateMany` that actually
  * applies the `where` predicate, so they assert CONDUCT:
  *   - a PENDING canonical row is promoted to CLEAN,
- *   - an INFECTED row is left exactly as it is,
+ *   - an INFECTED row is left exactly as it is (since #118, by being
+ *     refused at the gate before the dedup arm runs — see that case),
  *   - an already-CLEAN row is not restamped,
  *   - no verdict (scanner down / disabled) writes nothing at all.
  */
@@ -194,7 +195,14 @@ describe('uploadEvidenceFile — dedup hit keeps the fresh CLEAN verdict (#117)'
         expect(where.tenantId).toBe(TENANT);
     });
 
-    it('leaves an INFECTED canonical row exactly as it is', async () => {
+    // #118 landed hours after this suite and moved this case's mechanism.
+    // The dedup lookup now sees INFECTED rows, so `uploadEvidenceFile`
+    // REFUSES known-infected bytes at a gate before the dedup arm runs at
+    // all. The invariant is unchanged and stronger — a terminal verdict is
+    // never restamped — but the drain is no longer the thing enforcing it,
+    // so asserting on the drain would assert nothing. Assert the refusal,
+    // and that the row survived it untouched.
+    it('refuses the upload outright for an INFECTED canonical row, and leaves it untouched', async () => {
         const row = pendingRow({
             scanStatus: 'INFECTED',
             scanDetails: '{"threat":"Eicar-Test-Signature"}',
@@ -202,7 +210,7 @@ describe('uploadEvidenceFile — dedup hit keeps the fresh CLEAN verdict (#117)'
         });
         mockFindBySha.mockResolvedValue(row);
 
-        await upload([row]);
+        await expect(upload([row])).rejects.toThrow('FILE_INFECTED');
 
         expect(row.scanStatus).toBe('INFECTED');
         expect(row.scanDetails).toBe('{"threat":"Eicar-Test-Signature"}');
