@@ -843,6 +843,31 @@ export async function uploadEvidenceFile(
             // user-visible failure to surface. The retention/GC sweep
             // reclaims orphans, so swallowing here is intentional.
             try { await storage.delete(pathKey); } catch { /* best-effort orphan cleanup — see reason above */ }
+
+            // #117 — the dedup arm used to discard the verdict along with the
+            // bytes. It should not: we just scanned these exact bytes, and the
+            // canonical row holds the same SHA-256, so a fresh CLEAN is a
+            // fresh CLEAN for it too. A row left PENDING (clamd was down at
+            // its original upload, or it predates inline scanning) otherwise
+            // stays PENDING forever and the download gate keeps blocking it.
+            //
+            // The write is CONDITIONAL — `updateMany` with `scanStatus:
+            // 'PENDING'` in the predicate — so a terminal verdict is never
+            // overwritten. An INFECTED row matches zero rows and is untouched
+            // (nothing here could clear a quarantine), and an already-CLEAN
+            // row keeps its original scan provenance rather than being
+            // restamped. No verdict (scanner down / disabled / oversize) means
+            // no write at all: PENDING is the honest record of "not scanned".
+            if (scan) {
+                await db.fileRecord.updateMany({
+                    where: { id: fileRecordId, tenantId: ctx.tenantId, scanStatus: 'PENDING' },
+                    data: {
+                        scanStatus: scan.scanStatus,
+                        scanDetails: scan.scanDetails ?? null,
+                        scannedAt: scan.scannedAt ?? new Date(),
+                    },
+                });
+            }
         } else {
             // Create new FileRecord with cloud storage metadata
             const fileRecord = await FileRepository.createPending(db, ctx, {
