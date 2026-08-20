@@ -167,12 +167,29 @@ export async function POST(req: NextRequest) {
         //
         // Clearing a false positive stays possible, but as an explicit admin
         // action — never as a side effect of whatever the scanner posts last.
+        //
+        // QUARANTINE RIDES IN THIS SAME STATEMENT. `status: 'FAILED'` used to
+        // be a SECOND `update` issued after this claim had already committed.
+        // Between the two writes the row was readable in a state neither write
+        // intended. A writer that won the `scanStatus` race in that window
+        // left `scanStatus: 'CLEAN'` beside `status: 'FAILED'` — a file the
+        // download gate serves on a row that says it was quarantined. Today
+        // the only other writer is upload; the planned rescan job would be a
+        // second racer. Folding both columns into one conditional `updateMany`
+        // means the predicate and both writes settle in a single statement:
+        // either the row moves to INFECTED *and* FAILED together, or it does
+        // not move at all. `status` is only ever SET here, never unset.
+        const isInfected = payload.status === 'infected';
         const claimed = await prisma.fileRecord.updateMany({
             where: { id: fileRecord.id, scanStatus: { not: 'INFECTED' } },
             data: {
                 scanStatus,
                 scanDetails,
                 scannedAt: payload.scannedAt ? new Date(payload.scannedAt) : new Date(),
+                // Quarantine rides along, so the row can never be observed
+                // CLEAN-but-FAILED (or INFECTED-but-not-yet-FAILED) between
+                // two statements. Only ever SET, never unset.
+                ...(isInfected ? { status: 'FAILED' as const } : {}),
             },
         });
 
@@ -200,20 +217,19 @@ export async function POST(req: NextRequest) {
         });
 
         // ─── Handle infected files ───
-        if (payload.status === 'infected') {
+        //
+        // The quarantine WRITE already happened above, inside the same
+        // statement that claimed the verdict. What is left here is the
+        // out-of-band record of it: the operator log line and the
+        // hash-chained audit row. Neither touches the FileRecord, so a
+        // failure here cannot leave the two columns disagreeing.
+        if (isInfected) {
             logger.warn('AV webhook: INFECTED file detected', {
                 component: 'av-webhook',
                 fileId: fileRecord.id,
                 tenantId: fileRecord.tenantId,
                 pathKey: fileRecord.pathKey,
                 details: payload.details,
-            });
-
-            // Quarantine: mark file as FAILED to prevent downloads
-
-            await prisma.fileRecord.update({
-                where: { id: fileRecord.id },
-                data: { status: 'FAILED' },
             });
 
             // Log via the canonical hash-chained audit writer. The
