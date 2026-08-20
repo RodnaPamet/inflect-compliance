@@ -187,6 +187,87 @@ export function recordCalendarConsentRevoked(attrs: { provider: string }): void 
 }
 
 /**
+ * The outcome of one attempted directory WRITE on the leaver path.
+ *
+ * Separate from `recordIdentityDeprovisioned`, which counts rows this product
+ * marked deprovisioned in its OWN database. This counts what happened in a
+ * CUSTOMER'S directory, and the two diverge in exactly the situations worth
+ * alerting on.
+ *
+ * `outcome` carries every refusal distinctly rather than collapsing them,
+ * because an operator's next action differs for each: REFUSED_MODE is normal
+ * for a tenant still climbing the ladder, REFUSED_TARGET means a hybrid account
+ * needs the LDAPS connector, REFUSED_PROTECTED on any volume means the roster
+ * is naming service accounts, and INDETERMINATE means somebody must go and look
+ * at the directory.
+ *
+ * ALERT ON — even one INDETERMINATE, and REFUSED_PROTECTED above single
+ * figures.
+ */
+export function recordIdentityWriteOutcome(attrs: {
+    provider: string;
+    action: 'disable' | 'enable' | 'create';
+    outcome: string;
+}): void {
+    getMeter()
+        .createCounter('identity.write.outcome', {
+            description: 'Directory write attempts on the joiner/leaver path, by outcome',
+        })
+        .add(1, { provider: attrs.provider, action: attrs.action, outcome: attrs.outcome });
+}
+
+/**
+ * A leaver batch refused wholesale by the blast-radius breaker.
+ *
+ * Deliberately its own counter rather than an `outcome` label: a tripped
+ * breaker is not N refusals, it is ONE decision about a batch, and folding it
+ * into the per-account counter would make a single bad roster look like a
+ * hundred separate problems.
+ *
+ * ALERT ON — every occurrence. The breaker firing means an input looked like a
+ * broken feed, which is worth a human either way.
+ */
+export function recordIdentityBatchRefused(attrs: {
+    provider: string;
+    proposed: number;
+    population: number;
+}): void {
+    getMeter()
+        .createCounter('identity.write.batch_refused', {
+            description: 'Leaver batches refused whole by the blast-radius breaker',
+        })
+        .add(1, {
+            provider: attrs.provider,
+            // The COUNTS are deliberately not labels — an unbounded cardinality
+            // of batch sizes would blow up the series. They belong in the log
+            // line, which carries them.
+        });
+    void attrs.proposed;
+    void attrs.population;
+}
+
+/**
+ * Directory writes whose outcome was never confirmed, as a gauge-style count.
+ *
+ * These are the rows that need a human: PENDING (we crashed before reporting)
+ * and INDETERMINATE (the call never reported back). Both mean the directory may
+ * or may not have changed.
+ *
+ * `listUnsettledWrites` existed with NO caller, which made the whole
+ * capture-before-write rail invisible in production — a rail nobody can see is
+ * one nobody acts on.
+ *
+ * ALERT ON — a sustained non-zero.
+ */
+export function recordIdentityWritesUnsettled(attrs: { tenantId: string; count: number }): void {
+    getMeter()
+        .createCounter('identity.write.unsettled', {
+            description: 'Directory writes whose outcome was never confirmed',
+        })
+        .add(attrs.count, { tenant_id: attrs.tenantId });
+}
+
+/**
  * A scanner ingest discarded above-threshold findings at the materialisation
  * cap. Unlike the sync caps — which were removed in favour of draining — this
  * one stays, because each skipped iteration is a WRITE and an unbounded write

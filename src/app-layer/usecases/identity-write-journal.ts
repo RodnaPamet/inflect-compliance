@@ -31,6 +31,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { recordIdentityWritesUnsettled } from '@/lib/observability/integration-metrics';
 import type { IdentityWriteMode } from './identity-write-policy';
 
 export type IdentityWriteAction =
@@ -208,7 +209,7 @@ const MAX_UNSETTLED = 200;
  * silent one.
  */
 export async function listUnsettledWrites(ctx: RequestContext, olderThan: Date) {
-    return runInTenantContext(ctx, (db) =>
+    const rows = await runInTenantContext(ctx, (db) =>
         db.identityWriteJournal.findMany({
             // Both unsettled states: PENDING (we crashed before reporting) and
             // INDETERMINATE (the call never reported back). They mean the same
@@ -226,6 +227,16 @@ export async function listUnsettledWrites(ctx: RequestContext, olderThan: Date) 
             },
         }),
     );
+
+    // Counted HERE rather than by a separate sweep, so the number cannot drift
+    // from what an operator is actually shown. This function existed with no
+    // caller at all, which left the capture-before-write rail invisible in
+    // production — and a rail nobody can see is one nobody acts on.
+    //
+    // Emitted even when zero: a counter that only appears during an incident is
+    // indistinguishable from a counter that stopped being emitted.
+    recordIdentityWritesUnsettled({ tenantId: ctx.tenantId, count: rows.length });
+    return rows;
 }
 
 

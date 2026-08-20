@@ -33,6 +33,11 @@ import { resolveWriteTarget } from './identity-write-target';
 import { beginWrite } from './identity-write-journal';
 import { getIdentityWritePolicy } from './identity-write-policy';
 import { checkDisableBlastRadius } from './identity-write-breaker';
+import {
+    recordIdentityBatchRefused,
+    recordIdentityWriteOutcome,
+    recordIdentityWritesUnsettled,
+} from '@/lib/observability/integration-metrics';
 import { settleIndeterminateAsApplied } from './identity-write-journal';
 
 /**
@@ -48,6 +53,11 @@ export type DisableOutcome =
     | 'REFUSED_MODE'
     /** Mastered on-prem, or the sync flag was never observed. */
     | 'REFUSED_TARGET'
+    /**
+     * The account is the one this connection authenticates AS, or is otherwise
+     * protected. Refused before anything else, and never overridable.
+     */
+    | 'REFUSED_PROTECTED'
     /** Already disabled in the directory — nothing to do. */
     | 'ALREADY_DISABLED'
     /** DRY_RUN: everything was decided, nothing was written. */
@@ -85,6 +95,16 @@ export interface DirectoryAccountState {
  */
 export interface DirectoryWriter {
     readonly provider: string;
+    /**
+     * The account this connection authenticates AS, when it is an account at
+     * all — an LDAP bind DN, say. `null` for a credential that is not a user
+     * (an Entra app registration is not).
+     *
+     * Declared by the writer because only the writer knows it, and read by the
+     * orchestrator because only the orchestrator decides. See the self-lockout
+     * refusal in `disableAccount`.
+     */
+    readonly selfAccountId?: string | null;
     /** Read the current state. Called before the write, for the capture. */
     readState(externalUserId: string): Promise<DirectoryAccountState>;
     /** Perform the disable. Resolves on success, throws on refusal. */
@@ -123,6 +143,14 @@ export interface DisableAccountInput {
     readonly linkId: string;
     readonly externalUserId: string;
     readonly onPremisesSyncEnabled: boolean | null;
+    /**
+     * Break-glass / service account, excluded from automated offboarding.
+     *
+     * Carried on the INPUT rather than looked up here so the decision is made
+     * where the population is assembled and is visible in a dry run, instead of
+     * being a hidden query inside the write path.
+     */
+    readonly isProtected?: boolean;
 }
 
 /**
@@ -132,11 +160,83 @@ export interface DisableAccountInput {
  * a network call runs before the one that needs one. A tenant in DISABLED mode
  * must not generate directory traffic to discover that it is in DISABLED mode.
  */
+/** Case- and whitespace-insensitive identity comparison for directory ids. */
+function sameAccount(a: string, b: string): boolean {
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 export async function disableAccount(
     ctx: RequestContext,
     writer: DirectoryWriter,
     input: DisableAccountInput,
 ): Promise<DisableResult> {
+    const result = await decideAndDisable(ctx, writer, input);
+    // ONE choke point for the counter, so a future early return cannot ship
+    // without being counted. Every refusal is recorded distinctly — collapsing
+    // them would hide the difference between a tenant still climbing the ladder
+    // and a roster naming service accounts.
+    recordIdentityWriteOutcome({
+        provider: writer.provider,
+        action: 'disable',
+        outcome: result.outcome,
+    });
+    return result;
+}
+
+async function decideAndDisable(
+    ctx: RequestContext,
+    writer: DirectoryWriter,
+    input: DisableAccountInput,
+): Promise<DisableResult> {
+    // ── 0. SELF-LOCKOUT. Before everything, including the ladder. ──
+    //
+    // Disabling the account this connection binds with locks the product out of
+    // the customer's directory, permanently and by its own hand. Nothing
+    // afterwards can recover it: the next sync cannot authenticate, so the
+    // journal's restore path cannot reach the account to put it back, and the
+    // fix is a human with separate credentials.
+    //
+    // It is a plausible input rather than a paranoid one. A service account
+    // appears in an HR feed as an employee more often than one would like —
+    // shared mailboxes, contractor conversions, and accounts created for a
+    // person who has since left but whose credential was repurposed. The link
+    // model matches on email, and a service account with a human-looking
+    // address matches exactly as well as a human does.
+    //
+    // First in the chain, ahead of even the mode check, because this refusal
+    // does not depend on configuration. A tenant in AUTOMATIC has not consented
+    // to this, and a tenant in DRY_RUN should still see it reported.
+    if (writer.selfAccountId && sameAccount(input.externalUserId, writer.selfAccountId)) {
+        logger.error('leaver disable refused: target is the integration\'s own account', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+        });
+        return {
+            outcome: 'REFUSED_PROTECTED',
+            reason:
+                'Refusing to disable the account this integration authenticates as. Doing so would lock the ' +
+                'product out of this directory by its own hand — the next sync could not authenticate, so ' +
+                'nothing here could reach the account to put it back.',
+        };
+    }
+
+    // ── 0b. Any other protected account. ──
+    if (input.isProtected) {
+        logger.warn('leaver disable refused: protected account', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+            externalUserId: input.externalUserId,
+        });
+        return {
+            outcome: 'REFUSED_PROTECTED',
+            reason:
+                'Refusing to disable an account marked protected. Break-glass and service accounts are ' +
+                'excluded from automated offboarding by policy, not by accident.',
+        };
+    }
+
     // ── 1. The ladder. Free, and refuses the most common case. ──
     const policy = (await getIdentityWritePolicy(ctx)).leaver;
     if (policy.mode === 'DISABLED') {
@@ -305,6 +405,14 @@ export async function disableAccountsForLeaver(
         population: input.population,
     });
     if (!verdict.allowed) {
+        // Its own counter, not an outcome label: a tripped breaker is ONE
+        // decision about a batch, and folding it into the per-account counter
+        // would make a single bad roster look like a hundred problems.
+        recordIdentityBatchRefused({
+            provider: writer.provider,
+            proposed: input.candidates.length,
+            population: input.population,
+        });
         logger.warn('leaver batch refused by blast-radius breaker', {
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
