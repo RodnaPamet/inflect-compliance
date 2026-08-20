@@ -163,8 +163,8 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 29 scheduled jobs exist', () => {
-            expect(SCHEDULED_JOBS).toHaveLength(30);
+        test('exactly 31 scheduled jobs exist', () => {
+            expect(SCHEDULED_JOBS).toHaveLength(31);
         });
 
         test('scheduled job names match expected set', () => {
@@ -207,6 +207,9 @@ describe('Infrastructure Regression Guards', () => {
                 'hris-sync-dispatch',
                 // PR-2 — daily cross-tenant fan-out: an identity-sync per
                 // enabled Okta / Google Workspace connection.
+                // Daily leaver pass fan-out, one per (tenant, writable directory
+                // provider). Clamped at DRY_RUN — it decides, it does not write.
+                'identity-leaver-dispatch',
                 'identity-sync-dispatch',
                 // NIS2 Article 23 — hourly deadline clock flipping
                 // incident notification deadlines PENDING→DUE→OVERDUE.
