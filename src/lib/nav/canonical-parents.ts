@@ -46,6 +46,10 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/admin/devices': { href: '/admin', label: 'Admin' },
     '/admin/dsar-requests': { href: '/admin', label: 'Admin' },
     '/admin/entra': { href: '/admin', label: 'Admin' },
+    // Reached from the Integrations hub, where the identity connectors these
+    // passes act on are configured — same structural parent as the synced
+    // identity roster.
+    '/admin/identity-leaver-passes': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/integrations': { href: '/admin', label: 'Admin' },
     '/admin/integrations/sharepoint-health': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/integrations/[connectionId]': { href: '/admin/integrations', label: 'Integrations' },

@@ -23,6 +23,7 @@ import { Heading, Eyebrow } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { IdentityCrossLinks } from '@/components/admin/IdentityCrossLinks';
+import { RequirePermission } from '@/components/require-permission';
 import { cardVariants } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { cn } from '@/lib/cn';
@@ -497,6 +498,16 @@ export default function AdminIntegrationsPage() {
                             <Link href={tenantHref('/admin/integrations/identity-accounts')} className={buttonVariants({ variant: 'secondary', size: 'sm' })} id="identity-accounts-link">
                                 {t('identityAccounts.linkLabel')}
                             </Link>
+                            {/* The leaver-pass report is the only identity surface
+                                here that is OWNER-only — it names which of a
+                                customer's people the product would have disabled.
+                                Gated at the LINK as well as at the page, so an
+                                ADMIN is never offered a door that closes on them. */}
+                            <RequirePermission resource="admin" action="tenant_lifecycle">
+                                <Link href={tenantHref('/admin/identity-leaver-passes')} className={buttonVariants({ variant: 'secondary', size: 'sm' })} id="leaver-passes-link">
+                                    {t('leaverPasses.linkLabel')}
+                                </Link>
+                            </RequirePermission>
                             <Button
                                 variant="primary"
                                 icon={<Plus className="-ml-0.5 -mr-2.5" />}

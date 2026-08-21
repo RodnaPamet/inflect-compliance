@@ -384,10 +384,18 @@ describe('New page token discipline', () => {
         //     legacy btn/badge/glass-card); in the unmigrated tally only
         //     because the surface is new and not yet promoted to
         //     MIGRATED_PAGES.
+        //   - 135 (+2): JML leaver rails — admin/identity-leaver-passes/
+        //     page.tsx + LeaverPassesClient.tsx, the OWNER-only read surface
+        //     for the dry-run leaver-pass record. Token-clean (semantic
+        //     content-*/bg-* only; Card + DataTable + StatusBadge +
+        //     InlineNotice + EmptyState + PageBreadcrumbs primitives, no
+        //     legacy btn/badge/glass-card); in the unmigrated tally only
+        //     because the surface is new and not yet promoted to
+        //     MIGRATED_PAGES.
         // Each increment names the epic + page + reason; promotion
         // to MIGRATED_PAGES is the path forward, never silent
         // floor-bumping.
-        expect(unmigrated.length).toBeLessThanOrEqual(133);
+        expect(unmigrated.length).toBeLessThanOrEqual(135);
     });
 
     it('migrated page count is at least 4', () => {
