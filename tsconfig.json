@@ -43,6 +43,11 @@
     "scripts",
     "prisma/seed.ts",
     "dub-reference",
-    ".next-test"
+    ".next-test",
+    // Claude Code runtime state. `.claude/worktrees/<id>/` holds FULL
+    // checkouts of the repo, so `include: ["**/*.ts"]` would hand tsc a
+    // second (and third…) copy of every file in the project — slower, and
+    // errors reported against paths that are not the repo.
+    ".claude"
   ]
 }

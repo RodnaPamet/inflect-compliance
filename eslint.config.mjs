@@ -28,6 +28,13 @@ const config = [
             // build artefacts, not source.
             '.next-test/**',
             'node_modules/**',
+            // Claude Code runtime state. `.claude/worktrees/<id>/` holds
+            // FULL checkouts of the repo, so `eslint .` would lint every
+            // source file two or three times and report violations against
+            // paths that are not the repo. Gitignored since the repo
+            // adopted Claude Code (`.gitignore:136`); this list is the
+            // hand-maintained twin that had not caught up.
+            '.claude/**',
             'coverage/**',
             'playwright-report/**',
             // Static assets served verbatim — never source. Includes the

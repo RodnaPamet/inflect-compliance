@@ -28,22 +28,22 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
+
+const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 
 /** Dockerfile(s) + every CI workflow — the dependency-install surface. */
 function installPathFiles(): string[] {
-    const files: string[] = [];
-    for (const f of fs.readdirSync(ROOT)) {
-        if (/^Dockerfile/.test(f)) files.push(f);
-    }
-    const wfDir = path.join(ROOT, '.github/workflows');
-    if (fs.existsSync(wfDir)) {
-        for (const f of fs.readdirSync(wfDir)) {
-            if (/\.ya?ml$/.test(f)) files.push(`.github/workflows/${f}`);
-        }
-    }
-    return files;
+    // Population from git, not from a `readdirSync` of the repo root.
+    // The root holds gitignored trees — `.claude/worktrees/<id>/` is a
+    // FULL checkout of the repo — and a walk that reaches into one scans
+    // a copy of the repo instead of the repo. See
+    // `tests/helpers/repo-files.ts`.
+    return repoRelativeFiles().filter(
+        (rel) =>
+            /^Dockerfile[^/]*$/.test(rel) ||
+            /^\.github\/workflows\/[^/]+\.ya?ml$/.test(rel),
+    );
 }
 
 /**

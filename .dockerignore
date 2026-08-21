@@ -28,6 +28,10 @@ playwright.config.*
 .idea/
 .agents/
 .gemini/
+# Claude Code runtime state. `.claude/worktrees/<id>/` holds FULL
+# checkouts of the repo — hundreds of MB of build context, plus a
+# second copy of every source file, for a build that needs neither.
+.claude/
 
 # Documentation
 docs/
