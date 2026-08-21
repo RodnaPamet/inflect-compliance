@@ -16,6 +16,8 @@ import * as React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 
+import { TooltipProvider } from '@/components/ui/tooltip';
+
 // Memoized `t` per namespace — a fresh one per render invalidates the filter-def
 // memo in `BusinessContinuityClient` and the suite loops instead of failing.
 jest.mock('next-intl', () => {
@@ -127,7 +129,10 @@ function makeSharedCache() {
     return function Wrapper({ children }: { children: React.ReactNode }) {
         return (
             <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
-                {children}
+                {/* The app mounts one of these in `src/app/providers.tsx`; the
+                    stepper's enabled arrow is wrapped in a Radix Tooltip and
+                    throws without a provider ancestor. */}
+                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
             </SWRConfig>
         );
     };
@@ -141,6 +146,12 @@ function withUrlFilter(search: string) {
 beforeEach(() => {
     mockReplace.mockReset();
     withUrlFilter('');
+    // `BiaDependencyControls` fires a dependency-options fetch on mount; jsdom
+    // has no global fetch, and an unhandled throw there fails the render.
+    (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async () => ({
+        ok: true,
+        json: async () => ({ options: [] }),
+    }));
 });
 afterEach(() => withUrlFilter(''));
 

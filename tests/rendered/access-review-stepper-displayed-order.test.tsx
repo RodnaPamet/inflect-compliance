@@ -13,8 +13,10 @@
  * only true if the published order wins over the fallback.
  */
 import * as React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, renderHook } from '@testing-library/react';
 import { SWRConfig } from 'swr';
+
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 // Memoized `t` per namespace — the global next-intl mock hands back a fresh
 // `t` each render, which makes page-level suites loop rather than fail.
@@ -58,6 +60,15 @@ jest.mock('next-intl', () => {
 });
 
 const mockReplace = jest.fn();
+/**
+ * The pathname must be the REAL one for whichever surface is mounted.
+ * `PageHeader` classifies the route (`page-segregation`) and drops
+ * `titleAdornment` — which is where the stepper lives — on a MAIN page,
+ * because a MAIN page's H1 is `sr-only`. `/access-reviews` is MAIN and
+ * `/access-reviews/[reviewId]` is a SUBPAGE, so a mock that hard-codes the
+ * list path silently hides the arrows on the detail mount.
+ */
+let currentPath = '/t/acme/access-reviews';
 // `useParams` is required: the published order is tenant-scoped through the
 // route slug, so publisher and reader only meet when both resolve it.
 jest.mock('next/navigation', () => ({
@@ -70,7 +81,7 @@ jest.mock('next/navigation', () => ({
         forward: jest.fn(),
         prefetch: jest.fn(),
     }),
-    usePathname: () => '/t/acme/access-reviews',
+    usePathname: () => currentPath,
     useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -101,6 +112,8 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantHref: () => (path: string) => `/t/acme${path.startsWith('/') ? path : `/${path}`}`,
 }));
 
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { AccessReviewsClient } from '@/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient';
 import { AccessReviewDetailClient } from '@/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient';
 
@@ -155,7 +168,10 @@ function makeSharedCache() {
     return function Wrapper({ children }: { children: React.ReactNode }) {
         return (
             <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
-                {children}
+                {/* The app mounts one of these in `src/app/providers.tsx`; the
+                    stepper's enabled arrow is wrapped in a Radix Tooltip and
+                    throws without a provider ancestor. */}
+                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
             </SWRConfig>
         );
     };
@@ -163,6 +179,7 @@ function makeSharedCache() {
 
 beforeEach(() => {
     mockReplace.mockReset();
+    currentPath = '/t/acme/access-reviews';
     listAnswer = { rows: DISPLAYED, truncated: true };
     (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async () => ({
         ok: true,
@@ -188,6 +205,7 @@ describe('access-review stepper', () => {
 
         // A later read would now return four. The stepper must not care.
         listAnswer = { rows: BEYOND_CAP, truncated: false };
+        currentPath = '/t/acme/access-reviews/rev_3';
 
         render(
             <Wrapper>
@@ -199,6 +217,14 @@ describe('access-review stepper', () => {
                 />
             </Wrapper>,
         );
+
+        // Read the ids the detail page is handed, so a failure says WHICH
+        // order arrived rather than only "no arrows".
+        expect(
+            renderHook(() => useEntityListIds(CACHE_KEYS.accessReviews.list()), {
+                wrapper: Wrapper,
+            }).result.current,
+        ).toEqual(rendered);
 
         expect(screen.getByTestId('entity-prev-next-nav')).toBeInTheDocument();
         // rev_3 is the LAST row the register showed, so forward is a dead end
@@ -216,6 +242,7 @@ describe('access-review stepper', () => {
         // fallback read is left enabled on purpose: a deep link still steps.
         const Wrapper = makeSharedCache();
         listAnswer = { rows: BEYOND_CAP, truncated: false };
+        currentPath = '/t/acme/access-reviews/rev_3';
 
         render(
             <Wrapper>
@@ -227,6 +254,12 @@ describe('access-review stepper', () => {
                 />
             </Wrapper>,
         );
+
+        expect(
+            renderHook(() => useEntityListIds(CACHE_KEYS.accessReviews.list()), {
+                wrapper: Wrapper,
+            }).result.current,
+        ).toEqual(['rev_1', 'rev_2', 'rev_3', 'rev_4']);
 
         expect(screen.getByTestId('entity-prev-next-nav')).toBeInTheDocument();
         fireEvent.click(screen.getByTestId('entity-nav-next'));

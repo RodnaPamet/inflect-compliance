@@ -101,6 +101,15 @@ hook, edit-heavy surfaces stay out.
   block says so in its header. Publishing the capped set means the stepper
   cannot offer a run the history never listed, which is the same invariant the
   access-review test pins against `truncated`.
+- **A rendered suite's `usePathname` has to be the real path.**
+  `PageHeader` classifies the route through `page-segregation` and renders
+  the stepper via `titleAdornment`, which it drops on a MAIN page (whose H1
+  is `sr-only`). A mock that hard-coded the LIST pathname for both mounts
+  made the detail page classify as MAIN and hide the arrows while the hook
+  returned the right ids — a failure that looks exactly like broken wiring.
+  The suites carry a `currentPath` the tests move, and an assertion on the
+  hook's output sits beside the DOM assertion so the two failure modes are
+  distinguishable.
 - **The two existing access-review rendered suites needed `useParams` in
   their local `next/navigation` mocks.** `useDisplayedOrderKey` scopes the
   published order by route slug, so any component newly carrying the stepper

@@ -17,6 +17,8 @@ import * as React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 
+import { TooltipProvider } from '@/components/ui/tooltip';
+
 // next-intl is ESM (jest cannot parse it); resolve real en.json values through
 // a MEMOIZED `t` — a fresh `t` per render invalidates the label memos in these
 // components and makes the suite loop rather than fail.
@@ -144,7 +146,10 @@ function makeSharedCache() {
     return function Wrapper({ children }: { children: React.ReactNode }) {
         return (
             <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
-                {children}
+                {/* The app mounts one of these in `src/app/providers.tsx`; the
+                    stepper's enabled arrow is wrapped in a Radix Tooltip and
+                    throws without a provider ancestor. */}
+                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
             </SWRConfig>
         );
     };
@@ -156,6 +161,12 @@ function answer(data: unknown) {
 
 beforeEach(() => {
     mockReplace.mockReset();
+    // jsdom has no global fetch; nothing under test calls it, but an
+    // incidental probe throwing would fail the render rather than the assert.
+    (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async () => ({
+        ok: true,
+        json: async () => ({}),
+    }));
     currentRunId = 'run_2';
     mockUseTenantSWR.mockReset();
     mockUseTenantSWR.mockImplementation((key: unknown) => {
