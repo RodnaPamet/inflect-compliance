@@ -13,6 +13,8 @@ import { AppIcon } from '@/components/icons/AppIcon';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useToast } from '@/components/ui/hooks/use-toast';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
@@ -77,6 +79,14 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { fetchPlans(); }, [fetchPlans]);
+
+    // #107 PUBLISH side. This panel is the only surface that lists ONE
+    // control's test plans, so it owns their order — the control-scoped plan
+    // detail at /controls/{controlId}/tests/{planId} steps within this set,
+    // which is a different (and usually much shorter) sibling list than the
+    // tenant-wide /tests register. `plans` is server order with no client
+    // filter or sort, so what was fetched is what is painted.
+    usePublishDisplayedOrder(CACHE_KEYS.controls.testPlans(controlId), plans);
 
     const createPlan = async () => {
         if (!name.trim()) return;

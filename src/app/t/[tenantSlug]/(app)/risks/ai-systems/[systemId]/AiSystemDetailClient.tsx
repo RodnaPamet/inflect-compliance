@@ -14,6 +14,9 @@ import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
+import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { TIER_VARIANT } from '../AiSystemsClient';
 
 export interface AiSystemDetail {
@@ -61,6 +64,29 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
     const tx = useTranslations('risks');
+    // #107 READ side. Null `listKey`, so this is published-order-or-nothing:
+    // the registry at /risks/ai-systems renders server-side, so its rows never
+    // land in an SWR cache entry and a fallback read would fire a fresh
+    // `GET /ai-systems` on EVERY detail load — a round-trip per page view to
+    // serve arrows for a list the deep-linking user never saw. Hiding the
+    // arrows is the documented semantic for that case.
+    const systemIds = useEntityListIds(null, { orderKey: CACHE_KEYS.aiSystems.list() });
+
+    // Rendered through PageHeader's `titleAdornment` slot, which paints it as a
+    // SIBLING of the <h1>. Folding it into `title` instead would put two
+    // <button aria-label="Previous …"> inside the heading, and the accname
+    // spec concatenates a descendant control's label into the heading's own
+    // accessible name. There is no `aiSystem` phrase in the stepper catalog
+    // yet, so `labelSingular` resolves to the generic record wording.
+    const stepper = (
+        <EntityPrevNextNav
+            ids={systemIds}
+            currentId={system.id}
+            hrefFor={(id) => `/t/${tenantSlug}/risks/ai-systems/${id}`}
+            labelSingular="aiSystem"
+        />
+    );
+
     const [busy, setBusy] = useState<string | null>(null);
     const [queued, setQueued] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -97,6 +123,7 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                     { label: system.name },
                 ]}
                 title={system.name}
+                titleAdornment={stepper}
                 description={tx('aiSystems.detail.metaLine', { tier: system.riskTier, clause: system.classificationClauseId ?? tx('aiSystems.detail.unclassified'), role: system.deploymentRole === 'PROVIDER' ? tx('aiSystems.provider') : tx('aiSystems.deployer') })}
                 actions={
                     <StatusBadge variant={TIER_VARIANT[system.riskTier] ?? 'neutral'}>

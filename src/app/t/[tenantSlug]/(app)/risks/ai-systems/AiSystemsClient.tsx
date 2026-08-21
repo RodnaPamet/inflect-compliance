@@ -17,6 +17,8 @@ import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { buildAiSystemFilters, AI_SYSTEM_FILTER_KEYS } from './filter-defs';
 import { NewAiSystemModal } from './NewAiSystemModal';
 
@@ -87,6 +89,16 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
         const tiers = (state.riskTier ?? []) as string[];
         return tiers.length ? initialRows.filter((r) => tiers.includes(r.riskTier)) : initialRows;
     }, [initialRows, state.riskTier]);
+
+    // #107 PUBLISH side. `rows` is what the table renders: the server order
+    // narrowed by the risk-tier filter. There is no client sort here (no
+    // column is sortable), so the filtered array IS the painted order.
+    //
+    // Publishing matters more here than on an SWR-backed list, not less: this
+    // page is server-rendered, so the detail page has no list cache entry to
+    // fall back to and the published order is the ONLY thing that can give it
+    // arrows.
+    usePublishDisplayedOrder(CACHE_KEYS.aiSystems.list(), rows);
 
     const summary = useMemo(() => {
         const high = initialRows.filter((r) => r.riskTier === 'HIGH').length;
