@@ -68,6 +68,16 @@ export function createColumns<T>(
  */
 const ROW_PREFETCH_DWELL_MS = 120;
 
+/**
+ * Ceiling on the per-row prefetch-handler cache.
+ *
+ * Comfortably above any rendered window — the virtualizer keeps ~30 rows live
+ * and the un-virtualized threshold is 1000 — so eviction only ever reaches ids
+ * that scrolled out long ago, and a re-rendered row rebuilds its handler for
+ * the cost of one object.
+ */
+const PREFETCH_HANDLER_CACHE_MAX = 2000;
+
 export interface DataTableProps<T> {
   /** The data array to render. */
   data: T[];
@@ -537,6 +547,16 @@ export function DataTable<T>({
   useEffect(() => {
     onRowPrefetchRef.current = onRowPrefetch;
   });
+  // Keyed by row id so a row keeps ONE handler identity across renders —
+  // that stability is what lets the memo below actually bite.
+  //
+  // Bounded on purpose. Without a cap this grows one entry per row id ever
+  // seen for the lifetime of the mount, which on an infinite-scroll list is
+  // unbounded retention introduced by a performance change — the wrong trade
+  // to make while fixing re-renders. The cap is generous relative to any
+  // rendered window, so eviction only reaches ids that scrolled out long ago;
+  // an evicted row simply builds a fresh handler next time it is rendered,
+  // which costs one object and is correct either way.
   const prefetchHandlers = useRef(
     new Map<
       string,
@@ -549,6 +569,12 @@ export function DataTable<T>({
         if (cached) {
           cached.row = row;
           return cached.props;
+        }
+        if (prefetchHandlers.current.size >= PREFETCH_HANDLER_CACHE_MAX) {
+          // Map iterates in insertion order, so this drops the oldest ids —
+          // the ones furthest from the current window.
+          const oldest = prefetchHandlers.current.keys().next();
+          if (!oldest.done) prefetchHandlers.current.delete(oldest.value);
         }
         const entry: {
           row: Row<T>;
