@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { DataTable, createColumns, useColumnsDropdown, sortRowsByDisplay, type SortAccessors } from '@/components/ui/table';
 import { ListPageShell } from '@/components/layout/ListPageShell';
@@ -545,6 +546,12 @@ function TestsRollupContent() {
         () => sortRowsByDisplay(filteredPlans, sortAccessors, sortBy, sortOrder),
         [filteredPlans, sortAccessors, sortBy, sortOrder],
     );
+    // #107 PUBLISH side. `sortedPlans` — the filtered + client-sorted array —
+    // not `visiblePlans`: the progressive-disclosure window below is a
+    // rendering budget that grows as the user scrolls, and the stepper should
+    // walk the whole result set the user filtered down to.
+    usePublishDisplayedOrder(CACHE_KEYS.tests.plans(), sortedPlans);
+
     const {
         visibleRows: visiblePlans,
         hasMore: hasMorePlans,

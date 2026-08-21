@@ -21,7 +21,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
+import { usePublishDisplayedOrder, useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,7 @@ import { TestPlanScheduleSection } from '@/components/TestPlanScheduleSection';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { CardHeader } from '@/components/ui/card-header';
 import { KPIStat } from '@/components/ui/metric';
 import { cardVariants } from '@/components/ui/card';
@@ -151,6 +152,33 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     // must not offer a run the history never listed.
     usePublishDisplayedOrder(CACHE_KEYS.tests.runs(planId), plan?.runs);
 
+    // #107 READ side — the PLAN stepper. Which plans are this plan's siblings
+    // depends on how the user got here, and the two entry paths disagree:
+    //
+    //   • context="tests"   → the /tests register, filtered + sorted in the
+    //     browser. Its own SWR key IS `tests.plans()`, so the fallback read is
+    //     meaningful on a deep link (server order, the pre-#107 answer).
+    //   • context="control" → the TestPlansPanel on the control detail page,
+    //     which lists only THAT control's plans. Stepping through the
+    //     tenant-wide register here would walk to a plan belonging to a
+    //     different control while the URL still names this one.
+    //
+    // So the order key is chosen per context, and `hrefFor` below builds the
+    // matching route. The control key falls back to nothing (`listKey: null`)
+    // because the panel fetches by hand rather than through SWR — there is no
+    // cache entry under that key for a fallback to find.
+    const controlScoped = context === 'control';
+    const registerPlanIds = useEntityListIds(
+        controlScoped ? null : CACHE_KEYS.tests.plans(),
+    );
+    const controlPlanIds = useEntityListIds(null, {
+        orderKey:
+            controlScoped && plan?.controlId
+                ? CACHE_KEYS.controls.testPlans(plan.controlId)
+                : null,
+    });
+    const planIds = controlScoped ? controlPlanIds : registerPlanIds;
+
     const [editing, setEditing] = useState(false);
     const [creatingRun, setCreatingRun] = useState(false);
     const toast = useToast();
@@ -239,7 +267,26 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <Heading level={1} id="test-plan-title">{plan.name}</Heading>
+                    {/* The stepper is a SIBLING of the <h1>, never inside it:
+                        the accname spec concatenates a descendant control's
+                        aria-label into the heading's own accessible name, so
+                        folding it into the Heading would have a screen reader
+                        announce "<plan name> Previous item Next item". There
+                        is no `testPlan` phrase in the stepper catalog yet, so
+                        `labelSingular` resolves to the generic record wording. */}
+                    <div className="flex items-center gap-2.5">
+                        <Heading level={1} id="test-plan-title">{plan.name}</Heading>
+                        <EntityPrevNextNav
+                            ids={planIds}
+                            currentId={planId}
+                            hrefFor={(id) =>
+                                controlScoped
+                                    ? tenantHref(`/controls/${plan.controlId}/tests/${id}`)
+                                    : tenantHref(`/tests/plans/${id}`)
+                            }
+                            labelSingular="testPlan"
+                        />
+                    </div>
                     <div className="flex items-center gap-tight mt-1 flex-wrap">
                         <StatusBadge variant={PLAN_STATUS_BADGE[plan.status] ?? 'neutral'} id="test-plan-status">
                             {PLAN_STATUS_LABELS[plan.status] ?? plan.status}

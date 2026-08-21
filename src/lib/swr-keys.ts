@@ -110,8 +110,25 @@ export const CACHE_KEYS = {
         executions: (id: string) => `/controls/${id}/executions` as const,
         // R2-P2 — control health synthesis for the Overview.
         health: (id: string) => `/controls/${id}/health` as const,
+        /**
+         * A control's own test plans. `TestPlansPanel` on the control detail
+         * page fetches this endpoint directly (it predates `useTenantSWR`), so
+         * today the key exists as the namespace that panel publishes its
+         * rendered plan order under (#107) — the control-scoped plan detail at
+         * `/controls/{id}/tests/{planId}` reads it back to step between the
+         * plans of THAT control, which is a different sibling set from the
+         * tenant-wide `/tests` register.
+         */
+        testPlans: (id: string) => `/controls/${id}/tests/plans` as const,
     },
     risks: makeResource('risks'),
+    /**
+     * EU AI Act system registry. The list page is server-rendered (its rows
+     * arrive as props, never through SWR), so this key is used only as the
+     * namespace `AiSystemsClient` publishes its displayed order under; the
+     * detail page reads it with a null `listKey` so nothing ever fetches it.
+     */
+    aiSystems: makeResource('ai-systems'),
     evidence: {
         ...makeResource('evidence'),
         metrics: () => '/evidence/metrics' as const,
