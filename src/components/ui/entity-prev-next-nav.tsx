@@ -75,10 +75,14 @@ function Chevron({ dir }: { dir: 'up' | 'down' }) {
 export const STEPPER_ENTITIES: ReadonlySet<string> = new Set([
     'asset',
     'control',
+    'cycle',
+    'framework',
     'incident',
+    'pack',
     'policy',
     'risk',
     'task',
+    'testRun',
     'vendor',
 ]);
 

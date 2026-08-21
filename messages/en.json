@@ -5255,23 +5255,31 @@
         },
         "recordStepper": {
             "previous": {
-                "item": "Previous item",
                 "asset": "Previous asset",
                 "control": "Previous control",
+                "cycle": "Previous cycle",
+                "framework": "Previous framework",
                 "incident": "Previous incident",
+                "item": "Previous item",
+                "pack": "Previous pack",
                 "policy": "Previous policy",
                 "risk": "Previous risk",
                 "task": "Previous task",
+                "testRun": "Previous test run",
                 "vendor": "Previous vendor"
             },
             "next": {
-                "item": "Next item",
                 "asset": "Next asset",
                 "control": "Next control",
+                "cycle": "Next cycle",
+                "framework": "Next framework",
                 "incident": "Next incident",
+                "item": "Next item",
+                "pack": "Next pack",
                 "policy": "Next policy",
                 "risk": "Next risk",
                 "task": "Next task",
+                "testRun": "Next test run",
                 "vendor": "Next vendor"
             }
         }
@@ -6935,7 +6943,7 @@
             "colCheck": "Check",
             "colProvider": "Provider",
             "colExecuted": "Last run",
-            "empty": "No automated checks have run yet. A control runs automated checks once it has an evidence source of \u2018Integration\u2019 and an automation key from a connected integration \u2014 set both on the control\u2019s Edit form. The control\u2019s frequency decides how often the check runs.",
+            "empty": "No automated checks have run yet. A control runs automated checks once it has an evidence source of ‘Integration’ and an automation key from a connected integration — set both on the control’s Edit form. The control’s frequency decides how often the check runs.",
             "entitySingular": "check",
             "entityPlural": "checks"
         },
