@@ -269,18 +269,34 @@ describe('EntityPrevNextNav — labels come from the catalog, per locale', () =>
         });
     });
 
-    // Every entity a detail page passes today, in both directions. The
-    // masculine rows would survive a naive `"Предишен {entity}"` template;
-    // the two feminine rows are what make an interpolated adjective
-    // impossible, so they are the load-bearing cases.
+    // EVERY entity a detail page passes today, in both directions, across all
+    // THREE Bulgarian genders. The masculine rows would survive a naive
+    // `"Предишен {entity}"` template; the feminine and neuter rows are what
+    // make an interpolated adjective impossible, so they are the load-bearing
+    // cases:
+    //
+    //   m  -ен / -ащ    актив, контрол, инцидент, риск, доставчик,
+    //                   цикъл, пакет, преглед, анализ
+    //   f  -на / -аща   политика, задача, рамка
+    //   n  -но / -ащо   изпълнение          ← only one, and the easiest to miss
+    //
+    // The neuter row arrived with the audit/framework wave and was NOT covered
+    // here at the time; it is the form a native speaker would catch and a
+    // catalog diff would not.
     it.each([
         ['asset', 'Предишен актив', 'Следващ актив'],
         ['control', 'Предишен контрол', 'Следващ контрол'],
         ['incident', 'Предишен инцидент', 'Следващ инцидент'],
         ['risk', 'Предишен риск', 'Следващ риск'],
         ['vendor', 'Предишен доставчик', 'Следващ доставчик'],
+        ['cycle', 'Предишен цикъл', 'Следващ цикъл'],
+        ['pack', 'Предишен пакет', 'Следващ пакет'],
+        ['accessReview', 'Предишен преглед на достъпа', 'Следващ преглед на достъпа'],
+        ['bia', 'Предишен анализ', 'Следващ анализ'],
         ['policy', 'Предишна политика', 'Следваща политика'],
         ['task', 'Предишна задача', 'Следваща задача'],
+        ['framework', 'Предишна рамка', 'Следваща рамка'],
+        ['testRun', 'Предишно изпълнение', 'Следващо изпълнение'],
     ])('renders gender-agreeing Bulgarian for %s', (entity, prev, next) => {
         mockLocale.current = 'bg';
         expect(labels(mount(ids, 'a2', entity))).toEqual({ prev, next });

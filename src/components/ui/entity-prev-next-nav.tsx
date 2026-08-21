@@ -73,7 +73,9 @@ function Chevron({ dir }: { dir: 'up' | 'down' }) {
  * both catalogs instead, which fails the build rather than the user.
  */
 export const STEPPER_ENTITIES: ReadonlySet<string> = new Set([
+    'accessReview',
     'asset',
+    'bia',
     'control',
     'cycle',
     'framework',

@@ -5255,7 +5255,9 @@
         },
         "recordStepper": {
             "previous": {
+                "accessReview": "Previous access review",
                 "asset": "Previous asset",
+                "bia": "Previous BIA",
                 "control": "Previous control",
                 "cycle": "Previous cycle",
                 "framework": "Previous framework",
@@ -5269,7 +5271,9 @@
                 "vendor": "Previous vendor"
             },
             "next": {
+                "accessReview": "Next access review",
                 "asset": "Next asset",
+                "bia": "Next BIA",
                 "control": "Next control",
                 "cycle": "Next cycle",
                 "framework": "Next framework",

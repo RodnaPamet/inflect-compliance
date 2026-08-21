@@ -86,7 +86,22 @@ const ROOT = path.resolve(__dirname, '../..');
 // them and the payload reconciled to empty, deleting every tag), and a
 // half-succeeded save reporting WHICH half — both asserted on the
 // request payload, because a source scan passes against either bug.
-const RENDERED_TEST_FLOOR = 238;
+// 238 → 246 (2026-08-21): the prev/next stepper wave. Six suites that mount
+// the REAL publisher page, read the id order it painted out of the DOM,
+// unmount it, mount the REAL reader over the same SWR cache, and click the
+// arrows — for audit cycles, audit packs, frameworks (keyed by slug, not id),
+// test runs, BIAs and access-review campaigns. They are here rather than as
+// source scans because the failure mode is silence: EntityPrevNextNav renders
+// null when indexOf(currentId) is -1, so a wrongly-keyed order produces no
+// arrows at all, and a test asserting the page "calls the hook" passes against
+// a completely inert feature.
+//
+// Raised as its own change on purpose. The wave landed live=246 against
+// floor=238 — exactly SLACK.rendered, i.e. zero headroom — so the next
+// rendered suite anyone added would have gone red for a reason unrelated to
+// their work. The three lanes were each barred from this file (one shared
+// line, three concurrent writers), which is why the reconciliation is central.
+const RENDERED_TEST_FLOOR = 246;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
