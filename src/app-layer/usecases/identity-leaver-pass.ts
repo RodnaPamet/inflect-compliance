@@ -45,6 +45,7 @@
 import { logger } from '@/lib/observability/logger';
 import { runInTenantContext } from '@/lib/db-context';
 import { buildSystemContext } from '@/app-layer/context-system';
+import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
 import { getIdentityWritePolicy } from './identity-write-policy';
@@ -218,7 +219,12 @@ async function writeExecutionRow(
     ctx: RequestContext,
     provider: string,
     status: 'PASSED' | 'PARTIAL' | 'NOT_APPLICABLE',
-    resultJson: Record<string, unknown>,
+    // `Prisma.InputJsonValue`, not `Record<string, unknown>`. The two callers
+    // used to pass object LITERALS, which Prisma accepted because their inferred
+    // types were concrete; hoisting the create into one helper widened the
+    // parameter and broke assignability. Typing it as Prisma's own input type
+    // keeps the single-writer refactor without a cast at either call site.
+    resultJson: Prisma.InputJsonValue,
 ): Promise<void> {
     await runInTenantContext(ctx, (db) =>
         db.integrationExecution.create({
