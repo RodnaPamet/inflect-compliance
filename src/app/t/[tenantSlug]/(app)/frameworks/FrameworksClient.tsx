@@ -42,6 +42,10 @@ import { ViewToggle } from '@/components/ui/view-toggle';
 import { useViewMode } from '@/components/ui/hooks';
 import { Heading } from '@/components/ui/typography';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
+
+import { frameworkOrderKey } from './framework-order';
 
 const FW_META: Record<string, { icon: LucideIcon; color: string }> = {
     ISO27001: { icon: ShieldCheck, color: 'from-indigo-500 to-purple-600' },
@@ -206,6 +210,17 @@ export function FrameworksClient({
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [frameworks, coverages, coverageErrors],
     );
+
+    // #98 — publish the order the page RENDERS so the framework detail page's
+    // stepper walks it. `rows` is the single array both the cards view and the
+    // table view map over, so it is the displayed order in either view.
+    //
+    // Two things differ from the other seven publishers. The order is keyed by
+    // the framework SLUG (`frameworkOrderKey`), because that is what the
+    // `[frameworkKey]` route carries. And there is no SWR read here at all —
+    // this page is server-rendered and gets its rows as props — which the
+    // publish hook does not care about: it takes rows, not a fetch.
+    usePublishDisplayedOrder(CACHE_KEYS.frameworks.list(), rows, frameworkOrderKey);
 
     return (
         <div className="space-y-section animate-fadeIn">
