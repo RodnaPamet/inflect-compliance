@@ -4,15 +4,25 @@
 
 ## Design
 
-`runAvRescan` returns an `AvRescanResult` with sixteen fields. The `av-rescan`
-executor in `executor-registry.ts` copied ten of them into the `details` block
-of the `JobRunResult` — the object BullMQ stores as the run's return value and
-the only structured record an operator reads when asking "did last night's
-sweep work?".
+`runAvRescan` returns an `AvRescanResult` with **18** fields. The `av-rescan`
+executor in `executor-registry.ts` copied **11** of them into the `details`
+block of the `JobRunResult` — the object BullMQ stores as the run's return
+value and the only structured record an operator reads when asking "did last
+night's sweep work?".
 
-The list was hand-enumerated, and correct on the day it was written. Six fields
-added later never reached it: `scannerThrew`, `backedOff`, `halted`,
-`haltReason`, `haltRemediation` (and `durationMs`, deliberately — see below).
+The list was hand-enumerated, and correct on the day it was written. **7** were
+absent from that block: `scanned`, `durationMs`, `scannerThrew`, `backedOff`,
+`halted`, `haltReason`, `haltRemediation`.
+
+Two of those seven were never actually lost — `scanned` and `durationMs` reach
+the record through `makeResult`'s positional arguments rather than the details
+object, which is why counting keys alone overstates the damage. **5 reached the
+record nowhere:** `scannerThrew`, `backedOff`, `halted`, `haltReason`,
+`haltRemediation`.
+
+The distinction is worth the extra sentence, because this note is a permanent
+record and "how many were missing" is exactly the kind of number a later reader
+takes on trust. Counted from the source, not from the diff.
 
 The consequence was worse than a missing counter. A run that the infection-ratio
 breaker STOPPED and a run that finished with nothing to do produced
