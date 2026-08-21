@@ -24,7 +24,7 @@ import {
   Table as TableType,
   VisibilityState,
 } from "@tanstack/react-table";
-import { Dispatch, MouseEvent, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
+import { Dispatch, HTMLAttributes, MouseEvent, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
 import { type BatchAction, renderBatchActions } from "./selection-toolbar";
 import { Table, useTable } from "./table";
 import { cn } from "./table-utils";
@@ -67,6 +67,16 @@ export function createColumns<T>(
  * always cleared it (a click follows a hover by ~250 ms at the very fastest).
  */
 const ROW_PREFETCH_DWELL_MS = 120;
+
+/**
+ * Ceiling on the per-row prefetch-handler cache.
+ *
+ * Comfortably above any rendered window — the virtualizer keeps ~30 rows live
+ * and the un-virtualized threshold is 1000 — so eviction only ever reaches ids
+ * that scrolled out long ago, and a re-rendered row rebuilds its handler for
+ * the cost of one object.
+ */
+const PREFETCH_HANDLER_CACHE_MAX = 2000;
 
 export interface DataTableProps<T> {
   /** The data array to render. */
@@ -523,21 +533,70 @@ export function DataTable<T>({
     },
     [],
   );
+  // <Table> memoizes each row and compares `rowProps` by identity, so a
+  // fresh `{ onMouseEnter, onMouseLeave }` per render would re-render
+  // every row on every parent render — the exact cost that memo exists
+  // to remove, on the seven list pages that wire prefetch. Hand back
+  // ONE handler object per row id instead.
+  //
+  // Nothing captured in that object is allowed to go stale: the entry
+  // holds the CURRENT `Row` (refreshed on each lookup below) and the
+  // handlers read `onRowPrefetchRef`, so a cached handler always fires
+  // against this render's row and this render's callback.
+  const onRowPrefetchRef = useRef(onRowPrefetch);
+  useEffect(() => {
+    onRowPrefetchRef.current = onRowPrefetch;
+  });
+  // Keyed by row id so a row keeps ONE handler identity across renders —
+  // that stability is what lets the memo below actually bite.
+  //
+  // Bounded on purpose. Without a cap this grows one entry per row id ever
+  // seen for the lifetime of the mount, which on an infinite-scroll list is
+  // unbounded retention introduced by a performance change — the wrong trade
+  // to make while fixing re-renders. The cap is generous relative to any
+  // rendered window, so eviction only reaches ids that scrolled out long ago;
+  // an evicted row simply builds a fresh handler next time it is rendered,
+  // which costs one object and is correct either way.
+  const prefetchHandlers = useRef(
+    new Map<
+      string,
+      { row: Row<T>; props: HTMLAttributes<HTMLTableRowElement> }
+    >(),
+  );
   const prefetchRowProps = onRowPrefetch
-    ? (row: Row<T>) => ({
-        onMouseEnter: () => {
-          if (prefetchedRows.current.has(row.id)) return;
-          if (dwellTimer.current) clearTimeout(dwellTimer.current);
-          dwellTimer.current = setTimeout(() => {
-            prefetchedRows.current.add(row.id);
-            onRowPrefetch(row);
-          }, ROW_PREFETCH_DWELL_MS);
-        },
-        onMouseLeave: () => {
-          // Left before the dwell elapsed — the pointer was passing through.
-          if (dwellTimer.current) clearTimeout(dwellTimer.current);
-        },
-      })
+    ? (row: Row<T>) => {
+        const cached = prefetchHandlers.current.get(row.id);
+        if (cached) {
+          cached.row = row;
+          return cached.props;
+        }
+        if (prefetchHandlers.current.size >= PREFETCH_HANDLER_CACHE_MAX) {
+          // Map iterates in insertion order, so this drops the oldest ids —
+          // the ones furthest from the current window.
+          const oldest = prefetchHandlers.current.keys().next();
+          if (!oldest.done) prefetchHandlers.current.delete(oldest.value);
+        }
+        const entry: {
+          row: Row<T>;
+          props: HTMLAttributes<HTMLTableRowElement>;
+        } = { row, props: {} };
+        entry.props = {
+          onMouseEnter: () => {
+            if (prefetchedRows.current.has(entry.row.id)) return;
+            if (dwellTimer.current) clearTimeout(dwellTimer.current);
+            dwellTimer.current = setTimeout(() => {
+              prefetchedRows.current.add(entry.row.id);
+              onRowPrefetchRef.current?.(entry.row);
+            }, ROW_PREFETCH_DWELL_MS);
+          },
+          onMouseLeave: () => {
+            // Left before the dwell elapsed — the pointer was passing through.
+            if (dwellTimer.current) clearTimeout(dwellTimer.current);
+          },
+        };
+        prefetchHandlers.current.set(row.id, entry);
+        return entry.props;
+      }
     : undefined;
 
   // The outermost wrapper exists for the dataTestId / id hooks the
