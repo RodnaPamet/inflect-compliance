@@ -166,6 +166,45 @@ describe('the durable record a dry run leaves behind', () => {
         expect(data.resultJson.decisionsTruncated).toBe(true);
     });
 
+    it('records a pass that ran and REFUSED, so silence cannot look like a run', async () => {
+        // The distinction the seven-day observation rests on: "the pass ran and
+        // found nobody to offboard" and "no pass ran at all" used to be the same
+        // absence in the artefact. NO_FRESH_LINKS is the one that matters most —
+        // terminated workers present, nobody offboarded, green pass — which is
+        // the silent-nothing failure this subsystem is built around.
+        findCandidates.mockResolvedValue([]);
+
+        const r = await run();
+
+        expect(r).toMatchObject({ status: 'NOT_APPLICABLE', refusal: 'NO_FRESH_LINKS' });
+        expect(mockDb.integrationExecution.create).toHaveBeenCalledTimes(1);
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.status).toBe('NOT_APPLICABLE');
+        expect(data.resultJson.refusal).toBe('NO_FRESH_LINKS');
+        expect(data.resultJson.terminatedWorkers).toBe(2);
+    });
+
+    it('does NOT record a tenant that is not observing at all', async () => {
+        // A tenant with leaver writes switched off is not in an observation
+        // window, and a daily row would imply it was being watched. The ladder
+        // refusals are excluded for that reason, not by omission.
+        getPolicy.mockResolvedValue({ leaver: { mode: 'DISABLED' }, joiner: { mode: 'DISABLED' } });
+
+        const r = await run();
+
+        expect(r).toMatchObject({ refusal: 'MODE_DISABLED' });
+        expect(mockDb.integrationExecution.create).not.toHaveBeenCalled();
+    });
+
+    it('a refusal whose record fails is still a refusal, not an ERROR', async () => {
+        findCandidates.mockResolvedValue([]);
+        mockDb.integrationExecution.create.mockRejectedValue(new Error('db is on fire'));
+
+        const r = await run();
+
+        expect(r).toMatchObject({ status: 'NOT_APPLICABLE', refusal: 'NO_FRESH_LINKS' });
+    });
+
     it('a failed insert does not turn a completed pass into an ERROR', async () => {
         // The directory decisions are already made and already reported. Losing
         // the record of them is worth an alert, not a retry of a pass that ran —

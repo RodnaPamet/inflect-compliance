@@ -146,20 +146,90 @@ async function recordPassExecution(
     }));
     const truncated = results.length > reported.length;
 
+    // PARTIAL means "produced output, and that output is incomplete" — which is
+    // what a truncated decision list is, and is NOT what a FAILED or
+    // INDETERMINATE outcome is. Those are results the pass is reporting
+    // correctly, and they are in `counts`.
+    await writeExecutionRow(ctx, provider, truncated ? 'PARTIAL' : 'PASSED', {
+        ...summary,
+        decisions,
+        decisionsTruncated: truncated,
+    });
+}
+
+/**
+ * A pass that ran and refused still ran.
+ *
+ * Every refusal after the ladder gate used to return before the record was
+ * written, so the artefact could not distinguish "the pass ran and found nobody
+ * to offboard" from "no pass ran at all" — and those are the two readings an
+ * operator MUST be able to tell apart during a seven-day observation. The
+ * silence looked identical either way, which is the same failure this subsystem
+ * guards against everywhere else: a leaver pass that disables nobody and says
+ * "done".
+ *
+ * NOT_APPLICABLE rather than PASSED, per the enum's own definition — "ran
+ * cleanly but its applicable population was empty".
+ *
+ * The two LADDER refusals are deliberately excluded. A tenant with leaver writes
+ * switched off is not observing, and should not accrue observation rows; a
+ * tenant above the clamp is a configuration error that already logs a warning
+ * and would otherwise mint a daily row implying it is being watched.
+ */
+async function recordRefusedPass(
+    ctx: RequestContext,
+    provider: string,
+    refusal: LeaverPassRefusal,
+    detail: string,
+    summary: Record<string, unknown>,
+): Promise<void> {
+    await writeExecutionRow(ctx, provider, 'NOT_APPLICABLE', { ...summary, refusal, detail });
+}
+
+/**
+ * Record a refusal, never letting the record's failure become the pass's.
+ *
+ * Same posture as the success path: a pass that has already decided must not be
+ * reported as broken because a row could not be written. Wrapped here rather
+ * than at each call site so the three refusals cannot drift apart on it.
+ */
+async function safeRecordRefusal(
+    ctx: RequestContext,
+    provider: string,
+    refusal: LeaverPassRefusal,
+    detail: string,
+    summary: Record<string, unknown>,
+): Promise<void> {
+    try {
+        await recordRefusedPass(ctx, provider, refusal, detail, summary);
+    } catch (err) {
+        logger.error('leaver pass refused but its record could not be written', {
+            component: 'identity-leaver-pass',
+            tenantId: ctx.tenantId,
+            provider,
+            refusal,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
+/** The one place a leaver pass row is created, so both callers agree on its shape. */
+async function writeExecutionRow(
+    ctx: RequestContext,
+    provider: string,
+    status: 'PASSED' | 'PARTIAL' | 'NOT_APPLICABLE',
+    resultJson: Record<string, unknown>,
+): Promise<void> {
     await runInTenantContext(ctx, (db) =>
         db.integrationExecution.create({
             data: {
                 tenantId: ctx.tenantId,
                 provider,
                 automationKey: `${provider}${LEAVER_PASS_AUTOMATION_SUFFIX}`,
-                // PARTIAL means "produced output, and that output is incomplete"
-                // — which is what a truncated decision list is, and is NOT what
-                // a FAILED or INDETERMINATE outcome is. Those are results the
-                // pass is reporting correctly, and they are in `counts`.
-                status: truncated ? 'PARTIAL' : 'PASSED',
+                status,
                 triggeredBy: 'scheduled',
                 completedAt: new Date(),
-                resultJson: { ...summary, decisions, decisionsTruncated: truncated },
+                resultJson,
             },
         }),
     );
@@ -313,7 +383,12 @@ export async function runIdentityLeaverPass(input: {
         );
         if (terminated.length === 0) {
             recordLeaverPassOutcome({ provider: input.provider, outcome: 'no_terminated' });
-            return refused(mode, 'NO_TERMINATED_WORKERS', 'No worker is marked TERMINATED in the HR feed.');
+            const detail = 'No worker is marked TERMINATED in the HR feed.';
+            await safeRecordRefusal(ctx, input.provider, 'NO_TERMINATED_WORKERS', detail, {
+                mode,
+                terminatedWorkers: 0,
+            });
+            return refused(mode, 'NO_TERMINATED_WORKERS', detail);
         }
 
         // ── 3. Which of their accounts we have OBSERVED recently enough to act on.
@@ -329,14 +404,19 @@ export async function runIdentityLeaverPass(input: {
             // workers present means the link table is stale or empty — which is
             // exactly the silent-nothing failure this subsystem is most prone to.
             recordLeaverPassOutcome({ provider: input.provider, outcome: 'no_fresh_links' });
-            return refused(
-                mode,
-                'NO_FRESH_LINKS',
+            const detail =
                 `${terminated.length} terminated worker(s), but none has a directory link re-observed since ` +
-                    `${staleBefore.toISOString()}. Either the identity sync has not completed recently, or ` +
-                    'these workers hold no account this product has matched to them.',
-                { terminatedWorkers: terminated.length },
-            );
+                `${staleBefore.toISOString()}. Either the identity sync has not completed recently, or ` +
+                'these workers hold no account this product has matched to them.';
+            // The most important refusal to record. This is the shape of the
+            // silent-nothing failure: terminated workers present, nobody
+            // offboarded, and a green pass. An operator watching the seven days
+            // needs it to appear as a run that happened.
+            await safeRecordRefusal(ctx, input.provider, 'NO_FRESH_LINKS', detail, {
+                mode,
+                terminatedWorkers: terminated.length,
+            });
+            return refused(mode, 'NO_FRESH_LINKS', detail, { terminatedWorkers: terminated.length });
         }
 
         // ── 4. The population the breaker measures the batch against.
@@ -350,6 +430,13 @@ export async function runIdentityLeaverPass(input: {
         const resolution = await resolveDirectoryWriter({ ctx, provider: input.provider, mode });
         if (resolution.kind === 'none') {
             recordLeaverPassOutcome({ provider: input.provider, outcome: 'writer_refused' });
+            await safeRecordRefusal(
+                ctx,
+                input.provider,
+                `WRITER_${resolution.refusal}`,
+                resolution.detail,
+                { mode, terminatedWorkers: terminated.length, candidates: candidates.length, population },
+            );
             return refused(mode, `WRITER_${resolution.refusal}`, resolution.detail, {
                 terminatedWorkers: terminated.length,
                 candidates: candidates.length,
