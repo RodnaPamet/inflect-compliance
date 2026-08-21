@@ -17,6 +17,9 @@ import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
+import { frameworkOrderKey } from '../framework-order';
 
 type Tab = 'requirements' | 'packs' | 'coverage' | 'builder';
 
@@ -85,6 +88,17 @@ export default function FrameworkDetailPage() {
     const [coverage, setCoverage] = useState<FrameworkCoverage | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // #98 — ordered framework SLUGS for the prev/next stepper beside the name.
+    // The list page publishes the order it rendered; `frameworkOrderKey` is the
+    // extractor both sides share, because this route is keyed by
+    // `Framework.key` rather than `Framework.id`. Nothing published (a deep
+    // link straight here) falls back to the frameworks list endpoint, which
+    // returns the same order the list page renders server-side.
+    const frameworkKeys = useEntityListIds<{ key: string }>(
+        CACHE_KEYS.frameworks.list(),
+        { getId: frameworkOrderKey },
+    );
 
     // Epic 62 — celebrate when this framework hits 100% coverage.
     // `scopedMilestone` namespaces the dedupe key per framework so
@@ -185,6 +199,12 @@ export default function FrameworkDetailPage() {
             breadcrumbs={breadcrumbs}
 
             title={<span id="framework-detail-heading">{framework.name}</span>}
+            prevNext={{
+                ids: frameworkKeys,
+                currentId: frameworkKey,
+                hrefFor: (key) => tenantHref(`/frameworks/${key}`),
+                labelSingular: 'framework',
+            }}
             meta={
                 <MetaStrip
                     items={[
