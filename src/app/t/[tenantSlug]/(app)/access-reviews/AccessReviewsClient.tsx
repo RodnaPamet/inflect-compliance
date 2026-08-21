@@ -29,6 +29,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { DatePicker } from '@/components/ui/date-picker';
 import type { CappedList } from '@/lib/list-backfill-cap';
+import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { formatDate } from '@/lib/format-date';
 import { Heading } from '@/components/ui/typography';
@@ -264,6 +265,57 @@ interface CreateCampaignButtonProps {
     onCreated: (reviewId: string) => void;
 }
 
+/** One synced identity-provider account, narrowed to what the gate reads. */
+interface IdentityAccount {
+    provider: string;
+    status: string;
+}
+
+/**
+ * What `GET /admin/integrations/identity-accounts` puts on the wire.
+ *
+ * The route returns `jsonResponse({ accounts })` — an OBJECT, not a bare
+ * array. The bare-array arm is kept because the `useTenantSWR<T>` generic is
+ * an unchecked assertion (nothing validates the response at runtime), so the
+ * type alone is not evidence of the shape; the union makes both arms visible
+ * to the reader instead of hiding one behind a cast.
+ */
+type IdentityAccountsResponse =
+    | { accounts: IdentityAccount[] }
+    | IdentityAccount[];
+
+/**
+ * Read the account roster out of the response, or `null` if it is not known.
+ *
+ * THREE states, deliberately — `null` (in flight, errored, or a body whose
+ * shape this reader does not recognise) is not the same as `[]` (the roster
+ * loaded and nothing is synced). Collapsing them is what broke this gate:
+ * the previous reader asked `Array.isArray(data)` of a response that is an
+ * object, so it was permanently false, `directoryStatusKnown` below was
+ * permanently false, and the gate never applied. It failed OPEN — every
+ * directory stayed selectable — which is why nothing looked wrong from the
+ * outside.
+ *
+ * Note this is NOT `unwrapCappedList` from `@/lib/list-backfill-cap`: that
+ * helper folds an unrecognised body into `[]` on purpose, which is right for
+ * a picker that just needs options and exactly wrong here, where `[]` is a
+ * load-bearing answer that disables every option.
+ *
+ * An unrecognised shape returns `null` so the gate stands down rather than
+ * disabling directories on a body it does not understand — but that also
+ * means CHANGING THE ROUTE'S RESPONSE SHAPE SILENTLY RE-BREAKS THIS GATE,
+ * in this same quiet way. A cap or an envelope added there adds its arm
+ * here, in the same diff.
+ */
+function readIdentityAccounts(data: unknown): IdentityAccount[] | null {
+    if (Array.isArray(data)) return data as IdentityAccount[];
+    if (data && typeof data === 'object') {
+        const { accounts } = data as { accounts?: unknown };
+        if (Array.isArray(accounts)) return accounts as IdentityAccount[];
+    }
+    return null;
+}
+
 function CreateCampaignButton({
     tenantSlug,
     onCreated,
@@ -291,39 +343,51 @@ function CreateCampaignButton({
     // The path is TENANT-RELATIVE: useTenantSWR prepends `/api/t/{slug}`
     // itself. An absolute `/api/t/${tenantSlug}/...` double-prefixes into
     // `/api/t/{slug}/api/t/{slug}/...` — which 404s SILENTLY here: `data`
-    // stays undefined, `accountsKnown` stays false, and the whole
+    // stays undefined, `directoryStatusKnown` stays false, and the whole
     // directory-availability gate below never applies.
-    const accountsQuery = useTenantSWR<
-        Array<{ provider: string; status: string }>
-    >('/admin/integrations/identity-accounts');
-    const syncedProviders = useMemo(() => {
-        // Shape-guarded rather than `data ?? []`. Several list endpoints in
-        // this codebase return `{ rows, truncated }` rather than a bare
-        // array, so assuming the array form would take the whole page down
-        // with a render-time TypeError if this one ever grew a cap — and
-        // there would be no type error to catch it, because the response is
-        // untyped at the wire.
-        const rows = Array.isArray(accountsQuery.data)
-            ? accountsQuery.data
-            : [];
-        return new Set(
-            rows.filter((a) => a?.status === 'ACTIVE').map((a) => a.provider),
-        );
-    }, [accountsQuery.data]);
-    // Only gate once the fetch has resolved — while it is in flight we cannot
-    // tell "not synced" from "not loaded yet", and disabling on the latter
-    // would block a directory that is perfectly usable.
-    const accountsKnown = Array.isArray(accountsQuery.data);
+    const accountsQuery = useTenantSWR<IdentityAccountsResponse>(
+        '/admin/integrations/identity-accounts',
+    );
+    const accounts = useMemo(
+        () => readIdentityAccounts(accountsQuery.data),
+        [accountsQuery.data],
+    );
+    const syncedProviders = useMemo(
+        () =>
+            new Set(
+                (accounts ?? [])
+                    .filter((a) => a?.status === 'ACTIVE')
+                    .map((a) => a.provider),
+            ),
+        [accounts],
+    );
+    // Only gate once we know the sync status of EVERY directory. There are two
+    // ways not to know it, and both have to fail open, because the gate
+    // disables the option it decides against:
+    //
+    //   • `null` — in flight, errored, or an unrecognised body. Disabling on
+    //     an unresolved fetch would block a directory that is perfectly
+    //     usable. (An empty array is a different answer: the roster loaded
+    //     and there is genuinely nothing synced. Those two must not collapse
+    //     into each other — collapsing them is the bug this gate had.)
+    //   • a roster that came back AT the cap — see IDENTITY_ROSTER_PAGE_SIZE.
+    //     The route sends no `truncated` flag, so a provider missing from a
+    //     full page might simply have been cut off after the ones that sort
+    //     ahead of it. Absence in a capped list is not evidence of absence.
+    //     The roster is unfiltered by status too, so a full page of
+    //     DEPROVISIONED rows says nothing about ACTIVE accounts beyond it.
+    const directoryStatusKnown =
+        accounts !== null && accounts.length < IDENTITY_ROSTER_PAGE_SIZE;
 
     const directoryOptions: ComboboxOption[] = useMemo(() => {
         const gate = (value: string, label: string): ComboboxOption =>
-            accountsKnown && !syncedProviders.has(value)
+            directoryStatusKnown && !syncedProviders.has(value)
                 ? { value, label, disabledTooltip: t('directoryNotSynced') }
                 : { value, label };
         return [
             // 'all' spans every synced provider, so it is unavailable only
             // when nothing at all is synced.
-            accountsKnown && syncedProviders.size === 0
+            directoryStatusKnown && syncedProviders.size === 0
                 ? { value: 'all', label: t('directoryAll'), disabledTooltip: t('directoryNoneSynced') }
                 : { value: 'all', label: t('directoryAll') },
             gate('okta', t('directoryOkta')),
@@ -331,7 +395,7 @@ function CreateCampaignButton({
             gate('entra-id', t('directoryEntra')),
             gate('active-directory', t('directoryAd')),
         ];
-    }, [accountsKnown, syncedProviders, t]);
+    }, [directoryStatusKnown, syncedProviders, t]);
     const [dueAt, setDueAt] = useState<Date | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -497,7 +561,7 @@ function CreateCampaignButton({
                                             route is offered inline as a real
                                             link rather than described in
                                             prose. */}
-                                        {accountsKnown && syncedProviders.size === 0 && (
+                                        {directoryStatusKnown && syncedProviders.size === 0 && (
                                             <p
                                                 className="mt-tight text-xs text-content-warning"
                                                 data-testid="access-review-no-directories"

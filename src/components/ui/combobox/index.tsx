@@ -319,10 +319,34 @@ export function Combobox<
         }
     }, [shouldSortOptions, options, sortOptions, search]);
 
+    // Re-sync the snapshot when the option list changes in a way that
+    // changes what renders.
+    //
+    // The key used to be the VALUES alone. That reads as "the option set
+    // changed", but `sortedOptions` is a copy of the option OBJECTS, not
+    // just their order — so a caller that flipped `disabledTooltip` on an
+    // existing option (the usual shape of "this choice is unavailable
+    // now") never re-synced: the prop changed, the snapshot did not, and
+    // the dropdown kept rendering the previous state indefinitely. The
+    // caller has no way to tell, because the options it passed are right.
+    //
+    // The whole option cannot go in the key — `label`, `icon` and
+    // `disabledTooltip` are ReactNodes, and a React element holds a
+    // circular `_owner`, so `JSON.stringify` on one throws. So the key
+    // carries `value` plus the flags that decide how an option renders,
+    // which is what a re-sync has to notice. Options with none of them set
+    // contribute a constant, so every existing caller keys exactly as
+    // before.
+    const optionsSyncKey = options
+        ?.map(
+            (o) =>
+                `${o.value}\u0000${o.disabledTooltip ? 1 : 0}${o.first ? 1 : 0}${o.separatorAfter ? 1 : 0}`,
+        )
+        .join("\u0001");
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setShouldSortOptions(true);
-    }, [JSON.stringify(options?.map((o) => o.value))]);
+    }, [optionsSyncKey]);
 
     // Reset search + re-sort on close.
     useEffect(() => {
