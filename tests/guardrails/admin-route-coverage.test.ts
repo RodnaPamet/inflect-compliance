@@ -71,6 +71,11 @@ const ADMIN_ONLY_ROUTES = [
     // The read side of the same escape hatch — the only surface that
     // produces the fileId the reversal consumes. Same OWNER-only key.
     'admin/files/quarantined/route.ts',
+    // Bounded AV catch-up rescan trigger — OWNER-only
+    // (admin.tenant_lifecycle), the same key as clear-quarantine above
+    // because it decides the same thing (what the download gate serves)
+    // for a page of files rather than for one. Audited AV_RESCAN_INITIATED.
+    'admin/av-rescan/route.ts',
     'admin/identity-write-policy/route.ts',
     'admin/identity-leaver-passes/route.ts',
     'admin/identity-account-protection/[accountId]/route.ts',
