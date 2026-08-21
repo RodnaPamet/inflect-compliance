@@ -241,6 +241,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'system we do not own.',
     },
 
+    // ── JML leaver pass reports (the seven-day observation record) ──
+    {
+        path: new RegExp(`^${T}\\/admin\\/identity-leaver-passes(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Reads the per-candidate record of what a dry-run leaver pass ' +
+            'WOULD have disabled. Same OWNER-only key as the write policy ' +
+            'those passes run under, because naming which of a customer\'s ' +
+            'people the product would disable is authority of the same class ' +
+            'as granting the disable. A SIBLING path rather than nested under ' +
+            'admin/integrations on purpose: matching is first-match-wins and ' +
+            'that rule resolves to admin.manage, so nesting would document a ' +
+            'weaker gate here than the handler enforces.',
+    },
+
     // ── Per-tenant DEK rotation (Epic F.2 follow-up) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/tenant-dek-rotation(\\/.*)?$`),

@@ -69,6 +69,7 @@ const ADMIN_ONLY_ROUTES = [
     // (admin.tenant_lifecycle), audited FILE_QUARANTINE_CLEARED.
     'admin/files/[fileId]/clear-quarantine/route.ts',
     'admin/identity-write-policy/route.ts',
+    'admin/identity-leaver-passes/route.ts',
     'admin/billing/plan/route.ts',
     'admin/rotate-dek/route.ts',
     'admin/sessions/route.ts',
