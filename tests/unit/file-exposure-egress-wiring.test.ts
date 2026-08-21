@@ -192,7 +192,19 @@ describe('AV webhook — a late INFECTED verdict asks what already left', () => 
 
     it('does not assess exposure on a CLEAN verdict', async () => {
         const { POST } = await import('@/app/api/storage/av-webhook/route');
-        await POST(post({ fileId: 'file-1', status: 'clean', engine: 'clamav' }));
+        const res = await POST(post({ fileId: 'file-1', status: 'clean', engine: 'clamav' }));
+
+        // The negative below is only evidence if the route actually RAN and took
+        // the CLEAN branch. On its own `not.toHaveBeenCalled()` passes just as
+        // well when POST threw, refused, or never reached the verdict at all —
+        // an absence cannot say WHICH absence it is without something positive
+        // beside it. So: the request succeeded, and the CLEAN verdict was written.
+        expect(res.status).toBe(200);
+        expect(avUpdateMany).toHaveBeenCalledTimes(1);
+        expect(avUpdateMany.mock.calls[0][0]).toMatchObject({
+            data: expect.objectContaining({ scanStatus: 'CLEAN' }),
+        });
+
         expect(assessMock).not.toHaveBeenCalled();
     });
 
