@@ -69,6 +69,8 @@ describe('No duplicate admin guards on pages', () => {
     const STRICTER_GUARD_PAGES: Record<string, string> = {
         'identity-leaver-passes/page.tsx':
             'OWNER-only (admin.tenant_lifecycle) — the report names which of a customer’s people a leaver pass would have disabled; without the page gate a non-OWNER admin sees the API 403 as a load failure',
+        'identity-write-policy/page.tsx':
+            'OWNER-only (admin.tenant_lifecycle) — the page decides whether this product may disable accounts in the customer’s own directory, which is authority of the same class as tenant deletion; the layout’s admin.view would let a non-OWNER admin reach it and read the API 403 as a broken backend',
         'integrations/page.tsx':
             'gates ONE link (admin.tenant_lifecycle) to the OWNER-only leaver-pass report; the page itself stays admin.view, so an ADMIN is never offered a door that closes on them',
     };
