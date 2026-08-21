@@ -243,7 +243,14 @@ export async function removeIntegrationConnection(ctx: RequestContext, connectio
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'IntegrationConnection',
-                operation: 'deleted',
+                // 'disabled', not 'deleted'. This usecase sets isEnabled=false —
+                // it does not delete the row — and its own action name, its
+                // summary and the UI all say "disabled". `operation` is the
+                // STRUCTURED field, and Epic C.4 ships only detailsJson to the
+                // audit stream while dropping free-text `details`, so the SIEM
+                // read "deleted" while the only surface saying "disabled" was
+                // the one no machine sees.
+                operation: 'disabled',
                 provider: existing.provider,
                 summary: `Disabled integration: ${existing.name}`,
             },

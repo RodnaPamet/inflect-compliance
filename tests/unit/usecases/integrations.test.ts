@@ -293,6 +293,34 @@ describe('removeIntegrationConnection', () => {
             expect.objectContaining({ action: 'INTEGRATION_CONNECTION_DISABLED' }),
         );
     });
+
+    it('reports the STRUCTURED operation as disabled, agreeing with the action', async () => {
+        // The gap this closes: the assertion above pinned the action name and
+        // the summary said "Disabled integration", while `detailsJson.operation`
+        // said 'deleted' — and that is the half a machine reads. Epic C.4 ships
+        // only `detailsJson` to the audit stream and drops free-text `details`,
+        // so the SIEM was told the connection was deleted and the only surface
+        // saying otherwise was the one no consumer sees. Asserting the action
+        // alone stayed green through it.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                integrationConnection: {
+                    findFirst: jest.fn().mockResolvedValue({
+                        id: 'c1', provider: 'datadog', name: 'prod',
+                    }),
+                    update: jest.fn().mockResolvedValue({}),
+                },
+            } as never),
+        );
+
+        await removeIntegrationConnection(makeRequestContext('ADMIN'), 'c1');
+
+        const payload = mockLog.mock.calls.at(-1)?.[2] as {
+            detailsJson?: { operation?: string };
+        };
+        expect(payload.detailsJson?.operation).toBe('disabled');
+        expect(payload.detailsJson?.operation).not.toBe('deleted');
+    });
 });
 
 describe('runAutomationForControl — failure paths', () => {
