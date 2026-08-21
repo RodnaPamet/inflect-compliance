@@ -375,27 +375,60 @@ export class FileRepository {
      * file cannot be returned to circulation, so listing it would offer an
      * action that is guaranteed to fail.
      *
-     * Ordering is `scannedAt` DESC with `id` DESC as the tiebreak, because
-     * a bulk re-scan stamps many rows within the same millisecond and a
-     * cursor walk over a non-unique sort key silently skips or repeats rows.
-     * `scannedAt` is nullable in the schema (a row can be INFECTED with no
-     * stamp if it was condemned by a path that did not set one), and Prisma
-     * sorts NULLs last on DESC — those rows land at the end of the walk
-     * rather than vanishing from it.
+     * Ordering is `scannedAt` DESC with `id` DESC as the tiebreak, because a
+     * bulk re-scan stamps many rows within the same millisecond and a walk
+     * over a non-unique sort key silently skips or repeats rows.
+     *
+     * `scannedAt` is nullable (a row can be INFECTED with no stamp if it was
+     * condemned by a path that did not set one). Postgres orders NULLS FIRST
+     * on DESC by default and Prisma emits a bare `ORDER BY "scannedAt" DESC`,
+     * so unstamped rows lead the walk. Either end is fine; what matters is
+     * that the keyset predicate below agrees with it, which is why it is
+     * spelled out rather than assumed.
+     *
+     * PAGINATION IS A KEYSET WALK, NOT A PRISMA `cursor`. Prisma's `cursor`
+     * requires the cursor ROW to still satisfy the `where` — and the whole
+     * point of this list is to feed an action that removes a row from it.
+     * Clear one file's quarantine, ask for the next page, and a
+     * cursor-based walk returns EMPTY: the remaining quarantined files
+     * become invisible, and on an incident surface an empty page reads as
+     * "nothing is quarantined". A stale or garbage cursor did the same.
+     * The keyset below is self-contained — it compares values, not row
+     * identity, so it does not care whether the anchor row still exists.
      *
      * @param take hard bound on the page; the caller clamps it.
-     * @param cursor `FileRecord.id` of the last row of the previous page.
+     * @param after opaque position from the previous page's last row.
      */
     static async listQuarantined(
         db: PrismaTx,
         tenantId: string,
-        opts: { take: number; cursor?: string },
+        opts: { take: number; after?: { scannedAt: Date | null; id: string } },
     ) {
+        const after = opts.after;
+        // Keyset, matching `ORDER BY scannedAt DESC NULLS FIRST, id DESC`.
+        // Anchored in the NULL block: the rest of that block by id, then
+        // every stamped row. Anchored on a stamp: older stamps, then the
+        // same stamp by id.
+        const keyset = after
+            ? {
+                  OR:
+                      after.scannedAt === null
+                          ? [
+                                { scannedAt: null, id: { lt: after.id } },
+                                { scannedAt: { not: null } },
+                            ]
+                          : [
+                                { scannedAt: { lt: after.scannedAt } },
+                                { scannedAt: after.scannedAt, id: { lt: after.id } },
+                            ],
+              }
+            : {};
         return db.fileRecord.findMany({
             where: {
                 tenantId,
                 scanStatus: 'INFECTED',
                 status: { not: 'DELETED' },
+                ...keyset,
             },
             select: {
                 id: true,
@@ -413,7 +446,6 @@ export class FileRepository {
             },
             orderBy: [{ scannedAt: 'desc' }, { id: 'desc' }],
             take: opts.take,
-            ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
         });
     }
 

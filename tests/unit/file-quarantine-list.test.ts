@@ -192,7 +192,12 @@ describe('listQuarantinedFiles — paging', () => {
         const result = await listQuarantinedFiles(ownerCtx, { limit: 2 });
 
         expect(result.files.map((f) => f.fileId)).toEqual(['a', 'b']);
-        expect(result.nextCursor).toBe('b');
+        // The cursor is the SORT KEY of the last served row, base64url'd —
+        // not its id. It has to survive that row leaving the INFECTED set,
+        // which is the action this whole list exists to feed.
+        expect(result.nextCursor).toBe(
+            Buffer.from('2026-08-01T00:00:00.000Z|b', 'utf8').toString('base64url'),
+        );
     });
 
     it('reports no next page when the probe row does not come back', async () => {
@@ -204,12 +209,35 @@ describe('listQuarantinedFiles — paging', () => {
         expect(result.nextCursor).toBeNull();
     });
 
-    it('threads a cursor through as a skip-1 seek', async () => {
-        await listQuarantinedFiles(ownerCtx, { cursor: 'file-9' });
+    it('threads a cursor through as a keyset predicate, not a row anchor', async () => {
+        const token = Buffer.from('2026-08-01T00:00:00.000Z|file-9', 'utf8').toString(
+            'base64url',
+        );
+
+        await listQuarantinedFiles(ownerCtx, { cursor: token });
 
         const args = mockFileRecord.findMany.mock.calls[0][0];
-        expect(args.cursor).toEqual({ id: 'file-9' });
-        expect(args.skip).toBe(1);
+        // No Prisma `cursor`/`skip` at all: those anchor on a row that the
+        // clear-quarantine action is about to remove from the result set.
+        expect(args.cursor).toBeUndefined();
+        expect(args.skip).toBeUndefined();
+        // Positive assertion beside the two negatives — the seek is expressed
+        // as a comparison on the sort key, so it holds whether or not the
+        // anchor row still exists.
+        expect(args.where.OR).toEqual([
+            { scannedAt: { lt: new Date('2026-08-01T00:00:00.000Z') } },
+            { scannedAt: new Date('2026-08-01T00:00:00.000Z'), id: { lt: 'file-9' } },
+        ]);
+    });
+
+    it('a malformed cursor starts from the beginning rather than returning nothing', async () => {
+        await listQuarantinedFiles(ownerCtx, { cursor: 'not-a-real-token!!' });
+
+        const args = mockFileRecord.findMany.mock.calls[0][0];
+        // An empty page on an incident surface reads as "nothing is
+        // quarantined". Page one is wrong in a way the reader can see.
+        expect(args.where.OR).toBeUndefined();
+        expect(args.where.scanStatus).toBe('INFECTED');
     });
 
     it('treats a blank cursor as no cursor', async () => {

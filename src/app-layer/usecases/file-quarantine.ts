@@ -242,7 +242,14 @@ export interface QuarantinedFileRow {
 
 export interface ListQuarantinedFilesResult {
     files: QuarantinedFileRow[];
-    /** `fileId` to pass back as `cursor`; null on the last page. */
+    /**
+     * Opaque position to pass back as `cursor`; null on the last page.
+     *
+     * Opaque on purpose: it encodes the sort key (`scannedAt`, `id`), not a
+     * row identity, so the walk survives the very action this list exists to
+     * feed. A `fileId` cursor would not — clearing that file's quarantine
+     * drops it out of the INFECTED set, and the next page comes back empty.
+     */
     nextCursor: string | null;
 }
 
@@ -305,6 +312,45 @@ export function summariseScanVerdict(scanDetails: string | null): QuarantineVerd
  *
  * @throws forbidden — caller lacks `admin.tenant_lifecycle`.
  */
+/**
+ * Cursor codec for the quarantine walk.
+ *
+ * The token carries the SORT KEY — `scannedAt` (which is nullable) and `id` —
+ * base64url'd so callers treat it as opaque and do not build one by hand.
+ *
+ * A malformed or truncated token decodes to `undefined`, which means "start
+ * from the beginning". That is the deliberate choice: the alternative is an
+ * empty page, and on a surface whose job is to show what is quarantined, an
+ * empty page reads as "nothing is quarantined". Silently showing page one is
+ * wrong in a way the reader can SEE; silently showing nothing is not.
+ */
+function encodeQuarantineCursor(row: { scannedAt: Date | null; id: string }): string {
+    const stamp = row.scannedAt ? row.scannedAt.toISOString() : '';
+    return Buffer.from(`${stamp}|${row.id}`, 'utf8').toString('base64url');
+}
+
+function decodeQuarantineCursor(
+    token: string | undefined,
+): { scannedAt: Date | null; id: string } | undefined {
+    const raw = (token ?? '').trim();
+    if (!raw) return undefined;
+    let decoded: string;
+    try {
+        decoded = Buffer.from(raw, 'base64url').toString('utf8');
+    } catch {
+        return undefined;
+    }
+    const sep = decoded.indexOf('|');
+    if (sep < 0) return undefined;
+    const stamp = decoded.slice(0, sep);
+    const id = decoded.slice(sep + 1);
+    if (!id) return undefined;
+    if (!stamp) return { scannedAt: null, id };
+    const scannedAt = new Date(stamp);
+    if (Number.isNaN(scannedAt.getTime())) return undefined;
+    return { scannedAt, id };
+}
+
 export async function listQuarantinedFiles(
     ctx: RequestContext,
     options: { limit?: number; cursor?: string } = {},
@@ -316,13 +362,13 @@ export async function listQuarantinedFiles(
             ? Math.floor(options.limit)
             : DEFAULT_QUARANTINE_PAGE_SIZE;
     const take = Math.min(MAX_QUARANTINE_PAGE_SIZE, Math.max(1, requested));
-    const cursor = (options.cursor ?? '').trim() || undefined;
+    const after = decodeQuarantineCursor(options.cursor);
 
     // One extra row is the page-boundary probe: its presence is what
     // distinguishes "the last page" from "a full page that happens to
     // end here", and it is dropped before the caller sees it.
     const rows = await runInTenantContext(ctx, (db) =>
-        FileRepository.listQuarantined(db, ctx.tenantId, { take: take + 1, cursor }),
+        FileRepository.listQuarantined(db, ctx.tenantId, { take: take + 1, after }),
     );
 
     const hasMore = rows.length > take;
@@ -342,6 +388,6 @@ export async function listQuarantinedFiles(
             uploadedByUserId: row.uploadedByUserId,
             verdict: summariseScanVerdict(row.scanDetails),
         })),
-        nextCursor: hasMore ? page[page.length - 1].id : null,
+        nextCursor: hasMore ? encodeQuarantineCursor(page[page.length - 1]) : null,
     };
 }

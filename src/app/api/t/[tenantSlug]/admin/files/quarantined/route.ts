@@ -25,7 +25,11 @@
  * them" — `limit` is clamped to `MAX_QUARANTINE_PAGE_SIZE` and the reply
  * carries a `nextCursor`.
  *
- * A malformed `limit` / `cursor` is IGNORED rather than 400-ing. This is
+ * A malformed `limit` / `cursor` is IGNORED rather than 400-ing — and for
+ * the cursor that is load-bearing, not lenience: it decodes to "start from
+ * the beginning", because the alternative is an empty page, and on a surface
+ * whose job is to show what is quarantined an empty page reads as "nothing
+ * is quarantined". This is
  * an incident surface reached under time pressure, often by hand; a
  * typo in a query string should hand back the first page, not an error.
  * The usecase clamps whatever it is given.
