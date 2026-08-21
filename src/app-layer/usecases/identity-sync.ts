@@ -189,6 +189,18 @@ export async function runIdentitySync(input: {
                     syncedAt: now,
                 },
                 update: {
+                    // NOTHING ABOUT PROTECTION APPEARS IN THIS BLOCK, AND THAT IS
+                    // THE POINT. `isProtected`, `protectedAt`, `protectedByUserId`
+                    // and `protectionReason` are operator state, not directory
+                    // state — the directory has no opinion about them and this
+                    // sync must never express one. Adding any of them here would
+                    // clear a break-glass flag nightly, and the failure is silent
+                    // until the one run that would have refused doesn't.
+                    //
+                    // Prisma's explicit field lists are what make the omission
+                    // sufficient: this is not a spread, so a new column is opted
+                    // IN rather than swept along.
+                    //
                     // Claimed on EVERY pass, not only on create. A row that
                     // predates the column, or whose connection was deleted, is
                     // adopted by whichever connection can still see the account

@@ -241,6 +241,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'system we do not own.',
     },
 
+    // ── JML break-glass protection (never-offboard, per account) ────
+    {
+        path: new RegExp(`^${T}\\/admin\\/identity-account-protection(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Marks one directory account as never-offboard, or releases it. ' +
+            'Same OWNER-only key as the write policy it overrides: deciding ' +
+            'the product may NOT disable an account is authority of the same ' +
+            'class as deciding that it may, and releasing one hands back ' +
+            'standing power to disable it. A SIBLING path rather than nested ' +
+            'under admin/integrations/identity-accounts, where the roster GET ' +
+            'lives — matching is first-match-wins and that rule resolves to ' +
+            'admin.manage.',
+    },
+
     // ── JML leaver pass reports (the seven-day observation record) ──
     {
         path: new RegExp(`^${T}\\/admin\\/identity-leaver-passes(\\/.*)?$`),

@@ -749,11 +749,25 @@ describe('candidate selection demands FRESH link evidence', () => {
 
     it('carries the sync flag through, so the target check can use it', async () => {
         db.identityAccountLink.findMany.mockResolvedValue([
-            { id: 'l1', connectedAccount: { externalUserId: 'x1', email: 'a@corp.example', onPremisesSyncEnabled: true } },
+            {
+                id: 'l1',
+                connectedAccount: {
+                    externalUserId: 'x1',
+                    email: 'a@corp.example',
+                    isProtected: true,
+                    onPremisesSyncEnabled: true,
+                },
+            },
         ]);
         const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
         expect(out).toEqual([
-            { linkId: 'l1', externalUserId: 'x1', email: 'a@corp.example', onPremisesSyncEnabled: true },
+            {
+                linkId: 'l1',
+                externalUserId: 'x1',
+                email: 'a@corp.example',
+                isProtected: true,
+                onPremisesSyncEnabled: true,
+            },
         ]);
     });
 
@@ -775,6 +789,12 @@ describe('candidate selection demands FRESH link evidence', () => {
         expect(select.connectedAccount.select).toMatchObject({
             externalUserId: true,
             email: true,
+            // The break-glass producer. Dropping this from the select re-inerts
+            // the REFUSED_PROTECTED rail exactly the way `email` would re-inert
+            // the self-lockout one — silently, with every other test still green,
+            // because a mock row without the key maps to `undefined` and
+            // `toEqual` ignores it.
+            isProtected: true,
             onPremisesSyncEnabled: true,
         });
     });

@@ -98,6 +98,57 @@ describe('ENCRYPTED_FIELDS manifest', () => {
     });
 });
 
+describe('ConnectedIdentityAccount.protectionReason round-trips through the middleware', () => {
+    /**
+     * Step 3 of the manifest's own "Adding a new field" checklist.
+     *
+     * The operator's note saying WHY an account must never be offboarded. It
+     * routinely names a person or the purpose of a credential — "Alice's
+     * break-glass admin", "shared ops mailbox" — which is the same shape as
+     * IdentityWriteJournal.detail below, and it sits on a row the whole product
+     * reads.
+     */
+    it('is declared in the manifest', () => {
+        expect(getEncryptedFields('ConnectedIdentityAccount')).toContain('protectionReason');
+        expect(isEncryptedModel('ConnectedIdentityAccount')).toBe(true);
+    });
+
+    it('encrypts on write', () => {
+        const data: Record<string, unknown> = { protectionReason: "Ada's break-glass admin, do not disable" };
+        encryptDataNode(data, 'ConnectedIdentityAccount', null);
+        expect(isEncryptedValue(data.protectionReason as string)).toBe(true);
+        expect(data.protectionReason as string).not.toContain('Ada');
+    });
+
+    it('decrypts on read, recovering the original text', () => {
+        const plain = 'shared ops mailbox — offboarding it locks out the on-call rota';
+        const data: Record<string, unknown> = { protectionReason: plain };
+        encryptDataNode(data, 'ConnectedIdentityAccount', null);
+        expect(data.protectionReason).not.toBe(plain);
+        decryptResultNode(data, 'ConnectedIdentityAccount', { primary: null, previous: null, reason: 'by-design' });
+        expect(data.protectionReason).toBe(plain);
+    });
+
+    it('leaves a null reason alone', () => {
+        // Nullable, and cleared on release. Encrypting null would turn "this
+        // account is not protected" into ciphertext that reads as a value.
+        const data: Record<string, unknown> = { protectionReason: null };
+        encryptDataNode(data, 'ConnectedIdentityAccount', null);
+        expect(data.protectionReason).toBeNull();
+    });
+
+    it('does NOT touch the columns the leaver path reads to make decisions', () => {
+        // isProtected drives a refusal and externalUserId addresses a directory
+        // write. Encrypting either would break the feature rather than protect
+        // anyone — the manifest is for free text about people, not for flags.
+        const data: Record<string, unknown> = { isProtected: true, externalUserId: 'ada@acme.com', email: 'ada@acme.com' };
+        encryptDataNode(data, 'ConnectedIdentityAccount', null);
+        expect(data.isProtected).toBe(true);
+        expect(data.externalUserId).toBe('ada@acme.com');
+        expect(data.email).toBe('ada@acme.com');
+    });
+});
+
 describe('IdentityWriteJournal.detail round-trips through the middleware', () => {
     /**
      * Step 3 of the manifest's own "Adding a new field" checklist.
