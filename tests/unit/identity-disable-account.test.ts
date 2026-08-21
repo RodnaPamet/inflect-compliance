@@ -150,7 +150,7 @@ describe('SELF-LOCKOUT — the one refusal that comes before everything', () => 
      * with a human-looking address satisfies exactly as well as a human does.
      */
     it('refuses to disable the account the writer authenticates as', async () => {
-        const w = fakeWriter({ selfAccountId: 'ext-1' });
+        const w = fakeWriter({ selfAccountIds: ['ext-1'] });
         const r = await disableAccount(ctx, w, input({ externalUserId: 'ext-1' }));
 
         expect(r.outcome).toBe('REFUSED_PROTECTED');
@@ -160,7 +160,7 @@ describe('SELF-LOCKOUT — the one refusal that comes before everything', () => 
 
     it('compares case- and whitespace-insensitively', async () => {
         // A bind DN and a roster value routinely differ in case.
-        const w = fakeWriter({ selfAccountId: '  CN=Svc,DC=acme  ' });
+        const w = fakeWriter({ selfAccountIds: ['  CN=Svc,DC=acme  '] });
         const r = await disableAccount(ctx, w, input({ externalUserId: 'cn=svc,dc=acme' }));
         expect(r.outcome).toBe('REFUSED_PROTECTED');
     });
@@ -168,29 +168,80 @@ describe('SELF-LOCKOUT — the one refusal that comes before everything', () => 
     it('refuses BEFORE the ladder — a tenant in AUTOMATIC has not consented to this', async () => {
         setMode('AUTOMATIC');
         const readState = jest.fn();
-        const w = fakeWriter({ selfAccountId: 'ext-1', readState });
+        const w = fakeWriter({ selfAccountIds: ['ext-1'], readState });
         await disableAccount(ctx, w, input({ externalUserId: 'ext-1' }));
         expect(readState).not.toHaveBeenCalled();
     });
 
     it('still refuses in DRY_RUN, so the danger is visible before go-live', async () => {
         setMode('DRY_RUN', new Date('2026-08-01T00:00:00Z'));
-        const w = fakeWriter({ selfAccountId: 'ext-1' });
+        const w = fakeWriter({ selfAccountIds: ['ext-1'] });
         expect((await disableAccount(ctx, w, input({ externalUserId: 'ext-1' }))).outcome).toBe(
             'REFUSED_PROTECTED',
         );
     });
 
     it('does not refuse a DIFFERENT account', async () => {
-        const w = fakeWriter({ selfAccountId: 'ext-svc' });
+        const w = fakeWriter({ selfAccountIds: ['ext-svc'] });
         expect((await disableAccount(ctx, w, input({ externalUserId: 'ext-1' }))).outcome).toBe('DISABLED');
     });
 
     it('a writer with no account identity refuses nothing', async () => {
         // An Entra app registration is not a user; null must not match a blank
         // externalUserId or anything else.
-        const w = fakeWriter({ selfAccountId: null });
+        const w = fakeWriter({ selfAccountIds: [] });
         expect((await disableAccount(ctx, w, input())).outcome).toBe('DISABLED');
+    });
+
+    it('matches a bind DN against the account UPN — the namespaces the guard actually spans', async () => {
+        // THE DEFECT THIS CLOSES. An AD bind is configured as a DN or a
+        // userPrincipalName; `externalUserId` for AD is formatObjectGuid(objectGUID),
+        // a GUID. A GUID never equals a DN, so comparing only those two meant the
+        // refusal could not fire in ANY mode — AUTOMATIC and PROPOSE included, not
+        // just the dry run. The UPN is where the two namespaces meet, and the sync
+        // already stores it on the account row.
+        const w = fakeWriter({ selfAccountIds: ['svc-inflect@corp.example'] });
+        const r = await disableAccount(
+            ctx,
+            w,
+            input({ externalUserId: '11111111-2222-3333-4444-555555555555', email: 'svc-inflect@corp.example' }),
+        );
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+        expect(w.disabled).toEqual([]);
+    });
+
+    it('protects the READ bind too, not only the one it writes with', async () => {
+        // A dedicated write bind does not make the read bind expendable: the
+        // nightly sync authenticates as it, and disabling it stales every link,
+        // so each later leaver pass refuses NO_FRESH_LINKS. Offboarding stops for
+        // everyone, and the account that stopped it looks like an ordinary leaver.
+        const w = fakeWriter({ selfAccountIds: ['CN=svc-write,DC=corp', 'CN=svc-read,DC=corp'] });
+        const r = await disableAccount(ctx, w, input({ externalUserId: 'CN=svc-read,DC=corp' }));
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+    });
+
+    it('an empty identity list and an account with no email refuse nothing', async () => {
+        // The blank-string trap: '' === '' would match, and a writer with no
+        // configured bind facing an account with no mail would then refuse every
+        // candidate in the tenant. Both sides drop blanks before comparing.
+        const w = fakeWriter({ selfAccountIds: ['', '   '] });
+        const r = await disableAccount(ctx, w, input({ externalUserId: 'ext-9', email: '' }));
+        expect(r.outcome).toBe('DISABLED');
+    });
+
+    it('names the candidate by link id, never by directory identifier', async () => {
+        // The refusal used to log neither, so an operator reading a dry run could
+        // not tell WHICH account tripped it. It now names the link — an opaque,
+        // tenant-scoped handle — because the log line carries no RLS, no tenant
+        // scope and no retention policy.
+        const w = fakeWriter({ selfAccountIds: ['ext-1'] });
+        await disableAccount(ctx, w, input({ linkId: 'link-77', externalUserId: 'ext-1' }));
+
+        const call = (logger.error as jest.Mock).mock.calls.find(
+            (c) => typeof c[0] === 'string' && c[0].includes("integration's own account"),
+        );
+        expect(call?.[1]).toMatchObject({ linkId: 'link-77' });
+        expect(call?.[1]).not.toHaveProperty('externalUserId');
     });
 
     it('an account marked protected is refused too', async () => {
@@ -222,7 +273,7 @@ describe('every outcome is counted, including the refusals', () => {
 
         recordOutcome.mockClear();
         setMode('AUTOMATIC');
-        await disableAccount(ctx, fakeWriter({ selfAccountId: 'ext-1' }), input({ externalUserId: 'ext-1' }));
+        await disableAccount(ctx, fakeWriter({ selfAccountIds: ['ext-1'] }), input({ externalUserId: 'ext-1' }));
         expect(recordOutcome).toHaveBeenCalledWith(
             expect.objectContaining({ outcome: 'REFUSED_PROTECTED' }),
         );
@@ -698,9 +749,33 @@ describe('candidate selection demands FRESH link evidence', () => {
 
     it('carries the sync flag through, so the target check can use it', async () => {
         db.identityAccountLink.findMany.mockResolvedValue([
-            { id: 'l1', connectedAccount: { externalUserId: 'x1', onPremisesSyncEnabled: true } },
+            { id: 'l1', connectedAccount: { externalUserId: 'x1', email: 'a@corp.example', onPremisesSyncEnabled: true } },
         ]);
         const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
-        expect(out).toEqual([{ linkId: 'l1', externalUserId: 'x1', onPremisesSyncEnabled: true }]);
+        expect(out).toEqual([
+            { linkId: 'l1', externalUserId: 'x1', email: 'a@corp.example', onPremisesSyncEnabled: true },
+        ]);
+    });
+
+    it('SELECTS the email, which is the only thing that makes the self-lockout guard work', async () => {
+        // Two hops, and both need pinning. The mapping assertion above cannot do
+        // it alone: with a mock row that omits `email`, the mapping yields
+        // `email: undefined`, and `toEqual` IGNORES undefined properties — so
+        // deleting `email: true` from the select would leave that test green
+        // while re-inerting the guard it exists to feed.
+        //
+        // The guard compares a bind DN/UPN against the candidate, and an AD
+        // account's externalUserId is an objectGUID. Without the email there is
+        // no identity form the two sides share, so the refusal cannot fire — the
+        // exact defect this branch was written to close.
+        db.identityAccountLink.findMany.mockResolvedValue([]);
+        await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+
+        const select = db.identityAccountLink.findMany.mock.calls[0][0].select;
+        expect(select.connectedAccount.select).toMatchObject({
+            externalUserId: true,
+            email: true,
+            onPremisesSyncEnabled: true,
+        });
     });
 });

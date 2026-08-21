@@ -27,6 +27,7 @@
  */
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import { resolveWriteTarget } from './identity-write-target';
@@ -101,15 +102,32 @@ export interface DirectoryAccountState {
 export interface DirectoryWriter {
     readonly provider: string;
     /**
-     * The account this connection authenticates AS, when it is an account at
-     * all — an LDAP bind DN, say. `null` for a credential that is not a user
-     * (an Entra app registration is not).
+     * Every identity this connection authenticates AS, in every form the writer
+     * can name WITHOUT a network call. Empty for a credential that is not a user
+     * — an Entra app registration is not, and never will be.
      *
-     * Declared by the writer because only the writer knows it, and read by the
+     * A LIST, and both halves of that matter.
+     *
+     * SEVERAL IDENTITIES. A connection may hold a dedicated write bind AND a
+     * read bind. Only the write bind authenticates this writer, but disabling
+     * the READ bind stops the nightly sync, links go stale, and every later
+     * leaver pass refuses NO_FRESH_LINKS — offboarding stops, quietly, for
+     * everyone. Both must be off limits.
+     *
+     * SEVERAL FORMS. It was a single string compared by equality against
+     * `externalUserId`, and for Active Directory those are drawn from different
+     * namespaces: `externalUserId` is `formatObjectGuid(entry.objectGUID)`, a
+     * GUID, while the bind is a DN or a userPrincipalName. A GUID never equals a
+     * DN, so the refusal could not fire — in AUTOMATIC and PROPOSE as much as in
+     * the dry run. The writer's own `findAccount` dispatches on exactly this
+     * distinction (`GUID_PATTERN.test(id)` → search by objectGUID, else treat as
+     * a DN); the self-check did not.
+     *
+     * Declared by the writer because only the writer knows them, and read by the
      * orchestrator because only the orchestrator decides. See the self-lockout
      * refusal in `disableAccount`.
      */
-    readonly selfAccountId?: string | null;
+    readonly selfAccountIds?: readonly string[];
     /** Read the current state. Called before the write, for the capture. */
     readState(externalUserId: string): Promise<DirectoryAccountState>;
     /** Perform the disable. Resolves on success, throws on refusal. */
@@ -147,6 +165,16 @@ function provenNotApplied(err: unknown): boolean {
 export interface DisableAccountInput {
     readonly linkId: string;
     readonly externalUserId: string;
+    /**
+     * The account's mail / userPrincipalName, when the directory reported one.
+     *
+     * Carried for ONE reason: the self-lockout refusal. A bind is configured as
+     * a DN or a UPN, while `externalUserId` for Active Directory is an
+     * objectGUID — so comparing the two can never match. The UPN is the form the
+     * two namespaces actually meet in, and the sync already stores it on the
+     * account row one select-field away.
+     */
+    readonly email?: string | null;
     readonly onPremisesSyncEnabled: boolean | null;
     /**
      * Break-glass / service account, excluded from automated offboarding.
@@ -165,9 +193,51 @@ export interface DisableAccountInput {
  * a network call runs before the one that needs one. A tenant in DISABLED mode
  * must not generate directory traffic to discover that it is in DISABLED mode.
  */
+/**
+ * A provider message, with the account taken out of it, for a LOG field.
+ *
+ * Redacting the `externalUserId` KEY is not enough on its own and the gap is
+ * the dangerous kind. Four of these sites also log `error: <provider message>`,
+ * and the provider messages embed the identifier in their prose — "Entra
+ * refused to disable account <guid>", "Refusing to disable CN=…". A key-only
+ * fix leaves the id in the field beside the redacted one while making the line
+ * LOOK sanitised, which is worse than the open gap, because nobody looks twice
+ * at a line that already says [Redacted].
+ *
+ * The RETURNED `reason` is deliberately NOT scrubbed. It reaches an operator
+ * through a surface that is tenant-scoped and access-controlled, and naming the
+ * account is the whole use of it there. A log line has neither property.
+ */
+function scrubbed(detail: string, externalUserId: string): string {
+    return redactDirectoryIdentifiers(detail, externalUserId);
+}
+
 /** Case- and whitespace-insensitive identity comparison for directory ids. */
 function sameAccount(a: string, b: string): boolean {
     return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Is this candidate one of the accounts the connection authenticates as?
+ *
+ * Every identity the orchestrator holds for the candidate, against every
+ * identity the writer names for itself. Both sides are lists because both sides
+ * are genuinely plural: a connection may hold a write bind and a read bind, and
+ * an account is known by an objectGUID, a DN and a userPrincipalName depending
+ * on who is doing the naming.
+ *
+ * Blank strings are dropped rather than compared. An account with no email and a
+ * connection with no configured bind would otherwise match each other on `''`
+ * and refuse every candidate in the tenant.
+ */
+function matchesSelf(input: DisableAccountInput, selfIds: readonly string[] | undefined): boolean {
+    if (!selfIds || selfIds.length === 0) return false;
+    const candidateIds = [input.externalUserId, input.email].filter(
+        (v): v is string => typeof v === 'string' && v.trim() !== '',
+    );
+    return selfIds.some(
+        (self) => self.trim() !== '' && candidateIds.some((candidate) => sameAccount(candidate, self)),
+    );
 }
 
 export async function disableAccount(
@@ -211,11 +281,20 @@ async function decideAndDisable(
     // First in the chain, ahead of even the mode check, because this refusal
     // does not depend on configuration. A tenant in AUTOMATIC has not consented
     // to this, and a tenant in DRY_RUN should still see it reported.
-    if (writer.selfAccountId && sameAccount(input.externalUserId, writer.selfAccountId)) {
+    //
+    // Compared across every identity form BOTH sides can offer, because the two
+    // are keyed differently: a bind is configured as a DN or a UPN, while an AD
+    // account's `externalUserId` is an objectGUID. Matching only id-against-id
+    // is how this guard came to be wired and unable to fire.
+    if (matchesSelf(input, writer.selfAccountIds)) {
         logger.error('leaver disable refused: target is the integration\'s own account', {
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
             provider: writer.provider,
+            // The opaque link id, never the directory identifier: this line is
+            // neither encrypted nor tenant-scoped, and an operator reading a dry
+            // run still needs to know WHICH candidate tripped the refusal.
+            linkId: input.linkId,
         });
         return {
             outcome: 'REFUSED_PROTECTED',
@@ -232,7 +311,7 @@ async function decideAndDisable(
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
             provider: writer.provider,
-            externalUserId: input.externalUserId,
+            linkId: input.linkId,
         });
         return {
             outcome: 'REFUSED_PROTECTED',
@@ -288,8 +367,8 @@ async function decideAndDisable(
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
             provider: writer.provider,
-            externalUserId: input.externalUserId,
-            error: detail,
+            linkId: input.linkId,
+            error: scrubbed(detail, input.externalUserId),
         });
         return { outcome: 'FAILED', reason: `Could not read the account before writing: ${detail}` };
     }
@@ -339,7 +418,7 @@ async function decideAndDisable(
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
             provider: writer.provider,
-            externalUserId: input.externalUserId,
+            linkId: input.linkId,
         });
         return { outcome: 'DRY_RUN', reason: 'Dry-run mode: the disable was decided but not performed.' };
     }
@@ -377,9 +456,9 @@ async function decideAndDisable(
                 component: 'identity-disable-account',
                 tenantId: ctx.tenantId,
                 provider: writer.provider,
-                externalUserId: input.externalUserId,
+                linkId: input.linkId,
                 journalId: handle.journalId,
-                error: detail,
+                error: scrubbed(detail, input.externalUserId),
             });
             return { outcome: 'FAILED', reason: detail, journalId: handle.journalId };
         }
@@ -389,7 +468,7 @@ async function decideAndDisable(
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
             provider: writer.provider,
-            externalUserId: input.externalUserId,
+            linkId: input.linkId,
             journalId: handle.journalId,
             error: detail,
         });
@@ -600,13 +679,14 @@ export async function findLeaverCandidates(
             },
             select: {
                 id: true,
-                connectedAccount: { select: { externalUserId: true, onPremisesSyncEnabled: true } },
+                connectedAccount: { select: { externalUserId: true, email: true, onPremisesSyncEnabled: true } },
             },
             take: MAX_CANDIDATES,
         });
         return rows.map((r) => ({
             linkId: r.id,
             externalUserId: r.connectedAccount.externalUserId,
+            email: r.connectedAccount.email,
             onPremisesSyncEnabled: r.connectedAccount.onPremisesSyncEnabled,
         }));
     });

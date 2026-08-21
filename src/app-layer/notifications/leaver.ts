@@ -93,6 +93,7 @@ import type { EmailNotificationType } from '@prisma/client';
 import type { RequestContext } from '../types';
 import type { DisableOutcome } from '../usecases/identity-disable-account';
 import { runInTenantContext } from '@/lib/db-context';
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { enqueueEmail } from './enqueue';
@@ -356,26 +357,8 @@ export function planLeaverNotifications(
  * redaction only ever REMOVES, substituting fixed literals that cannot carry
  * markup back in.
  */
-const EMAIL_LIKE_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const DN_LIKE_RE = /\b(?:CN|OU|DC|UID)=[^,\s"']+(?:\s*,\s*(?:CN|OU|DC|UID)=[^,\s"']+)*/gi;
-const GUID_LIKE_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
-
-function redactDirectoryIdentifiers(text: string, externalUserId?: string | null): string {
-    let out = text;
-    // The account's own id first and by exact match, because it is the one
-    // identifier we can remove with certainty rather than by shape — and a
-    // sAMAccountName carries no shape at all, so nothing else here would catch
-    // it.
-    const own = (externalUserId ?? '').trim();
-    if (own.length >= 3) {
-        const escaped = own.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        out = out.replace(new RegExp(escaped, 'gi'), '{account}');
-    }
-    return out
-        .replace(DN_LIKE_RE, '{account}')
-        .replace(EMAIL_LIKE_RE, '{account}')
-        .replace(GUID_LIKE_RE, '{account}');
-}
+// Moved to @/lib/security/redact-directory-identifiers so the log path can
+// share it. The reasoning that produced these three patterns lives there now.
 
 export interface NotifyLeaverInput {
     /** The link the write acted through, when there was one. */
