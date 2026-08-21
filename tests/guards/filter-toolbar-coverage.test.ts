@@ -59,6 +59,8 @@ const EXEMPTIONS: Record<string, string> = {
         "Detail-page Vulnerabilities sub-table (asset 360° view) — the CVE list for one asset; EntityDetailLayout owns the chrome, not a faceted-filter list surface.",
     "src/app/t/[tenantSlug]/(app)/audits/nis2-gap/Nis2GapLifecycleClient.tsx":
         "NIS2 gap-lifecycle surface — run-history + prioritized-gap sub-tables on a multi-section detail view (KPIs + trend + radar + propose-not-commit review); not a faceted-filter list.",
+    "src/app/t/[tenantSlug]/(app)/admin/identity-leaver-passes/LeaverPassesClient.tsx":
+        "Dry-run leaver-pass report — a master/detail pair (the passes a tenant has run, capped at 100 by the read, plus the selected pass's decisions). The whole point is reading every pass in the seven-day window, so a facet that hides one is a facet that hides evidence; the list is already bounded and ordered most-recent-first.",
     // ── Cross-tenant read-only aggregation views (org-level) ──
     // These render a portfolio of tenant-scoped data without the
     // per-tenant filtering surface that FilterToolbar provides.

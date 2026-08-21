@@ -56,6 +56,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — chronological audit log; parent page owns chrome.',
     'admin/dsar-requests/DsarRegisterClient.tsx':
         '(c) admin register still without a toolbar — small rights-request queue (GDPR Art.15/17); the gear lands when a toolbar does.',
+    'admin/identity-leaver-passes/LeaverPassesClient.tsx':
+        '(b) multi-table — a passes list plus the selected pass\u2019s decisions table, both with fixed derived columns an operator is meant to read in full; hiding a column here hides evidence.',
     'admin/billing/BillingEventLog.tsx':
         '(a) sub-component — billing-page event log; parent decides chrome.',
     'admin/integrations/ConnectionHealthPanel.tsx':

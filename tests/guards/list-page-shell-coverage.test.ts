@@ -88,6 +88,8 @@ const EXEMPTIONS: Record<string, string> = {
         'admin sub-page — per-connection outcome view (header + sync action + one table), not a viewport-clamped list',
     'admin/integrations/identity-accounts/page.tsx':
         'admin sub-page — synced-identity roster (bounded per-tenant table), not a viewport-clamped list',
+    'admin/identity-leaver-passes/LeaverPassesClient.tsx':
+        'master/detail report — passes table plus the selected pass’s decisions table; clamping either would scroll one while the other stayed still',
 
     // GAP-3 — freshness sub-panel embedded inside the (exempt)
     // integrations page. Parent decides layout; this file just renders

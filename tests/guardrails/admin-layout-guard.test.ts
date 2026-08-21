@@ -40,6 +40,17 @@ describe('Admin layout guard', () => {
  *
  * Pages that need finer-grained checks (e.g. admin.manage vs admin.view)
  * should be explicitly allowlisted below.
+ *
+ * The allowlist is keyed on the path RELATIVE TO the admin dir, not on the
+ * basename. Keying on the basename could only ever hold `layout.tsx`, since
+ * every page file in the tree is called `page.tsx` — so the "finer-grained
+ * checks" carve-out the comment above promises was unreachable, and the first
+ * page that legitimately needed a stricter gate would have had to choose
+ * between failing CI and moving its guard somewhere the scan does not look.
+ *
+ * An entry is not a blanket pass. `STRICTER_GUARD_PAGES` is asserted to hold a
+ * gate that is genuinely NARROWER than the layout's `admin.view` — an entry
+ * that degrades to `action="view"` is redundant again and fails.
  */
 describe('No duplicate admin guards on pages', () => {
     const ADMIN_PAGES_DIR = path.resolve(
@@ -47,10 +58,20 @@ describe('No duplicate admin guards on pages', () => {
         '../../src/app/t/[tenantSlug]/(app)/admin'
     );
 
-    // Allowlist: files that may import RequirePermission for non-redundant reasons
-    const ALLOWLIST = new Set([
-        'layout.tsx', // The layout itself — obviously needs it
-    ]);
+    /**
+     * Pages whose own `RequirePermission` is STRICTER than the layout's, with
+     * the reason. Path is relative to ADMIN_PAGES_DIR, POSIX separators.
+     *
+     * Two shapes qualify, and both are narrower than `admin.view`: a whole page
+     * behind a stricter key, and a page that keeps `admin.view` but gates ONE
+     * affordance leading somewhere stricter.
+     */
+    const STRICTER_GUARD_PAGES: Record<string, string> = {
+        'identity-leaver-passes/page.tsx':
+            'OWNER-only (admin.tenant_lifecycle) — the report names which of a customer’s people a leaver pass would have disabled; without the page gate a non-OWNER admin sees the API 403 as a load failure',
+        'integrations/page.tsx':
+            'gates ONE link (admin.tenant_lifecycle) to the OWNER-only leaver-pass report; the page itself stays admin.view, so an ADMIN is never offered a door that closes on them',
+    };
 
     function findPageFiles(dir: string): string[] {
         const files: string[] = [];
@@ -68,13 +89,16 @@ describe('No duplicate admin guards on pages', () => {
         return files;
     }
 
+    const rel = (p: string) =>
+        path.relative(ADMIN_PAGES_DIR, p).split(path.sep).join('/');
+
     test('no admin page.tsx files import RequirePermission for admin resource', () => {
         const pages = findPageFiles(ADMIN_PAGES_DIR);
         const violations: string[] = [];
 
         for (const pagePath of pages) {
-            const basename = path.basename(pagePath);
-            if (ALLOWLIST.has(basename)) continue;
+            const relPath = rel(pagePath);
+            if (relPath in STRICTER_GUARD_PAGES) continue;
 
             const content = fs.readFileSync(pagePath, 'utf-8');
             // Check for RequirePermission import (not just any mention in comments)
@@ -82,7 +106,6 @@ describe('No duplicate admin guards on pages', () => {
                 content.includes("from '@/components/require-permission'") ||
                 content.includes('from "@/components/require-permission"')
             ) {
-                const relPath = path.relative(ADMIN_PAGES_DIR, pagePath);
                 violations.push(relPath);
             }
         }
@@ -95,16 +118,43 @@ describe('No duplicate admin guards on pages', () => {
         const violations: string[] = [];
 
         for (const pagePath of pages) {
+            const relPath = rel(pagePath);
+            // A page carrying a stricter gate needs a fallback to render when
+            // that gate refuses; ForbiddenPage IS that fallback, so the same
+            // carve-out applies here.
+            if (relPath in STRICTER_GUARD_PAGES) continue;
+
             const content = fs.readFileSync(pagePath, 'utf-8');
             if (
                 content.includes("from '@/components/ForbiddenPage'") ||
                 content.includes('from "@/components/ForbiddenPage"')
             ) {
-                const relPath = path.relative(ADMIN_PAGES_DIR, pagePath);
                 violations.push(relPath);
             }
         }
 
         expect(violations).toEqual([]);
+    });
+
+    test('every allowlisted page exists AND guards something stricter than admin.view', () => {
+        // Positive half: the carve-out has to describe a real file that really
+        // does carry the guard. Without this an entry outlives its page and
+        // silently exempts nothing (or, worse, a future file at that path).
+        const entries = Object.keys(STRICTER_GUARD_PAGES);
+        expect(entries.length).toBeGreaterThan(0);
+
+        for (const relPath of entries) {
+            const full = path.join(ADMIN_PAGES_DIR, relPath);
+            expect(fs.existsSync(full)).toBe(true);
+
+            const content = fs.readFileSync(full, 'utf-8');
+            expect(content).toContain('RequirePermission');
+            expect(content).toContain('resource="admin"');
+            // Negative half, paired with the positives above: the exemption is
+            // for a NARROWER gate. Re-declaring the layout's own `admin.view`
+            // is the redundancy this describe block exists to refuse.
+            expect(content).not.toContain('action="view"');
+            expect(STRICTER_GUARD_PAGES[relPath].length).toBeGreaterThan(20);
+        }
     });
 });
