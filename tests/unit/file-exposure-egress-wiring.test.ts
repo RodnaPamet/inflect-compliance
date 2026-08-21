@@ -83,11 +83,26 @@ jest.mock('@/app-layer/usecases/evidence', () => ({
 }));
 
 // ─── SharePoint export ───
+interface FakeFileRow {
+    id: string;
+    tenantId: string;
+    sha256: string;
+    pathKey: string;
+    originalName: string;
+    scanStatus: string;
+    status: string;
+    deletedAt: Date | null;
+}
+
 const mockDb = {
     auditPack: { update: jest.fn(async () => ({})) },
     integrationExecution: { create: jest.fn(async () => ({})) },
-    evidence: { findMany: jest.fn(async () => []) },
-    fileRecord: { findMany: jest.fn(async () => []) },
+    // Element types are declared, not inferred. `jest.fn(async () => [])`
+    // infers `Promise<never[]>`, so every later `mockResolvedValueOnce([{…}])`
+    // is a TS2322 against `never` — which jest runs happily and the build
+    // refuses.
+    evidence: { findMany: jest.fn(async (): Promise<{ fileRecord: FakeFileRow }[]> => []) },
+    fileRecord: { findMany: jest.fn(async (): Promise<FakeFileRow[]> => []) },
 };
 const mockClient = { uploadNewFile: jest.fn() };
 const mockGetPack = jest.fn();
