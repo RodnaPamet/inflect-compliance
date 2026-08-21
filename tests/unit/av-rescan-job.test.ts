@@ -151,6 +151,7 @@ interface RowOverrides {
     sizeBytes?: number;
     sha256?: string;
     bytes?: Buffer;
+    scanAttempts?: number;
 }
 
 /**
@@ -169,6 +170,7 @@ function pendingRow(over: RowOverrides = {}) {
         sha256: over.sha256 ?? createHash('sha256').update(bytes).digest('hex'),
         sizeBytes: over.sizeBytes ?? bytes.length,
         storageProvider: 'local',
+        scanAttempts: over.scanAttempts ?? 0,
     };
 }
 
@@ -182,6 +184,19 @@ function writtenPayloads(): Array<Record<string, unknown>> {
     return [...updateMany.mock.calls, ...update.mock.calls].map(
         (c) => (c[0] as { data: Record<string, unknown> }).data,
     );
+}
+
+/**
+ * The writes that assert a scan RESULT.
+ *
+ * #120 split the attempt record out of the verdict write, so "the job wrote
+ * nothing" is no longer the right question for a row left pending — an
+ * attempt IS recorded there, deliberately, in columns disjoint from the
+ * verdict. The invariant these blocks protect is unchanged and narrower than
+ * it looked: no VERDICT is written. Anything carrying `scanStatus` is one.
+ */
+function verdictPayloads(): Array<Record<string, unknown>> {
+    return writtenPayloads().filter((d) => 'scanStatus' in d);
 }
 
 beforeEach(() => {
@@ -212,7 +227,7 @@ describe('#113 a synthetic CLEAN is never written to a row', () => {
         // already the bug — the row would then be stamped CLEAN and stay
         // servable in every future mode.
         expect(scanBufferMock).not.toHaveBeenCalled();
-        expect(writtenPayloads()).toEqual([]);
+        expect(verdictPayloads()).toEqual([]);
         expect(result.scanned).toBe(0);
     });
 
@@ -231,7 +246,7 @@ describe('#113 a synthetic CLEAN is never written to a row', () => {
         await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
 
         expect(scanBufferMock).toHaveBeenCalled();
-        expect(writtenPayloads()).toEqual([]);
+        expect(verdictPayloads()).toEqual([]);
         expect(appendAuditEntryMock).not.toHaveBeenCalled();
     });
 });
@@ -253,7 +268,7 @@ describe('#114 bytes read back from storage are verified against the record', ()
         const result = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
 
         expect(scanBufferMock).not.toHaveBeenCalled();
-        expect(writtenPayloads()).toEqual([]);
+        expect(verdictPayloads()).toEqual([]);
         expect(result.integrityMismatch).toBe(1);
     });
 
@@ -280,7 +295,7 @@ describe('#115 SKIPPED is never used for "too big" or "scanner down"', () => {
         const { runAvRescan } = loadJob();
         const result = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
 
-        expect(writtenPayloads()).toEqual([]);
+        expect(verdictPayloads()).toEqual([]);
         expect(result.leftPending).toBe(1);
     });
 
@@ -297,7 +312,7 @@ describe('#115 SKIPPED is never used for "too big" or "scanner down"', () => {
 
         expect(readStream).not.toHaveBeenCalled();
         expect(scanBufferMock).not.toHaveBeenCalled();
-        expect(writtenPayloads()).toEqual([]);
+        expect(verdictPayloads()).toEqual([]);
         expect(result.leftPending).toBe(1);
     });
 
@@ -315,7 +330,7 @@ describe('#115 SKIPPED is never used for "too big" or "scanner down"', () => {
         const { runAvRescan } = loadJob();
         await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
 
-        const statuses = writtenPayloads().map((d) => d.scanStatus);
+        const statuses = verdictPayloads().map((d) => d.scanStatus);
         expect(statuses).toEqual(['CLEAN']);
         expect(statuses).not.toContain('SKIPPED');
     });
@@ -383,10 +398,10 @@ describe('#121 concurrency is a conditional claim at verdict time', () => {
         const result = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
 
         expect(result.infected).toBe(1);
-        for (const data of writtenPayloads()) {
+        for (const data of verdictPayloads()) {
             expect(Object.keys(data)).not.toContain('status');
         }
-        expect(writtenPayloads()[0].scanStatus).toBe('INFECTED');
+        expect(verdictPayloads()[0].scanStatus).toBe('INFECTED');
     });
 });
 
@@ -445,7 +460,7 @@ describe('#126 scanning happens outside any transaction, with provenance', () =>
         const { runAvRescan } = loadJob();
         await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
 
-        const details = JSON.parse(String(writtenPayloads()[0].scanDetails));
+        const details = JSON.parse(String(verdictPayloads()[0].scanDetails));
         expect(details.source).toBe('rescan-job');
         expect(details.engine).toBe('clamav');
     });
@@ -521,7 +536,7 @@ describe('the sweep survives a bad row and reports honestly', () => {
 
         expect(result.readError).toBe(1);
         expect(result.clean).toBe(2);
-        expect(writtenPayloads().map((d) => d.scanStatus)).toEqual(['CLEAN', 'CLEAN']);
+        expect(verdictPayloads().map((d) => d.scanStatus)).toEqual(['CLEAN', 'CLEAN']);
         // The row after the failure was reached at all.
         expect(scanBufferMock).toHaveBeenCalledTimes(2);
     });

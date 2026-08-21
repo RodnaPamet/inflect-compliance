@@ -73,6 +73,24 @@
  *     operator needs when a rescan turns out to have been run against a
  *     misconfigured scanner.
  *
+ *   - **A row that cannot reach a verdict must not hold the page.** The
+ *     bullets above all end the same way: the row keeps its honest PENDING.
+ *     That is right, and on its own it starves the queue — the sweep is
+ *     bounded and ordered oldest-first, so a handful of rows whose object is
+ *     gone from storage or whose bytes no longer match their digest sit at
+ *     the head of every future page and nothing behind them is ever examined.
+ *     The backlog not draining is the user-visible complaint this whole chain
+ *     exists to fix. So each row we leave PENDING gets an ATTEMPT recorded
+ *     against it — `scanAttempts` / `lastScanAttemptAt` / `nextScanAttemptAt`,
+ *     columns disjoint from the verdict ones — and the selection skips a row
+ *     until its exponential backoff expires and orders fewest-attempts first.
+ *     The attempt write is a SEPARATE statement from the verdict write and
+ *     never shares one: `FileRepository.recordScanAttempt` refuses at runtime
+ *     to touch `scanStatus`, `scanDetails`, `scannedAt` or `status`. A row
+ *     that DOES reach a verdict is written exactly as it was before — no
+ *     attempt bookkeeping rides along, because a verdict makes the row
+ *     unselectable anyway and the counter would only be noise.
+ *
  * ## Bounded
  *
  * One tenant, one page of rows, `take` always present. This is an operator
@@ -90,6 +108,7 @@ import { scanBuffer } from '@/lib/storage/av-scan';
 import { AV_SCAN_MAX_BYTES } from '@/app-layer/services/file-scan';
 import { computeSha256, streamToBuffer } from '@/app-layer/services/bundle-attachments';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import type { StorageProviderType } from '@/lib/storage/types';
 
 // ─── Bounds ─────────────────────────────────────────────────────────
@@ -148,6 +167,13 @@ export interface AvRescanResult {
     refusedSyntheticClean: number;
     /** Row was no longer PENDING when the claim ran. */
     lostClaim: number;
+    /**
+     * Rows left PENDING that had an attempt recorded and a backoff applied,
+     * so the page they were holding is now free for the rows behind them.
+     * Equals `leftPending` minus the handful whose attempt write lost its own
+     * race (a verdict landed between the scan and the bookkeeping).
+     */
+    backedOff: number;
     durationMs: number;
 }
 
@@ -174,6 +200,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 readError: 0,
                 refusedSyntheticClean: 0,
                 lostClaim: 0,
+                backedOff: 0,
                 durationMs: 0,
             };
 
@@ -198,12 +225,24 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 Math.min(options.limit ?? AV_RESCAN_DEFAULT_LIMIT, AV_RESCAN_MAX_LIMIT),
             );
 
+            // ── Select only what is DUE ──────────────────────────────
+            //
+            // `scanStatus: 'PENDING'` is the honest record of "no verdict",
+            // not a work queue: a row whose object is missing or whose bytes
+            // no longer match its digest is permanently PENDING and, ordered
+            // oldest-first under a `take`, would hold the head of every
+            // future page. The backoff gate is what lets the queue move past
+            // it, and the attempts-first ordering is what stops a
+            // much-retried row outranking one never tried. `NULL` means
+            // never attempted — every row that predates this ships as due.
+            const now = new Date();
             const rows = await prisma.fileRecord.findMany({
                 where: {
                     tenantId,
                     scanStatus: 'PENDING',
                     status: 'STORED',
                     deletedAt: null,
+                    OR: [{ nextScanAttemptAt: null }, { nextScanAttemptAt: { lte: now } }],
                 },
                 select: {
                     id: true,
@@ -212,12 +251,48 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                     sizeBytes: true,
                     storageProvider: true,
                     originalName: true,
+                    scanAttempts: true,
                 },
-                orderBy: { createdAt: 'asc' },
+                orderBy: [{ scanAttempts: 'asc' }, { createdAt: 'asc' }],
                 take,
             });
 
             out.scanned = rows.length;
+
+            /**
+             * Leave a row PENDING and stop it holding the page.
+             *
+             * Two writes exist in this job and they are kept apart on
+             * purpose. The verdict write below says what the scanner decided;
+             * this one says only that we tried, in columns no gate and no
+             * auditor reads. It is guarded by `scanStatus: 'PENDING'` for the
+             * same reason the verdict write is — if another writer landed a
+             * verdict while we were scanning, theirs stands and our attempt
+             * counter has no business touching the row.
+             *
+             * A failure here is swallowed: the bookkeeping is an
+             * optimisation of WHEN the row is retried, and losing it must
+             * never cost the operator the rest of the page.
+             */
+            const leavePending = async (row: { id: string; scanAttempts: number }) => {
+                out.leftPending++;
+                try {
+                    const attempts = await FileRepository.recordScanAttempt(prisma, row.id, {
+                        tenantId,
+                        attempts: row.scanAttempts,
+                        now: new Date(),
+                    });
+                    if (attempts !== null) out.backedOff++;
+                } catch (err) {
+                    logger.warn('av-rescan could not record a scan attempt', {
+                        component: 'av-rescan',
+                        tenantId,
+                        jobRunId,
+                        fileId: row.id,
+                        error: err instanceof Error ? err.message : String(err),
+                    });
+                }
+            };
 
             for (const row of rows) {
                 // ── Too big to scan is not "safe" ────────────────────
@@ -229,7 +304,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 // servable.
                 if (row.sizeBytes > AV_SCAN_MAX_BYTES) {
                     out.oversize++;
-                    out.leftPending++;
+                    await leavePending(row);
                     logger.warn('av-rescan left a file pending: exceeds scan cap', {
                         component: 'av-rescan',
                         tenantId,
@@ -254,7 +329,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                     buffer = await streamToBuffer(provider.readStream(row.pathKey));
                 } catch (err) {
                     out.readError++;
-                    out.leftPending++;
+                    await leavePending(row);
                     logger.warn('av-rescan could not read an object; leaving it pending', {
                         component: 'av-rescan',
                         tenantId,
@@ -275,7 +350,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 const actualHash = computeSha256(buffer);
                 if (actualHash !== row.sha256) {
                     out.integrityMismatch++;
-                    out.leftPending++;
+                    await leavePending(row);
                     logger.error('av-rescan: stored bytes do not match the record digest', {
                         component: 'av-rescan',
                         tenantId,
@@ -295,7 +370,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
 
                 if (result.status === 'ERROR') {
                     out.scannerError++;
-                    out.leftPending++;
+                    await leavePending(row);
                     logger.warn('av-rescan: scan did not complete; leaving file pending', {
                         component: 'av-rescan',
                         tenantId,
@@ -313,7 +388,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 // fabricated verdict after someone reworks the mode logic.
                 if (result.engine === 'disabled') {
                     out.refusedSyntheticClean++;
-                    out.leftPending++;
+                    await leavePending(row);
                     logger.error('av-rescan refused a synthetic CLEAN from engine "disabled"', {
                         component: 'av-rescan',
                         tenantId,
@@ -409,6 +484,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 readError: out.readError,
                 refusedSyntheticClean: out.refusedSyntheticClean,
                 lostClaim: out.lostClaim,
+                backedOff: out.backedOff,
                 durationMs: out.durationMs,
             });
 
