@@ -185,7 +185,10 @@ describe('route-permission map', () => {
             'POST',
         );
         expect(reversal?.permission).toBe('admin.tenant_lifecycle');
-        expect(reversal?.methods).toBeUndefined();
+        // `methods` lives on the RULE, not on the resolved wrapper — an
+        // omitted `methods` means the rule covers every verb, which is what
+        // makes the reversal rule un-shadowed here.
+        expect(reversal?.rule.methods).toBeUndefined();
     });
 
     it('the key both name is one ADMIN does not hold', () => {
