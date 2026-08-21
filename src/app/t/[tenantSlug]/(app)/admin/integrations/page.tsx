@@ -507,6 +507,17 @@ export default function AdminIntegrationsPage() {
                                 <Link href={tenantHref('/admin/identity-leaver-passes')} className={buttonVariants({ variant: 'secondary', size: 'sm' })} id="leaver-passes-link">
                                     {t('leaverPasses.linkLabel')}
                                 </Link>
+                                {/* The ladder itself. It shipped with a route and
+                                    no door, so the only way to start the mandated
+                                    seven-day dry run was a hand-made request from
+                                    an OWNER session — which meant the observation
+                                    period could not be BEGUN through the product
+                                    at all. Same gate as its sibling: the control
+                                    decides whether we may disable accounts in the
+                                    customer's own directory. */}
+                                <Link href={tenantHref('/admin/identity-write-policy')} className={buttonVariants({ variant: 'secondary', size: 'sm' })} id="write-policy-link">
+                                    {t('writeLadder.linkLabel')}
+                                </Link>
                             </RequirePermission>
                             <Button
                                 variant="primary"

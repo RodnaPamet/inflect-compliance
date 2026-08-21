@@ -30,6 +30,15 @@ const MIGRATED_PAGES = [
     // EI-1 — Entra provider wizard; design-system-native from birth
     // (Input / FormField / ToggleGroup / Card + semantic tokens only).
     'admin/entra/page.tsx',
+    // JML write ladder — the OWNER-only control deciding whether the product may
+    // write to a customer's directory. Design-system-native from birth (semantic
+    // content-*/bg-*/border-* only; Card + StatusBadge + InlineNotice +
+    // ConfirmDialog + PageBreadcrumbs primitives, no legacy btn/badge). Promoted
+    // on arrival rather than parked in the unmigrated tally, which is what the
+    // ceiling comment asks for and keeps these two files under the raw-colour
+    // assertion below instead of merely counted.
+    'admin/identity-write-policy/page.tsx',
+    'admin/identity-write-policy/WriteLadderClient.tsx',
     // SP-5 — SharePoint sync-health dashboard; semantic tokens + KPIStat only.
     'admin/integrations/sharepoint-health/page.tsx',
     // RQ-2 — risk appetite config; semantic tokens + Card/Input/Textarea only.

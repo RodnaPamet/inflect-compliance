@@ -5117,6 +5117,43 @@
                 "REJECTED": "Rejected",
                 "CANCELED": "Withdrawn"
             }
+        },
+        "writeLadder": {
+            "breadcrumb": "Directory write policy",
+            "title": "Directory write policy",
+            "intro": "Whether this product may act on accounts in your identity directory, and how far. Each direction widens one rung at a time; narrowing is always available and takes effect on the next pass.",
+            "forbidden": "Only an owner can view or change the directory write policy.",
+            "loading": "Loading the current policy…",
+            "loadError": "Couldn't load the directory write policy.",
+            "saveError": "Couldn't change the directory write policy.",
+            "atTop": "This is the widest rung.",
+            "widenTo": "Widen to {mode}",
+            "narrowTo": "Narrow to {mode}",
+            "confirmTitle": "Widen to {mode}?",
+            "dryRunSince": "In dry run since {date}. A direction must sit here {days} days before it can widen.",
+            "aboveClamp": "This rung is above what the product will act on today. Passes run at {mode} and refuse anything wider, so widening further changes the policy but not the behaviour.",
+            "notImplemented": "Joiner provisioning is not built yet — no directory provider can create an account. Any rung above Off is recorded but does nothing.",
+            "direction": {
+                "leaver": "Leavers",
+                "joiner": "Joiners"
+            },
+            "blurb": {
+                "leaver": "What happens when the HR feed reports someone as terminated and the product holds a directory account matched to them.",
+                "joiner": "What happens when the HR feed reports a new worker who has no directory account yet."
+            },
+            "mode": {
+                "DISABLED": "Off",
+                "DRY_RUN": "Dry run",
+                "PROPOSE": "Propose",
+                "AUTOMATIC": "Automatic"
+            },
+            "confirmBody": {
+                "DISABLED": "The product will stop acting on this direction entirely.",
+                "DRY_RUN": "The product will decide what it would do and record it, and write nothing to your directory. This starts the observation period.",
+                "PROPOSE": "The product will raise each action for a person to approve before anything is written to your directory.",
+                "AUTOMATIC": "The product will write to your directory without asking. Nothing stands between a terminated worker in the HR feed and a disabled account, except the safety rails. You can narrow this at any time."
+            },
+            "linkLabel": "Write policy"
         }
     },
     "riskManager": {
