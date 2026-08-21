@@ -30,6 +30,7 @@ import { LEAVER_PASS_AUTOMATION_SUFFIX } from './identity-leaver-pass';
 import { logger } from '@/lib/observability/logger';
 import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-freshness';
 import { runIdentitySync } from './identity-sync';
+import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
 
 /** Providers whose connection-level sync runs a directory/account sync. */
 const IDENTITY_SYNC_PROVIDERS = new Set(['okta', 'google-workspace', 'entra-id', 'active-directory']);
@@ -710,7 +711,12 @@ export async function listConnectedAccounts(
                 syncedAt: true,
             },
             orderBy: [{ provider: 'asc' }, { email: 'asc' }],
-            take: options.limit ?? 500,
+            // Capped, with no `truncated` flag on the wire — so a caller can
+            // read PRESENCE off this list but never ABSENCE. The constant is
+            // shared with the access-reviews directory gate, which compares
+            // the row count against it before it dares call a provider
+            // unsynced. See src/lib/identity-roster.ts.
+            take: options.limit ?? IDENTITY_ROSTER_PAGE_SIZE,
         })
     );
 }

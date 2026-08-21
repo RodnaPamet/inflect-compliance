@@ -12,7 +12,7 @@
  *   - axe-core finds zero WCAG 2.1 AA violations on the opened picker.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import * as React from 'react';
@@ -222,5 +222,72 @@ describe('<Combobox name /> — hidden input', () => {
             'input[type="hidden"][name="fruit"]',
         );
         expect(hidden).toHaveValue('cherry');
+    });
+});
+
+// --- Options that change without the option SET changing -------
+
+/**
+ * The dropdown renders from a state snapshot of `options`, re-synced when
+ * the option list changes. That re-sync used to key on the option VALUES
+ * alone -- so a caller that marked an existing option unavailable, which is
+ * a `disabledTooltip` appearing on an option whose value did not change,
+ * updated the prop and nothing else: the snapshot stayed as it was and the
+ * dropdown kept offering the option indefinitely. Silent, and invisible
+ * from the caller's side, since the options it passes are correct.
+ */
+function AvailabilityHarness({ gated }: { gated: boolean }) {
+    const [selected, setSelected] = React.useState<ComboboxOption | null>(null);
+    const options = React.useMemo<ComboboxOption[]>(
+        () =>
+            FRUITS.map((o) =>
+                gated && o.value !== 'apple'
+                    ? { ...o, disabledTooltip: 'Out of season' }
+                    : { value: o.value, label: o.label },
+            ),
+        [gated],
+    );
+    return (
+        <Combobox
+            options={options}
+            selected={selected}
+            setSelected={setSelected}
+            placeholder="Pick a fruit"
+            forceDropdown
+        />
+    );
+}
+
+const optionNamed = async (name: string) =>
+    within(await screen.findByRole('listbox')).getByRole('option', { name });
+
+describe('<Combobox /> -- availability that changes under an open dropdown', () => {
+    it('picks up a disabledTooltip added to an option already on screen', async () => {
+        const user = userEvent.setup();
+        const { rerender } = render(<AvailabilityHarness gated={false} />);
+        await user.click(screen.getByRole('combobox'));
+
+        // Baseline, so the assertion below is about the re-sync and not
+        // about an option that was disabled from the start.
+        expect(await optionNamed('Banana')).toHaveAttribute(
+            'aria-disabled',
+            'false',
+        );
+
+        // Same option set, same values -- only availability changed.
+        rerender(<AvailabilityHarness gated />);
+
+        await waitFor(async () =>
+            expect(await optionNamed('Banana')).toHaveAttribute(
+                'aria-disabled',
+                'true',
+            ),
+        );
+        // The one that stayed available is still selectable: the re-sync
+        // carries per-option state, it does not disable the list.
+        expect(await optionNamed('Apple')).toHaveAttribute(
+            'aria-disabled',
+            'false',
+        );
     });
 });
