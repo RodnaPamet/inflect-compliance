@@ -341,10 +341,68 @@ describe('the write-target refuses what would silently revert', () => {
         expect(r.reason).toMatch(/never observed/i);
     });
 
-    it('refuses BEFORE reading state — no network call for a decided refusal', async () => {
-        const readState = jest.fn();
-        await disableAccount(ctx, fakeWriter({ readState }), input({ onPremisesSyncEnabled: true }));
-        expect(readState).not.toHaveBeenCalled();
+    /**
+     * These replace an earlier assertion that the read did NOT happen for a
+     * decided refusal. That ordering was cheaper and produced an alert nobody
+     * could clear.
+     *
+     * The refusal is decided from `onPremisesSyncEnabled`, which is true because
+     * the object is mastered on-premises and stays true after an administrator
+     * does exactly what the mail asks. Nothing in the pass could observe the
+     * work being done, so the NEEDS_ACTION mail arrived again the next day, and
+     * every day after — in the inbox it shares with INDETERMINATE.
+     */
+    it('ASKS the account before refusing — the read is what gives the refusal a way to clear', async () => {
+        const readState = jest.fn(async () => ({ enabled: true, priorState: { accountEnabled: true } }));
+        const r = await disableAccount(ctx, fakeWriter({ readState }), input({ onPremisesSyncEnabled: true }));
+
+        expect(readState).toHaveBeenCalledWith('ext-1');
+        // Still live, so the refusal still has something to ask for.
+        expect(r.outcome).toBe('REFUSED_TARGET');
+    });
+
+    it('CLEARS once the account is disabled where it is mastered', async () => {
+        // The same candidate with the same permanently-true sync flag. The only
+        // thing that changed is that somebody did what the mail asked.
+        const w = fakeWriter({ readState: async () => ({ enabled: false, priorState: { accountEnabled: false } }) });
+        const r = await disableAccount(ctx, w, input({ onPremisesSyncEnabled: true }));
+
+        expect(r.outcome).toBe('ALREADY_DISABLED');
+        expect(w.disabled).toEqual([]);
+        expect(db.identityWriteJournal.create).not.toHaveBeenCalled();
+    });
+
+    it('clears the never-observed refusal on the same evidence', async () => {
+        // "Run a sync and retry" is satisfiable, but it is not the only way the
+        // work gets done — an admin who simply disables the account has also
+        // finished, and there is nothing left to ask them for.
+        const w = fakeWriter({ readState: async () => ({ enabled: false, priorState: {} }) });
+        const r = await disableAccount(ctx, w, input({ onPremisesSyncEnabled: null }));
+        expect(r.outcome).toBe('ALREADY_DISABLED');
+    });
+
+    it('counts a cleared account as ALREADY_DISABLED, not as a refusal', async () => {
+        // REFUSED_TARGET is the counter an operator watches for "hybrid accounts
+        // still needing a human". Leaving resolved ones in it would hold the
+        // number flat while the work was being done.
+        const w = fakeWriter({ readState: async () => ({ enabled: false, priorState: {} }) });
+        await disableAccount(ctx, w, input({ onPremisesSyncEnabled: true }));
+
+        expect(recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ALREADY_DISABLED' }));
+        expect(recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'REFUSED_TARGET' }));
+    });
+
+    it('keeps the refusal when the account cannot be read — never downgrades it to FAILED', async () => {
+        // FAILED is a statement about a write, and no write was ever going to
+        // be attempted here. It would swap "disable this where it is mastered"
+        // for "the provider rejected the write" — a different instruction
+        // naming a different cause for the same live account.
+        const w = fakeWriter({ readState: async () => { throw new Error('graph timeout'); } });
+        const r = await disableAccount(ctx, w, input({ onPremisesSyncEnabled: true }));
+
+        expect(r.outcome).toBe('REFUSED_TARGET');
+        expect(r.reason).toMatch(/mastered on-premises/i);
+        expect(w.disabled).toEqual([]);
     });
 });
 
@@ -381,6 +439,21 @@ describe('DRY_RUN decides everything and writes nothing', () => {
         setMode('DRY_RUN', new Date('2026-08-01T00:00:00Z'));
         const r = await disableAccount(ctx, fakeWriter(), input({ onPremisesSyncEnabled: true }));
         expect(r.outcome).toBe('REFUSED_TARGET');
+    });
+
+    it('and clears that refusal in dry run too — the rung every tenant is clamped at', async () => {
+        // DRY_RUN is where this actually runs today, and where the unclearable
+        // mail was being generated. The reader here is the snapshot writer in
+        // production, so the fresh evidence is the last confirmed-complete
+        // enumeration rather than a socket.
+        setMode('DRY_RUN', new Date('2026-08-01T00:00:00Z'));
+        const w = fakeWriter({ readState: async () => ({ enabled: false, priorState: { staleEvidence: true } }) });
+        const r = await disableAccount(ctx, w, input({ onPremisesSyncEnabled: true }));
+
+        expect(r.outcome).toBe('ALREADY_DISABLED');
+        // Stale evidence never settles a journal row, refusal or not.
+        expect(r.journalId).toBeUndefined();
+        expect(db.identityWriteJournal.updateMany).not.toHaveBeenCalled();
     });
 });
 
@@ -663,6 +736,34 @@ describe('the batch gate', () => {
         const first = db.notificationOutbox.create.mock.calls[0][0].data;
         expect(first.type).toBe('IDENTITY_LEAVER_DISABLED');
         expect(first.toEmail).toBe('it@acme.test');
+    });
+
+    it('stops mailing about a hybrid account once somebody has disabled it', async () => {
+        // The defect end to end. Both candidates are permanently
+        // directory-synced, so both refused the write target every single day;
+        // the outbox dedupes by link id per day, so it was one NEEDS_ACTION mail
+        // per leaver per day with no way for anyone to make it stop.
+        //
+        // The positive half is asserted alongside the silence on purpose: an
+        // empty outbox proves nothing on its own — it reads the same whether the
+        // mail was suppressed or the notification path never ran at all.
+        const w = fakeWriter({
+            readState: async (id: string) => ({ enabled: id === 'still-live', priorState: {} }),
+        });
+        const candidates = [
+            input({ linkId: 'l1', externalUserId: 'still-live', onPremisesSyncEnabled: true }),
+            input({ linkId: 'l2', externalUserId: 'disabled-in-ad', onPremisesSyncEnabled: true }),
+        ];
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+
+        expect(r.results.map((x) => x.outcome)).toEqual(['REFUSED_TARGET', 'ALREADY_DISABLED']);
+        expect(db.notificationOutbox.create).toHaveBeenCalledTimes(1);
+        const only = db.notificationOutbox.create.mock.calls[0][0].data;
+        expect(only.type).toBe('IDENTITY_LEAVER_NEEDS_ACTION');
+        // The per-day dedupe entity for a pre-journal refusal is the link id —
+        // the mechanism that made the nag exactly daily, and the one that now
+        // has nothing to fire on for l2.
+        expect(only.dedupeKey).toContain(':l1:');
     });
 
     it('a broken notification path does not stop the batch', async () => {
