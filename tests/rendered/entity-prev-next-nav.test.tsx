@@ -276,14 +276,20 @@ describe('EntityPrevNextNav — labels come from the catalog, per locale', () =>
     // cases:
     //
     //   m  -ен / -ащ    актив, контрол, инцидент, риск, доставчик,
-    //                   цикъл, пакет, преглед, анализ
-    //   f  -на / -аща   политика, задача, рамка
+    //                   цикъл, пакет, преглед, анализ, тестов план
+    //   f  -на / -аща   политика, задача, рамка, ИИ система
     //   n  -но / -ащо   изпълнение          ← only one, and the easiest to miss
     //
     // The neuter row arrived with the audit/framework wave and was NOT covered
     // here at the time; it is the form a native speaker would catch and a
-    // catalog diff would not.
-    it.each([
+    // catalog diff would not. Every slug the component registers is rendered
+    // here for exactly that reason — an entity added to STEPPER_ENTITIES
+    // without a row below is a gender nobody checked.
+    //
+    // `testPlan` and `testRun` are DIFFERENT entities and different genders:
+    // a план (m) is the standing document, an изпълнение (n) is one execution
+    // of it. Sharing a phrase between them would be wrong twice over.
+    const BG_GENDER_TABLE: Array<[string, string, string]> = [
         ['asset', 'Предишен актив', 'Следващ актив'],
         ['control', 'Предишен контрол', 'Следващ контрол'],
         ['incident', 'Предишен инцидент', 'Следващ инцидент'],
@@ -293,13 +299,30 @@ describe('EntityPrevNextNav — labels come from the catalog, per locale', () =>
         ['pack', 'Предишен пакет', 'Следващ пакет'],
         ['accessReview', 'Предишен преглед на достъпа', 'Следващ преглед на достъпа'],
         ['bia', 'Предишен анализ', 'Следващ анализ'],
+        ['testPlan', 'Предишен тестов план', 'Следващ тестов план'],
         ['policy', 'Предишна политика', 'Следваща политика'],
         ['task', 'Предишна задача', 'Следваща задача'],
         ['framework', 'Предишна рамка', 'Следваща рамка'],
+        ['aiSystem', 'Предишна ИИ система', 'Следваща ИИ система'],
         ['testRun', 'Предишно изпълнение', 'Следващо изпълнение'],
-    ])('renders gender-agreeing Bulgarian for %s', (entity, prev, next) => {
+    ];
+
+    it.each(BG_GENDER_TABLE)('renders gender-agreeing Bulgarian for %s', (entity, prev, next) => {
         mockLocale.current = 'bg';
         expect(labels(mount(ids, 'a2', entity))).toEqual({ prev, next });
+    });
+
+    // The table above is the ONLY place a slug's Bulgarian is actually
+    // rendered through the component. `testRun` — the single neuter, and the
+    // form most likely to be got wrong — reached the catalog without a row
+    // here and went a whole wave unchecked. Registering a slug without
+    // rendering it now fails, and the failure names the slug.
+    it('every registered entity has a rendered row — no slug ships unasserted', () => {
+        const covered = new Set(BG_GENDER_TABLE.map(([slug]) => slug));
+        const unrendered = [...STEPPER_ENTITIES].filter((slug) => !covered.has(slug));
+        expect(unrendered).toEqual([]);
+        // Positive half, so an empty table could never satisfy the line above.
+        expect(covered.size).toBe(STEPPER_ENTITIES.size);
     });
 
     it('falls back to the generic record phrase for an unregistered entity', () => {

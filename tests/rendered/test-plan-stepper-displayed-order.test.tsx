@@ -300,9 +300,12 @@ describe('test-plan stepper — the /tests register entry path', () => {
         expect(view.container.querySelector('[data-testid="entity-prev-next-nav"]')).not.toBeNull();
 
         const { prev, next } = navButtons(view.container);
-        // No `testPlan` phrase in the stepper catalog yet → generic wording.
-        expect(prev!.getAttribute('aria-label')).toBe('Previous item');
-        expect(next!.getAttribute('aria-label')).toBe('Next item');
+        // The stepper catalog carries a `testPlan` phrase, so these read as the
+        // entity — not the generic "Previous item" fallback the page shipped
+        // with. `testPlan` is its own slug: a план (m) is the standing
+        // document, a `testRun`'s изпълнение (n) is one execution of it.
+        expect(prev!.getAttribute('aria-label')).toBe('Previous test plan');
+        expect(next!.getAttribute('aria-label')).toBe('Next test plan');
 
         act(() => { fireEvent.click(next!); });
         expect(routerMock.replace).toHaveBeenCalledWith('/t/acme/tests/plans/plan-a');

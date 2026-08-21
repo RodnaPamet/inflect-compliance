@@ -245,9 +245,12 @@ describe('AI-system stepper reads the order the registry displayed', () => {
 
         const prev = view.container.querySelector('[data-testid="entity-nav-prev"]') as HTMLButtonElement;
         const next = view.container.querySelector('[data-testid="entity-nav-next"]') as HTMLButtonElement;
-        // No `aiSystem` phrase in the stepper catalog yet → generic wording.
-        expect(prev.getAttribute('aria-label')).toBe('Previous item');
-        expect(next.getAttribute('aria-label')).toBe('Next item');
+        // The stepper catalog carries an `aiSystem` phrase, so these read as
+        // the entity — not the generic "Previous item" fallback the page shipped
+        // with. The Bulgarian pair (feminine: Предишна / Следваща ИИ система)
+        // is asserted in tests/rendered/entity-prev-next-nav.test.tsx.
+        expect(prev.getAttribute('aria-label')).toBe('Previous AI system');
+        expect(next.getAttribute('aria-label')).toBe('Next AI system');
 
         act(() => { fireEvent.click(next); });
         expect(routerMock.replace).toHaveBeenCalledWith('/t/acme/risks/ai-systems/sys-3');

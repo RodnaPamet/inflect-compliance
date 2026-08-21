@@ -76,8 +76,10 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
     // SIBLING of the <h1>. Folding it into `title` instead would put two
     // <button aria-label="Previous …"> inside the heading, and the accname
     // spec concatenates a descendant control's label into the heading's own
-    // accessible name. There is no `aiSystem` phrase in the stepper catalog
-    // yet, so `labelSingular` resolves to the generic record wording.
+    // accessible name. `aiSystem` is a registered stepper slug, so the labels
+    // read "Previous / Next AI system" — and in Bulgarian the feminine
+    // "Предишна / Следваща ИИ система", which is why the catalog holds whole
+    // phrases rather than one interpolated adjective.
     const stepper = (
         <EntityPrevNextNav
             ids={systemIds}

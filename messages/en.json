@@ -5296,6 +5296,7 @@
         "recordStepper": {
             "previous": {
                 "accessReview": "Previous access review",
+                "aiSystem": "Previous AI system",
                 "asset": "Previous asset",
                 "bia": "Previous BIA",
                 "control": "Previous control",
@@ -5307,11 +5308,13 @@
                 "policy": "Previous policy",
                 "risk": "Previous risk",
                 "task": "Previous task",
+                "testPlan": "Previous test plan",
                 "testRun": "Previous test run",
                 "vendor": "Previous vendor"
             },
             "next": {
                 "accessReview": "Next access review",
+                "aiSystem": "Next AI system",
                 "asset": "Next asset",
                 "bia": "Next BIA",
                 "control": "Next control",
@@ -5323,6 +5326,7 @@
                 "policy": "Next policy",
                 "risk": "Next risk",
                 "task": "Next task",
+                "testPlan": "Next test plan",
                 "testRun": "Next test run",
                 "vendor": "Next vendor"
             }

@@ -271,9 +271,11 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
                         the accname spec concatenates a descendant control's
                         aria-label into the heading's own accessible name, so
                         folding it into the Heading would have a screen reader
-                        announce "<plan name> Previous item Next item". There
-                        is no `testPlan` phrase in the stepper catalog yet, so
-                        `labelSingular` resolves to the generic record wording. */}
+                        announce "<plan name> Previous test plan Next test
+                        plan". `testPlan` is its own registered stepper slug —
+                        NOT `testRun`: a план (m) is the standing document, an
+                        изпълнение (n) is one execution of it, and Bulgarian
+                        makes them disagree in gender as well as in meaning. */}
                     <div className="flex items-center gap-2.5">
                         <Heading level={1} id="test-plan-title">{plan.name}</Heading>
                         <EntityPrevNextNav
