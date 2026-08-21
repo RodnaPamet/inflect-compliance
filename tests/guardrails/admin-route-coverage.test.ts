@@ -65,6 +65,9 @@ const ADMIN_ONLY_ROUTES = [
     'admin/trust-center/requests/[requestId]/approve/route.ts',
     'admin/key-rotation/route.ts',
     'admin/tenant-dek-rotation/route.ts',
+    // False-positive quarantine reversal — OWNER-only
+    // (admin.tenant_lifecycle), audited FILE_QUARANTINE_CLEARED.
+    'admin/files/[fileId]/clear-quarantine/route.ts',
     'admin/identity-write-policy/route.ts',
     'admin/billing/plan/route.ts',
     'admin/rotate-dek/route.ts',
