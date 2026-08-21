@@ -15,7 +15,7 @@ import type { NormalizedIdentityAccount } from '@/app-layer/integrations/provide
 import { IntegrationAuthError } from '@/app-layer/integrations/http-resilience';
 
 const mockDb = {
-    integrationConnection: { findFirst: jest.fn(), updateMany: jest.fn() },
+    integrationConnection: { findFirst: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
     integrationExecution: { create: jest.fn(), update: jest.fn() },
     connectedIdentityAccount: { upsert: jest.fn(), updateMany: jest.fn() },
 };
@@ -37,6 +37,10 @@ beforeEach(() => {
     mockDb.integrationExecution.update.mockResolvedValue({});
     mockDb.connectedIdentityAccount.upsert.mockResolvedValue({});
     mockDb.integrationConnection.updateMany.mockResolvedValue({ count: 0 });
+    // One connection for this provider — the shape every tenant in the field
+    // has, and the one where the reconcile may still sweep rows that carry no
+    // connectionId. Tests that care about the two-connection case override it.
+    mockDb.integrationConnection.count.mockResolvedValue(1);
     mockDb.connectedIdentityAccount.updateMany.mockResolvedValue({ count: 3 });
 });
 
@@ -52,6 +56,57 @@ describe('runIdentitySync', () => {
         expect(where.tenantId_provider_externalUserId).toEqual({ tenantId: 't1', provider: 'okta', externalUserId: 'a' });
         // execution finalized PASSED
         expect(mockDb.integrationExecution.update.mock.calls.at(-1)?.[0].data.status).toBe('PASSED');
+    });
+
+    it('scopes the deprovision reconcile to the CONNECTION, not the provider', async () => {
+        // THE BUG THIS CLOSES. IntegrationConnection is unique on
+        // (tenantId, provider, NAME), so two AD forests or two Entra tenants
+        // under one customer are a supported configuration. The reconcile used
+        // to match on `provider`, so connection A's pass swept everything for
+        // that provider it had not itself touched — which is all of connection
+        // B — and B's pass then did the reverse. Both reported PASSED. It ran on
+        // the READ path: no write permission, no consent, no bind.
+        mockDb.integrationConnection.count.mockResolvedValue(2);
+        const provider = stubProvider([acct('a')]);
+        await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        const where = mockDb.connectedIdentityAccount.updateMany.mock.calls[0][0].where;
+        expect(where.connectionId).toBe('conn-1');
+        // And NOT widened back to "or anything unattributed" — in a
+        // two-connection tenant an unattributed row may belong to the other one,
+        // which is the original bug in a new spelling.
+        expect(where.OR).toBeUndefined();
+    });
+
+    it('still sweeps rows that predate the column — but only where one connection exists', async () => {
+        // The other half. Scoping strictly to connectionId would silently stop
+        // deprovisioning every row written before the column existed, and the
+        // silence is the dangerous part: the deprovisioned count would report 0,
+        // which reads exactly like a healthy directory. With a single connection
+        // there is no other connection those rows could belong to, so including
+        // them is safe and preserves today's behaviour for every tenant in the
+        // field.
+        mockDb.integrationConnection.count.mockResolvedValue(1);
+        const provider = stubProvider([acct('a')]);
+        await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        const where = mockDb.connectedIdentityAccount.updateMany.mock.calls[0][0].where;
+        expect(where.OR).toEqual([{ connectionId: 'conn-1' }, { connectionId: null }]);
+        expect(where.connectionId).toBeUndefined();
+    });
+
+    it('claims the connection on every pass, not only when the row is created', async () => {
+        // An account row that predates the column, or whose connection was
+        // deleted, is adopted by whichever connection can still see it — the
+        // only evidence available about where it lives. Setting it on `create`
+        // alone would freeze attribution at whatever ran first and leave the
+        // legacy rows unattributed forever.
+        const provider = stubProvider([acct('a')]);
+        await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        const call = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+        expect(call.create.connectionId).toBe('conn-1');
+        expect(call.update.connectionId).toBe('conn-1');
     });
 
     it('H3 — a PARTIAL (truncated) enumeration does NOT deprovision and marks ERROR', async () => {
