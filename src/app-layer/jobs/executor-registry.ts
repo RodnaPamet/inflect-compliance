@@ -1223,6 +1223,43 @@ executorRegistry.register('av-rescan', async (payload) => {
         limit: payload.limit,
         requestId: payload.requestId,
     });
+    // The details block is SPREAD from the result, not re-typed field by
+    // field. The hand-written list it replaces was accurate the day it was
+    // written and silently wrong afterwards: `scannerThrew`, `backedOff`,
+    // `halted`, `haltReason` and `haltRemediation` were all added to
+    // `AvRescanResult` later and none of them reached the job record, so a
+    // run that STOPPED because the verdicts looked wrong and a run that
+    // finished with nothing to do produced indistinguishable records. An
+    // operator reading the run history could not tell those apart, and the
+    // absence of a field carries no information about which absence it is.
+    // Spreading makes the record follow the interface by construction --
+    // the next counter added lands here without anyone remembering to.
+    //
+    // `durationMs` is the one field deliberately dropped: the result's is
+    // the job body's own measure, the top-level one on `JobRunResult` is
+    // the executor's wall clock including the dynamic import. Two different
+    // numbers under one name in one record is a reader's trap. Dropping a
+    // NAMED field cannot silently swallow a future one.
+    const { durationMs: _jobBodyDurationMs, ...counters } = r;
+    const details: Record<string, unknown> = { ...counters };
+
+    // Deliberately NOT reported as `JobOutcome.status: 'PARTIAL'`.
+    //
+    // Two reasons, either sufficient. First, it would be invisible:
+    // `makeResult` reads `JobOutcome.status` only to decide `success`
+    // (`!== 'ERROR'`), and `errorMessage` / `noRetry` are gated on ERROR --
+    // the status string itself is never written to `JobRunResult`, so
+    // passing PARTIAL here produces a record identical to passing nothing.
+    // Second, PARTIAL already means something in this file and it is the
+    // opposite of a halt: a directory synced across several runs, each
+    // storing a cursor and stopping, resuming unattended on the next tick
+    // -- explicitly "working as designed, do not page anyone". A halted
+    // rescan stopped BECAUSE its results looked wrong and must not be
+    // re-run until a human has checked the signature database. The run's
+    // status stays a success (it is not a job failure, and BullMQ must not
+    // retry it); what says the true thing is `details.halted` +
+    // `haltReason` + `haltRemediation`, which an operator and an alert can
+    // both match on.
     return makeResult(
         'av-rescan',
         startedAt,
@@ -1230,19 +1267,7 @@ executorRegistry.register('av-rescan', async (payload) => {
         r.scanned,
         r.clean + r.infected,
         r.leftPending + r.lostClaim,
-        {
-            tenantId: r.tenantId,
-            jobRunId: r.jobRunId,
-            clean: r.clean,
-            infected: r.infected,
-            leftPending: r.leftPending,
-            integrityMismatch: r.integrityMismatch,
-            oversize: r.oversize,
-            scannerError: r.scannerError,
-            readError: r.readError,
-            refusedSyntheticClean: r.refusedSyntheticClean,
-            lostClaim: r.lostClaim,
-        },
+        details,
     );
 });
 
