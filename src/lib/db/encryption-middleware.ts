@@ -74,6 +74,7 @@ import {
     nodeHasAnyEncryptedFieldKey,
 } from '@/lib/security/encrypted-fields';
 import { getAuditContext } from '@/lib/audit-context';
+import { KEK_BYPASS_SOURCES } from '@/lib/db/kek-bypass-sources';
 import { logger } from '@/lib/observability/logger';
 import { recordFieldDecryptFailure, recordTenantContextMismatch } from '@/lib/observability/metrics';
 // `import * as` (rather than a top-level named import) keeps the
@@ -117,12 +118,15 @@ const RESULT_DECRYPT_ACTIONS: ReadonlySet<string> = new Set([
  * (seeds populate globals, sweep jobs iterate all tenants, system
  * events are infrastructure), and making them write v2 under one
  * tenant's DEK would break their multi-tenant semantics.
+ *
+ * The list now lives in `db/kek-bypass-sources.ts`, a leaf module,
+ * because three call sites branch on it — this one, the RLS
+ * tripwire, and `runInTenantJobContext`, which REFUSES these labels.
+ * Three private copies of one list is how a single-tenant job ends up
+ * labelled `'job'` and reading `null` out of its own encrypted
+ * columns.
  */
-const BYPASS_SOURCES: ReadonlySet<string> = new Set([
-    'seed',
-    'job',
-    'system',
-]);
+const BYPASS_SOURCES = KEK_BYPASS_SOURCES;
 
 // ─── DEK resolution (Epic B.2) ────────────────────────────────────────
 
