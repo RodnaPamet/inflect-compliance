@@ -37,7 +37,11 @@ jest.mock('@/lib/db-context', () => ({
     ),
 }));
 
-const appendAuditEntryMock = jest.fn(async () => ({
+// The parameter is declared even though the body ignores it: tsc infers a
+// mock's signature from its implementation, so a zero-arg `jest.fn(async () =>
+// …)` invoked as `mock(input)` is a hard TS2554, and `mock.calls[0][0]` on the
+// resulting `[]` tuple is TS2493. Both are invisible to jest and fail the build.
+const appendAuditEntryMock = jest.fn(async (_input: unknown) => ({
     id: 'audit-1',
     entryHash: 'hash-1',
     previousHash: null,
