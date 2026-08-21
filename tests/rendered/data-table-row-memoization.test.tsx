@@ -184,8 +184,12 @@ describe("DataTable — body rows are memoized (#101)", () => {
         // memo misses and the row gets a new array every time — the memo
         // is then present but inert, which is exactly the state this
         // branch sat in. Independent of React's bail-out behaviour.
+        // One outer array, pushed to — NOT a counter reassigned from inside
+        // the component. `renders += 1` inside a component body is a
+        // reassignment of an outer binding, which the React Compiler lint rule
+        // refuses; `seen.push(...)` is a mutation of an outer object, which it
+        // allows. `seen.length` IS the render count, so nothing is lost.
         const seen: unknown[] = [];
-        let renders = 0;
 
         function CellsProbe() {
             const [tick, setTick] = React.useState(0);
@@ -194,7 +198,6 @@ describe("DataTable — body rows are memoized (#101)", () => {
                 columns,
                 getRowId: (r) => r.id,
             });
-            renders += 1;
             seen.push(table.getRowModel().rows[0].getVisibleCells());
             return (
                 <button type="button" onClick={() => setTick((v) => v + 1)}>
@@ -206,8 +209,10 @@ describe("DataTable — body rows are memoized (#101)", () => {
         render(<CellsProbe />);
         bump(ANCESTOR_RENDERS);
 
-        expect(renders).toBeGreaterThan(ANCESTOR_RENDERS); // it really re-rendered
-        expect(seen.length).toBe(renders);
+        // Positive first: the probe really did re-render more times than we
+        // bumped it, so the identity assertion below is about a live component
+        // and not about a component that never ran.
+        expect(seen.length).toBeGreaterThan(ANCESTOR_RENDERS);
         expect(seen[0]).toBeDefined();
         expect(new Set(seen).size).toBe(1); // one array identity, every render
     });
