@@ -313,6 +313,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'tenant deletion and DEK rotation; ADMIN is explicitly denied ' +
             'this key. Audited as FILE_QUARANTINE_CLEARED before the write.',
     },
+    // ── Bounded AV catch-up rescan ──────────────────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/av-rescan$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Enqueues the bounded per-tenant `av-rescan` job, which turns ' +
+            'evidence stuck at scanStatus PENDING into CLEAN or INFECTED. ' +
+            'Same OWNER-only key as clear-quarantine directly above, because ' +
+            'it is the same authority — deciding what the download gate will ' +
+            'serve — applied in BULK rather than one file at a time. A ' +
+            'SIBLING of admin/files rather than nested under it: matching is ' +
+            'first-match-wins, and an exact-anchored path here means a future ' +
+            'sub-route cannot silently inherit this gate. Audited as ' +
+            'AV_RESCAN_INITIATED at enqueue time.',
+    },
     // ── Per-tenant DEK rotation — GAP-22 alias path ─────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/rotate-dek(\\/.*)?$`),

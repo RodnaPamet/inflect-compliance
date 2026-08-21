@@ -157,7 +157,11 @@ describe('Regression: Import hygiene', () => {
         // key-rotation; row lookups go through `findOwnTenantSession`
         // in `lib/security/session-tracker.ts`, not through
         // `prisma.userSession.…` in the route.
-        const ROUTE_ALLOWLIST = ['audit-log', 'scim', 'key-rotation', 'tenant-dek-rotation', 'sessions'];
+        // av-rescan is the same shape as key-rotation: the only mention of
+        // prisma in the file is the handle handed to `logEvent` for the
+        // AV_RESCAN_INITIATED row. No `prisma.<model>` query appears in the
+        // route — the job does every read and write, in the worker.
+        const ROUTE_ALLOWLIST = ['audit-log', 'scim', 'key-rotation', 'tenant-dek-rotation', 'sessions', 'av-rescan'];
         const routes = walk(routeDir, ['.ts']).filter(f =>
             f.endsWith('route.ts') && !ROUTE_ALLOWLIST.some(a => f.includes(a))
         );
