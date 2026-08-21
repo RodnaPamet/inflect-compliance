@@ -19,7 +19,10 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
-import { assessExposureOnInfection } from '@/app-layer/services/file-distribution';
+import {
+    assessExposureOnInfection,
+    type LedgerClient,
+} from '@/app-layer/services/file-distribution';
 
 // Use shared prisma instance to ensure audit middleware is active
 
@@ -276,6 +279,20 @@ export async function POST(req: NextRequest) {
                     sha256: fileRecord.sha256,
                     uploadedByUserId: fileRecord.uploadedByUserId,
                     engine: payload.engine ?? null,
+                    // The GLOBAL client, and this route means it.
+                    //
+                    // Nothing on this path binds a tenant context — the whole
+                    // handler runs unbound, so there is no `PrismaTx` here to
+                    // hand over. Reads stay correct because they filter on
+                    // `tenantId` explicitly, which is what scopes them; RLS is
+                    // not doing that work on this route.
+                    //
+                    // Passing it by name is the point. The parameter used to
+                    // default to this same client, which made an unbound caller
+                    // read as a bound one. Binding the webhook is tracked
+                    // separately — this argument surfaces the gap, it does not
+                    // close it.
+                    client: prisma as unknown as LedgerClient,
                 });
             } catch (err) {
                 logger.error('AV webhook: exposure assessment failed after quarantine', {

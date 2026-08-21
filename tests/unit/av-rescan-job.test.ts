@@ -153,6 +153,38 @@ jest.mock('@/lib/storage/av-scan', () => ({
 
 // ─── Audit ──────────────────────────────────────────────────────────
 
+/** A minimal but complete `FileExposureReport` — the record half needs a real one. */
+const EXPOSURE_REPORT = {
+    fileRecordId: 'file-x',
+    sha256: 'x',
+    siblingFileRecordIds: [],
+    totalDistributions: 0,
+    byChannel: {},
+    firstDistributedAt: null,
+    lastDistributedAt: null,
+    unrevocableCopies: 0,
+    liveSignedUrls: 0,
+    signedUrlExposureEndsAt: null,
+    recipientUserIds: [],
+    artefacts: [],
+    exhaustive: true,
+    assessedAt: '2026-01-01T00:00:00.000Z',
+};
+
+const buildExposureMock = jest.fn(async (_opts: unknown) => EXPOSURE_REPORT);
+const recordExposureMock = jest.fn(async (_report: unknown, _opts: unknown) => undefined);
+jest.mock('@/app-layer/services/file-distribution', () => ({
+    __esModule: true,
+    buildFileExposureReport: (opts: unknown) => {
+        order.push('exposure:build');
+        return buildExposureMock(opts as never);
+    },
+    recordFileExposureReport: (report: unknown, opts: unknown) => {
+        order.push('exposure:record');
+        return recordExposureMock(report as never, opts as never);
+    },
+}));
+
 const appendAuditEntryMock = jest.fn(async (_entry: unknown) => undefined);
 jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntry: (entry: unknown) => {
@@ -427,6 +459,105 @@ describe('#121 concurrency is a conditional claim at verdict time', () => {
         for (const data of verdictPayloads()) {
             expect(Object.keys(data)).not.toContain('status');
         }
+        expect(verdictPayloads()[0].scanStatus).toBe('INFECTED');
+    });
+
+    // ── #129 — the sweep's verdicts reach the distribution ledger ──
+    //
+    // The ledger answers "what already left". It was wired into the AV
+    // webhook only, so verdicts found by THIS path — which walks the whole
+    // PENDING backlog, i.e. the files servable the longest — bypassed it.
+    it('assesses exposure for a file it condemns, after the verdict is durable', async () => {
+        findMany.mockResolvedValue([pendingRow()]);
+        scanBufferMock.mockResolvedValue({
+            status: 'INFECTED',
+            engine: 'clamav',
+            threat: 'Eicar-Test-Signature',
+            durationMs: 4,
+        });
+
+        const { runAvRescan } = loadJob();
+        const result = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        expect(result.infected).toBe(1);
+        expect(buildExposureMock).toHaveBeenCalledTimes(1);
+        expect(buildExposureMock.mock.calls[0][0]).toMatchObject({
+            tenantId: TENANT,
+            fileRecordId: pendingRow().id,
+            sha256: pendingRow().sha256,
+        });
+        // The reads run on the job's BOUND connection, not the global client.
+        expect((buildExposureMock.mock.calls[0][0] as { client?: unknown }).client).toBe(db);
+
+        expect(recordExposureMock).toHaveBeenCalledTimes(1);
+        expect(recordExposureMock.mock.calls[0][0]).toBe(EXPOSURE_REPORT);
+        expect(recordExposureMock.mock.calls[0][1]).toMatchObject({
+            tenantId: TENANT,
+            fileRecordId: pendingRow().id,
+            engine: 'clamav',
+        });
+
+        // ORDER is the assertion, not merely that both ran: the verdict must
+        // be durable before anything reports on it, or a failed report could
+        // describe a row that was never condemned.
+        expect(order.indexOf('exposure:build')).toBeGreaterThan(order.indexOf('audit'));
+
+        // ── The split itself ────────────────────────────────────────
+        //
+        // The READ belongs inside a tenant binding; the WRITE must not be,
+        // because `appendAuditEntry` opens its own advisory-locked
+        // transaction and nesting it holds two pooled connections per
+        // condemned file. Measured by scope depth at each point rather than
+        // by relative index — wrapping BOTH calls in one `inTenant` would
+        // keep the indices in order while breaking exactly this property.
+        const depthAt = (label: string) => {
+            const at = order.indexOf(label);
+            const before = order.slice(0, at);
+            return (
+                before.filter((x) => x === 'tx:start').length -
+                before.filter((x) => x === 'tx:end').length
+            );
+        };
+        expect(depthAt('exposure:build')).toBeGreaterThan(0);
+        expect(depthAt('exposure:record')).toBe(0);
+    });
+
+    it('does not assess exposure for a CLEAN verdict', async () => {
+        findMany.mockResolvedValue([pendingRow()]);
+        scanBufferMock.mockResolvedValue({
+            status: 'CLEAN',
+            engine: 'clamav',
+            durationMs: 4,
+        });
+
+        const { runAvRescan } = loadJob();
+        const result = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        // Positive first — the negative below is only evidence if the job
+        // actually ran and took the CLEAN branch. On its own,
+        // `not.toHaveBeenCalled()` passes just as well when nothing executed.
+        expect(result.clean).toBe(1);
+        expect(verdictPayloads()[0].scanStatus).toBe('CLEAN');
+        expect(buildExposureMock).not.toHaveBeenCalled();
+        expect(recordExposureMock).not.toHaveBeenCalled();
+    });
+
+    it('a failing ledger never costs the sweep a verdict it correctly wrote', async () => {
+        findMany.mockResolvedValue([pendingRow()]);
+        scanBufferMock.mockResolvedValue({
+            status: 'INFECTED',
+            engine: 'clamav',
+            threat: 'Eicar-Test-Signature',
+            durationMs: 4,
+        });
+        buildExposureMock.mockRejectedValueOnce(new Error('ledger down'));
+
+        const { runAvRescan } = loadJob();
+        const result = await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        // The run completes and the verdict stands. A reporting problem must
+        // never un-condemn a file.
+        expect(result.infected).toBe(1);
         expect(verdictPayloads()[0].scanStatus).toBe('INFECTED');
     });
 });

@@ -48,7 +48,6 @@
  *
  * @module app-layer/services/file-distribution
  */
-import { prisma } from '@/lib/prisma';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 import { logger } from '@/lib/observability/logger';
 
@@ -255,7 +254,7 @@ export const EXPOSURE_SIBLING_CAP = 200;
 /** Artefacts listed individually in the report (counts stay exact). */
 export const EXPOSURE_ARTEFACT_CAP = 50;
 
-type LedgerClient = {
+export type LedgerClient = {
     fileRecord: { findMany: (args: unknown) => Promise<Array<{ id: string }>> };
     auditLog: {
         findMany: (args: unknown) => Promise<Array<{
@@ -282,9 +281,18 @@ export async function buildFileExposureReport(opts: {
     fileRecordId: string;
     sha256: string | null | undefined;
     now?: Date;
-    client?: LedgerClient;
+    /**
+     * REQUIRED. There is deliberately no fall-back to the module-level client.
+     *
+     * These reads are the half of the ledger that RLS can scope, so the caller
+     * has to say which connection they run on — a tenant-bound `PrismaTx` from
+     * `runInTenantJobContext`, or the global client passed explicitly where no
+     * binding exists. An optional parameter let an unbound caller look bound;
+     * a required one puts the choice in the diff.
+     */
+    client: LedgerClient;
 }): Promise<FileExposureReport> {
-    const client = opts.client ?? (prisma as unknown as LedgerClient);
+    const client = opts.client;
     const now = opts.now ?? new Date();
     const sha256 = opts.sha256 ?? '';
 
@@ -391,36 +399,11 @@ export async function assessExposureOnInfection(opts: {
     uploadedByUserId?: string | null;
     engine?: string | null;
     now?: Date;
-    client?: LedgerClient;
+    client: LedgerClient;
 }): Promise<FileExposureReport | null> {
     try {
         const report = await buildFileExposureReport(opts);
-
-        // Even a ZERO-distribution report is worth writing. "Nothing left the
-        // platform" is the answer an incident responder most needs and cannot
-        // otherwise obtain — an absent row is indistinguishable from an
-        // assessment that never ran.
-        await appendAuditEntry({
-            tenantId: opts.tenantId,
-            userId: opts.uploadedByUserId ?? null,
-            actorType: 'SYSTEM',
-            entity: 'FileRecord',
-            entityId: opts.fileRecordId,
-            action: FILE_EXPOSURE_ASSESSED_ACTION,
-            detailsJson: { category: 'custom', kind: 'file_exposure', engine: opts.engine ?? null, ...report },
-        });
-
-        const level = report.totalDistributions > 0 ? 'warn' : 'info';
-        logger[level]('file-distribution: exposure assessed for a newly INFECTED file', {
-            component: 'file-distribution',
-            tenantId: opts.tenantId,
-            fileRecordId: opts.fileRecordId,
-            totalDistributions: report.totalDistributions,
-            unrevocableCopies: report.unrevocableCopies,
-            liveSignedUrls: report.liveSignedUrls,
-            signedUrlExposureEndsAt: report.signedUrlExposureEndsAt,
-            exhaustive: report.exhaustive,
-        });
+        await recordFileExposureReport(report, opts);
         return report;
     } catch (err) {
         logger.error('file-distribution: exposure assessment failed', {
@@ -431,4 +414,52 @@ export async function assessExposureOnInfection(opts: {
         });
         return null;
     }
+}
+
+/**
+ * Write a built report into the hash-chained trail.
+ *
+ * Split from `assessExposureOnInfection` so a caller that wants the READS
+ * tenant-bound can scope them itself and still land the row here. Takes NO
+ * client on purpose: `appendAuditEntry` opens its own advisory-locked
+ * transaction, and nesting that inside an interactive one holds two pooled
+ * connections per file (the #123 precedent — read in one transaction, audit
+ * outside any, transition in a second).
+ *
+ * Throws on failure; `assessExposureOnInfection` is the swallowing wrapper.
+ */
+export async function recordFileExposureReport(
+    report: FileExposureReport,
+    opts: {
+        tenantId: string;
+        fileRecordId: string;
+        uploadedByUserId?: string | null;
+        engine?: string | null;
+    },
+): Promise<void> {
+    // Even a ZERO-distribution report is worth writing. "Nothing left the
+    // platform" is the answer an incident responder most needs and cannot
+    // otherwise obtain — an absent row is indistinguishable from an
+    // assessment that never ran.
+    await appendAuditEntry({
+        tenantId: opts.tenantId,
+        userId: opts.uploadedByUserId ?? null,
+        actorType: 'SYSTEM',
+        entity: 'FileRecord',
+        entityId: opts.fileRecordId,
+        action: FILE_EXPOSURE_ASSESSED_ACTION,
+        detailsJson: { category: 'custom', kind: 'file_exposure', engine: opts.engine ?? null, ...report },
+    });
+
+    const level = report.totalDistributions > 0 ? 'warn' : 'info';
+    logger[level]('file-distribution: exposure assessed for a newly INFECTED file', {
+        component: 'file-distribution',
+        tenantId: opts.tenantId,
+        fileRecordId: opts.fileRecordId,
+        totalDistributions: report.totalDistributions,
+        unrevocableCopies: report.unrevocableCopies,
+        liveSignedUrls: report.liveSignedUrls,
+        signedUrlExposureEndsAt: report.signedUrlExposureEndsAt,
+        exhaustive: report.exhaustive,
+    });
 }
