@@ -18,6 +18,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { KEK_BYPASS_SOURCES, isKekBypassSource } from '@/lib/db/kek-bypass-sources';
+import { AUTOMATION_DISPATCH_SOURCE } from '@/app-layer/automation/tenant-dek-read';
 
 const root = join(__dirname, '../..');
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -61,17 +63,17 @@ describe('automation dispatch — tenant DEK on the rule read', () => {
         // The trap. These are jobs, so `source: 'job'` reads as the obvious
         // label — and it resolves to NO_DEK_PAIR, silently restoring the
         // ciphertext-as-signing-key bug with no test failing.
-        const helper = read('src/app-layer/automation/tenant-dek-read.ts');
-        const source = helper.match(/AUTOMATION_DISPATCH_SOURCE\s*=\s*'([^']+)'/)?.[1];
-        expect(source).toBeTruthy();
-
-        const mw = read('src/lib/db/encryption-middleware.ts');
-        const block = mw.slice(mw.indexOf('BYPASS_SOURCES'));
-        const bypass = (block.slice(0, block.indexOf(']')).match(/'([a-z]+)'/g) ?? []).map((s) =>
-            s.replace(/'/g, ''),
-        );
-        expect(bypass).toEqual(expect.arrayContaining(['seed', 'job', 'system']));
-        expect(bypass).not.toContain(source);
+        //
+        // This used to slice the literal out of `encryption-middleware.ts`
+        // with a regex, which meant it asserted where the list was WRITTEN
+        // rather than what the middleware reads. #152 moved the list into a
+        // leaf module so three call sites could share one copy, and the regex
+        // went green-to-red on a refactor that changed no behaviour — the
+        // failure mode the repo's guard-naming rule warns about. Importing the
+        // real value costs nothing here (the module has no imports of its own,
+        // so this guard stays DB-free) and now tracks the value in use.
+        expect(isKekBypassSource(AUTOMATION_DISPATCH_SOURCE)).toBe(false);
+        expect([...KEK_BYPASS_SOURCES].sort()).toEqual(['job', 'seed', 'system']);
     });
 
     it('the wrapper passes a tenantId, not just any audit context', () => {

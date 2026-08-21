@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { prisma, prismaRead } from './prisma';
 import type { RequestContext } from '@/app-layer/types';
 import { runWithAuditContext } from './audit-context';
+import { KEK_BYPASS_SOURCES, isKekBypassSource } from './db/kek-bypass-sources';
 
 export type PrismaTx = Omit<
     PrismaClient,
@@ -137,6 +138,110 @@ export async function runInTenantReadContext<T>(
                 // read-only tx (it mutates session state, not tables).
                 await tx.$executeRaw`SET TRANSACTION READ ONLY`;
                 await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true), set_config('app.request_id', ${ctx.requestId}, true)`;
+                return callback(tx);
+            }, txOptions)
+    ) as Promise<T>;
+}
+
+/**
+ * Tenant context for a background job — the same RLS posture as
+ * {@link runInTenantContext}, without a `RequestContext` to build.
+ *
+ * ## Why a job needs its own door
+ *
+ * `runJob` binds the OBSERVABILITY request context (`lib/observability/
+ * context.ts`) — an AsyncLocalStorage store carrying `requestId`, `route`,
+ * and `tenantId` for logs and traces. The Prisma extensions read a DIFFERENT
+ * store, the audit context in `lib/audit-context.ts`. Two stores, no bridge
+ * between them, and nothing in a job's shape makes that visible: a job with a
+ * perfectly good `tenantId` on its payload still leaves `getAuditContext()`
+ * undefined for every query it makes.
+ *
+ * What that costs, in the order an operator notices it:
+ *
+ *   1. **No RLS.** The connection never becomes `app_user` and
+ *      `app.tenant_id` is never set, so `superuser_bypass` matches and the
+ *      database enforces nothing. An unattended bulk write is left standing
+ *      on its application-layer `where` clause alone — for the one class of
+ *      code where "one layer is enough" is least defensible.
+ *   2. **No auto-audit.** `lib/prisma.ts`'s audit extension returns early
+ *      when the audit context carries no `tenantId`, so a job's writes are
+ *      absent from the trail its API-path equivalents land in.
+ *   3. **A `missing_tenant_context` warn per write**, which is the tripwire
+ *      correctly reporting 1 and 2.
+ *
+ * ## Why not just label the job
+ *
+ * The reflex fix is `runWithAuditContext({ tenantId, source: 'job' }, …)`.
+ * That silences the tripwire and fixes nothing: `'job'` is a
+ * {@link KEK_BYPASS_SOURCES} label, so the encryption middleware stops
+ * resolving the tenant DEK. Encrypted reads come back `null`, encrypted
+ * writes get sealed under the global KEK, and neither failure is loud. This
+ * function REFUSES those labels at the door rather than documenting the
+ * hazard and hoping.
+ *
+ * Pass `source` as the JOB'S OWN NAME (`'av-rescan'`). It reaches the audit
+ * trail as `metadataJson.source`, so the row says which unattended writer
+ * touched the tenant — the thing `'api'` would actively misreport.
+ *
+ * ## What it costs, and when NOT to use it
+ *
+ * This opens a transaction. Hold it around the WRITE, never around an
+ * out-of-process round trip — a scanner call or an HTTP fetch inside here
+ * pins a Postgres backend, and through PgBouncer a pooled server connection,
+ * for its whole duration.
+ *
+ * It is also the wrong tool for a genuinely cross-tenant sweep. One tenant id
+ * is a precondition, not a formality: a sweep that iterates every tenant
+ * wants `runWithoutRls({ reason: 'cross-tenant-sweep' })`, which says so.
+ */
+export async function runInTenantJobContext<T>(
+    job: {
+        tenantId: string;
+        /** The job's own name. Never a {@link KEK_BYPASS_SOURCES} label. */
+        source: string;
+        /** Operator or system actor to attribute writes to, when there is one. */
+        actorUserId?: string | null;
+        /** Correlation id — `runJob`'s `jobRunId` unless the trigger had one. */
+        requestId?: string | null;
+    },
+    callback: (db: PrismaTx) => Promise<T>,
+    options?: { customPrisma?: PrismaClient; timeout?: number; maxWait?: number }
+): Promise<T> {
+    if (!job.tenantId) {
+        throw new Error(
+            'runInTenantJobContext requires a tenantId — a job with no single ' +
+                'tenant wants runWithoutRls({ reason: "cross-tenant-sweep" }).'
+        );
+    }
+    if (isKekBypassSource(job.source)) {
+        throw new Error(
+            `runInTenantJobContext refuses source '${job.source}': it is one of ` +
+                `the tenant-less labels (${[...KEK_BYPASS_SOURCES].join(', ')}), which ` +
+                `turn the per-tenant DEK OFF — encrypted reads would come back null ` +
+                `and encrypted writes would be sealed under the global KEK. Pass the ` +
+                `job's own name instead.`
+        );
+    }
+
+    const p = options?.customPrisma || prisma;
+    const txOptions: { timeout?: number; maxWait?: number } = {};
+    if (options?.timeout) txOptions.timeout = options.timeout;
+    if (options?.maxWait) txOptions.maxWait = options.maxWait;
+
+    const requestId = job.requestId ?? `job:${job.source}`;
+
+    return runWithAuditContext(
+        {
+            tenantId: job.tenantId,
+            actorUserId: job.actorUserId ?? undefined,
+            requestId,
+            source: job.source,
+        },
+        () =>
+            p.$transaction(async (tx) => {
+                await tx.$executeRaw`SET LOCAL ROLE app_user`;
+                await tx.$executeRaw`SELECT set_config('app.tenant_id', ${job.tenantId}, true), set_config('app.request_id', ${requestId}, true)`;
                 return callback(tx);
             }, txOptions)
     ) as Promise<T>;

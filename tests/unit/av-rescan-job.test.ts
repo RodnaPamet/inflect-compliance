@@ -74,6 +74,10 @@ const db = {
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: db, default: db }));
 
 // ─── Tenant transaction wrapper ─────────────────────────────────────
+//
+// The mock keeps the REAL refusal rule (a `KEK_BYPASS_SOURCES` label throws)
+// so a future edit that relabels this job `'job'` fails here rather than in
+// production, where the symptom would be encrypted columns reading `null`.
 
 const runInTenantContextMock = jest.fn(
     async (_ctx: unknown, fn: (c: unknown) => Promise<unknown>) => {
@@ -85,9 +89,25 @@ const runInTenantContextMock = jest.fn(
         }
     },
 );
+const runInTenantJobContextMock = jest.fn(
+    async (job: { tenantId: string; source: string }, fn: (c: unknown) => Promise<unknown>) => {
+        if (!job.tenantId) throw new Error('runInTenantJobContext requires a tenantId');
+        if (['seed', 'job', 'system'].includes(job.source)) {
+            throw new Error(`runInTenantJobContext refuses source '${job.source}'`);
+        }
+        order.push('tx:start');
+        try {
+            return await fn(db);
+        } finally {
+            order.push('tx:end');
+        }
+    },
+);
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (ctx: unknown, fn: (c: unknown) => Promise<unknown>) =>
         runInTenantContextMock(ctx, fn),
+    runInTenantJobContext: (job: never, fn: (c: unknown) => Promise<unknown>) =>
+        runInTenantJobContextMock(job, fn),
 }));
 
 // ─── Storage ────────────────────────────────────────────────────────
@@ -367,8 +387,14 @@ describe('#121 concurrency is a conditional claim at verdict time', () => {
         // (the AV webhook, an upload retry) landed while we were scanning.
         expect(update).not.toHaveBeenCalled();
         expect(updateMany).toHaveBeenCalledTimes(1);
-        expect(updateMany.mock.calls[0][0].where).toEqual({
+        // #152 added `tenantId` alongside the row id. The invariant this
+        // block protects is the PENDING guard, so it is asserted by key
+        // rather than by whole-object equality — a shape match would have to
+        // be edited again by the next legitimate narrowing of the predicate,
+        // and each such edit is a chance to drop the guard by accident.
+        expect(updateMany.mock.calls[0][0].where).toMatchObject({
             id: 'file-claim',
+            tenantId: TENANT,
             scanStatus: 'PENDING',
         });
     });
@@ -490,6 +516,97 @@ describe('the sweep is bounded and tenant-scoped', () => {
         });
 
         expect(findMany.mock.calls[0][0].take).toBe(AV_RESCAN_MAX_LIMIT);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════
+// #152 — the writes engage RLS, and are labelled honestly
+// ════════════════════════════════════════════════════════════════════
+//
+// Production reported this job writing FileRecord with no tenant context at
+// all — `rls-middleware.missing_tenant_context`, `hasAuditContext: false`,
+// once per `updateMany`. The writes were correct, but the database was
+// enforcing nothing behind them, which for an unattended bulk writer is the
+// one place the second layer earns its cost.
+//
+// The neighbouring trap is what the last block here pins: the natural-looking
+// fix is to label the context `source: 'job'`, and that label is in
+// `KEK_BYPASS_SOURCES` — it silences the tripwire while switching the tenant
+// DEK OFF, so encrypted reads come back `null`. Getting a tenant context is
+// the fix; naming it 'job' is the bug that replaces it.
+
+describe('#152 every statement runs inside the tenant RLS context', () => {
+    it('binds the tenant for the selection AND for both writes', async () => {
+        // One row that reaches a verdict, one that is left pending (its
+        // object is missing from storage), so the selection read, the verdict
+        // write and the attempt write are all exercised in a single run.
+        const ok = pendingRow({ id: 'ctx-ok' });
+        const missing = pendingRow({ id: 'ctx-missing' });
+        storageBytes.delete(missing.pathKey);
+        findMany.mockResolvedValue([ok, missing]);
+
+        const { runAvRescan } = loadJob();
+        await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        // Positive: the read, the verdict write and the attempt write each
+        // opened a context. Asserting the count is what catches a future edit
+        // that wraps only some of them.
+        expect(runInTenantJobContextMock).toHaveBeenCalledTimes(3);
+        for (const [job] of runInTenantJobContextMock.mock.calls) {
+            expect(job.tenantId).toBe(TENANT);
+        }
+
+        // ...and nothing reached the database outside one.
+        let depth = 0;
+        const outsideContext: string[] = [];
+        for (const event of order) {
+            if (event === 'tx:start') depth++;
+            else if (event === 'tx:end') depth--;
+            else if (['findMany', 'updateMany', 'update'].includes(event) && depth === 0) {
+                outsideContext.push(event);
+            }
+        }
+        expect(outsideContext).toEqual([]);
+        // Pair the negative with a positive — an empty ledger would satisfy
+        // the assertion above just as well as a correct one.
+        expect(order).toContain('findMany');
+        expect(order).toContain('updateMany');
+    });
+
+    it('labels the context with the job name, never a DEK-bypass source', async () => {
+        findMany.mockResolvedValue([pendingRow()]);
+
+        const { runAvRescan } = loadJob();
+        await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        const sources = runInTenantJobContextMock.mock.calls.map(([job]) => job.source);
+        expect(sources.length).toBeGreaterThan(0);
+        for (const source of sources) {
+            expect(source).toBe('av-rescan');
+            // The three labels in `KEK_BYPASS_SOURCES`. Any of them would
+            // resolve the tenant DEK to null: encrypted reads would come back
+            // `null` and encrypted writes would be sealed under the global KEK.
+            expect(['seed', 'job', 'system']).not.toContain(source);
+        }
+    });
+
+    it('scopes the verdict claim to the tenant as well as the row id', async () => {
+        findMany.mockResolvedValue([pendingRow({ id: 'claim-1' })]);
+
+        const { runAvRescan } = loadJob();
+        await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        const verdictCall = updateMany.mock.calls.find(
+            (c) => 'scanStatus' in (c[0] as { data: Record<string, unknown> }).data,
+        );
+        expect(verdictCall).toBeDefined();
+        const where = (verdictCall as unknown[])[0] as { where: Record<string, unknown> };
+        expect(where.where.id).toBe('claim-1');
+        expect(where.where.tenantId).toBe(TENANT);
+        // The claim predicate is still the concurrency control — adding the
+        // tenant must not have cost us the `scanStatus: 'PENDING'` guard that
+        // stops this job overwriting an INFECTED verdict.
+        expect(where.where.scanStatus).toBe('PENDING');
     });
 });
 

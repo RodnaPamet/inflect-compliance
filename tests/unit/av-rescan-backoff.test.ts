@@ -149,6 +149,29 @@ const db = {
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: db, default: db }));
 
+// ─── Tenant RLS context ─────────────────────────────────────────────
+//
+// #152 moved every statement in the sweep inside `runInTenantJobContext`, so
+// the table above is now reached through the tenant transaction rather than
+// the bare client. The mock keeps the real refusal rule (a
+// `KEK_BYPASS_SOURCES` label throws) — see the sibling job test for why that
+// matters — and hands the callback the same in-memory table, so the backoff
+// assertions below are unchanged.
+const tenantJobContexts: Array<{ tenantId: string; source: string }> = [];
+jest.mock('@/lib/db-context', () => ({
+    runInTenantJobContext: async (
+        job: { tenantId: string; source: string },
+        fn: (c: unknown) => Promise<unknown>,
+    ) => {
+        if (!job.tenantId) throw new Error('runInTenantJobContext requires a tenantId');
+        if (['seed', 'job', 'system'].includes(job.source)) {
+            throw new Error(`runInTenantJobContext refuses source '${job.source}'`);
+        }
+        tenantJobContexts.push(job);
+        return fn(db);
+    },
+}));
+
 // ─── Storage ────────────────────────────────────────────────────────
 
 const storageBytes = new Map<string, Buffer>();
@@ -246,6 +269,7 @@ beforeEach(() => {
     table = [];
     writes.length = 0;
     scanned.length = 0;
+    tenantJobContexts.length = 0;
     storageBytes.clear();
     jest.clearAllMocks();
     mockEnv.AV_SCAN_MODE = 'strict';
@@ -435,6 +459,21 @@ describe('#120 the attempt record and the verdict are separate writes', () => {
             tenantId: TENANT,
             scanStatus: 'PENDING',
         });
+    });
+
+    it('records the attempt inside the tenant RLS context, not on the bare client', async () => {
+        seed('gone', { storeBytes: false });
+
+        const { runAvRescan } = loadJob();
+        await runAvRescan({ tenantId: TENANT, initiatedByUserId: USER });
+
+        // The attempt write is the easiest of the two to leave behind: it is
+        // swallowed on failure by design, so a version of it that ran outside
+        // the tenant context would leave no trace anywhere.
+        expect(attemptWrites()).toHaveLength(1);
+        expect(tenantJobContexts.length).toBeGreaterThanOrEqual(2); // selection + attempt
+        expect(tenantJobContexts.every((c) => c.tenantId === TENANT)).toBe(true);
+        expect(tenantJobContexts.every((c) => c.source === 'av-rescan')).toBe(true);
     });
 
     it('does not bump the counter when the row stopped being PENDING', async () => {

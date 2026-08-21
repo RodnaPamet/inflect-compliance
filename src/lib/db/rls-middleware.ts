@@ -53,6 +53,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { getAuditContext } from '@/lib/audit-context';
+import { isKekBypassSource } from '@/lib/db/kek-bypass-sources';
 import { logger } from '@/lib/observability/logger';
 import * as prismaModule from '@/lib/prisma';
 
@@ -76,11 +77,13 @@ function getPrismaClient(): PrismaClient {
 
 export {
     runInTenantContext,
+    runInTenantJobContext,
     runInTenantReadContext,
     withTenantDb,
     runInGlobalContext,
 } from '@/lib/db-context';
 export type { PrismaTx } from '@/lib/db-context';
+export { KEK_BYPASS_SOURCES, isKekBypassSource } from '@/lib/db/kek-bypass-sources';
 
 // ─── Explicit bypass helper ──────────────────────────────────────────
 
@@ -333,10 +336,14 @@ export function withRlsTripwireExtension<T extends object>(
                     const hasTenant = !!ctx?.tenantId;
                     const source = ctx?.source;
 
-                    const isBypassContext =
-                        source === 'seed' ||
-                        source === 'job' ||
-                        source === 'system';
+                    // Same list the encryption middleware uses to fall
+                    // back to the global KEK — deliberately shared, not
+                    // re-spelled. The two decisions have to agree: a
+                    // source that silences this tripwire is a source
+                    // that gets no tenant DEK, and a caller who learns
+                    // that only from the second one has already
+                    // shipped.
+                    const isBypassContext = isKekBypassSource(source);
 
                     if (hasTenant || isBypassContext) {
                         return query(args);

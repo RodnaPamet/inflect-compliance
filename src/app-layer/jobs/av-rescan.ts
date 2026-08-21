@@ -67,6 +67,29 @@
  *     the duration, once per file. The scan is an out-of-process round trip
  *     that has no business inside a database transaction.
  *
+ *   - **Every statement runs inside one, though.** The two claims above are
+ *     not in tension — the transaction wraps each STATEMENT, not the loop.
+ *     Until #152 this job's writes ran with no tenant context at all, which
+ *     production reported honestly (`rls-middleware.missing_tenant_context`,
+ *     `hasAuditContext: false`, once per `updateMany`) and which nobody was
+ *     watching. The writes were correct, because the predicate is keyed by a
+ *     row id this job just read from a tenant-filtered query. But "correct
+ *     because the application filter held" is exactly the argument this job's
+ *     whole design rejects everywhere else: a bulk unattended writer is the
+ *     one place a second layer earns its cost. `runInTenantJobContext` binds
+ *     `app_user` + `app.tenant_id`, so a widened `where` in some future edit
+ *     is refused by the database rather than by review.
+ *
+ *     Binding the context has a second, deliberate effect: the audit
+ *     extension in `lib/prisma.ts` only fires when the audit context carries
+ *     a tenant, so these writes now also land in the tenant's trail as
+ *     `metadataJson.source: 'av-rescan'`. That is the point — an operator
+ *     ought to be able to see an unattended bulk verdict write — but it does
+ *     mean a run writes audit rows in proportion to the rows it touches. The
+ *     job is bounded at AV_RESCAN_MAX_LIMIT and triggered on demand, so the
+ *     volume is bounded too. A recurring cron would need that decision made
+ *     separately.
+ *
  *   - **Provenance is stamped in `scanDetails`.** A row that says CLEAN should
  *     say who decided that. `source: 'rescan-job'` distinguishes these
  *     verdicts from `inline-upload` ones at a glance, which is what an
@@ -132,7 +155,6 @@
  * `scanned` comes back zero.
  */
 import crypto from 'crypto';
-import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
@@ -142,8 +164,19 @@ import type { ScanResult } from '@/lib/storage/av-scan';
 import { AV_SCAN_MAX_BYTES } from '@/app-layer/services/file-scan';
 import { computeSha256, streamToBuffer } from '@/app-layer/services/bundle-attachments';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import { runInTenantJobContext, type PrismaTx } from '@/lib/db-context';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import type { StorageProviderType } from '@/lib/storage/types';
+
+/**
+ * The audit-context `source` every statement in this job runs under.
+ *
+ * NOT `'job'`. That label is in `KEK_BYPASS_SOURCES` and turns the
+ * per-tenant DEK off; `runInTenantJobContext` refuses it outright. The job's
+ * own name is also what an operator reading `AuditLog.metadataJson.source`
+ * needs to see.
+ */
+const AV_RESCAN_SOURCE = 'av-rescan';
 
 // ─── Bounds ─────────────────────────────────────────────────────────
 
@@ -320,6 +353,31 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 durationMs: 0,
             };
 
+            /**
+             * Every statement this job issues, inside the tenant's RLS context.
+             *
+             * Deliberately per-statement rather than one wrapper around the
+             * loop: the transaction must never be open across `scanBuffer`
+             * (clamd's timeout is 30 s, and a held transaction pins a Postgres
+             * backend and a PgBouncer server connection for its duration).
+             * Wrapping each statement keeps every transaction short and keeps
+             * the scan outside all of them, which is the property
+             * `#126 holds no transaction open across the scan` pins.
+             *
+             * The `source` is the job's own name — see AV_RESCAN_SOURCE for why
+             * `'job'` is the label that quietly breaks encrypted columns.
+             */
+            const inTenant = <T>(fn: (db: PrismaTx) => Promise<T>): Promise<T> =>
+                runInTenantJobContext(
+                    {
+                        tenantId,
+                        source: AV_RESCAN_SOURCE,
+                        actorUserId: options.initiatedByUserId,
+                        requestId: options.requestId ?? jobRunId,
+                    },
+                    fn,
+                );
+
             // ── Guard 1 of 2 against the synthetic CLEAN ──────────────
             //
             // In `disabled` mode `scanBuffer` never contacts a scanner and
@@ -352,7 +410,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
             // much-retried row outranking one never tried. `NULL` means
             // never attempted — every row that predates this ships as due.
             const now = new Date();
-            const rows = await prisma.fileRecord.findMany({
+            const rows = await inTenant((db) => db.fileRecord.findMany({
                 where: {
                     tenantId,
                     scanStatus: 'PENDING',
@@ -371,7 +429,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 },
                 orderBy: [{ scanAttempts: 'asc' }, { createdAt: 'asc' }],
                 take,
-            });
+            }));
 
 
             /**
@@ -392,11 +450,13 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
             const leavePending = async (row: { id: string; scanAttempts: number }) => {
                 out.leftPending++;
                 try {
-                    const attempts = await FileRepository.recordScanAttempt(prisma, row.id, {
-                        tenantId,
-                        attempts: row.scanAttempts,
-                        now: new Date(),
-                    });
+                    const attempts = await inTenant((db) =>
+                        FileRepository.recordScanAttempt(db, row.id, {
+                            tenantId,
+                            attempts: row.scanAttempts,
+                            now: new Date(),
+                        }),
+                    );
                     if (attempts !== null) out.backedOff++;
                 } catch (err) {
                     logger.warn('av-rescan could not record a scan attempt', {
@@ -557,8 +617,15 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 // `scanStatus` is the ONLY column written here: quarantine
                 // (`status`) belongs to the webhook path, and this job must
                 // never be the thing that flips it.
-                const claimed = await prisma.fileRecord.updateMany({
-                    where: { id: row.id, scanStatus: 'PENDING' },
+                //
+                // `tenantId` is in the predicate as well, and the statement
+                // runs under the tenant's RLS context. Neither is redundant
+                // with the other: RLS is what still holds if this `where` is
+                // widened by a later edit, and the explicit column is what
+                // makes the query readable and correct on a connection that
+                // legitimately bypasses RLS (a superuser maintenance run).
+                const claimed = await inTenant((db) => db.fileRecord.updateMany({
+                    where: { id: row.id, tenantId, scanStatus: 'PENDING' },
                     data: {
                         scanStatus: verdict,
                         scanDetails: JSON.stringify({
@@ -570,7 +637,7 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                         }),
                         scannedAt: new Date(),
                     },
-                });
+                }));
 
                 if (claimed.count === 0) {
                     // Another writer landed a verdict while we were scanning
