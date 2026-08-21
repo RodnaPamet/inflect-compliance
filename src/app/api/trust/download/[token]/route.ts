@@ -5,6 +5,7 @@ import { jsonResponse } from '@/lib/api-response';
 import { prisma } from '@/lib/prisma';
 import { getStorageProvider } from '@/lib/storage';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
+import { recordFileDistribution } from '@/app-layer/services/file-distribution';
 import { logger } from '@/lib/observability/logger';
 
 /**
@@ -37,7 +38,13 @@ export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }:
         // below. Selecting only pathKey + originalName is what made this route
         // serve INFECTED, mid-scan and soft-deleted files: a column you don't
         // load is a gate you can't apply.
-        select: { pathKey: true, originalName: true, scanStatus: true, status: true, deletedAt: true },
+        // id / tenantId / sha256 are selected for the distribution ledger
+        // below: the exposure report joins on the CONTENT HASH, so a row that
+        // does not carry it cannot be answered for later.
+        select: {
+            id: true, tenantId: true, sha256: true,
+            pathKey: true, originalName: true, scanStatus: true, status: true, deletedAt: true,
+        },
     });
     if (!file) return jsonResponse({ error: 'not_found' }, { status: 404 });
 
@@ -66,5 +73,29 @@ export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }:
         expiresIn: TRUST_DOWNLOAD_URL_TTL_SECONDS,
         downloadFilename: file.originalName,
     });
+
+    // ─── Distribution ledger ───
+    // This is the only unauthenticated egress in the repo, and from here the
+    // signed URL is the bearer credential. Record that the bytes left, and
+    // WHEN the URL dies — that instant is what turns "a URL is out there"
+    // into a bounded window if the file is later condemned. Fail-safe by
+    // construction: the recorder never throws, so a ledger problem cannot
+    // deny a requester the document a human already approved.
+    //
+    // The context is the ACCESS REQUEST, not the document. That is what makes
+    // "who received it" answerable: the request row carries the approved
+    // requester, so an exposure report on this channel can name a person
+    // rather than only a file. Recording the fileRecordId as context would
+    // have said nothing the entry does not already carry.
+    await recordFileDistribution({
+        tenantId: file.tenantId,
+        fileRecordId: file.id,
+        sha256: file.sha256,
+        channel: 'TRUST_CENTER_DOWNLOAD',
+        contextType: 'TrustCenterAccessRequest',
+        contextId: resolved.accessRequestId,
+        signedUrlExpiresAt: new Date(Date.now() + TRUST_DOWNLOAD_URL_TTL_SECONDS * 1000),
+    });
+
     return NextResponse.redirect(url, { status: 302, headers: { 'Cache-Control': 'private, no-store' } });
 });

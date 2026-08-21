@@ -70,7 +70,10 @@ describe('consumeDownloadToken', () => {
         m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null, document: { fileRecordId: 'file-1' } });
         m.trustCenterAccessRequest.updateMany.mockResolvedValue({ count: 1 });
         const r = await consumeDownloadToken('ictc_abc', NOW);
-        expect(r).toEqual({ fileRecordId: 'file-1' });
+        // accessRequestId is carried out so the distribution ledger can name WHO
+        // received the bytes on the only unauthenticated egress. toEqual is exact,
+        // so this assertion is what will notice if that stops being returned.
+        expect(r).toEqual({ fileRecordId: 'file-1', accessRequestId: 'req-1' });
         // the consume was atomic on downloadedAt: null
         expect(m.trustCenterAccessRequest.updateMany.mock.calls[0][0].where.downloadedAt).toBeNull();
     });

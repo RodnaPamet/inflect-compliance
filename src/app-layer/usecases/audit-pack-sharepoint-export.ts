@@ -23,6 +23,7 @@ import { edgeLogger } from '@/lib/observability/edge-logger';
 import { getStorageProvider, assertTenantKey } from '@/lib/storage';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { getAuditPack, exportAuditPack } from './audit-readiness/packs';
+import { recordFileDistributions } from '../services/file-distribution';
 import {
     getSharePointClient,
     listSharePointConnections,
@@ -31,7 +32,20 @@ import {
 /** Total evidence-binary payload cap per export ZIP (manifest is always included). */
 export const SP_EXPORT_MAX_BYTES = 200 * 1024 * 1024;
 
-interface BundleFile { pathKey: string; name: string; scanStatus: string; status: string; deletedAt: Date | null }
+interface BundleFile {
+    /** FileRecord id + content hash — carried so the ZIP's contents can be
+     *  recorded in the distribution ledger and joined on later. */
+    id: string;
+    sha256: string;
+    pathKey: string;
+    name: string;
+    scanStatus: string;
+    status: string;
+    deletedAt: Date | null;
+}
+
+/** Identity of one file that really went into the ZIP. */
+export interface BundledFileIdentity { fileRecordId: string; sha256: string }
 
 /**
  * Why a file did not make it into the pack, counted per reason.
@@ -112,31 +126,31 @@ async function bundleEvidenceBinaries(
     ctx: RequestContext,
     packItems: Array<{ entityType: string; entityId: string }>,
     zip: JSZip,
-): Promise<{ bundled: number; skipped: SkippedBreakdown; bytes: number }> {
+): Promise<{ bundled: number; skipped: SkippedBreakdown; bytes: number; identities: BundledFileIdentity[] }> {
     const evidenceIds = packItems.filter((i) => i.entityType === 'EVIDENCE').map((i) => i.entityId);
     const fileIds = packItems.filter((i) => i.entityType === 'FILE').map((i) => i.entityId);
-    if (evidenceIds.length === 0 && fileIds.length === 0) return { bundled: 0, skipped: { ...NO_SKIPS }, bytes: 0 };
+    if (evidenceIds.length === 0 && fileIds.length === 0) return { bundled: 0, skipped: { ...NO_SKIPS }, bytes: 0, identities: [] };
 
     const files: BundleFile[] = await runInTenantContext(ctx, async (db) => {
         const out: BundleFile[] = [];
         if (evidenceIds.length) {
             const ev = await db.evidence.findMany({
                 where: { id: { in: evidenceIds }, tenantId: ctx.tenantId },
-                select: { fileRecord: { select: { pathKey: true, originalName: true, scanStatus: true, status: true, deletedAt: true } } },
+                select: { fileRecord: { select: { id: true, sha256: true, pathKey: true, originalName: true, scanStatus: true, status: true, deletedAt: true } } },
             });
             for (const e of ev) {
                 if (e.fileRecord) {
                     const fr = e.fileRecord;
-                    out.push({ pathKey: fr.pathKey, name: fr.originalName, scanStatus: fr.scanStatus, status: fr.status, deletedAt: fr.deletedAt });
+                    out.push({ id: fr.id, sha256: fr.sha256, pathKey: fr.pathKey, name: fr.originalName, scanStatus: fr.scanStatus, status: fr.status, deletedAt: fr.deletedAt });
                 }
             }
         }
         if (fileIds.length) {
             const fr = await db.fileRecord.findMany({
                 where: { id: { in: fileIds }, tenantId: ctx.tenantId },
-                select: { pathKey: true, originalName: true, scanStatus: true, status: true, deletedAt: true },
+                select: { id: true, sha256: true, pathKey: true, originalName: true, scanStatus: true, status: true, deletedAt: true },
             });
-            out.push(...fr.map((f) => ({ pathKey: f.pathKey, name: f.originalName, scanStatus: f.scanStatus, status: f.status, deletedAt: f.deletedAt })));
+            out.push(...fr.map((f) => ({ id: f.id, sha256: f.sha256, pathKey: f.pathKey, name: f.originalName, scanStatus: f.scanStatus, status: f.status, deletedAt: f.deletedAt })));
         }
         return out;
     });
@@ -146,6 +160,9 @@ async function bundleEvidenceBinaries(
     const skipped: SkippedBreakdown = { ...NO_SKIPS };
     let bytes = 0;
     const usedNames = new Set<string>();
+    // Identities of the files that REALLY made it into the ZIP — the ledger
+    // must record what the auditor received, not what the pack listed.
+    const identities: BundledFileIdentity[] = [];
     for (const f of files) {
         // Only bundle scanned-clean, stored, non-deleted files. Each rejection
         // is counted under its OWN reason — the caller has to be able to tell
@@ -178,6 +195,7 @@ async function bundleEvidenceBinaries(
             zip.file(`evidence/${name}`, buf);
             bundled++;
             bytes += buf.byteLength;
+            identities.push({ fileRecordId: f.id, sha256: f.sha256 });
         } catch (err) {
             skipped.unreadable++;
             edgeLogger.warn('Audit-pack export: evidence file read failed', {
@@ -186,7 +204,7 @@ async function bundleEvidenceBinaries(
             });
         }
     }
-    return { bundled, skipped, bytes };
+    return { bundled, skipped, bytes, identities };
 }
 
 export interface SpExportDestination {
@@ -252,6 +270,30 @@ export async function exportAuditPackToSharePoint(
         fileName,
         bytes,
         'application/zip',
+    );
+
+    // ─── Distribution ledger ───
+    //
+    // Recorded AFTER `uploadNewFile` resolves, never before: until it does,
+    // nothing has left. A ledger entry for an export that failed would claim
+    // an exposure that never happened, and the report's whole value is that
+    // its counts can be acted on.
+    //
+    // These copies are the unrevocable kind. The ZIP now lives in the
+    // customer's SharePoint tenant; if one of these files is later condemned,
+    // no expiry saves us — a human has to be told which pack, which drive, and
+    // which file to go and delete. That is precisely what this records.
+    await recordFileDistributions(
+        bundle.identities.map((f) => ({
+            tenantId: ctx.tenantId,
+            fileRecordId: f.fileRecordId,
+            sha256: f.sha256,
+            channel: 'AUDIT_PACK_SHAREPOINT' as const,
+            actorUserId: ctx.userId,
+            destination: dest.driveId,
+            contextType: 'AuditPack',
+            contextId: packId,
+        })),
     );
 
     await runInTenantContext(ctx, async (db) => {

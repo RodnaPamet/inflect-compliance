@@ -19,6 +19,7 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import { assessExposureOnInfection } from '@/app-layer/services/file-distribution';
 
 // Use shared prisma instance to ensure audit middleware is active
 
@@ -250,6 +251,40 @@ export async function POST(req: NextRequest) {
                     avDetails: payload.details ?? null,
                 },
             });
+
+            // ─── What already left? ───
+            //
+            // Quarantine only refuses FUTURE reads. This verdict may have
+            // arrived hours after upload — that asynchrony is the reason this
+            // webhook exists — so by now an auditor may be holding a pack ZIP
+            // containing these bytes, and a presigned URL minted minutes ago is
+            // still working regardless of what the row now says. Answer the
+            // question while we have the file's identity in hand: join the
+            // distribution ledger on the id AND the content hash (the same
+            // bytes can sit under several FileRecord rows) and write the
+            // resulting exposure report into the same hash-chained trail, one
+            // row after the quarantine.
+            //
+            // Deliberately after the quarantine write and defensively wrapped:
+            // the quarantine has already committed and stands on its own. A
+            // scanner told to retry because our reporting failed would be a
+            // worse outcome than a missing report.
+            try {
+                await assessExposureOnInfection({
+                    tenantId: fileRecord.tenantId,
+                    fileRecordId: fileRecord.id,
+                    sha256: fileRecord.sha256,
+                    uploadedByUserId: fileRecord.uploadedByUserId,
+                    engine: payload.engine ?? null,
+                });
+            } catch (err) {
+                logger.error('AV webhook: exposure assessment failed after quarantine', {
+                    component: 'av-webhook',
+                    fileId: fileRecord.id,
+                    tenantId: fileRecord.tenantId,
+                    err: err instanceof Error ? err : new Error(String(err)),
+                });
+            }
         }
 
         return jsonResponse({

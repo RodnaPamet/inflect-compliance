@@ -718,6 +718,7 @@ import {
 import type { StorageDomain } from '@/lib/storage';
 import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
 import { scanUploadOrRefuse } from '../services/file-scan';
+import { SIGNED_DOWNLOAD_URL_TTL_SECONDS } from '@/lib/storage/signed-url-policy';
 import { Readable } from 'stream';
 import { env } from '@/env';
 
@@ -1388,7 +1389,11 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         if (readProvider.name === 's3') {
             // S3: return presigned download URL (client-side redirect)
             const downloadUrl = await readProvider.createSignedDownloadUrl(fileRecord.pathKey, {
-                expiresIn: 300, // 5 minutes
+                // 5 minutes. Shared with the route's distribution ledger, which
+                // records the window this URL opens — an inline literal here
+                // would let the two drift and make the ledger state an expiry
+                // the URL does not honour.
+                expiresIn: SIGNED_DOWNLOAD_URL_TTL_SECONDS,
                 downloadFilename: fileRecord.originalName,
             });
             return {

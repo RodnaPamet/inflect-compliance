@@ -97,12 +97,19 @@ export async function requestTrustCenterAccess(slug: string, documentId: string,
 
 export interface ResolvedDownload {
     fileRecordId: string;
+    /**
+     * The TrustCenterAccessRequest this token belonged to. Carried out so the
+     * distribution ledger can name WHO received the bytes on the repo's only
+     * unauthenticated egress — the request row holds the approved requester.
+     */
+    accessRequestId: string;
 }
 
 /**
  * Resolve + CONSUME a download token: hash lookup, must be APPROVED, not
  * expired, not already downloaded. Marks it downloaded (single-use) and
- * returns the fileRecordId. Returns null on any failure (no disclosure).
+ * returns the fileRecordId plus the request it came from. Returns null on any
+ * failure (no disclosure).
  */
 export async function consumeDownloadToken(token: string, now: Date = new Date()): Promise<ResolvedDownload | null> {
     if (!token || !token.startsWith('ictc_')) return null;
@@ -120,5 +127,5 @@ export async function consumeDownloadToken(token: string, now: Date = new Date()
         data: { downloadedAt: now },
     });
     if (claim.count === 0) return null; // lost the race
-    return { fileRecordId: req.document.fileRecordId };
+    return { fileRecordId: req.document.fileRecordId, accessRequestId: req.id };
 }
