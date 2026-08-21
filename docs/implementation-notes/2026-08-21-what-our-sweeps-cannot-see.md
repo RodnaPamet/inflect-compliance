@@ -106,18 +106,41 @@ This guard is unusually self-aware — it already carries an "every
 `/api/account` turned out to be excluded by entries no root covered. But the
 remedy was applied per-directory, and one large surface was never triaged:
 
+**`DataSubjectRequest` is on NEITHER isolation axis** — and it is the strongest
+specimen in this note, so it belongs before the rest. It has no `tenantId` column,
+so the tenantId-keyed half of the denominator cannot see it; it carries no RLS
+policy, so `rls-coverage.test.ts` has nothing to assert; and it is not in
+`ORG_SCOPED_MODELS`, so the ownership-chained half misses it too. `dsar-register.ts`
+documents this in its own header — `scopedToTenantMembers()` is the only thing
+preventing a cross-tenant DSAR read, and it is application code with no DB-level
+backstop and no guard watching it.
+
+Every other entry below is "a guard cannot see this table". This one is "no guard
+CAN see it, because it does not carry either marker either guard is keyed on" —
+the failure mode at its purest, on subject-access records.
+
 **`/api/org/**` — 25 route files, none in any root.** This is the organization
 tier: org member add/update/remove, org invite create/revoke, attaching and
-detaching tenants from an org, setting org threat level and maturity. Every one
-of them is gated — verified route by route: 8 gate at the route with
+detaching tenants from an org, setting org threat level and maturity.
+
+**21 of the 25 are gated; the remaining 4 are deliberately open** and should be
+named rather than folded into an "every one" — `src/app/api/org/route.ts`
+(self-service org creation, per its own docblock; its GET is self-scoped) and the
+three `org/invite/[token]/*` routes, which are token-bound and mirror the tenant
+invite carve-out. Counted by absence of `getOrgCtx`, which is the floor the other
+21 sit on.
+
+Of those 21 — verified route by route: 8 gate at the route with
 `if (!ctx.permissions.canManageMembers | canManageTenants | canDrillDown) throw
 forbidden(...)`, and the rest gate inside the usecase
 (`org-threat-level.ts:89 canSetThreatLevel`, `org-maturity.ts:190 canSetMaturity`,
 `org-security-initiative.ts:59 canConfigureDashboard`,
 `org-dashboard-widgets.ts:62`). Underneath all of them, `getOrgCtx`
 (`src/app-layer/context.ts:183`) resolves the caller's `OrgMembership` and throws
-an external 404 when there is none, so org membership is a floor no route can skip.
-**There is no open door here.**
+an external 404 when there is none, so org membership is a floor those 21 cannot
+skip. **There is no open door here** — but "no open door" is a claim about 21
+routes plus 4 with a written reason, not about 25 uniformly, and the difference is
+the kind a later reader would otherwise have to re-derive.
 
 What is missing is the other half of C.1. `AUTHZ_DENIED` is written in exactly
 one place — `src/lib/security/permission-middleware.ts` — so every one of those

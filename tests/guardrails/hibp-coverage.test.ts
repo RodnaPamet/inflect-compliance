@@ -258,6 +258,16 @@ describe('HIBP coverage guardrail — structural scan', () => {
     it('every route.ts that parses a password field is registered', () => {
         const apiDir = path.join(REPO_ROOT, 'src/app/api');
         const allRoutes = walkRouteFiles(apiDir);
+
+        // POSITIVE CONTROL for the walker itself, and the audit that produced
+        // this file is the reason it is here. The sibling block above guards
+        // the shared-schema half the same way; this half had no such guard, so
+        // if `src/app/api` ever moves or `walkRouteFiles` breaks, the loop
+        // below would iterate ZERO routes, find zero violations, and pass —
+        // reporting full coverage of an empty set. That is precisely the
+        // failure this guard was widened to close, left standing inside the
+        // widening. A "nothing found" needs something proving the finder ran.
+        expect(allRoutes.length).toBeGreaterThan(400);
         const registeredFiles = new Set(
             HIBP_REQUIRED_ROUTES.map((r) => path.join(REPO_ROOT, r.file)),
         );
