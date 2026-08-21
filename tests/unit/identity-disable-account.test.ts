@@ -46,18 +46,19 @@ jest.mock('@/lib/observability/logger', () => ({
 import { logger } from '@/lib/observability/logger';
 const recordOutcome = jest.fn();
 const recordBatchRefused = jest.fn();
+// Spread the real module and override only what this file asserts on. This is
+// the file that paid for the alternative (#2050): a factory that LISTS the
+// functions is a snapshot of the module as it looked the day it was written,
+// the batch path here reaches notifyLeaverOutcome — which counts each
+// recipient — and the counter added upstream was `undefined`. Calling undefined
+// threw out of a function contracted never to throw, the notification was
+// swallowed, and the assertion that went red was a mail several files away.
+// The spread tracks the module by itself, and the exports nobody overrides stay
+// real (a noop meter, no cost).
 jest.mock('@/lib/observability/integration-metrics', () => ({
+    ...jest.requireActual('@/lib/observability/integration-metrics'),
     recordIdentityWriteOutcome: (...a: unknown[]) => recordOutcome(...a),
     recordIdentityBatchRefused: (...a: unknown[]) => recordBatchRefused(...a),
-    recordIdentityWritesUnsettled: jest.fn(),
-    // The batch path reaches notifyLeaverOutcome, which counts each recipient.
-    // A factory mock lists functions ONE BY ONE, so a counter added to the real
-    // module is `undefined` here — and calling undefined throws inside
-    // notifyLeaverOutcome, whose contract is never to throw, so the notification
-    // is swallowed and the mail simply does not appear. The test that breaks is
-    // the one asserting a mail, several files away from the change.
-    recordLeaverNotification: jest.fn(),
-    recordLeaverPassOutcome: jest.fn(),
 }));
 
 import {

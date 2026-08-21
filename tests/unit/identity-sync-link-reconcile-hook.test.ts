@@ -24,7 +24,14 @@ jest.mock('@/app-layer/usecases/identity-sync', () => ({
 jest.mock('@/app-layer/usecases/identity-account-link', () => ({
     reconcileIdentityAccountLinks: jest.fn(),
 }));
+// Spread the real module and override only what this file asserts on. A factory
+// that LISTS the functions is a snapshot of the module as it looked the day it
+// was written: the next counter added upstream is `undefined` here, and calling
+// undefined throws out of a caller contracted never to throw — so the red lands
+// on an unrelated assertion in another file. The spread tracks the module by
+// itself, and the exports nobody overrides stay real (a noop meter, no cost).
 jest.mock('@/lib/observability/integration-metrics', () => ({
+    ...jest.requireActual('@/lib/observability/integration-metrics'),
     recordIdentityLinkReconcile: jest.fn(),
 }));
 
