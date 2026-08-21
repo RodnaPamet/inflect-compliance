@@ -166,9 +166,19 @@ jest.mock('@/lib/storage', () => ({
 // ─── Scanner ────────────────────────────────────────────────────────
 
 const scanned: string[] = [];
-const scanBufferMock = jest.fn(async (buf: Buffer) => {
+// The return type is declared rather than inferred. Left to inference, the
+// default implementation narrows it to `status: 'CLEAN'`, and a later
+// `mockImplementation` that can also answer ERROR is a TS2345 — invisible to
+// jest, fatal to the build.
+type ScanVerdict = {
+    status: 'CLEAN' | 'INFECTED' | 'ERROR';
+    engine: string;
+    durationMs: number;
+    threat?: string;
+};
+const scanBufferMock = jest.fn(async (buf: Buffer): Promise<ScanVerdict> => {
     scanned.push(buf.toString());
-    return { status: 'CLEAN' as const, engine: 'clamav', durationMs: 3 };
+    return { status: 'CLEAN', engine: 'clamav', durationMs: 3 };
 });
 jest.mock('@/lib/storage/av-scan', () => ({
     __esModule: true,
