@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { MetaStrip, type MetaItem } from '@/components/ui/meta-strip';
 import { cardVariants } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
@@ -96,6 +98,20 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
     const [showLinkControl, setShowLinkControl] = useState(false);
     const [depError, setDepError] = useState<string | null>(null);
 
+    // #107 READ side. The register is server-rendered and filtered in the
+    // browser, so its rows never reach an SWR cache entry a fallback could
+    // read — hence the null `listKey`: published order or nothing. A BIA
+    // opened by deep link, or from the process-canvas "create BIA" flow,
+    // simply gets no arrows, which is the honest answer.
+    //
+    // `labelSingular` names an entity the `ui.recordStepper` catalog does not
+    // carry yet, so both tooltips read the generic "Previous / Next item"
+    // today. Naming it anyway means landing `bia` in en + bg is a
+    // messages-only change with no follow-up here.
+    const biaIds = useEntityListIds(null, {
+        orderKey: CACHE_KEYS.audits.businessContinuity(),
+    });
+
     // BIA-lifecycle — edit / review / impact-profile / delete surfaces.
     const [busy, setBusy] = useState(false);
     const [editing, setEditing] = useState(false);
@@ -180,6 +196,12 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
     return (
         <EntityDetailLayout
             back={{ smart: true }}
+            prevNext={{
+                ids: biaIds,
+                currentId: bia.id,
+                hrefFor: (id) => `/t/${tenantSlug}/audits/business-continuity/${id}`,
+                labelSingular: 'bia',
+            }}
             breadcrumbs={[
                 { label: tx('crumb.dashboard'), href: `/t/${tenantSlug}/dashboard` },
                 { label: tx('crumb.internalAudit'), href: `/t/${tenantSlug}/audits` },

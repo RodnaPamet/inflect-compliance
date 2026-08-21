@@ -16,6 +16,7 @@ import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useThresholdLoadMore } from '@/components/ui/hooks';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
@@ -79,6 +80,15 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
 
     const reviews = reviewsQuery.data?.rows ?? [];
     const truncated = reviewsQuery.data?.truncated ?? false;
+
+    // #107 PUBLISH side. `reviews` — the backfill-capped set the table is
+    // driving — not `visibleReviews`, which is only the scroll window.
+    //
+    // This register applies no filter and no client sort, so the published
+    // order matches the cache order today. Publishing anyway is what makes
+    // the campaign detail's stepper honest the moment either arrives, and it
+    // saves the detail page a redundant list fetch in the common case.
+    usePublishDisplayedOrder(CACHE_KEYS.accessReviews.list(), reviews);
 
     // Render a window, not the whole backfill-capped set. Without this the
     // page mounts every row it fetched — up to `LIST_BACKFILL_CAP` — and

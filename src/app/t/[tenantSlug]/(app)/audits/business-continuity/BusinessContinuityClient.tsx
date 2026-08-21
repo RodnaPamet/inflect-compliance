@@ -13,6 +13,8 @@ import { useTranslations } from 'next-intl';
 import { Plus } from '@/components/ui/icons/nucleo/plus';
 import { LifeRing } from '@/components/ui/icons/nucleo/life-ring';
 import { EntityListPage } from '@/components/layout/EntityListPage';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
 import { createColumns } from '@/components/ui/table';
 import { useThresholdLoadMore } from '@/components/ui/hooks';
@@ -115,6 +117,14 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
         const crits = (state.criticality ?? []) as string[];
         return initialRows.filter((r) => (crits.length ? crits.includes(r.criticality) : true));
     }, [initialRows, state.criticality]);
+    // #107 PUBLISH side. `rows`, not `visibleBiaRows`: the window below is a
+    // rendering budget that grows on scroll, and the stepper should walk the
+    // whole set the user filtered down to — exactly as scrolling would.
+    //
+    // The criticality filter is applied ENTIRELY client-side over a
+    // server-rendered `initialRows`, so nothing else in the app can know what
+    // this table is showing. That is the case that made #107 necessary.
+    usePublishDisplayedOrder(CACHE_KEYS.audits.businessContinuity(), rows);
     // Render a window, not the whole backfill-capped set. Without this the
     // page mounts every row it fetched and never virtualizes — the default
     // threshold is 1000, so a tenant can sit under it and still re-render

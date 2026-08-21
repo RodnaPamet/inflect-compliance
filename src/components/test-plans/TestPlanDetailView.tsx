@@ -21,6 +21,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -136,6 +138,18 @@ export function TestPlanDetailView({ planId, context }: { planId: string; contex
     const { data: control } = useTenantSWR<{ id: string; code: string | null; name: string }>(
         context === 'control' && plan ? `/controls/${plan.controlId}` : null,
     );
+
+    // #107 PUBLISH side — the run-history list below is the ONLY surface in
+    // the product that renders a plan's runs as a peer list, so it is the
+    // surface that owns their order. `/tests/runs/{runId}` reads it back to
+    // step between runs of the same plan.
+    //
+    // The rows published are `plan.runs` verbatim: this list applies no
+    // filter and no client sort, so what the server returned IS what the
+    // user sees, and the server already caps it (`_count.runs` can exceed
+    // `runs.length`). Publishing the capped set is correct — the stepper
+    // must not offer a run the history never listed.
+    usePublishDisplayedOrder(CACHE_KEYS.tests.runs(planId), plan?.runs);
 
     const [editing, setEditing] = useState(false);
     const [creatingRun, setCreatingRun] = useState(false);

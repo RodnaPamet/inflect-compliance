@@ -283,6 +283,16 @@ export const CACHE_KEYS = {
     tests: {
         plans: () => '/tests/plans' as const,
         detail: (planId: string) => `/tests/plans/${planId}` as const,
+        /**
+         * A plan's run history. Today this key is used ONLY as the namespace
+         * the plan-detail view publishes its rendered run order under (#107)
+         * — the runs themselves arrive embedded in `tests.detail(planId)`,
+         * and the run stepper reads with a null `listKey` so nothing ever
+         * fetches it. Naming it here anyway keeps the publisher and the
+         * reader on one string by construction, which is the whole point of
+         * the registry.
+         */
+        runs: (planId: string) => `/tests/plans/${planId}/runs` as const,
         due: () => '/tests/due' as const,
         dashboard: (periodDays: number) => `/tests/dashboard?period=${periodDays}` as const,
         readiness: () => '/tests/readiness' as const,

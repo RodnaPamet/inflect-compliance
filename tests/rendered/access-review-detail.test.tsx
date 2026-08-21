@@ -14,6 +14,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 
 jest.mock('next/navigation', () => ({
+    // `useParams` is REQUIRED, not decoration: the prev/next stepper
+    // resolves its published-order cache key through the route's
+    // tenantSlug, so a mock without it throws the moment the client
+    // mounts.
+    useParams: () => ({ tenantSlug: 'acme' }),
     useRouter: () => ({
         push: jest.fn(),
         replace: jest.fn(),
