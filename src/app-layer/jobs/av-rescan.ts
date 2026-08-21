@@ -91,6 +91,39 @@
  *     attempt bookkeeping rides along, because a verdict makes the row
  *     unselectable anyway and the counter would only be noise.
  *
+ *   - **A row that cannot reach a verdict must not abort the page either.**
+ *     The bullet above covers a row that FAILS; this one covers a row that
+ *     explodes. `scanBuffer` returning `{ status: 'ERROR' }` is a handled
+ *     outcome, but it can also *throw* — a socket reset mid-INSTREAM, a
+ *     payload that kills the parser, a DNS failure on the clamd host. An
+ *     unhandled throw propagates out of the loop and out of `runJob`, so one
+ *     poison row stops every row behind it on this run AND on every future
+ *     run, because nothing was written that would change which page is
+ *     selected next time. The throw is therefore caught per row and treated
+ *     as exactly what it is: no verdict. The row keeps its honest PENDING and
+ *     gets the same attempt record as every other leave-pending branch. It is
+ *     counted apart from `scannerError` — "the scanner answered ERROR forty
+ *     times" and "the scanner blew up forty times" are different pages of the
+ *     runbook.
+ *
+ *   - **An abnormal INFECTED proportion halts the run.** This job condemns
+ *     files unattended, and `INFECTED` is terminal for a download: the only
+ *     way back is an OWNER walking
+ *     `POST /api/t/:slug/admin/files/:fileId/clear-quarantine` file by file.
+ *     A rescan that flips a large fraction of a tenant's library is far more
+ *     likely to be a bad signature update than an outbreak, so once enough
+ *     files have a verdict to make the ratio mean anything
+ *     (`AV_RESCAN_INFECTION_BREAKER_MIN_VERDICTS` — an ABSOLUTE floor, so a
+ *     three-file tenant with one real infection can never trip it) the run
+ *     stops as soon as the infected share crosses
+ *     `AV_RESCAN_INFECTION_BREAKER_RATIO`. Verdicts already written are LEFT
+ *     ALONE — a job that condemned a file wrongly has no better claim to be
+ *     right when it un-condemns it, and the reversal path is a deliberate,
+ *     audited, reason-carrying admin action. The halt is announced as its own
+ *     log event and its own audit row, and names the reversal route: a silent
+ *     halt is indistinguishable from a clean finish, which is the same
+ *     absence problem as a silent success.
+ *
  * ## Bounded
  *
  * One tenant, one page of rows, `take` always present. This is an operator
@@ -105,6 +138,7 @@ import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { getProviderByName } from '@/lib/storage';
 import { scanBuffer } from '@/lib/storage/av-scan';
+import type { ScanResult } from '@/lib/storage/av-scan';
 import { AV_SCAN_MAX_BYTES } from '@/app-layer/services/file-scan';
 import { computeSha256, streamToBuffer } from '@/app-layer/services/bundle-attachments';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
@@ -125,6 +159,63 @@ export const AV_RESCAN_DEFAULT_LIMIT = 200;
  * a row that got a verdict is no longer PENDING and is no longer selected.
  */
 export const AV_RESCAN_MAX_LIMIT = 1_000;
+
+/**
+ * How many rows must reach a VERDICT before the infection ratio is allowed to
+ * mean anything.
+ *
+ * An ABSOLUTE floor, and it is the half of the breaker that stops it being
+ * actively harmful. A ratio on its own halts a three-file tenant with one
+ * genuine infection at 33%, and a one-file tenant at 100% — turning a working
+ * scan into an operator ticket every time. Below this count the run simply
+ * does not evaluate the breaker.
+ */
+export const AV_RESCAN_INFECTION_BREAKER_MIN_VERDICTS = 20;
+
+/**
+ * The infected share of settled rows that halts the run.
+ *
+ * Chosen high rather than sensitive. The signal being caught is a bad
+ * signature update, which condemns essentially everything it looks at, so the
+ * true positive sits near 1.0 and there is nothing to gain from crowding a
+ * real outbreak. Halting is not free: every row behind the breaker stays
+ * PENDING and un-previewable until an operator decides, so a jumpy threshold
+ * trades one library-wide failure for a recurring one.
+ */
+export const AV_RESCAN_INFECTION_BREAKER_RATIO = 0.5;
+
+/**
+ * What an operator should do about a halt, carried on the log line, the audit
+ * row and the returned result.
+ *
+ * A halt that only says "stopped" leaves the reader to discover on their own
+ * that the rows already condemned are recoverable, and how. The reversal path
+ * shipped with the un-quarantine route; naming it here is the difference
+ * between a halt that is actionable and one that is alarming.
+ */
+export const AV_RESCAN_HALT_REMEDIATION =
+    'Verdicts already written were left in place. Verify the ClamAV signature ' +
+    'database before re-running; clear any false positive with POST ' +
+    '/api/t/:slug/admin/files/:fileId/clear-quarantine (OWNER only).';
+
+/** Why a run stopped before it reached the end of its page. */
+export type AvRescanHaltReason = 'infection-ratio';
+
+/**
+ * The breaker predicate, kept apart from the loop so it can be reasoned about
+ * (and tested) without a page of rows around it.
+ *
+ * The denominator is SETTLED rows — the ones that actually reached a verdict —
+ * not rows examined. A page half of which could not be read from storage says
+ * nothing either way about whether the signature is sound, and folding those
+ * in would let a storage outage silently suppress a breaker that should have
+ * fired.
+ */
+export function infectionBreakerTripped(counts: { clean: number; infected: number }): boolean {
+    const settled = counts.clean + counts.infected;
+    if (settled < AV_RESCAN_INFECTION_BREAKER_MIN_VERDICTS) return false;
+    return counts.infected / settled > AV_RESCAN_INFECTION_BREAKER_RATIO;
+}
 
 // ─── Contract ───────────────────────────────────────────────────────
 
@@ -150,7 +241,12 @@ export interface AvRescanOptions {
 export interface AvRescanResult {
     tenantId: string;
     jobRunId: string;
-    /** Rows selected and considered this run. */
+    /**
+     * Rows actually EXAMINED this run — incremented as the loop reaches each
+     * one, not set from the page size up front. The two are the same number
+     * unless the run halted early, and when it did, reporting the page size
+     * would credit the run with rows it never looked at.
+     */
     scanned: number;
     clean: number;
     infected: number;
@@ -159,8 +255,14 @@ export interface AvRescanResult {
     integrityMismatch: number;
     /** Declared size above the clamd stream cap — never read, never scanned. */
     oversize: number;
-    /** Scanner unreachable / timed out / unparseable. */
+    /** Scanner answered `ERROR` — unreachable / timed out / unparseable. */
     scannerError: number;
+    /**
+     * Scanner THREW rather than answering. Counted apart from `scannerError`
+     * because it is a different page of the runbook: an ERROR is clamd saying
+     * it could not do the job, a throw is the call itself coming apart.
+     */
+    scannerThrew: number;
     /** Object could not be read from storage at all. */
     readError: number;
     /** A `CLEAN` from `engine: 'disabled'` — refused, never persisted. */
@@ -174,6 +276,16 @@ export interface AvRescanResult {
      * race (a verdict landed between the scan and the bookkeeping).
      */
     backedOff: number;
+    /**
+     * True when the run stopped before the end of its page. Distinct from a
+     * clean finish on purpose — `scanned < limit` alone is also what a small
+     * tenant looks like.
+     */
+    halted: boolean;
+    /** Why it halted, `null` when it did not. */
+    haltReason: AvRescanHaltReason | null;
+    /** What to do about the halt, `null` when there was none. */
+    haltRemediation: string | null;
     durationMs: number;
 }
 
@@ -197,10 +309,14 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 integrityMismatch: 0,
                 oversize: 0,
                 scannerError: 0,
+                scannerThrew: 0,
                 readError: 0,
                 refusedSyntheticClean: 0,
                 lostClaim: 0,
                 backedOff: 0,
+                halted: false,
+                haltReason: null,
+                haltRemediation: null,
                 durationMs: 0,
             };
 
@@ -257,7 +373,6 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 take,
             });
 
-            out.scanned = rows.length;
 
             /**
              * Leave a row PENDING and stop it holding the page.
@@ -295,6 +410,11 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
             };
 
             for (const row of rows) {
+                // Counted HERE, not from `rows.length` before the loop: a run
+                // that halts early must not claim credit for the rows it
+                // never looked at.
+                out.scanned++;
+
                 // ── Too big to scan is not "safe" ────────────────────
                 //
                 // clamd aborts past its own StreamMaxLength, so the round
@@ -366,7 +486,35 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
 
                 // ── Scan. Outside every transaction, by construction —
                 // there is no transaction open anywhere in this loop.
-                const result = await scanBuffer(buffer);
+                //
+                // The try/catch is the whole point. `scanBuffer` has two ways
+                // of failing and only one of them is a return value: a socket
+                // reset mid-INSTREAM, a DNS failure on the clamd host or a
+                // payload that kills the response parser all THROW. Uncaught,
+                // that throw leaves the loop, leaves `runJob`, and takes every
+                // row behind this one with it — on this run and on every run
+                // after, since nothing was written that would change which
+                // page gets selected next time. One poison row is not allowed
+                // to be a permanent outage of the sweep.
+                let result: ScanResult;
+                try {
+                    result = await scanBuffer(buffer);
+                } catch (err) {
+                    // A throw is not a verdict, and it is not `SKIPPED`
+                    // either. The row keeps its honest PENDING and takes the
+                    // same attempt record every other leave-pending branch
+                    // takes, so the backoff moves it out of the way.
+                    out.scannerThrew++;
+                    await leavePending(row);
+                    logger.error('av-rescan: the scanner threw; leaving file pending', {
+                        component: 'av-rescan',
+                        tenantId,
+                        jobRunId,
+                        fileId: row.id,
+                        error: err instanceof Error ? err.message : String(err),
+                    });
+                    continue;
+                }
 
                 if (result.status === 'ERROR') {
                     out.scannerError++;
@@ -466,6 +614,76 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                     },
                     requestId: options.requestId ?? null,
                 });
+
+                // ── Circuit breaker ──────────────────────────────────
+                //
+                // Evaluated only after the row is fully settled — verdict
+                // durable, audit row written — so the halt never orphans a
+                // half-finished row.
+                //
+                // Verdicts already written are LEFT ALONE. Rolling them back
+                // is tempting and wrong: the same run that condemned them is
+                // the one now saying it does not trust itself, and it would
+                // be reversing an INFECTED verdict unattended, with no reason
+                // string and no human deciding — precisely the shape the
+                // clear-quarantine route exists to avoid. The rows BEHIND the
+                // breaker are untouched, including their attempt counters:
+                // they were never examined, so they have not earned a backoff
+                // and must come back on the next run at full priority.
+                if (infectionBreakerTripped(out)) {
+                    out.halted = true;
+                    out.haltReason = 'infection-ratio';
+                    out.haltRemediation = AV_RESCAN_HALT_REMEDIATION;
+
+                    // Its OWN log event, not a field on the completion line.
+                    // A halt and a clean finish are the same shape from the
+                    // outside — both stop early relative to the page, both
+                    // return a result — so the difference has to be
+                    // something an alert can match on.
+                    logger.error('av-rescan.halted', {
+                        component: 'av-rescan',
+                        tenantId,
+                        jobRunId,
+                        haltReason: out.haltReason,
+                        scanned: out.scanned,
+                        infected: out.infected,
+                        clean: out.clean,
+                        selected: rows.length,
+                        notExamined: rows.length - out.scanned,
+                        ratio: out.infected / (out.infected + out.clean),
+                        thresholdRatio: AV_RESCAN_INFECTION_BREAKER_RATIO,
+                        minVerdicts: AV_RESCAN_INFECTION_BREAKER_MIN_VERDICTS,
+                        remediation: AV_RESCAN_HALT_REMEDIATION,
+                    });
+
+                    // And an audit row, so the halt reaches the SIEM stream
+                    // alongside the `FILE_QUARANTINED` rows it is casting
+                    // doubt on. Anchored on the tenant rather than a file —
+                    // the subject is the run, not any one row.
+                    await appendAuditEntry({
+                        tenantId,
+                        userId: options.initiatedByUserId,
+                        actorType: 'SYSTEM',
+                        entity: 'Tenant',
+                        entityId: tenantId,
+                        action: 'AV_RESCAN_HALTED',
+                        details: null,
+                        metadataJson: {
+                            jobRunId,
+                            haltReason: out.haltReason,
+                            scanned: out.scanned,
+                            infected: out.infected,
+                            clean: out.clean,
+                            selected: rows.length,
+                            thresholdRatio: AV_RESCAN_INFECTION_BREAKER_RATIO,
+                            minVerdicts: AV_RESCAN_INFECTION_BREAKER_MIN_VERDICTS,
+                            remediation: AV_RESCAN_HALT_REMEDIATION,
+                        },
+                        requestId: options.requestId ?? null,
+                    });
+
+                    break;
+                }
             }
 
             out.durationMs = Date.now() - started;
@@ -483,8 +701,11 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                 scannerError: out.scannerError,
                 readError: out.readError,
                 refusedSyntheticClean: out.refusedSyntheticClean,
+                scannerThrew: out.scannerThrew,
                 lostClaim: out.lostClaim,
                 backedOff: out.backedOff,
+                halted: out.halted,
+                haltReason: out.haltReason,
                 durationMs: out.durationMs,
             });
 
