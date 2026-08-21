@@ -281,6 +281,27 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'compromise — destructive on the timeline that matters ' +
             'and OWNER-only per the role model in CLAUDE.md.',
     },
+    // ── The quarantine list (the read side of the reversal) ─────────
+    //
+    // Order against the reversal rule below does not matter: the two
+    // paths are disjoint (`quarantined` carries no second segment), so
+    // first-match-wins cannot confuse them. They sit adjacent because
+    // they are one decision — a reviewer changing the tier of either
+    // needs the other on the same screen.
+    {
+        path: new RegExp(`^${T}\\/admin\\/files\\/quarantined$`),
+        permission: 'admin.tenant_lifecycle',
+        methods: ['GET'],
+        note:
+            'Enumerates the files ClamAV condemned. Same OWNER-only key ' +
+            'as the reversal it feeds, deliberately: it is the ONLY ' +
+            'source of the fileId that write consumes, so a weaker tier ' +
+            'here would be disclosure with no matching capability — and ' +
+            'the rows are a map of the malware in a customer library ' +
+            '(name, size, uploader, engine signature). An ADMIN mid- ' +
+            'incident still reads every FILE_QUARANTINED audit row at ' +
+            'the far lower audit.view bar.',
+    },
     // ── False-positive quarantine reversal ──────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/files\\/[^/]+\\/clear-quarantine$`),

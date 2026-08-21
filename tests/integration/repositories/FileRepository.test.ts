@@ -193,6 +193,110 @@ describeFn('FileRepository (integration — real DB)', () => {
         expect(await FileRepository.findBySha256(prisma, TENANT_A, sha)).toBeNull();
     });
 
+    it('listQuarantined returns only this tenant\'s live INFECTED rows', async () => {
+        // The unit suite proves the `where` OBJECT; this proves the
+        // predicate against the real enum columns and the real planner —
+        // `status: { not: 'DELETED' }` is an enum comparison, not a string
+        // one, and a DELETED row that leaked into this list would offer an
+        // action `clearInfectedVerdict` is guaranteed to refuse.
+        const ctxB = makeRequestContext('ADMIN', { tenantId: TENANT_B, userId });
+
+        const live = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        const deleted = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        const clean = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        const otherTenant = await FileRepository.createPending(prisma, ctxB, pendingData());
+
+        await prisma.fileRecord.updateMany({
+            where: { id: { in: [live.id, otherTenant.id] } },
+            data: { scanStatus: 'INFECTED', status: 'FAILED', scanDetails: 'EICAR' },
+        });
+        await prisma.fileRecord.updateMany({
+            where: { id: deleted.id },
+            data: { scanStatus: 'INFECTED', status: 'DELETED' },
+        });
+        await prisma.fileRecord.updateMany({
+            where: { id: clean.id },
+            data: { scanStatus: 'CLEAN', status: 'STORED' },
+        });
+
+        const rows = await FileRepository.listQuarantined(prisma, TENANT_A, { take: 50 });
+
+        expect(rows.map((r) => r.id)).toEqual([live.id]);
+        expect(rows[0].scanDetails).toBe('EICAR');
+        // The storage locator never leaves the layer.
+        expect('pathKey' in rows[0]).toBe(false);
+    });
+
+    it('listQuarantined pages with a stable cursor', async () => {
+        const made: string[] = [];
+        for (const _ of [0, 1, 2]) {
+            const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+            made.push(rec.id);
+        }
+        // Every row stamped at the SAME instant — the case a non-unique
+        // sort key silently skips or repeats rows on.
+        const stamped = new Date('2026-08-01T00:00:00.000Z');
+        await prisma.fileRecord.updateMany({
+            where: { id: { in: made } },
+            data: { scanStatus: 'INFECTED', status: 'FAILED', scannedAt: stamped },
+        });
+
+        const first = await FileRepository.listQuarantined(prisma, TENANT_A, { take: 2 });
+        expect(first).toHaveLength(2);
+
+        const second = await FileRepository.listQuarantined(prisma, TENANT_A, {
+            take: 2,
+            after: { scannedAt: first[1].scannedAt, id: first[1].id },
+        });
+
+        const seen = [...first.map((r) => r.id), ...second.map((r) => r.id)];
+        expect(seen).toHaveLength(3);
+        expect(new Set(seen).size).toBe(3);
+        expect([...seen].sort()).toEqual([...made].sort());
+    });
+
+    it('keeps paging after the anchor row leaves the INFECTED set', async () => {
+        // THE REASON THIS IS A KEYSET WALK AND NOT A PRISMA `cursor`.
+        //
+        // This list exists to feed `clearInfectedVerdict`. Prisma's `cursor`
+        // requires the anchor ROW to still satisfy the `where` — so clearing
+        // a file's quarantine, which is the whole point, would make the next
+        // page come back EMPTY and hide every remaining quarantined file. On
+        // an incident surface an empty page reads as "nothing is
+        // quarantined", which is the worst possible way to be wrong.
+        const made: string[] = [];
+        for (const _ of [0, 1, 2]) {
+            const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+            made.push(rec.id);
+        }
+        const stamped = new Date('2026-08-02T00:00:00.000Z');
+        await prisma.fileRecord.updateMany({
+            where: { id: { in: made } },
+            data: { scanStatus: 'INFECTED', status: 'FAILED', scannedAt: stamped },
+        });
+
+        const first = await FileRepository.listQuarantined(prisma, TENANT_A, { take: 2 });
+        expect(first).toHaveLength(2);
+        const anchor = { scannedAt: first[1].scannedAt, id: first[1].id };
+
+        // Do the thing the list is FOR: the anchor row stops being INFECTED.
+        await prisma.fileRecord.updateMany({
+            where: { id: first[1].id },
+            data: { scanStatus: 'CLEAN', status: 'STORED' },
+        });
+
+        const second = await FileRepository.listQuarantined(prisma, TENANT_A, {
+            take: 2,
+            after: anchor,
+        });
+
+        // The third row is still reachable. Positive assertion beside the
+        // count, because "length 1" alone would also be satisfied by the
+        // wrong row coming back.
+        const remaining = made.filter((id) => id !== first[0].id && id !== first[1].id);
+        expect(second.map((r) => r.id)).toEqual(remaining);
+    });
+
     it('findPendingOlderThan returns old PENDING records', async () => {
         const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
         // Back-date it so the lt filter matches.

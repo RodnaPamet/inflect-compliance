@@ -88,3 +88,40 @@ export function assertCanClearFileQuarantine(ctx: RequestContext): void {
         );
     }
 }
+
+/**
+ * Asserts the caller may enumerate this tenant's quarantined files.
+ *
+ * SAME KEY AS THE REVERSAL — `admin.tenant_lifecycle`, OWNER-only —
+ * and that is a deliberate choice rather than an oversight, because the
+ * obvious alternative (let ADMIN read, keep OWNER for the write) is
+ * defensible and was rejected for three reasons:
+ *
+ *   1. The list IS the index of the action. `clearFileQuarantine` takes
+ *      a `fileId` and nothing else, so this read is the only way to
+ *      obtain the argument the OWNER-only write consumes. Handing that
+ *      to a role that cannot use it is disclosure with no matching
+ *      capability; handing it to one that can is the same authority
+ *      split over two calls.
+ *   2. The rows are a map of the malware in a customer's evidence
+ *      library — original filename, size, uploader, and the engine's
+ *      threat signature. That is exactly the reconnaissance an attacker
+ *      with a compromised ADMIN session wants: which payloads landed,
+ *      which were caught, and what the scanner calls them.
+ *   3. An ADMIN investigating an incident is not left blind. Every
+ *      quarantine writes a hash-chained `FILE_QUARANTINED` audit row,
+ *      and the audit trail is readable at the far lower `audit.view`
+ *      bar. What OWNER buys here is the ACTIONABLE view, not the only
+ *      view.
+ *
+ * The route is gated on the same key by `requirePermission`; this is the
+ * usecase-layer twin, so a non-HTTP caller cannot reach the list without
+ * the same authority.
+ */
+export function assertCanViewQuarantinedFiles(ctx: RequestContext): void {
+    if (!ctx.appPermissions?.admin?.tenant_lifecycle) {
+        throw forbidden(
+            'Viewing quarantined files is an owner-level action.',
+        );
+    }
+}

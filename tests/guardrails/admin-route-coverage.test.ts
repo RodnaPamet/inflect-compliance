@@ -68,6 +68,9 @@ const ADMIN_ONLY_ROUTES = [
     // False-positive quarantine reversal — OWNER-only
     // (admin.tenant_lifecycle), audited FILE_QUARANTINE_CLEARED.
     'admin/files/[fileId]/clear-quarantine/route.ts',
+    // The read side of the same escape hatch — the only surface that
+    // produces the fileId the reversal consumes. Same OWNER-only key.
+    'admin/files/quarantined/route.ts',
     'admin/identity-write-policy/route.ts',
     'admin/identity-leaver-passes/route.ts',
     'admin/identity-account-protection/[accountId]/route.ts',
