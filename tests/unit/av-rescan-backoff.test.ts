@@ -520,3 +520,40 @@ describe('#120 the backoff schedule', () => {
         expect(guarded.fileRecord.updateMany).toHaveBeenCalledTimes(1);
     });
 });
+
+
+// The split between an attempt record and a verdict write is the whole task.
+// `assertAttemptColumnsOnly` is what will enforce it once anyone threads a
+// caller-supplied object into that write — untested, it would be decoration.
+describe('assertAttemptColumnsOnly — the split is enforced, not just intended', () => {
+    // Lazily required, like every other import in this file: pulling
+    // FileRepository in at module scope evaluates the `@/env` mock factory
+    // before `mockEnv` is initialised, and the whole suite fails to run.
+    const { assertAttemptColumnsOnly } =
+        require('@/app-layer/repositories/FileRepository') as typeof import('@/app-layer/repositories/FileRepository');
+
+    it('accepts exactly the three attempt columns', () => {
+        expect(() =>
+            assertAttemptColumnsOnly({
+                scanAttempts: 3,
+                lastScanAttemptAt: new Date(),
+                nextScanAttemptAt: new Date(),
+            }),
+        ).not.toThrow();
+    });
+
+    it.each(['scanStatus', 'scanDetails', 'scannedAt', 'status'])(
+        'refuses the verdict column %s — an attempt must never assert a result',
+        (column) => {
+            expect(() => assertAttemptColumnsOnly({ scanAttempts: 1, [column]: 'CLEAN' })).toThrow(
+                /refuses to write the verdict column/,
+            );
+        },
+    );
+
+    it('refuses a column it does not recognise at all', () => {
+        expect(() => assertAttemptColumnsOnly({ tenantId: 'tenant-1' })).toThrow(
+            /refuses to write the unknown column/,
+        );
+    });
+});

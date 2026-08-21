@@ -54,7 +54,7 @@ export const SCAN_ATTEMPT_COLUMNS = [
  */
 export const SCAN_VERDICT_COLUMNS = ['scanStatus', 'scanDetails', 'scannedAt', 'status'] as const;
 
-function assertAttemptColumnsOnly(data: Record<string, unknown>): void {
+export function assertAttemptColumnsOnly(data: Record<string, unknown>): void {
     for (const column of Object.keys(data)) {
         if ((SCAN_VERDICT_COLUMNS as readonly string[]).includes(column)) {
             throw badRequest(
@@ -404,8 +404,16 @@ export class FileRepository {
      * touches a disjoint set of columns. Sharing either would defeat the
      * point: a verdict is terminal and must never be fabricated by a
      * bookkeeping write, and an attempt count is frequent and says nothing at
-     * all about whether the file is safe. `assertAttemptColumnsOnly` below is
-     * the runtime spine of that rule.
+     * all about whether the file is safe.
+     *
+     * `assertAttemptColumnsOnly` guards that split. Today it cannot fire —
+     * the data it checks is a literal built three lines below — and saying
+     * otherwise would be claiming a defence that never runs. What it is for
+     * is the NEXT edit: the moment anyone threads a caller-supplied object
+     * into this write, a merged `scanStatus` becomes a fabricated verdict
+     * rather than a bookkeeping bump. It is exported and directly tested so
+     * the rule is enforced somewhere a test can see, instead of resting on a
+     * reviewer noticing.
      *
      * `scanStatus: 'PENDING'` in the predicate means a row that won a verdict
      * from another writer while we were scanning it cannot have its attempt
