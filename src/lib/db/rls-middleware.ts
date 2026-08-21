@@ -217,6 +217,16 @@ const OWNERSHIP_CHAINED_MODELS: readonly string[] = [
     // tenant migration sequences and are now picked up by
     // `enumerateDirectTenantScopedModels()`.
     'PolicyAcknowledgement',
+    // Sibling of the row above, and it shipped outside this list for a
+    // month. Migration 20260715140000_policy_ack_assignment creates the
+    // table WITH the mirrored EXISTS-on-PolicyVersion.tenantId policy —
+    // the RLS is real. What was missing is the entry here, and this list
+    // is the DENOMINATOR for two things: `rls-coverage.test.ts` (so a
+    // later migration could have dropped the policy with CI still green)
+    // and `isTenantScopedModel`, which decides whether the Prisma
+    // tripwire warns about a context-less query. Neither could see the
+    // table, because both are keyed on a marker the table never carried.
+    'PolicyAcknowledgementAssignment',
 ];
 
 function enumerateDirectTenantScopedModels(): string[] {

@@ -47,38 +47,11 @@ const TEST_DIRS = [
  * goes down.
  */
 const EXEMPTIONS: Record<string, string> = {
-    // Q1 — Compliance core targets in roadmap. clause/mapping back the
-    // framework + cross-framework projection layer; tested today
-    // transitively via control.queries integration tests but the
-    // ratchet asks for a direct import.
-    'src/app-layer/usecases/clause.ts':
-        'Roadmap Q1 — exercised transitively via control/framework tests; direct unit tests pending.',
-    'src/app-layer/usecases/framework/catalog.ts':
-        'Roadmap Q1 — fixtures-driven catalog loader, currently exercised only via framework.install integration.',
-    'src/app-layer/usecases/framework/tree.ts':
-        'Roadmap Q1 — pending direct unit tests.',
-
-    // Q2 — Audit + audit-trail
-    'src/app-layer/usecases/org-audit.ts':
-        'Roadmap Q2 — org-scoped audit feed projection; pending direct tests.',
-
     // Q3 — Reports + cross-domain
     'src/app-layer/usecases/report.ts':
         'Roadmap Q3 — report rendering orchestration; covered indirectly by PDF/export integration suites.',
     'src/app-layer/usecases/notification.ts':
         'Roadmap Q3 — notification dispatch; covered indirectly by deadline-monitor + automation tests.',
-
-    // Inherited data / vendor-audit / traceability-graph — supporting domains
-    'src/app-layer/usecases/inherited-control-data.ts':
-        'Roadmap Q3 — vendor → tenant inherited control denormalisation, indirectly exercised by vendor.assessment tests.',
-    'src/app-layer/usecases/vendor-audit.ts':
-        'Roadmap Q2 — vendor audit cycle, pending direct unit tests in Vendor PR.',
-    'src/app-layer/usecases/traceability-graph.ts':
-        'Roadmap Q1 — graph builder, exercised via traceability integration test; pending direct unit tests.',
-
-    // Test-internal hardening — last priority, low blast radius.
-    'src/app-layer/usecases/test-hardening.ts':
-        'Roadmap Q3 — test plan hardening utility, low blast radius; pending direct tests.',
 };
 
 const EXEMPTION_COUNT = Object.keys(EXEMPTIONS).length;
@@ -180,10 +153,43 @@ describe('every usecase file has an importing test', () => {
         // Today's baseline. When you add an exemption, you must also
         // lower this floor — i.e. you can't sneak in an additional
         // untested file without explicitly admitting the regression in
-        // a separate, visible diff. PR 19 took auditLog.ts off the
-        // list, so the ratchet is at 11 now.
-        const BASELINE = 10;
+        // a separate, visible diff.
+        //
+        // 10 → 2 on 2026-08-21. Eight of the ten entries had earned a
+        // direct `@/app-layer/usecases/<path>` test months earlier and
+        // nobody deleted the entry, because nothing here looked. An
+        // exemption REMOVES its file from the denominator, so the
+        // "pending direct unit tests" reasons stayed on files that had
+        // them — and, worse, deleting those tests would have gone
+        // unnoticed. The stale-exemption test below is the half that
+        // was missing.
+        const BASELINE = 2;
         expect(EXEMPTION_COUNT).toBeLessThanOrEqual(BASELINE);
+    });
+
+    test('no EXEMPTIONS entry is stale — an exempt file must still be untested', () => {
+        // The mirror of the coverage test, and the reason the count
+        // above was 5x reality. `every usecase is imported OR exempt`
+        // short-circuits on the exemption before it ever runs the
+        // detector, so an entry that has since earned a test is
+        // invisible to it. This runs the SAME detector against the
+        // exempt files and demands the exemption be given up once it
+        // is no longer true.
+        const stale = Object.keys(EXEMPTIONS).filter((rel) =>
+            isImported(rel, testSource),
+        );
+
+        if (stale.length > 0) {
+            throw new Error(
+                `EXEMPTIONS entries that now have an importing test:\n${stale
+                    .map((f) => `  - ${f}`)
+                    .join('\n')}\n\n` +
+                    'Delete each entry (and lower BASELINE by the same amount)\n' +
+                    'in this diff. A stale exemption keeps the file OUT of the\n' +
+                    "denominator, so deleting the file's only test would not\n" +
+                    'fail this suite.',
+            );
+        }
     });
 
     test('every EXEMPTIONS entry points to an actual file (catches stale entries after refactors)', () => {

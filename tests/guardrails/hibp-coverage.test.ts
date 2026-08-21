@@ -73,6 +73,100 @@ const CALL_RE = /\bcheckPasswordAgainstHIBP\s*\(/;
 const PASSWORD_FIELD_RE =
     /\b(password|newPassword|currentPassword|confirmPassword)\s*:\s*z\./g;
 
+/**
+ * Shared-schema modules. The password-field heuristic above only sees
+ * a Zod field DECLARED in the file it is scanning, so a route whose
+ * body schema lives in one of these modules is invisible to it —
+ * which is not hypothetical: `api/auth/register/route.ts`, the
+ * flagship password route, parses `AuthActionSchema` from
+ * `@/lib/schemas` and matches PASSWORD_FIELD_RE zero times. It is
+ * covered only because a human put it on the curated list above.
+ *
+ * So the scan resolves one more hop: find the exported schemas in
+ * these modules that carry a password-shaped field (transitively —
+ * `AuthActionSchema` gets it from `AuthRegisterSchema.extend(...)`),
+ * then treat a route that imports one of those names exactly like a
+ * route that declares the field inline.
+ */
+const SHARED_SCHEMA_DIRS = ['src/lib/schemas', 'src/app-layer/schemas'];
+
+function walkTsFiles(dir: string): string[] {
+    const out: string[] = [];
+    if (!fs.existsSync(dir)) return out;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) out.push(...walkTsFiles(full));
+        else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+            out.push(full);
+        }
+    }
+    return out;
+}
+
+/**
+ * Exported schema names in the shared modules that (transitively)
+ * carry a password-shaped field.
+ *
+ * Declaration bodies are sliced `export const X =` → next `export `,
+ * which is coarse but safe in the direction that matters: over-wide
+ * slices can only ADD names to the set, and a name in the set only
+ * ever demands that an importing route be registered.
+ */
+function passwordBearingSharedSchemas(
+    fileSources: readonly string[],
+): Set<string> {
+    const bodies = new Map<string, string>();
+    for (const src of fileSources) {
+        const decl = /export\s+const\s+(\w+)\s*[:=]/g;
+        const starts: Array<{ name: string; at: number }> = [];
+        for (const m of src.matchAll(decl)) {
+            starts.push({ name: m[1], at: m.index ?? 0 });
+        }
+        for (let i = 0; i < starts.length; i++) {
+            const end = i + 1 < starts.length ? starts[i + 1].at : src.length;
+            bodies.set(starts[i].name, src.slice(starts[i].at, end));
+        }
+    }
+
+    const bearing = new Set<string>();
+    for (const [name, body] of bodies) {
+        // Fresh regex per test — PASSWORD_FIELD_RE is /g and stateful.
+        if (new RegExp(PASSWORD_FIELD_RE.source).test(body)) bearing.add(name);
+    }
+
+    // Fixpoint: a schema that references a bearing schema inherits it
+    // (`.extend`, `.merge`, union members, `z.object({ inner: X })`).
+    let grew = true;
+    while (grew) {
+        grew = false;
+        for (const [name, body] of bodies) {
+            if (bearing.has(name)) continue;
+            for (const ref of bearing) {
+                if (ref !== name && new RegExp(`\\b${ref}\\b`).test(body)) {
+                    bearing.add(name);
+                    grew = true;
+                    break;
+                }
+            }
+        }
+    }
+    return bearing;
+}
+
+/** Schema names a route file imports from a shared-schema module. */
+function importedSchemaNames(routeSrc: string): Set<string> {
+    const names = new Set<string>();
+    const importRe =
+        /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"]@\/(?:lib|app-layer)\/schemas[^'"]*['"]/g;
+    for (const m of routeSrc.matchAll(importRe)) {
+        for (const raw of m[1].split(',')) {
+            const name = raw.trim().split(/\s+as\s+/)[0].trim();
+            if (name) names.add(name);
+        }
+    }
+    return names;
+}
+
 function walkRouteFiles(dir: string): string[] {
     const out: string[] = [];
     if (!fs.existsSync(dir)) return out;
@@ -145,6 +239,22 @@ describe('HIBP coverage guardrail — curated list integrity', () => {
 // ── Test 2 — structural scan ───────────────────────────────────────────────
 
 describe('HIBP coverage guardrail — structural scan', () => {
+    const sharedSources = SHARED_SCHEMA_DIRS.flatMap((d) =>
+        walkTsFiles(path.join(REPO_ROOT, d)).map((f) => fs.readFileSync(f, 'utf8')),
+    );
+    const bearingSchemas = passwordBearingSharedSchemas(sharedSources);
+
+    it('finds password-bearing schemas in the shared modules (sanity)', () => {
+        // Without this the widened scan below could pass by finding
+        // nothing at all — which is exactly the shape of failure it
+        // exists to close.
+        expect(sharedSources.length).toBeGreaterThan(0);
+        expect(bearingSchemas.size).toBeGreaterThan(0);
+        expect(bearingSchemas.has('AuthRegisterSchema')).toBe(true);
+        // Transitive: AuthActionSchema is a union over AuthRegisterSchema.
+        expect(bearingSchemas.has('AuthActionSchema')).toBe(true);
+    });
+
     it('every route.ts that parses a password field is registered', () => {
         const apiDir = path.join(REPO_ROOT, 'src/app/api');
         const allRoutes = walkRouteFiles(apiDir);
@@ -156,14 +266,20 @@ describe('HIBP coverage guardrail — structural scan', () => {
 
         for (const absFile of allRoutes) {
             const src = fs.readFileSync(absFile, 'utf8');
-            const matches = [...src.matchAll(PASSWORD_FIELD_RE)];
-            if (matches.length === 0) continue;
+            const inline = [...src.matchAll(PASSWORD_FIELD_RE)].map((m) => m[1]);
+            const viaImport = [...importedSchemaNames(src)].filter((n) =>
+                bearingSchemas.has(n),
+            );
+            if (inline.length === 0 && viaImport.length === 0) continue;
 
             if (!registeredFiles.has(absFile)) {
-                const fieldNames = [...new Set(matches.map((m) => m[1]))].join(', ');
+                const how =
+                    inline.length > 0
+                        ? `parses a password field \`${[...new Set(inline)].join(', ')}\``
+                        : `parses a password-bearing shared schema \`${viaImport.join(', ')}\``;
                 const rel = path.relative(REPO_ROOT, absFile);
                 violations.push(
-                    `Route \`${rel}\` parses a password field \`${fieldNames}\` but is not` +
+                    `Route \`${rel}\` ${how} but is not` +
                         ` registered in HIBP_REQUIRED_ROUTES. Add an entry so the HIBP check is` +
                         ` enforced on this route, or document why it's exempt.`,
                 );
