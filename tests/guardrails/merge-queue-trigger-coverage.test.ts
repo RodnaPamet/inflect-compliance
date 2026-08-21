@@ -40,6 +40,14 @@
  *   5. Queue-run concurrency — a CANCELLED queue run is reported as a
  *      FAILURE and ejects the PR from the queue, so `ci.yml` must never
  *      cancel in-progress runs.
+ *   5b. Per-ref concurrency — a workflow-level `concurrency.group` on a
+ *      `pull_request` workflow must be keyed by ref. A repo-wide group
+ *      serialises unrelated PRs, and `cancel-in-progress: false` does not
+ *      mean "cancel nothing" — GitHub still cancels the previously QUEUED
+ *      run when a newer one joins the group. The result is worse than a
+ *      skip: a skipped job reports `skipped`, but a cancelled run vanishes
+ *      from the check rollup entirely, so "no failures and nothing
+ *      pending" reads as green on a PR the suite never ran against.
  *   6. The never-require list — contexts produced by workflows this scan
  *      CANNOT see must stay out of the required set (see SCAN SCOPE).
  *
@@ -397,6 +405,40 @@ describe('merge queue — the quiet breakages', () => {
     it('ci.yml never cancels in-progress runs (a cancelled queue run ejects the PR)', () => {
         expect(CI).toMatch(/^\s*cancel-in-progress:\s*false\s*$/m);
         expect(CI).not.toMatch(/cancel-in-progress:\s*true/);
+    });
+
+    /**
+     * WORKFLOW-LEVEL groups only — column 0. A JOB-level `concurrency:` is
+     * deliberately out of scope: `terraform.yml` serialises its apply job
+     * against shared remote state, which is correct and has nothing to do
+     * with PR check rollups. The trap being closed here is specifically a
+     * top-level group shared across refs on a `pull_request` workflow.
+     */
+    it('every pull_request workflow keys its workflow-level concurrency group by ref', () => {
+        const offenders: string[] = [];
+        for (const file of listWorkflows()) {
+            if (!hasTrigger(file, 'pull_request')) continue;
+            const src = readWorkflow(file);
+            const m = /^concurrency:\s*\n(?:\s*#.*\n)*\s*group:\s*(.+)$/m.exec(src);
+            if (!m) continue; // no group at all cancels nothing — fine
+            const group = m[1].trim();
+            if (!/github\.(ref|head_ref)/.test(group)) {
+                offenders.push(`${file}: group: ${group}`);
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('the detector would catch a repo-wide group (regression proof)', () => {
+        const bare = 'on:\n  pull_request:\n\nconcurrency:\n  group: some-suite\n';
+        const keyed =
+            'on:\n  pull_request:\n\nconcurrency:\n  group: some-suite-${{ github.ref }}\n';
+        const detect = (src: string) => {
+            const m = /^concurrency:\s*\n(?:\s*#.*\n)*\s*group:\s*(.+)$/m.exec(src);
+            return m ? /github\.(ref|head_ref)/.test(m[1].trim()) : true;
+        };
+        expect(detect(bare)).toBe(false);
+        expect(detect(keyed)).toBe(true);
     });
 
     it('no ci.yml job that runs in the queue reads github.event.pull_request', () => {

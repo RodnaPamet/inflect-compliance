@@ -98,8 +98,35 @@ on:
 permissions:
   contents: read
 
+# Keyed by REF, not repo-wide. The group used to be a bare
+# `integration-stress`, which serialised every run in the repository
+# against every other — and `cancel-in-progress: false` does NOT mean
+# "cancel nothing": GitHub still cancels the previously QUEUED run each
+# time a newer one arrives in the same group. So opening N pull requests
+# within a few seconds ran this suite on ONE of them and cancelled it on
+# the other N-1.
+#
+# That is the failure mode this file's header already warns about for
+# `paths:` filters — "wrong SILENTLY: the suite would simply not run,
+# which looks identical to passing" — arriving through the back door.
+# It is worse than a skip, in fact: a skipped job reports `skipped`, but
+# a CANCELLED run disappears from the pull request's check rollup
+# entirely. Not pending, not failing, absent. A reader counting "no
+# failures and nothing pending" sees green. Observed 2026-08-20 on
+# #2052 and #2054, both merged before anyone noticed the check was
+# missing rather than passing.
+#
+# Nothing was being protected by the repo-wide group: the job brings up
+# its OWN `postgres:16-alpine` service container, so two runs share no
+# database, no lock and no external resource. Compare `release` and the
+# `terraform-staging` JOB group, which are global because they genuinely
+# must be — one release pipeline, one remote state.
+#
+# `cancel-in-progress` stays false. Per ref, a superseding push should
+# still wait rather than kill a run in flight, and a cancelled run in the
+# merge queue is reported as a FAILURE and ejects the PR.
 concurrency:
-  group: integration-stress
+  group: integration-stress-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
