@@ -14,6 +14,10 @@ import { useToast } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import {
+    useEntityListIds,
+    usePublishDisplayedOrder,
+} from '@/lib/hooks/use-entity-list-ids';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
@@ -99,6 +103,19 @@ export default function CycleDetailPage() {
         `${CACHE_KEYS.audits.cycle(cycleId)}?action=default-pack-preview`,
     );
     const preview = previewQuery.data ?? null;
+
+    // #97 — this page is BOTH sides of the stepper contract.
+    //
+    // READ: the cycles list publishes the order it rendered under
+    // `audits.cycles()`; step that order beside the cycle name.
+    const cycleIds = useEntityListIds(CACHE_KEYS.audits.cycles());
+    // PUBLISH: audit packs have no list route of their own — the pack cards
+    // at the bottom of this page are the only surface that renders a pack
+    // list, so this is where the pack detail page's stepper order comes from.
+    // It reads `useEntityListIds(null, { orderKey: audits.packs() })`, i.e.
+    // published-order-or-nothing, so a pack opened without passing through a
+    // cycle correctly shows no arrows.
+    usePublishDisplayedOrder(CACHE_KEYS.audits.packs(), cycle?.packs);
 
     const loading = cycleQuery.isLoading;
     // See the sibling comment in `packs/[packId]/page.tsx`: a failed BACKGROUND
@@ -242,6 +259,12 @@ export default function CycleDetailPage() {
                     {cycle.name}
                 </span>
             }
+            prevNext={{
+                ids: cycleIds,
+                currentId: cycleId,
+                hrefFor: (id) => `/t/${tenantSlug}/audits/cycles/${id}`,
+                labelSingular: 'cycle',
+            }}
             meta={
                 <MetaStrip
                     items={[
