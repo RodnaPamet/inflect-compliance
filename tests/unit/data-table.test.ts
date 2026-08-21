@@ -1752,30 +1752,33 @@ describe('No duplicate table utilities outside the table module', () => {
 
 describe('Page-level column definition patterns', () => {
   const clientDir = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
-  // VulnerabilitiesClient.tsx (NVD CVE feature, #1309) defines its DataTable
-  // columns inline rather than via createColumns and carries no data-testid —
-  // a #1309 follow-up to migrate it to the createColumns + barrel + testid
-  // pattern. Excluded here so it doesn't block unrelated PRs in the interim.
-  const EXCLUDED = ['SoAClient.tsx', 'AuditsClient.tsx', 'VulnerabilitiesClient.tsx'];
+  // VulnerabilitiesClient.tsx was excluded as a #1309 follow-up — "defines its
+  // DataTable columns inline rather than via createColumns and carries no
+  // data-testid". That migration has since landed: the file now imports
+  // createColumns from the barrel, memoises its columns, and carries a
+  // data-testid, so it passes all four checks unaided. Entry deleted rather
+  // than left standing, per the repo's no-stale-exemptions rule.
+  const EXCLUDED = ['SoAClient.tsx', 'AuditsClient.tsx'];
 
-  // Exempt from the `data-testid` check ONLY — every other check below still
-  // applies to these files.
+  // The `data-testid` check below is NOT in tension with CLAUDE.md's
+  // "prefer a role or an existing HTML `id`" selector rule, though it reads
+  // that way at first glance. `DataTableProps` declares no `id` prop and does
+  // not extend HTMLAttributes; every render branch in data-table.tsx emits
+  // `<div id={dataTestId} data-testid={dataTestId}>`. So on a DataTable the
+  // `data-testid` prop IS the id setter — passing it is what creates the
+  // `#risks-table` / `#controls-table` / `#evidence-table` ids that E2E specs
+  // already select on, and omitting it leaves the table addressable by
+  // neither. A page that skips it is not honouring the id-first rule; it is
+  // opting out of being addressable at all.
   //
-  // The two rules genuinely disagree. This scan requires the literal string
-  // `data-testid` in any *Client.tsx that renders a DataTable; CLAUDE.md's E2E
-  // conventions say the opposite in as many words — "Use existing HTML `id`
-  // attributes — do NOT add `data-testid` attributes" — and that instruction is
-  // the later one, from the e2e-isolation work.
-  //
-  // Adding an attribute purely to satisfy a substring grep, against a written
-  // instruction not to, would be the worst of both: the page gains a selector
-  // nothing selects on, and the contradiction stays buried. So a page written
-  // AFTER that instruction is exempted here by name, and the disagreement is
-  // filed to be resolved rather than absorbed.
-  //
-  // Note what this check can and cannot see: it greps for the string, so it
-  // cannot tell a testid that an E2E spec uses from one that nothing references.
-  const TESTID_EXEMPT = ['LeaverPassesClient.tsx'];
+  // Known limitation, deliberately not papered over: this greps the whole
+  // file for the literal string, so it cannot tell a testid an E2E spec
+  // selects on from one that nothing references, nor that the testid reached
+  // the DataTable rather than some unrelated element. Measured on the current
+  // tree, 34 of 71 distinct testid keys in the scanned pages are selected on
+  // by nothing. Tightening it to "a data-testid reaches the <DataTable> or the
+  // EntityListPage `table={{…}}` config" is the real fix and wants a proper
+  // JSX-aware scan, not a wider regex.
 
   function findClientFiles(dir: string): string[] {
     const results: string[] = [];
@@ -1817,8 +1820,7 @@ describe('Page-level column definition patterns', () => {
       expect(hasBarrelImport).toBe(true);
     });
 
-    const testidFn = TESTID_EXEMPT.includes(basename) ? it.skip : it;
-    testidFn(`${basename} has a data-testid`, () => {
+    it(`${basename} has a data-testid`, () => {
       expect(content).toContain('data-testid');
     });
   }
