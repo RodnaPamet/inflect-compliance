@@ -163,8 +163,8 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 31 scheduled jobs exist', () => {
-            expect(SCHEDULED_JOBS).toHaveLength(31);
+        test('exactly 32 scheduled jobs exist', () => {
+            expect(SCHEDULED_JOBS).toHaveLength(32);
         });
 
         test('scheduled job names match expected set', () => {
@@ -201,6 +201,10 @@ describe('Infrastructure Regression Guards', () => {
                 'dau-mau-aggregator',
                 // Epic G-5 — daily 30/14/7-day expiry reminder for
                 // control exceptions.
+                // Audit Coherence S3 — daily flip of APPROVED evidence past its
+                // nextReviewDate to NEEDS_REVIEW, 30 min before notification-dispatch
+                // so the owner hears the same morning.
+                'evidence-stale-review-sweep',
                 'exception-expiry-monitor',
                 // PR-4 — daily cross-tenant fan-out: an hris-sync per enabled
                 // BambooHR connection.
