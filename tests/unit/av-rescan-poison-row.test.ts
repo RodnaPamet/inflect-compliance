@@ -164,6 +164,36 @@ const db = {
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: db, default: db }));
 
+// The job's DB work now runs inside `runInTenantJobContext`, so the statements
+// carry `SET LOCAL ROLE app_user` and `app.tenant_id` — without that binding an
+// unattended bulk write stands on its application `where` clause alone.
+//
+// Mocked at the CONTEXT seam rather than at `$transaction`/`$executeRaw`: this
+// suite is about the poison row and the halt ratio, not about isolation, and
+// mocking the raw SQL would make every test here depend on the exact statements
+// the binding happens to issue. The same shape as av-rescan-job.test.ts, so the
+// two suites agree about what the job's DB seam looks like.
+//
+// THE REFUSALS ARE REPLICATED ON PURPOSE. A passthrough that accepted any job
+// would let a caller pass `source: 'job'` — a KEK-bypass label that turns the
+// per-tenant DEK off — and this suite would never notice. The binding itself is
+// asserted in tests/unit/tenant-job-context.test.ts; these two lines only stop
+// this file from being the place the guarantee quietly disappears.
+const runInTenantJobContextMock = jest.fn(
+    async (job: { tenantId: string; source: string }, fn: (c: unknown) => Promise<unknown>) => {
+        if (!job.tenantId) throw new Error('runInTenantJobContext requires a tenantId');
+        if (['seed', 'job', 'system'].includes(job.source)) {
+            throw new Error(`runInTenantJobContext refuses source '${job.source}'`);
+        }
+        return fn(db);
+    },
+);
+jest.mock('@/lib/db-context', () => ({
+    runInTenantContext: (ctx: unknown, fn: (c: unknown) => Promise<unknown>) => fn(db),
+    runInTenantJobContext: (job: never, fn: (c: unknown) => Promise<unknown>) =>
+        runInTenantJobContextMock(job, fn),
+}));
+
 // ─── Storage ────────────────────────────────────────────────────────
 
 const storageBytes = new Map<string, Buffer>();
