@@ -780,6 +780,18 @@ duplicating the limits table).
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.
 - **Integration tests**: Use `prismaTestClient()` and `resetDatabase()` from `tests/helpers/db.ts`. Hit a real DB — do not mock Prisma in integration tests.
 - **Guard tests** (`tests/guards/`): Static analysis tests that enforce architectural rules (no `as any`, no unsafe patterns). These are regular Jest tests that scan source files with regex.
+- **A source scan's population comes from git.** Use `repoFiles()` /
+  `repoRelativeFiles()` from `tests/helpers/repo-files.ts` — backed by
+  `git ls-files --cached --others --exclude-standard` — rather than an
+  `fs.readdirSync` walk with a `['node_modules', '.next']` skip list. Such a
+  list is a hand-maintained denominator and nothing checks it against reality:
+  it had never heard of `.claude/`, where `.claude/worktrees/<id>/` holds a FULL
+  checkout of the repo, so the prisma-schema guardrail read its own copy of
+  itself and reported it — green on CI, red only for whoever used worktrees.
+  `tests/guardrails/source-scan-population.test.ts` fails CI on any file under
+  `tests/` that hands the repo root to a directory read, and carries no
+  allowlist. See
+  `docs/implementation-notes/2026-08-21-source-scan-population-from-git.md`.
 - **E2E tests**: Playwright in serial mode. **Structural isolation, not shared state** (`chore/e2e-isolation`):
     - **Read-only specs** (list pages, filters, a11y, theme, tooltips,
       responsive, display checks — navigate + assert, never

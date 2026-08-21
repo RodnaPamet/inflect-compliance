@@ -162,6 +162,16 @@ const nodeProject = {
     testPathIgnorePatterns: [
         '<rootDir>/.next/',
         '<rootDir>/node_modules/',
+        // `.claude/` is gitignored (`.gitignore:136`) and
+        // `.claude/worktrees/<id>/` holds a FULL checkout of the repo —
+        // every test file, twice. Without this Jest discovers both copies,
+        // reports `jest-haste-map: duplicate manual mock found`, and fails
+        // under test names that no longer exist in the working tree. It
+        // never bites CI (no worktrees there), so the cost lands entirely
+        // on whoever is using them. `<rootDir>/` anchors it: running FROM a
+        // worktree still excludes worktrees nested under it, and never the
+        // worktree's own tests.
+        '<rootDir>/.claude/',
         '<rootDir>/tests/e2e/',
         '<rootDir>/tests/rendered/',
         '<rootDir>/dub-reference/',
@@ -212,6 +222,13 @@ const nodeProject = {
         // suite whose coverage is meaningless.
         ...(process.env.JEST_STRESS === '1' ? [] : ['<rootDir>/tests/stress/']),
     ],
+    // Companion to the `.claude/` entry above. `testPathIgnorePatterns`
+    // stops Jest RUNNING the worktree copies; the haste map crawls
+    // independently of it and still finds them, which is where
+    // `jest-haste-map: duplicate manual mock found: next-intl` comes from —
+    // and a duplicate manual mock is not a warning to live with, it makes
+    // which mock wins nondeterministic.
+    modulePathIgnorePatterns: ['<rootDir>/.claude/'],
     transform: {
         '^.+\\.(ts|tsx)$': 'ts-jest',
         // Transpile the NextAuth ESM graph so middleware-importing
@@ -357,7 +374,13 @@ const jsdomProject = {
         // that span multiple primitives or pages.
         '<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}',
     ],
-    testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/'],
+    testPathIgnorePatterns: [
+        '<rootDir>/.next/',
+        '<rootDir>/node_modules/',
+        // See the node project's copy for why.
+        '<rootDir>/.claude/',
+    ],
+    modulePathIgnorePatterns: ['<rootDir>/.claude/'],
     transform: {
         '^.+\\.(ts|tsx)$': [
             'ts-jest',

@@ -34,7 +34,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const REPO_ROOT = path.resolve(__dirname, '../..');
+import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
+
 const SCHEMA_DIR = path.resolve(REPO_ROOT, 'prisma/schema');
 
 const REQUIRED_DOMAIN_FILES = [
@@ -121,35 +122,32 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
         // mode is opaque. This guard catches the regression at the
         // code level so the message points at the fix:
         // "use readPrismaSchema() from tests/helpers/prisma-schema".
+        // The population comes from git, not from a hand-rolled walk with a
+        // `['node_modules', '.next']` skip list. That list was missing
+        // `.claude/` — gitignored, and home to full worktree checkouts — so
+        // with any worktree present this guard read the worktree's copies of
+        // ITSELF and its own helper and reported them as violations. Green on
+        // CI (no worktrees there), red only for whoever uses them. See
+        // `tests/helpers/repo-files.ts`.
         const violations: string[] = [];
-        const walk = (dir: string) => {
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    if (entry.name === 'node_modules' || entry.name === '.next') continue;
-                    walk(full);
-                    continue;
-                }
-                if (!/\.(ts|tsx)$/.test(entry.name)) continue;
-                // The helper itself owns the path constant; this
-                // ratchet's own file references the legacy path in
-                // explanatory comments only.
-                const rel = path.relative(REPO_ROOT, full);
-                if (rel === 'tests/helpers/prisma-schema.ts') continue;
-                if (rel === 'tests/guardrails/prisma-schema-folder-coverage.test.ts') continue;
+        for (const full of repoFiles({ extensions: ['.ts', '.tsx'] })) {
+            // The helper itself owns the path constant; this
+            // ratchet's own file references the legacy path in
+            // explanatory comments only.
+            const rel = repoRelative(full);
+            if (rel === 'tests/helpers/prisma-schema.ts') continue;
+            if (rel === 'tests/guardrails/prisma-schema-folder-coverage.test.ts') continue;
 
-                const src = fs.readFileSync(full, 'utf-8');
-                // Match only real read calls — readFileSync, statSync,
-                // existsSync — applied to a path that ends in
-                // `prisma/schema.prisma`. Comments and JSDoc references
-                // pass through.
-                const re = /(?:readFileSync|existsSync|statSync)\([^)]*['"][^'"]*prisma\/schema\.prisma['"][^)]*\)/g;
-                if (re.test(src)) {
-                    violations.push(rel);
-                }
+            const src = fs.readFileSync(full, 'utf-8');
+            // Match only real read calls — readFileSync, statSync,
+            // existsSync — applied to a path that ends in
+            // `prisma/schema.prisma`. Comments and JSDoc references
+            // pass through.
+            const re = /(?:readFileSync|existsSync|statSync)\([^)]*['"][^'"]*prisma\/schema\.prisma['"][^)]*\)/g;
+            if (re.test(src)) {
+                violations.push(rel);
             }
-        };
-        walk(REPO_ROOT);
+        }
 
         if (violations.length > 0) {
             throw new Error(
