@@ -101,7 +101,25 @@ const ROOT = path.resolve(__dirname, '../..');
 // rendered suite anyone added would have gone red for a reason unrelated to
 // their work. The three lanes were each barred from this file (one shared
 // line, three concurrent writers), which is why the reconciliation is central.
-const RENDERED_TEST_FLOOR = 246;
+//
+// 246 → 252 (2026-08-21, later): six more suites across the JML and evidence
+// rounds — the break-glass account flag, the dry-run leaver-pass report, the
+// access-review directory gate, and the AV work beside them. Live reached 252
+// against a ceiling of 254, i.e. two left, which is the same near-exhaustion the
+// paragraph above describes; re-baselined before the next two suites tripped it
+// for a reason unrelated to their work.
+//
+// STILL ITS OWN CHANGE, AND STILL ALONE, for a reason worth stating plainly
+// rather than re-deriving: this number is the one data shape where two branches
+// can both edit the SAME line to the SAME new value, merge with no conflict, and
+// leave main quietly wrong by one. A list tolerates concurrent appends because
+// the union of two appends is the truth; a count does not, because the union of
+// two increments is not two increments. #2080 did conflict here today, and that
+// was luck — both branches happened to touch adjacent comment lines too. So this
+// stays a one-file PR taken when no rendered-test PR is in flight, and the live
+// count is re-measured immediately before merge rather than trusted from when it
+// was written.
+const RENDERED_TEST_FLOOR = 252;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
