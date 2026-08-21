@@ -26,6 +26,7 @@ import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useSWRConfig } from 'swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { Button } from '@/components/ui/button';
@@ -119,6 +120,17 @@ export function AccessReviewDetailClient({
     const isReviewer = currentUserId === review.reviewerUserId;
     const canDecide = (isReviewer || isAdmin) && review.status !== 'CLOSED';
     const canClose = isAdmin && review.status !== 'CLOSED';
+
+    // #107 READ side. The register publishes what it rendered; the fallback
+    // to the list cache is left ENABLED here (a real `listKey`, not the
+    // null-key shape) because this list endpoint is a genuine SWR resource in
+    // the `CappedList` shape the hook already unwraps — so a campaign opened
+    // by deep link or from a notification still gets server order, which for
+    // an unfiltered, unsorted register is the same order the page shows.
+    //
+    // `accessReview` is not in the `ui.recordStepper` catalog yet, so the
+    // tooltips read the generic "Previous / Next item" until it lands.
+    const reviewIds = useEntityListIds(CACHE_KEYS.accessReviews.list());
 
     const [activeDecision, setActiveDecision] = useState<{
         row: DecisionRow;
@@ -223,6 +235,12 @@ export function AccessReviewDetailClient({
         <EntityDetailLayout
             id="access-review-detail-page"
             back={{ smart: true }}
+            prevNext={{
+                ids: reviewIds,
+                currentId: review.id,
+                hrefFor: (id) => `/t/${tenantSlug}/access-reviews/${id}`,
+                labelSingular: 'accessReview',
+            }}
             breadcrumbs={[
                 { label: t('crumbDashboard'), href: `/t/${tenantSlug}/dashboard` },
                 { label: t('crumbList'), href: `/t/${tenantSlug}/access-reviews` },

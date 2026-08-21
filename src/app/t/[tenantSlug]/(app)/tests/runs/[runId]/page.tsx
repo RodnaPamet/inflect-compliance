@@ -14,6 +14,8 @@ import { Paperclip } from 'lucide-react';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { useToast } from '@/components/ui/hooks/use-toast';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -101,6 +103,23 @@ export default function TestRunPage() {
     // (start / complete / evidence link+unlink / retest) refetch via
     // mutate() instead of the old imperative fetchRun().
     const { data: run, isLoading, error, mutate } = useTenantSWR<TestRunDetail>(`/tests/runs/${runId}`);
+
+    // #107 READ side. Runs have no list ROUTE — the only place they appear as
+    // a peer list is the run-history block on their plan's detail view, which
+    // publishes under `tests.runs(planId)`. So this is the `orderKey` +
+    // null-`listKey` shape: published order or nothing, no fallback fetch.
+    //
+    // The plan id comes from the run itself, so the key is null until the run
+    // resolves — and it is per-plan, which is what makes the stepper walk THIS
+    // plan's runs rather than every run in the tenant.
+    //
+    // Nothing published (a run opened from "Run now" on /tests, from the
+    // control detail's test-plans panel, or from a deep link) leaves `ids`
+    // empty and `EntityPrevNextNav` renders nothing. That is correct: a run
+    // reached without seeing a run history has no siblings the user knows of.
+    const runIds = useEntityListIds(null, {
+        orderKey: run?.testPlanId ? CACHE_KEYS.tests.runs(run.testPlanId) : null,
+    });
 
     // Guided run — RUNNING transition + per-step checklist (ephemeral aid).
     const [starting, setStarting] = useState(false);
@@ -404,6 +423,12 @@ export default function TestRunPage() {
             id="test-run-detail-page"
             back={{ smart: true }}
             breadcrumbs={breadcrumbs}
+            prevNext={{
+                ids: runIds,
+                currentId: runId,
+                hrefFor: (id) => tenantHref(`/tests/runs/${id}`),
+                labelSingular: 'testRun',
+            }}
 
             title={
                 <span id="test-run-title">
