@@ -46,6 +46,32 @@ model ConnectedIdentityAccount {
   /// reconcile in identity-sync.ts for the one place null is deliberately included,
   /// and why that is only safe when the tenant has a single connection.
   connectionId          String?
+  /// Never offboard this account automatically, whatever the HR feed says.
+  ///
+  /// The break-glass rail. `disableAccount` already refuses when told an account
+  /// is protected — the refusal and its reason have existed since #2036 — but
+  /// nothing set the flag, so the rail was inert. This is its producer.
+  ///
+  /// AN OPERATOR FLAG ON THE ACCOUNT, chosen over a list in the connection's
+  /// config. Two alternatives were considered and rejected: deriving protection
+  /// from `isAdmin` fails OPEN across an entire directory on one swallowed Graph
+  /// 403, and a PROPOSE-style approval queue duplicates a rung the ladder
+  /// already has — this rail has to work at AUTOMATIC, which is the mode where
+  /// nothing is in front of the write.
+  ///
+  /// ** OMITTED FROM THE SYNC UPSERT'S `update` BLOCK, DELIBERATELY. ** The
+  /// nightly sync would otherwise clear it, and the failure is invisible until
+  /// the one night it matters. That omission is the single most important line
+  /// in this feature; see identity-sync.ts, where it is stated again.
+  isProtected           Boolean                @default(false)
+  /// When it was set, and by whom — a display convenience, not the record. The
+  /// authoritative account of who protected what is the hash-chained audit log;
+  /// a bare userId here avoids a User back-relation for a column nothing joins.
+  protectedAt           DateTime?
+  protectedByUserId     String?
+  /// Why. Free text, shown beside the flag so a later operator can tell a
+  /// break-glass credential from a service account from someone's mistake.
+  protectionReason      String?
   /// string[] of group / role names the account belongs to.
   groupsJson            Json                   @default("[]")
   lastActiveAt          DateTime?

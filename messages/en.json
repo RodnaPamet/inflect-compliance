@@ -4976,7 +4976,15 @@
             "mfaOn": "On",
             "mfaOff": "Off",
             "empty": "No synced accounts yet. Connect and sync Okta or Google Workspace.",
-            "loadError": "Couldn't load identity accounts."
+            "loadError": "Couldn't load identity accounts.",
+            "colProtected": "Never offboard",
+            "protected": "Protected",
+            "protect": "Protect",
+            "release": "Release",
+            "protectPrompt": "Why must this account never be offboarded automatically?",
+            "protectError": "Couldn't change protection for this account.",
+            "reasonLabel": "Reason",
+            "cancel": "Cancel"
         },
         "section": {
             "identity": "Identity & access",

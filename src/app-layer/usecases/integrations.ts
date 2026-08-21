@@ -698,6 +698,14 @@ export async function listConnectedAccounts(
                 status: true,
                 isAdmin: true,
                 mfaEnrolled: true,
+                // The break-glass flag and its reason. Added as FIELDS on each
+                // row — the response SHAPE is unchanged, still `{ accounts: [] }`
+                // — which matters because the access-review page consumes this
+                // endpoint through a broken `Array.isArray` check that currently
+                // fails open (see the task filed for it). Adding fields cannot
+                // disturb that; changing the shape would.
+                isProtected: true,
+                protectionReason: true,
                 lastActiveAt: true,
                 syncedAt: true,
             },

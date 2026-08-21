@@ -165,6 +165,12 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  explicit `secretEncrypted` shape IntegrationConnection uses, not into
     //  this list.
     IdentityWriteJournal: ['detail'],
+    // Operator free text saying WHY an account must never be offboarded. It
+    // routinely names a person or the purpose of a credential — "Alice's
+    // break-glass admin", "shared ops mailbox, do not disable" — which is the
+    // same shape as IdentityWriteJournal.detail one line up. No repository
+    // searches it, and the column is new, so nothing needs backfilling.
+    ConnectedIdentityAccount: ['protectionReason'],
 
     // ─── Risk ──────────────────────────────────────────
     //  `description` omitted — searched via RiskRepository `contains`.

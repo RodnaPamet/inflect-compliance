@@ -65,6 +65,14 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/task.ts'],
         sanitizer: 'sanitizePlainText',
     },
+    // `protectionReason` is wholly operator-authored: a note saying why an
+    // account must never be offboarded. It is read back by the roster page and
+    // will be read by anything that later renders the protected set, so it is
+    // sanitised at the write path rather than at each reader.
+    ConnectedIdentityAccount: {
+        usecases: ['src/app-layer/usecases/identity-account-protection.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     // `detail` is mixed provenance: a provider rejection message is machine
     // -generated, but a REVERTED reason is written by a person, and the row is
     // read back by an operator surface and an auditor export. Sanitised in

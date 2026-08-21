@@ -693,7 +693,14 @@ export async function findLeaverCandidates(
             },
             select: {
                 id: true,
-                connectedAccount: { select: { externalUserId: true, email: true, onPremisesSyncEnabled: true } },
+                connectedAccount: {
+                    select: {
+                        externalUserId: true,
+                        email: true,
+                        isProtected: true,
+                        onPremisesSyncEnabled: true,
+                    },
+                },
             },
             take: MAX_CANDIDATES,
         });
@@ -701,6 +708,11 @@ export async function findLeaverCandidates(
             linkId: r.id,
             externalUserId: r.connectedAccount.externalUserId,
             email: r.connectedAccount.email,
+            // The producer the break-glass refusal never had. Read HERE, where
+            // the population is assembled, rather than queried inside the write
+            // path — so a dry run reports the refusal without the write path
+            // needing a hidden lookup to explain it.
+            isProtected: r.connectedAccount.isProtected,
             onPremisesSyncEnabled: r.connectedAccount.onPremisesSyncEnabled,
         }));
     });
