@@ -104,10 +104,11 @@ export function BiaDetailClient({ bia, tenantSlug }: { bia: BiaDetail; tenantSlu
     // opened by deep link, or from the process-canvas "create BIA" flow,
     // simply gets no arrows, which is the honest answer.
     //
-    // `labelSingular` names an entity the `ui.recordStepper` catalog does not
-    // carry yet, so both tooltips read the generic "Previous / Next item"
-    // today. Naming it anyway means landing `bia` in en + bg is a
-    // messages-only change with no follow-up here.
+    // `bia` IS in the `ui.recordStepper` catalog (en + bg, landed separately
+    // from this file), so the tooltips read the real phrase — "Previous BIA",
+    // and in Bulgarian "Предишен анализ", the register's own word for these
+    // records. Naming the entity here and landing the phrase centrally is the
+    // pattern: this file never needs to know the wording.
     const biaIds = useEntityListIds(null, {
         orderKey: CACHE_KEYS.audits.businessContinuity(),
     });

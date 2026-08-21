@@ -128,8 +128,8 @@ export function AccessReviewDetailClient({
     // by deep link or from a notification still gets server order, which for
     // an unfiltered, unsorted register is the same order the page shows.
     //
-    // `accessReview` is not in the `ui.recordStepper` catalog yet, so the
-    // tooltips read the generic "Previous / Next item" until it lands.
+    // `accessReview` IS in the `ui.recordStepper` catalog (en + bg), so the
+    // tooltips read the real phrase rather than the generic record one.
     const reviewIds = useEntityListIds(CACHE_KEYS.accessReviews.list());
 
     const [activeDecision, setActiveDecision] = useState<{

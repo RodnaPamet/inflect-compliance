@@ -317,7 +317,7 @@ describe('EntityPrevNextNav — labels come from the catalog, per locale', () =>
     // form most likely to be got wrong — reached the catalog without a row
     // here and went a whole wave unchecked. Registering a slug without
     // rendering it now fails, and the failure names the slug.
-    it('renders every registered entity — no slug ships unasserted', () => {
+    it('every registered entity has a rendered row — no slug ships unasserted', () => {
         const covered = new Set(BG_GENDER_TABLE.map(([slug]) => slug));
         const unrendered = [...STEPPER_ENTITIES].filter((slug) => !covered.has(slug));
         expect(unrendered).toEqual([]);
