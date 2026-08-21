@@ -11,6 +11,7 @@ import { NewVendorModal } from './NewVendorModal';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { UserCombobox } from '@/components/ui/user-combobox';
@@ -238,6 +239,10 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
         () => sortRowsByDisplay(vendors, sortAccessors, sortBy, sortOrder),
         [vendors, sortAccessors, sortBy, sortOrder],
     );
+    // #107 — publish the rendered order so the detail page's prev/next
+    // stepper walks what the user saw. The sorted+filtered set, not the
+    // load-on-scroll window.
+    usePublishDisplayedOrder(CACHE_KEYS.vendors.list(), sortedVendors);
 
     // Load-on-scroll windowing — render the first batch, append more as
     // the user nears the bottom (DataTable onReachEnd sentinel).

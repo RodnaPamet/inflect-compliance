@@ -16,6 +16,7 @@ import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { useSWRConfig } from 'swr';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { CappedList } from '@/lib/list-backfill-cap';
@@ -384,6 +385,10 @@ function TasksPageInner({
         () => sortRowsByDisplay(tasks, sortAccessors, sortBy, sortOrder),
         [tasks, sortAccessors, sortBy, sortOrder],
     );
+    // #107 — publish the rendered order so the detail page's prev/next
+    // stepper walks what the user saw. The sorted+filtered set, not the
+    // load-on-scroll window.
+    usePublishDisplayedOrder(CACHE_KEYS.tasks.list(), sortedTasks);
     const sortableColumns = useMemo(
         () => ['title', 'type', 'severity', 'status', 'source', 'assignee', 'dueAt', 'updatedAt'],
         [],

@@ -76,6 +76,9 @@ jest.mock('next/navigation', () => {
         useRouter: () => router,
         usePathname: () => '/t/acme/tasks',
         useSearchParams: () => searchParams,
+        // TasksClient publishes its displayed order, and that key is scoped by
+        // the route slug — so the client's render path now reads useParams.
+        useParams: () => ({ tenantSlug: 'acme' }),
     };
 });
 
