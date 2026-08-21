@@ -800,8 +800,31 @@ duplicating the limits table).
       sub-steps. Assigning a top-level `let` in a `beforeEach` /
       `beforeAll` is fine. Enforced by
       `tests/guards/e2e-isolation.test.ts`.
-    - Use existing HTML `id` attributes — do NOT add `data-testid`
-      attributes.
+    - **Selectors: prefer a role or an existing HTML `id`; reach for
+      `data-testid` only where neither exists.** In hand-written
+      markup, do not sprinkle `data-testid` on an element merely to
+      select it — give it a real `id`, or select it by role/label.
+      Measured practice in `tests/e2e`: `#id` locators 311 calls
+      (51%), `[data-testid=…]` 88 (14%), `getByRole` 84 (14%);
+      `getByTestId` is used **zero** times.
+    - **`<DataTable>` is the documented exception, because there its
+      `data-testid` prop IS the `id` setter.** `DataTableProps` has no
+      `id` prop and does not extend `HTMLAttributes`; every render
+      branch emits `<div id={dataTestId} data-testid={dataTestId}>`.
+      So passing `data-testid="risks-table"` is *how* you create the
+      "existing HTML `id`" (`#risks-table`) the rule above tells specs
+      to select on — it is not an extra attribute bolted on for tests.
+      Omitting it leaves the table addressable by neither. Nine `#id`
+      selectors across 25 E2E locator calls (`#controls-table`,
+      `#members-table`, `#evidence-table`, the `#org-*-table`s) exist
+      only because that prop was passed. Every list page must pass it,
+      on the `<DataTable>` itself or in the `table={{ … }}` config of
+      `EntityListPage`; `tests/unit/data-table.test.ts` enforces it and
+      `src/components/ui/table/GUIDE.md` shows the canonical call.
+    - **Rendered (RTL) tests are testid-first** — `tests/rendered`
+      calls `getByTestId` 976 times across 130 files. A `data-testid`
+      added because a rendered test needs a stable handle is correct
+      and is not covered by the preference above.
     - Scope `#id` / role locators to `getByRole('main')` where a
       Next streaming duplicate of the page could match — never a
       bare page-level locator (see the risk-matrix E2E lesson).

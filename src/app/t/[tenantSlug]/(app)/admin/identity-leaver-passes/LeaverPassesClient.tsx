@@ -286,6 +286,7 @@ export function LeaverPassesClient() {
                         selectionEnabled={false}
                         onRowClick={(row) => setSelectedId(row.original.id)}
                         emptyState={t('leaverPasses.empty')}
+                        data-testid="leaver-passes-table"
                     />
                 )}
             </Card>
@@ -348,6 +349,7 @@ export function LeaverPassesClient() {
                             getRowId={(d) => d.linkId}
                             selectionEnabled={false}
                             emptyState={t('leaverPasses.noDecisions')}
+                            data-testid="leaver-pass-decisions-table"
                         />
                     )}
                 </Card>
