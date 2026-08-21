@@ -45,7 +45,7 @@ beforeEach(() => {
 });
 
 describe('runIdentitySync', () => {
-    it('upserts each account idempotently by (tenantId, provider, externalUserId)', async () => {
+    it('upserts each account idempotently by (tenantId, connectionId, externalUserId)', async () => {
         const provider = stubProvider([acct('a'), acct('b')]);
         const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
 
@@ -53,7 +53,16 @@ describe('runIdentitySync', () => {
         expect(r.upserted).toBe(2);
         expect(mockDb.connectedIdentityAccount.upsert).toHaveBeenCalledTimes(2);
         const where = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0].where;
-        expect(where.tenantId_provider_externalUserId).toEqual({ tenantId: 't1', provider: 'okta', externalUserId: 'a' });
+        // Keyed on the CONNECTION as of phase 2. The old
+        // tenantId_provider_externalUserId key made two forests under one tenant
+        // collide on a single row, which is what forced the reconcile to be
+        // provider-scoped and produced the nightly cross-deprovision.
+        expect(where.tenantId_connectionId_externalUserId).toEqual({
+            tenantId: 't1',
+            connectionId: 'conn-1',
+            externalUserId: 'a',
+        });
+        expect(where.tenantId_provider_externalUserId).toBeUndefined();
         // execution finalized PASSED
         expect(mockDb.integrationExecution.update.mock.calls.at(-1)?.[0].data.status).toBe('PASSED');
     });
@@ -78,21 +87,27 @@ describe('runIdentitySync', () => {
         expect(where.OR).toBeUndefined();
     });
 
-    it('still sweeps rows that predate the column — but only where one connection exists', async () => {
-        // The other half. Scoping strictly to connectionId would silently stop
-        // deprovisioning every row written before the column existed, and the
-        // silence is the dangerous part: the deprovisioned count would report 0,
-        // which reads exactly like a healthy directory. With a single connection
-        // there is no other connection those rows could belong to, so including
-        // them is safe and preserves today's behaviour for every tenant in the
-        // field.
-        mockDb.integrationConnection.count.mockResolvedValue(1);
+    it('no longer widens to unattributed rows — there are none to widen to', async () => {
+        // REVERSED DELIBERATELY IN PHASE 2, and the reversal is the point.
+        //
+        // Phase 1 had to include NULL-connectionId rows when the tenant held one
+        // connection: the column was nullable, and excluding them would have
+        // silently stopped deprovisioning every row written before it existed —
+        // with the deprovisioned count reporting 0, which reads exactly like a
+        // healthy directory.
+        //
+        // The column is NOT NULL now, so `connectionId: null` matches nothing and
+        // the widening has nothing left to widen to. The extra COUNT query that
+        // decided whether to widen is gone with it.
         const provider = stubProvider([acct('a')]);
         await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
 
         const where = mockDb.connectedIdentityAccount.updateMany.mock.calls[0][0].where;
-        expect(where.OR).toEqual([{ connectionId: 'conn-1' }, { connectionId: null }]);
-        expect(where.connectionId).toBeUndefined();
+        expect(where.connectionId).toBe('conn-1');
+        expect(where.OR).toBeUndefined();
+        // And the count query that drove the old decision is no longer issued —
+        // asserted positively so "we removed it" is checked, not assumed.
+        expect(mockDb.integrationConnection.count).not.toHaveBeenCalled();
     });
 
     it('claims the connection on every pass, not only when the row is created', async () => {
@@ -143,13 +158,13 @@ describe('runIdentitySync', () => {
     it('running twice with the same directory is idempotent (same upsert keys)', async () => {
         const provider = stubProvider([acct('a'), acct('b')]);
         await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
-        const firstKeys = mockDb.connectedIdentityAccount.upsert.mock.calls.map((c) => c[0].where.tenantId_provider_externalUserId.externalUserId);
+        const firstKeys = mockDb.connectedIdentityAccount.upsert.mock.calls.map((c) => c[0].where.tenantId_connectionId_externalUserId.externalUserId);
         jest.clearAllMocks();
         mockDb.integrationConnection.findFirst.mockResolvedValue({ id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true, syncCursor: null, syncPassStartedAt: null });
         mockDb.integrationExecution.create.mockResolvedValue({ id: 'exec-2' });
         mockDb.connectedIdentityAccount.updateMany.mockResolvedValue({ count: 0 });
         await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
-        const secondKeys = mockDb.connectedIdentityAccount.upsert.mock.calls.map((c) => c[0].where.tenantId_provider_externalUserId.externalUserId);
+        const secondKeys = mockDb.connectedIdentityAccount.upsert.mock.calls.map((c) => c[0].where.tenantId_connectionId_externalUserId.externalUserId);
         expect(secondKeys).toEqual(firstKeys);
     });
 

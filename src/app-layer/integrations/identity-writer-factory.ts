@@ -117,6 +117,7 @@ const NOOP_CLOSE = async (): Promise<void> => {};
 export function createSnapshotWriter(
     ctx: RequestContext,
     provider: string,
+    connectionId: string,
     selfAccountIds: readonly string[] = [],
 ): DirectoryWriter {
     return {
@@ -135,7 +136,14 @@ export function createSnapshotWriter(
         async readState(externalUserId: string): Promise<DirectoryAccountState> {
             const row = await runInTenantContext(ctx, (db) =>
                 db.connectedIdentityAccount.findFirst({
-                    where: { tenantId: ctx.tenantId, provider, externalUserId },
+                    // SCOPED TO THE CONNECTION as of phase 2. The account key is
+                    // now (tenantId, connectionId, externalUserId), so the same
+                    // externalUserId can legitimately exist under two connections
+                    // — two forests, two rows, two different accounts. Reading by
+                    // (tenantId, provider, externalUserId) would return whichever
+                    // Prisma happened to order first, and a dry run would report a
+                    // decision about the wrong directory.
+                    where: { tenantId: ctx.tenantId, provider, connectionId, externalUserId },
                     select: { status: true, updatedAt: true, onPremisesSyncEnabled: true },
                 }),
             );
@@ -267,31 +275,6 @@ export async function resolveDirectoryWriter(
         }),
     );
 
-    // OBSERVATION STILL NEEDS NO CREDENTIALS — but it does need to know which
-    // accounts it must never propose disabling, and only a connection can say.
-    //
-    // The read moved ABOVE this arm; the refusals below it did not. That
-    // distinction is the whole design. The argument for withholding a live
-    // writer from a dry run is about the CONSTRUCTOR — createEntraIdWriter
-    // refuses unless writesEnabled === true, and requiring that in order to run
-    // the observation rung would invert the ladder — and the constructors are
-    // still below. Reading a row inverts nothing.
-    //
-    // Promoting the refusals too would hand DRY_RUN three new ways to produce
-    // nothing (NO_CONNECTION / AMBIGUOUS_CONNECTION / SECRETS_UNREADABLE), each
-    // landing as NOT_APPLICABLE — so a two-connection or undecryptable-secret
-    // tenant would stop observing during the seven days it is REQUIRED to
-    // observe. A dry run that cannot name the bind account is worse than one
-    // that can; it is still far better than no dry run at all.
-    //
-    // Every enabled connection contributes, not just the first. With two, we
-    // hold two bind identities and no rule for choosing between them — and
-    // "protect both" is the only answer that cannot disable the wrong one.
-    if (mode === 'DRY_RUN') {
-        const selfIds = conns.flatMap((c) => selfAccountIdsFromConnection(c));
-        return { kind: 'snapshot', writer: createSnapshotWriter(ctx, provider, selfIds), close: NOOP_CLOSE };
-    }
-
     if (conns.length === 0) {
         return {
             kind: 'none',
@@ -304,11 +287,45 @@ export async function resolveDirectoryWriter(
             kind: 'none',
             refusal: 'AMBIGUOUS_CONNECTION',
             detail:
-                `${conns.length} enabled ${provider} connections. A directory account records which ` +
-                'connection last observed it, but that record is not yet mandatory — an account synced ' +
-                'before it existed, or one whose connection was removed, cannot say which of them it ' +
-                'belongs to. Choosing either would address a disable at a directory the account may ' +
-                'not live in, so this refuses instead. Leave one connection enabled for this provider.',
+                `${conns.length} enabled ${provider} connections. Each directory account now names the ` +
+                'connection that observed it, so the accounts are no longer ambiguous — but a writer is ' +
+                'still resolved per (tenant, provider) rather than per account, so one of the two would ' +
+                'have to be chosen for all of them. Choosing either would address a disable at a ' +
+                'directory the account may not live in, so this refuses instead. Leave one connection ' +
+                'enabled for this provider.',
+        };
+    }
+
+    // THE DRY_RUN ARM MOVED BELOW THE TWO CONNECTION REFUSALS IN PHASE 2, and
+    // that reverses what phase 1 argued. The earlier reasoning was sound for its
+    // own release: a snapshot reader answering from stored rows could still
+    // observe usefully with zero or several connections, so refusing would have
+    // stopped a tenant observing during seven days it is REQUIRED to observe.
+    //
+    // Phase 2 makes that false. `connectionId` is NOT NULL and the account key is
+    // (tenantId, connectionId, externalUserId), so the reader needs ONE connection
+    // to scope by. Without it the two cases degrade rather than refuse:
+    //   · zero connections — no account rows exist either, since a row is created
+    //     by a connection's sync. Every candidate would come back "no observed
+    //     directory record", which is a FAILED per account instead of one named
+    //     NO_CONNECTION for the run.
+    //   · two connections — the same externalUserId can legitimately exist under
+    //     both, and readState would return whichever Prisma ordered first. A dry
+    //     run reporting a decision about the wrong directory is worse than one
+    //     that refuses.
+    // Since #2066 the refusal is RECORDED, so a refused pass is visible in the
+    // seven-day artefact rather than being silence.
+    //
+    // SECRETS_UNREADABLE stays BELOW, deliberately: `selfAccountIdsFromConnection`
+    // degrades to what configJson alone can say, so an undecryptable secret still
+    // yields a dry run with one bind protected instead of none. That half of the
+    // phase 1 argument survives intact.
+    if (mode === 'DRY_RUN') {
+        const selfIds = selfAccountIdsFromConnection(conns[0]);
+        return {
+            kind: 'snapshot',
+            writer: createSnapshotWriter(ctx, provider, conns[0].id, selfIds),
+            close: NOOP_CLOSE,
         };
     }
 

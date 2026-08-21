@@ -37,6 +37,10 @@ async function clearOwnRows(): Promise<void> {
     await prisma.identityWriteJournal.deleteMany({ where: t });
     await prisma.identityAccountLink.deleteMany({ where: t });
     await prisma.connectedIdentityAccount.deleteMany({ where: t });
+    // The FK is ON DELETE CASCADE now, so deleting the connection would take its
+    // accounts with it — but the accounts go first anyway, because this cleanup
+    // must not depend on cascade ordering to leave the table empty.
+    await prisma.integrationConnection.deleteMany({ where: t });
     await prisma.employee.deleteMany({ where: t });
     await prisma.tenant.deleteMany({ where: { id: { in: [T1, T2] } } });
 }
@@ -55,8 +59,22 @@ beforeAll(async () => {
         const employee = await prisma.employee.create({
             data: { tenantId: t, fullName: `Worker ${t}`, workEmail: `worker@${t}.test` },
         });
+        // An account belongs to the connection whose sync observed it —
+        // `connectionId` is required, so a fixture cannot skip it any more. That
+        // is the schema saying what was always true: a row exists because a
+        // connection went and looked.
+        const connection = await prisma.integrationConnection.create({
+            data: { tenantId: t, provider: 'entra-id', name: `entra-${t}`, configJson: {} },
+        });
         const account = await prisma.connectedIdentityAccount.create({
-            data: { tenantId: t, provider: 'entra-id', externalUserId: `ext-${t}`, email: `worker@${t}.test`, syncedAt: new Date() },
+            data: {
+                tenantId: t,
+                provider: 'entra-id',
+                connectionId: connection.id,
+                externalUserId: `ext-${t}`,
+                email: `worker@${t}.test`,
+                syncedAt: new Date(),
+            },
         });
         const link = await prisma.identityAccountLink.create({
             data: { tenantId: t, employeeId: employee.id, connectedAccountId: account.id, matchMethod: 'EMAIL_EXACT', lastVerifiedAt: new Date() },

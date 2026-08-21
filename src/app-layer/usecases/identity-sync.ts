@@ -170,7 +170,17 @@ export async function runIdentitySync(input: {
         for (const a of accounts) { // guardrail-allow: n+1 — per-account upsert, bounded by MAX_USERS
             if (!a.externalUserId) continue;
             await db.connectedIdentityAccount.upsert({
-                where: { tenantId_provider_externalUserId: { tenantId: ctx.tenantId, provider: conn.provider, externalUserId: a.externalUserId } },
+                // Keyed on the CONNECTION as of phase 2. The old
+                // tenantId_provider_externalUserId key made two forests under one
+                // tenant collide on a single row, which is what forced the
+                // deprovision reconcile to be provider-scoped in the first place.
+                where: {
+                    tenantId_connectionId_externalUserId: {
+                        tenantId: ctx.tenantId,
+                        connectionId: conn.id,
+                        externalUserId: a.externalUserId,
+                    },
+                },
                 create: {
                     tenantId: ctx.tenantId,
                     provider: conn.provider,
@@ -312,34 +322,25 @@ export async function runIdentitySync(input: {
         // did the reverse. Both reported PASSED. No write permission, no
         // consent, no bind — one admin adding a second connection triggered it.
         //
-        // THE NULL ARM, and why it is conditional. A row observed before the
-        // column existed, or one whose connection was deleted, carries NULL.
-        // Excluding those outright would silently stop deprovisioning them, and
-        // the silence is the dangerous part: `recordIdentityDeprovisioned`
-        // would report 0, which reads exactly like a healthy directory.
-        // Including them unconditionally would re-create the original bug in a
-        // new spelling, because in a two-connection tenant a NULL row may
-        // belong to the OTHER connection.
+        // THE NULL ARM IS GONE, and its removal is the point of phase 2 rather
+        // than a tidy-up. Phase 1 had to include unattributed rows when the
+        // tenant held a single connection, because `connectionId` was nullable
+        // and excluding them would have silently stopped deprovisioning every
+        // row written before the column existed — with
+        // `recordIdentityDeprovisioned` reporting 0, which reads exactly like a
+        // healthy directory. The column is NOT NULL now, so there is nothing
+        // left to include: `connectionId: null` matches no row, and the extra
+        // COUNT query that decided whether to widen has nothing left to decide.
         //
-        // So they are included only when this tenant has exactly ONE connection
-        // for this provider — the case where "the other connection" does not
-        // exist and the attribution is therefore not in doubt. That is also
-        // every tenant in the field today, so the behaviour they see is
-        // unchanged; the narrowing bites only for the configuration that was
-        // broken anyway.
-        const connectionsForProvider = await db.integrationConnection.count({
-            where: { tenantId: ctx.tenantId, provider: conn.provider },
-        });
-        const ownership =
-            connectionsForProvider <= 1
-                ? { OR: [{ connectionId: conn.id }, { connectionId: null }] }
-                : { connectionId: conn.id };
-
+        // `provider` stays in the predicate even though `connectionId` already
+        // implies it. It is not redundant defensively — it keeps the statement
+        // readable and correct on a connection that legitimately bypasses RLS,
+        // and it is the column the index leads with.
         const reconcile = await db.connectedIdentityAccount.updateMany({
             where: {
                 tenantId: ctx.tenantId,
                 provider: conn.provider,
-                ...ownership,
+                connectionId: conn.id,
                 status: { not: 'DEPROVISIONED' },
                 syncedAt: { lt: passStartedAt },
             },
