@@ -26,6 +26,7 @@ import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { validateProviderConfig } from '../integrations/config-schema';
+import { LEAVER_PASS_AUTOMATION_SUFFIX } from './identity-leaver-pass';
 import { logger } from '@/lib/observability/logger';
 import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-freshness';
 import { runIdentitySync } from './identity-sync';
@@ -610,7 +611,19 @@ export async function listAllControlChecks(
 ) {
     return runInTenantContext(ctx, (db) =>
         db.integrationExecution.findMany({
-            where: { tenantId: ctx.tenantId },
+            where: {
+                tenantId: ctx.tenantId,
+                // A leaver pass is not a control check. It produces no evidence
+                // and attests nothing — it is an offboarding action that happens
+                // to be stored in the same table — so listing it here would
+                // misdescribe it to whoever reads this page.
+                //
+                // It is also the narrower choice on access: this list is
+                // reachable with `controls.view`, while every other leaver
+                // surface is gated at OWNER. Excluding it keeps where-we-store-a
+                // row from quietly deciding who-can-see-it.
+                automationKey: { not: { endsWith: LEAVER_PASS_AUTOMATION_SUFFIX } },
+            },
             select: {
                 id: true,
                 provider: true,

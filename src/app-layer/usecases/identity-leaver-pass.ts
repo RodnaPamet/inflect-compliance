@@ -45,14 +45,18 @@
 import { logger } from '@/lib/observability/logger';
 import { runInTenantContext } from '@/lib/db-context';
 import { buildSystemContext } from '@/app-layer/context-system';
+import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
 import { getIdentityWritePolicy } from './identity-write-policy';
 import {
     disableAccountsForLeaver,
     findLeaverCandidates,
+    type DisableAccountInput,
     type DisableOutcome,
     type DisableResult,
+    type LeaverDisableResult,
 } from './identity-disable-account';
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { recordLeaverPassOutcome } from '@/lib/observability/integration-metrics';
 
 /**
@@ -72,8 +76,135 @@ export const LEAVER_MAX_MODE = 'DRY_RUN' as const;
  */
 export const LINK_FRESHNESS_MS = 2 * 24 * 60 * 60 * 1000;
 
-/** Bound on the per-decision detail carried into the execution report. */
+/**
+ * Bound on the per-decision detail carried into the execution report.
+ *
+ * Larger than anything reachable today on purpose. The blast-radius breaker
+ * REFUSES a batch above MAX_DISABLES_PER_RUN (50) rather than trimming it, so a
+ * pass produces 0 or at most 50 decisions — never 200. This is the bound that
+ * keeps one JSON column from becoming unbounded if that ever changes, not a
+ * limit anyone should expect to hit; a report that IS truncated says so, in the
+ * row, rather than quietly ending early.
+ */
 export const MAX_REPORTED_DECISIONS = 200;
+
+/**
+ * Suffix identifying a leaver pass among integration executions.
+ *
+ * Exported because the tenant-wide "automated checks" list EXCLUDES it. Two
+ * reasons, and the second is the stronger one. A leaver pass is not a control
+ * check — it is an offboarding action — so listing it beside evidence-producing
+ * checks would misdescribe it to anyone reading that page. And that page is
+ * reachable with `controls.view`, while everything else about the leaver rails
+ * is gated at OWNER; letting the rows drift onto it would widen their audience
+ * as a side effect of choosing where to store them.
+ */
+export const LEAVER_PASS_AUTOMATION_SUFFIX = '.leaver_pass';
+
+/**
+ * The durable record a dry run leaves behind.
+ *
+ * The seven-day observation window exists to be COMPARED against what HR and IT
+ * actually did — the ladder's own refusal text says so — and until now a dry run
+ * produced nothing to compare with. It decided, logged a histogram, and threw
+ * every decision away. Worse, the promotion gate counts ELAPSED days since
+ * dryRunSince rather than observed runs, so the window could be satisfied by
+ * time passing while nobody watched anything.
+ *
+ * KEYED BY LINK ID, NEVER BY DIRECTORY IDENTIFIER. `IntegrationExecution` is not
+ * encrypted at rest (the Epic B manifest is String-only, so a Json column cannot
+ * join it) and its rows outlive the pass, so the identifier that goes in must be
+ * one that means nothing outside an authorised read. The link id is tenant-scoped
+ * and resolvable to a person only through the account it points at.
+ *
+ * And the reasons are SCRUBBED. `DisableResult.reason` is deliberately
+ * un-redacted — it is written for an operator reading a tenant-scoped surface —
+ * but a provider message routinely embeds the account: "Entra refused to disable
+ * account <guid>", "No observed directory record for <id>". Persisting them
+ * verbatim would put back exactly what keying by link id takes out.
+ *
+ * ONE TERMINAL ROW, not a RUNNING row updated later. The pass runs with
+ * attempts: 1 and spans no transaction, so a two-phase write has a real orphan
+ * mode: a process that dies mid-pass leaves a RUNNING row nothing will ever
+ * finish, and an operator counting runs would read it as one that happened.
+ */
+async function recordPassExecution(
+    ctx: RequestContext,
+    provider: string,
+    candidates: readonly DisableAccountInput[],
+    results: readonly LeaverDisableResult[],
+    summary: Record<string, unknown>,
+): Promise<void> {
+    const identifierByLink = new Map(candidates.map((c) => [c.linkId, c.externalUserId]));
+    const reported = results.slice(0, MAX_REPORTED_DECISIONS);
+    const decisions = reported.map((r) => ({
+        linkId: r.linkId,
+        outcome: r.outcome,
+        ...(r.reason
+            ? { reason: redactDirectoryIdentifiers(r.reason, identifierByLink.get(r.linkId)) }
+            : {}),
+    }));
+    const truncated = results.length > reported.length;
+
+    await runInTenantContext(ctx, (db) =>
+        db.integrationExecution.create({
+            data: {
+                tenantId: ctx.tenantId,
+                provider,
+                automationKey: `${provider}${LEAVER_PASS_AUTOMATION_SUFFIX}`,
+                // PARTIAL means "produced output, and that output is incomplete"
+                // — which is what a truncated decision list is, and is NOT what
+                // a FAILED or INDETERMINATE outcome is. Those are results the
+                // pass is reporting correctly, and they are in `counts`.
+                status: truncated ? 'PARTIAL' : 'PASSED',
+                triggeredBy: 'scheduled',
+                completedAt: new Date(),
+                resultJson: { ...summary, decisions, decisionsTruncated: truncated },
+            },
+        }),
+    );
+}
+
+/** Bound on how many passes one read returns. A daily job over a short window. */
+const MAX_LISTED_PASSES = 100;
+
+/**
+ * The passes a tenant has run, most recent first — the read half of the record.
+ *
+ * Deliberately NOT served by the tenant-wide "automated checks" list, which
+ * excludes this automationKey: that page is reachable with `controls.view`,
+ * while the authority to run these passes at all is OWNER-only. A record that
+ * widened its own audience by being stored in a shared table would be a strange
+ * way to observe a control.
+ *
+ * Returns `resultJson` verbatim, because the per-decision list IS the artefact —
+ * a summary of a summary would defeat the point of persisting one. Every
+ * identifier in it is already a link id, and every reason was scrubbed on the
+ * way in.
+ */
+export async function listLeaverPasses(
+    ctx: RequestContext,
+    options: { limit?: number } = {},
+) {
+    return runInTenantContext(ctx, (db) =>
+        db.integrationExecution.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                automationKey: { endsWith: LEAVER_PASS_AUTOMATION_SUFFIX },
+            },
+            select: {
+                id: true,
+                provider: true,
+                status: true,
+                executedAt: true,
+                completedAt: true,
+                resultJson: true,
+            },
+            orderBy: { executedAt: 'desc' },
+            take: Math.min(options.limit ?? MAX_LISTED_PASSES, MAX_LISTED_PASSES),
+        }),
+    );
+}
 
 export type LeaverPassStatus = 'PASSED' | 'NOT_APPLICABLE' | 'ERROR';
 
@@ -245,6 +376,30 @@ export async function runIdentityLeaverPass(input: {
                 batchRefused: outcome.refused ?? null,
                 counts,
             });
+
+            // AFTER the counters and the log line, and inside the try so the
+            // writer is still closed by the finally below. A failed insert must
+            // not turn a completed pass into an ERROR — the directory decisions
+            // are already made and already reported; losing the record of them
+            // is worth an alert, not a retry of a pass that ran.
+            try {
+                await recordPassExecution(ctx, input.provider, candidates, outcome.results, {
+                    mode,
+                    evidence: resolution.kind,
+                    terminatedWorkers: terminated.length,
+                    candidates: candidates.length,
+                    population,
+                    batchRefused: outcome.refused ?? null,
+                    counts,
+                });
+            } catch (err) {
+                logger.error('leaver pass ran but its record could not be written', {
+                    component: 'identity-leaver-pass',
+                    tenantId: ctx.tenantId,
+                    provider: input.provider,
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
 
             recordLeaverPassOutcome({
                 provider: input.provider,

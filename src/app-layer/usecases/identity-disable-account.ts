@@ -83,6 +83,20 @@ export interface DisableResult {
     readonly journalId?: string;
 }
 
+/**
+ * A decision with the candidate it was made about.
+ *
+ * `decideAndDisable` returns a bare `DisableResult` from a dozen places and has
+ * no reason to know which link it came from. The batch does, so the pairing is
+ * made HERE, where both are in scope — rather than left to positional alignment
+ * between two arrays, which is correct until somebody filters one of them.
+ *
+ * The link id is the only identifier that leaves this module for a durable
+ * record: it is tenant-scoped, opaque, and resolvable to a person only through
+ * an authorised read.
+ */
+export type LeaverDisableResult = DisableResult & { readonly linkId: string };
+
 /** The state a provider hands back before a write, and needs to perform one. */
 export interface DirectoryAccountState {
     /** False when the account is already disabled. */
@@ -498,7 +512,7 @@ export async function disableAccountsForLeaver(
     ctx: RequestContext,
     writer: DirectoryWriter,
     input: LeaverBatchInput,
-): Promise<{ refused?: string; results: DisableResult[] }> {
+): Promise<{ refused?: string; results: LeaverDisableResult[] }> {
     const verdict = checkDisableBlastRadius({
         proposed: input.candidates.length,
         population: input.population,
@@ -545,7 +559,7 @@ export async function disableAccountsForLeaver(
         return { tenantSlug: null, it: [], byLink: new Map<string, never>() };
     });
 
-    const results: DisableResult[] = [];
+    const results: LeaverDisableResult[] = [];
     // Accumulated across the batch rather than reported per candidate — see the
     // single warn after the loop for why.
     let notificationsLost = 0;
@@ -589,7 +603,7 @@ export async function disableAccountsForLeaver(
             // write could not be confirmed rather than asserting a non-fact.
             result = { outcome: 'INDETERMINATE', reason: detail };
         }
-        results.push(result);
+        results.push({ ...result, linkId: candidate.linkId });
 
         // Tell the people who need to know — which is NOT everyone, on NOT
         // every outcome. `notifyLeaverOutcome` owns that decision and is
