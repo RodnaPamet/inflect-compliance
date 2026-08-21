@@ -65,3 +65,26 @@ export function assertNotSelfDeactivation(ctx: RequestContext, targetUserId: str
         throw forbidden('Cannot deactivate your own membership. Ask another admin.');
     }
 }
+
+// ─── Owner-grade capabilities ───
+
+/**
+ * Asserts the caller may return a quarantined file to circulation.
+ *
+ * Deliberately NOT `assertCanAdmin`. Clearing an INFECTED verdict puts
+ * bytes ClamAV condemned back in front of every downloader, so it
+ * carries the same OWNER-only key as tenant deletion and DEK rotation
+ * — `admin.tenant_lifecycle`, which ADMIN is explicitly denied by the
+ * role model in `src/lib/permissions.ts`.
+ *
+ * The HTTP route is gated on the same key by `requirePermission`; this
+ * is the usecase-layer twin, so a non-HTTP caller (a script, a future
+ * job) cannot reach the escape hatch without the same authority.
+ */
+export function assertCanClearFileQuarantine(ctx: RequestContext): void {
+    if (!ctx.appPermissions?.admin?.tenant_lifecycle) {
+        throw forbidden(
+            'Clearing a malware quarantine is an owner-level action.',
+        );
+    }
+}

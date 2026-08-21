@@ -251,6 +251,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'compromise — destructive on the timeline that matters ' +
             'and OWNER-only per the role model in CLAUDE.md.',
     },
+    // ── False-positive quarantine reversal ──────────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/files\\/[^/]+\\/clear-quarantine$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Returns a file ClamAV condemned to circulation — the only ' +
+            'way back from a terminal INFECTED verdict. Serving suspected ' +
+            'malware again is OWNER-grade authority, the same class as ' +
+            'tenant deletion and DEK rotation; ADMIN is explicitly denied ' +
+            'this key. Audited as FILE_QUARANTINE_CLEARED before the write.',
+    },
     // ── Per-tenant DEK rotation — GAP-22 alias path ─────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/rotate-dek(\\/.*)?$`),
