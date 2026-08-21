@@ -3,6 +3,71 @@ import { badRequest } from '@/lib/errors/types';
 import { env } from '@/env';
 import { RequestContext } from '../types';
 
+/**
+ * Backoff floor. A row that has just failed once is not interesting again for
+ * a quarter of an hour: none of the reasons a rescan fails (missing object,
+ * digest mismatch, unparseable payload, scanner down) resolve faster than an
+ * operator can act.
+ */
+export const SCAN_ATTEMPT_BACKOFF_BASE_MS = 15 * 60_000;
+
+/**
+ * Backoff ceiling. Capped rather than unbounded because the failure modes DO
+ * get fixed — storage is restored, clamd is upgraded — and a row must return
+ * to the queue on its own once that happens, without an operator knowing to
+ * go looking for it.
+ */
+export const SCAN_ATTEMPT_BACKOFF_MAX_MS = 24 * 60 * 60_000;
+
+/**
+ * Delay before the `n`th attempt is eligible again. Doubles per attempt from
+ * the floor to the ceiling: 15m, 30m, 1h, 2h, 4h, 8h, 16h, then 24h forever.
+ */
+export function scanAttemptBackoffMs(attempts: number): number {
+    // A non-finite count would propagate through the shift into
+    // `new Date(now + NaN)` — an Invalid Date, which Prisma writes as NULL,
+    // which reads back as "due now" and reinstates the starvation this whole
+    // change exists to remove. Failing closed to one attempt is the safe read.
+    const n = Number.isFinite(attempts) ? Math.max(1, Math.floor(attempts)) : 1;
+    // Exponent is clamped before the shift: 2 ** 1024 is Infinity, and
+    // `Math.min(Infinity, cap)` would still be the cap, but `new Date(now +
+    // Infinity)` on the way there is an Invalid Date if anyone reorders this.
+    const doublings = Math.min(n - 1, 32);
+    return Math.min(SCAN_ATTEMPT_BACKOFF_BASE_MS * 2 ** doublings, SCAN_ATTEMPT_BACKOFF_MAX_MS);
+}
+
+/**
+ * The columns an attempt record is allowed to write — nothing that a
+ * downloader, a gate, or an auditor reads as a scan result.
+ */
+export const SCAN_ATTEMPT_COLUMNS = [
+    'scanAttempts',
+    'lastScanAttemptAt',
+    'nextScanAttemptAt',
+] as const;
+
+/**
+ * Columns that assert a VERDICT. An attempt record that touched one of these
+ * would be publishing a scan result it does not have — the exact failure the
+ * rescan job is built to avoid — so it is refused here rather than trusted to
+ * a code reviewer noticing a merged object literal.
+ */
+export const SCAN_VERDICT_COLUMNS = ['scanStatus', 'scanDetails', 'scannedAt', 'status'] as const;
+
+export function assertAttemptColumnsOnly(data: Record<string, unknown>): void {
+    for (const column of Object.keys(data)) {
+        if ((SCAN_VERDICT_COLUMNS as readonly string[]).includes(column)) {
+            throw badRequest(
+                `recordScanAttempt refuses to write the verdict column "${column}": ` +
+                    'an attempt record must never assert a scan result',
+            );
+        }
+        if (!(SCAN_ATTEMPT_COLUMNS as readonly string[]).includes(column)) {
+            throw badRequest(`recordScanAttempt refuses to write the unknown column "${column}"`);
+        }
+    }
+}
+
 export class FileRepository {
     static async createPending(
         db: PrismaTx,
@@ -295,14 +360,89 @@ export class FileRepository {
         return db.fileRecord.findUnique({ where: { id } });
     }
 
-    static async findPendingScan(db: PrismaTx, tenantId?: string) {
-        const where: Record<string, unknown> = { scanStatus: 'PENDING', status: 'STORED' };
+    /**
+     * Rows the AV sweep should look at next.
+     *
+     * The predicate carries `scanStatus: 'PENDING'` because that is still the
+     * honest record of "no verdict yet" — but PENDING alone is not a work
+     * queue. A row can be permanently unable to reach a verdict (its object is
+     * gone from storage, its bytes no longer match `sha256`, clamd cannot
+     * parse it) and correctly stay PENDING forever. Selected oldest-first with
+     * a `take`, those rows sit at the head of the page on every run and the
+     * backlog behind them never drains.
+     *
+     * Two things keep that from happening, and both read the ATTEMPT columns,
+     * never the verdict ones:
+     *
+     *  - `nextScanAttemptAt` gates a row out until its backoff expires. NULL
+     *    means never attempted, which is due now — so rows written before
+     *    this shipped are picked up immediately.
+     *  - the ordering puts fewest-attempts first, so a row that has failed
+     *    nine times can never be ahead of one that has never been tried, even
+     *    when both are due.
+     */
+    static async findPendingScan(db: PrismaTx, tenantId?: string, now: Date = new Date()) {
+        const where: Record<string, unknown> = {
+            scanStatus: 'PENDING',
+            status: 'STORED',
+            OR: [{ nextScanAttemptAt: null }, { nextScanAttemptAt: { lte: now } }],
+        };
         if (tenantId) where.tenantId = tenantId;
         return db.fileRecord.findMany({
             where,
-            orderBy: { createdAt: 'asc' },
+            orderBy: [{ scanAttempts: 'asc' }, { createdAt: 'asc' }],
             take: 100,
         });
+    }
+
+    /**
+     * Record that a scan was ATTEMPTED and failed to produce a verdict, and
+     * push the row's next eligibility out by the backoff for its new attempt
+     * count.
+     *
+     * This is deliberately a separate statement from the verdict write, and
+     * touches a disjoint set of columns. Sharing either would defeat the
+     * point: a verdict is terminal and must never be fabricated by a
+     * bookkeeping write, and an attempt count is frequent and says nothing at
+     * all about whether the file is safe.
+     *
+     * `assertAttemptColumnsOnly` guards that split. Today it cannot fire —
+     * the data it checks is a literal built three lines below — and saying
+     * otherwise would be claiming a defence that never runs. What it is for
+     * is the NEXT edit: the moment anyone threads a caller-supplied object
+     * into this write, a merged `scanStatus` becomes a fabricated verdict
+     * rather than a bookkeeping bump. It is exported and directly tested so
+     * the rule is enforced somewhere a test can see, instead of resting on a
+     * reviewer noticing.
+     *
+     * `scanStatus: 'PENDING'` in the predicate means a row that won a verdict
+     * from another writer while we were scanning it cannot have its attempt
+     * counter bumped afterwards — the same conditional-claim shape the
+     * verdict write uses.
+     *
+     * @returns the row's new attempt count, or `null` if it was no longer
+     *   PENDING (nothing was written).
+     */
+    static async recordScanAttempt(
+        db: PrismaTx,
+        id: string,
+        opts: { tenantId: string; attempts: number; now?: Date },
+    ): Promise<number | null> {
+        const now = opts.now ?? new Date();
+        const current = Number.isFinite(opts.attempts) ? Math.max(0, Math.floor(opts.attempts)) : 0;
+        const attempts = current + 1;
+        const data = {
+            scanAttempts: attempts,
+            lastScanAttemptAt: now,
+            nextScanAttemptAt: new Date(now.getTime() + scanAttemptBackoffMs(attempts)),
+        };
+        assertAttemptColumnsOnly(data);
+
+        const written = await db.fileRecord.updateMany({
+            where: { id, tenantId: opts.tenantId, scanStatus: 'PENDING' },
+            data,
+        });
+        return written.count === 0 ? null : attempts;
     }
 
     static async getByPathKey(db: PrismaTx, pathKey: string) {

@@ -387,6 +387,81 @@ describeFn('FileRepository (integration — real DB)', () => {
         expect(global.map((r) => r.id)).toContain(rec.id);
     });
 
+    it('findPendingScan excludes a row whose backoff has not expired, and orders fewest-attempts first', async () => {
+        // The reason `findPendingScan` cannot just be "everything PENDING":
+        // a row that will never earn a verdict is permanently PENDING and,
+        // ordered oldest-first under a `take`, holds the head of the page
+        // against every row behind it.
+        const due = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, due.id);
+        const backedOff = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, backedOff.id);
+        await prisma.fileRecord.update({
+            where: { id: backedOff.id },
+            data: { scanAttempts: 4, nextScanAttemptAt: new Date(Date.now() + 3_600_000) },
+        });
+
+        const ids = (await FileRepository.findPendingScan(prisma, TENANT_A)).map((r) => r.id);
+        expect(ids).toContain(due.id);
+        expect(ids).not.toContain(backedOff.id);
+
+        // Past its backoff it comes back — capped, not exiled — but behind
+        // the row nobody has tried yet.
+        const later = new Date(Date.now() + 7_200_000);
+        const ordered = (await FileRepository.findPendingScan(prisma, TENANT_A, later)).map(
+            (r) => r.id,
+        );
+        expect(ordered).toContain(backedOff.id);
+        expect(ordered.indexOf(due.id)).toBeLessThan(ordered.indexOf(backedOff.id));
+    });
+
+    it('recordScanAttempt writes only the attempt columns, and only while the row is PENDING', async () => {
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+
+        const attempts = await FileRepository.recordScanAttempt(prisma, rec.id, {
+            tenantId: TENANT_A,
+            attempts: 0,
+        });
+        expect(attempts).toBe(1);
+
+        const after = await prisma.fileRecord.findUniqueOrThrow({ where: { id: rec.id } });
+        expect(after.scanAttempts).toBe(1);
+        expect(after.nextScanAttemptAt).not.toBeNull();
+        expect(after.lastScanAttemptAt).not.toBeNull();
+        // The verdict columns are untouched — an attempt is not a result.
+        expect(after.scanStatus).toBe('PENDING');
+        expect(after.scannedAt).toBeNull();
+        expect(after.scanDetails).toBeNull();
+
+        // Once a verdict lands, the bookkeeping stops: the row has left the
+        // queue and a counter describing it would be stale forever.
+        await prisma.fileRecord.update({
+            where: { id: rec.id },
+            data: { scanStatus: 'CLEAN', scannedAt: new Date() },
+        });
+        expect(
+            await FileRepository.recordScanAttempt(prisma, rec.id, {
+                tenantId: TENANT_A,
+                attempts: 1,
+            }),
+        ).toBeNull();
+        expect(
+            (await prisma.fileRecord.findUniqueOrThrow({ where: { id: rec.id } })).scanAttempts,
+        ).toBe(1);
+    });
+
+    it('recordScanAttempt cannot be used across tenants', async () => {
+        const rec = await FileRepository.createPending(prisma, CTX_A, pendingData());
+        await FileRepository.markStored(prisma, CTX_A, rec.id);
+        expect(
+            await FileRepository.recordScanAttempt(prisma, rec.id, {
+                tenantId: TENANT_B,
+                attempts: 0,
+            }),
+        ).toBeNull();
+    });
+
     it('getByPathKey finds a record by its storage path', async () => {
         const data = pendingData();
         const rec = await FileRepository.createPending(prisma, CTX_A, data);

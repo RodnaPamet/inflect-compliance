@@ -116,6 +116,20 @@ model FileRecord {
   storageProvider      String           @default("local")
   scanDetails          String?
   scannedAt            DateTime?
+  // #120 — attempt bookkeeping, deliberately NOT the verdict columns above.
+  // `scanStatus` / `scanDetails` / `scannedAt` say what the scanner decided;
+  // these three say only that we tried. A row whose scan cannot succeed for a
+  // reason that will not change (object gone from storage, bytes no longer
+  // matching `sha256`, a payload clamd cannot parse) stays honestly PENDING
+  // forever, so without a separate attempt record it is re-selected by every
+  // sweep and — the sweep being bounded and ordered oldest-first — occupies
+  // the page ahead of every row behind it. `nextScanAttemptAt` is the gate
+  // that lets the backlog drain past it; `scanAttempts` is what sets the
+  // exponential delay. Neither is ever written in the same statement as a
+  // verdict.
+  scanAttempts         Int              @default(0)
+  lastScanAttemptAt    DateTime?
+  nextScanAttemptAt    DateTime?
   deletedAt            DateTime?
   deletedByUserId      String?
   retentionUntil       DateTime?
@@ -135,6 +149,10 @@ model FileRecord {
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
   @@index([tenantId, scanStatus])
+  // Backs the rescan sweep's selection shape: tenant + PENDING + due-now,
+  // ordered by attempts. Without the third column every sweep re-reads the
+  // whole PENDING set to discard the backed-off rows.
+  @@index([tenantId, scanStatus, nextScanAttemptAt])
   @@index([tenantId, deletedAt])
   @@index([tenantId, previousFileRecordId])
 }
