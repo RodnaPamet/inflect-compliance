@@ -46,6 +46,25 @@ const REDACT_PATHS = [
     'totpSecret',
     'req.headers.authorization',
     'req.headers.cookie',
+    // Directory identifiers. Not credentials — which is exactly why they were
+    // missed: the list until now was "things that authenticate", and an
+    // objectGUID or a bind DN does not. It identifies a PERSON, in a line that
+    // carries no RLS, no tenant scope and no retention policy, and that lands
+    // in whatever aggregator the deployment uses. The notification layer
+    // already refuses to put these in a mail; a log is the weaker surface, not
+    // the stronger one.
+    //
+    // pino matches a bare key at the ROOT level only, and `log()` spreads its
+    // fields into a root-level object — so these bite where they are written.
+    // They do NOT reach inside a `error: '…Entra refused to disable account
+    // <guid>…'` string, which is why the identity write paths also scrub their
+    // error text through redactDirectoryIdentifiers before logging it. Adding
+    // the key alone would have made those lines LOOK sanitised while the id sat
+    // in the field beside it.
+    'externalUserId',
+    'distinguishedName',
+    'userPrincipalName',
+    'sAMAccountName',
 ];
 
 // ── Determine environment ──

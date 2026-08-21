@@ -72,9 +72,62 @@ describe('DRY_RUN never touches the directory', () => {
         expect(createAd).not.toHaveBeenCalled();
     });
 
-    it('does not even read the connection — observation needs no credentials', async () => {
+    it('reads the connection, but constructs no writer from it', async () => {
+        // CHANGED DELIBERATELY. This used to assert the connection was never
+        // read at all, and that assertion is what kept the self-lockout refusal
+        // inert in the only mode anyone runs: with no connection there is no
+        // bind identity, so `createSnapshotWriter` hardcoded null and the guard
+        // had nothing to compare against.
+        //
+        // The argument for withholding a live writer from a dry run was never
+        // about the READ — it is about the CONSTRUCTOR. `createEntraIdWriter`
+        // refuses unless writesEnabled === true, and requiring that flag in
+        // order to run the observation rung would invert the whole ladder. That
+        // is what the two assertions below protect, and they are unchanged.
         await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'DRY_RUN' });
-        expect(mockDb.integrationConnection.findMany).not.toHaveBeenCalled();
+        expect(mockDb.integrationConnection.findMany).toHaveBeenCalled();
+        expect(createEntra).not.toHaveBeenCalled();
+        expect(createAd).not.toHaveBeenCalled();
+    });
+
+    it('carries both configured binds into the snapshot reader', async () => {
+        mockDb.integrationConnection.findMany.mockResolvedValue([
+            { id: 'c1', configJson: { bindDN: 'CN=svc-read,DC=corp' }, secretEncrypted: null },
+        ]);
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });
+
+        expect(r.kind).toBe('snapshot');
+        if (r.kind !== 'snapshot') return;
+        expect(r.writer.selfAccountIds).toEqual(['CN=svc-read,DC=corp']);
+    });
+
+    it('refuses nothing extra in DRY_RUN when there is no connection to read', async () => {
+        // The refusal arms stay BELOW the dry-run return on purpose. Promoting
+        // them would give observation three new ways to produce nothing, so a
+        // tenant with no connection — or two, or undecryptable secrets — would
+        // stop observing during the seven days it is required to observe.
+        mockDb.integrationConnection.findMany.mockResolvedValue([]);
+        const r = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'DRY_RUN' });
+
+        expect(r.kind).toBe('snapshot');
+        if (r.kind !== 'snapshot') return;
+        expect(r.writer.selfAccountIds).toEqual([]);
+    });
+
+    it('keeps observing when the secrets will not decrypt, with what config alone can say', async () => {
+        // A DEK failure must degrade the dry run, not end it: bindDN is a config
+        // field and needs no decryption, so one bind is still protected. The
+        // LIVE path still refuses SECRETS_UNREADABLE by name — that judgement is
+        // made below, where a real write is at stake.
+        mockDb.integrationConnection.findMany.mockResolvedValue([
+            // 'BROKEN' is what this file's decryptField mock throws on.
+            { id: 'c1', configJson: { bindDN: 'CN=svc-read,DC=corp' }, secretEncrypted: 'BROKEN' },
+        ]);
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });
+
+        expect(r.kind).toBe('snapshot');
+        if (r.kind !== 'snapshot') return;
+        expect(r.writer.selfAccountIds).toEqual(['CN=svc-read,DC=corp']);
     });
 });
 

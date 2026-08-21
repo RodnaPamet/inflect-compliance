@@ -793,11 +793,24 @@ export function createActiveDirectoryWriter(
          * hand — the next bind fails, so nothing here could reach the account
          * to put it back.
          *
-         * The WRITE bind is preferred when configured, because that is the
-         * credential this writer actually authenticates with; the read bind is
-         * the fallback for the same reason.
+         * BOTH binds, not just the one this writer authenticates with. A
+         * dedicated write bind does not make the READ bind expendable: the
+         * nightly sync authenticates as it, and disabling it stops the sync,
+         * lets every link go stale, and makes each later leaver pass refuse
+         * NO_FRESH_LINKS. Offboarding stops for everyone, quietly, and the
+         * account that did it looks like an ordinary leaver in the report.
+         *
+         * Configured strings only — no directory lookup. Resolving each bind to
+         * its objectGUID would need a search per writer, and the dry run has no
+         * connection to search with. The orchestrator closes the gap from the
+         * other side instead, comparing these against the candidate's UPN as
+         * well as its objectGUID; a bind configured as a bare DN whose account
+         * carries no matching UPN is the residual, and #137's operator flag is
+         * the general answer to that.
          */
-        selfAccountId: writeBindDN || bindDN || null,
+        selfAccountIds: [writeBindDN, connection.bindDN, bindDN]
+            .map((v) => String(v ?? '').trim())
+            .filter((v) => v !== ''),
 
         async readState(externalUserId: string): Promise<DirectoryAccountState> {
             const entry = await findAccount(externalUserId);

@@ -117,14 +117,20 @@ const NOOP_CLOSE = async (): Promise<void> => {};
 export function createSnapshotWriter(
     ctx: RequestContext,
     provider: string,
+    selfAccountIds: readonly string[] = [],
 ): DirectoryWriter {
     return {
         provider,
-        // The snapshot cannot know which account the connection binds as, and
-        // guessing would make a self-lockout refusal appear or vanish between
-        // the dry run and the real one. The pass supplies it from the
-        // connection instead, through the same rule the live writer uses.
-        selfAccountId: null,
+        // Supplied by the caller, from the same connection fields the live
+        // writer binds with. It used to be hardcoded `null` with a comment
+        // claiming "the pass supplies it from the connection instead" — the pass
+        // did not, and there was no parameter through which it could have. So
+        // the self-lockout refusal was a guard bound to nothing in the ONE mode
+        // every tenant runs for seven days.
+        //
+        // Defaulting to empty keeps the meaning honest for a caller that has no
+        // connection to read: no identities, so refuse nothing on this ground.
+        selfAccountIds,
 
         async readState(externalUserId: string): Promise<DirectoryAccountState> {
             const row = await runInTenantContext(ctx, (db) =>
@@ -188,6 +194,41 @@ function mergeConnection(conn: {
     return { ...config, ...secrets };
 }
 
+/**
+ * The bind identities a connection authenticates as, for the snapshot reader.
+ *
+ * Both binds, because a dedicated write bind does not make the read bind
+ * expendable — the nightly sync authenticates as it, and disabling it stops the
+ * sync, stales every link, and makes each later leaver pass refuse
+ * NO_FRESH_LINKS. Offboarding stops for everyone and the account that did it
+ * looks like an ordinary leaver in the report.
+ *
+ * DEGRADES RATHER THAN REFUSES. `bindDN` is a config field and needs no
+ * decryption; `writeBindDN` arrives as a secret. If the secret bag will not
+ * decrypt we keep what configJson alone can tell us and say so, because a dry
+ * run that protects one bind beats a dry run that protects neither. The LIVE
+ * path still refuses SECRETS_UNREADABLE by name — that judgement is unchanged
+ * and is made below, where a real write is at stake.
+ */
+function selfAccountIdsFromConnection(conn: {
+    configJson: unknown;
+    secretEncrypted: string | null;
+}): string[] {
+    let merged: Record<string, unknown>;
+    try {
+        merged = mergeConnection(conn);
+    } catch (err) {
+        merged = (conn.configJson ?? {}) as Record<string, unknown>;
+        logger.warn('dry-run self-account ids fell back to config: secrets did not decrypt', {
+            component: 'identity-writer-factory',
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    return [merged.writeBindDN, merged.bindDN]
+        .map((v) => String(v ?? '').trim())
+        .filter((v) => v !== '');
+}
+
 export interface ResolveWriterInput {
     readonly ctx: RequestContext;
     readonly provider: string;
@@ -215,11 +256,6 @@ export async function resolveDirectoryWriter(
         };
     }
 
-    // Observation needs no connection credentials at all — that is the point.
-    if (mode === 'DRY_RUN') {
-        return { kind: 'snapshot', writer: createSnapshotWriter(ctx, provider), close: NOOP_CLOSE };
-    }
-
     const conns = await runInTenantContext(ctx, (db) =>
         db.integrationConnection.findMany({
             where: { tenantId: ctx.tenantId, provider, isEnabled: true },
@@ -230,6 +266,31 @@ export async function resolveDirectoryWriter(
             take: 3,
         }),
     );
+
+    // OBSERVATION STILL NEEDS NO CREDENTIALS — but it does need to know which
+    // accounts it must never propose disabling, and only a connection can say.
+    //
+    // The read moved ABOVE this arm; the refusals below it did not. That
+    // distinction is the whole design. The argument for withholding a live
+    // writer from a dry run is about the CONSTRUCTOR — createEntraIdWriter
+    // refuses unless writesEnabled === true, and requiring that in order to run
+    // the observation rung would invert the ladder — and the constructors are
+    // still below. Reading a row inverts nothing.
+    //
+    // Promoting the refusals too would hand DRY_RUN three new ways to produce
+    // nothing (NO_CONNECTION / AMBIGUOUS_CONNECTION / SECRETS_UNREADABLE), each
+    // landing as NOT_APPLICABLE — so a two-connection or undecryptable-secret
+    // tenant would stop observing during the seven days it is REQUIRED to
+    // observe. A dry run that cannot name the bind account is worse than one
+    // that can; it is still far better than no dry run at all.
+    //
+    // Every enabled connection contributes, not just the first. With two, we
+    // hold two bind identities and no rule for choosing between them — and
+    // "protect both" is the only answer that cannot disable the wrong one.
+    if (mode === 'DRY_RUN') {
+        const selfIds = conns.flatMap((c) => selfAccountIdsFromConnection(c));
+        return { kind: 'snapshot', writer: createSnapshotWriter(ctx, provider, selfIds), close: NOOP_CLOSE };
+    }
 
     if (conns.length === 0) {
         return {

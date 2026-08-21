@@ -62,8 +62,29 @@ Pino is configured to redact these paths in log objects:
 
 ```
 authorization, cookie, password, secret, token, mfaCode,
-clientSecret, accessToken, refreshToken, idToken, privateKey, totpSecret
+clientSecret, accessToken, refreshToken, idToken, privateKey, totpSecret,
+externalUserId, distinguishedName, userPrincipalName, sAMAccountName,
+req.headers.authorization, req.headers.cookie
 ```
+
+The first group is credentials. The second is **directory identifiers**, which
+are not credentials — and that is why they were missing: the list was "things
+that authenticate", and an objectGUID or a bind DN does not authenticate
+anything. It identifies a person, in a line that carries no RLS, no tenant scope
+and no retention policy.
+
+**A redacted key is not a redacted line.** Pino matches a bare key at the ROOT
+level only, and it does not reach inside a string — so a field like
+`error: "Entra refused to disable account <guid>"` still carries the identifier
+next to the key that was scrubbed. Any log line whose `error` field can hold a
+directory provider's message must pass it through
+`redactDirectoryIdentifiers` from `@/lib/security/redact-directory-identifiers`
+first. Adding the key alone makes the line *look* sanitised, which is worse than
+leaving it visibly unsanitised, because nobody reads it twice.
+
+That function is shared with the leaver notification path deliberately. The rule
+is the same in both places, and a log is the weaker surface, not the stronger
+one: an email at least has a named recipient and a retention story.
 
 ---
 

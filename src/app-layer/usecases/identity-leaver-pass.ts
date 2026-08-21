@@ -31,10 +31,14 @@
  *
  * ═══ THE UNIT IS (TENANT, PROVIDER) ═══
  *
- * Not per connection. `ConnectedIdentityAccount` carries no `connectionId`, so
- * with two enabled connections for one provider there is no way to say which
- * directory an account came from — the factory refuses that outright rather than
- * addressing a disable at a forest the account may not live in.
+ * Not per connection — still. `ConnectedIdentityAccount` now RECORDS a
+ * `connectionId`, but it is nullable, and an account synced before the column
+ * existed or one whose connection was removed cannot say which directory it came
+ * from. So with two enabled connections for one provider the factory still
+ * refuses outright, rather than addressing a disable at a forest the account may
+ * not live in. The unit becomes per-connection when that column is mandatory and
+ * the factory resolves a writer per account; until then this comment describes
+ * a deliberate conservatism, not a missing column.
  *
  * @module usecases/identity-leaver-pass
  */
