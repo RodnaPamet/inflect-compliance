@@ -82,16 +82,18 @@ export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }:
     // construction: the recorder never throws, so a ledger problem cannot
     // deny a requester the document a human already approved.
     //
-    // The requester's identity is deliberately NOT copied here — it is
-    // recoverable by joining the TrustCenterAccessRequest row, and Epic C.4
-    // streams `detailsJson` to the tenant's SIEM verbatim.
+    // The context is the ACCESS REQUEST, not the document. That is what makes
+    // "who received it" answerable: the request row carries the approved
+    // requester, so an exposure report on this channel can name a person
+    // rather than only a file. Recording the fileRecordId as context would
+    // have said nothing the entry does not already carry.
     await recordFileDistribution({
         tenantId: file.tenantId,
         fileRecordId: file.id,
         sha256: file.sha256,
         channel: 'TRUST_CENTER_DOWNLOAD',
-        contextType: 'TrustCenterDocument',
-        contextId: file.id,
+        contextType: 'TrustCenterAccessRequest',
+        contextId: resolved.accessRequestId,
         signedUrlExpiresAt: new Date(Date.now() + TRUST_DOWNLOAD_URL_TTL_SECONDS * 1000),
     });
 

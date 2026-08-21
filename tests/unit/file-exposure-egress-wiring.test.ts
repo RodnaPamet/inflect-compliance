@@ -128,7 +128,7 @@ beforeEach(() => {
     };
     createSignedDownloadUrlMock.mockResolvedValue('https://signed.example/blob');
     readStreamMock.mockImplementation(() => bufStream('bytes'));
-    consumeDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1' });
+    consumeDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1', accessRequestId: 'tcar-77' });
     trustFindUnique.mockResolvedValue({
         id: 'file-1',
         tenantId: 'tenant-1',
@@ -209,6 +209,13 @@ describe('trust-center download — the unauthenticated egress is recorded', () 
             fileRecordId: 'file-1',
             sha256: 'b'.repeat(64),
             channel: 'TRUST_CENTER_DOWNLOAD',
+            // The CONTEXT is the access request, not the document. That is the
+            // whole point on this channel: the request row carries the approved
+            // requester, so an exposure report here can name a person. Pointing
+            // context at the fileRecordId would repeat what the entry already
+            // holds and answer nobody's question.
+            contextType: 'TrustCenterAccessRequest',
+            contextId: 'tcar-77',
         });
         // The signed URL is the bearer credential from here on. Recording WHEN
         // it dies is what turns "a URL is out there" into a bounded window.
