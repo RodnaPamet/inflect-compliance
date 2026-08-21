@@ -242,6 +242,17 @@ export interface EvidenceExpiryMonitorPayload {
     windows?: number[];
 }
 
+/**
+ * Evidence stale-review sweep — flip past-due APPROVED evidence to NEEDS_REVIEW.
+ *
+ * Deliberately mirrors `EvidenceExpiryMonitorPayload`'s optional-tenant shape:
+ * omitting `tenantId` sweeps every tenant in one `updateMany`, which is what the
+ * cron does.
+ */
+export interface EvidenceStaleReviewSweepPayload {
+    tenantId?: string;
+}
+
 /** Notification dispatch — monitor → grouped digest → outbox pipeline */
 export interface NotificationDispatchPayload {
     tenantId?: string;
@@ -620,6 +631,7 @@ export interface JobPayloadMap {
     'vendor-monitoring': VendorMonitoringPayload;
     'deadline-monitor': DeadlineMonitorPayload;
     'evidence-expiry-monitor': EvidenceExpiryMonitorPayload;
+    'evidence-stale-review-sweep': EvidenceStaleReviewSweepPayload;
     'notification-dispatch': NotificationDispatchPayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
@@ -1060,6 +1072,12 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 500,
     },
     'evidence-expiry-monitor': {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'evidence-stale-review-sweep': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,

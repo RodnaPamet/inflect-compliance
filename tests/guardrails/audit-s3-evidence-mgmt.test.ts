@@ -82,35 +82,16 @@ describe('Audit S3 — Evidence Management & Retention', () => {
         });
     });
 
-    describe('stale-review sweep usecase', () => {
-        const src = read(
-            'src/app-layer/usecases/evidence-stale-review-sweep.ts',
-        );
-
-        it('exports `runEvidenceStaleReviewSweep`', () => {
-            expect(src).toMatch(
-                /export async function runEvidenceStaleReviewSweep/,
-            );
-        });
-
-        it('issues an `updateMany` against APPROVED + past-due rows', () => {
-            expect(src).toMatch(/updateMany\(/);
-            expect(src).toMatch(/status:\s*['"]APPROVED['"]/);
-            expect(src).toMatch(/nextReviewDate:\s*\{[\s\S]{0,80}lt:\s*now/);
-        });
-
-        it('writes status: NEEDS_REVIEW', () => {
-            expect(src).toMatch(/data:\s*\{\s*status:\s*['"]NEEDS_REVIEW['"]/);
-        });
-
-        it('respects tenantId scoping (single-tenant + sweep-all)', () => {
-            expect(src).toMatch(/tenantId\?\:\s*string/);
-            expect(src).toMatch(/options\.tenantId\s*\?/);
-        });
-
-        it('runs under the job-runner wrapper', () => {
-            expect(src).toMatch(/runJob\(/);
-            expect(src).toMatch(/['"]evidence-stale-review-sweep['"]/);
-        });
-    });
+    // The `stale-review sweep usecase` block that stood here asserted five
+    // things about the SOURCE TEXT of evidence-stale-review-sweep.ts — that it
+    // exports the function, issues an updateMany, writes NEEDS_REVIEW, and so
+    // on. Every one of them passed for three months against a usecase that was
+    // never registered, never scheduled and never called.
+    //
+    // All five are covered behaviourally by
+    // tests/unit/usecases/evidence-stale-review-sweep.test.ts, and the wiring
+    // the greps could not see is covered by
+    // tests/unit/jobs/evidence-stale-review-sweep-wiring.test.ts. Deleted
+    // rather than kept alongside: a duplicate that cannot fail is worse than
+    // no test, because it makes the row look covered.
 });

@@ -629,6 +629,27 @@ executorRegistry.register('evidence-expiry-monitor', async (payload) => {
     return result;
 });
 
+// ── evidence-stale-review-sweep ──────────────────────────────────────
+//
+// Scheduled at 06:30 UTC, thirty minutes BEFORE `notification-dispatch`.
+// That ordering is the point: the sweep flips past-due APPROVED evidence to
+// NEEDS_REVIEW, and the 07:00 dispatch is what tells the owner. Run it after,
+// and every owner learns a day late.
+
+executorRegistry.register('evidence-stale-review-sweep', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runEvidenceStaleReviewSweep } = await import(
+        '@/app-layer/usecases/evidence-stale-review-sweep'
+    );
+    const result = await runEvidenceStaleReviewSweep({ tenantId: payload.tenantId });
+    return makeResult(
+        'evidence-stale-review-sweep', startedAt, startMs,
+        result.transitioned, result.transitioned, 0,
+        { transitioned: result.transitioned },
+    );
+});
+
 // ── notification-dispatch ────────────────────────────────────────────
 
 executorRegistry.register('notification-dispatch', async (payload) => {

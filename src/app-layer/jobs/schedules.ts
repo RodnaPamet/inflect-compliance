@@ -263,6 +263,13 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'evidence-stale-review-sweep',
+        pattern: '30 6 * * *',    // daily at 06:30 UTC (before notification-dispatch at 07:00)
+        description: 'Transition APPROVED evidence past its nextReviewDate to NEEDS_REVIEW, so the 07:00 dispatch tells the owner the same morning',
+        // Empty: no tenantId means sweep every tenant in one updateMany.
+        defaultPayload: {},
+    },
+    {
         name: 'notification-dispatch',
         pattern: '0 7 * * *',     // daily at 07:00 UTC (single-pass: runs monitors internally)
         description: 'Single-pass pipeline: run all monitors → group by owner → dispatch digest notifications. Replaces separate monitor+dispatch schedule to prevent duplicate DB scans.',
