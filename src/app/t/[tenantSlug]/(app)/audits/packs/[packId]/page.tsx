@@ -21,6 +21,7 @@ import { useCelebration, useToast } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { scopedMilestone } from '@/lib/celebrations';
 import { Package, MessageSquare } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -97,6 +98,15 @@ export default function PackDetailPage() {
     // even for enum members we haven't explicitly mapped.
     const localizeEnum = (prefix: string, value: string): string =>
         tx.has(`${prefix}.${value}`) ? tx(`${prefix}.${value}`) : humanizeSnakeCase(value);
+
+    // #97 — the pack stepper's order, and the one call site of the
+    // published-order-or-nothing axis. Packs have NO list route: the cycle
+    // detail page's pack cards are the only surface that renders a pack list,
+    // and it publishes that order under `audits.packs()`. A null `listKey`
+    // means there is no fallback read — arriving at a pack by deep link
+    // (share notification, bookmark) publishes nothing, so the arrows hide
+    // rather than inventing an order the user never saw.
+    const packIds = useEntityListIds(null, { orderKey: CACHE_KEYS.audits.packs() });
 
     const [resolvingId, setResolvingId] = useState<string | null>(null);
     const [freezeConfirmOpen, setFreezeConfirmOpen] = useState(false);
@@ -470,6 +480,12 @@ export default function PackDetailPage() {
             breadcrumbs={breadcrumbs}
 
             title={<span id="pack-name">{pack.name}</span>}
+            prevNext={{
+                ids: packIds,
+                currentId: packId,
+                hrefFor: (id) => `/t/${tenantSlug}/audits/packs/${id}`,
+                labelSingular: 'pack',
+            }}
             meta={
                 <MetaStrip
                     items={[

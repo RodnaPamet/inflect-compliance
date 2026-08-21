@@ -30,6 +30,7 @@ import { useToast } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { AUDIT_CYCLE_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/status-variants';
 import { ReadinessScoreRing, ReadinessLegend } from './ReadinessScoreRing';
 
@@ -137,6 +138,18 @@ export default function AuditCyclesPage() {
     );
     const cycles = overviewQuery.data?.cycles ?? [];
     const scores = overviewQuery.data?.scoresByCycleId ?? {};
+    // #97 — publish the cycle order this page RENDERS, for the detail
+    // page's prev/next stepper. The cards below map `cycles` straight through
+    // with no client-side sort or filter, so the published order is the card
+    // order by construction.
+    //
+    // Note the two keys are deliberately different: this page reads
+    // `/audits/readiness/overview` (the cycle list joined with scores) but
+    // publishes under `CACHE_KEYS.audits.cycles()`, the key the cycle DETAIL
+    // page steps on. Without this call that detail page falls back to the
+    // bare `/audits/cycles` cache entry — which this page never populates, so
+    // it holds whatever the audits-hub cycle picker last fetched, or nothing.
+    usePublishDisplayedOrder(CACHE_KEYS.audits.cycles(), cycles);
     const loading = overviewQuery.isLoading;
     // A failed load must NOT fall through to the "create your first cycle"
     // empty state — that misreads an outage as a first-run. The two stay
