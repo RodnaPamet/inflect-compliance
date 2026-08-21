@@ -723,6 +723,80 @@ import { Readable } from 'stream';
 import { env } from '@/env';
 
 /**
+ * A hash that was ever quarantined stays poisoned — on EVERY path that accepts
+ * user-supplied bytes.
+ *
+ * The inline scan reports what the engine knows at this instant. The whole
+ * reason the AV webhook exists is that a verdict can arrive later — and a
+ * verdict that arrives later has to survive the NEXT arrival of the same
+ * bytes. Quarantine moves the row to `status: 'FAILED'`, so the condemned hash
+ * used to fall straight out of a `status: 'STORED'` dedup lookup and the
+ * identical bytes re-entered as a fresh PENDING row that nothing had scanned.
+ * `findBySha256` now returns the quarantined row (the fix is there, not in the
+ * quarantine, which stays atomic); this is where the arrival is refused.
+ *
+ * ONE helper rather than a copy per path, for two reasons that are not tidiness:
+ *   - the audit `action` and `disposition` are literal SIEM contract, and two
+ *     copies drift — a rule written against the upload wording would then miss
+ *     the same threat arriving through replace;
+ *   - `replaceEvidenceFile` had no hash lookup AT ALL, so the "verdict arrives
+ *     later" story #118 established for upload simply did not exist for the
+ *     path that swaps bytes under an already-APPROVED evidence row.
+ *
+ * The gate runs OUTSIDE the caller's write transaction on purpose. The refusal
+ * is a security event, and an audit row written inside a transaction that then
+ * throws rolls back with it — the same reason `scanUploadOrRefuse` audits
+ * before it throws.
+ *
+ * Returns normally when the hash is unknown or carries a non-INFECTED verdict;
+ * throws `badRequest('FILE_INFECTED')` otherwise, after dropping the copy the
+ * caller has already written to storage.
+ */
+async function refuseIfHashKnownInfected(
+    ctx: RequestContext,
+    storage: ReturnType<typeof getStorageProvider>,
+    written: { sha256: string; sizeBytes: number },
+    arrival: {
+        pathKey: string;
+        originalName: string;
+        /** How these bytes turned up, for the audit detail line only. */
+        via: 're-upload' | 'replacement';
+    },
+): Promise<void> {
+    const known = await runInTenantContext(ctx, async (db) => {
+        const row = await FileRepository.findBySha256(db, ctx.tenantId, written.sha256);
+        if (row?.scanStatus !== 'INFECTED') return null;
+
+        const detail = `Refused ${arrival.via} of quarantined content: ${arrival.originalName}`;
+        await logEvent(db, ctx, {
+            // Same action string the webhook and the inline refusal use, so
+            // one SIEM rule catches every disposition of the same threat.
+            action: 'FILE_QUARANTINED',
+            entityType: 'FileRecord',
+            entityId: row.id,
+            details: detail,
+            detailsJson: {
+                category: 'access',
+                operation: 'login',
+                detail,
+                sha256: written.sha256,
+                sizeBytes: written.sizeBytes,
+                disposition: 'refused_known_infected_hash',
+            },
+        });
+        return row;
+    });
+    if (!known) return;
+
+    // The bytes are in the bucket already — drop that copy rather than leave
+    // known malware behind. Best-effort, as on the dedup path: a failed delete
+    // leaks one orphan for the GC sweep and must not change the refusal the
+    // caller sees.
+    try { await storage.delete(arrival.pathKey); } catch { /* best-effort orphan cleanup — see reason above */ }
+    throw badRequest('FILE_INFECTED', 'This file was rejected by the malware scanner.');
+}
+
+/**
  * Upload a file and create an Evidence record of type FILE in one flow.
  * Streams to disk + computes SHA-256 + creates FileRecord + Evidence.
  * Supports SHA-256 dedup: reuses existing FileRecord if same hash+tenant.
@@ -783,51 +857,16 @@ export async function uploadEvidenceFile(
     const readable = Readable.from(buffer);
     const writeResult = await storage.write(pathKey, readable, { mimeType });
 
-    // A hash that was ever quarantined stays poisoned.
-    //
-    // The scan above reports what the engine knows at this instant. The whole
-    // reason the AV webhook exists is that a verdict can arrive later — and a
-    // verdict that arrives later has to survive the NEXT upload of the same
-    // bytes. It did not: quarantine moves the row to `status: 'FAILED'`, the
-    // dedup lookup matched STORED only, so the condemned hash fell out of the
-    // index and the identical bytes re-entered as a fresh PENDING row that
-    // nothing had scanned. `findBySha256` now returns the quarantined row
-    // (the fix is there, not in the quarantine, which stays atomic); this is
-    // where the re-upload is refused.
-    //
-    // The gate sits OUTSIDE the transaction below on purpose. The refusal is a
-    // security event, and an audit row written inside a transaction that then
-    // throws rolls back with it — the same reason `scanUploadOrRefuse` audits
-    // before it throws.
-    const knownInfected = await runInTenantContext(ctx, async (db) => {
-        const known = await FileRepository.findBySha256(db, ctx.tenantId, writeResult.sha256);
-        if (known?.scanStatus !== 'INFECTED') return null;
-        await logEvent(db, ctx, {
-            // Same action string the webhook and the upload-time refusal use,
-            // so one SIEM rule catches every disposition of the same threat.
-            action: 'FILE_QUARANTINED',
-            entityType: 'FileRecord',
-            entityId: known.id,
-            details: `Refused re-upload of quarantined content: ${originalName}`,
-            detailsJson: {
-                category: 'access',
-                operation: 'login',
-                detail: `Refused re-upload of quarantined content: ${originalName}`,
-                sha256: writeResult.sha256,
-                sizeBytes: writeResult.sizeBytes,
-                disposition: 'refused_known_infected_hash',
-            },
-        });
-        return known;
-    });
-    if (knownInfected) {
-        // The bytes are in the bucket already — drop that copy rather than
-        // leave known malware behind. Best-effort, as on the dedup path: a
-        // failed delete leaks one orphan for the GC sweep and must not change
-        // the refusal the caller sees.
-        try { await storage.delete(pathKey); } catch { /* best-effort orphan cleanup — see reason above */ }
-        throw badRequest('FILE_INFECTED', 'This file was rejected by the malware scanner.');
-    }
+    // A hash that was ever quarantined stays poisoned. Sits before the dedup
+    // arm below, so condemned bytes are refused rather than re-admitted as a
+    // fresh row. See `refuseIfHashKnownInfected` for why it is one shared
+    // helper and why it runs outside the transaction.
+    await refuseIfHashKnownInfected(
+        ctx,
+        storage,
+        { sha256: writeResult.sha256, sizeBytes: writeResult.sizeBytes },
+        { pathKey, originalName, via: 're-upload' },
+    );
 
     // EP-3 — normalise the control association (many-to-many + legacy single).
     const requestedControlIds = normalizeControlIds(metadata.controlIds, metadata.controlId);
@@ -1184,6 +1223,19 @@ export async function replaceEvidenceFile(ctx: RequestContext, evidenceId: strin
 
     const readable = Readable.from(buffer);
     const writeResult = await storage.write(pathKey, readable, { mimeType });
+
+    // Same gate the upload path runs — a verdict that arrived after the last
+    // upload of these bytes has to hold here too. This path had NO hash lookup
+    // at all, so bytes the scanner had already condemned took the create
+    // branch unchallenged and landed under an existing evidence row, one that
+    // may already carry an APPROVED badge. A hash refused at one of two doors
+    // is not refused; #118 locked the upload door, this locks the other.
+    await refuseIfHashKnownInfected(
+        ctx,
+        storage,
+        { sha256: writeResult.sha256, sizeBytes: writeResult.sizeBytes },
+        { pathKey, originalName, via: 'replacement' },
+    );
 
     const result = await runInTenantContext(ctx, async (db) => {
         // New FileRecord, chained to the one it supersedes.
