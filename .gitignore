@@ -132,8 +132,18 @@ cred-list.txt
 *.cpuprofile
 *.pid
 
-# Claude Code runtime state
-.claude/
+# Claude Code runtime state. Ignored as CONTENTS (`.claude/*`) rather than as a
+# directory, because git cannot re-include anything beneath an excluded
+# directory — `.claude/` + `!.claude/skills/` silently keeps skills ignored,
+# since git never descends far enough to see the negation.
+#
+# `.claude/worktrees/` stays ignored and that is load-bearing: it holds FULL
+# checkouts of this repo, and #2094 exists because scanners that walked them
+# reported the repo's own copies as violations.
+.claude/*
+# Skills are source, not runtime state: reviewed in PRs, and the only thing here
+# that must survive an ephemeral execution environment.
+!.claude/skills/
 
 # Terraform — runtime/state/plan artefacts must never land in git.
 # The full set lives in infra/terraform/.gitignore; these root-level

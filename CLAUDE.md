@@ -775,6 +775,92 @@ the reasoning behind plan limits, the failure-shape contract
 do" list (no UI-only gating, no second mode-detection mechanism, no
 duplicating the limits table).
 
+### Identity lifecycle — JML (joiner / mover / leaver)
+
+The subsystem that can **disable accounts in a customer's own directory**. It is
+the highest-blast-radius capability in the product, and it is deliberately
+throttled: the leaver pass is clamped in source at `DRY_RUN`, and the joiner is
+not implemented at all.
+
+**The chain is three scheduled jobs, and the order is load-bearing.**
+
+```
+03:00 UTC  identity-sync-dispatch    per enabled okta / google-workspace / entra-id / active-directory connection
+04:00 UTC  hris-sync-dispatch        per enabled bamboohr / workday connection  (roster → Employee)
+05:00 UTC  identity-leaver-dispatch  per (tenant, provider) over WRITABLE_IDENTITY_PROVIDERS
+```
+
+The pass acts only on links a **complete** sync re-observed, so 05:00 sits after
+03:00 on purpose. **Declaration order in `SCHEDULED_JOBS` is NOT execution
+order** — only the cron pattern is; reading `schedules.ts` top-to-bottom gives
+the wrong sequence.
+
+**Each table has exactly one write seam. Do not add a second.**
+
+| Table | Written by |
+| --- | --- |
+| `ConnectedIdentityAccount` | `identity-sync.ts` (upsert + the deprovision `updateMany`) and `identity-account-protection.ts` (the never-offboard flag) — nothing else |
+| `IdentityAccountLink` | `identity-account-link.ts::reconcileIdentityAccountLinks`, whose ONLY caller is `reconcileLinksAfterSync` inside `runIdentitySyncJob` |
+| `Employee` | `personnel.ts::createEmployee` (MANUAL) and `hris-sync.ts` (HRIS). There is **no update path** for an employee's status outside HRIS sync |
+
+**The link reconcile lives in the JOB, not the usecase.** `runIdentitySync` (which
+the manual "Sync now" route calls) enumerates the directory; `runIdentitySyncJob`
+enumerates *and then* reconciles links. So a manual sync fills the roster and
+creates no links, and the next pass refuses `NO_FRESH_LINKS`. Any new caller that
+needs links must go through the job, or the seam moves.
+
+Reconcile is gated on the sync returning `PASSED` — a `PARTIAL` (resumable) or
+`ERROR` (truncated at the 5000-account cap) sync creates no links. Matching is
+**exact normalised email** between `Employee.workEmail` and
+`ConnectedIdentityAccount.email`, and only when exactly one employee holds that
+address. For Entra that address is `u.mail || u.userPrincipalName`.
+
+**The write-mode ladder** (`DISABLED → DRY_RUN → PROPOSE → AUTOMATIC`) is stored
+per direction on `TenantSecuritySettings.identity{Leaver,Joiner}Mode`, defaulting
+to `DISABLED`. `setIdentityWriteMode` in `usecases/identity-write-policy.ts`
+refuses multi-rung widening and refuses to leave `DRY_RUN` before
+`DRY_RUN_MIN_DAYS` (7). **Narrowing is always allowed**, and any move out of
+`DRY_RUN` — including narrowing — nulls `dryRunSince` and restarts the clock.
+
+`LEAVER_MAX_MODE = 'DRY_RUN'` is a **source constant, not config**, enforced at
+gate 1 of `runIdentityLeaverPass`. The ladder itself does not enforce it: a tenant
+can be stored at `PROPOSE`/`AUTOMATIC` and every pass will refuse
+`MODE_ABOVE_CLAMP`. The admin route reports the clamp to the UI in a `honoured`
+block so the surface can warn rather than accept a value the system discards.
+Raising the clamp must be a diff somebody reviews.
+
+**Both ladder refusals are the only ones that write no `IntegrationExecution`
+row** — they emit a metric and a log line, but nothing lands on
+`/admin/identity-leaver-passes`. Every other refusal records a
+`NOT_APPLICABLE` row naming its reason. This asymmetry is why a tenant left at
+`DISABLED` looks identical, from inside the product, to a dead worker.
+
+**In `DRY_RUN` no directory writer is constructed.** `resolveDirectoryWriter`
+returns the snapshot arm before the live Entra writer, so a dry run needs neither
+`writesEnabled` nor `User.EnableDisableAccount.All` and opens no socket. It does
+still decrypt the connection secret (for self-account ids) and degrades to
+config-only with a WARN if that fails. Consequence worth knowing: `beginWrite` on
+the write journal sits *below* the dry-run early return, so
+**`IdentityWriteJournal` has no reachable caller today** — do not treat journal
+rows as evidence a pass ran.
+
+**Refusal order matters when reading an outcome.** `ALREADY_DISABLED` is checked
+before the write-target rail, so an account that last synced as suspended returns
+silently. `onPremisesSyncEnabled` maps absent/null to `null`, which the target
+rail refuses as never-observed — an unflagged directory yields `REFUSED_TARGET`
+on every candidate, which is the rail working, not a broken sync.
+
+**Adding to this subsystem:** a new writable provider goes in
+`WRITABLE_IDENTITY_PROVIDERS` and needs a writer plus an entry in the factory's
+refusal set; a new directory provider that only reads goes in
+`IDENTITY_PROVIDERS` in `jobs/identity-sync.ts` (and the two other copies of that
+list — they are not shared). Follow
+[docs/new-subsystem-checklist.md](docs/new-subsystem-checklist.md) as usual.
+
+When the chain produces nothing, the causes are numerous and all present
+identically as an empty page — use the `identity-chain-diagnostic` skill rather
+than guessing.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

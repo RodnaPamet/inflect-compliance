@@ -97,12 +97,26 @@ describe('repo file population — what a source scan is allowed to see', () => 
         // one ignored tree guaranteed to exist while these tests run — if a
         // future change swapped `--exclude-standard` for a hand list, ~200k
         // paths would appear here.
+        //
+        // `.claude/` is NOT wholly ignored: `.gitignore` ignores its CONTENTS and
+        // re-includes `.claude/skills/`, which is reviewed source. So the check is
+        // by subtree rather than by the `.claude/` prefix — narrowing it to the
+        // tree that actually holds repo copies, and still failing if some OTHER
+        // part of `.claude/` is un-ignored later.
         const leaked = repoRelativeFiles().filter(
-            (rel) => rel.startsWith('node_modules/') || rel.startsWith('.claude/'),
+            (rel) =>
+                rel.startsWith('node_modules/') ||
+                rel.startsWith('.claude/worktrees/') ||
+                (rel.startsWith('.claude/') && !rel.startsWith('.claude/skills/')),
         );
         expect(leaked).toEqual([]);
         // …and the list is not empty, so the assertion above is not vacuous.
         expect(repoRelativeFiles().length).toBeGreaterThan(1000);
+        // The re-inclusion is real and still working — without this, deleting the
+        // `!.claude/skills/` negation would make the assertion above pass by
+        // emptiness, silently un-shipping every committed skill.
+        expect(repoRelativeFiles().filter((r) => r.startsWith('.claude/skills/')).length)
+            .toBeGreaterThan(0);
     });
 
     it('narrows by subtree on path segments, not on a bare string prefix', () => {
