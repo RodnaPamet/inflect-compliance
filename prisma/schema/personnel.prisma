@@ -40,12 +40,14 @@ model ConnectedIdentityAccount {
   /// reconcile could only scope itself by `provider`, so every connection marked
   /// every OTHER connection's accounts DEPROVISIONED, both passes reporting PASSED.
   ///
-  /// NULLABLE, and the null means something specific: "observed before this column
-  /// existed, or the observing connection has since been deleted". It is NOT "belongs
-  /// to every connection" — code that treats it that way re-creates the bug. See the
-  /// reconcile in identity-sync.ts for the one place null is deliberately included,
-  /// and why that is only safe when the tenant has a single connection.
-  connectionId          String?
+  /// REQUIRED as of phase 2. It was nullable for exactly one release, so that the
+  /// containers running during phase 1's rolling deploy — which knew nothing about
+  /// the column — could keep upserting through the old unique key. That window has
+  /// closed: the phase-1 image is deployed and production holds zero NULLs.
+  ///
+  /// An account with no connection is not a thing this product can represent. It
+  /// was observed by a sync, and a sync is a connection doing the observing.
+  connectionId          String
   /// Never offboard this account automatically, whatever the HR feed says.
   ///
   /// The break-glass rail. `disableAccount` already refuses when told an account
@@ -80,19 +82,26 @@ model ConnectedIdentityAccount {
   updatedAt             DateTime               @updatedAt
 
   tenant          Tenant                          @relation(fields: [tenantId], references: [id])
-  connection      IntegrationConnection?          @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  // Cascade, not SetNull: the column is required now, so an orphan cannot be
+  // represented. Deleting a connection deletes the roster it observed — which is
+  // the truthful outcome, since those rows were only ever that connection's
+  // account of a directory it no longer reaches.
+  connection      IntegrationConnection           @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   reviewDecisions AccessReviewConnectedDecision[]
   identityLink    IdentityAccountLink?
 
-  // DELIBERATELY still keyed on `provider`, not `connectionId`, and this is a
-  // transitional state rather than the end state. Old containers in a rolling
-  // deploy upsert through this exact compound key; dropping it in the same
-  // release that introduces the column would fail their writes outright. The
-  // swap to [tenantId, connectionId, externalUserId] + NOT NULL is a second,
-  // separate migration, and it is the one that also has to scope
-  // createSnapshotWriter's readState — which is unambiguous ONLY while this
-  // unique stands.
-  @@unique([tenantId, provider, externalUserId])
+  // PHASE 2: the grain is the connection, not the provider.
+  //
+  // Two directory connections for one provider are a supported configuration —
+  // IntegrationConnection is unique on (tenantId, provider, NAME) — so an account
+  // is identified by WHICH directory it came from, not merely by which kind. The
+  // old (tenantId, provider, externalUserId) key made two forests collide on one
+  // row and is what forced the deprovision reconcile to be provider-scoped.
+  //
+  // Retiring it also closes the residual phase 1 left standing: two connections
+  // pointed at the SAME directory used to collide on upsert with a P2002, which
+  // was a visible failure rather than corruption, but a failure nonetheless.
+  @@unique([tenantId, connectionId, externalUserId])
   @@index([tenantId, provider])
   @@index([tenantId, status])
   @@index([tenantId, connectionId])

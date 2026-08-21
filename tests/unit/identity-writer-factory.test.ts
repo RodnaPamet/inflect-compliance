@@ -101,17 +101,45 @@ describe('DRY_RUN never touches the directory', () => {
         expect(r.writer.selfAccountIds).toEqual(['CN=svc-read,DC=corp']);
     });
 
-    it('refuses nothing extra in DRY_RUN when there is no connection to read', async () => {
-        // The refusal arms stay BELOW the dry-run return on purpose. Promoting
-        // them would give observation three new ways to produce nothing, so a
-        // tenant with no connection — or two, or undecryptable secrets — would
-        // stop observing during the seven days it is required to observe.
+    it('DOES refuse NO_CONNECTION in DRY_RUN — reversed deliberately in phase 2', async () => {
+        // This test asserted the OPPOSITE one release ago, and the reversal is
+        // the point rather than a regression.
+        //
+        // Phase 1's reasoning was sound for phase 1: the snapshot reader answered
+        // from stored rows, so it could still observe usefully with zero
+        // connections, and refusing would have stopped a tenant observing during
+        // seven days it is REQUIRED to observe.
+        //
+        // Phase 2 makes that false. `connectionId` is NOT NULL and an account is
+        // keyed (tenantId, connectionId, externalUserId), so the reader needs one
+        // connection to scope by. With none there are no account rows either — a
+        // row exists because a connection's sync created it — so every candidate
+        // would come back "no observed directory record": a FAILED per account
+        // instead of one named refusal for the run. And since #2066 the refusal
+        // is RECORDED, so it appears in the seven-day artefact rather than being
+        // silence.
         mockDb.integrationConnection.findMany.mockResolvedValue([]);
         const r = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'DRY_RUN' });
 
+        expect(r.kind).toBe('none');
+        if (r.kind !== 'none') return;
+        expect(r.refusal).toBe('NO_CONNECTION');
+    });
+
+    it('still DEGRADES rather than refuses when the secrets will not decrypt', async () => {
+        // The other half of phase 1's argument survives intact, and this is the
+        // line that proves the reversal above was scoped rather than wholesale:
+        // SECRETS_UNREADABLE stays BELOW the dry-run arm, so an undecryptable
+        // secret still yields a dry run with the config-only bind protected
+        // instead of no dry run at all.
+        mockDb.integrationConnection.findMany.mockResolvedValue([
+            { id: 'c1', configJson: { bindDN: 'CN=svc-read,DC=corp' }, secretEncrypted: 'BROKEN' },
+        ]);
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });
+
         expect(r.kind).toBe('snapshot');
         if (r.kind !== 'snapshot') return;
-        expect(r.writer.selfAccountIds).toEqual([]);
+        expect(r.writer.selfAccountIds).toEqual(['CN=svc-read,DC=corp']);
     });
 
     it('keeps observing when the secrets will not decrypt, with what config alone can say', async () => {
@@ -132,8 +160,27 @@ describe('DRY_RUN never touches the directory', () => {
 });
 
 describe('the snapshot reader', () => {
+    it('SCOPES its read to the connection, not just the provider', () => {
+        // Phase 2 keys an account on (tenantId, connectionId, externalUserId), so
+        // the same externalUserId can legitimately exist under two connections —
+        // two forests, two rows, two different accounts. Reading by provider alone
+        // would return whichever Prisma ordered first, and a dry run would report
+        // a decision about the wrong directory.
+        return createSnapshotWriter(ctx, 'active-directory', 'conn-9')
+            .readState('ext-1')
+            .then(() => {
+                const where = mockDb.connectedIdentityAccount.findFirst.mock.calls.at(-1)![0].where;
+                expect(where).toMatchObject({
+                    tenantId: 't1',
+                    provider: 'active-directory',
+                    connectionId: 'conn-9',
+                    externalUserId: 'ext-1',
+                });
+            });
+    });
+
     it('reports enabled from the observed status, for both writable providers', async () => {
-        const w = createSnapshotWriter(ctx, 'entra-id');
+        const w = createSnapshotWriter(ctx, 'entra-id', 'conn-1');
         expect((await w.readState('ext-1')).enabled).toBe(true);
 
         mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
@@ -150,7 +197,7 @@ describe('the snapshot reader', () => {
             updatedAt: new Date(),
             onPremisesSyncEnabled: null,
         });
-        expect((await createSnapshotWriter(ctx, 'entra-id').readState('ext-1')).enabled).toBe(false);
+        expect((await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1')).enabled).toBe(false);
     });
 
     it('marks its evidence stale, so nothing settles a journal row from it', async () => {
@@ -158,13 +205,13 @@ describe('the snapshot reader', () => {
         // inferred from the account being disabled NOW. Sound from a live read;
         // unsound from data up to a day old — an account re-enabled this
         // morning still reads SUSPENDED in last night's snapshot.
-        const state = await createSnapshotWriter(ctx, 'entra-id').readState('ext-1');
+        const state = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
         expect(state.priorState).toMatchObject({ source: 'SNAPSHOT', staleEvidence: true });
     });
 
     it('refuses an account the last complete sync never saw', async () => {
         mockDb.connectedIdentityAccount.findFirst.mockResolvedValue(null);
-        await expect(createSnapshotWriter(ctx, 'entra-id').readState('ghost')).rejects.toBeInstanceOf(
+        await expect(createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ghost')).rejects.toBeInstanceOf(
             DirectoryWriteError,
         );
     });
@@ -172,7 +219,7 @@ describe('the snapshot reader', () => {
     it('THROWS on disable rather than quietly doing nothing', async () => {
         // A silent no-op would make a mode bug — a pass above DRY_RUN handed the
         // observation writer — look exactly like a successful dry run.
-        const err = await createSnapshotWriter(ctx, 'entra-id')
+        const err = await createSnapshotWriter(ctx, 'entra-id', 'conn-1')
             .disable('ext-1', { enabled: true, priorState: {} })
             .catch((e: unknown) => e);
         expect(err).toBeInstanceOf(DirectoryWriteError);

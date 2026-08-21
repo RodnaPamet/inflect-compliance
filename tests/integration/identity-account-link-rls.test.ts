@@ -46,6 +46,10 @@ async function clearOwnRows(): Promise<void> {
     const tenants = { tenantId: { in: [T1, T2] } };
     await prisma.identityAccountLink.deleteMany({ where: tenants });
     await prisma.connectedIdentityAccount.deleteMany({ where: tenants });
+    // Accounts first, then their connections. The FK cascades, so the order is
+    // not strictly required — but a cleanup that leans on cascade ordering stops
+    // being a cleanup the moment someone changes the FK.
+    await prisma.integrationConnection.deleteMany({ where: tenants });
     await prisma.employee.deleteMany({ where: tenants });
     await prisma.tenant.deleteMany({ where: { id: { in: [T1, T2] } } });
 }
@@ -62,10 +66,16 @@ beforeAll(async () => {
         const employee = await prisma.employee.create({
             data: { tenantId: t, fullName: `Worker ${t}`, workEmail: `worker@${t}.test` },
         });
+        // `connectionId` is required as of phase 2 — an account exists because a
+        // connection's sync observed it, and the schema now says so.
+        const oktaConn = await prisma.integrationConnection.create({
+            data: { tenantId: t, provider: 'okta', name: `okta-${t}`, configJson: {} },
+        });
         const account = await prisma.connectedIdentityAccount.create({
             data: {
                 tenantId: t,
                 provider: 'okta',
+                connectionId: oktaConn.id,
                 externalUserId: `ext-${t}`,
                 email: `worker@${t}.test`,
                 syncedAt: new Date(),
@@ -200,10 +210,17 @@ describe('one account belongs to at most one worker', () => {
     it('but one worker may hold SEVERAL accounts', async () => {
         // Entra + Okta + on-prem AD for one person; disabling all of them is
         // the point. A unique on employeeId would have broken this.
+        // A different provider means a different connection, which is exactly the
+        // shape phase 2 made explicit: the second account is not "the same person
+        // again", it is another directory's record of them.
+        const entraConn = await prisma.integrationConnection.create({
+            data: { tenantId: T1, provider: 'entra-id', name: `entra-${T1}`, configJson: {} },
+        });
         const second = await prisma.connectedIdentityAccount.create({
             data: {
                 tenantId: T1,
                 provider: 'entra-id',
+                connectionId: entraConn.id,
                 externalUserId: 'ext-one-entra',
                 email: `worker@${T1}.test`,
                 syncedAt: new Date(),
@@ -234,10 +251,14 @@ describe('a link dies with either side it describes', () => {
         const employee = await prisma.employee.create({
             data: { tenantId: T2, fullName: 'Cascade Worker', workEmail: 'cascade@ial-tenant-two.test' },
         });
+        const cascadeConn = await prisma.integrationConnection.create({
+            data: { tenantId: T2, provider: 'okta', name: 'okta-cascade', configJson: {} },
+        });
         const account = await prisma.connectedIdentityAccount.create({
             data: {
                 tenantId: T2,
                 provider: 'okta',
+                connectionId: cascadeConn.id,
                 externalUserId: 'ext-cascade',
                 email: 'cascade@ial-tenant-two.test',
                 syncedAt: new Date(),

@@ -44,7 +44,13 @@ describe('identity providers — registration + wiring', () => {
     it('ConnectedIdentityAccount carries RLS + tenant indexes', () => {
         const schema = readPrismaSchema();
         expect(schema).toMatch(/model ConnectedIdentityAccount \{/);
-        expect(schema).toMatch(/@@unique\(\[tenantId, provider, externalUserId\]\)/);
+        // PHASE 2: the grain is the connection. Two directory connections for one
+        // provider are supported — IntegrationConnection is unique on
+        // (tenantId, provider, NAME) — so an account is identified by WHICH
+        // directory it came from, not merely by which kind. The old key made two
+        // forests collide on one row and is what forced the deprovision reconcile
+        // to be provider-scoped.
+        expect(schema).toMatch(/@@unique\(\[tenantId, connectionId, externalUserId\]\)/);
         expect(schema).toMatch(/@@index\(\[tenantId, provider\]\)/);
         expect(schema).toMatch(/@@index\(\[tenantId, status\]\)/);
         // RLS migration present with the standard triple.
