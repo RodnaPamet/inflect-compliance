@@ -40,6 +40,15 @@
  *                     act on is exactly what trains an audience to stop
  *                     reading.
  *
+ *                     "Still live" is a CHECKED fact rather than an inference
+ *                     from the refusal: `decideAndDisable` holds this verdict
+ *                     until it has read the account, so a candidate somebody
+ *                     already disabled at the master leaves as ALREADY_DISABLED
+ *                     and this mail is not sent. Without that the message had
+ *                     no clearing condition at all — the sync flag stays true
+ *                     for a hybrid object forever, so doing what the mail asked
+ *                     produced the same mail the next day.
+ *
  *   REFUSED_PROTECTED The account is the one this connection authenticates AS,
  *                     or is otherwise protected. Same audience and same shape
  *                     as REFUSED_TARGET — the account is LIVE — but the refusal

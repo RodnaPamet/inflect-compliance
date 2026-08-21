@@ -206,6 +206,13 @@ export interface DisableAccountInput {
  * The order matters and is cheapest-first: every check that can refuse without
  * a network call runs before the one that needs one. A tenant in DISABLED mode
  * must not generate directory traffic to discover that it is in DISABLED mode.
+ *
+ * The write-target check is the one deliberate exception, and it is an
+ * exception about the RETURN, not about the decision. It is still decided for
+ * free, in its own position; only its refusal waits for the account to be read.
+ * A refusal that never asks the directory cannot notice the directory being
+ * fixed either, and that is what made the mail it produces unclearable — see
+ * section 2.
  */
 /**
  * A provider message, with the account taken out of it, for a LOG field.
@@ -351,16 +358,50 @@ async function decideAndDisable(
     }
 
     // ── 2. The target. Also free, and the one that prevents a write that
-    //       would silently un-do itself. ──
+    //       would silently un-do itself. DECIDED here, RETURNED after the
+    //       read. ──
+    //
+    // WHY THE VERDICT IS HELD
+    //
+    // `resolveWriteTarget` answers from the stored account row alone, and for
+    // the hybrid case its answer never changes: `onPremisesSyncEnabled` is true
+    // because the object is mastered on-premises, and it is still true after an
+    // administrator does exactly what the refusal asks and disables the account
+    // in Active Directory. Returning here therefore produced a NEEDS_ACTION
+    // mail that could not be SATISFIED — and because the outbox dedupes
+    // pre-journal refusals per day by link id, it was one mail per leaver per
+    // day, forever, in the inbox it shares with INDETERMINATE.
+    //
+    // That is the defect, and it is not a volume one. An alert with no clearing
+    // condition is an alert people learn to filter, and it takes the alerts
+    // that DO need action down with it.
+    //
+    // The clearing condition is the account itself. Once it reads disabled
+    // there is nothing left to ask anybody for — whoever disabled it, and
+    // wherever they did. That fact is one step below, in the read the next
+    // section already performs for every other outcome, so the verdict waits
+    // for it. For an account that is still live the refusal is unchanged, which
+    // is the point: what stops is the nagging, not the reporting.
+    //
+    // A cloud-side disable that Azure AD Connect is about to revert reads
+    // disabled only until the next cycle, after which this refuses again. The
+    // alert is quieted by a fact and resumes if the fact does, which is the
+    // behaviour to want from it.
     const target = resolveWriteTarget({
         provider: writer.provider,
         onPremisesSyncEnabled: input.onPremisesSyncEnabled,
     });
-    if (!target.allowed) {
-        return { outcome: 'REFUSED_TARGET', reason: target.reason };
-    }
 
-    // ── 3. Read the current state. First network call, and the capture. ──
+    // ── 3. Read the current state. First network call, the capture, and now
+    //       also the evidence a held target refusal is answered by. ──
+    //
+    // Reached by a target-refused candidate too, which costs it one read it did
+    // not previously make. In DRY_RUN — the rung every tenant is clamped at —
+    // that is not a socket at all: `resolveDirectoryWriter` hands the pass the
+    // snapshot reader, so it is one indexed row from the last confirmed-complete
+    // enumeration. Above DRY_RUN it is a real read against an account we are
+    // about to decline to write to, and it buys the refusal its only way to
+    // stop. That is worth a read per leaver per day; a permanent alert is not.
     //
     // Inside its own try: this is a NETWORK call, and it was previously
     // unguarded, so a transient read failure propagated out of disableAccount
@@ -384,6 +425,14 @@ async function decideAndDisable(
             linkId: input.linkId,
             error: scrubbed(detail, input.externalUserId),
         });
+        // A held target refusal outranks a read failure. FAILED is a statement
+        // about a write, and no write was ever going to be attempted for this
+        // account — reporting it would swap "somebody must disable this where
+        // it is mastered" for "the provider rejected the write", a different
+        // instruction naming a different cause for the same live account. The
+        // refusal is also the decision we are still certain of: it was made
+        // from the account row, which the failed read did not contradict.
+        if (!target.allowed) return { outcome: 'REFUSED_TARGET', reason: target.reason };
         return { outcome: 'FAILED', reason: `Could not read the account before writing: ${detail}` };
     }
 
@@ -410,6 +459,13 @@ async function decideAndDisable(
         // against reality that nothing needed doing for exactly the person who
         // did. The reader marks its own evidence; the decision is not the mode's
         // to make, because a future caller could read stale data in any mode.
+        //
+        // A candidate whose write target was REFUSED reaches here too now, and
+        // the settle is still right for it. A row exists only where a write was
+        // once attempted, which means the target check passed back then and the
+        // sync flag has flipped since — so the inference being drawn is the same
+        // one, from the same live evidence, and leaving the row unsettled would
+        // strand its captured prior state exactly as before.
         const staleEvidence =
             (state.priorState as { staleEvidence?: unknown } | null)?.staleEvidence === true;
         const settled = staleEvidence
@@ -422,6 +478,20 @@ async function decideAndDisable(
                 : 'The account is already disabled in the directory.',
             journalId: settled ?? undefined,
         };
+    }
+
+    // ── 3b. The target refusal from section 2, now that the account has
+    //        actually been asked. ──
+    //
+    // Enabled, so the refusal still has something to ask for and the mail is
+    // still worth sending. Reached only THROUGH the read above, and that is the
+    // whole of the fix: the same candidate, once disabled where it is mastered,
+    // leaves by the branch above instead and says nothing.
+    //
+    // Ahead of DRY_RUN, exactly as before. A dry run whose job is to show what
+    // the pass WOULD do must still show this decision.
+    if (!target.allowed) {
+        return { outcome: 'REFUSED_TARGET', reason: target.reason };
     }
 
     if (policy.mode === 'DRY_RUN') {
