@@ -361,6 +361,63 @@ export class FileRepository {
     }
 
     /**
+     * The rows {@link clearInfectedVerdict} exists to act on.
+     *
+     * WHY A DEDICATED METHOD rather than a `scanStatus` option on
+     * {@link listByTenant}: that one is unbounded and selects whole rows.
+     * A single bad signature update condemns every matching upload in a
+     * library at once, so this is precisely the query that must never be
+     * allowed to return "all of them" — hence the mandatory `take` and the
+     * explicit `select`, which keeps `pathKey` (a storage locator) out of a
+     * response whose whole purpose is to be read by a human.
+     *
+     * DELETED ROWS ARE EXCLUDED, matching the write's predicate: a deleted
+     * file cannot be returned to circulation, so listing it would offer an
+     * action that is guaranteed to fail.
+     *
+     * Ordering is `scannedAt` DESC with `id` DESC as the tiebreak, because
+     * a bulk re-scan stamps many rows within the same millisecond and a
+     * cursor walk over a non-unique sort key silently skips or repeats rows.
+     * `scannedAt` is nullable in the schema (a row can be INFECTED with no
+     * stamp if it was condemned by a path that did not set one), and Prisma
+     * sorts NULLs last on DESC — those rows land at the end of the walk
+     * rather than vanishing from it.
+     *
+     * @param take hard bound on the page; the caller clamps it.
+     * @param cursor `FileRecord.id` of the last row of the previous page.
+     */
+    static async listQuarantined(
+        db: PrismaTx,
+        tenantId: string,
+        opts: { take: number; cursor?: string },
+    ) {
+        return db.fileRecord.findMany({
+            where: {
+                tenantId,
+                scanStatus: 'INFECTED',
+                status: { not: 'DELETED' },
+            },
+            select: {
+                id: true,
+                originalName: true,
+                mimeType: true,
+                sizeBytes: true,
+                sha256: true,
+                domain: true,
+                status: true,
+                scanStatus: true,
+                scanDetails: true,
+                scannedAt: true,
+                createdAt: true,
+                uploadedByUserId: true,
+            },
+            orderBy: [{ scannedAt: 'desc' }, { id: 'desc' }],
+            take: opts.take,
+            ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+        });
+    }
+
+    /**
      * Rows the AV sweep should look at next.
      *
      * The predicate carries `scanStatus: 'PENDING'` because that is still the

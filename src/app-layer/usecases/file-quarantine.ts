@@ -31,7 +31,10 @@
  * @module usecases/file-quarantine
  */
 import type { RequestContext } from '../types';
-import { assertCanClearFileQuarantine } from '../policies/admin.policies';
+import {
+    assertCanClearFileQuarantine,
+    assertCanViewQuarantinedFiles,
+} from '../policies/admin.policies';
 import { FileRepository } from '../repositories/FileRepository';
 import { runInTenantContext } from '@/lib/db-context';
 import { appendAuditEntry } from '@/lib/audit';
@@ -176,5 +179,169 @@ export async function clearFileQuarantine(
         scanStatus: restored.scanStatus,
         status: restored.status,
         auditLogId: entry.id,
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// The read side: finding the file to act on.
+//
+// `clearFileQuarantine` above takes a `fileId` and nothing else, and
+// until this existed there was no way to obtain one. An operator had
+// to lift the id out of the audit trail — which is a hash-chained,
+// append-only log, not a work queue — so the escape hatch shipped with
+// no handle on it. This is the handle.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Default page size — one screenful without a scroll marathon. */
+export const DEFAULT_QUARANTINE_PAGE_SIZE = 50;
+/**
+ * Hard ceiling on a page. A single bad signature update can condemn
+ * thousands of rows at once, which is exactly why this query may never
+ * be allowed to answer "all of them": the caller pages, or it waits.
+ */
+export const MAX_QUARANTINE_PAGE_SIZE = 100;
+
+/**
+ * Bound on the threat text echoed back. `scanDetails` is written from
+ * scanner output, so its length is not ours to trust.
+ */
+export const MAX_THREAT_TEXT = 300;
+
+/** What the engine said, normalised across the writers that produce it. */
+export interface QuarantineVerdict {
+    /** Scanning engine, when it identified itself. */
+    engine: string | null;
+    /** The signature or message — the thing an operator judges. */
+    threat: string | null;
+    /** Which writer landed the verdict (`rescan-job`, the webhook, …). */
+    source: string | null;
+    /**
+     * True when `scanDetails` was not the JSON envelope either writer
+     * produces. The raw text still comes back as `threat`, truncated —
+     * an unparseable verdict is a thing to show an operator, not to
+     * swallow.
+     */
+    unparsed: boolean;
+}
+
+export interface QuarantinedFileRow {
+    fileId: string;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+    sha256: string;
+    domain: string;
+    /** `FileRecordStatus` — FAILED for a webhook quarantine, STORED otherwise. */
+    status: string;
+    /** When the verdict was stamped. Null if the writer left no stamp. */
+    quarantinedAt: Date | null;
+    uploadedAt: Date;
+    uploadedByUserId: string;
+    verdict: QuarantineVerdict;
+}
+
+export interface ListQuarantinedFilesResult {
+    files: QuarantinedFileRow[];
+    /** `fileId` to pass back as `cursor`; null on the last page. */
+    nextCursor: string | null;
+}
+
+function clip(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return trimmed.length > MAX_THREAT_TEXT
+        ? `${trimmed.slice(0, MAX_THREAT_TEXT)}…`
+        : trimmed;
+}
+
+/**
+ * Normalise `scanDetails` into something an operator can read.
+ *
+ * Two writers produce it and they do not agree on a shape:
+ *   av-webhook   `{ engine, result, details, receivedAt }`
+ *   av-rescan    `{ engine, durationMs, threat, source, jobRunId }`
+ *
+ * Rather than pick one and silently render the other blank, this reads
+ * whichever threat-bearing key is present. A value that is not the JSON
+ * envelope at all (an older row, a hand-written detail string) is not
+ * discarded either — it comes back as `threat` with `unparsed: true`,
+ * because the whole point of the surface is judging a verdict, and a
+ * verdict you cannot see is worse than an ugly one.
+ */
+export function summariseScanVerdict(scanDetails: string | null): QuarantineVerdict {
+    if (!scanDetails || !scanDetails.trim()) {
+        return { engine: null, threat: null, source: null, unparsed: false };
+    }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(scanDetails);
+    } catch {
+        return { engine: null, threat: clip(scanDetails), source: null, unparsed: true };
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return { engine: null, threat: clip(scanDetails), source: null, unparsed: true };
+    }
+    const envelope = parsed as Record<string, unknown>;
+    return {
+        engine: clip(envelope.engine),
+        threat: clip(envelope.threat) ?? clip(envelope.details) ?? clip(envelope.result),
+        source: clip(envelope.source),
+        unparsed: false,
+    };
+}
+
+/**
+ * Enumerate this tenant's quarantined files, newest verdict first.
+ *
+ * Gated on `admin.tenant_lifecycle` — see
+ * `assertCanViewQuarantinedFiles` for why the read carries the same
+ * OWNER-only key as the write it feeds.
+ *
+ * `pathKey` is deliberately NOT in the projection. It is a storage
+ * locator for bytes the scanner condemned; nothing on this surface
+ * needs it, and a response that carries it turns an operator's list
+ * into a pointer at live malware.
+ *
+ * @throws forbidden — caller lacks `admin.tenant_lifecycle`.
+ */
+export async function listQuarantinedFiles(
+    ctx: RequestContext,
+    options: { limit?: number; cursor?: string } = {},
+): Promise<ListQuarantinedFilesResult> {
+    assertCanViewQuarantinedFiles(ctx);
+
+    const requested =
+        typeof options.limit === 'number' && Number.isFinite(options.limit)
+            ? Math.floor(options.limit)
+            : DEFAULT_QUARANTINE_PAGE_SIZE;
+    const take = Math.min(MAX_QUARANTINE_PAGE_SIZE, Math.max(1, requested));
+    const cursor = (options.cursor ?? '').trim() || undefined;
+
+    // One extra row is the page-boundary probe: its presence is what
+    // distinguishes "the last page" from "a full page that happens to
+    // end here", and it is dropped before the caller sees it.
+    const rows = await runInTenantContext(ctx, (db) =>
+        FileRepository.listQuarantined(db, ctx.tenantId, { take: take + 1, cursor }),
+    );
+
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+
+    return {
+        files: page.map((row) => ({
+            fileId: row.id,
+            originalName: row.originalName,
+            mimeType: row.mimeType,
+            sizeBytes: row.sizeBytes,
+            sha256: row.sha256,
+            domain: row.domain,
+            status: row.status,
+            quarantinedAt: row.scannedAt,
+            uploadedAt: row.createdAt,
+            uploadedByUserId: row.uploadedByUserId,
+            verdict: summariseScanVerdict(row.scanDetails),
+        })),
+        nextCursor: hasMore ? page[page.length - 1].id : null,
     };
 }
