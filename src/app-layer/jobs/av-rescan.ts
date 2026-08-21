@@ -165,6 +165,11 @@ import { AV_SCAN_MAX_BYTES } from '@/app-layer/services/file-scan';
 import { computeSha256, streamToBuffer } from '@/app-layer/services/bundle-attachments';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 import { runInTenantJobContext, type PrismaTx } from '@/lib/db-context';
+import {
+    buildFileExposureReport,
+    recordFileExposureReport,
+    type LedgerClient,
+} from '@/app-layer/services/file-distribution';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import type { StorageProviderType } from '@/lib/storage/types';
 
@@ -681,6 +686,64 @@ export async function runAvRescan(options: AvRescanOptions): Promise<AvRescanRes
                     },
                     requestId: options.requestId ?? null,
                 });
+
+                // ── Exposure assessment ──────────────────────────────
+                //
+                // The ledger answers "what already left" — which audit pack,
+                // which SharePoint export, which still-live signed URL
+                // carried these bytes before we knew they were bad. It was
+                // wired into the AV WEBHOOK only, so verdicts found by THIS
+                // path — the path that walks the whole PENDING backlog, i.e.
+                // the files that have been servable the longest — bypassed it
+                // entirely.
+                //
+                // Placed after the audit and BEFORE the breaker on purpose: a
+                // row already condemned is exactly the one an operator needs
+                // an exposure report for, and it should get one even if the
+                // ratio then halts the run.
+                //
+                // Defensively wrapped even though the function is already
+                // internally fail-safe. The verdict has committed and stands
+                // on its own; a reporting failure must never cost the sweep a
+                // row it has correctly condemned.
+                if (verdict === 'INFECTED') {
+                    try {
+                        // Two steps, deliberately not one.
+                        //
+                        // The READS get the tenant-bound connection — they are
+                        // the half RLS can scope, so they run under the same
+                        // `app_user` + `app.tenant_id` binding as every other
+                        // statement in this job.
+                        //
+                        // The WRITE lands outside that scope. `appendAuditEntry`
+                        // opens its own `pg_advisory_xact_lock` transaction, and
+                        // nesting it inside the read's would hold two pooled
+                        // connections and an advisory lock per condemned file —
+                        // exactly what the sweep does most of on the day a bad
+                        // signature condemns thousands.
+                        const report = await inTenant((db) =>
+                            buildFileExposureReport({
+                                tenantId,
+                                fileRecordId: row.id,
+                                sha256: row.sha256,
+                                client: db as unknown as LedgerClient,
+                            }),
+                        );
+                        await recordFileExposureReport(report, {
+                            tenantId,
+                            fileRecordId: row.id,
+                            engine: result.engine,
+                        });
+                    } catch (err) {
+                        logger.error('av-rescan: exposure assessment failed after verdict', {
+                            component: 'av-rescan',
+                            jobRunId,
+                            fileId: row.id,
+                            tenantId,
+                            err: err instanceof Error ? err : new Error(String(err)),
+                        });
+                    }
+                }
 
                 // ── Circuit breaker ──────────────────────────────────
                 //
