@@ -19,6 +19,10 @@ import type {
     EvidencePayload,
 } from '../../types';
 import { resilientFetch } from '../../http-resilience';
+// Imported, not re-exported. A provider that needs the rule imports it from
+// `providers/hris/employment-status` — one canonical path, so "which import of
+// deriveEmploymentStatus is the real one" is never a question anybody has to ask.
+import { deriveEmploymentStatus, type EmploymentStatusValue } from './employment-status';
 
 /** A roster row normalized across HRIS vendors. */
 export interface NormalizedEmployee {
@@ -26,7 +30,7 @@ export interface NormalizedEmployee {
     fullName: string;
     workEmail: string;
     /** EmploymentStatus. */
-    status: 'ACTIVE' | 'ONBOARDING' | 'OFFBOARDING' | 'TERMINATED' | 'LEAVE';
+    status: EmploymentStatusValue;
     department?: string | null;
     jobTitle?: string | null;
     /** Manager's work email — resolved to managerEmployeeId during sync. */
@@ -148,20 +152,32 @@ interface BambooDeps {
  * employed) mapped to ACTIVE — hiding their lingering access from
  * `offboarded_access_removed`. Derive ONBOARDING (pre-hire / future start) and
  * OFFBOARDING (pending termination) from the hire/termination dates + status.
+ *
+ * The ORDERING is not this file's to decide: `deriveEmploymentStatus` owns the
+ * rule that dates beat the status string, for every HRIS provider. This mapper
+ * had the inversion Workday was fixed for in #2012 — it returned on `terminat`
+ * before ever reading `terminationDate`, so an employee whose BambooHR status
+ * read "Terminated — Notice" with a last day a month out came back TERMINATED
+ * and the JML leaver pass would have disabled them mid-notice-period.
+ *
+ * All that remains here is choosing WHICH of BambooHR's two status fields
+ * speaks, and what an absent opinion means. BambooHR has no third signal, so
+ * ACTIVE is the honest default rather than a guess.
  */
 function mapBambooStatus(
     row: { status?: string; employmentStatus?: string; hireDate?: string | null; terminationDate?: string | null },
     now: Date = new Date(),
 ): NormalizedEmployee['status'] {
-    const s = (row.status || row.employmentStatus || '').toLowerCase();
-    if (s.includes('terminat')) return 'TERMINATED';
-    if (s.includes('leave')) return 'LEAVE';
-    // Pending termination — still employed, termination scheduled in the future.
-    if (row.terminationDate && new Date(row.terminationDate) > now) return 'OFFBOARDING';
-    // Pre-hire — start date in the future, or an explicit pre-hire/onboarding status.
-    if (row.hireDate && new Date(row.hireDate) > now) return 'ONBOARDING';
-    if (s.includes('pre-hire') || s.includes('prehire') || s.includes('onboard')) return 'ONBOARDING';
-    return 'ACTIVE';
+    return (
+        deriveEmploymentStatus(
+            {
+                statusText: row.status || row.employmentStatus,
+                hireDate: row.hireDate,
+                terminationDate: row.terminationDate,
+            },
+            now,
+        ) ?? 'ACTIVE'
+    );
 }
 
 export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvider {

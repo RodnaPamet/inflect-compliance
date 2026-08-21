@@ -279,10 +279,40 @@ describe('BambooHrProvider — status mapping (H2)', () => {
         ).toBe('OFFBOARDING');
     });
 
-    it('does not treat a past termination date as OFFBOARDING', async () => {
+    it('a past termination date is TERMINATED — not OFFBOARDING, and not the "Active" the string claims', async () => {
+        // Changed expectation, deliberately: this used to assert ACTIVE, back
+        // when the status string outranked the dates here. Believing "Active"
+        // over a last day that has already passed is what leaves a departed
+        // worker's directory access enabled indefinitely — the exact hole
+        // `offboarded_access_removed` exists to find. The test's own name has
+        // always been "not OFFBOARDING", which TERMINATED satisfies.
         expect(await statusOf({ status: 'Active', terminationDate: past() })).toBe(
-            'ACTIVE',
+            'TERMINATED',
         );
+        // The pair: with no date the string still decides, so the assertion
+        // above is about precedence rather than about a dead branch.
+        expect(await statusOf({ status: 'Active' })).toBe('ACTIVE');
+    });
+
+    it('a "Terminated" string with a FUTURE last day is OFFBOARDING — dates win', async () => {
+        // The #2012 regression class, which this mapper carried independently.
+        // BambooHR statuses are administrator-named, so "Terminated - Notice" is
+        // an ordinary value for someone still employed and still working. The
+        // JML leaver pass acts on TERMINATED, so answering the string here is
+        // what disables a person mid-notice-period.
+        expect(
+            await statusOf({ status: 'Terminated - Notice', terminationDate: future() }),
+        ).toBe('OFFBOARDING');
+        expect(await statusOf({ status: 'Terminated - Notice' })).toBe('TERMINATED');
+    });
+
+    it('a worker on leave with a termination date resolves from the DATE', async () => {
+        // Deliberate consequence of the ordering, asserted so it is a decision
+        // and not an accident. Both answers mean "do not disable yet".
+        expect(
+            await statusOf({ status: 'On Leave', terminationDate: future() }),
+        ).toBe('OFFBOARDING');
+        expect(await statusOf({ status: 'On Leave' })).toBe('LEAVE');
     });
 
     it('derives ONBOARDING from a future hire date', async () => {
