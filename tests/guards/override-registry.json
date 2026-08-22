@@ -102,17 +102,17 @@
     },
     "@typescript-eslint/parser": {
         "kind": "peer-bridge",
-        "reason": "Paired with the plugin override above — same version, one AST contract."
+        "reason": "Paired with the plugin override above — same version, one AST contract. The plugin is the direct devDependency and carries the version; parser and the umbrella are reached only transitively, so they are pinned by literal range rather than `$name` (a `$ref` to a non-direct dependency dangles and silently disables the override). Raised ^8.61.0 → ^8.67.0 on 2026-08-22: the bridge had SPLIT — the plugin resolved 8.67.0 while parser/typescript-eslint and the shared scope-manager, types, typescript-estree and utils packages sat on 8.61.0, which is exactly the disagreement this pairing exists to prevent. When the plugin devDependency moves, move these two in the same commit."
     },
     "typescript-eslint": {
         "kind": "peer-bridge",
-        "reason": "The umbrella package; pinned with its two constituents so flat config resolves one line."
+        "reason": "The umbrella package; pinned with its two constituents so flat config resolves one line. Raised ^8.61.0 → ^8.67.0 on 2026-08-22 alongside @typescript-eslint/parser, to re-close the split against the 8.67.0 plugin. Not a direct dependency, so a literal range rather than `$name`."
     },
     "nanoid": {
         "kind": "security",
         "advisory": "GHSA-2v37-7h3g-55p8",
-        "patchedFrom": "3.3.17",
-        "reason": "nanoid: a custom generator can loop indefinitely when size is zero (high). It reaches production only transitively, via next -> postcss, which pins the 3.x line — so the floor is ^3.3.17 rather than the 6.x latest; forcing a major here would break postcss's own contract. The lock resolves 3.3.18. Drop this override once postcss ships a release whose own nanoid floor is >=3.3.17."
+        "patchedFrom": "3.3.18",
+        "reason": "nanoid: a custom generator can loop indefinitely when size is zero (high). The 3.x line is fixed in 3.3.18 (the 4.x/5.x line in 5.1.6). It reaches production only transitively, via next -> postcss, which pins the 3.x line — so the floor is ^3.3.18 rather than the 6.x latest; forcing a major here would break postcss's own contract. Floor raised 3.3.17 → 3.3.18 on 2026-08-22, and patchedFrom corrected 3.3.17 → 3.3.18 in the same change: 3.3.17 is not a fixed version of this advisory at all — the vulnerable range is `< 3.3.18`, so the old floor was itself inside it and excluded nothing. `npm audit` stayed green only because the lockfile happened to resolve 3.3.18. Drop this override once postcss ships a release whose own nanoid floor is >=3.3.18."
     },
     "postcss": {
         "kind": "security",
