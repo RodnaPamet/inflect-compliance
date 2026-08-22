@@ -52,8 +52,21 @@ SHAPE `if (<condition reading a request context's .permissions/.appPermissions/
 not consume the budget.
 
 It classifies into four tiers: `ROUTE_PERMISSION`, `USECASE_ASSERT`,
-`ROLE_PRESENCE_ONLY`, `NONE`. Measured over the tree: 149 / 363 / 8 / 79
-handlers (weakest-handler-per-file: 149 / 363 / 7 / 63 files).
+`ROLE_PRESENCE_ONLY`, `NONE`. Measured over the tree:
+
+| tier | handlers (771) | files, weakest handler (582) |
+| --- | --- | --- |
+| `ROUTE_PERMISSION` | 221 | 149 |
+| `USECASE_ASSERT` | 463 | 363 |
+| `ROLE_PRESENCE_ONLY` | 8 | 7 |
+| `NONE` | 79 | 63 |
+
+The first version of this paragraph read `149 / 363 / 8 / 79 handlers`, which
+sums to 599 rather than 771 — it had taken three numbers from the per-FILE
+distribution and one from the per-HANDLER one. Two units, one row. Worth
+leaving the correction visible: the totals were both stated two lines apart and
+neither reconciled against the other, which is the only reason it survived
+writing.
 
 `getTenantCtx()` is deliberately NOT a decision. It authenticates the session
 and checks membership, but says nothing about what the caller may DO; counting
