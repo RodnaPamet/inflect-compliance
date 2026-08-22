@@ -20,7 +20,7 @@ import {
     checkTenantAccess,
     checkOrgAccess,
 } from '@/lib/auth/guard';
-import { generateNonce, buildCspHeader, CSP_NONCE_HEADER, CSP_REPORT_PATH, CSP_REPORT_GROUP, getCspHeaderName, isCspReportOnly } from '@/lib/security/csp';
+import { generateNonce, buildCspHeader, CSP_NONCE_HEADER, CSP_REPORT_PATH, LEGACY_CSP_REPORT_PATH, CSP_REPORT_GROUP, getCspHeaderName, isCspReportOnly } from '@/lib/security/csp';
 import { applySecurityHeaders } from '@/lib/security/headers';
 import { resolveCorsConfig, isOriginAllowed, applyCorsHeaders, CORS_PREFLIGHT_HEADERS } from '@/lib/security/cors';
 import { shouldBlockAdminRequest } from '@/lib/security/admin-session-guard';
@@ -132,6 +132,63 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             return rl.response;
         }
         return NextResponse.next();
+    }
+
+    // ── 0e. CSP violation report — meter the operator GET, leave the
+    // browser POST alone. Same shape as 0–0d: an anonymous-at-the-edge path
+    // whose credential is verified in the handler, rate-limited BEFORE the
+    // allowlist below waves it through.
+    //
+    // `/api/security/csp-report` sits in MACHINE_CALLER_PREFIXES so a browser
+    // can POST a report with no cookie, and that allowlist matches a PATH —
+    // so the operator GET, which returns the process-wide violation buffer
+    // behind PLATFORM_ADMIN_API_KEY (#2103), was reachable from the internet
+    // at any rate at all. Measured before this block: 500 consecutive
+    // wrong-key GETs, 500 × 401, zero 429. The key is 32+ characters and
+    // compared in constant time, so guessing it is not the threat being
+    // answered here; the threat is that each of those attempts is free to the
+    // caller and is not free to us — the same reason 0d gives for the
+    // assessment-token check.
+    //
+    // GET (and the HEAD that Next.js auto-derives from it, which runs the
+    // same handler) — deliberately not POST. The POST is a credential-less
+    // browser beacon, and a limiter it shares with an attacker silently drops
+    // real reports, which is the exact failure this path exists to avoid. It
+    // keeps its own per-IP limiter (30/min) and 16 KB body cap inside the
+    // handler and is not touched here: it falls through to the allowlist
+    // exactly as before.
+    //
+    // Keyed by IP alone — `checkApiReadRateLimit` folds the client IP into
+    // the bucket and userId is null because no JWT has been read at this
+    // point. Deliberately NOT keyed by the presented credential the way 0c
+    // keys by the device bearer token: a device token is ISSUED, so keying by
+    // it gives each device a fair bucket behind one NAT, whereas here the
+    // credential is the thing an attacker varies — keying by it would hand
+    // every guess a fresh budget.
+    //
+    // Budget: API_READ_LIMIT (120/min), the same preset 0–0d use. Operator
+    // use of this endpoint is a human refreshing a debug view — single digits
+    // per minute — so 120 leaves it untouched while bounding a caller to 120
+    // constant-time compares plus summary serialisations per IP per minute
+    // instead of unbounded.
+    if (
+        (req.method === 'GET' || req.method === 'HEAD') &&
+        (pathname === CSP_REPORT_PATH || pathname === LEGACY_CSP_REPORT_PATH)
+    ) {
+        const rl = await checkApiReadRateLimit(req, null, 'cspreport');
+        if (!rl.ok && rl.response) {
+            return rl.response;
+        }
+        // Falls THROUGH to the allowlist rather than returning
+        // `NextResponse.next()` the way 0–0d do — the one place this block
+        // departs from them, and only on the allow side. Behaviour today is
+        // identical, because `isPublicPath` matches this path on the next
+        // line. What it buys is that MACHINE_CALLER_PREFIXES stays the only
+        // thing making this path public at the edge, which is what
+        // `guard.ts` claims of it. A `next()` here would be a second,
+        // silent authority: removing the allowlist entry would then close
+        // the POST and leave the GET open, which is the inverse of what
+        // anyone editing that list would intend.
     }
 
     // ── 1. Allow public paths (login, auth callbacks, static, etc.) ──

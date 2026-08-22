@@ -136,6 +136,18 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/account',
         why: 'Self-service account surface (avatar, profile). Session-scoped rather than tenant-scoped, so the existing routes are excluded individually — the root is in scope so a future one cannot arrive unexamined.',
     },
+    // Also not tenant-scoped, and it arrived here the hard way. `/api/security`
+    // held exactly one route, and that route's GET served the process-wide CSP
+    // violation buffer to the internet for as long as it existed (#2103): the
+    // path is on the edge allowlist so the credential-less POST can land, the
+    // allowlist is path-scoped rather than method-scoped, and no guardrail
+    // walked the directory. Nothing was exempt — nothing was looked at.
+    //
+    // In scope so the triage is FORCED for the next route added here.
+    {
+        relPath: 'src/app/api/security',
+        why: 'Deployment-wide security surface. Not under /api/t/[tenantSlug], so requirePermission (which resolves a tenant role) does not apply to what lives here today; the one route is excluded individually with its actual gate named, and the root is in scope so the next one cannot arrive unexamined.',
+    },
     {
         relPath: 'src/app/api/t/[tenantSlug]/vendors/[vendorId]/subprocessors',
         why: 'The GDPR Art.28 sub-processor register + its recursive nth-party chain. Reads gate on vendors.view, mutations on vendors.edit — matching the usecase asserts. In scope so denials audit at the C.1 layer and a future refactor cannot drop the usecase assert without failing here. Narrow leaf root: the other vendors/[vendorId] siblings are NOT privileged and stay on usecase-layer authorization.',
@@ -194,6 +206,17 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
     {
         relPath: 'api/admin/diagnostics/route.ts',
         reason: 'Platform-admin-key-gated: process/runtime diagnostics — server-wide, with no tenant dimension, so tenant-scope does not apply.',
+    },
+    {
+        relPath: 'api/security/csp-report/route.ts',
+        reason:
+            'Platform-admin-key-gated GET (verifyPlatformApiKey) over the ' +
+            'process-wide CSP violation ring buffer — server-wide, no tenant ' +
+            'dimension, so tenant-scope does not apply; a tenant role would ' +
+            'be a cross-tenant read. The POST on the same file is the ' +
+            'credential-less browser report sink and stays open by design. ' +
+            'The GET gate is asserted behaviourally in ' +
+            'tests/unit/security/csp-report-authz.test.ts.',
     },
     // Risk-report siblings pulled in by the `risks/reports` privileged root.
     // Only the POST /risks/reports generate handler is an export action (gated

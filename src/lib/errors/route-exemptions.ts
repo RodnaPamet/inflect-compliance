@@ -179,9 +179,13 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
         file: 'security/csp-report/route.ts',
         category: 'csp_report_sink',
         reason:
-            'Modern CSP report sink. Always returns 204 (or 413 for ' +
-            'oversize, 429 for rate-limit). Browser fire-and-forget; ' +
-            'no JSON consumer.',
+            'Modern CSP report sink. The POST always returns 204 (or 413 ' +
+            'for oversize, 429 for rate-limit): browser fire-and-forget, ' +
+            'no JSON consumer. The file also exports an operator GET, ' +
+            'gated on PLATFORM_ADMIN_API_KEY, which returns 401/503 as a ' +
+            'plain {error} body — the exemption is per FILE, so wrapping ' +
+            'that half would drag the wrapper (and its 60/min mutation ' +
+            'limit) onto the report sink and break the 204 invariant.',
     },
 
     // ─── External webhook receivers ───

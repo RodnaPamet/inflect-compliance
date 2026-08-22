@@ -86,6 +86,17 @@ export const CSP_NONCE_HEADER = 'x-csp-nonce';
 export const CSP_REPORT_PATH = '/api/security/csp-report';
 
 /**
+ * The pre-hardening CSP report path, still live because browsers hold cached
+ * CSP headers pointing at it (`src/app/api/csp-report/route.ts` forwards a
+ * POST to `CSP_REPORT_PATH`). Named here because the edge treats the two as
+ * one surface: both are on `MACHINE_CALLER_PREFIXES`, so both are anonymous
+ * at the edge, and the rate limit `src/middleware.ts` puts on the operator
+ * GET has to cover both or the alias becomes the unmetered way in the moment
+ * anyone exports a GET from it.
+ */
+export const LEGACY_CSP_REPORT_PATH = '/api/csp-report';
+
+/**
  * Report-To group name for the Reporting API.
  */
 export const CSP_REPORT_GROUP = 'csp-endpoint';
