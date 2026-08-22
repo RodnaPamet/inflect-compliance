@@ -32,7 +32,16 @@
  *     flag that is permanently false passes.
  *
  * If any of those matter for a route — and for a privileged route they all
- * do — the route belongs in LAYER 1, not here.
+ * do — layer 1 is where it should be covered.
+ *
+ * But be precise about what that buys, because the sentence above used to
+ * read as though layer 1 checked them: IT DOES NOT. Layer 1 asserts a literal
+ * `requirePermission` in the file plus a path-matched rule. It does not check
+ * ordering, sufficiency, or liveness either — a `risks.view` key on a DELETE
+ * satisfies it. What layer 1 gives is a stronger and much more legible
+ * REQUIREMENT (the gate is at the route boundary, where a denial is audited)
+ * on a population someone curated deliberately. Neither layer verifies that
+ * the gate governs the work; nothing here does.
  *
  * ─── THE RELATIONSHIP TO LAYER 1 ───────────────────────────────────────
  *
@@ -84,6 +93,14 @@
  *     merely *mentions* `status: 403` counts as denying.
  *   - A decision reached on SOME path through the call graph counts for the
  *     whole handler, even if the destructive path skips it.
+ *   - `CONTEXT_ROOTS` is a NAME check with no type behind it, so anything
+ *     bound to one of those names reads as a context. `const ctx = await
+ *     req.json(); if (ctx.role !== 'OWNER') throw ...` passes — caller-
+ *     supplied data deciding its own authorization. This is the exact mirror
+ *     of the fail-CLOSED entry above (a real context under an unrecognised
+ *     name), and only that safe direction was written down until adversarial
+ *     review found the other one. Both directions of a name check have to be
+ *     stated or the list flatters itself.
  *
  * The fail-open set is the price of asking a reachability question. It is
  * why this layer is named for reachability and why layer 1 was left alone.
@@ -346,7 +363,21 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
     { handler: 'api/webhooks/sharepoint/route.ts#POST', klass: 'SIGNED_WEBHOOK',
       note: 'Microsoft Graph notification; clientState (<tenantId>:<policyId>) is compared against the stored subscription.' },
     { handler: 'api/integrations/webhooks/[provider]/route.ts#POST', klass: 'SIGNED_WEBHOOK',
-      note: 'Provider signature verified against the connection\'s stored webhook secret before any processing.' },
+      // The verification is ONE HOP AWAY, so this entry corroborates on the
+      // delegation rather than on the check. The route reads the raw body,
+      // hands it to `processIncomingWebhook`, and turns `auth_failed` into a
+      // 401; `usecases/webhook-processor.ts` is what calls `extractSignature`
+      // / `verifyHmacSha256` / `verifyGitHubSignature` against the connection's
+      // stored secret.
+      //
+      // The class default (/signature|hmac|clientState|…/) matched this file
+      // only via its DOCBLOCK, which is why it survived until the corroboration
+      // started ignoring comments. Corroborating on something the route's own
+      // code actually contains is the honest version — and it is weaker: it
+      // asserts that the route still delegates, not that the delegate still
+      // verifies.
+      mechanism: /processIncomingWebhook|auth_failed/,
+      note: 'Provider signature verified in webhook-processor against the connection\'s stored webhook secret before any processing; the route delegates and maps auth_failed to 401.' },
     { handler: 'api/integrations/calendar/callback/route.ts#GET', klass: 'SIGNED_WEBHOOK',
       note: 'OAuth redirect. The cal_oauth_state cookie nonce is the CSRF defence; the cookie is deleted on use.' },
     { handler: 'api/integrations/calendar/admin-callback/route.ts#GET', klass: 'SIGNED_WEBHOOK',
@@ -434,6 +465,24 @@ const EXEMPT_BY_KEY = new Map(EXEMPT_HANDLERS.map((e) => [e.handler, e]));
 
 function readSource(file: string): string {
     return fs.readFileSync(file, 'utf8');
+}
+
+/**
+ * Source with comments removed.
+ *
+ * The mechanism corroboration below must not be satisfiable by the route's own
+ * prose. Testing `/verifyWebhookSignature/` against raw source passes for a file
+ * whose only mention is `// we no longer verifyWebhookSignature here` — which is
+ * the exact state the check exists to catch, reading as a pass.
+ *
+ * Deliberately crude: block comments, line comments, and the contents of string
+ * literals are all out of scope for a credential-check regex, so removing a
+ * little too much is safe here. Erring the other way is not.
+ */
+function readCodeOnly(file: string): string {
+    return readSource(file)
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────
@@ -582,6 +631,16 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
         // self-service route that stops resolving a session, fails HERE —
         // its exemption entry is untouched but the property it claimed is
         // gone.
+        //
+        // Matched against CODE ONLY, and that is load-bearing. Run against raw
+        // source, `/verifyWebhookSignature/` also matches
+        // `// we no longer verifyWebhookSignature here`, so a route that had
+        // deleted the check would pass on the strength of the comment saying
+        // so. Adversarial review found one exemption in exactly that state.
+        //
+        // What this still CANNOT see, so it is not claimed above: that the
+        // named call is REACHED. A verifier behind `if (false)`, or after the
+        // work it should gate, satisfies the regex. Presence, not liveness.
         const offenders: string[] = [];
         let checked = 0;
         for (const e of EXEMPT_HANDLERS) {
@@ -590,7 +649,7 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
             const file = path.join(APP_ROOT, e.handler.split('#')[0]);
             if (!fs.existsSync(file)) continue; // reported by the dangling test
             checked += 1;
-            if (!mechanism.test(readSource(file))) {
+            if (!mechanism.test(readCodeOnly(file))) {
                 offenders.push(`${e.handler} (${e.klass}) expected ${mechanism}`);
             }
         }
