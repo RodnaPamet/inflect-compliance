@@ -7,21 +7,41 @@ echo "╚═══════════════════════�
 
 # ── 1. Apply Prisma migrations (idempotent) ──
 #
-# Pin the CLI version to match @prisma/client in package.json. If
-# `prisma` is ever pruned from the image (e.g. someone moves it
-# back to devDependencies), `npx prisma` would otherwise fetch
-# `latest` from npm and could ship breaking changes silently.
+# Runs the CLI ALREADY IN THE IMAGE, the same way this script runs
+# `next` at the end. `prisma` is a production dependency (^7.9.1), so it
+# survives `npm prune --omit=dev` and the binary is at
+# `node_modules/.bin/prisma`.
 #
-# Prisma 7 — connection URLs are NOT in the schema any more (they
-# moved to `prisma.config.ts` at the repo root). The CLI auto-
-# discovers that config file from the cwd, so `--schema` here is
-# redundant but kept for explicitness. The previous pin
-# `prisma@5.22.0` rejects the Prisma 7 schema with
-# "Argument 'url' is missing in data source block 'db'" — bumped
-# to 7.8.0 in lockstep with the migration that landed in #140.
+# This replaced `npx --yes prisma@7.8.0`, for three reasons:
+#
+#   1. It FETCHED. An explicit version that differs from the installed
+#      one sends npx to the registry, so every container start
+#      downloaded and tar-extracted a second copy of the CLI. Verified
+#      on the running production container — the artefact is still there
+#      at ~/.npm/_npx/<hash>/node_modules/prisma.
+#
+#   2. That extraction is the only thing in the runner that exercises
+#      npm's bundled `tar`, which CVE-2026-73566 (HIGH, DoS via a
+#      crafted long-path archive) now affects. No npm release fixes it:
+#      npm 12.0.2 still vendors tar 7.5.19 even though 7.5.21 shipped a
+#      month earlier, because bundled deps freeze at publish time.
+#      Removing the fetch removes the reachability.
+#
+#   3. The pin had drifted from the thing it claimed to match. The
+#      comment here said "pin the CLI version to match @prisma/client",
+#      while pinning 7.8.0 against a declared ^7.9.1 — so it fetched an
+#      OLDER CLI than the one already present. Using the local binary
+#      makes the version match structural instead of asserted.
+#
+# Prisma 7 — connection URLs are NOT in the schema any more (they moved
+# to `prisma.config.ts` at the repo root). The CLI auto-discovers that
+# config from the cwd, so `--schema` is redundant but kept explicit.
+# Proved against the production image before this change: the local
+# 7.9.1 binary loads prisma.config.ts, resolves the multi-file schema,
+# connects, and reads all 255 migrations.
 echo ""
 echo "→ Applying database migrations..."
-npx --yes prisma@7.8.0 migrate deploy --schema=./prisma/schema
+./node_modules/.bin/prisma migrate deploy --schema=./prisma/schema
 echo "✓ Migrations applied"
 
 # ── 1b. Seed self-assessment library content (idempotent) ──
