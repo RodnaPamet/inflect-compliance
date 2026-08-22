@@ -18,10 +18,20 @@
  * hard-coded expectation per path rather than a generic "contains the word
  * auth" scan — the point is that a human decided what gates each one, and
  * changing that decision has to be a visible edit here.
+ *
+ * And an entry is a PATH, while a route file exports METHODS. `isPublicPath`
+ * cannot say "the POST only", so an entry added for a credential-less method
+ * opens every other method on the same path. `/api/security/csp-report` is
+ * where that bit: its POST is the browser report sink and must stay open,
+ * while its GET returns the process-wide CSP violation buffer and was public
+ * for as long as the entry existed (#2103). Hence the split below —
+ * credential-LESS is a property of a method, not of a path, and the methods
+ * that are not credential-less are asserted one by one.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { MACHINE_CALLER_PREFIXES, isPublicPath } from '@/lib/auth/guard';
+import { functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const APP = path.join(ROOT, 'src/app');
@@ -84,12 +94,43 @@ describe('machine-caller paths authenticate themselves', () => {
         expect(src).toMatch(gate);
     });
 
+    it('the operator GET on the csp-report path gates itself', () => {
+        // The one place in this list where "credential-less" is true of a
+        // METHOD and not of the path. The POST below is the browser sink and
+        // stays open; the GET returns `getViolationSummary(50)` — whole
+        // CspViolation records, including `documentUri` values carrying other
+        // tenants' slugs — and so must carry its own gate, because the edge
+        // allowlist three files away cannot express "POST only".
+        //
+        // Bounded to the GET's own body rather than the file: the POST and
+        // the header docblock both mention the gate by name, so a file-wide
+        // match would stay green with the call deleted from the handler.
+        const src = fs.readFileSync(
+            path.join(APP, 'api/security/csp-report/route.ts'),
+            'utf8',
+        );
+        const get = codeOnly(functionBodyOf(src, 'GET'));
+        expect(get).toMatch(/verifyPlatformApiKey\s*\(/);
+        // The extraction found a real body — an over-eager strip would make
+        // a `not.toMatch` sibling vacuous, and makes this one a false alarm.
+        expect(get).toMatch(/getViolationSummary\s*\(/);
+
+        // The POST on the same file stays credential-less. A "consistency"
+        // pass that moved the gate up to module scope would take every CSP
+        // report down with it, silently.
+        expect(codeOnly(functionBodyOf(src, 'POST'))).not.toMatch(
+            /verifyPlatformApiKey/,
+        );
+    });
+
     it('every credential-bearing prefix has a contract here', () => {
-        // The two report/beacon endpoints are credential-LESS by spec (a
-        // browser will not attach cookies to either), so they have no gate to
-        // assert — they are protected by a rate limiter and a body cap
-        // instead. Everything else in the list must be accounted for above,
-        // so a new entry cannot be added without stating what gates it.
+        // The report/beacon endpoints are credential-LESS by spec (a browser
+        // will not attach cookies to any of them), so their SINK has no gate
+        // to assert — they are protected by a rate limiter and a body cap
+        // instead. The non-sink method on the csp-report path is covered by
+        // the test directly above. Everything else in the list must be
+        // accounted for in CONTRACTS, so a new entry cannot be added without
+        // stating what gates it.
         const credentialLess = [
             '/api/security/csp-report',
             '/api/csp-report',

@@ -2,8 +2,16 @@
  * CSP Violation Store — in-memory ring buffer for recent violations.
  *
  * Architecture:
- *   Browser → POST /api/security/csp-report → parse → store + log
- *   Admin  → GET  /api/security/csp-report  → read recent violations
+ *   Browser  → POST /api/security/csp-report → parse → store + log
+ *   Operator → GET  /api/security/csp-report → read recent violations
+ *
+ * "Operator", not "admin of a tenant". The buffer below is ONE array per
+ * process, shared by every tenant on the instance, so `documentUri` values
+ * from `/t/<slug>/…` pages of unrelated tenants sit side by side in it. The
+ * GET is therefore gated on `PLATFORM_ADMIN_API_KEY` in the handler — not on
+ * a tenant role, which would be a cross-tenant read no matter how senior the
+ * role. If this store ever gains a tenant dimension, that is the moment to
+ * revisit the gate; until then, treat every field here as deployment-wide.
  *
  * Storage strategy:
  *   - Ring buffer of MAX_VIOLATIONS entries (default 500)
@@ -53,7 +61,8 @@ export interface CspViolation {
 }
 
 /**
- * Summary statistics for the admin API.
+ * Summary statistics returned by the operator GET. Deployment-wide: the
+ * counters and `recentViolations` span every tenant on the process.
  */
 export interface CspViolationSummary {
     totalReceived: number;

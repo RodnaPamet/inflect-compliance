@@ -78,6 +78,14 @@ export const PUBLIC_API_REGEXES: readonly RegExp[] = [
  * fails if an entry here has no in-handler gate, because an allowlist entry
  * without one is a hole, and this list is the only thing standing between a
  * public prefix and the tenant API.
+ *
+ * And "the handler" means EVERY handler the file exports. Matching here is
+ * path-scoped, not method-scoped: an entry added for one credential-less
+ * method opens the others too. That is how `GET /api/security/csp-report`
+ * came to serve the cross-tenant CSP violation buffer to the internet
+ * (#2103) while its own comment said the middleware protected it. If a
+ * route needs one method open and another closed, the closed one gates
+ * itself in code — there is no way to say so here.
  */
 export const MACHINE_CALLER_PREFIXES = [
     // Bearer SCIM token, tenant-scoped — `authenticateScimRequest`
@@ -103,6 +111,9 @@ export const MACHINE_CALLER_PREFIXES = [
     // Browser-sent CSP violation reports. Credential-less by spec — the
     // browser will not attach cookies, so requiring one guarantees zero
     // reports. Protected by a per-IP report limiter and a 16 KB body cap.
+    // POST only, in intent: the GET on the same path returns the
+    // process-wide violation buffer and gates itself on
+    // PLATFORM_ADMIN_API_KEY, because this list cannot express a method.
     '/api/security/csp-report',
     '/api/csp-report',
     // Web-vitals beacon, same reasoning: `navigator.sendBeacon` from a page
