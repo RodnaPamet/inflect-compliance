@@ -115,9 +115,28 @@ describeFn('listRisks — owner enrichment (Epic 44.4)', () => {
 
     afterAll(async () => {
         try {
-            await testPrisma.risk.deleteMany({
-                where: { tenantId: tenantA },
-            });
+            // GUARDED, and the guard is the point.
+            //
+            // `tenantA` is a bare `let` assigned inside `beforeAll`. Jest runs
+            // `afterAll` even when `beforeAll` THREW, so on a setup failure it
+            // is still `undefined` here — and Prisma DROPS an undefined filter
+            // value rather than rejecting it. Measured against this repo's own
+            // client on the test database:
+            //
+            //     count({ where: { id: undefined } })      -> 200   (every row)
+            //     count({ where: { id: 'no-such-id' } })   ->   0
+            //
+            // So the unguarded form is `DELETE FROM "Risk"` with no predicate,
+            // against a Postgres shared by every suite in the run. The
+            // `catch` below does not save it: this does not throw, it succeeds.
+            //
+            // Fails OPEN, which is the opposite of the intuition that an
+            // undefined filter matches nothing.
+            if (tenantA) {
+                await testPrisma.risk.deleteMany({
+                    where: { tenantId: tenantA },
+                });
+            }
             await testPrisma.tenant.deleteMany({
                 where: { slug: { in: slugs } },
             });
