@@ -8,7 +8,10 @@
 jest.mock('@/lib/storage', () => ({ getStorageProvider: jest.fn() }));
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { user: { update: jest.fn() } },
+    default: {
+        user: { update: jest.fn() },
+        tenantMembership: { findFirst: jest.fn() },
+    },
 }));
 
 import {
@@ -18,6 +21,7 @@ import {
     uploadOwnAvatar,
     removeOwnAvatar,
     getAvatarStream,
+    canViewAvatar,
     AVATAR_MAX_BYTES,
 } from '@/lib/account/avatar';
 import { getStorageProvider } from '@/lib/storage';
@@ -27,6 +31,9 @@ const mockGetStorageProvider = getStorageProvider as jest.Mock;
 const mockUserUpdate = (prisma as unknown as {
     user: { update: jest.Mock };
 }).user.update;
+const mockMembershipFindFirst = (prisma as unknown as {
+    tenantMembership: { findFirst: jest.Mock };
+}).tenantMembership.findFirst;
 
 /** A minimal byte buffer carrying the RIFF/WEBP magic number. */
 function webpBuffer(extraBytes = 32): Buffer {
@@ -184,5 +191,79 @@ describe('getAvatarStream — serve-route resolution', () => {
 
         expect(await getAvatarStream('u1')).toBeNull();
         expect(readStream).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * #2104 — the avatar audience gate. The route-level behaviour (which
+ * status code a refusal wears) lives in
+ * `tests/unit/account-avatar-serve-authz.test.ts`; this block pins the
+ * decision itself and the shape of the single query it costs.
+ */
+describe('canViewAvatar — shared-tenant audience gate', () => {
+    beforeEach(() => {
+        mockMembershipFindFirst.mockReset();
+    });
+
+    it('allows the caller their own avatar without a round trip', async () => {
+        // No mockResolvedValue: a query here would return `undefined`,
+        // and `undefined !== null` would make this pass for the WRONG
+        // reason. The call-count assertion below is what proves the
+        // short-circuit, and the sibling case proves the counter moves.
+        expect(await canViewAvatar('u1', 'u1')).toBe(true);
+        expect(mockMembershipFindFirst).not.toHaveBeenCalled();
+    });
+
+    it('asks the database once for a subject who is not the caller', async () => {
+        mockMembershipFindFirst.mockResolvedValue({ id: 'm1' });
+
+        expect(await canViewAvatar('viewer', 'subject')).toBe(true);
+        expect(mockMembershipFindFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('denies when no shared ACTIVE membership row comes back', async () => {
+        mockMembershipFindFirst.mockResolvedValue(null);
+
+        expect(await canViewAvatar('viewer', 'subject')).toBe(false);
+        expect(mockMembershipFindFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('requires ACTIVE on BOTH sides, in a live tenant, in one query', async () => {
+        mockMembershipFindFirst.mockResolvedValue(null);
+
+        await canViewAvatar('viewer', 'subject');
+
+        // The whole authorization rule is this `where`. Asserted
+        // exactly (not `objectContaining`) because every clause is
+        // load-bearing: drop `status` on either side and a removed
+        // employee keeps reading their ex-colleagues' avatars; drop
+        // `deletedAt` and a soft-deleted tenant still grants an
+        // audience; widen either userId and the gate is gone.
+        expect(mockMembershipFindFirst).toHaveBeenCalledWith({
+            where: {
+                userId: 'subject',
+                status: 'ACTIVE',
+                tenant: {
+                    deletedAt: null,
+                    memberships: {
+                        some: { userId: 'viewer', status: 'ACTIVE' },
+                    },
+                },
+            },
+            select: { id: true },
+        });
+    });
+
+    it('never fans out per tenant — one call regardless of membership count', async () => {
+        // The N+1 shape this forbids: resolve the viewer's tenants,
+        // then probe the subject once per tenant. `findFirst` with a
+        // correlated `some` keeps it at one round trip, so the count
+        // cannot grow with the size of either membership set.
+        mockMembershipFindFirst.mockResolvedValue(null);
+
+        await canViewAvatar('viewer', 'subject');
+        await canViewAvatar('viewer', 'other-subject');
+
+        expect(mockMembershipFindFirst).toHaveBeenCalledTimes(2);
     });
 });
