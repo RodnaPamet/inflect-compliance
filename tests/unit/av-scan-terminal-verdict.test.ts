@@ -39,6 +39,27 @@ jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntry: (...a: unknown[]) => appendAuditEntryMock(...a),
 }));
 
+/**
+ * #2096 — the route's writes now run inside the file's tenant context. The
+ * callback receives the same mocked delegates, so every assertion below still
+ * observes the statement it always did.
+ */
+jest.mock('@/lib/db-context', () => ({
+    __esModule: true,
+    runInTenantJobContext: async (
+        _job: { tenantId: string; source: string },
+        fn: (db: unknown) => Promise<unknown>,
+    ) =>
+        fn({
+            fileRecord: {
+                findUnique: (...a: unknown[]) => findUniqueMock(...a),
+                findFirst: (...a: unknown[]) => findFirstMock(...a),
+                update: (...a: unknown[]) => updateMock(...a),
+                updateMany: (...a: unknown[]) => updateManyMock(...a),
+            },
+        }),
+}));
+
 const FILE = {
     id: 'file-1',
     tenantId: 'tenant-1',
