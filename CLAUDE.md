@@ -377,6 +377,30 @@ new admin/privileged routes MUST add a rule in
 `requireAdminCtx` helper for new code — it still works but the
 permission-key model is the canonical pattern.
 
+**Two layers, and they are not interchangeable.**
+`api-permission-coverage.test.ts` is LAYER 1 — a curated
+`PRIVILEGED_ROOTS` population where only a LITERAL
+`requirePermission(...)` in the route file counts. A usecase-layer
+`assertCan*` does NOT satisfy it and must never be allowed to: a
+`requirePermission` denial writes a hash-chained `AUTHZ_DENIED`
+row, an `assertCanAdmin` denial writes nothing. Accepting the
+weaker mechanism on that population was measured, once, at a net
+strictness regression across 25 routes.
+
+`tests/guardrails/api-route-has-some-authorization.test.ts` is
+LAYER 2 (#2099) — additive, over ALL 582 `src/app/api/**/route.ts`
+files. It asks only *"is there any authorization on this path at
+all?"*, satisfied by a route-level gate, an `assertCan*` reached
+through the call graph (`tests/helpers/route-authorization-graph.ts`,
+3 module hops), or a declared exempt class whose credential check
+CI still verifies is present. **It makes no ordering, sufficiency
+or liveness claim** — a check that runs after the destructive
+write passes it. The residual with no authorization at all is
+capped at 2, each carrying its tracking issue. A new route lands
+IN by default: adding one under an existing exempt prefix still
+fails until it is triaged. See
+`docs/implementation-notes/2026-08-22-api-authorization-two-layers.md`.
+
 **C.2 — Secret detection.** Local pre-commit hook
 (`.husky/pre-commit` → `scripts/detect-secrets.sh`) scans staged
 files; CI guardrail (`tests/guardrails/no-secrets.test.ts`) walks
