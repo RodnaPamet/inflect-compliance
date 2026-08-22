@@ -25,6 +25,23 @@
  * Failure messages are written to be copy-paste-actionable. A reviewer
  * who sees a CI failure here should know exactly which file to edit
  * and which line to add.
+ *
+ * ─── THIS IS LAYER 1. IT IS THE STRONG CLAIM. ──────────────────────
+ *
+ * `tests/guardrails/api-route-has-some-authorization.test.ts` is layer 2:
+ * it walks the WHOLE api tree and asks only "is there any authorization
+ * on this path at all?", accepting a usecase-layer `assertCan*` reached
+ * through the call graph. That is a strictly weaker question, and it is
+ * ADDITIVE — it does not and must not relax anything here.
+ *
+ * Nothing in this file may be softened to lean on layer 2. In particular
+ * a usecase `assertCan*` does NOT satisfy the assertion below, and the
+ * routes in `PRIVILEGED_ROOTS` do not migrate there: a `requirePermission`
+ * denial writes a hash-chained AUTHZ_DENIED audit row and an
+ * `assertCanAdmin` denial writes nothing, which is exactly the defect
+ * Epic D.3 fixed for seven tenant routes. Accepting the weaker mechanism
+ * on this population was measured, once, at a net strictness regression
+ * across 25 routes.
  */
 
 import * as fs from 'fs';
