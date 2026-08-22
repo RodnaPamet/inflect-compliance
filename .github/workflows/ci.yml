@@ -295,6 +295,22 @@ jobs:
               - 'next.config.*'
               - 'deploy/**'
               - 'prisma/**'
+              # Root file — `prisma/**` does NOT match it, and the CLI reads it
+              # at container start to find the datasource URL.
+              - 'prisma.config.ts'
+              # The image's ENTRYPOINT. It is COPYed into the runner stage, so
+              # editing it changes the image — but it was not in this list, so
+              # a change to it shipped without the image being rebuilt or
+              # scanned. Found when a PR editing it produced a green run in
+              # which Docker Build and Trivy were both skipped.
+              - 'scripts/entrypoint.sh'
+              # patch-package runs on postinstall and mutates node_modules
+              # inside the image; a changed patch changes what ships.
+              - 'patches/**'
+              # Governs the Trivy gate itself. Without this, a PR adding an
+              # exemption cannot verify that the exemption works — the scan
+              # that would prove it does not run.
+              - '.trivyignore'
               - '.github/workflows/ci.yml'
 
   # ═══════════════════════════════════════════════════════════════
