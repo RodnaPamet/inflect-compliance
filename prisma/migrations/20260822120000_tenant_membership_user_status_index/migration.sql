@@ -5,12 +5,25 @@
 -- column, so a user-first predicate degrades to a sequential scan of
 -- every membership row in the deployment.
 --
--- Issue #2104 puts that predicate on a hot path: the avatar serve
--- route now authorizes a read by asking whether the caller and the
--- subject share a tenant, once per distinct avatar per cache window.
--- Several existing callers (getDefaultTenantForUser, the security-
--- events reader, the SCIM membership lookups, the evidence owner
--- lookup) were already paying the scan.
+-- Issue #2104 puts that predicate on a hot path: the avatar serve route
+-- now authorizes a read by asking whether the caller and the subject share
+-- a tenant.
+--
+-- ON EVERY REQUEST, not once per cache window. The route sets
+-- `Cache-Control: private, max-age=300`, but `deploy/caddy/Caddyfile:51-52`
+-- matches `@dynamic` and REPLACES it with `no-store` for every `/api/*`
+-- response — so in the deployed topology nothing is cached and there is no
+-- window to amortise over. The index is therefore load-bearing rather than
+-- a nicety. Several existing callers (getDefaultTenantForUser, the
+-- security-events reader, the SCIM membership lookups, the evidence owner
+-- lookup) were already paying the sequential scan.
+--
+-- `IF NOT EXISTS` deliberately. The paragraph above invites an operator to
+-- create this index by hand on production ahead of the release, and a bare
+-- CREATE INDEX would then fail the deploy with 42P07 — wedging the release
+-- behind Caddy's retry window over an index that already exists and is
+-- already correct. Matches 20260806150000_control_index_fit and
+-- 20260506020000_pr4_list_page_index_audit.
 --
 -- Additive; rollback is `DROP INDEX "TenantMembership_userId_status_idx";`.
-CREATE INDEX "TenantMembership_userId_status_idx" ON "TenantMembership"("userId", "status");
+CREATE INDEX IF NOT EXISTS "TenantMembership_userId_status_idx" ON "TenantMembership"("userId", "status");

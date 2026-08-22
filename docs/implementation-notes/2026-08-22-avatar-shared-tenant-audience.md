@@ -50,8 +50,19 @@ That predicate is `userId`-first, and no `userId`-leading index existed:
 `TenantMembership_tenantId_userId_key` has `userId` as its *second* column, which
 answers "who is in tenant T" and not "which tenants is user U in". So the query
 would have seq-scanned every membership row in the deployment, on a route that
-renders once per distinct colleague per cache window. The migration adds
-`TenantMembership_userId_status_idx`.
+runs the query **on every request**.
+
+Not once per cache window — that was the first version of this paragraph and it
+was wrong. The route sets `Cache-Control: private, max-age=300`, but
+`deploy/caddy/Caddyfile:51-52` matches `@dynamic` and REPLACES the header with
+`no-store` for every `/api/*` response. In the deployed topology nothing caches
+this, so there is no window to amortise the query over. The index is load-bearing
+rather than a nicety, and the per-request cost is real: this route is outside
+`/api/t/**`, so neither rate-limit tier applies to it.
+
+The migration adds `TenantMembership_userId_status_idx`, with `IF NOT EXISTS`
+so that an operator who pre-creates it on production does not wedge the deploy
+with a 42P07.
 
 ## Files
 
