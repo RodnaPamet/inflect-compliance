@@ -138,6 +138,11 @@ CSP_REPORT_ONLY=true
 # PLATFORM_ADMIN_API_KEY in the handler (not on a tenant role — the ring
 # buffer is one array per process and spans every tenant). Without the
 # header it is 401; with no key configured on the deployment it is 503.
+# It is also edge-rate-limited at 120 requests/IP/min, so a wrong-key
+# caller cannot spend an unbounded number of constant-time compares. The
+# POST sink is deliberately NOT covered by that limit — throttling a
+# credential-less browser beacon loses real reports — and keeps its own
+# 30 reports/IP/min in-handler limiter instead. See docs/rate-limiting.md.
 curl -H "X-Platform-Admin-Key: $PLATFORM_ADMIN_API_KEY" \
      https://<host>/api/security/csp-report   # recent violation summary
 
