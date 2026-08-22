@@ -43,6 +43,9 @@ describe('deadline arithmetic', () => {
 
 describe('phase ordering', () => {
     it('walks the seven-phase flow then terminates at CLOSED', () => {
+        // LITERAL ON PURPOSE — do not derive. NIS2 Article 23 incident handling
+        // is a seven-phase flow plus the CLOSED terminal; a ninth phase changes
+        // the regulatory lifecycle and must fail here rather than pass silently.
         expect(PHASE_ORDER).toHaveLength(8);
         expect(nextPhase('DETECTION')).toBe('CLASSIFICATION');
         expect(nextPhase('RECOVERY')).toBe('CLOSED');

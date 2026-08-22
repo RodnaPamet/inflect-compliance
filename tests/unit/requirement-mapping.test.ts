@@ -147,6 +147,10 @@ describe('RequirementMapping Domain', () => {
     // ─── Mapping Strength Semantics ──────────────────────────────────
     describe('MappingStrength enum', () => {
         it('defines exactly 5 strength values', () => {
+            // LITERAL ON PURPOSE — do not derive. MappingStrength is a closed
+            // set-relation vocabulary (the ranks below assume exactly these
+            // five, strictly ordered); a sixth strength is a modelling
+            // decision, not an array append.
             expect(MAPPING_STRENGTHS).toHaveLength(5);
             expect(MAPPING_STRENGTHS).toEqual(['EQUAL', 'SUPERSET', 'SUBSET', 'INTERSECT', 'RELATED']);
         });

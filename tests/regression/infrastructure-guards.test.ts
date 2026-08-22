@@ -78,6 +78,110 @@ function resolveEnvSchema(overrides: Record<string, string | undefined>): Resolv
     return JSON.parse(line.slice('RESOLVED '.length)) as ResolvedEnv;
 }
 
+/**
+ * The scheduled-job set, sorted — the SINGLE SOURCE OF TRUTH for both
+ * assertions below. The count is DERIVED from this list
+ * (`.length`), never written as a literal.
+ *
+ * Why: a literal count and the enumeration it counts lived in different
+ * files (`src/app-layer/jobs/schedules.ts` and this one). Two branches
+ * each adding a job both write the same new number, git merges them
+ * WITHOUT CONFLICT, and main then asserts N while reality is N+1 — both
+ * PRs green, no suspicious diff. The clean merge is the dangerous case,
+ * so deriving is the fix; "review it more carefully" is not.
+ *
+ * This count is BOOKKEEPING, not a claim about the domain: nothing says
+ * the platform should have exactly this many jobs, and the name-set
+ * assertion already carries everything the number did. Contrast with a
+ * closed VOCABULARY size (e.g. `MATURITY_LEVELS` has five levels), which
+ * stays a literal precisely so that growing it cannot pass silently.
+ *
+ * Adding a job: append its name here, in sort order, with a one-line
+ * note on what it does. The length assertion follows automatically.
+ */
+const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
+    // Audit Coherence S7 — daily admin escalation when
+    // an access-review campaign is severely past its
+    // dueAt and decisions remain pending.
+    'access-review-overdue-escalation',
+    // Epic G-4 — daily reviewer reminder for access review
+    // campaigns approaching their dueAt.
+    'access-review-reminder',
+    'automation-runner',
+    // C-roadmap — cross-tenant fan-out for the per-user calendar
+    // push. The child (calendar-push-tenant) is enqueued, not
+    // scheduled, so only the dispatcher appears here.
+    'calendar-push-dispatch',
+    // The fan-out the three *-posture-collect executors never
+    // had — they were registered and enqueued by nothing, so the
+    // rolling-evidence collectors behind them were unreachable.
+    'cloud-posture-collect-dispatch',
+    'compliance-digest',
+    // AI compliance-posture hero — daily cross-tenant fan-out
+    // enqueuing a per-tenant posture-summary generation.
+    'compliance-posture-summary-dispatch',
+    'compliance-snapshot',
+    // Epic G-2 — every-5-min repeatable scanning
+    // ControlTestPlan and enqueuing runner jobs.
+    'control-test-scheduler',
+    'daily-evidence-expiry',
+    'data-lifecycle',
+    // Business-KPI — every-5-min cross-tenant DAU/MAU
+    // aggregation refreshing the active-user gauge snapshot.
+    'dau-mau-aggregator',
+    // Epic G-5 — daily 30/14/7-day expiry reminder for
+    // control exceptions.
+    // Audit Coherence S3 — daily flip of APPROVED evidence past its
+    // nextReviewDate to NEEDS_REVIEW, 30 min before notification-dispatch
+    // so the owner hears the same morning.
+    'evidence-stale-review-sweep',
+    'exception-expiry-monitor',
+    // PR-4 — daily cross-tenant fan-out: an hris-sync per enabled
+    // BambooHR connection.
+    'hris-sync-dispatch',
+    // PR-2 — daily cross-tenant fan-out: an identity-sync per
+    // enabled Okta / Google Workspace connection.
+    // Daily leaver pass fan-out, one per (tenant, writable directory
+    // provider). Clamped at DRY_RUN — it decides, it does not write.
+    'identity-leaver-dispatch',
+    'identity-sync-dispatch',
+    // NIS2 Article 23 — hourly deadline clock flipping
+    // incident notification deadlines PENDING→DUE→OVERDUE.
+    'incident-notification-deadlines',
+    'notification-dispatch',
+    // Vuln integration — daily NVD CVE catalog ingestion +
+    // cross-tenant asset-match pass.
+    'nvd-cve-sync',
+    // Business-KPI — daily sweep emitting business.onboarding.abandoned
+    // for tenants idle ≥7 days on an onboarding step.
+    'onboarding-abandonment-sweep',
+    'policy-review-reminder',
+    // RQ-10 — daily cross-tenant scheduled-report delivery.
+    'report-delivery',
+    'retention-sweep',
+    // RQ-2 — daily cross-tenant risk-appetite breach monitor.
+    'risk-appetite-monitor',
+    // RQ-9 — daily cross-tenant risk + portfolio snapshot.
+    'risk-snapshot',
+    // PR-E — daily sweep firing SCHEDULE automation rules whose
+    // target entity is N days from its due date.
+    'schedule-trigger-sweep',
+    // SP-3 — every-4-hour fan-out: a delta sync per enabled
+    // SharePoint connection (auto-import changed evidence files).
+    'sharepoint-delta-sync-dispatch',
+    // SP-4 — daily renewal of policy Graph change subscriptions.
+    'sharepoint-subscription-renew',
+    // Automation Epic 5 — every-5-min SLA breach sweep over
+    // RUNNING automation executions.
+    'sla-monitor',
+    // In-app TASK_DUE notifications fired one week, one
+    // day, and on the day a task's dueAt falls.
+    'task-due-notification',
+    // Continuous vendor monitoring — daily posture sweep
+    // (breach / attestation-expiry / TLS) + reassessment reminder.
+    'vendor-monitoring',
+];
+
 describe('Infrastructure Regression Guards', () => {
 
     // ═══════════════════════════════════════════════════════════════
@@ -163,94 +267,29 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 32 scheduled jobs exist', () => {
-            expect(SCHEDULED_JOBS).toHaveLength(32);
+        // The derivation is only as trustworthy as the list it derives from:
+        // a duplicated name would inflate `.length` (and hide a genuinely
+        // double-registered repeatable job), and an out-of-sort-order append
+        // turns the name-set failure below into an unreadable diff.
+        test('the expected-name list is sorted and duplicate-free', () => {
+            expect(new Set(EXPECTED_SCHEDULED_JOB_NAMES).size).toBe(
+                EXPECTED_SCHEDULED_JOB_NAMES.length,
+            );
+            expect([...EXPECTED_SCHEDULED_JOB_NAMES].sort()).toEqual(
+                EXPECTED_SCHEDULED_JOB_NAMES,
+            );
+        });
+
+        test('SCHEDULED_JOBS holds exactly the expected set of jobs', () => {
+            // Derived, not a literal — see EXPECTED_SCHEDULED_JOB_NAMES.
+            expect(SCHEDULED_JOBS).toHaveLength(
+                EXPECTED_SCHEDULED_JOB_NAMES.length,
+            );
         });
 
         test('scheduled job names match expected set', () => {
             const names = SCHEDULED_JOBS.map(s => s.name).sort();
-            expect(names).toEqual([
-                // Audit Coherence S7 — daily admin escalation when
-                // an access-review campaign is severely past its
-                // dueAt and decisions remain pending.
-                'access-review-overdue-escalation',
-                // Epic G-4 — daily reviewer reminder for access review
-                // campaigns approaching their dueAt.
-                'access-review-reminder',
-                'automation-runner',
-                // C-roadmap — cross-tenant fan-out for the per-user calendar
-                // push. The child (calendar-push-tenant) is enqueued, not
-                // scheduled, so only the dispatcher appears here.
-                'calendar-push-dispatch',
-                // The fan-out the three *-posture-collect executors never
-                // had — they were registered and enqueued by nothing, so the
-                // rolling-evidence collectors behind them were unreachable.
-                'cloud-posture-collect-dispatch',
-                'compliance-digest',
-                // AI compliance-posture hero — daily cross-tenant fan-out
-                // enqueuing a per-tenant posture-summary generation.
-                'compliance-posture-summary-dispatch',
-                'compliance-snapshot',
-                // Epic G-2 — every-5-min repeatable scanning
-                // ControlTestPlan and enqueuing runner jobs.
-                'control-test-scheduler',
-                'daily-evidence-expiry',
-                'data-lifecycle',
-                // Business-KPI — every-5-min cross-tenant DAU/MAU
-                // aggregation refreshing the active-user gauge snapshot.
-                'dau-mau-aggregator',
-                // Epic G-5 — daily 30/14/7-day expiry reminder for
-                // control exceptions.
-                // Audit Coherence S3 — daily flip of APPROVED evidence past its
-                // nextReviewDate to NEEDS_REVIEW, 30 min before notification-dispatch
-                // so the owner hears the same morning.
-                'evidence-stale-review-sweep',
-                'exception-expiry-monitor',
-                // PR-4 — daily cross-tenant fan-out: an hris-sync per enabled
-                // BambooHR connection.
-                'hris-sync-dispatch',
-                // PR-2 — daily cross-tenant fan-out: an identity-sync per
-                // enabled Okta / Google Workspace connection.
-                // Daily leaver pass fan-out, one per (tenant, writable directory
-                // provider). Clamped at DRY_RUN — it decides, it does not write.
-                'identity-leaver-dispatch',
-                'identity-sync-dispatch',
-                // NIS2 Article 23 — hourly deadline clock flipping
-                // incident notification deadlines PENDING→DUE→OVERDUE.
-                'incident-notification-deadlines',
-                'notification-dispatch',
-                // Vuln integration — daily NVD CVE catalog ingestion +
-                // cross-tenant asset-match pass.
-                'nvd-cve-sync',
-                // Business-KPI — daily sweep emitting business.onboarding.abandoned
-                // for tenants idle ≥7 days on an onboarding step.
-                'onboarding-abandonment-sweep',
-                'policy-review-reminder',
-                // RQ-10 — daily cross-tenant scheduled-report delivery.
-                'report-delivery',
-                'retention-sweep',
-                // RQ-2 — daily cross-tenant risk-appetite breach monitor.
-                'risk-appetite-monitor',
-                // RQ-9 — daily cross-tenant risk + portfolio snapshot.
-                'risk-snapshot',
-                // PR-E — daily sweep firing SCHEDULE automation rules whose
-                // target entity is N days from its due date.
-                'schedule-trigger-sweep',
-                // SP-3 — every-4-hour fan-out: a delta sync per enabled
-                // SharePoint connection (auto-import changed evidence files).
-                'sharepoint-delta-sync-dispatch',
-                // SP-4 — daily renewal of policy Graph change subscriptions.
-                'sharepoint-subscription-renew',
-                // Automation Epic 5 — every-5-min SLA breach sweep over
-                // RUNNING automation executions.
-                'sla-monitor',
-                // In-app TASK_DUE notifications fired one week, one
-                // day, and on the day a task's dueAt falls.
-                'task-due-notification',
-                // Continuous vendor monitoring — daily posture sweep
-                // (breach / attestation-expiry / TLS) + reassessment reminder.
-                'vendor-monitoring',
-            ]);
+            expect(names).toEqual(EXPECTED_SCHEDULED_JOB_NAMES);
         });
     });
 

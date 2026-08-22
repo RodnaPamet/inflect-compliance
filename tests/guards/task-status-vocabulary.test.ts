@@ -78,6 +78,11 @@ describe('TP-1 (a) — the shared TASK_STATUS_BADGE map', () => {
         expect(new Set(Object.keys(TASK_STATUS_BADGE))).toEqual(
             new Set(ENUM_VALUES),
         );
+        // LITERAL ON PURPOSE — do not derive. The set-equality above compares
+        // the map against the LIVE enum, so a ninth status added to BOTH sides
+        // passes it. This 8 is the claim that TaskStatus is a closed
+        // eight-value vocabulary: it RESISTS the enum rather than tracking it,
+        // and widening the vocabulary must be a decision, not an append.
         expect(Object.keys(TASK_STATUS_BADGE)).toHaveLength(8);
     });
 
