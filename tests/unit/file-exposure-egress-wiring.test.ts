@@ -25,7 +25,17 @@ const recordManyMock = jest.fn();
  * `appendAuditEntry` opens its own advisory-locked transaction. So the route
  * no longer calls `assessExposureOnInfection` — it calls the two halves.
  */
-const buildExposureMock = jest.fn(async () => ({
+// `_input` is declared even though the implementation ignores it, and that is
+// load-bearing rather than tidiness. Handing `jest.fn` an implementation is what
+// NARROWS its signature: with `async () => …` tsc infers `() => Promise<…>`, so
+// `mock.calls` becomes an array of EMPTY tuples and `mock.calls[0][0]` below is
+// TS2493 — "tuple of length 0 has no element at index 0".
+//
+// Jest does not care; the suite passes. Only the central `tsc` rejects it, so
+// verifying with `npx jest` alone shows green and gives no signal. Note the
+// contrast with `recordExposureMock` below: a BARE `jest.fn()` narrows nothing
+// and indexes fine, so the more carefully-written mock is the one that breaks.
+const buildExposureMock = jest.fn(async (_input: unknown) => ({
     fileRecordId: 'file-1',
     sha256: 'a'.repeat(64),
     siblingFileRecordIds: [],
@@ -47,7 +57,11 @@ jest.mock('@/app-layer/services/file-distribution', () => ({
     __esModule: true,
     recordFileDistribution: (...a: unknown[]) => recordMock(...a),
     recordFileDistributions: (...a: unknown[]) => recordManyMock(...a),
-    buildFileExposureReport: (...a: unknown[]) => buildExposureMock(...(a as [])),
+    // `a[0]` rather than a spread cast: `...(a as [])` asserted an EMPTY tuple,
+    // which matched the old zero-arg signature and stops compiling the moment
+    // the mock declares a parameter. Passing the argument by position says what
+    // is meant and needs no cast.
+    buildFileExposureReport: (...a: unknown[]) => buildExposureMock(a[0]),
     recordFileExposureReport: (...a: unknown[]) => recordExposureMock(...a),
 }));
 
