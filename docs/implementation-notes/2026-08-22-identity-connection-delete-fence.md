@@ -30,7 +30,16 @@ had marked never-offboard, and nothing in the system reads as broken.
   `{ okta, google-workspace, entra-id, active-directory }`.
 
 A loaded gun with no trigger. The work is not to unload it — the cascade is
-correct — but to make the trigger unable to appear silently.
+correct — but to fence the one trigger that exists.
+
+**Scope, stated up front.** Every assertion goes through `disconnectSharePoint`,
+so the suite detects exactly one regression: `loadConnection` losing its provider
+filter. A SECOND `integrationConnection.delete(...)` call site added elsewhere
+would leave the suite green. That gap is left open deliberately — closing it
+needs an enumeration of delete call sites, i.e. a source scan, and a source scan
+cannot answer whether a path is reachable. The broad claim ("the trigger cannot
+appear silently") would have been the more comfortable sentence and the false
+one.
 
 ## Where the safety property actually lives
 

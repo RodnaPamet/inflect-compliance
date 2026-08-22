@@ -25,8 +25,23 @@
  * hold identity accounts (`identity-sync` is their sole creator and it
  * gates on okta / google-workspace / entra-id / active-directory).
  *
- * So this is a loaded gun with no trigger, and the job is to make the
- * trigger unable to appear silently.
+ * So this is a loaded gun with no trigger, and the job is to fence the one
+ * trigger that exists.
+ *
+ * WHAT THIS SUITE DOES NOT COVER — say it here, not in a postmortem
+ * -----------------------------------------------------------------
+ * Every assertion below reaches the database through `disconnectSharePoint`,
+ * so this suite detects exactly ONE regression: `loadConnection` losing its
+ * provider filter. It does NOT detect the other way the trigger appears — a
+ * SECOND `integrationConnection.delete(...)` call site added elsewhere (a
+ * `disconnectGoogleWorkspace` modelled on this one, a tenant-cleanup path, a
+ * migration script). Such a call site would leave all five assertions green.
+ *
+ * That gap is stated rather than closed because closing it needs a different
+ * instrument — an enumeration of delete call sites, which is a source scan,
+ * and a source scan cannot answer whether a path is reachable. Claiming the
+ * broad property here would be the more comfortable sentence and the false
+ * one.
  *
  * WHERE THE SAFETY PROPERTY ACTUALLY LIVES
  * ----------------------------------------
@@ -73,8 +88,19 @@ const TENANT_ID = `t-${SUITE_TAG}`;
  * providers whose connections can be carrying protection flags. Every one
  * of them has to be unreachable from the SharePoint disconnect — not just
  * the first one someone thought of.
+ *
+ * ALL FOUR, deliberately. An earlier draft listed two and kept this comment,
+ * which made the comment false by exactly the argument it was making. The
+ * omission that would have mattered is `active-directory`: with `entra-id` it
+ * is one of the two WRITABLE_IDENTITY_PROVIDERS, so it is among the likeliest
+ * to grow a `disconnectX` of its own modelled on the SharePoint one.
+ *
+ * Keep this in step with IDENTITY_PROVIDERS in `usecases/identity-sync.ts`. It
+ * is a fourth copy of a closed vocabulary that already exists three times in
+ * src/ — the duplication is a known cost, taken because a test that imported
+ * the list would pass automatically when someone shortened it.
  */
-const IDENTITY_PROVIDERS = ['okta', 'entra-id'] as const;
+const IDENTITY_PROVIDERS = ['okta', 'entra-id', 'google-workspace', 'active-directory'] as const;
 type IdentityProvider = (typeof IDENTITY_PROVIDERS)[number];
 
 const PROTECTION_REASON = 'Break-glass credential — never offboard automatically';
@@ -166,7 +192,14 @@ describeFn('identity connections are unreachable from the SharePoint disconnect'
                 TENANT_ID,
             );
         });
-        await globalPrisma.user.deleteMany({ where: { id: ownerUserId } });
+        // GUARDED, and this is not defensive padding. `afterAll` runs even when
+        // `beforeAll` threw, and Prisma treats `where: { id: undefined }` as an
+        // ABSENT filter rather than an error — so an early failure here would
+        // issue an unfiltered deleteMany against a Postgres this machine shares
+        // with other sessions. The bare `let` is what makes it reachable.
+        if (ownerUserId) {
+            await globalPrisma.user.deleteMany({ where: { id: ownerUserId } });
+        }
         await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
         await globalPrisma.$disconnect();
     });
