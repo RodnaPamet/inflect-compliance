@@ -276,6 +276,24 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  on REJECTED rows. Both contain narrative that may name
     //  internal users / systems, so they're encrypted at rest.
     ControlException: ['justification', 'rejectionReason'],
+    // GDPR data-subject requests. Both columns are narrative text ABOUT AN
+    // IDENTIFIED PERSON who has exercised a privacy right — why their request
+    // was refused, and what was done to fulfil it. That is the most sensitive
+    // free text the platform holds by subject matter, and it was shipping in
+    // plaintext until 20260822010000.
+    //
+    // Nothing was bypassed. The model is deliberately USER-scoped and carries
+    // no `tenantId`, so it was outside `TENANT_SCOPED_MODELS` — and the
+    // coverage guard scans tenant-scoped columns only. Listing the model for
+    // RLS put these two into that guard's denominator for the first time, and
+    // it failed immediately. One absence hid the table from two guards.
+    //
+    // Both already pass through `sanitizeOptional` in `dsar-register.ts`, so
+    // the D.2 write-path requirement is met. Neither is used in a `contains` /
+    // `startsWith` / `orderBy` anywhere in `src/`, so encryption is safe.
+    // No backfill migration: production holds zero DataSubjectRequest rows
+    // (measured, not assumed).
+    DataSubjectRequest: ['rejectionReason', 'fulfilmentNotes'],
     // EU AI Act registry — a system's purpose + use-context can describe
     // sensitive business processes / data flows. Sanitised on write, encrypted
     // at rest. NOT searched (no contains/orderBy), so encryption is safe.

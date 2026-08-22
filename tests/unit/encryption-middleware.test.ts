@@ -149,6 +149,66 @@ describe('ConnectedIdentityAccount.protectionReason round-trips through the midd
     });
 });
 
+describe('DataSubjectRequest free text round-trips through the middleware', () => {
+    /**
+     * Step 3 of the manifest's own "Adding a new field" checklist.
+     *
+     * `rejectionReason` and `fulfilmentNotes` are narrative ABOUT AN IDENTIFIED
+     * PERSON who has exercised a GDPR right — why their request was refused,
+     * and what was done to satisfy it. By subject matter this is the most
+     * sensitive free text the platform stores.
+     *
+     * It shipped in plaintext, and no guard was bypassed to allow that: the
+     * model is deliberately USER-scoped with no `tenantId`, the coverage guard
+     * scans tenant-scoped columns, so these two were never in its denominator.
+     * They entered it only when the model was listed for RLS.
+     */
+    it('declares both columns in the manifest', () => {
+        expect(getEncryptedFields('DataSubjectRequest')).toContain('rejectionReason');
+        expect(getEncryptedFields('DataSubjectRequest')).toContain('fulfilmentNotes');
+        expect(isEncryptedModel('DataSubjectRequest')).toBe(true);
+    });
+
+    it('encrypts the rejection reason, and the subject is not readable in the ciphertext', () => {
+        const data: Record<string, unknown> = {
+            rejectionReason: 'Could not verify identity of Ada Lovelace (ada@acme.com)',
+        };
+        encryptDataNode(data, 'DataSubjectRequest', null);
+        expect(isEncryptedValue(data.rejectionReason as string)).toBe(true);
+        expect(data.rejectionReason as string).not.toContain('Ada');
+        expect(data.rejectionReason as string).not.toContain('acme.com');
+    });
+
+    it('round-trips fulfilment notes exactly', () => {
+        const plain = 'Exported 4 records; erased marketing profile; confirmed with subject 2026-08-22.';
+        const data: Record<string, unknown> = { fulfilmentNotes: plain };
+        encryptDataNode(data, 'DataSubjectRequest', null);
+        expect(data.fulfilmentNotes).not.toBe(plain);
+        decryptResultNode(data, 'DataSubjectRequest', { primary: null, previous: null, reason: 'by-design' });
+        expect(data.fulfilmentNotes).toBe(plain);
+    });
+
+    it('leaves nulls alone — an unfulfilled request is not ciphertext', () => {
+        const data: Record<string, unknown> = { rejectionReason: null, fulfilmentNotes: null };
+        encryptDataNode(data, 'DataSubjectRequest', null);
+        expect(data.rejectionReason).toBeNull();
+        expect(data.fulfilmentNotes).toBeNull();
+    });
+
+    it('does NOT touch the columns the workflow reads to make decisions', () => {
+        // `userId` is the RLS policy's join key and `status` drives the state
+        // machine. Encrypting either would break isolation or the workflow
+        // outright — the manifest is for free text, not identifiers or state.
+        const data: Record<string, unknown> = {
+            userId: 'u-123', status: 'REJECTED', type: 'ERASURE',
+        };
+        encryptDataNode(data, 'DataSubjectRequest', null);
+        expect(data.userId).toBe('u-123');
+        expect(data.status).toBe('REJECTED');
+        expect(data.type).toBe('ERASURE');
+    });
+});
+
 describe('IdentityWriteJournal.detail round-trips through the middleware', () => {
     /**
      * Step 3 of the manifest's own "Adding a new field" checklist.

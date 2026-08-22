@@ -230,6 +230,16 @@ const OWNERSHIP_CHAINED_MODELS: readonly string[] = [
     // tripwire warns about a context-less query. Neither could see the
     // table, because both are keyed on a marker the table never carried.
     'PolicyAcknowledgementAssignment',
+    // DataSubjectRequest — the same omission for a different reason, and a
+    // worse one: the sibling above HAD its policy and was merely unlisted,
+    // whereas this table had NO row-level security at all until migration
+    // 20260822010000. It is deliberately USER-scoped (a DSAR concerns a
+    // person, not a tenant) so it carries no `tenantId`, which is exactly
+    // why the auto half could not enumerate it — the marker both halves key
+    // on is one the model will never carry by design. Its chain runs through
+    // `TenantMembership` on `userId`, mirroring the app's own
+    // `scopedToTenantMembers()` predicate in `dsar-register.ts`.
+    'DataSubjectRequest',
 ];
 
 function enumerateDirectTenantScopedModels(): string[] {

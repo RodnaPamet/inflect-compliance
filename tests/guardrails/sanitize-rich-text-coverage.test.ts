@@ -73,6 +73,20 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/identity-account-protection.ts'],
         sanitizer: 'sanitizePlainText',
     },
+    // `rejectionReason` and `fulfilmentNotes` on a GDPR data-subject request.
+    // Operator-authored narrative about an identified person, written through
+    // `sanitizeOptional` in `dsar-register.ts` — a three-state preserving
+    // wrapper (undefined = leave, null = clear) over `sanitizePlainText`.
+    //
+    // This model reached the manifest only when it was listed for RLS: it is
+    // deliberately USER-scoped with no `tenantId`, and both the encryption
+    // coverage guard and this one scan tenant-scoped models, so its columns sat
+    // outside every denominator at once. The sanitising was already correct —
+    // what was missing was the model's membership in the lists that check.
+    DataSubjectRequest: {
+        usecases: ['src/app-layer/usecases/dsar-register.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     // `detail` is mixed provenance: a provider rejection message is machine
     // -generated, but a REVERTED reason is written by a person, and the row is
     // read back by an operator surface and an auditor export. Sanitised in
