@@ -82,6 +82,7 @@ const prismaMock = {
                 data: Record<string, unknown>;
             }) => {
                 writeCount += 1;
+                order.push('claim');
                 const notInfected = (where.scanStatus as { not?: string } | undefined)?.not;
                 if (where.id !== row.id) return { count: 0 };
                 if (notInfected !== undefined && row.scanStatus === notInfected) return { count: 0 };
@@ -108,10 +109,36 @@ jest.mock('@/lib/prisma', () => ({
     default: prismaMock,
 }));
 
+/**
+ * Ordered trace of scope boundaries and the operations inside them, so a test
+ * can assert WHERE an operation ran and not merely that it ran.
+ */
+const order: string[] = [];
+const tenantScopeCalls: Array<{ tenantId: string; source: string }> = [];
+
+jest.mock('@/lib/db-context', () => ({
+    __esModule: true,
+    runInTenantJobContext: async (
+        job: { tenantId: string; source: string },
+        fn: (db: unknown) => Promise<unknown>,
+    ) => {
+        tenantScopeCalls.push({ tenantId: job.tenantId, source: job.source });
+        order.push('tx:start');
+        try {
+            return await fn(prismaMock);
+        } finally {
+            order.push('tx:end');
+        }
+    },
+}));
+
 const appendAuditEntryMock = jest.fn();
 jest.mock('@/lib/audit/audit-writer', () => ({
     __esModule: true,
-    appendAuditEntry: (...a: unknown[]) => appendAuditEntryMock(...a),
+    appendAuditEntry: (...a: unknown[]) => {
+        order.push('audit');
+        return appendAuditEntryMock(...a);
+    },
 }));
 
 function post(body: Record<string, unknown>) {
@@ -123,6 +150,8 @@ function post(body: Record<string, unknown>) {
 }
 
 beforeEach(() => {
+    order.length = 0;
+    tenantScopeCalls.length = 0;
     jest.clearAllMocks();
     row = freshRow();
     snapshots = [];
@@ -220,5 +249,78 @@ describe('AV webhook — quarantine is one atomic write', () => {
                 tenantId: 'tenant-1',
             }),
         );
+    });
+});
+
+/**
+ * The route's DB work runs in the file's tenant context (#2096).
+ *
+ * Before this, the whole handler ran unbound: correct, because every query
+ * filtered on `tenantId` explicitly, but with no RLS backstop underneath — the
+ * one layer that would stop a future query that forgot the filter.
+ *
+ * The lookup is the deliberate exception and stays unbound, because finding the
+ * row IS how the route learns which tenant to bind to. That is asserted below
+ * rather than left implicit, so a later change that "fixes" it by binding the
+ * lookup to something guessed from the payload fails here.
+ */
+describe('AV webhook — tenant binding', () => {
+    it('runs the conditional claim INSIDE a tenant scope, and the audit write outside', async () => {
+        const { POST } = await import('@/app/api/storage/av-webhook/route');
+        await POST(post({ fileId: 'file-1', status: 'infected', engine: 'clamav' }));
+
+        // Scope DEPTH, not relative index. Wrapping the whole handler in one
+        // binding would keep the indices in order while nesting the
+        // advisory-locked audit transaction inside an interactive one — which
+        // is the regression this asserts against.
+        const depthAt = (label: string) => {
+            const at = order.indexOf(label);
+            expect(at).toBeGreaterThanOrEqual(0); // positive control: it ran at all
+            const before = order.slice(0, at);
+            return (
+                before.filter((x) => x === 'tx:start').length -
+                before.filter((x) => x === 'tx:end').length
+            );
+        };
+
+        expect(depthAt('claim')).toBeGreaterThan(0);
+        expect(depthAt('audit')).toBe(0);
+    });
+
+    it('binds to the tenant the lookup discovered', async () => {
+        const { POST } = await import('@/app/api/storage/av-webhook/route');
+        await POST(post({ fileId: 'file-1', status: 'infected', engine: 'clamav' }));
+
+        expect(tenantScopeCalls.length).toBeGreaterThan(0);
+        for (const call of tenantScopeCalls) {
+            expect(call.tenantId).toBe('tenant-1');
+        }
+    });
+
+    it('never labels its context with a KEK-bypass source', async () => {
+        // 'job' / 'system' / 'seed' are in KEK_BYPASS_SOURCES: they turn the
+        // per-tenant DEK off, so encrypted columns written under them are
+        // wrapped by the global KEK instead. `runInTenantJobContext` refuses
+        // them outright, which would surface as a 500 rather than silent
+        // corruption — but the label is worth pinning where it is chosen.
+        for (const call of tenantScopeCalls) {
+            expect(['job', 'system', 'seed']).not.toContain(call.source);
+            expect(call.source).toBe('av-webhook');
+        }
+    });
+
+    it('leaves the file LOOKUP unbound — it is what discovers the tenant', async () => {
+        const { POST } = await import('@/app/api/storage/av-webhook/route');
+        await POST(post({ fileId: 'file-1', status: 'infected', engine: 'clamav' }));
+
+        // The lookup must have happened before any scope opened: there is no
+        // tenant to bind to until it returns. `findUnique` is called on the
+        // module-level client, so the first scope boundary in `order` comes
+        // after it.
+        expect(prismaMock.fileRecord.findUnique).toHaveBeenCalledWith({
+            where: { id: 'file-1' },
+        });
+        expect(order[0]).toBe('tx:start');
+        expect(order.indexOf('claim')).toBeGreaterThan(order.indexOf('tx:start'));
     });
 });

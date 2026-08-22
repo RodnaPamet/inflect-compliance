@@ -19,8 +19,20 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import { runInTenantJobContext, type PrismaTx } from '@/lib/db-context';
+
+/**
+ * The audit-context `source` every bound statement on this route runs under.
+ *
+ * NOT `'job'` / `'system'` / `'seed'` — those are in `KEK_BYPASS_SOURCES`,
+ * which turns the per-tenant DEK off, and `runInTenantJobContext` refuses them
+ * outright. The route's own name is also what an operator reading
+ * `AuditLog.metadataJson.source` needs to see.
+ */
+const AV_WEBHOOK_SOURCE = 'av-webhook';
 import {
-    assessExposureOnInfection,
+    buildFileExposureReport,
+    recordFileExposureReport,
     type LedgerClient,
 } from '@/app-layer/services/file-distribution';
 
@@ -119,6 +131,19 @@ export async function POST(req: NextRequest) {
         }
 
         // ─── Lookup file record ───
+        //
+        // THIS ONE READ IS DELIBERATELY UNBOUND, and it is the only one left.
+        //
+        // Binding a statement to a tenant requires knowing the tenant, and on
+        // this route finding the row IS how we learn it: the scanner posts a
+        // `fileId` or a `pathKey` and nothing else. There is no session, no
+        // slug, no JWT — the caller is a machine authenticated by HMAC.
+        //
+        // It is safe to leave unbound because neither predicate is
+        // tenant-shaped: `id` is a primary key and `pathKey` is globally
+        // unique, so each matches at most one row and the row it matches is
+        // the one the scanner scanned. Everything AFTER this point runs under
+        // `inTenant`, bound to the tenant this lookup discovers.
         let fileRecord: Awaited<ReturnType<typeof prisma.fileRecord.findUnique>> = null;
         if (payload.fileId) {
 
@@ -140,6 +165,33 @@ export async function POST(req: NextRequest) {
             });
             return jsonResponse({ error: 'File not found' }, { status: 404 });
         }
+
+        // ─── Everything from here runs in the file's tenant context ───
+        //
+        // `source` is this route's own name, never `'job'` / `'system'` /
+        // `'seed'` — those are in `KEK_BYPASS_SOURCES`, which turns the
+        // per-tenant DEK off, and `runInTenantJobContext` refuses them outright.
+        //
+        // Per-statement rather than one wrapper around the handler, for the
+        // same reason `av-rescan.ts` does it: `appendAuditEntry` takes
+        // `pg_advisory_xact_lock` in its OWN transaction, and nesting that
+        // inside an interactive one holds two pooled connections and a
+        // per-tenant lock for the duration. Short transactions, audit outside
+        // all of them.
+        // Captured as consts: `fileRecord` is a `let`, so the null-narrowing
+        // from the guard above does not survive into the closures below.
+        const record = fileRecord;
+        const tenantId = record.tenantId;
+        const inTenant = <T>(fn: (db: PrismaTx) => Promise<T>): Promise<T> =>
+            runInTenantJobContext(
+                {
+                    tenantId,
+                    source: AV_WEBHOOK_SOURCE,
+                    actorUserId: record.uploadedByUserId,
+                    requestId: null,
+                },
+                fn,
+            );
 
         // ─── Map status ───
         const scanStatusMap: Record<string, string> = {
@@ -184,8 +236,8 @@ export async function POST(req: NextRequest) {
         // either the row moves to INFECTED *and* FAILED together, or it does
         // not move at all. `status` is only ever SET here, never unset.
         const isInfected = payload.status === 'infected';
-        const claimed = await prisma.fileRecord.updateMany({
-            where: { id: fileRecord.id, scanStatus: { not: 'INFECTED' } },
+        const claimed = await inTenant((db) => db.fileRecord.updateMany({
+            where: { id: record.id, scanStatus: { not: 'INFECTED' } },
             data: {
                 scanStatus,
                 scanDetails,
@@ -195,7 +247,7 @@ export async function POST(req: NextRequest) {
                 // two statements. Only ever SET, never unset.
                 ...(isInfected ? { status: 'FAILED' as const } : {}),
             },
-        });
+        }));
 
         if (claimed.count === 0) {
             // The row is already INFECTED. Report success — the webhook did
@@ -273,26 +325,24 @@ export async function POST(req: NextRequest) {
             // scanner told to retry because our reporting failed would be a
             // worse outcome than a missing report.
             try {
-                await assessExposureOnInfection({
-                    tenantId: fileRecord.tenantId,
-                    fileRecordId: fileRecord.id,
-                    sha256: fileRecord.sha256,
-                    uploadedByUserId: fileRecord.uploadedByUserId,
+                // Two steps, deliberately not one — the same split
+                // `av-rescan.ts` uses. The READS take the tenant-bound
+                // connection; the WRITE lands outside it, because
+                // `recordFileExposureReport` ends in `appendAuditEntry` and
+                // that opens its own advisory-locked transaction.
+                const report = await inTenant((db) =>
+                    buildFileExposureReport({
+                        tenantId,
+                        fileRecordId: record.id,
+                        sha256: record.sha256,
+                        client: db as unknown as LedgerClient,
+                    }),
+                );
+                await recordFileExposureReport(report, {
+                    tenantId,
+                    fileRecordId: record.id,
+                    uploadedByUserId: record.uploadedByUserId,
                     engine: payload.engine ?? null,
-                    // The GLOBAL client, and this route means it.
-                    //
-                    // Nothing on this path binds a tenant context — the whole
-                    // handler runs unbound, so there is no `PrismaTx` here to
-                    // hand over. Reads stay correct because they filter on
-                    // `tenantId` explicitly, which is what scopes them; RLS is
-                    // not doing that work on this route.
-                    //
-                    // Passing it by name is the point. The parameter used to
-                    // default to this same client, which made an unbound caller
-                    // read as a bound one. Binding the webhook is tracked
-                    // separately — this argument surfaces the gap, it does not
-                    // close it.
-                    client: prisma as unknown as LedgerClient,
                 });
             } catch (err) {
                 logger.error('AV webhook: exposure assessment failed after quarantine', {
