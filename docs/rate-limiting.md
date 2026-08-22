@@ -62,6 +62,50 @@ path.startsWith(excluded + '/')`), so `/api/health` matches but
 the exclusion to similar-prefixed paths). There's an explicit test for
 this in `tests/unit/api-read-rate-limit.test.ts`.
 
+## Anonymous edge surfaces
+
+A short list of paths is reachable with no session by design — the caller is
+a browser beacon, an external respondent, a device agent or a deployment
+operator, and it presents its credential (or none at all) to the handler
+rather than to the edge. They sit on `MACHINE_CALLER_PREFIXES` or the
+public-path list, so `src/middleware.ts` hands them straight through without
+ever reaching the read-tier check above.
+
+Each one therefore calls `checkApiReadRateLimit(req, null, '<scope>')`
+itself, BEFORE the public-path early-return, borrowing the read tier's
+budget and enforcement module under its own bucket namespace:
+
+| Path | Scope key | Bucket |
+|------|-----------|--------|
+| `/trust/<slug>` | `trust:<slug>` | IP + slug |
+| `/api/trust/**` | `apitrust:<slug>`, `apitrust:download` | IP + slug |
+| `/api/t/<slug>/devices/report` | `devreport:<token prefix>` | IP + device token |
+| `/vendor-assessment/**`, `/api/vendor-assessment/**` | `vendorassess:<id>` | IP + assessment id |
+| `GET`/`HEAD` on `/api/security/csp-report`, `/api/csp-report` | `cspreport` | IP |
+
+None of these are matched by `isApiReadRateLimited`, which stays scoped to
+`/api/t/` GETs. The middleware calls the check directly so it can run ahead
+of the allowlist, and so it can pick a bucket key the generic matcher has no
+way to derive.
+
+Two things in that table are easy to get wrong:
+
+- **The CSP-report row is the one method-scoped entry.** `POST` on that path
+  is a credential-less browser beacon, and a limiter it shares with an
+  attacker loses real violation reports silently — so the POST is left to its
+  own in-handler limiter (30 reports/IP/min, `checkReportRateLimit` in
+  `src/lib/security/csp-violations.ts`) plus a 16 KB body cap, and the edge
+  block skips it. The `GET` returns the process-wide violation buffer behind
+  `PLATFORM_ADMIN_API_KEY`; 120/min bounds what an unauthenticated caller can
+  spend of ours per IP, having previously been able to spend an unbounded
+  amount.
+- **Keying by the presented credential is a fairness decision, not a security
+  one.** `devreport:` keys by the device bearer token because those tokens
+  are issued, so many devices behind one NAT get independent buckets. The
+  CSP-report GET keys by IP alone for the opposite reason: there the
+  credential is the thing an attacker varies, so keying by it would hand
+  every guess a fresh budget.
+
 ## Bucketing
 
 The read tier keys by **`(IP, userId, tenantSlug)`**. Two consequences:
