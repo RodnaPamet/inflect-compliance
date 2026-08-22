@@ -706,6 +706,14 @@ model TenantMembership {
 
   @@unique([tenantId, userId])
   @@index([tenantId, status])
+  /// Answers "which tenants does THIS user belong to" without a scan.
+  /// `@@unique([tenantId, userId])` cannot: `userId` is its second
+  /// column, so a user-first lookup falls back to a sequential scan of
+  /// every membership in the deployment. The avatar serve route
+  /// (#2104) asks that question on a per-image hot path, and
+  /// `getDefaultTenantForUser`, the security-events reader and the
+  /// SCIM membership lookups all asked it already.
+  @@index([userId, status])
   @@index([customRoleId])
   @@index([provisionedByOrgId])
 }

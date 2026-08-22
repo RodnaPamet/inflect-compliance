@@ -229,12 +229,15 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
     {
         relPath: 'api/account/avatar/[userId]/route.ts',
         reason:
-            'Deliberately permissive read, NOT self-service: any authenticated ' +
-            'user may GET any userId\'s avatar. Avatars render across tenant ' +
-            'member lists and people-pickers, and the route is documented as a ' +
-            'low-sensitivity read. Recorded plainly because it is the one route ' +
-            'here that reads another user: it is unscoped by tenant, so tightening ' +
-            'it is a behaviour change to weigh separately, not a rename of this reason.',
+            'Reads ANOTHER user, so it is neither self-service nor unguarded — ' +
+            'it is gated by `canViewAvatar`, which requires an ACTIVE membership ' +
+            'shared with the subject and answers a caller outside that audience ' +
+            'with the same 404 an absent avatar returns (#2104). Not ' +
+            '`requirePermission`: the route resolves no tenant from its path, so ' +
+            'there is no tenant role for a permission key to be checked against — ' +
+            'the audience is "any tenant we both belong to", which is a membership ' +
+            'question rather than a role one. Behaviour is asserted in ' +
+            'tests/unit/account-avatar-serve-authz.test.ts.',
     },
 ];
 

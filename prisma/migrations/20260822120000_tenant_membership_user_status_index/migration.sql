@@ -1,0 +1,16 @@
+-- Index the user-first membership lookup.
+--
+-- `TenantMembership_tenantId_userId_key` covers "who is in tenant T"
+-- but not "which tenants is user U in" — `userId` is its second
+-- column, so a user-first predicate degrades to a sequential scan of
+-- every membership row in the deployment.
+--
+-- Issue #2104 puts that predicate on a hot path: the avatar serve
+-- route now authorizes a read by asking whether the caller and the
+-- subject share a tenant, once per distinct avatar per cache window.
+-- Several existing callers (getDefaultTenantForUser, the security-
+-- events reader, the SCIM membership lookups, the evidence owner
+-- lookup) were already paying the scan.
+--
+-- Additive; rollback is `DROP INDEX "TenantMembership_userId_status_idx";`.
+CREATE INDEX "TenantMembership_userId_status_idx" ON "TenantMembership"("userId", "status");

@@ -103,6 +103,75 @@ export async function removeOwnAvatar(userId: string): Promise<void> {
 }
 
 /**
+ * May `viewerUserId` read `subjectUserId`'s avatar? (#2104)
+ *
+ * The audience is the subject's colleagues: a caller may read an
+ * avatar when there is at least one tenant in which BOTH of them hold
+ * an ACTIVE membership — plus, always, their own. Before #2104 the
+ * serve route checked authentication only, so any signed-in account,
+ * including one with zero memberships, could read any user's avatar
+ * and use 200-versus-404 as an account-existence oracle.
+ *
+ * ACTIVE on both sides, matching `applyMembershipClaims` in
+ * `src/auth.ts` (`{ status: 'ACTIVE', tenant: { deletedAt: null } }`)
+ * — the same predicate that decides whether the caller can reach the
+ * tenant's pages at all. INVITED is not yet a colleague; DEACTIVATED
+ * and REMOVED no longer are. A soft-deleted tenant grants nothing,
+ * because nobody can enter it.
+ *
+ * Known consequence: `/admin/members` lists ACTIVE + INVITED +
+ * DEACTIVATED rows, so the latter two render as initials rather than
+ * their uploaded photo. That is the subject side of this rule, and
+ * loosening it is a deliberate product call — see
+ * `docs/implementation-notes/2026-08-22-avatar-shared-tenant-audience.md`
+ * before changing it to make one page prettier.
+ *
+ * ONE round trip, at most one row. The subject's ACTIVE memberships
+ * are the driving scan (`TenantMembership_userId_status_idx`) and the
+ * viewer's side is a correlated EXISTS over the same table, so
+ * neither membership set is materialised in the app and there is no
+ * per-tenant loop:
+ *
+ *   SELECT id FROM "TenantMembership" m
+ *   WHERE m."userId" = $subject AND m.status = 'ACTIVE'
+ *     AND EXISTS (SELECT 1 FROM "Tenant" t
+ *                  WHERE t.id = m."tenantId" AND t."deletedAt" IS NULL
+ *                    AND EXISTS (SELECT 1 FROM "TenantMembership" v
+ *                                 WHERE v."tenantId" = t.id
+ *                                   AND v."userId" = $viewer
+ *                                   AND v.status = 'ACTIVE'))
+ *   LIMIT 1;
+ *
+ * Deliberately asked of the DATABASE rather than of the caller's JWT
+ * membership claims. Those are a bounded fast path — capped at
+ * `MAX_JWT_MEMBERSHIPS` and refreshed only at sign-in — so reading
+ * them here would hand a 404 to a colleague sitting past the cap.
+ */
+export async function canViewAvatar(
+    viewerUserId: string,
+    subjectUserId: string,
+): Promise<boolean> {
+    // Own avatar. The chrome renders it on every page, so answering
+    // this one without a round trip is the case that matters for cost.
+    if (viewerUserId === subjectUserId) return true;
+
+    const shared = await prisma.tenantMembership.findFirst({
+        where: {
+            userId: subjectUserId,
+            status: 'ACTIVE',
+            tenant: {
+                deletedAt: null,
+                memberships: {
+                    some: { userId: viewerUserId, status: 'ACTIVE' },
+                },
+            },
+        },
+        select: { id: true },
+    });
+    return shared !== null;
+}
+
+/**
  * Resolve a stored avatar to a readable stream for the serve route,
  * or `null` when the user has no uploaded avatar. The `head` probe
  * turns a missing object into a clean `null` (→ 404) instead of an
