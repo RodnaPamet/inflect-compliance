@@ -103,3 +103,36 @@ CVE-2026-69152
 #   Retire when: an npm release bundles ip-address ≥ 10.3.1. Re-check with
 #   `npm ls ip-address` in the image.
 CVE-2026-69192
+
+# CVE-2026-73566 (tar) — node-tar DoS via a crafted long-path archive, HIGH.
+#   Affected 7.5.19 reaches the image ONLY through the global npm CLI's
+#   bundled copy at /usr/local/lib/node_modules/npm/node_modules/tar. It is
+#   not in the application's runtime tree: `npm prune --omit=dev` keeps only
+#   production deps, and the one other tar in the image is Next's own
+#   compiled copy at a different version.
+#
+#   WHY THIS IS SAFE IS A CHANGE, NOT A STANDING FACT — read before trusting.
+#   Until 2026-08-22 the runner DID exercise this tar on every container
+#   start: `scripts/entrypoint.sh` ran `npx --yes prisma@7.8.0`, and an
+#   explicit version differing from the installed one sends npx to the
+#   registry, where the download is tar-extracted. The evidence was on the
+#   running production container (~/.npm/_npx/<hash>/node_modules/prisma).
+#   That line now invokes the already-installed ./node_modules/.bin/prisma,
+#   so nothing in the runner invokes the npm CLI at all: the entrypoint runs
+#   the local prisma binary and then `exec node_modules/.bin/next start`.
+#
+#   The exemption is therefore CONDITIONAL on that. If the entrypoint goes
+#   back to npx, or any runtime path shells out to npm, this reasoning is
+#   false and the exemption must be withdrawn rather than re-justified.
+#   `tests/guards/runner-never-invokes-npm.test.ts` fails if that happens,
+#   so the premise is enforced rather than asserted.
+#
+#   No npm release fixes it: npm 12.0.2 (newest, checked 2026-08-22) still
+#   vendors tar 7.5.19 despite 7.5.21 shipping 2026-07-21 — bundled deps
+#   freeze at publish time, so the `^7.5.19` range in npm's manifest does
+#   not help. The repo's own `tar` override is already `^7.5.21` and is
+#   inert for exactly this reason.
+#   Retire when: an npm release bundles tar ≥ 7.5.21. Re-check with
+#   `cat /usr/local/lib/node_modules/npm/node_modules/tar/package.json` in
+#   the image.
+CVE-2026-73566
