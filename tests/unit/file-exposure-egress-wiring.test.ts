@@ -1,5 +1,29 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test-mock pattern. */
 /**
+ * ── Before editing a mock in this file, read this ──────────────────────
+ *
+ * `jest.fn(impl)` INFERS its signature from `impl`, and that inference has now
+ * broken this file twice, in two different shapes:
+ *
+ *   - `jest.fn(async () => ({...}))` infers zero parameters, so `mock.calls` is
+ *     an array of EMPTY tuples and `mock.calls[0][0]` is TS2493.
+ *   - `jest.fn(async () => [])` infers `Promise<never[]>`, so every later
+ *     `mockResolvedValueOnce([{...}])` on that mock is rejected (see the note
+ *     further down at `mockDb.evidence.findMany`).
+ *
+ * Both times the SUITE PASSED. Jest does not typecheck, so running it is
+ * evidence about runtime behaviour and says nothing about this class of defect.
+ * Only the central `tsc --noEmit` rejects it.
+ *
+ * So: declare parameters and return types on every mock here, even where the
+ * body ignores them — `async (_input: unknown) => …` — and judge a change to
+ * this file by `tsc` exit code, not by a green suite.
+ *
+ * The boundary, since it is not obvious: only the RESOLVED-value forms inherit
+ * the narrowed signature. `mockRejectedValueOnce(new Error(...))` is fine, the
+ * rejection reason having no relationship to the return type.
+ */
+/**
  * Every path that lets bytes leave the platform must say so, and a late
  * INFECTED verdict must ask what already left.
  *
@@ -19,13 +43,50 @@ import { NextRequest } from 'next/server';
 // ─── The ledger (mocked — its own behaviour is tested separately) ───
 const recordMock = jest.fn();
 const recordManyMock = jest.fn();
-const assessMock = jest.fn();
+/**
+ * #2096 split the webhook's ledger call in two: the READS take the
+ * tenant-bound connection, the WRITE lands outside that scope because
+ * `appendAuditEntry` opens its own advisory-locked transaction. So the route
+ * no longer calls `assessExposureOnInfection` — it calls the two halves.
+ */
+// `_input` is declared even though the implementation ignores it, and that is
+// load-bearing rather than tidiness. Handing `jest.fn` an implementation is what
+// NARROWS its signature: with `async () => …` tsc infers `() => Promise<…>`, so
+// `mock.calls` becomes an array of EMPTY tuples and `mock.calls[0][0]` below is
+// TS2493 — "tuple of length 0 has no element at index 0".
+//
+// Jest does not care; the suite passes. Only the central `tsc` rejects it, so
+// verifying with `npx jest` alone shows green and gives no signal. Note the
+// contrast with `recordExposureMock` below: a BARE `jest.fn()` narrows nothing
+// and indexes fine, so the more carefully-written mock is the one that breaks.
+const buildExposureMock = jest.fn(async (_input: unknown) => ({
+    fileRecordId: 'file-1',
+    sha256: 'a'.repeat(64),
+    siblingFileRecordIds: [],
+    totalDistributions: 0,
+    byChannel: {},
+    firstDistributedAt: null,
+    lastDistributedAt: null,
+    unrevocableCopies: 0,
+    liveSignedUrls: 0,
+    signedUrlExposureEndsAt: null,
+    recipientUserIds: [],
+    artefacts: [],
+    exhaustive: true,
+    assessedAt: '2026-01-01T00:00:00.000Z',
+}));
+const recordExposureMock = jest.fn();
 
 jest.mock('@/app-layer/services/file-distribution', () => ({
     __esModule: true,
     recordFileDistribution: (...a: unknown[]) => recordMock(...a),
     recordFileDistributions: (...a: unknown[]) => recordManyMock(...a),
-    assessExposureOnInfection: (...a: unknown[]) => assessMock(...a),
+    // `a[0]` rather than a spread cast: `...(a as [])` asserted an EMPTY tuple,
+    // which matched the old zero-arg signature and stops compiling the moment
+    // the mock declares a parameter. Passing the argument by position says what
+    // is meant and needs no cast.
+    buildFileExposureReport: (...a: unknown[]) => buildExposureMock(a[0]),
+    recordFileExposureReport: (...a: unknown[]) => recordExposureMock(...a),
 }));
 
 // ─── Prisma: the AV webhook uses the DEFAULT export, trust uses the named one ───
@@ -110,6 +171,21 @@ const mockExport = jest.fn();
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
     runInTenantContext: (_ctx: any, fn: (db: any) => any) => fn(mockDb),
+    // #2096 — the AV webhook's writes run in the file's tenant context. Must
+    // live in THIS factory: a second `jest.mock` of the same module silently
+    // replaces the first rather than merging, so a separate one higher up the
+    // file would be overridden and the route would see no mock at all.
+    runInTenantJobContext: async (
+        _job: { tenantId: string; source: string },
+        fn: (db: any) => Promise<unknown>,
+    ) =>
+        fn({
+            fileRecord: {
+                findUnique: (...a: unknown[]) => avFindUnique(...(a as [])),
+                findFirst: (...a: unknown[]) => avFindUnique(...(a as [])),
+                updateMany: (...a: unknown[]) => avUpdateMany(...(a as [any])),
+            },
+        }),
 }));
 jest.mock('@/app-layer/usecases/audit-readiness/packs', () => ({
     __esModule: true,
@@ -180,13 +256,19 @@ describe('AV webhook — a late INFECTED verdict asks what already left', () => 
 
         await POST(post({ fileId: 'file-1', status: 'infected', engine: 'clamav' }));
 
-        expect(assessMock).toHaveBeenCalledTimes(1);
+        expect(buildExposureMock).toHaveBeenCalledTimes(1);
         // The hash is what lets the report cover OTHER rows holding the same
         // bytes. Without it the answer only covers the row the scanner named.
-        expect(assessMock.mock.calls[0][0]).toMatchObject({
+        expect(buildExposureMock.mock.calls[0][0]).toMatchObject({
             tenantId: 'tenant-1',
             fileRecordId: 'file-1',
             sha256: 'a'.repeat(64),
+        });
+        // And the built report reaches the writer — the half that lands the row.
+        expect(recordExposureMock).toHaveBeenCalledTimes(1);
+        expect(recordExposureMock.mock.calls[0][1]).toMatchObject({
+            tenantId: 'tenant-1',
+            fileRecordId: 'file-1',
         });
     });
 
@@ -205,11 +287,12 @@ describe('AV webhook — a late INFECTED verdict asks what already left', () => 
             data: expect.objectContaining({ scanStatus: 'CLEAN' }),
         });
 
-        expect(assessMock).not.toHaveBeenCalled();
+        expect(buildExposureMock).not.toHaveBeenCalled();
+        expect(recordExposureMock).not.toHaveBeenCalled();
     });
 
     it('still returns 200 when the assessment itself fails — quarantine already committed', async () => {
-        assessMock.mockRejectedValueOnce(new Error('ledger unreachable'));
+        buildExposureMock.mockRejectedValueOnce(new Error('ledger unreachable'));
         const { POST } = await import('@/app/api/storage/av-webhook/route');
 
         const res = await POST(post({ fileId: 'file-1', status: 'infected' }));
