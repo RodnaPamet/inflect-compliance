@@ -19,13 +19,36 @@ import { NextRequest } from 'next/server';
 // ─── The ledger (mocked — its own behaviour is tested separately) ───
 const recordMock = jest.fn();
 const recordManyMock = jest.fn();
-const assessMock = jest.fn();
+/**
+ * #2096 split the webhook's ledger call in two: the READS take the
+ * tenant-bound connection, the WRITE lands outside that scope because
+ * `appendAuditEntry` opens its own advisory-locked transaction. So the route
+ * no longer calls `assessExposureOnInfection` — it calls the two halves.
+ */
+const buildExposureMock = jest.fn(async () => ({
+    fileRecordId: 'file-1',
+    sha256: 'a'.repeat(64),
+    siblingFileRecordIds: [],
+    totalDistributions: 0,
+    byChannel: {},
+    firstDistributedAt: null,
+    lastDistributedAt: null,
+    unrevocableCopies: 0,
+    liveSignedUrls: 0,
+    signedUrlExposureEndsAt: null,
+    recipientUserIds: [],
+    artefacts: [],
+    exhaustive: true,
+    assessedAt: '2026-01-01T00:00:00.000Z',
+}));
+const recordExposureMock = jest.fn();
 
 jest.mock('@/app-layer/services/file-distribution', () => ({
     __esModule: true,
     recordFileDistribution: (...a: unknown[]) => recordMock(...a),
     recordFileDistributions: (...a: unknown[]) => recordManyMock(...a),
-    assessExposureOnInfection: (...a: unknown[]) => assessMock(...a),
+    buildFileExposureReport: (...a: unknown[]) => buildExposureMock(...(a as [])),
+    recordFileExposureReport: (...a: unknown[]) => recordExposureMock(...a),
 }));
 
 // ─── Prisma: the AV webhook uses the DEFAULT export, trust uses the named one ───
@@ -110,6 +133,21 @@ const mockExport = jest.fn();
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
     runInTenantContext: (_ctx: any, fn: (db: any) => any) => fn(mockDb),
+    // #2096 — the AV webhook's writes run in the file's tenant context. Must
+    // live in THIS factory: a second `jest.mock` of the same module silently
+    // replaces the first rather than merging, so a separate one higher up the
+    // file would be overridden and the route would see no mock at all.
+    runInTenantJobContext: async (
+        _job: { tenantId: string; source: string },
+        fn: (db: any) => Promise<unknown>,
+    ) =>
+        fn({
+            fileRecord: {
+                findUnique: (...a: unknown[]) => avFindUnique(...(a as [])),
+                findFirst: (...a: unknown[]) => avFindUnique(...(a as [])),
+                updateMany: (...a: unknown[]) => avUpdateMany(...(a as [any])),
+            },
+        }),
 }));
 jest.mock('@/app-layer/usecases/audit-readiness/packs', () => ({
     __esModule: true,
@@ -180,13 +218,19 @@ describe('AV webhook — a late INFECTED verdict asks what already left', () => 
 
         await POST(post({ fileId: 'file-1', status: 'infected', engine: 'clamav' }));
 
-        expect(assessMock).toHaveBeenCalledTimes(1);
+        expect(buildExposureMock).toHaveBeenCalledTimes(1);
         // The hash is what lets the report cover OTHER rows holding the same
         // bytes. Without it the answer only covers the row the scanner named.
-        expect(assessMock.mock.calls[0][0]).toMatchObject({
+        expect(buildExposureMock.mock.calls[0][0]).toMatchObject({
             tenantId: 'tenant-1',
             fileRecordId: 'file-1',
             sha256: 'a'.repeat(64),
+        });
+        // And the built report reaches the writer — the half that lands the row.
+        expect(recordExposureMock).toHaveBeenCalledTimes(1);
+        expect(recordExposureMock.mock.calls[0][1]).toMatchObject({
+            tenantId: 'tenant-1',
+            fileRecordId: 'file-1',
         });
     });
 
@@ -205,11 +249,12 @@ describe('AV webhook — a late INFECTED verdict asks what already left', () => 
             data: expect.objectContaining({ scanStatus: 'CLEAN' }),
         });
 
-        expect(assessMock).not.toHaveBeenCalled();
+        expect(buildExposureMock).not.toHaveBeenCalled();
+        expect(recordExposureMock).not.toHaveBeenCalled();
     });
 
     it('still returns 200 when the assessment itself fails — quarantine already committed', async () => {
-        assessMock.mockRejectedValueOnce(new Error('ledger unreachable'));
+        buildExposureMock.mockRejectedValueOnce(new Error('ledger unreachable'));
         const { POST } = await import('@/app/api/storage/av-webhook/route');
 
         const res = await POST(post({ fileId: 'file-1', status: 'infected' }));
