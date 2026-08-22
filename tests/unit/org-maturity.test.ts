@@ -42,6 +42,9 @@ describe('org-maturity usecases', () => {
         expect(typeof getCurrentOrgMaturity).toBe('function');
         expect(typeof getOrgMaturityTrend).toBe('function');
         expect(MATURITY_DOMAINS).toEqual(['GOVERN', 'IDENTIFY', 'PROTECT', 'DETECT', 'RESPOND', 'RECOVER']);
+        // LITERAL ON PURPOSE — do not derive. CMM has five maturity levels and
+        // MATURITY_LEVEL_NUM maps them onto 1..5; a sixth level would silently
+        // break every band comparison, so it must fail here first.
         expect(MATURITY_LEVELS).toHaveLength(5);
     });
 

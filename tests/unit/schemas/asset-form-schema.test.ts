@@ -12,6 +12,10 @@ describe('ASSET_TYPE_VALUES', () => {
     it('contains the expected set of asset types', () => {
         expect(ASSET_TYPE_VALUES).toContain('INFORMATION');
         expect(ASSET_TYPE_VALUES).toContain('OTHER');
+        // LITERAL ON PURPOSE — do not derive. ASSET_TYPE_VALUES is the closed
+        // vocabulary backing `z.enum(...)`, a filter facet and a dropdown; the
+        // two `toContain`s above pin only 2 of the 10, so this count is what
+        // makes an eleventh asset type a decision instead of an append.
         expect(ASSET_TYPE_VALUES).toHaveLength(10);
     });
 });

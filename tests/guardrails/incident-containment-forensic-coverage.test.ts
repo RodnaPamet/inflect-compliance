@@ -60,6 +60,10 @@ describe('incident containment runbooks (P2)', () => {
     });
 
     it('declares the six incident-response roles (RACI)', () => {
+        // LITERAL ON PURPOSE — do not derive. The IR RACI is a closed six-role
+        // model (every other assertion here is a weak `some(...)`, so this is
+        // the only thing that notices a role being added or dropped). Contrast
+        // FORENSIC_EVIDENCE_CHECKLIST below, deliberately an open floor.
         expect(INCIDENT_RESPONSE_RACI).toHaveLength(6);
         // The DPO/legal role owns the regulatory determination.
         expect(
