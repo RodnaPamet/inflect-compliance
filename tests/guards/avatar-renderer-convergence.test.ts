@@ -133,7 +133,11 @@ describe('Avatar upload flow (avatar roadmap P3)', () => {
         expect(src).not.toMatch(/requirePermission\s*\(/);
     });
 
-    it('the serve route streams a stored avatar behind auth', () => {
+    // The route's AUTHORIZATION behaviour — who may read whose avatar,
+    // and that a refusal is shaped like a 404 — is asserted for real in
+    // tests/unit/account-avatar-serve-authz.test.ts. This case covers
+    // only the wiring the renderer convergence depends on.
+    it('the serve route streams a stored avatar for a signed-in caller', () => {
         const src = read(SERVE_ROUTE);
         expect(src).toMatch(/export const GET =/);
         expect(src).toMatch(/getServerSession/);

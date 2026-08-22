@@ -153,7 +153,7 @@ const NON_SERVING_READS: Record<string, string> = {
  */
 const SERVES_UNSCANNED_BY_DESIGN: Record<string, string> = {
     'src/lib/account/avatar.ts':
-        'SERVES user-uploaded bytes, unscanned. Not FileRecord-backed, so there is no scanStatus to gate on — that is a gap, not a refutation. Accepted on three mitigations: a 512KB cap, a magic-byte sniff, and a forced image/webp content-type with no Content-Disposition, so the response renders rather than downloads. That blocks the stored-XSS and dropper shapes but NOT a malicious-decoder payload. Any session user can fetch any userId by design (member lists). Routing avatars through FileRecord + scan is the real fix and is a product decision, not a line.',
+        'SERVES user-uploaded bytes, unscanned. Not FileRecord-backed, so there is no scanStatus to gate on — that is a gap, not a refutation. Accepted on three mitigations: a 512KB cap, a magic-byte sniff, and a forced image/webp content-type with no Content-Disposition, so the response renders rather than downloads. That blocks the stored-XSS and dropper shapes but NOT a malicious-decoder payload. Readable by the subject and by users holding an ACTIVE membership in a tenant the subject is also ACTIVE in (#2104) — so a hostile payload reaches colleagues, not the whole userbase. Routing avatars through FileRecord + scan is the real fix and is a product decision, not a line.',
     'src/app-layer/usecases/risk-report.ts':
         'SERVES a report the generator itself just produced — system-authored bytes, never user-uploaded. The argument holds today; it is listed here rather than as non-serving so that an edit which reads a user-uploaded attachment INTO a report has to come past this line.',
 };
