@@ -129,21 +129,20 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // Business-KPI — every-5-min cross-tenant DAU/MAU
     // aggregation refreshing the active-user gauge snapshot.
     'dau-mau-aggregator',
-    // Epic G-5 — daily 30/14/7-day expiry reminder for
-    // control exceptions.
     // Audit Coherence S3 — daily flip of APPROVED evidence past its
     // nextReviewDate to NEEDS_REVIEW, 30 min before notification-dispatch
     // so the owner hears the same morning.
     'evidence-stale-review-sweep',
+    // Epic G-5 — daily 30/14/7-day expiry reminder for control exceptions.
     'exception-expiry-monitor',
-    // PR-4 — daily cross-tenant fan-out: an hris-sync per enabled
-    // BambooHR connection.
+    // PR-4 — daily cross-tenant fan-out: an hris-sync per enabled HRIS
+    // connection (BambooHR, Workday).
     'hris-sync-dispatch',
-    // PR-2 — daily cross-tenant fan-out: an identity-sync per
-    // enabled Okta / Google Workspace connection.
     // Daily leaver pass fan-out, one per (tenant, writable directory
     // provider). Clamped at DRY_RUN — it decides, it does not write.
     'identity-leaver-dispatch',
+    // PR-2 — daily cross-tenant fan-out: an identity-sync per enabled
+    // Okta / Google Workspace / Entra ID / Active Directory connection.
     'identity-sync-dispatch',
     // NIS2 Article 23 — hourly deadline clock flipping
     // incident notification deadlines PENDING→DUE→OVERDUE.
@@ -280,7 +279,12 @@ describe('Infrastructure Regression Guards', () => {
             );
         });
 
-        test('SCHEDULED_JOBS holds exactly the expected set of jobs', () => {
+        // NAMED FOR WHAT IT CHECKS, which is only the count. It used to say
+        // "holds exactly the expected set" — the same claim the NEXT test makes
+        // and actually verifies. Two tests asserting "the expected set" invite a
+        // later reader to dedupe them, and deleting the wrong one leaves a file
+        // whose surviving test promises a set and checks a number.
+        test('SCHEDULED_JOBS length matches the expected-name list', () => {
             // Derived, not a literal — see EXPECTED_SCHEDULED_JOB_NAMES.
             expect(SCHEDULED_JOBS).toHaveLength(
                 EXPECTED_SCHEDULED_JOB_NAMES.length,

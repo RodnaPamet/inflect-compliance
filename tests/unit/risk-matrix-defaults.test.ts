@@ -23,6 +23,12 @@ describe('DEFAULT_RISK_MATRIX_CONFIG', () => {
     });
 
     it('exposes per-level labels matching the dimension counts', () => {
+        // LITERAL ON PURPOSE — do not derive from `likelihoodLevels` /
+        // `impactLevels`. These 5s are the claim that the DEFAULT matrix is
+        // 5x5, not bookkeeping over the config: deriving them would make the
+        // assertion true for any square matrix, including a 3x3 default that
+        // nobody meant to ship. See the sweep in #2105 for the
+        // bookkeeping-vs-domain-claim rule.
         expect(DEFAULT_RISK_MATRIX_CONFIG.levelLabels.likelihood).toHaveLength(5);
         expect(DEFAULT_RISK_MATRIX_CONFIG.levelLabels.impact).toHaveLength(5);
     });

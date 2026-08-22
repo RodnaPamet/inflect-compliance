@@ -1,18 +1,36 @@
 // Provide mandatory env vars for src/env.ts validation during tests.
 //
-// For DATABASE_URL: shell env wins; then try .env (the normal local-dev
-// pattern — no need to re-source the file for `npm test`); then fall
-// back to a dummy URL that lets env validation pass for unit tests
-// that mock Prisma. Integration tests that actually connect will still
-// use whichever real URL we resolved here.
-if (!process.env.DATABASE_URL) {
+// For DATABASE_URL: shell env wins; then `.env` (the normal local-dev
+// pattern — no need to re-source the file for `npm test`); then `.env.test`;
+// then a dummy URL that lets env validation pass for unit tests that mock
+// Prisma.
+//
+// `.env.test` IS THE ONE THAT MATTERS LOCALLY, and it was missing. `.env` is
+// gitignored and a fresh clone does not have one, so this fell straight to the
+// dummy on port 5432 — while `tests/helpers/db.ts` resolves the TEST CLIENT
+// independently, and correctly, to the 5434 container. An integration test that
+// only reads through `prismaTestClient()` therefore passes, and one that drives
+// a USECASE fails with `Can't reach database server at 127.0.0.1:5432`, because
+// `runInTenantContext` goes through the app's DATABASE_URL. Two different URLs
+// in one process, one of them a placeholder.
+//
+// It never bites CI, which exports DATABASE_URL — so the cost lands entirely on
+// whoever is writing a usecase-level integration test locally, and it reads as
+// "my test is broken" rather than "my env is unset".
+function readEnvFileUrl(file) {
   try {
     const fs = require('fs');
     const path = require('path');
-    const envContent = fs.readFileSync(path.resolve(__dirname, '.env'), 'utf8');
-    const match = envContent.match(/^DATABASE_URL="?([^"\n]*)"?$/m);
-    if (match && match[1]) process.env.DATABASE_URL = match[1];
-  } catch { /* no .env — fall through to dummy */ }
+    const content = fs.readFileSync(path.resolve(__dirname, file), 'utf8');
+    const match = content.match(/^DATABASE_URL="?([^"\n]*)"?$/m);
+    return match && match[1] ? match[1] : null;
+  } catch {
+    return null; // file absent — try the next source
+  }
+}
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL =
+    readEnvFileUrl('.env') || readEnvFileUrl('.env.test') || '';
 }
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://user:password@localhost:5432/testdb';
 
