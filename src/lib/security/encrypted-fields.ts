@@ -288,9 +288,35 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // RLS put these two into that guard's denominator for the first time, and
     // it failed immediately. One absence hid the table from two guards.
     //
-    // Both already pass through `sanitizeOptional` in `dsar-register.ts`, so
-    // the D.2 write-path requirement is met. Neither is used in a `contains` /
-    // `startsWith` / `orderBy` anywhere in `src/`, so encryption is safe.
+    // The D.2 write-path requirement is met for both, but by TWO DIFFERENT
+    // mechanisms, and the distinction is the point of this comment.
+    //
+    //   `fulfilmentNotes`  — genuinely free text, sanitised via
+    //                        `sanitizeOptional` in `dsar-register.ts`.
+    //   `rejectionReason`  — written RAW at `dsar-register.ts:236`
+    //                        (`input.reason ?? null`) and NOT sanitised. What
+    //                        protects it is the allowlist at :204-212: the
+    //                        write is gated on `input.to === 'REJECTED'` and
+    //                        `requiresReason` is exactly that same condition,
+    //                        so the check always runs first and the column can
+    //                        only ever hold one of the three values in
+    //                        `DSAR_REJECTION_REASONS`. Sanitising a closed
+    //                        vocabulary would be a no-op.
+    //
+    // Written out because the protection is easy to lose by accident. Add an
+    // `other: please specify` reason, or widen the vocabulary to free text, and
+    // the allowlist stops protecting anything — while the rich-text sanitiser
+    // ratchet stays GREEN, because it is file-level and `dsar-register.ts` does
+    // sanitise the sibling column.
+    //
+    // `tests/unit/dsar-rejection-reason-allowlist.test.ts` is what fails
+    // instead: it pins every allowed value to a fixed token shape, and asserts
+    // both that a free-text reason is refused and that each allowlisted one
+    // gets through. Widening the vocabulary breaks the first; deleting the
+    // check breaks the other two.
+    //
+    // Neither column is used in a `contains` / `startsWith` / `orderBy`
+    // anywhere in `src/`, so encryption is safe.
     // No backfill migration: production holds zero DataSubjectRequest rows
     // (measured, not assumed).
     DataSubjectRequest: ['rejectionReason', 'fulfilmentNotes'],
