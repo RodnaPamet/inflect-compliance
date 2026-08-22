@@ -1,5 +1,29 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test-mock pattern. */
 /**
+ * ── Before editing a mock in this file, read this ──────────────────────
+ *
+ * `jest.fn(impl)` INFERS its signature from `impl`, and that inference has now
+ * broken this file twice, in two different shapes:
+ *
+ *   - `jest.fn(async () => ({...}))` infers zero parameters, so `mock.calls` is
+ *     an array of EMPTY tuples and `mock.calls[0][0]` is TS2493.
+ *   - `jest.fn(async () => [])` infers `Promise<never[]>`, so every later
+ *     `mockResolvedValueOnce([{...}])` on that mock is rejected (see the note
+ *     further down at `mockDb.evidence.findMany`).
+ *
+ * Both times the SUITE PASSED. Jest does not typecheck, so running it is
+ * evidence about runtime behaviour and says nothing about this class of defect.
+ * Only the central `tsc --noEmit` rejects it.
+ *
+ * So: declare parameters and return types on every mock here, even where the
+ * body ignores them — `async (_input: unknown) => …` — and judge a change to
+ * this file by `tsc` exit code, not by a green suite.
+ *
+ * The boundary, since it is not obvious: only the RESOLVED-value forms inherit
+ * the narrowed signature. `mockRejectedValueOnce(new Error(...))` is fine, the
+ * rejection reason having no relationship to the return type.
+ */
+/**
  * Every path that lets bytes leave the platform must say so, and a late
  * INFECTED verdict must ask what already left.
  *
