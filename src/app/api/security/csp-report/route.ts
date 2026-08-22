@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import {
     checkReportRateLimit,
     storeViolation,
@@ -9,6 +9,7 @@ import {
     MAX_REPORT_PAYLOAD_BYTES,
 } from '@/lib/security/csp-violations';
 import { jsonResponse } from '@/lib/api-response';
+import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
 
 /**
  * CSP Violation Report Endpoint
@@ -19,14 +20,17 @@ import { jsonResponse } from '@/lib/api-response';
  *     - Modern: application/reports+json (Reporting API v1, array)
  *     - Fallback: application/json
  *
- * GET — returns recent violation summary (admin debugging)
- *   Protected by admin role check (via middleware auth guard).
+ * GET — returns the recent-violation summary (operator debugging)
+ *   Gated in-handler by PLATFORM_ADMIN_API_KEY. Nothing in the product
+ *   calls it; it exists for whoever operates the deployment.
  *
  * Security:
- *   - Rate limited: 30 reports/IP/min
- *   - Payload size capped at 16 KB
- *   - No CSRF token required (browser sends reports without credentials)
- *   - Always returns 204 on POST (never leaks internal state)
+ *   - POST: rate limited 30 reports/IP/min, payload capped at 16 KB,
+ *     no CSRF token required (the browser sends reports without
+ *     credentials), always 204 (never leaks internal state).
+ *   - GET: X-Platform-Admin-Key, verified in constant time. See the
+ *     docblock on the handler for why the gate lives in the handler
+ *     and why it is the platform key rather than a tenant role.
  */
 
 // ─── POST: Receive CSP violation reports ─────────────────────────────
@@ -103,11 +107,49 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 }
 
-// ─── GET: Admin summary of recent violations ────────────────────────
+// ─── GET: Operator summary of recent violations ───────────────
 
-export async function GET(): Promise<NextResponse> {
-    // NOTE: This route is protected by the middleware auth guard.
-    // Only authenticated users can access /api/* routes.
+/**
+ * This path is listed in `MACHINE_CALLER_PREFIXES` (src/lib/auth/guard.ts)
+ * so the edge lets the POST through without a cookie — a browser will not
+ * attach one to a CSP report, so requiring credentials there guarantees zero
+ * reports forever. That allowlist is PATH-scoped, not method-scoped, so the
+ * GET is equally public at the edge and has to gate itself here. It did not,
+ * under a comment asserting that "the middleware auth guard" covered it, and
+ * so it served `documentUri` / `originalPolicy` / `sourceFile` to anyone who
+ * asked (#2103). Do not replace this with another claim about the
+ * middleware: whatever the middleware does to `/api/*` in general, it does
+ * not do to this path in particular.
+ *
+ * The gate is the PLATFORM key rather than a tenant role, and that is the
+ * load-bearing choice rather than an accident of what was to hand. The ring
+ * buffer is ONE process-wide array shared by every tenant on the instance,
+ * so a `documentUri` of `/t/<some-other-tenant>/risks/…` is sitting in it.
+ * There is no tenant role under which reading another tenant's page URLs is
+ * correct — a tenant-ADMIN check would narrow the audience from "the
+ * internet" to "any admin of any tenant" and still be a cross-tenant read.
+ * The question this surface actually asks is "are you operating this
+ * deployment", and `/api/admin/diagnostics` — same shape, server-wide data
+ * with no tenant dimension — already answers it exactly this way.
+ *
+ * Consequence worth knowing before debugging a CSP problem: with
+ * `PLATFORM_ADMIN_API_KEY` unset this endpoint is 503, i.e. off. That is the
+ * intended default. Reading the violation buffer is an operator action.
+ */
+export async function GET(request: NextRequest): Promise<NextResponse> {
+    try {
+        verifyPlatformApiKey(request);
+    } catch (err) {
+        // Keep the error's OWN status. `verifyPlatformApiKey` throws 503 when
+        // no key is configured on this deployment and 401 when the supplied
+        // one is missing or wrong; collapsing both to 401 sends an operator
+        // off to rotate a credential that does not exist.
+        if (err instanceof PlatformAdminError) {
+            return NextResponse.json({ error: err.message }, { status: err.status });
+        }
+        throw err;
+    }
+
     const summary = getViolationSummary(50);
     return jsonResponse(summary);
 }

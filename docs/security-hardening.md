@@ -134,8 +134,12 @@ style-src   'self' 'nonce-X' https://fonts.googleapis.com
 # Step 1: Report-only mode (observe violations without blocking)
 CSP_REPORT_ONLY=true
 
-# Step 2: Monitor violations
-GET /api/security/csp-report  # Returns recent violation summary
+# Step 2: Monitor violations. The GET is an OPERATOR surface, gated on
+# PLATFORM_ADMIN_API_KEY in the handler (not on a tenant role — the ring
+# buffer is one array per process and spans every tenant). Without the
+# header it is 401; with no key configured on the deployment it is 503.
+curl -H "X-Platform-Admin-Key: $PLATFORM_ADMIN_API_KEY" \
+     https://<host>/api/security/csp-report   # recent violation summary
 
 # Step 3: Enforce (block violations)
 CSP_REPORT_ONLY=false  # or unset (default = enforce)
