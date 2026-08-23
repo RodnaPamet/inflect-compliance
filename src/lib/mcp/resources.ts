@@ -26,10 +26,18 @@ const REQ_SUFFIX = '/requirements';
 
 /**
  * List available resources for the tenant: the framework catalogue plus a
- * requirement-tree resource per installable framework. Enumerating frameworks
- * reads global catalogue data (gated by the usecase's `assertCanViewFrameworks`
- * — any `mcp:read` reader passes); the per-framework tenant COVERAGE is gated
- * on read (below).
+ * requirement-tree resource per installable framework.
+ *
+ * Enumerating frameworks reads global catalogue data, still gated by the
+ * usecase's `assertCanViewFrameworks` — but as of 2026-08-23 that policy reads
+ * `appPermissions.frameworks.view` rather than merely checking the role
+ * exists, so "any `mcp:read` reader passes" is no longer true. A key needs
+ * `frameworks:read` alongside `mcp:read`: `scopesToPermissions` maps `mcp:read`
+ * to an EMPTY action list, so it confers no resource permission on its own.
+ * That is the documented model — `mcp:read` gates the surface, a resource scope
+ * gates the data.
+ *
+ * The per-framework tenant COVERAGE is separately gated on read (below).
  */
 export async function listMcpResources(ctx: RequestContext): Promise<McpResourceDescriptor[]> {
     const frameworks = await listInstallableFrameworks(ctx);

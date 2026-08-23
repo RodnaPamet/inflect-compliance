@@ -31,6 +31,7 @@ const TENANT_B = `rb-${SUITE}`;
 let keyRisksA = '';
 let keyRisksB = '';
 let keyControlsOnly = ''; // tenant A: mcp:read + controls:read (NO risks:read)
+let keyFrameworksA = ''; // tenant A: mcp:read + frameworks:read
 
 async function mintKey(tenantId: string, userId: string, scopes: string[]): Promise<string> {
     const { plaintext, keyHash, keyPrefix } = generateApiKey();
@@ -88,6 +89,12 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
         keyRisksA = await mintKey(TENANT_A, userA, ['mcp:read', 'risks:read']);
         keyRisksB = await mintKey(TENANT_B, userB, ['mcp:read', 'risks:read']);
         keyControlsOnly = await mintKey(TENANT_A, userA, ['mcp:read', 'controls:read']);
+        // `frameworks:read` alongside `mcp:read`, which is the documented model:
+        // `mcp:read` gates the MCP surface, a RESOURCE scope gates the data.
+        // Enumerating the catalogue goes through `assertCanViewFrameworks`,
+        // which reads `appPermissions.frameworks.view` — derived from this
+        // key's scopes by `scopesToPermissions`.
+        keyFrameworksA = await mintKey(TENANT_A, userA, ['mcp:read', 'frameworks:read']);
 
         const fw = await prisma.framework.create({
             data: { key: FW_KEY, version: '1', name: 'MCP RS Test Framework', kind: 'NIST_FRAMEWORK', description: 'x' },
@@ -163,10 +170,24 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
     });
 
     it('resources/list exposes the framework catalogue + per-framework requirements', async () => {
-        const { json } = await rpc(keyRisksA, { jsonrpc: '2.0', id: 6, method: 'resources/list' });
+        const { json } = await rpc(keyFrameworksA, { jsonrpc: '2.0', id: 6, method: 'resources/list' });
         const uris = (json as { result: { resources: Array<{ uri: string }> } }).result.resources.map((r) => r.uri);
         expect(uris).toContain('inflect://frameworks');
         // The seeded installable framework produces a per-framework requirement resource.
         expect(uris).toContain(`inflect://frameworks/${FW_KEY}/requirements`);
+    });
+
+    it('resources/list refuses a key without frameworks:read', async () => {
+        // The behaviour change from `assertCanViewFrameworks` reading the
+        // permission instead of the role. `keyRisksA` holds `mcp:read` +
+        // `risks:read`; `scopesToPermissions` maps `mcp:read` to an EMPTY
+        // action list, so `frameworks.view` is false and enumeration is
+        // refused where it previously succeeded.
+        //
+        // Paired with the test above deliberately: on its own a refusal proves
+        // nothing, because a broken enumeration refuses every key. The two
+        // together show the scope is what decides.
+        const { json } = await rpc(keyRisksA, { jsonrpc: '2.0', id: 7, method: 'resources/list' });
+        expect(JSON.stringify(json)).toMatch(/permission to view frameworks/i);
     });
 });
