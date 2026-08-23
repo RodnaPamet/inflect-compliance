@@ -1056,6 +1056,15 @@ deleted. **Shrink that list; do not grow it.** When you need a new guard:
 - If the rule is structural — a banned import, a required prop, a forbidden
   identifier, a naming convention — write an **ESLint rule** instead. An AST
   rule survives reformatting and renaming; a regex over source text does not.
+  **`eslint-rules/` is where those live** — a local plugin registered as
+  `local` in `eslint.config.mjs`, with one rule per file and a `RuleTester`
+  test beside it. Read `eslint-rules/README.md` first: it carries the
+  rule-vs-selector-vs-guard decision (a single esquery selector in
+  `no-restricted-syntax` often says the whole thing and needs no rule file),
+  and the module-format constraint — CommonJS `.js`, because `.mjs` cannot be
+  required by Jest and `.cjs` breaks the Lint job's `react-hooks` plugin
+  scope. See
+  `docs/implementation-notes/2026-08-24-custom-eslint-rule-infrastructure.md`.
 
 **Reconciling this with "ratchet every PR."** The two are not in conflict once
 the word is read precisely. Ship each PR with a test that **fails when the
