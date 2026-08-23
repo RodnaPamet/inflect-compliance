@@ -9,16 +9,36 @@
  *
  * Design notes:
  *
- *   - **5 parallel queries** (control / risk / policy / evidence
- *     / framework). Same fan-out the client used to do; just
- *     consolidated server-side so one round-trip replaces five.
+ *   - **Eight parallel queries** (control / risk / policy /
+ *     evidence / asset / task / test plan, plus the global
+ *     framework catalogue). Same fan-out the client used to do;
+ *     just consolidated server-side so one round-trip replaces
+ *     eight.
+ *   - **Per-domain permission skipping.** Each query only runs
+ *     when `ctx.appPermissions.<domain>.view` is true. A denied
+ *     domain is SKIPPED rather than refused: the caller gets the
+ *     domains they can see, and the corresponding
+ *     `meta.perTypeCounts` entry stays 0 so the response never
+ *     claims results it withheld. See
+ *     `policies/discovery.policies.ts` for why skipping beats an
+ *     all-or-nothing refusal, and for the degenerate case (no
+ *     domain viewable at all) that still throws.
  *   - **Per-type cap before sort.** Each underlying query is
  *     bounded at `perTypeLimit * 3` rows so the substring filter
  *     never scans an unbounded table. The post-sort step then
  *     enforces the actual `perTypeLimit` after ranking selects
  *     the best ones.
- *   - **Frameworks are global.** No tenant filter on the query;
- *     callers can still find ISO27001 even before installing it.
+ *   - **Frameworks are global, and still gated.** No tenant filter
+ *     on the query — callers can find ISO27001 before installing
+ *     it. It is nonetheless skipped for a role without
+ *     `frameworks.view`, and NOT because the catalogue is
+ *     confidential: it is public standards text, identical for
+ *     every tenant, so withholding it buys nothing. It is skipped
+ *     because every framework hit is a link into
+ *     `/t/<slug>/frameworks/<key>`, and that page has refused
+ *     `frameworks.view: false` since 2026-08-23. Returning a row
+ *     whose only affordance is a 403 is worse than returning no
+ *     row.
  *   - **Evidence has no detail page.** Hits link to the evidence
  *     LIST (the existing per-row drawer opens from there).
  */
@@ -26,7 +46,11 @@
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { prisma } from '@/lib/prisma';
-import { forbidden } from '@/lib/errors/types';
+import {
+    assertAnyDomainViewable,
+    canViewDomain,
+    type ViewableDomain,
+} from '../policies/discovery.policies';
 import { capPerType, computeRankScore, sortHits } from '@/lib/search/rank';
 import {
     DEFAULT_PER_TYPE_LIMIT,
@@ -43,12 +67,41 @@ export interface GetUnifiedSearchOptions {
     perTypeLimit?: number;
 }
 
+/**
+ * Which `PermissionSet` domain governs each searchable type. `Record`
+ * over the full `SearchHitType` union on purpose: adding a hit type
+ * without deciding what permission gates it is a compile error, not a
+ * silently-ungated query.
+ */
+const SEARCH_DOMAINS: Record<SearchHitType, ViewableDomain> = {
+    control: 'controls',
+    risk: 'risks',
+    policy: 'policies',
+    evidence: 'evidence',
+    asset: 'assets',
+    task: 'tasks',
+    // ControlTestPlan — the `tests` domain, not `controls`. A role can
+    // legitimately see controls without seeing their test programme.
+    test: 'tests',
+    framework: 'frameworks',
+};
+
 export async function getUnifiedSearch(
     ctx: RequestContext,
     rawQuery: string,
     options: GetUnifiedSearchOptions = {},
 ): Promise<SearchResponse> {
-    if (!ctx.role) throw forbidden('Authentication required');
+    // Was `if (!ctx.role) throw forbidden('Authentication required')` — a
+    // branch `getTenantCtx` makes unreachable. The real decision is
+    // per-domain, below; this covers only the case where NOTHING is
+    // viewable, which no built-in role can reach.
+    assertAnyDomainViewable(
+        ctx,
+        Object.values(SEARCH_DOMAINS),
+        'searchable records in this tenant',
+    );
+    const canSearch = (type: SearchHitType): boolean =>
+        canViewDomain(ctx, SEARCH_DOMAINS[type]);
 
     const limit = options.perTypeLimit ?? DEFAULT_PER_TYPE_LIMIT;
     // The `perTypeLimit * 3` headroom on each query lets ranking
@@ -77,118 +130,143 @@ export async function getUnifiedSearch(
 
     await runInTenantContext(ctx, async (db) => {
         const [controls, risks, policies, evidence, assets, tasks, tests] = await Promise.all([
-            db.control.findMany({
-                where: {
-                    tenantId,
-                    OR: [
-                        { name: { contains, mode: 'insensitive' } },
-                        { code: { contains, mode: 'insensitive' } },
-                    ],
-                },
-                select: { id: true, code: true, name: true, status: true },
-                take: dbLimit,
-            }),
-            db.risk.findMany({
-                where: {
-                    tenantId,
-                    OR: [
-                        { title: { contains, mode: 'insensitive' } },
-                        { category: { contains, mode: 'insensitive' } },
-                    ],
-                },
-                select: {
-                    id: true,
-                    title: true,
-                    category: true,
-                    status: true,
-                    score: true,
-                },
-                take: dbLimit,
-            }),
-            db.policy.findMany({
-                where: {
-                    tenantId,
-                    title: { contains, mode: 'insensitive' },
-                },
-                select: { id: true, title: true, status: true },
-                take: dbLimit,
-            }),
-            db.evidence.findMany({
-                where: {
-                    tenantId,
-                    title: { contains, mode: 'insensitive' },
-                },
-                select: { id: true, title: true, type: true },
-                take: dbLimit,
-            }),
+            !canSearch('control')
+                ? Promise.resolve([])
+                : db.control.findMany({
+                      where: {
+                          tenantId,
+                          OR: [
+                              { name: { contains, mode: 'insensitive' } },
+                              { code: { contains, mode: 'insensitive' } },
+                          ],
+                      },
+                      select: { id: true, code: true, name: true, status: true },
+                      take: dbLimit,
+                  }),
+            !canSearch('risk')
+                ? Promise.resolve([])
+                : db.risk.findMany({
+                      where: {
+                          tenantId,
+                          OR: [
+                              { title: { contains, mode: 'insensitive' } },
+                              { category: { contains, mode: 'insensitive' } },
+                          ],
+                      },
+                      select: {
+                          id: true,
+                          title: true,
+                          category: true,
+                          status: true,
+                          score: true,
+                      },
+                      take: dbLimit,
+                  }),
+            !canSearch('policy')
+                ? Promise.resolve([])
+                : db.policy.findMany({
+                      where: {
+                          tenantId,
+                          title: { contains, mode: 'insensitive' },
+                      },
+                      select: { id: true, title: true, status: true },
+                      take: dbLimit,
+                  }),
+            !canSearch('evidence')
+                ? Promise.resolve([])
+                : db.evidence.findMany({
+                      where: {
+                          tenantId,
+                          title: { contains, mode: 'insensitive' },
+                      },
+                      select: { id: true, title: true, type: true },
+                      take: dbLimit,
+                  }),
             // Asset search — matches against `name` and the optional
             // `externalRef` field. `externalRef` is the canonical
             // place users put external system IDs / asset tags
             // (`patent1`, `srv-prod-04`, etc.), so it's the field
             // the "I'm looking for that specific asset" use case
             // depends on.
-            db.asset.findMany({
-                where: {
-                    tenantId,
-                    OR: [
-                        { name: { contains, mode: 'insensitive' } },
-                        { externalRef: { contains, mode: 'insensitive' } },
-                    ],
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    type: true,
-                    status: true,
-                    externalRef: true,
-                },
-                take: dbLimit,
-            }),
-            // Task search — title + description + `key` (the
-            // optional public-facing task identifier like "TASK-42").
-            // Description is often the most informative field; we
-            // search it but cap result to keep ranking honest.
-            db.task.findMany({
-                where: {
-                    tenantId,
-                    OR: [
-                        { title: { contains, mode: 'insensitive' } },
-                        { description: { contains, mode: 'insensitive' } },
-                        { key: { contains, mode: 'insensitive' } },
-                    ],
-                },
-                select: {
-                    id: true,
-                    title: true,
-                    status: true,
-                    severity: true,
-                    key: true,
-                },
-                take: dbLimit,
-            }),
+            !canSearch('asset')
+                ? Promise.resolve([])
+                : db.asset.findMany({
+                      where: {
+                          tenantId,
+                          OR: [
+                              { name: { contains, mode: 'insensitive' } },
+                              { externalRef: { contains, mode: 'insensitive' } },
+                          ],
+                      },
+                      select: {
+                          id: true,
+                          name: true,
+                          type: true,
+                          status: true,
+                          externalRef: true,
+                      },
+                      take: dbLimit,
+                  }),
+            // Task search — `title` + `key` (the optional public-facing
+            // task identifier like "TASK-42").
+            //
+            // `description` USED to be in this OR and was removed on
+            // 2026-08-24 as a dead clause. `Task.description` is in the
+            // Epic B encryption manifest
+            // (`src/lib/security/encrypted-fields.ts`), so the column
+            // holds AES-GCM ciphertext under a random IV. An ILIKE
+            // against it cannot match the plaintext the user typed, for
+            // any input — a guaranteed-empty predicate that still cost
+            // a scan of the column on every keystroke. `TaskRepository`
+            // had already reached the same conclusion; the manifest
+            // carries the note next to the field list.
+            !canSearch('task')
+                ? Promise.resolve([])
+                : db.task.findMany({
+                      where: {
+                          tenantId,
+                          OR: [
+                              { title: { contains, mode: 'insensitive' } },
+                              { key: { contains, mode: 'insensitive' } },
+                          ],
+                      },
+                      select: {
+                          id: true,
+                          title: true,
+                          status: true,
+                          severity: true,
+                          key: true,
+                      },
+                      take: dbLimit,
+                  }),
             // Test search — ControlTestPlan, not ControlTestRun.
             // Plans have a `name` field (runs don't); users looking
             // for "a test" typically mean "the plan that tests
             // control X". Each plan is tied to a control via
             // `controlId` (we fetch the control's code for the href
             // and subtitle).
-            db.controlTestPlan.findMany({
-                where: {
-                    tenantId,
-                    OR: [
-                        { name: { contains, mode: 'insensitive' } },
-                        { description: { contains, mode: 'insensitive' } },
-                    ],
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    status: true,
-                    controlId: true,
-                    control: { select: { code: true, name: true } },
-                },
-                take: dbLimit,
-            }),
+            // (`ControlTestPlan.description` is NOT in the encryption
+            // manifest — unlike `Task.description` above — so this
+            // clause does match plaintext and stays.)
+            !canSearch('test')
+                ? Promise.resolve([])
+                : db.controlTestPlan.findMany({
+                      where: {
+                          tenantId,
+                          OR: [
+                              { name: { contains, mode: 'insensitive' } },
+                              { description: { contains, mode: 'insensitive' } },
+                          ],
+                      },
+                      select: {
+                          id: true,
+                          name: true,
+                          status: true,
+                          controlId: true,
+                          control: { select: { code: true, name: true } },
+                      },
+                      take: dbLimit,
+                  }),
         ]);
 
         for (const c of controls as Row<{
@@ -241,18 +319,24 @@ export async function getUnifiedSearch(
     // Frameworks are global rows (no tenantId). Read them with the
     // bare prisma client; the search is still scoped to a logged-
     // in tenant member by the route's `getTenantCtx` gate above.
-    const frameworks = await prisma.framework.findMany({
-        where: {
-            OR: [
-                { key: { contains, mode: 'insensitive' } },
-                { name: { contains, mode: 'insensitive' } },
-            ],
-        },
-        select: { id: true, key: true, name: true, version: true },
-        take: dbLimit,
-    });
-    for (const f of frameworks) {
-        allHits.push(buildFrameworkHit(f, trimmed, tenantSlug));
+    //
+    // Skipped for a role without `frameworks.view` — see the header
+    // note. The reason is coherence with the destination page, not
+    // confidentiality of the catalogue.
+    if (canSearch('framework')) {
+        const frameworks = await prisma.framework.findMany({
+            where: {
+                OR: [
+                    { key: { contains, mode: 'insensitive' } },
+                    { name: { contains, mode: 'insensitive' } },
+                ],
+            },
+            select: { id: true, key: true, name: true, version: true },
+            take: dbLimit,
+        });
+        for (const f of frameworks) {
+            allHits.push(buildFrameworkHit(f, trimmed, tenantSlug));
+        }
     }
 
     // Rank + cap. Capping happens AFTER sort so a strong substring

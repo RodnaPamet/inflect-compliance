@@ -5,7 +5,10 @@
  * runs the usecase through runInTenantContext (prisma singleton).
  *
  * Branches:
- *   - !ctx.role → forbidden.
+ *   - no viewable kind at all → forbidden.
+ *   - per-kind permission skipping (2026-08-24): a custom role without
+ *     `<domain>.view` loses that kind's nodes AND every edge touching them,
+ *     while the other kinds still render.
  *   - no kinds filter → all three node kinds fetched + every link.
  *   - kinds filter excluding a kind → that kind's findMany short-circuits
  *     to [] (the Promise.resolve arm).
@@ -17,6 +20,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { makeRequestContext } from '../helpers/make-context';
+import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
+import type { RequestContext } from '@/app-layer/types';
 import { getTraceabilityGraph } from '@/app-layer/usecases/traceability-graph';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -25,6 +30,24 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const SUITE = `tg-${randomUUID().slice(0, 8)}`;
 const TENANT = `t-${SUITE}`;
 const ctx = makeRequestContext('ADMIN', { tenantId: TENANT, tenantSlug: SUITE });
+
+/** The five `PermissionSet` domains the graph reads. */
+const GRAPH_DOMAINS = ['controls', 'risks', 'assets', 'frameworks', 'policies'] as const;
+
+/**
+ * A `TenantCustomRole`-shaped context: a real base role whose
+ * `permissionsJson` zeroes some flags. That is the only population this gate
+ * can refuse — every built-in role carries `view: true` on all five.
+ */
+function customRole(mutate: (p: PermissionSet) => void): RequestContext {
+    const appPermissions = structuredClone(getPermissionsForRole('READER'));
+    mutate(appPermissions);
+    return makeRequestContext('READER', {
+        tenantId: TENANT,
+        tenantSlug: SUITE,
+        appPermissions,
+    });
+}
 
 let controlId: string;
 let riskId: string;
@@ -56,9 +79,55 @@ describeFn('getTraceabilityGraph (real DB)', () => {
         await prisma.$disconnect();
     });
 
-    it('throws forbidden when the context has no role', async () => {
-        const noRole = makeRequestContext('ADMIN', { tenantId: TENANT, tenantSlug: SUITE, role: undefined as never });
-        await expect(getTraceabilityGraph(noRole)).rejects.toThrow(/Authentication required/);
+    it('throws forbidden when the caller can view none of the graph kinds', async () => {
+        // Replaces an `if (!ctx.role)` assertion. That branch was unreachable
+        // — `getTenantCtx` always populates the role — so the old test proved
+        // only that a context no caller produces was refused. This one has a
+        // populated role and is refused on the permissions.
+        const blind = customRole((p) => {
+            for (const domain of GRAPH_DOMAINS) p[domain].view = false;
+        });
+        expect(blind.role).toBeTruthy();
+        await expect(getTraceabilityGraph(blind)).rejects.toThrow(
+            /permission to view any entities in the traceability graph/i,
+        );
+    });
+
+    it('a READER — the least-privileged built-in role — still gets the full graph', async () => {
+        // The load-bearing positive companion. A READER reaches every one of
+        // these rows through the list pages already; a gate that refused them
+        // here would be a regression dressed as a fix.
+        const reader = makeRequestContext('READER', { tenantId: TENANT, tenantSlug: SUITE });
+        const graph = await getTraceabilityGraph(reader);
+        const kinds = new Set(graph.nodes.map((n) => n.kind));
+        expect(kinds.has('control')).toBe(true);
+        expect(kinds.has('risk')).toBe(true);
+        expect(kinds.has('asset')).toBe(true);
+        expect(new Set(graph.edges.map((e) => e.relation)).has('mitigates')).toBe(true);
+    });
+
+    it('drops a denied kind, its edges and its category — other kinds survive', async () => {
+        const noRisks = customRole((p) => {
+            p.risks.view = false;
+        });
+        const graph = await getTraceabilityGraph(noRisks);
+        const kinds = new Set(graph.nodes.map((n) => n.kind));
+
+        expect(kinds.has('risk')).toBe(false);
+        // Edges are filtered to surviving endpoints, so both relations that
+        // touch a risk go with it.
+        const relations = new Set(graph.edges.map((e) => e.relation));
+        expect(relations.has('mitigates')).toBe(false);
+        expect(relations.has('exposes')).toBe(false);
+        // `categories` counts come from the final node list, so the legend
+        // does not advertise a kind the payload withheld.
+        expect(graph.categories.map((c) => c.kind)).not.toContain('risk');
+
+        // Skipping, not refusing: control + asset and the edge between them
+        // are all still there.
+        expect(kinds.has('control')).toBe(true);
+        expect(kinds.has('asset')).toBe(true);
+        expect(relations.has('protects')).toBe(true);
     });
 
     it('builds a full graph (all kinds + every link relation) by default', async () => {

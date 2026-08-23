@@ -8,10 +8,23 @@
  * typed, capped, category-tagged graph payload via
  * `buildTraceabilityGraph`.
  *
- * Authz — any authenticated tenant member (read-only). Mirrors the
- * existing `getControlTraceability` etc. usecases — those are also
- * unconditionally readable per `assertCanRead` in
- * `traceability.ts`.
+ * Authz — PER-KIND, read-only. Each of the five node kinds is fetched
+ * only when the caller holds the matching `view` permission
+ * (`controls` / `risks` / `assets` / `policies`, and `frameworks` for
+ * the requirement column). A denied kind is SKIPPED, not refused: the
+ * caller gets the part of the graph they are entitled to, its edges
+ * drop out automatically because `buildTraceabilityGraph` keeps only
+ * edges whose BOTH endpoints survived, and its `categories` entry
+ * disappears because counts are computed from the final node list.
+ * A caller who can view none of the five is refused outright — see
+ * `policies/discovery.policies.ts` for why that degenerate case throws
+ * while the partial cases skip.
+ *
+ * This replaced an `if (!ctx.role) throw forbidden(…)` that
+ * `getTenantCtx` made unreachable. Fixing it here rather than at the
+ * route covers BOTH callers: the API route and the server-rendered
+ * Sankey page (`/t/[slug]/controls/sankey`), which calls this usecase
+ * directly.
  *
  * Tenant scoping: every read happens inside `runInTenantContext`
  * so the `app.tenant_id` setting is bound + the role drops to
@@ -22,7 +35,11 @@
 
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { forbidden } from '@/lib/errors/types';
+import {
+    assertAnyDomainViewable,
+    canViewDomain,
+    type ViewableDomain,
+} from '../policies/discovery.policies';
 import {
     buildTraceabilityGraph,
     type RawAsset,
@@ -48,6 +65,24 @@ import {
  */
 const LINK_CAP_MULTIPLIER = 4;
 
+/**
+ * Which `PermissionSet` domain governs each graph node kind. `Record`
+ * over the full `TraceabilityNodeKind` union on purpose: adding a kind
+ * without deciding what permission gates it is a compile error, not a
+ * silently-ungated column.
+ *
+ * `requirement` maps to `frameworks` because the requirement column is
+ * the framework catalogue projected through the control links —
+ * `FrameworkRequirement` is a global model with no tenantId of its own.
+ */
+const GRAPH_DOMAINS: Record<TraceabilityNodeKind, ViewableDomain> = {
+    control: 'controls',
+    risk: 'risks',
+    asset: 'assets',
+    requirement: 'frameworks',
+    policy: 'policies',
+};
+
 export interface GetTraceabilityGraphOptions {
     filters?: TraceabilityGraphFilters;
     /** Override the soft node cap. Useful in tests. */
@@ -58,14 +93,27 @@ export async function getTraceabilityGraph(
     ctx: RequestContext,
     options: GetTraceabilityGraphOptions = {},
 ): Promise<TraceabilityGraph> {
-    if (!ctx.role) {
-        throw forbidden('Authentication required');
-    }
+    // Was `if (!ctx.role) throw forbidden('Authentication required')` — a
+    // branch `getTenantCtx` makes unreachable. The real decision is
+    // per-kind, below; this covers only the case where NOTHING in the
+    // graph is viewable, which no built-in role can reach.
+    assertAnyDomainViewable(
+        ctx,
+        Object.values(GRAPH_DOMAINS),
+        'entities in the traceability graph',
+    );
 
     const filters = options.filters ?? {};
     const wantKinds = filters.kinds && filters.kinds.length > 0
         ? new Set<TraceabilityNodeKind>(filters.kinds)
         : null;
+
+    /** Permission only — the caller's `kinds=` filter is separate. */
+    const canSee = (kind: TraceabilityNodeKind): boolean =>
+        canViewDomain(ctx, GRAPH_DOMAINS[kind]);
+    /** Permission AND the caller's requested-kind filter. */
+    const include = (kind: TraceabilityNodeKind): boolean =>
+        (!wantKinds || wantKinds.has(kind)) && canSee(kind);
 
     // Audit Coherence S9 (2026-05-24) — push pagination into the
     // DB. The pre-S9 path fetched EVERY control/risk/asset and link
@@ -98,14 +146,14 @@ export async function getTraceabilityGraph(
             controlRequirementLinks,
             policyControlLinks,
         ] = await Promise.all([
-            wantKinds && !wantKinds.has('control')
+            !include('control')
                 ? Promise.resolve([] as RawControl[])
                 : db.control.findMany({
                       where: { tenantId: ctx.tenantId },
                       select: { id: true, code: true, name: true, status: true },
                       take: nodeCap,
                   }),
-            wantKinds && !wantKinds.has('risk')
+            !include('risk')
                 ? Promise.resolve([] as RawRisk[])
                 : db.risk.findMany({
                       where: { tenantId: ctx.tenantId },
@@ -118,7 +166,7 @@ export async function getTraceabilityGraph(
                       },
                       take: nodeCap,
                   }),
-            wantKinds && !wantKinds.has('asset')
+            !include('asset')
                 ? Promise.resolve([] as RawAsset[])
                 : db.asset.findMany({
                       where: { tenantId: ctx.tenantId, status: 'ACTIVE' },
@@ -131,35 +179,63 @@ export async function getTraceabilityGraph(
                       },
                       take: nodeCap,
                   }),
-            db.riskControl.findMany({
-                where: { tenantId: ctx.tenantId },
-                select: { id: true, riskId: true, controlId: true },
-                take: linkCap,
-            }),
-            db.controlAsset.findMany({
-                where: { tenantId: ctx.tenantId },
-                select: {
-                    id: true,
-                    controlId: true,
-                    assetId: true,
-                    coverageType: true,
-                },
-                take: linkCap,
-            }),
-            db.assetRiskLink.findMany({
-                where: { tenantId: ctx.tenantId },
-                select: {
-                    id: true,
-                    assetId: true,
-                    riskId: true,
-                    exposureLevel: true,
-                },
-                take: linkCap,
-            }),
+            // Link tables are gated on BOTH endpoints' permission (not on
+            // `wantKinds`, which behaved this way before and is left
+            // alone). An edge whose other end the caller may not see can
+            // never survive `buildTraceabilityGraph`'s both-endpoints
+            // filter, so fetching it is pure cost.
+            !canSee('control') || !canSee('risk')
+                ? Promise.resolve(
+                      [] as { id: string; riskId: string; controlId: string }[],
+                  )
+                : db.riskControl.findMany({
+                      where: { tenantId: ctx.tenantId },
+                      select: { id: true, riskId: true, controlId: true },
+                      take: linkCap,
+                  }),
+            !canSee('control') || !canSee('asset')
+                ? Promise.resolve(
+                      [] as {
+                          id: string;
+                          controlId: string;
+                          assetId: string;
+                          coverageType: string | null;
+                      }[],
+                  )
+                : db.controlAsset.findMany({
+                      where: { tenantId: ctx.tenantId },
+                      select: {
+                          id: true,
+                          controlId: true,
+                          assetId: true,
+                          coverageType: true,
+                      },
+                      take: linkCap,
+                  }),
+            !canSee('asset') || !canSee('risk')
+                ? Promise.resolve(
+                      [] as {
+                          id: string;
+                          assetId: string;
+                          riskId: string;
+                          exposureLevel: string | null;
+                      }[],
+                  )
+                : db.assetRiskLink.findMany({
+                      where: { tenantId: ctx.tenantId },
+                      select: {
+                          id: true,
+                          assetId: true,
+                          riskId: true,
+                          exposureLevel: true,
+                      },
+                      take: linkCap,
+                  }),
             // Gated on the requirement kind — mirrors the node fetches:
-            // when the caller filters requirements out there's no point
-            // materialising the control→requirement link rows.
-            wantKinds && !wantKinds.has('requirement')
+            // when the caller filters requirements out, or may not see
+            // requirements or controls, there's no point materialising
+            // the control→requirement link rows.
+            !include('requirement') || !canSee('control')
                 ? Promise.resolve(
                       [] as { id: string; controlId: string; requirementId: string }[],
                   )
@@ -169,7 +245,7 @@ export async function getTraceabilityGraph(
                       take: linkCap,
                   }),
             // Gated on the policy kind — mirrors the requirement gating.
-            wantKinds && !wantKinds.has('policy')
+            !include('policy') || !canSee('control')
                 ? Promise.resolve(
                       [] as { id: string; policyId: string; controlId: string }[],
                   )

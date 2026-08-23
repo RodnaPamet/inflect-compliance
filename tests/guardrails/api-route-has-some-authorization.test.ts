@@ -500,29 +500,33 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
  * anything — they are a known-weak shape we are choosing not to grow.
  */
 const ROLE_PRESENCE_ONLY_HANDLERS: readonly string[] = [
-    // Six entries came OFF this list on 2026-08-23, all from ONE change.
-    // `assertCanViewFrameworks` was the shared root cause — its whole body was
-    // the never-false check — so the routes above it inherited the shape
-    // rather than each having their own. Fixing the policy to read
-    // `appPermissions.frameworks.view` cleared:
+    // EMPTY, and that is now the rule rather than a milestone: with nothing
+    // pinned, the exact-equality assertion below reads "no handler anywhere
+    // may reach only a role-presence check". A new `if (!ctx.role) throw`
+    // route fails CI on arrival.
     //
-    //   api/mcp/route.ts#POST
-    //   api/t/[tenantSlug]/frameworks/route.ts#GET
-    //   api/t/[tenantSlug]/frameworks/[frameworkKey]/route.ts#GET
-    //   api/t/[tenantSlug]/frameworks/[frameworkKey]/tree/route.ts#GET
-    //   api/t/[tenantSlug]/onboarding/frameworks/route.ts#GET
-    //   api/t/[tenantSlug]/reports/readiness/route.ts#GET
+    // It emptied in two steps.
     //
-    // `reports/readiness` is worth a word: it cleared WITHOUT a route-level
-    // `reports.view` gate, because `generateReadinessReport` opens with the
-    // policy call. Gating the route instead would have left the Reports page
-    // — which calls that usecase directly — reading the same payload
-    // ungated. Fixing the shared policy covers both callers by construction.
+    // 2026-08-23 — six entries, ONE change. `assertCanViewFrameworks` was the
+    // shared root cause: its whole body was the never-false check, so the
+    // routes above it inherited the shape rather than each having their own.
+    // Making it read `appPermissions.frameworks.view` cleared
+    // `api/mcp#POST`, the three `frameworks/**#GET`,
+    // `onboarding/frameworks#GET` and `reports/readiness#GET`. That last one
+    // cleared WITHOUT a route-level `reports.view` gate, because
+    // `generateReadinessReport` opens with the policy call — gating the route
+    // instead would have left the Reports page, which calls that usecase
+    // directly, reading the same payload ungated.
     //
-    // The two below are NOT this shape's dependents: each carries its own
-    // inline `if (!ctx.role)` in its own usecase, so neither was touched.
-    'api/t/[tenantSlug]/search/route.ts#GET',
-    'api/t/[tenantSlug]/traceability/graph/route.ts#GET',
+    // 2026-08-24 — the last two. `search#GET` and `traceability/graph#GET`
+    // each carried their own inline `if (!ctx.role)` inside their own
+    // usecase, so neither was a dependent of the policy above. Both now gate
+    // PER DOMAIN in `app-layer/policies/discovery.policies.ts`: each entity
+    // query runs only under the matching `<domain>.view` permission and is
+    // skipped otherwise, with `assertAnyDomainViewable` refusing outright the
+    // degenerate caller who can see none of them. The graph usecase again
+    // had a second caller — the server-rendered `controls/sankey` page — and
+    // fixing the usecase rather than the route covers it by construction.
 ];
 
 // ─── Discovery ───────────────────────────────────────────────────────

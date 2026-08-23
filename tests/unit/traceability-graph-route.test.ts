@@ -162,9 +162,18 @@ describe('GET /api/t/[tenantSlug]/traceability/graph', () => {
         expect(opts.filters.focusId).toBe('c1');
     });
 
-    it('returns 403 when the policy denies (caller has no role)', async () => {
+    it('returns 403 when the usecase denies on permissions', async () => {
+        // The usecase is mocked here — this asserts the route's error
+        // MAPPING, not the gate. The real refusal now comes from
+        // `assertAnyDomainViewable` for a caller who can view none of the
+        // graph's five kinds; `tests/integration/traceability-graph-usecase`
+        // covers that behaviour against a real DB.
         getTenantCtxMock.mockResolvedValue(ctxFor('READER'));
-        getGraphMock.mockRejectedValue(forbidden('Authentication required'));
+        getGraphMock.mockRejectedValue(
+            forbidden(
+                'You do not have permission to view any entities in the traceability graph.',
+            ),
+        );
 
         const res = await GET(makeRequest(), {
             params: Promise.resolve({ tenantSlug: 'acme' }),
