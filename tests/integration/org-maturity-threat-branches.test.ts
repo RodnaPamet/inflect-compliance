@@ -58,7 +58,11 @@ describeFn('org-maturity + org-threat-level — branch coverage (integration)', 
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
             await tx.$executeRawUnsafe(`DELETE FROM "OrgAuditLog" WHERE "organizationId" = $1`, ORG_ID);
         });
-        await globalPrisma.user.deleteMany({ where: { id: userId } });
+        // Guarded: an undefined filter value is DROPPED, not matched —
+        // see the teardown note in ./db-helper.ts.
+        if (userId) {
+            await globalPrisma.user.deleteMany({ where: { id: userId } });
+        }
         await globalPrisma.organization.deleteMany({ where: { id: ORG_ID } });
         await globalPrisma.$disconnect();
     });

@@ -96,7 +96,14 @@ describeFn('policy usecase — branch coverage (integration)', () => {
         await globalPrisma.policyEvidenceItem.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.policyVersion.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.policy.deleteMany({ where: { tenantId: TENANT_ID } });
-        await globalPrisma.policyTemplate.deleteMany({ where: { id: templateId } });
+        // Guarded: an undefined filter value is DROPPED, not matched — see
+        // the teardown note in ./db-helper.ts. PolicyTemplate is the GLOBAL
+        // template library: no tenantId, no RLS, no inbound FK, and seeded
+        // once by prisma/seed.ts — an unpredicated delete here outlives the
+        // run and needs a manual reseed to undo.
+        if (templateId) {
+            await globalPrisma.policyTemplate.deleteMany({ where: { id: templateId } });
+        }
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
             await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);

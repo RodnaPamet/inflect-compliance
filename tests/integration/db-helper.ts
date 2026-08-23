@@ -140,5 +140,39 @@ const available = checkDbAvailable(dbUrl);
  */
 assertDbAvailableOrSkipAllowed(available, process.env.ALLOW_DB_SKIP, dbUrl);
 
+/**
+ * ─── Teardown note: an undefined filter value is DROPPED, not matched ───
+ *
+ * Every suite importing `DB_URL` shares ONE Postgres with every other suite in
+ * the run, so the standard `afterAll` cleanup shape is worth stating once here
+ * rather than at each of its sites.
+ *
+ * Jest runs `afterAll` even when `beforeAll` THREW. A fixture id captured by a
+ * bare `let` inside `beforeAll` is therefore still `undefined` in teardown
+ * whenever setup failed — and Prisma DROPS an undefined filter value instead
+ * of rejecting it. Measured against this repo's own client on the test
+ * database (2026-08-23), not assumed:
+ *
+ *     user.count()                                      -> 306  (every row)
+ *     user.count({ where: { id: undefined } })           -> 306  (every row)
+ *     user.count({ where: { id: 'no-such-id' } })        ->   0
+ *     user.count({ where: { id: { in: [undefined] } } }) -> throws
+ *         "Can not use `undefined` value within array"
+ *
+ * So `deleteMany({ where: { id: someUnassignedLet } })` is `DELETE FROM "User"`
+ * with no predicate. It does not throw — it SUCCEEDS, which is why wrapping the
+ * teardown in a catch-everything block is no protection at all. It fails OPEN,
+ * the opposite of the intuition that an undefined filter matches nothing.
+ *
+ * The `{ in: [...] }` form is safe here, but by accident of Prisma's array
+ * validation rather than by design; a scalar filter has no such backstop.
+ *
+ * The fix at each site is a truthiness guard — `if (id) await ...deleteMany()`
+ * — chosen over a throwing helper because nearly every one of these teardowns
+ * has more cleanup and a `$disconnect()` after the guarded line, and leaking a
+ * pooled connection on the failure path would feed the same shared-Postgres
+ * contention that produces the failed setup in the first place. Guarded sites
+ * point back here.
+ */
 export const DB_URL = dbUrl;
 export const DB_AVAILABLE = available;

@@ -78,7 +78,11 @@ describeFn('org-security-initiative usecase — branch coverage (integration)', 
             await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
-        await globalPrisma.user.deleteMany({ where: { id: ownerUserId } });
+        // Guarded: an undefined filter value is DROPPED, not matched —
+        // see the teardown note in ./db-helper.ts.
+        if (ownerUserId) {
+            await globalPrisma.user.deleteMany({ where: { id: ownerUserId } });
+        }
         await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
         await globalPrisma.organization.deleteMany({ where: { id: ORG_ID } });
         await globalPrisma.$disconnect();
