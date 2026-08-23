@@ -138,9 +138,15 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
             });
             await prisma.tenant.deleteMany({ where: { id: { in: [tenantA, tenantB] } } });
         } catch (err) {
-            // Best effort, but not silent. The `{ in: [...] }` filters above
-            // throw when setup failed, and swallowing that is what let a
-            // teardown that did the wrong thing read as a clean run.
+            // Best effort, but not silent. Swallowing a teardown error is what
+            // lets a teardown that did the wrong thing read as a clean run.
+            //
+            // Precisely: the `{ in: [...] }` filters above throw only when
+            // setup failed BEFORE `tenantA`/`tenantB` are assigned — Prisma
+            // rejects an undefined array ELEMENT. A failure at the last
+            // `beforeAll` statement leaves both defined, nothing throws, and
+            // this warning does not fire. It covers the early window, not
+            // every failure.
             console.warn('[rls-middleware] teardown error:', err);
         }
         await prisma.$disconnect();

@@ -63,9 +63,14 @@ describeFn('getOrgServerContext — org context resolution (integration)', () =>
 
     afterAll(async () => {
         // Guarded: an undefined filter value is DROPPED, not matched — see
-        // the teardown note in ./db-helper.ts. `orgId` is assigned by the
-        // FIRST statement of `beforeAll`, so every failure path leaves it
-        // undefined here. Both lines read it, so one guard covers both.
+        // the teardown note in ./db-helper.ts. Both lines read `orgId`, so one
+        // guard covers both.
+        //
+        // The window is narrow, not total: `orgId` is assigned on the second
+        // statement of `beforeAll`, so only a throw in the `organization.create`
+        // above it leaves it undefined. A failure in any of the five statements
+        // AFTER it leaves `orgId` set and this block runs normally. Guarded
+        // anyway — the cost is one truthiness test and the window is real.
         if (orgId) {
             await globalPrisma.orgMembership.deleteMany({ where: { organizationId: orgId } });
             await globalPrisma.organization.deleteMany({ where: { id: orgId } });
