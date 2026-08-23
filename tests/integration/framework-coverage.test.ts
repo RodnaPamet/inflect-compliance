@@ -128,12 +128,31 @@ describe('Framework Coverage & Templates', () => {
             expect(typeof mod.assertCanInstallFrameworkPack).toBe('function');
         });
 
-        it('assertCanViewFrameworks allows any role', () => {
+        it('assertCanViewFrameworks admits every built-in role, via the permission', () => {
+            // Renamed from "allows any role", which stopped being true on
+            // 2026-08-23. The outcome for these four is unchanged — all built-in
+            // roles carry `frameworks.view: true` — but the AUTHORITY moved from
+            // the role's existence to the permission flag, so the context has to
+            // be a real one. The previous version passed `{ role: 'READER' }`
+            // with no `appPermissions` at all, which is not a shape any caller
+            // produces.
             const { assertCanViewFrameworks } = require('../../src/app-layer/policies/framework.policies');
-            expect(() => assertCanViewFrameworks({ role: 'READER' } as any)).not.toThrow();
-            expect(() => assertCanViewFrameworks({ role: 'EDITOR' } as any)).not.toThrow();
-            expect(() => assertCanViewFrameworks({ role: 'ADMIN' } as any)).not.toThrow();
-            expect(() => assertCanViewFrameworks({ role: 'AUDITOR' } as any)).not.toThrow();
+            const { getPermissionsForRole } = require('../../src/lib/permissions');
+            for (const role of ['READER', 'EDITOR', 'ADMIN', 'AUDITOR'] as const) {
+                const ctx = { role, appPermissions: getPermissionsForRole(role) };
+                expect(() => assertCanViewFrameworks(ctx as any)).not.toThrow();
+            }
+            // The behaviour that is actually new — see
+            // tests/unit/policies/framework-view-permission.test.ts for the
+            // full contract.
+            const denied = {
+                role: 'READER',
+                appPermissions: {
+                    ...getPermissionsForRole('READER'),
+                    frameworks: { view: false, install: false },
+                },
+            };
+            expect(() => assertCanViewFrameworks(denied as any)).toThrow();
         });
 
         it('assertCanInstallFrameworkPack rejects non-ADMIN', () => {
