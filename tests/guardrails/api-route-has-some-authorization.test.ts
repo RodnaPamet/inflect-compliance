@@ -839,22 +839,39 @@ describe('the authorization detector still discriminates', () => {
     });
 
     it('notices when a real route loses the usecase call that authorised it', () => {
-        // `POST /evidence/[id]/purge` is three lines of glue; its gate lives
-        // two module hops away at purgeEntity → assertCanAdmin. Unmutated it
-        // must resolve; with the usecase call renamed to something that
-        // resolves nowhere it must fall to NONE.
+        // `POST /evidence/[id]/purge` is the deepest chain in the tree and
+        // still the right probe, but since #2117 it carries BOTH layers: a
+        // route-level `requirePermission` AND, three module hops away,
+        // purgeEvidence → purgeEntity → assertCanAdmin. So the probe is run
+        // in three states rather than two — otherwise the route gate alone
+        // would answer every question and the graph walk would never be
+        // exercised at all, which is the thing this test exists to prove.
         const purge = path.join(
             API_ROOT,
             't/[tenantSlug]/evidence/[id]/purge/route.ts',
         );
+        const original = readSource(purge);
+
+        // 1. As it ships — the strongest tier wins.
         expect(analyzer.classify(purge).map((v) => v.tier)).toEqual([
-            'USECASE_ASSERT',
+            'ROUTE_PERMISSION',
         ]);
 
-        const mutated = readSource(purge).replace(/purgeEvidence/g, 'noopEvidence');
-        expect(mutated).not.toEqual(readSource(purge));
+        // 2. Route gate removed. The usecase assert is three hops away and
+        //    invisible in this file; only the graph walk can find it.
+        const noRouteGate = original.replace(/requirePermission/g, 'passthroughWrapper');
+        expect(noRouteGate).not.toEqual(original);
         expect(
-            analyzer.classifyWithSource(purge, mutated).map((v) => v.tier),
+            analyzer.classifyWithSource(purge, noRouteGate).map((v) => v.tier),
+        ).toEqual(['USECASE_ASSERT']);
+
+        // 3. Usecase call removed too — nothing left to reach, so NONE.
+        //    Without step 2 above, this step would pass on a walker that had
+        //    stopped following imports entirely.
+        const noneLeft = noRouteGate.replace(/purgeEvidence/g, 'noopEvidence');
+        expect(noneLeft).not.toEqual(noRouteGate);
+        expect(
+            analyzer.classifyWithSource(purge, noneLeft).map((v) => v.tier),
         ).toEqual(['NONE']);
     });
 

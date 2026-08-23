@@ -9,17 +9,24 @@ import { jsonResponse } from '@/lib/api-response';
 /**
  * POST /api/t/[tenantSlug]/tasks/bulk/delete
  *
- * Gated on `tasks.edit`, matching the single-task DELETE. The usecase-tier
- * question (risks/assets/controls all require ADMIN for bulk delete) is
- * settled separately in the bulk-delete parity item; this route key is
- * aligned with whatever that lands on.
+ * Gated on `admin.manage`. This route previously declared `tasks.edit`
+ * while `bulkDeleteTask` asserted `assertCanAdmin` — a gate declared
+ * WEAKER than the assert behind it, which is worse than no gate at all
+ * for the audit trail: an EDITOR passed the middleware, the usecase threw
+ * the 403, and a usecase throw writes no AUTHZ_DENIED row. So the exact
+ * denial the gate exists to log was the only one it could not see. The
+ * route's own comment anticipated this ("this route key is aligned with
+ * whatever that lands on"); the bulk-delete parity item landed on ADMIN.
+ *
+ * NOT an access change — an EDITOR was already refused, by the usecase.
+ * What changes is that the refusal is now recorded. See #2117.
  *
  * Body parsed inline — see `bulk/assign` for why `withValidatedBody` and
  * `requirePermission` are not nested.
  */
 export const POST = withApiErrorHandling(
     requirePermission<{ tenantSlug: string }>(
-        'tasks.edit',
+        'admin.manage',
         async (req: NextRequest, _routeArgs, ctx) => {
             const body = await parseJsonBody(req, BulkTaskDeleteSchema);
             const result = await bulkDeleteTask(ctx, body.taskIds);

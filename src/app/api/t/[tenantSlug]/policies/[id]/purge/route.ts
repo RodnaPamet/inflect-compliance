@@ -1,12 +1,24 @@
 import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { purgePolicy } from '@/app-layer/usecases/policy';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
-export const POST = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const result = await purgePolicy(ctx, params.id);
-    return jsonResponse(result);
-});
+type Params = { tenantSlug: string; id: string };
+
+/**
+ * IRREVERSIBLE hard delete of a soft-deleted policy.
+ *
+ * `admin.manage` ALONE, unlike the `bulk/delete` sibling: `purgePolicy`
+ * delegates straight to `purgeEntity`, which asserts only the coarse
+ * `assertCanAdmin` — it never reaches `assertCanAdminPolicies`. Adding
+ * `policies.edit` here would make the route STRICTER than the usecase and
+ * lock out a custom role the usecase would admit. The key mirrors the
+ * assert that actually runs. See #2117.
+ */
+export const POST = withApiErrorHandling(
+    requirePermission<Params>('admin.manage', async (_req: NextRequest, { params }, ctx) => {
+        const result = await purgePolicy(ctx, params.id);
+        return jsonResponse(result);
+    }),
+);
