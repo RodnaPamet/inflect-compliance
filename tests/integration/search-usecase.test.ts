@@ -57,7 +57,11 @@ describeFn('getUnifiedSearch (real DB)', () => {
         await prisma.risk.deleteMany({ where: { tenantId: TENANT } });
         await prisma.control.deleteMany({ where: { tenantId: TENANT } });
         await prisma.framework.deleteMany({ where: { key: `${TOKEN}-fw` } });
-        await prisma.user.deleteMany({ where: { id: uid } });
+        // Guarded: an undefined filter value is DROPPED, not matched —
+        // see the teardown note in ./db-helper.ts.
+        if (uid) {
+            await prisma.user.deleteMany({ where: { id: uid } });
+        }
         await prisma.$disconnect();
     });
 

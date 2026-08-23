@@ -121,7 +121,15 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
 
     afterAll(async () => {
         try {
-            await prisma.findingEvidence.deleteMany({ where: { id: findingEvidenceId } });
+            // Guarded: Prisma DROPS an undefined filter value rather than
+            // rejecting it, so on a failed `beforeAll` this line becomes
+            // `DELETE FROM "FindingEvidence"` — every finding-evidence link in
+            // the shared database, on a junction with no inbound FK to abort
+            // it. See the teardown note in ./db-helper.ts. The `{ in: [...] }`
+            // filters below reject undefined instead, so they need no guard.
+            if (findingEvidenceId) {
+                await prisma.findingEvidence.deleteMany({ where: { id: findingEvidenceId } });
+            }
             await prisma.automationRule.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
             await prisma.finding.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
             await prisma.evidence.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
@@ -129,8 +137,17 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
                 where: { provider: { startsWith: `mw-${SUFFIX}` } },
             });
             await prisma.tenant.deleteMany({ where: { id: { in: [tenantA, tenantB] } } });
-        } catch {
-            /* best effort */
+        } catch (err) {
+            // Best effort, but not silent. Swallowing a teardown error is what
+            // lets a teardown that did the wrong thing read as a clean run.
+            //
+            // Precisely: the `{ in: [...] }` filters above throw only when
+            // setup failed BEFORE `tenantA`/`tenantB` are assigned — Prisma
+            // rejects an undefined array ELEMENT. A failure at the last
+            // `beforeAll` statement leaves both defined, nothing throws, and
+            // this warning does not fire. It covers the early window, not
+            // every failure.
+            console.warn('[rls-middleware] teardown error:', err);
         }
         await prisma.$disconnect();
     });
