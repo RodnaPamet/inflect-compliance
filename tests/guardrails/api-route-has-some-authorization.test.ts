@@ -362,6 +362,14 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       note: 'HMAC-SHA256 in X-AV-Signature, timing-safe compared.' },
     { handler: 'api/webhooks/sharepoint/route.ts#POST', klass: 'SIGNED_WEBHOOK',
       note: 'Microsoft Graph notification; clientState (<tenantId>:<policyId>) is compared against the stored subscription.' },
+    { handler: 'api/security/csp-report/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL',
+      // Was NO_AUTHORIZATION until #2109. The GET is reachable at the edge
+      // because the path is in PUBLIC_PATH_EXACT for the browser POST — the
+      // allowlist is path-scoped and cannot express a method — so it gates
+      // itself in-handler with the platform admin key, and is metered by
+      // middleware section 0e.
+      mechanism: /verifyPlatformApiKey/,
+      note: 'Deployment-wide CSP violation summary, so a tenant role would be the wrong axis: the buffer is one ring buffer per process, shared by every tenant. Gated by the platform admin key, the same credential /api/admin/diagnostics uses.' },
     { handler: 'api/integrations/webhooks/[provider]/route.ts#POST', klass: 'SIGNED_WEBHOOK',
       // The verification is ONE HOP AWAY, so this entry corroborates on the
       // delegation rather than on the check. The route reads the raw body,
@@ -390,14 +398,39 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       note: 'Tenants inside my org. The sibling POST reaches a usecase assert on its own.' },
     { handler: 'api/t/[tenantSlug]/onboarding/state/route.ts#GET', klass: 'MEMBERSHIP_SCOPED',
       note: 'Onboarding checklist progress for the current tenant — visible to every member by design.' },
+    { handler: 'api/account/avatar/[userId]/route.ts#GET', klass: 'MEMBERSHIP_SCOPED',
+      // Was NO_AUTHORIZATION until #2108. Not under /api/t/, so there is no
+      // tenant in the path and no role to check against; the audience is
+      // "any tenant we both belong to", which is a membership question.
+      // `canViewAvatar` requires an ACTIVE membership shared with the subject
+      // and answers everyone else with the same 404 an absent avatar returns,
+      // so it does not double as an account-existence oracle.
+      mechanism: /canViewAvatar/,
+      note: 'Reads ANOTHER user, so neither self-service nor unguarded. Behaviour asserted in tests/unit/account-avatar-serve-authz.test.ts.' },
     { handler: 'api/t/[tenantSlug]/security/mfa/policy/route.ts#GET', klass: 'MEMBERSHIP_SCOPED',
       note: 'Reading whether the tenant requires MFA is open to every member; the PUT next to it is gated on admin.manage by layer 1.' },
 
     // ── NO_AUTHORIZATION — the residual, and the finding ─────────────
-    { handler: 'api/security/csp-report/route.ts#GET', klass: 'NO_AUTHORIZATION',
-      note: 'Returns the recent CSP-violation summary. Its doc comment claims an admin role check "via middleware auth guard"; there is none in the handler. Tracked by #2103 — do not extend this entry to cover a replacement route.' },
-    { handler: 'api/account/avatar/[userId]/route.ts#GET', klass: 'NO_AUTHORIZATION',
-      note: 'Any authenticated user may read any userId\'s avatar, unscoped by tenant. Low sensitivity but genuinely unscoped. Tracked by #2104.' },
+    //
+    // EMPTY, as of 2026-08-23. Both original members were fixed rather than
+    // reclassified to make CI quiet, and each moved to the class naming the
+    // mechanism that now guards it — see PROTOCOL_CREDENTIAL (csp-report,
+    // #2109) and MEMBERSHIP_SCOPED (avatar, #2108).
+    //
+    // Read this before adding one. The class doc says to keep the list at zero
+    // and never add to it to make CI green; that is not aspirational. A route
+    // reaching this bucket means the guard found real unauthorized access, and
+    // both times it did, the answer was a fix with a behavioural test, not an
+    // entry with a ticket number attached.
+    //
+    // Note what the analyser still cannot see, because it bears on the next
+    // one: `verifyPlatformApiKey(request)` and `canViewAvatar(...)` are both
+    // real gates, and BOTH still classify as NONE. The detector looks for
+    // `if (<ctx.role|ctx.permissions|ctx.appPermissions>) throw`, so a gate
+    // shaped as a credential verifier or a membership query is invisible to
+    // it. That is why these two need an entry at all now that they are fixed —
+    // the exemption records a gate the tier system cannot detect, which is a
+    // different thing from recording a gap.
 ];
 
 /**
@@ -713,20 +746,33 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
         expect(actual).toEqual(pinned);
     });
 
-    it('the NO_AUTHORIZATION residual stays at the size the survey found', () => {
+    it('the NO_AUTHORIZATION residual is empty', () => {
         // Calibration against an independent six-agent classification of all
         // 582 routes (2026-08-22): exactly 6 routes had no authorization
         // anywhere, of which 3 were refuted as membership-scoped reads,
         // leaving 2 tracked fixes (#2103, #2104) and 1 benign tenant read.
-        // Matching that number is the evidence this rule is calibrated; a
-        // rule producing 40 would be measuring something else.
+        // Matching that number was the evidence this rule is calibrated; a
+        // rule producing 40 would have been measuring something else.
+        //
+        // Both tracked fixes landed on 2026-08-23 (#2109, #2108) and their
+        // entries moved to the class naming the mechanism that now guards
+        // them, so the residual is ZERO.
+        //
+        // A DOWNWARD ratchet, deliberately expressed as equality rather than
+        // `<= 0`. The looser form reads identically today and stops meaning
+        // anything the moment someone needs a number above zero — at which
+        // point the honest change is to write that number here, in a diff,
+        // with the issue that tracks it. Making CI green by widening a bound
+        // is how this list would fill up.
         const residual = EXEMPT_HANDLERS.filter((e) => e.klass === 'NO_AUTHORIZATION');
-        expect(residual.map((e) => e.handler).sort()).toEqual([
-            'api/account/avatar/[userId]/route.ts#GET',
-            'api/security/csp-report/route.ts#GET',
-        ]);
-        // Downward ratchet: fixing one means deleting its entry here too.
-        expect(residual.length).toBeLessThanOrEqual(2);
+        expect(residual.map((e) => e.handler)).toEqual([]);
+
+        // Positive companion: the class still EXISTS and is still reachable.
+        // Without this, deleting `NO_AUTHORIZATION` from `EXEMPT_CLASSES`
+        // entirely would satisfy the assertion above while removing the guard's
+        // whole output channel.
+        expect(Object.keys(EXEMPT_CLASSES)).toContain('NO_AUTHORIZATION');
+        expect(EXEMPT_CLASSES.NO_AUTHORIZATION.requiresNote).toBe(true);
     });
 });
 
