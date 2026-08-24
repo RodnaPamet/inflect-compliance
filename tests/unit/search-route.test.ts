@@ -136,9 +136,18 @@ describe('GET /api/t/[tenantSlug]/search', () => {
         expect(getSearchMock.mock.calls[0][1]).toBe('');
     });
 
-    it('returns 403 when the policy denies', async () => {
+    it('returns 403 when the usecase denies on permissions', async () => {
+        // The usecase is mocked here — this asserts the route's error
+        // MAPPING, not the gate. The real refusal now comes from
+        // `assertAnyDomainViewable` for a caller who can view none of the
+        // eight searchable domains; `tests/integration/search-usecase`
+        // covers that behaviour against a real DB.
         getTenantCtxMock.mockResolvedValue(ctxFor('READER'));
-        getSearchMock.mockRejectedValue(forbidden('Authentication required'));
+        getSearchMock.mockRejectedValue(
+            forbidden(
+                'You do not have permission to view any searchable records in this tenant.',
+            ),
+        );
 
         const res = await GET(req('?q=anything'), { params: Promise.resolve({ tenantSlug: 'acme' }) });
         expect(res.status).toBe(403);
