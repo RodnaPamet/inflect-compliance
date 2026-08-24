@@ -184,9 +184,123 @@ describe('local/no-fail-open-teardown-filter', () => {
                     });
                 `,
             },
+            {
+                name: 'scalar array member stays safe — Prisma rejects undefined IN an array',
+                code: `
+                    let tenantA: string;
+                    let tenantB: string;
+                    afterAll(async () => {
+                        await prisma.risk.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
+                    });
+                `,
+            },
+            {
+                name: 'explicit non-nullish guard is a real guard',
+                code: `
+                    let tenantA: string;
+                    afterAll(async () => {
+                        if (tenantA !== undefined) {
+                            await prisma.risk.deleteMany({ where: { tenantId: tenantA } });
+                        }
+                    });
+                `,
+            },
+            {
+                name: 'loose non-null guard is a real guard',
+                code: `
+                    let tenantA: string;
+                    afterAll(async () => {
+                        if (tenantA != null) {
+                            await prisma.risk.deleteMany({ where: { tenantId: tenantA } });
+                        }
+                    });
+                `,
+            },
+            {
+                name: 'conjunction — every operand must hold, so an && operand guards',
+                code: `
+                    let tenantA: string;
+                    afterAll(async () => {
+                        if (someFlag && tenantA) {
+                            await prisma.risk.deleteMany({ where: { tenantId: tenantA } });
+                        }
+                    });
+                `,
+            },
         ],
 
         invalid: [
+            // ── The two fail-OPEN shapes the first version was silent on,
+            //    both measured against the real client at 331 rows.
+            {
+                name: 'AND combinator — { AND: [{ id: undefined }] } matches EVERY row',
+                code: `
+                    let tenantA: string;
+                    afterAll(async () => {
+                        await prisma.risk.deleteMany({ where: { AND: [{ tenantId: tenantA }] } });
+                    });
+                `,
+                errors: [failOpen],
+            },
+            {
+                name: 'NOT combinator — same, and the array skip used to cover it',
+                code: `
+                    let tenantA: string;
+                    afterAll(async () => {
+                        await prisma.risk.deleteMany({ where: { NOT: [{ tenantId: tenantA }] } });
+                    });
+                `,
+                errors: [failOpen],
+            },
+            {
+                name: 'where: <bare let> — the whole filter object is the variable',
+                code: `
+                    let filter: object;
+                    afterAll(async () => {
+                        await prisma.risk.deleteMany({ where: filter });
+                    });
+                `,
+                errors: [failOpen],
+            },
+            // ── POLARITY. The first version of this rule accepted any test
+            //    that MENTIONED the variable, so all three of these were
+            //    silent. The first is strictly WORSE than no guard at all.
+            {
+                name: 'negated guard — the delete runs exactly when the filter is undefined',
+                code: `
+                    let tenantA: string;
+                    afterAll(async () => {
+                        if (!tenantA) {
+                            await prisma.risk.deleteMany({ where: { tenantId: tenantA } });
+                        }
+                    });
+                `,
+                errors: [failOpen],
+            },
+            {
+                name: 'equality-to-undefined guard is the inverse of a guard',
+                code: `
+                    let tenantA: string;
+                    afterAll(async () => {
+                        if (tenantA === undefined) {
+                            await prisma.risk.deleteMany({ where: { tenantId: tenantA } });
+                        }
+                    });
+                `,
+                errors: [failOpen],
+            },
+            {
+                name: 'disjunction — the branch can run with the variable falsy',
+                code: `
+                    let tenantA: string;
+                    afterAll(async () => {
+                        if (someFlag || tenantA === null) {
+                            await prisma.risk.deleteMany({ where: { tenantId: tenantA } });
+                        }
+                    });
+                `,
+                errors: [failOpen],
+            },
             // ── The #2113 defect, exactly as it stood on main ──────
             {
                 name: 'bare let read as a scalar filter in afterAll',

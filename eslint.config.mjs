@@ -85,7 +85,7 @@ const config = [
             // `let` fixture id. Prisma DROPS an undefined filter value,
             // so the statement becomes an unpredicated DELETE — and it
             // SUCCEEDS, so the surrounding try/catch never fires and the
-            // run stays green. Fifteen sites were fixed by hand across
+            // run stays green. Fourteen sites were fixed by hand across
             // two PRs with nothing stopping the sixteenth.
             //
             // Its first full-repo run found 12 live instances in five

@@ -52,11 +52,25 @@
  *     and `where: { id: getId() }` are invisible to it, so a green rule
  *     is NOT a proof that a teardown is safe.
  *
- * Every one of those biases points the same way ON PURPOSE: the rule
- * fails CLOSED. It flags things that are fine rather than staying quiet
- * about things that are not, because the cost of a false positive is one
- * `if (…)` and the cost of a false negative is an emptied table in a
- * database every other suite in the run is sharing.
+ * Those biases point the same way ON PURPOSE — flag something fine rather than
+ * stay quiet about something that is not, because a false positive costs one
+ * `if (…)` and a false negative costs an emptied table in a database every
+ * other suite in the run is sharing.
+ *
+ * BUT "the rule fails CLOSED" is NOT true as an absolute, and the first version
+ * of this header said it was. Three shapes were measured failing OPEN and have
+ * since been fixed — a negated guard (`if (!x)`, strictly worse than no guard),
+ * an `AND`/`NOT` combinator array, and `where: <bare let>`. What remains open,
+ * stated rather than implied away:
+ *
+ *   - Only `Identifier` filter values are inspected. `where: { id: fix.id }`
+ *     and `where: { id: getId() }` are invisible.
+ *   - Reachability is not analysed. Whether the hook that assigns the variable
+ *     can actually throw before it is a data-flow question this rule does not
+ *     ask; it flags the SHAPE.
+ *
+ * So a green rule is not a proof that a teardown is safe. It is a proof that
+ * this one syntactic shape is absent.
  *
  * ── Two shapes it deliberately leaves alone ──────────────────────────
  *
@@ -139,6 +153,63 @@ function isBareLet(variable) {
  * Conservative by design — see the header. Anything else (early return,
  * `else` branch, a helper that throws) reads as unguarded.
  */
+/**
+ * Does `test` require `variable` to be TRUTHY for the guarded branch to run?
+ *
+ * POLARITY IS THE WHOLE POINT, and the first version of this rule ignored it —
+ * it accepted any test that MENTIONED the variable. That made it silent on
+ *
+ *     if (!tenantA) { await prisma.risk.deleteMany({ where: { tenantId: tenantA } }); }
+ *
+ * which is strictly WORSE than no guard: the delete runs exactly when the
+ * filter is undefined. Also silent on `if (tenantA === undefined)` and
+ * `if (someFlag || tenantA === null)`.
+ *
+ * Accepts only three shapes, and treats everything else as UNGUARDED so the
+ * rule reports rather than stays quiet:
+ *
+ *   if (x)                     the identifier is the whole test
+ *   if (x && …) / if (… && x)  an operand of an && chain, all of which must hold
+ *   if (x !== undefined)       explicit non-nullish, either operand order
+ *   if (x != null)
+ *
+ * A disjunction is rejected even when an operand is positive: in `if (a || x)`
+ * the branch can run with `x` falsy. So is any shape reached through a `!`.
+ */
+function guardsPositively(sourceCode, test, variable) {
+    const isOurs = (n) =>
+        n &&
+        n.type === 'Identifier' &&
+        n.name === variable.name &&
+        resolveVariable(sourceCode, n, n.name) === variable;
+
+    // if (x)
+    if (isOurs(test)) return true;
+
+    // if (x && …) — recurse into BOTH operands; either may carry the check,
+    // and every operand of an && must hold for the branch to run.
+    if (test.type === 'LogicalExpression' && test.operator === '&&') {
+        return (
+            guardsPositively(sourceCode, test.left, variable) ||
+            guardsPositively(sourceCode, test.right, variable)
+        );
+    }
+
+    // if (x !== undefined) / if (x != null), either operand order
+    if (
+        test.type === 'BinaryExpression' &&
+        (test.operator === '!==' || test.operator === '!=')
+    ) {
+        const nullish = (n) =>
+            (n.type === 'Identifier' && n.name === 'undefined') ||
+            (n.type === 'Literal' && n.value === null);
+        if (isOurs(test.left) && nullish(test.right)) return true;
+        if (isOurs(test.right) && nullish(test.left)) return true;
+    }
+
+    return false;
+}
+
 function isGuarded(sourceCode, node, variable, stopAt) {
     let child = node;
     let parent = node.parent;
@@ -157,15 +228,8 @@ function isGuarded(sourceCode, node, variable, stopAt) {
         ) {
             test = parent.left;
         }
-        if (test) {
-            for (const id of collectIdentifiers(test)) {
-                if (
-                    id.name === variable.name &&
-                    resolveVariable(sourceCode, id, id.name) === variable
-                ) {
-                    return true;
-                }
-            }
+        if (test && guardsPositively(sourceCode, test, variable)) {
+            return true;
         }
         child = parent;
         parent = parent.parent;
@@ -205,10 +269,25 @@ function enclosingTeardownCallback(node) {
 /**
  * Every `Identifier` used as a filter VALUE inside a `where` object.
  *
- * Recurses through nested objects (`{ tenant: { id: x } }`,
- * `{ id: { in: x } }`) and deliberately does NOT recurse into array
- * literals — Prisma rejects an undefined array member, so that shape is
- * already safe.
+ * Recurses through nested objects (`{ tenant: { id: x } }`, `{ id: { in: x } }`)
+ * and through array literals whose ELEMENTS ARE OBJECTS — the `AND` / `OR` /
+ * `NOT` combinator shape.
+ *
+ * The array distinction is measured, not assumed, and the first version of this
+ * rule drew it in the wrong place. It skipped EVERY array literal, justified as
+ * "Prisma rejects an undefined array member". That is true only of a SCALAR
+ * member. Against this repo's client (331 rows):
+ *
+ *     { id: { in: [undefined] } }   -> THROWS          (scalar member, safe)
+ *     { OR:  [{ id: undefined }] }  ->   0             (safe, by luck)
+ *     { AND: [{ id: undefined }] }  -> 331, EVERY ROW  (fails OPEN)
+ *     { NOT: [{ id: undefined }] }  -> 331, EVERY ROW  (fails OPEN)
+ *
+ * So an array of scalars is genuinely safe and is still skipped; an array of
+ * objects is not, and is now recursed into. Generalising from the `in:` case to
+ * "any array literal" is the same over-generalisation
+ * `tests/integration/db-helper.ts` warns about one level down — two of three
+ * `in` shapes are safe, and the safe ones teach the wrong rule.
  */
 function collectFilterIdentifiers(node, out = []) {
     if (node.type !== 'ObjectExpression') return out;
@@ -219,6 +298,13 @@ function collectFilterIdentifiers(node, out = []) {
             out.push(value);
         } else if (value.type === 'ObjectExpression') {
             collectFilterIdentifiers(value, out);
+        } else if (value.type === 'ArrayExpression') {
+            // Objects inside AND/OR/NOT; scalar members are Prisma's to reject.
+            for (const el of value.elements) {
+                if (el && el.type === 'ObjectExpression') {
+                    collectFilterIdentifiers(el, out);
+                }
+            }
         }
     }
     return out;
@@ -267,12 +353,24 @@ module.exports = {
                         ((p.key.type === 'Identifier' && p.key.name === 'where') ||
                             (p.key.type === 'Literal' && p.key.value === 'where')),
                 );
-                if (!whereProperty || whereProperty.value.type !== 'ObjectExpression') {
-                    return;
-                }
+                if (!whereProperty) return;
+
+                // `where: filter` with `filter` a bare `let` fails open exactly
+                // like an inline scalar — measured `where: undefined` -> 331 of
+                // 331 rows. The first version returned early on any non-object
+                // `where`, so this was silent; 47 teardown calls already use
+                // `where: <identifier>` (all `const` today), so the first one
+                // written as a `let` would have been unprotected.
+                const candidates =
+                    whereProperty.value.type === 'Identifier'
+                        ? [whereProperty.value]
+                        : whereProperty.value.type === 'ObjectExpression'
+                          ? collectFilterIdentifiers(whereProperty.value)
+                          : [];
+                if (candidates.length === 0) return;
 
                 const reported = new Set();
-                for (const id of collectFilterIdentifiers(whereProperty.value)) {
+                for (const id of candidates) {
                     const variable = resolveVariable(sourceCode, id, id.name);
                     if (!isBareLet(variable)) continue;
                     if (isGuarded(sourceCode, node, variable, hook)) continue;

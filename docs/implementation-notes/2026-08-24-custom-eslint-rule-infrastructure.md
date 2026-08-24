@@ -1,6 +1,6 @@
 # 2026-08-24 — custom ESLint rule infrastructure (`eslint-rules/`)
 
-**Commit:** `<pending>` chore(lint): stand up custom ESLint rule infrastructure
+**Commit:** `a6fd69cbc` chore(lint): stand up custom ESLint rule infrastructure
 
 ## Design
 
@@ -33,7 +33,7 @@ teardown on any setup failure — and Prisma DROPS an undefined filter value
 rather than rejecting it, turning `deleteMany({ where: { tenantId: tenantA } })`
 into an unpredicated `DELETE` against a database every suite in the run shares.
 It does not throw. It succeeds, so the surrounding `try { … } catch` never
-fires and the run stays green. Fifteen sites were fixed by hand across two PRs
+fires and the run stays green. Fourteen sites were fixed by hand across two PRs
 and nothing stopped the sixteenth.
 
 The rule needs scope resolution (is this identifier a `let` with no
@@ -69,7 +69,12 @@ precisely why it justifies a rule file rather than another entry in
   loads from the ESM config (interop), from Jest (require), and from ESLint
   alike. Verified all three, not assumed.
 
-- **The rule fails CLOSED, deliberately and at some cost.** Whether a variable
+- **The rule is BIASED toward flagging, but it does not fail closed as an
+  absolute** — the first draft of this note claimed it did. Three shapes were
+  measured failing OPEN and are now fixed: a negated guard (`if (!x)`, strictly
+  worse than no guard), `AND`/`NOT` combinator arrays, and `where: <bare let>`.
+  Two remain open and are listed in the rule header rather than glossed:
+  non-identifier filter values, and reachability. Whether a variable
   is assigned on every path reaching the `deleteMany` is a data-flow fact and
   this rule does no data-flow analysis. It recognises exactly one guard shape —
   the call in the truthy branch of an `if`/ternary testing the same variable,

@@ -101,7 +101,7 @@ So the unguarded teardown is `DELETE FROM "User"` with no predicate against a
 database every other suite in the run is sharing. It does not throw — it
 SUCCEEDS, so the surrounding `try { … } catch` is no protection and the run
 stays green. It fails OPEN, the opposite of the intuition that an undefined
-filter matches nothing. Fifteen sites were fixed by hand across #2113 and
+filter matches nothing. Fourteen sites were fixed by hand across #2113 and
 #2114 with nothing stopping the sixteenth.
 
 **What it cannot see.** Whether a variable is assigned on every path reaching
@@ -121,14 +121,24 @@ at all. It matches a syntactic shape:
   `where: { id: getId() }` are invisible to it, so a green rule is **not** a
   proof that a teardown is safe.
 
-Every one of those biases points the same way on purpose: the rule fails
-CLOSED. It flags things that are fine rather than staying quiet about things
-that are not, because a false positive costs one `if (…)` and a false negative
-costs a table in a shared database.
+Those biases point the same way on purpose — flag something fine rather than
+stay quiet about something that is not, because a false positive costs one
+`if (…)` and a false negative costs a table in a shared database.
 
-**Two shapes it deliberately leaves alone.** `where: { id: { in: [a, b] } }` —
-an array *literal* — is already safe, because Prisma validates array members
-and throws on an undefined element. `where: { id: { in: ids } }`, where the
+But **"the rule fails CLOSED" is not true as an absolute**, and the first
+version of this file said it was. Three shapes were measured failing OPEN and
+have since been fixed: a negated guard (`if (!x) { … }`, strictly *worse* than
+no guard, since the delete then runs exactly when the filter is undefined), an
+`AND` / `NOT` combinator array, and `where: <bare let>`. The two bullets above
+are what remains open. A green rule proves this one syntactic shape is absent —
+not that the teardown is safe.
+
+**One shape it deliberately leaves alone, and the line is narrower than it
+looks.** `where: { id: { in: [a, b] } }` — an array literal of SCALARS — is
+already safe, because Prisma validates array members and throws on an undefined
+element. An array literal of OBJECTS is not: `{ AND: [{ id: undefined }] }`
+matched every row of 331 when measured, so combinator arrays are recursed into
+and flagged. `where: { id: { in: ids } }`, where the
 identifier stands for the whole array, is **not** safe and IS flagged: an
 undefined array is dropped exactly like a bare scalar. There is no live
 instance of that in the repo; #2114 wrote the trap down precisely because
