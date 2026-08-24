@@ -72,7 +72,12 @@ on:
   # On PRs: catch the regression BEFORE it lands, and produce the check
   # context that lets this be required once branch protection is enabled.
   pull_request:
-    branches: [main]
+    # NO `branches:` filter, deliberately. `branches: [main]` meant a PR whose
+    # base is another feature branch fired ZERO jobs from this workflow — not
+    # "skipped" (which still reports a neutral context), but never triggered, so
+    # the PR page showed no checks at all and there was nothing visibly missing
+    # to notice. Removed 2026-08-25;
+    # tests/guardrails/ci-check-reachability-before-merge.test.ts fails if it returns.
   # REQUIRED once `pull_request` exists — not optional, and not for
   # symmetry. A job that skips reports `skipped` and branch protection
   # counts it as a pass; a workflow that never TRIGGERS reports nothing,
