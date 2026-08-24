@@ -184,9 +184,24 @@ const EXEMPT_CLASSES: Record<ExemptClass, ExemptClassDef> = {
             'invite redemption, an audit-pack share link, a gated trust-centre ' +
             'download, an external vendor-assessment response. The token is ' +
             'unguessable, scoped and (mostly) single-use; there is no session ' +
-            'to resolve a role from. Corroboration here is WEAK: it only checks ' +
-            'the route still mentions a token at all.',
-        mechanism: /token/i,
+            'to resolve a role from. Each member names the verifier it must ' +
+            'keep calling — or, where the check is one hop away in a usecase, ' +
+            'the delegation it must keep making, and says so.',
+        // No class-level mechanism ON PURPOSE. It used to be `/token/i`, which
+        // matched any occurrence of the WORD — the `{ token }` every one of
+        // these routes destructures out of its params, a `rawToken` local, a
+        // Zod field, an `invalid_or_expired` neighbour. None of those verify
+        // anything.
+        //
+        // Measured rather than asserted: with all 14 verifiers renamed out of
+        // the real route files, `/token/i` still passed on 10 of 10 of them,
+        // while the per-entry mechanisms below went red on 14 of 14. The old
+        // pattern was not weak corroboration, it was none.
+        //
+        // Each of the 14 members now carries a per-entry `mechanism` naming
+        // its real verifier, and `every CAPABILITY_TOKEN member names a real
+        // verifier` below refuses a member that arrives without one — so
+        // removing the class default is a tightening, not a hole.
     },
     PROTOCOL_CREDENTIAL: {
         why:
@@ -300,25 +315,65 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       note: 'Verify MY MFA enrolment (Epic D.3 self-service carve-out).' },
 
     // ── CAPABILITY_TOKEN ─────────────────────────────────────────────
+    //
+    // Every member names its verifier. Where the check lives one module hop
+    // away — most of them, because these routes are thin glue — the entry
+    // corroborates the DELEGATION and says so: it asserts the route still
+    // hands the token to the thing that checks it, not that the check is
+    // still correct. Weaker than naming the check, and stated rather than
+    // implied. The two `start-signin` routes verify NOTHING and are called
+    // out as such rather than given a cleverer regex.
     { handler: 'api/audit/shared/[token]/route.ts#GET', klass: 'CAPABILITY_TOKEN',
-      note: 'Auditor share link. Explicitly rate-limited on (IP, token) because the token is the only credential.' },
+      mechanism: /getPackByShareToken/,
+      note: 'Auditor share link. Explicitly rate-limited on (IP, token) because the token is the only credential. Verified one hop away: getPackByShareToken hashes it and requires an AuditPackShare with revokedAt null and an unexpired expiresAt; this corroborates the delegation.' },
     { handler: 'api/audit/shared/[token]/route.ts#POST', klass: 'CAPABILITY_TOKEN',
-      note: 'Comment on a shared audit pack through the same share token.' },
-    { handler: 'api/invites/[token]/route.ts#GET', klass: 'CAPABILITY_TOKEN' },
-    { handler: 'api/invites/[token]/route.ts#POST', klass: 'CAPABILITY_TOKEN' },
-    { handler: 'api/invites/[token]/accept-redirect/route.ts#GET', klass: 'CAPABILITY_TOKEN' },
-    { handler: 'api/invites/[token]/start-signin/route.ts#GET', klass: 'CAPABILITY_TOKEN' },
-    { handler: 'api/org/invite/[token]/route.ts#GET', klass: 'CAPABILITY_TOKEN' },
-    { handler: 'api/org/invite/[token]/route.ts#POST', klass: 'CAPABILITY_TOKEN' },
-    { handler: 'api/org/invite/[token]/accept-redirect/route.ts#GET', klass: 'CAPABILITY_TOKEN' },
-    { handler: 'api/org/invite/[token]/accept-redirect/route.ts#POST', klass: 'CAPABILITY_TOKEN' },
-    { handler: 'api/org/invite/[token]/start-signin/route.ts#GET', klass: 'CAPABILITY_TOKEN' },
+      mechanism: /addShareComment/,
+      note: 'Comment on a shared audit pack through the same share token. addShareComment re-resolves the share by token hash and re-checks revoked/expired before the write, so the return channel does not trust the GET having succeeded.' },
+    { handler: 'api/invites/[token]/route.ts#GET', klass: 'CAPABILITY_TOKEN',
+      mechanism: /previewInviteByToken/,
+      note: 'Invite preview. previewInviteByToken returns null unless the token names an invite that is unrevoked, unaccepted and unexpired; the route collapses that to a 410 so token existence is not disclosed.' },
+    { handler: 'api/invites/[token]/route.ts#POST', klass: 'CAPABILITY_TOKEN',
+      mechanism: /redeemInvite/,
+      note: 'Redemption. The route requires a session first, then redeemInvite claims the token atomically (acceptedAt/revokedAt/expiresAt predicate on updateMany) and burns it on an email mismatch.' },
+    { handler: 'api/invites/[token]/accept-redirect/route.ts#GET', klass: 'CAPABILITY_TOKEN',
+      mechanism: /redeemInvite/,
+      note: 'Post-OAuth callbackUrl for the same redemption: unauthenticated callers are bounced to /login, and the token itself is checked by the same redeemInvite atomic claim.' },
+    { handler: 'api/invites/[token]/start-signin/route.ts#GET', klass: 'CAPABILITY_TOKEN',
+      // FINDING, not corroboration. This route verifies NOTHING: it copies the
+      // URL segment verbatim into an HttpOnly 10-minute cookie and redirects
+      // to /login. The token is first checked much later, by redeemInvite in
+      // the NextAuth signIn callback. There is no verifier in this file to
+      // name, so the entry pins the COOKIE NAME instead — that name is the
+      // seam `src/auth.ts` reads, and it is the only thing here whose loss
+      // would mean something. Recorded as weak; see the note.
+      mechanism: /inflect_invite_token/,
+      note: 'WEAKLY GROUNDED: no verification happens here at all — the route stashes the unvalidated URL token in an HttpOnly cookie and redirects. Safe because it grants nothing and redeemInvite (signIn callback) is email-bound, so a planted cookie can only auto-accept an invite already addressed to that exact address. Corroborates the cookie name, not a check — and only in THIS file. Changing src/auth.ts to read a different cookie is the edit that actually breaks redemption, and it leaves this green; renaming both sides together is benign and turns it red. The pin is inverted relative to the risk, kept because a cookie name is the only textual anchor this route has.' },
+    { handler: 'api/org/invite/[token]/route.ts#GET', klass: 'CAPABILITY_TOKEN',
+      mechanism: /previewOrgInviteByToken/,
+      note: 'Org-invite preview. previewOrgInviteByToken returns null for revoked, accepted, expired and unknown alike; the route maps all four to one 410 so callers cannot enumerate.' },
+    { handler: 'api/org/invite/[token]/route.ts#POST', klass: 'CAPABILITY_TOKEN',
+      mechanism: /redeemOrgInvite/,
+      note: 'Org redemption. Session required by the route, then redeemOrgInvite performs the same atomic updateMany claim against acceptedAt/revokedAt/expiresAt as the tenant flow.' },
+    { handler: 'api/org/invite/[token]/accept-redirect/route.ts#GET', klass: 'CAPABILITY_TOKEN',
+      mechanism: /redeemOrgInvite/,
+      note: 'GET and POST share one `handle`, so both are corroborated on the same call: unauthenticated callers redirect to /login and the token is checked by redeemOrgInvite.' },
+    { handler: 'api/org/invite/[token]/accept-redirect/route.ts#POST', klass: 'CAPABILITY_TOKEN',
+      mechanism: /redeemOrgInvite/,
+      note: 'Form-submit target on /invite/org/[token]; identical body to the GET above via the shared `handle`, verified by the redeemOrgInvite atomic claim.' },
+    { handler: 'api/org/invite/[token]/start-signin/route.ts#GET', klass: 'CAPABILITY_TOKEN',
+      // FINDING — the org mirror of the tenant start-signin above, same shape,
+      // same absence of a check. Corroborates the distinct cookie name.
+      mechanism: /inflect_org_invite_token/,
+      note: 'WEAKLY GROUNDED: mirrors /api/invites/[token]/start-signin and verifies nothing — it writes the raw URL token to an HttpOnly cookie and redirects to /login. redeemOrgInvite in the signIn callback is the only check, and it is email-bound. Corroborates the cookie name, not a check, and only in THIS file — same inverted pin as the tenant sibling above.' },
     { handler: 'api/trust/download/[token]/route.ts#GET', klass: 'CAPABILITY_TOKEN',
-      note: 'Single-use, expiring download token minted after an approved trust-centre access request.' },
+      mechanism: /consumeDownloadToken/,
+      note: 'Single-use, expiring download token minted after an approved trust-centre access request. The verifier is called IN this route: consumeDownloadToken requires the ictc_ prefix, looks the token up by hash, demands status APPROVED and an unexpired unconsumed request, then claims it with a downloadedAt-null updateMany.' },
     { handler: 'api/vendor-assessment/[assessmentId]/route.ts#GET', klass: 'CAPABILITY_TOKEN',
-      note: 'External vendor respondent. The token arrives ONLY as ?t=… and is never read from a header or body.' },
+      mechanism: /loadResponseByToken/,
+      note: 'External vendor respondent. The token arrives ONLY as ?t=… and is never read from a header or body. loadResponseByToken opens with verifyAccessToken, which hashes it, constant-time-compares the resolved assessment id against the URL id, and denies on expired/revoked/wrong-status.' },
     { handler: 'api/vendor-assessment/[assessmentId]/submit/route.ts#POST', klass: 'CAPABILITY_TOKEN',
-      note: 'External vendor submits their answers under the same ?t=… token.' },
+      mechanism: /submitResponse/,
+      note: 'External vendor submits their answers under the same token (body-carried here). submitResponse re-runs the full verifyAccessToken gate before writing — the write path does not trust the read path having passed.' },
 
     // ── PROTOCOL_CREDENTIAL ──────────────────────────────────────────
     { handler: 'api/admin/diagnostics/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL',
@@ -523,9 +578,16 @@ function readSource(file: string): string {
  * whose only mention is `// we no longer verifyWebhookSignature here` — which is
  * the exact state the check exists to catch, reading as a pass.
  *
- * Deliberately crude: block comments, line comments, and the contents of string
- * literals are all out of scope for a credential-check regex, so removing a
- * little too much is safe here. Erring the other way is not.
+ * Deliberately crude: block and line comments are stripped, and removing a
+ * little too much is safe for a credential-check regex. Erring the other way
+ * is not.
+ *
+ * String literal CONTENTS are NOT stripped, contrary to what this said before.
+ * Two CAPABILITY_TOKEN entries silently depend on that — their mechanism names
+ * a cookie NAME, which lives in a literal — so the claim was both false and
+ * load-bearing. Left unstripped deliberately, now that it is stated: a
+ * verifier reached by name through a string is rare but real, and stripping
+ * literals would silently break those two.
  */
 function readCodeOnly(file: string): string {
     return readSource(file)
@@ -719,6 +781,144 @@ describe('every API route handler has SOME authorization (layer 2)', () => {
                 ].join('\n'),
             );
         }
+    });
+
+    it('every CAPABILITY_TOKEN member names a real verifier, and loses it when the verifier goes', () => {
+        // CAPABILITY_TOKEN has no class-level mechanism any more, so this is
+        // what keeps the class from decaying back into a list of trusted
+        // paths. Three properties, each closing a different way the old
+        // `/token/i` was vacuous:
+        //
+        //   1. Every member carries a per-entry mechanism. No default to
+        //      fall back on means a new member cannot arrive uncorroborated.
+        //   2. The mechanism is a PLAIN IDENTIFIER. `/token/i` was vacuous
+        //      because it was a word, not a name; a pattern with
+        //      metacharacters is how that sneaks back in.
+        //   3. The identifier is SPECIFIC to this kind of route — it does not
+        //      appear in a corpus of routes that hold no capability token at
+        //      all. `/token/i` was vacuous because it was a word; `/params/`
+        //      or `/a/` would be vacuous the same way. A verifier's NAME does
+        //      not occur in a health probe.
+        //
+        // Property 3 was originally written as a rename-mutation: delete every
+        // occurrence of the identifier from the source and require the match to
+        // go red. That proved NOTHING, and it is worth saying why, because it
+        // looked like the strongest of the three.
+        //
+        // Property 2 constrains the mechanism to a plain identifier with no
+        // metacharacters, and the check above has already asserted it matches.
+        // A case-sensitive literal can never match a string from which every
+        // occurrence of that literal was deleted — so the mutation's outcome
+        // was guaranteed, and the loop re-derived only "the identifier is
+        // present", which the line above it had just established. Measured:
+        // setting all 14 mechanisms to `/params/` — Next.js boilerplate in
+        // every one of these handlers, corroborating nothing — still reported
+        // every member proved.
+        //
+        // Specificity is the property that was actually wanted.
+        const members = EXEMPT_HANDLERS.filter((e) => e.klass === 'CAPABILITY_TOKEN');
+        // Positive companion: the class is populated, so an empty offender
+        // list below is evidence rather than an empty scan.
+        expect(members.length).toBeGreaterThanOrEqual(14);
+        expect(EXEMPT_CLASSES.CAPABILITY_TOKEN.mechanism).toBeUndefined();
+
+        // Routes drawn from classes that CANNOT hold a capability token: two
+        // health probes and two membership-scoped reads. Any identifier that
+        // appears here is boilerplate, not a credential check.
+        const CONTROL_ROUTES = [
+            'api/health/route.ts',
+            'api/readyz/route.ts',
+            'api/org/[orgSlug]/route.ts',
+            'api/t/[tenantSlug]/onboarding/state/route.ts',
+        ];
+        const controlCorpus = CONTROL_ROUTES.map((r) =>
+            readCodeOnly(path.join(APP_ROOT, r)),
+        ).join('\n');
+        // The corpus has to be real for a non-match to mean anything, and it
+        // has to contain the boilerplate this property exists to reject —
+        // otherwise `/params/` would pass for want of a corpus rather than for
+        // being specific.
+        expect(controlCorpus.length).toBeGreaterThan(500);
+        expect(/params/.test(controlCorpus)).toBe(true);
+
+        const offenders: string[] = [];
+        // Denominator excludes handlers whose file is gone — the dangling-entry
+        // test owns that failure, and counting them here would report the same
+        // problem as a mysterious arithmetic mismatch.
+        const checkable = members.filter((e) =>
+            fs.existsSync(path.join(APP_ROOT, e.handler.split('#')[0])),
+        );
+        let proved = 0;
+
+        for (const e of checkable) {
+            if (!e.mechanism) {
+                offenders.push(`${e.handler} — no per-entry mechanism`);
+                continue;
+            }
+            const identifier = e.mechanism.source;
+            if (e.mechanism.flags !== '') {
+                // `.test()` on a /g or /y regex advances lastIndex, and this
+                // same RegExp object is shared with the corroboration test
+                // above — so a flagged mechanism makes both order-dependent.
+                offenders.push(
+                    `${e.handler} — mechanism ${e.mechanism} carries flags; use an unflagged literal`,
+                );
+                continue;
+            }
+            if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+                offenders.push(
+                    `${e.handler} — mechanism ${e.mechanism} is a pattern, not the name of a verifier`,
+                );
+                continue;
+            }
+            if ((e.note ?? '').trim().length < 40) {
+                offenders.push(
+                    `${e.handler} — no note saying where the verification actually happens`,
+                );
+                continue;
+            }
+
+            const code = readCodeOnly(path.join(APP_ROOT, e.handler.split('#')[0]));
+            if (!e.mechanism.test(code)) {
+                offenders.push(
+                    `${e.handler} — ${e.mechanism} is absent from the route's code`,
+                );
+                continue;
+            }
+
+            if (e.mechanism.test(controlCorpus)) {
+                offenders.push(
+                    `${e.handler} — ${e.mechanism} also matches routes that hold no capability ` +
+                        `token, so it is a common word rather than a verifier's name`,
+                );
+                continue;
+            }
+            proved += 1;
+        }
+
+        // Diagnostics first: a bare count mismatch below would say a member
+        // failed without saying which, or why.
+        if (offenders.length > 0) {
+            throw new Error(
+                [
+                    'CAPABILITY_TOKEN exemptions that are not really corroborated:',
+                    ...offenders.map((o) => `  - ${o}`),
+                    '',
+                    'Open the route, find the call it actually relies on — a token',
+                    'verification, a claim check, or the delegation that performs one —',
+                    'and name it in a per-entry `mechanism`, with a note saying where',
+                    'the check lives. If the route verifies nothing, say THAT in the',
+                    'note rather than reaching for a regex that cannot fail.',
+                ].join('\n'),
+            );
+        }
+
+        // A floor on the denominator, so an empty offender list is evidence.
+        // NOT paired with `expect(proved).toBe(checkable.length)`, which used
+        // to sit here claiming to catch a run where "nothing was mutated at
+        // all" — it could not: every offender path `continue`s, so zero
+        // offenders already implies every checkable member incremented.
+        expect(checkable.length).toBeGreaterThanOrEqual(14);
     });
 
     it('PRE_TENANT_AUTH membership stays confined to /api/auth/', () => {
