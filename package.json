@@ -13,6 +13,7 @@
     "secret-scan": "bash scripts/detect-secrets.sh",
     "docs:lint": "node scripts/docs-lint.mjs",
     "license:check": "npx --yes license-checker --production --summary --failOn \"AGPL-1.0-only;AGPL-1.0-or-later;AGPL-3.0-only;AGPL-3.0-or-later;SSPL-1.0;BUSL-1.1;Commons-Clause\" --excludePackages \"inflect-compliance@$npm_package_version\"",
+    "release:check-notes": "node scripts/check-release-notes-render.mjs",
     "dev": "cross-env NEXT_IGNORE_INCORRECT_LOCKFILE=1 next dev",
     "build": "cross-env NEXT_IGNORE_INCORRECT_LOCKFILE=1 tsx scripts/validate-env.ts && next build --webpack",
     "build:worker": "node scripts/build-worker.mjs",
@@ -207,7 +208,7 @@
     "@types/sanitize-html": "^2.16.1",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "autoprefixer": "^10.5.4",
-    "conventional-changelog-conventionalcommits": "^10.4.0",
+    "conventional-changelog-conventionalcommits": "10.3.0",
     "cross-env": "^10.1.0",
     "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.2",
@@ -233,6 +234,7 @@
     "*": "bash scripts/detect-secrets.sh"
   },
   "overrides": {
+    "@conventional-changelog/template": "1.3.0",
     "deepmerge-ts": "^8.0.1",
     "valibot": "^1.4.2",
     "@sentry/bundler-plugin-core": {

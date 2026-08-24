@@ -350,6 +350,17 @@ jobs:
       - name: "Gate: dependency licenses"
         run: npm run license:check
 
+      # Release-notes gate — semantic-release runs only on `main`, and only
+      # does real work when a commit actually cuts a release, so a bump that
+      # breaks changelog rendering passes every PR check and lands green.
+      # #2120 (conventional-changelog-conventionalcommits 10.3.0 -> 10.4.0)
+      # did exactly that: it sat latent through four main commits and broke
+      # the pipeline on the first `fix:` commit after it. This renders one
+      # synthetic commit through the real plugin so the failure surfaces on
+      # the PR that introduces it.
+      - name: "Gate: release notes render"
+        run: npm run release:check-notes
+
   # ═══════════════════════════════════════════════════════════════
   #  Job 2: Typecheck — TypeScript strict compilation
   #  Fast, no DB needed. Catches type errors early.
