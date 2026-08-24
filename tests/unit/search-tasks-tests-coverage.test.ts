@@ -80,8 +80,31 @@ describe('Task search coverage', () => {
             'utf8',
         );
         expect(src).toMatch(/db\.task\.findMany\(/);
-        // title + description + key all searched.
-        expect(src).toMatch(/title:\s*\{\s*contains[\s\S]+?description:\s*\{\s*contains[\s\S]+?key:\s*\{\s*contains/);
+
+        // BOUNDED to the task query. The previous assertion was
+        //   /title:\s*\{\s*contains[\s\S]+?description:\s*\{\s*contains[\s\S]+?key:.../
+        // over the WHOLE file, and `[\s\S]+?` happily bridges from one
+        // domain's query into another's — so it matched a `description:
+        // { contains }` belonging to a different entity and reported that the
+        // TASK query searched description. It kept passing after the task
+        // clause was removed, which is how a stale assertion survives.
+        const taskQuery = src.slice(
+            src.indexOf('db.task.findMany('),
+            src.indexOf('db.controlTestPlan.findMany('),
+        );
+        expect(taskQuery.length).toBeGreaterThan(100); // the slice found something
+        expect(taskQuery).toMatch(/title:\s*\{\s*contains/);
+        expect(taskQuery).toMatch(/key:\s*\{\s*contains/);
+
+        // description is DELIBERATELY not searched: `Task.description` is in
+        // the encryption manifest, so the ILIKE ran against `v1:` ciphertext
+        // and could never match a plaintext query. Worse than dead — a row
+        // written by anything bypassing the middleware WOULD have matched, so
+        // the clause searched an arbitrary legacy subset while appearing to
+        // search all descriptions. Asserting its ABSENCE here, bounded to this
+        // query, is what stops it being re-added by someone reading the select
+        // list and assuming a gap.
+        expect(taskQuery).not.toMatch(/description:\s*\{\s*contains/);
     });
 
     it('palette UI ENTITY_META + ENTITY_ORDER include "task"', () => {
