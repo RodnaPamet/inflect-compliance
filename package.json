@@ -13,6 +13,7 @@
     "secret-scan": "bash scripts/detect-secrets.sh",
     "docs:lint": "node scripts/docs-lint.mjs",
     "license:check": "npx --yes license-checker --production --summary --failOn \"AGPL-1.0-only;AGPL-1.0-or-later;AGPL-3.0-only;AGPL-3.0-or-later;SSPL-1.0;BUSL-1.1;Commons-Clause\" --excludePackages \"inflect-compliance@$npm_package_version\"",
+    "release:check-notes": "node scripts/check-release-notes-render.mjs",
     "dev": "cross-env NEXT_IGNORE_INCORRECT_LOCKFILE=1 next dev",
     "build": "cross-env NEXT_IGNORE_INCORRECT_LOCKFILE=1 tsx scripts/validate-env.ts && next build --webpack",
     "build:worker": "node scripts/build-worker.mjs",
