@@ -145,7 +145,7 @@
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "ldapts": "^9.0.0",
-    "lucide-react": "^1.33.0",
+    "lucide-react": "1.31.0",
     "mammoth": "^1.12.1",
     "marked": "^18.0.10",
     "motion": "^13.1.1",
