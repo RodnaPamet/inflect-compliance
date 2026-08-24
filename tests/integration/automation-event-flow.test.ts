@@ -49,8 +49,14 @@ describeFn('Automation event flow — emit → dispatch → execution row', () =
 
     afterAll(async () => {
         try {
-            await prisma.automationExecution.deleteMany({ where: { tenantId } });
-            await prisma.automationRule.deleteMany({ where: { tenantId } });
+            // Guarded: on a failed `beforeAll` this bare `let` is still
+            // undefined, and Prisma DROPS an undefined filter value rather
+            // than rejecting it, so the unguarded form is an unpredicated
+            // DELETE — see the teardown note in ./db-helper.ts.
+            if (tenantId) {
+                await prisma.automationExecution.deleteMany({ where: { tenantId } });
+                await prisma.automationRule.deleteMany({ where: { tenantId } });
+            }
         } catch {
             /* best effort */
         }

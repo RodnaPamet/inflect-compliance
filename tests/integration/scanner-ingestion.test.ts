@@ -79,9 +79,15 @@ describeFn('scanner ingestion (integration)', () => {
 
     afterAll(async () => {
         try {
-            await prisma.scannerFinding.deleteMany({ where: { tenantId } });
-            await prisma.scannerRun.deleteMany({ where: { tenantId } });
-            await prisma.finding.deleteMany({ where: { tenantId } });
+            // Guarded: on a failed `beforeAll` this bare `let` is still
+            // undefined, and Prisma DROPS an undefined filter value rather
+            // than rejecting it, so the unguarded form is an unpredicated
+            // DELETE — see the teardown note in ./db-helper.ts.
+            if (tenantId) {
+                await prisma.scannerFinding.deleteMany({ where: { tenantId } });
+                await prisma.scannerRun.deleteMany({ where: { tenantId } });
+                await prisma.finding.deleteMany({ where: { tenantId } });
+            }
         } catch {
             /* best-effort cleanup */
         }

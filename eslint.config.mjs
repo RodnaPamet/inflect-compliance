@@ -14,6 +14,9 @@
  */
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
+// This repo's own rules. CommonJS on purpose — see the header of
+// ./eslint-rules/index.js for why `.mjs` and `.cjs` both fail here.
+import localPlugin from './eslint-rules/index.js';
 
 const config = [
     ...nextCoreWebVitals,
@@ -50,6 +53,9 @@ const config = [
             // its TS-specific block, so our cross-cutting rules below
             // need the plugin re-registered in scope.
             '@typescript-eslint': tsPlugin,
+            // ./eslint-rules — rules this repo owns. See its README for
+            // when a rule belongs here rather than in `tests/guards/`.
+            local: localPlugin,
         },
         rules: {
             // React 19's `eslint-plugin-react-hooks@6+` ships a set
@@ -71,6 +77,24 @@ const config = [
             // sites are inside library wrappers (vaul, react-grid-
             // layout) that haven't migrated yet. Surface as warn.
             'react/no-find-dom-node': 'warn',
+            // ── This repo's own rules (./eslint-rules) ──
+            //
+            // Bans the teardown shape that emptied tables on the shared
+            // test database in #2107 / #2113 / #2114: an unguarded
+            // `deleteMany` in an `afterAll` whose filter reads a bare
+            // `let` fixture id. Prisma DROPS an undefined filter value,
+            // so the statement becomes an unpredicated DELETE — and it
+            // SUCCEEDS, so the surrounding try/catch never fires and the
+            // run stays green. Fourteen sites were fixed by hand across
+            // two PRs with nothing stopping the sixteenth.
+            //
+            // Its first full-repo run found 12 live instances in five
+            // files that both hand-sweeps missed; they are guarded in the
+            // same diff, so `eslint .` is back to `0 errors, 245 warnings`
+            // — the warning count on main. `error`, not `warn`: the remedy
+            // is one `if (…)`, and a warning would not fail CI anyway
+            // (`npm run lint` passes no --max-warnings).
+            'local/no-fail-open-teardown-filter': 'error',
             '@typescript-eslint/no-explicit-any': 'warn',
             '@typescript-eslint/ban-ts-comment': [
                 'warn',
