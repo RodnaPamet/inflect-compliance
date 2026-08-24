@@ -64,33 +64,39 @@ jobs:
           # needed to measure bundle size.
           SKIP_ENV_VALIDATION: '1'
           NEXT_TELEMETRY_DISABLED: '1'
-          # 6144 PER PROCESS, matching ci.yml's build jobs — and note this is
-          # a REDUCTION from 8192, which is the counter-intuitive direction.
+          # 10240 PER PROCESS. This number is MEASURED, and the two values
+          # before it were wrong in OPPOSITE directions.
           #
-          # `--max-old-space-size` is a PER-PROCESS ceiling delivered through
-          # NODE_OPTIONS, and `next.config` sets `webpackBuildWorker: true`
-          # EXPLICITLY, so the compile runs in a parent AND a worker that each
-          # inherit it. 8192 x 2 is 16 GB on a 16 GB runner — the entire machine,
-          # with nothing left for the analyzer's own module graph. ci.yml hit
-          # exactly this, measured it (peak 15783 MB used / 206 MB available on
-          # a run that PASSED), and dropped to 6144 x 2 = ~12 GB. This job was
-          # never updated to match.
+          # What the compile worker actually did, from its own V8 traces:
+          #   ceiling 8192 -> heap 7942 / 8257 MB -> FATAL (run 32697139148)
+          #   ceiling 6144 -> heap 5796 / 6236 MB -> FATAL (run 32759606612)
+          # It grows to fill whatever ceiling it is given and then dies, so
+          # demand genuinely exceeds 8 GB and LOWERING the ceiling only killed
+          # it sooner. ci.yml's plain `next build` passes at 6144/process on
+          # this same runner, so the delta is the analyzer's retained stats
+          # object: the treemap needs the whole module graph live at once.
+          # This job therefore CANNOT inherit ci.yml's number — that job is
+          # doing strictly less work. (An earlier comment here said exactly
+          # that, citing "~6.5 GB it actually needs", and was overwritten on
+          # the theory below. It was right.)
           #
-          # It survived at 8192 only by riding the margin, and the production
-          # dependency bump on 2026-08-24 (#2119: next 16.2.12 -> 16.3.1,
-          # lucide-react 1.29 -> 1.33 and twelve others) consumed it — first
-          # failure `59378f4fe`, "Ineffective mark-compacts near heap limit",
-          # on a job that had passed on every preceding main commit. Note
-          # `optimizePackageImports` lists `lucide-react`, so that bump lands
-          # directly on the barrel-rewriting work this build does.
+          # The reasoning this replaces summed the two ceilings ("8192 x 2 =
+          # 16 GB on a 16 GB runner") and concluded the fix was to reduce
+          # them. `--max-old-space-size` is a PERMISSION, not a reservation —
+          # a process consumes what it needs, not its ceiling — so adding two
+          # ceilings and comparing the total to RAM is a category error.
           #
-          # The paragraph this replaces argued the analyzer needs MORE heap
-          # than the plain build, and cited "~6.5 GB it actually needs". That
-          # was measured in the SINGLE-heap era, before the worker split — the
-          # same staleness ci.yml warns about two files away. With the compile
-          # across two heaps each holds far less, so the analyzer's extra
-          # stats fit inside 6144.
-          NODE_OPTIONS: '--max-old-space-size=6144'
+          # The doubling is still real for PEAK usage (ci.yml sampled 15783 MB
+          # used / 206 MB available), which is why this is 10240 and not
+          # 12288+: the parent's headroom has to survive alongside it.
+          #
+          # If this dies by SIGKILL / exit 137 rather than a V8 "Ineffective
+          # mark-compacts", then the 16 GB runner is the binding constraint
+          # rather than the ceiling, and the lever is `vars.LARGE_RUNNER`
+          # (already read on line 53) — currently UNSET, repo variables hold
+          # only CODE_SCANNING_ENABLED. Provisioning it is a cost decision
+          # for the repo owner, not a config tweak.
+          NODE_OPTIONS: '--max-old-space-size=10240'
           # `npm run analyze` → `npm run build`, which runs
           # `scripts/validate-env.ts` before `next build`. That script hard-
           # checks `DATABASE_URL` (it predates SKIP_ENV_VALIDATION and does not
