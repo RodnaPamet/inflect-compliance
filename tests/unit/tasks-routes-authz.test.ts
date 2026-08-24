@@ -154,6 +154,16 @@ const ADMIN_GATED_WRITES: Record<string, { methods: string[]; reason: string }> 
             'writes AUTHZ_DENIED rather than one layer deeper where nothing ' +
             'is recorded.',
     },
+    'bulk/delete/route.ts': {
+        methods: ['POST'],
+        reason:
+            'bulkDeleteTask has ALWAYS asserted assertCanAdmin — it is the ' +
+            'gate the single DELETE above was raised to match. Its route, ' +
+            'though, still declared tasks.edit, so the EDITOR it refused was ' +
+            'refused one layer too deep and left no AUTHZ_DENIED row. Key ' +
+            'corrected to admin.manage in #2117; who may bulk-delete is ' +
+            'unchanged, where the refusal is recorded is not.',
+    },
 };
 
 const VIEW_GATED_WRITES: Record<string, { methods: string[]; reason: string }> = {

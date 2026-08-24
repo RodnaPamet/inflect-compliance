@@ -31,12 +31,20 @@
  *   (a) route-level `requirePermission('risks.view', …)` — greppable, and
  *       the only mechanism that emits an `AUTHZ_DENIED` audit row (Epic C.1).
  *   (b) a usecase-layer `assertCan*` reached from the handler — invisible
- *       from the route file. `POST /evidence/[id]/purge` is three lines of
- *       glue whose authorisation lives two modules away:
+ *       from the route file. `POST /evidence/[id]/purge` is a handful of
+ *       lines of glue whose usecase-layer authorisation lives two modules
+ *       away:
  *
  *           route → purgeEvidence()      (@/app-layer/usecases/evidence)
  *                 → purgeEntity()        (…/soft-delete-operations)
  *                 → assertCanAdmin(ctx)
+ *
+ *       That route ALSO carries a route-level gate since #2117 — the two
+ *       mechanisms are belt and braces, not alternatives, because only (a)
+ *       writes an AUTHZ_DENIED row and only (b) protects a non-HTTP caller.
+ *       The chain above is still what this module has to be able to follow,
+ *       and the consumer's detector proof strips the route gate from the
+ *       source to exercise exactly that.
  *
  * A rule that only grepped the route file would raise hundreds of findings
  * of which almost all are false. So the analyser follows imports.

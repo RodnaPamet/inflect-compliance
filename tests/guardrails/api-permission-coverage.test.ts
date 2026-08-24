@@ -169,6 +169,60 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/vendors/[vendorId]/subprocessors',
         why: 'The GDPR Art.28 sub-processor register + its recursive nth-party chain. Reads gate on vendors.view, mutations on vendors.edit — matching the usecase asserts. In scope so denials audit at the C.1 layer and a future refactor cannot drop the usecase assert without failing here. Narrow leaf root: the other vendors/[vendorId] siblings are NOT privileged and stay on usecase-layer authorization.',
     },
+    // ── Destructive register verbs (#2117) ──────────────────────────
+    // NARROW LEAF ROOTS, one per migrated handler, following the
+    // `assets/[id]/purge` precedent above. Deliberately not the parent
+    // directory: `evidence/bulk` also holds approve + assign, and
+    // `policies/[id]` holds a dozen ordinary CRUD siblings. Those are
+    // recoverable EDITOR-tier verbs that authorize at the usecase layer
+    // and were NOT migrated, so widening the root would pull them in and
+    // force an exclusion entry each — a list of carve-outs describing
+    // routes nobody examined. The leaf is the population that was
+    // actually triaged.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/evidence/bulk/delete',
+        why: 'Bulk soft-delete of the evidence register — admin.manage, matching the assertCanAdmin in bulkDeleteEvidence.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/evidence/[id]/purge',
+        why: 'Irreversible evidence hard-delete — admin.manage, matching the assertCanAdmin reached via purgeEntity.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/evidence/[id]/restore',
+        why: 'Undo of an evidence soft-delete — admin.manage, matching the assertCanAdmin reached via restoreEntity.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/policies/bulk/delete',
+        why: 'Bulk delete of the policy library — admin.manage + policies.edit, the two halves of assertCanAdminPolicies.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/policies/bulk/archive',
+        why: 'Bulk archive of the policy library — same assertCanAdminPolicies conjunction as bulk/delete.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/policies/[id]/purge',
+        why: 'Irreversible policy hard-delete — admin.manage alone, because purgeEntity asserts the coarse canAdmin and never reaches assertCanAdminPolicies.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/policies/[id]/restore',
+        why: 'Undo of a policy soft-delete — admin.manage alone, for the same reason as its purge sibling.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/vendors/bulk/delete',
+        why: 'Bulk delete of the vendor register — admin.manage, matching the assertCanAdmin bulkDeleteVendor was raised to. Narrow leaf root: the recoverable bulk/status + bulk/assign siblings stay at vendors.edit and are NOT in scope.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/tests/plans/bulk/delete',
+        why: 'Bulk delete of the control test programme — admin.manage, the exact predicate assertCanBulkManageTestPlans reads.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/tests/plans/bulk/restore',
+        why: 'Bulk restore of the control test programme — gated identically to the delete it undoes.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/tasks/bulk/delete',
+        why: 'Bulk delete of the task register — admin.manage. This one already had a gate; it declared tasks.edit while the usecase asserted canAdmin, so the denial it existed to log was the one it let through.',
+    },
 ];
 
 /**

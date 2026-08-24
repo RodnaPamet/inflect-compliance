@@ -470,12 +470,26 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
 
     // ── Asset bulk mutations + purge (Epic C.1 audit consistency) ────
     {
-        path: new RegExp(`^${T}\\/assets\\/bulk\\/(status|assign|delete)$`),
+        path: new RegExp(`^${T}\\/assets\\/bulk\\/(status|assign)$`),
         methods: ['POST'],
         permission: 'assets.edit',
         note:
-            'Bulk asset status change / owner assign / soft-delete — asset ' +
+            'Bulk asset status change / owner assign — recoverable asset ' +
             'mutations; gated so denials audit at the permission layer.',
+    },
+    {
+        // Split out of the (status|assign|delete) rule above, which declared
+        // assets.edit for all three while the handler had always declared
+        // admin.manage. Nothing enforced off this map, so the mismatch cost no
+        // access — but the map is what a reviewer and the SDK read, and it
+        // described the delete as one tier weaker than it is.
+        path: new RegExp(`^${T}\\/assets\\/bulk\\/delete$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Bulk soft-delete of the asset register — bulkDeleteAsset asserts ' +
+            'canAdmin, so the route gate matches at admin.manage rather than ' +
+            'the assets.edit its recoverable bulk siblings use.',
     },
     {
         path: new RegExp(`^${T}\\/assets\\/bulk\\/import$`),
@@ -554,6 +568,89 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Creating a bundle, adding an item, or FREEZING one. Freeze ' +
             'makes the bundle immutable, so it is an edit rather than a ' +
             'read even though it takes no body.',
+    },
+
+    // ── Destructive register verbs (#2117) ──────────────────────────
+    // Bulk delete / archive / purge / restore across the evidence,
+    // policy, vendor, test-plan and task registers. Every one of these
+    // authorized correctly BEFORE this map entry existed — via the
+    // usecase `assertCan*` — and every one of them recorded nothing when
+    // it refused, because `AUTHZ_DENIED` is written by `requirePermission`
+    // and by nothing else. The usecase asserts stay (they are what
+    // protects jobs and scripts); these rules describe the route gate
+    // that now sits in front of them.
+    //
+    // Each key is chosen to MIRROR the assert behind it, never to be
+    // derived from the path. A key weaker than the assert is not a
+    // lenient gate, it is an unlogged one; a key stricter than the
+    // assert locks out a caller the usecase would admit.
+    {
+        path: new RegExp(`^${T}\\/evidence\\/bulk\\/delete$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Bulk soft-delete of the evidence register — `bulkDeleteEvidence` ' +
+            'asserts canAdmin, so the route gate matches at admin.manage ' +
+            'rather than the evidence.edit an EDITOR holds.',
+    },
+    {
+        path: new RegExp(`^${T}\\/evidence\\/[^/]+\\/(purge|restore)$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'IRREVERSIBLE hard delete of a soft-deleted evidence record, and ' +
+            'its restore counterpart. Both reach assertCanAdmin through ' +
+            'purgeEntity / restoreEntity in soft-delete-operations.',
+    },
+    {
+        path: new RegExp(`^${T}\\/policies\\/bulk\\/(delete|archive)$`),
+        methods: ['POST'],
+        permission: ['admin.manage', 'policies.edit'],
+        mode: 'all',
+        note:
+            'Bulk delete / archive of the policy library. TWO keys because ' +
+            'assertCanAdminPolicies is itself a conjunction — the coarse ADMIN ' +
+            'tier AND the granular policies.edit flag — and the route must ' +
+            'mirror the assert to catch every denial it exists to log.',
+    },
+    {
+        path: new RegExp(`^${T}\\/policies\\/[^/]+\\/(purge|restore)$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Hard delete / restore of one policy. admin.manage ALONE, unlike ' +
+            'the bulk siblings: purgePolicy and restorePolicy delegate to ' +
+            'purgeEntity / restoreEntity, which assert only the coarse ' +
+            'canAdmin and never reach assertCanAdminPolicies. Adding ' +
+            'policies.edit here would out-strict the usecase.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vendors\\/bulk\\/delete$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Bulk delete of the vendor register — raised to assertCanAdmin so ' +
+            'it matches every peer register, unlike its bulk/status and ' +
+            'bulk/assign siblings which stay at the vendors.edit tier.',
+    },
+    {
+        path: new RegExp(`^${T}\\/tests\\/plans\\/bulk\\/(delete|restore)$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Bulk delete / restore of the control test programme. ' +
+            'assertCanBulkManageTestPlans reads appPermissions.admin.manage ' +
+            'directly, so route gate and usecase gate are the same predicate.',
+    },
+    {
+        path: new RegExp(`^${T}\\/tasks\\/bulk\\/delete$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Bulk delete of the task register. Previously declared tasks.edit ' +
+            'while bulkDeleteTask asserted canAdmin — a gate weaker than its ' +
+            'assert, so an EDITOR passed the middleware and was refused deeper ' +
+            'where nothing writes an audit row. Not an access change.',
     },
 ] as const;
 
