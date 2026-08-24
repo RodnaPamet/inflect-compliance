@@ -64,16 +64,33 @@ jobs:
           # needed to measure bundle size.
           SKIP_ENV_VALIDATION: '1'
           NEXT_TELEMETRY_DISABLED: '1'
-          # The bundle-analyzer plugin holds the full module graph + stats in
-          # memory ON TOP of the Next build, so it needs more heap than the
-          # plain Build job (which runs fine at 6144). As the app grew, the
-          # analyzer started hitting the V8 heap ceiling at ~6083 MB (exit 134,
-          # "Reached heap limit"), so it OOM'd every main run. Raise the ceiling
-          # to 8192 (the repo's standard heavy-build bump, matching the
-          # heap-bumped tsc) — V8 grows lazily, so this only lets the analyzer
-          # climb past the 6144 wall to the ~6.5 GB it actually needs; it fits a
-          # 16 GB large runner comfortably and the standard runner's RAM too.
-          NODE_OPTIONS: '--max-old-space-size=8192'
+          # 6144 PER PROCESS, matching ci.yml's build jobs — and note this is
+          # a REDUCTION from 8192, which is the counter-intuitive direction.
+          #
+          # `--max-old-space-size` is a PER-PROCESS ceiling delivered through
+          # NODE_OPTIONS, and `next.config` sets `webpackBuildWorker: true`
+          # EXPLICITLY, so the compile runs in a parent AND a worker that each
+          # inherit it. 8192 x 2 is 16 GB on a 16 GB runner — the entire machine,
+          # with nothing left for the analyzer's own module graph. ci.yml hit
+          # exactly this, measured it (peak 15783 MB used / 206 MB available on
+          # a run that PASSED), and dropped to 6144 x 2 = ~12 GB. This job was
+          # never updated to match.
+          #
+          # It survived at 8192 only by riding the margin, and the production
+          # dependency bump on 2026-08-24 (#2119: next 16.2.12 -> 16.3.1,
+          # lucide-react 1.29 -> 1.33 and twelve others) consumed it — first
+          # failure `59378f4fe`, "Ineffective mark-compacts near heap limit",
+          # on a job that had passed on every preceding main commit. Note
+          # `optimizePackageImports` lists `lucide-react`, so that bump lands
+          # directly on the barrel-rewriting work this build does.
+          #
+          # The paragraph this replaces argued the analyzer needs MORE heap
+          # than the plain build, and cited "~6.5 GB it actually needs". That
+          # was measured in the SINGLE-heap era, before the worker split — the
+          # same staleness ci.yml warns about two files away. With the compile
+          # across two heaps each holds far less, so the analyzer's extra
+          # stats fit inside 6144.
+          NODE_OPTIONS: '--max-old-space-size=6144'
           # `npm run analyze` → `npm run build`, which runs
           # `scripts/validate-env.ts` before `next build`. That script hard-
           # checks `DATABASE_URL` (it predates SKIP_ENV_VALIDATION and does not
