@@ -607,9 +607,15 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
  * ADMIN tier, matching `bulkDeleteRisk` / `bulkDeleteAsset` /
  * `control/mutations.bulkDelete` — a bulk destructive action is an admin
  * capability across every register, and tasks were the lone exception at the
- * write tier. The ROUTE stays on `tasks.edit`, which is also what the assets
- * bulk-delete route does: the coarse HTTP gate lets an editor reach the
- * usecase, and the usecase makes the tier decision.
+ * write tier.
+ *
+ * The ROUTE now declares `admin.manage` too, so a refusal is audited rather
+ * than thrown silently from here (#2117). This paragraph previously said the
+ * route "stays on `tasks.edit` ... and the usecase makes the tier decision" —
+ * false as of that change, and its comparison to the assets bulk-delete route
+ * was already false before it: that route has declared `admin.manage` since
+ * #2111. The usecase assert stays regardless, because it is what protects
+ * non-HTTP callers.
  */
 export async function bulkDeleteTask(ctx: RequestContext, taskIds: string[]) {
     assertCanAdmin(ctx);

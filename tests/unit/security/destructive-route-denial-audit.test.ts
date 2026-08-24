@@ -415,6 +415,31 @@ describe('policies bulk verbs require BOTH halves of assertCanAdminPolicies', ()
         ]);
     });
 
+    it('the ONE-key routes admit that same caller — the asymmetry is deliberate', async () => {
+        // The diff's headline design decision is that policies/bulk/{delete,
+        // archive} declare TWO keys while policies/[id]/{purge,restore} declare
+        // one. Only the two-key half had a behavioural test; this half was
+        // pinned by string literals alone (`key: 'admin.manage'`), which a
+        // "make purge consistent with bulk" PR would naturally update in the
+        // same diff — so nothing would have failed.
+        //
+        // A caller with admin.manage but NOT policies.edit must be REFUSED at
+        // bulk (asserted above) and ADMITTED at purge. Asserting both is what
+        // makes the asymmetry a decision rather than an accident.
+        mockGetTenantCtx.mockResolvedValue(adminWithoutPolicyEdit());
+        mockPurgePolicy.mockResolvedValue({ purged: 1 });
+
+        const res = await (policyPurge as Handler)(
+            makeReq('/api/t/acme/policies/pol-1/purge', {}),
+            { params: { tenantSlug: 'acme', id: 'pol-1' } },
+        );
+
+        expect(res.status).toBeLessThan(400);
+        expect(mockPurgePolicy).toHaveBeenCalled();
+        // And nothing was audited as a denial, because nothing was denied.
+        expect(denialEntries()).toEqual([]);
+    });
+
     it('…and the same caller WITH policies.edit is admitted (positive companion)', async () => {
         mockGetTenantCtx.mockResolvedValue(makeRequestContext('ADMIN'));
         mockBulkDeletePolicy.mockResolvedValue({ deleted: 1 });

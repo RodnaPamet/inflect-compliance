@@ -1,6 +1,6 @@
 # 2026-08-24 — destructive register routes record their refusals (#2117)
 
-**Commit:** `<pending> fix(security): audit destructive-route denials at the C.1 layer`
+**Commit:** `f108f24b4 fix(authz): audit destructive-route denials`
 
 ## Design
 

@@ -11,12 +11,23 @@ import { jsonResponse } from '@/lib/api-response';
  *
  * TWO keys, `all` mode, because `assertCanAdminPolicies` is itself a
  * conjunction: the coarse ADMIN tier AND the granular `policies.edit`
- * flag (see policy.policies.ts). Declaring both mirrors the assert
- * exactly, so the request that the usecase would refuse is refused HERE
- * — where the denial writes an AUTHZ_DENIED audit row — instead of
- * deeper, where it writes nothing. Neither key alone would do that: a
- * custom role holding `admin.manage` but not `policies.edit` would pass
- * a one-key gate and be thrown out silently by the usecase.
+ * flag (see policy.policies.ts). Declaring both NARROWS the silent-refusal
+ * window — it does not close it, and the difference matters.
+ *
+ * What it closes: a custom role holding `admin.manage` but not
+ * `policies.edit` passed a one-key gate and was thrown out silently by the
+ * usecase. It is now refused here, with an AUTHZ_DENIED row.
+ *
+ * What it does NOT close: `admin.manage` and `assertCanAdmin` are different
+ * predicates over different views of the context. The assert reads
+ * `ctx.permissions.canAdmin`, derived from `customRole.baseRole ?? role`,
+ * which IGNORES `permissionsJson`; the route key reads
+ * `ctx.appPermissions.admin.manage`, which honours it. So a role with
+ * `baseRole: 'EDITOR'` and `admin: { manage: true }` — mintable, since
+ * `assertGrantWithinOwnAuthority` only blocks granting what the grantor
+ * lacks — passes this gate, reaches the usecase, and is refused there with
+ * no audit row. Closing that needs the two predicates reconciled, which is
+ * a larger change than this one.
  *
  * The usecase assert stays. It is what protects non-HTTP callers. See #2117.
  */
