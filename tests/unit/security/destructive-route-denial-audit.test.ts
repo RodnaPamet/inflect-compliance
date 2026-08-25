@@ -153,6 +153,21 @@ type Handler = (
 ) => Promise<Response>;
 
 /**
+ * Invoke a real route export as a `Handler`.
+ *
+ * Route handlers type `params` as `Promise<Params>` — the Next 15+ contract
+ * this repo pins in `tests/guards/async-params-route-typing.test.ts`. These
+ * tests pass params synchronously, which is runtime-correct because the
+ * handlers `await` them and `await` accepts a non-thenable unchanged.
+ *
+ * So the mismatch is purely at the type boundary. It is bridged ONCE here,
+ * with the reason written down, rather than by scattering `as unknown as`
+ * across every call site — where the next reader would have to re-derive why
+ * each one was safe.
+ */
+const asHandler = (h: unknown): Handler => h as Handler;
+
+/**
  * The method is a parameter, not a constant. `auditPermissionDenied`
  * copies `req.method` into the AUTHZ_DENIED row, so hard-coding POST
  * would have made the DELETE routes' rows assert a method they never
@@ -225,7 +240,7 @@ describe('the mechanism gap is proven directly', () => {
 
         // (b) The route layer, same context, same refusal — and now a row.
         mockGetTenantCtx.mockResolvedValue(editor);
-        const res = await (evidenceBulkDelete as Handler)(
+        const res = await asHandler(evidenceBulkDelete)(
             makeReq('/api/t/acme/evidence/bulk/delete', { evidenceIds: ['ev-1'] }),
             { params: { tenantSlug: 'acme' } },
         );
@@ -269,7 +284,7 @@ const ROUTES: ReadonlyArray<{
 }> = [
     {
         name: 'POST /evidence/bulk/delete',
-        handler: evidenceBulkDelete as Handler,
+        handler: asHandler(evidenceBulkDelete),
         path: '/api/t/acme/evidence/bulk/delete',
         params: { tenantSlug: 'acme' },
         body: { evidenceIds: ['ev-1', 'ev-2'] },
@@ -280,7 +295,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /evidence/[id]/purge',
-        handler: evidencePurge as Handler,
+        handler: asHandler(evidencePurge),
         path: '/api/t/acme/evidence/ev-1/purge',
         params: { tenantSlug: 'acme', id: 'ev-1' },
         key: 'admin.manage',
@@ -290,7 +305,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /evidence/[id]/restore',
-        handler: evidenceRestore as Handler,
+        handler: asHandler(evidenceRestore),
         path: '/api/t/acme/evidence/ev-1/restore',
         params: { tenantSlug: 'acme', id: 'ev-1' },
         key: 'admin.manage',
@@ -300,7 +315,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /policies/bulk/delete',
-        handler: policiesBulkDelete as Handler,
+        handler: asHandler(policiesBulkDelete),
         path: '/api/t/acme/policies/bulk/delete',
         params: { tenantSlug: 'acme' },
         body: { policyIds: ['pol-1'] },
@@ -311,7 +326,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /policies/bulk/archive',
-        handler: policiesBulkArchive as Handler,
+        handler: asHandler(policiesBulkArchive),
         path: '/api/t/acme/policies/bulk/archive',
         params: { tenantSlug: 'acme' },
         body: { policyIds: ['pol-1'] },
@@ -322,7 +337,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /policies/[id]/purge',
-        handler: policyPurge as Handler,
+        handler: asHandler(policyPurge),
         path: '/api/t/acme/policies/pol-1/purge',
         params: { tenantSlug: 'acme', id: 'pol-1' },
         key: 'admin.manage',
@@ -332,7 +347,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /policies/[id]/restore',
-        handler: policyRestore as Handler,
+        handler: asHandler(policyRestore),
         path: '/api/t/acme/policies/pol-1/restore',
         params: { tenantSlug: 'acme', id: 'pol-1' },
         key: 'admin.manage',
@@ -342,7 +357,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /vendors/bulk/delete',
-        handler: vendorsBulkDelete as Handler,
+        handler: asHandler(vendorsBulkDelete),
         path: '/api/t/acme/vendors/bulk/delete',
         params: { tenantSlug: 'acme' },
         body: { vendorIds: ['v-1'] },
@@ -353,7 +368,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /tests/plans/bulk/delete',
-        handler: testPlansBulkDelete as Handler,
+        handler: asHandler(testPlansBulkDelete),
         path: '/api/t/acme/tests/plans/bulk/delete',
         params: { tenantSlug: 'acme' },
         body: { planIds: ['tp-1'] },
@@ -364,7 +379,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /tests/plans/bulk/restore',
-        handler: testPlansBulkRestore as Handler,
+        handler: asHandler(testPlansBulkRestore),
         path: '/api/t/acme/tests/plans/bulk/restore',
         params: { tenantSlug: 'acme' },
         body: { planIds: ['tp-1'] },
@@ -375,7 +390,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /tasks/bulk/delete',
-        handler: tasksBulkDelete as Handler,
+        handler: asHandler(tasksBulkDelete),
         path: '/api/t/acme/tasks/bulk/delete',
         params: { tenantSlug: 'acme' },
         body: { taskIds: ['t-1'] },
@@ -393,7 +408,7 @@ const ROUTES: ReadonlyArray<{
     // about the population that actually calls these routes.
     {
         name: 'DELETE /vendors/[vendorId]/documents/[docId]',
-        handler: vendorDocumentDelete as Handler,
+        handler: asHandler(vendorDocumentDelete),
         path: '/api/t/acme/vendors/v-1/documents/doc-1',
         params: { tenantSlug: 'acme', vendorId: 'v-1', docId: 'doc-1' },
         method: 'DELETE',
@@ -406,7 +421,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'DELETE /vendors/[vendorId]/links/[linkId]',
-        handler: vendorLinkDelete as Handler,
+        handler: asHandler(vendorLinkDelete),
         path: '/api/t/acme/vendors/v-1/links/lk-1',
         params: { tenantSlug: 'acme', vendorId: 'v-1', linkId: 'lk-1' },
         method: 'DELETE',
@@ -419,7 +434,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'POST /vendor-assessment-reviews/[assessmentId]/revoke',
-        handler: assessmentRevoke as Handler,
+        handler: asHandler(assessmentRevoke),
         path: '/api/t/acme/vendor-assessment-reviews/as-1/revoke',
         params: { tenantSlug: 'acme', assessmentId: 'as-1' },
         key: 'vendors.edit',
@@ -440,7 +455,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'DELETE /loss-events/[id]',
-        handler: lossEventDelete as Handler,
+        handler: asHandler(lossEventDelete),
         path: '/api/t/acme/loss-events/le-1',
         params: { tenantSlug: 'acme', id: 'le-1' },
         method: 'DELETE',
@@ -451,7 +466,7 @@ const ROUTES: ReadonlyArray<{
     },
     {
         name: 'DELETE /processes/[id]',
-        handler: processMapDelete as Handler,
+        handler: asHandler(processMapDelete),
         path: '/api/t/acme/processes/pm-1',
         params: { tenantSlug: 'acme', id: 'pm-1' },
         method: 'DELETE',
@@ -466,7 +481,7 @@ const ROUTES: ReadonlyArray<{
         // form requirePermission writes into the row, so a regression to one
         // key fails here rather than passing on "some 403 happened".
         name: 'POST /policies/[id]/archive',
-        handler: policyArchive as Handler,
+        handler: asHandler(policyArchive),
         path: '/api/t/acme/policies/pol-1/archive',
         params: { tenantSlug: 'acme', id: 'pol-1' },
         key: 'admin.manage,policies.edit',
@@ -572,13 +587,13 @@ describe('policies bulk verbs require BOTH halves of assertCanAdminPolicies', ()
         });
 
     it.each([
-        ['bulk/delete', policiesBulkDelete as Handler, '/api/t/acme/policies/bulk/delete', mockBulkDeletePolicy, { tenantSlug: 'acme' }],
-        ['bulk/archive', policiesBulkArchive as Handler, '/api/t/acme/policies/bulk/archive', mockBulkArchivePolicy, { tenantSlug: 'acme' }],
+        ['bulk/delete', asHandler(policiesBulkDelete), '/api/t/acme/policies/bulk/delete', mockBulkDeletePolicy, { tenantSlug: 'acme' }],
+        ['bulk/archive', asHandler(policiesBulkArchive), '/api/t/acme/policies/bulk/archive', mockBulkArchivePolicy, { tenantSlug: 'acme' }],
         // The single-entity archive joined the two-key set in the second
         // tranche. Included here rather than trusted to the table above,
         // because the table pins the key as a STRING — this is the assertion
         // that the second key actually changes an outcome.
-        ['[id]/archive', policyArchive as Handler, '/api/t/acme/policies/pol-1/archive', mockArchivePolicy, { tenantSlug: 'acme', id: 'pol-1' }],
+        ['[id]/archive', asHandler(policyArchive), '/api/t/acme/policies/pol-1/archive', mockArchivePolicy, { tenantSlug: 'acme', id: 'pol-1' }],
     ])('%s refuses admin.manage-without-policies.edit, and records it', async (
         _verb,
         handler,
@@ -613,7 +628,7 @@ describe('policies bulk verbs require BOTH halves of assertCanAdminPolicies', ()
         mockGetTenantCtx.mockResolvedValue(adminWithoutPolicyEdit());
         mockPurgePolicy.mockResolvedValue({ purged: 1 });
 
-        const res = await (policyPurge as Handler)(
+        const res = await asHandler(policyPurge)(
             makeReq('/api/t/acme/policies/pol-1/purge', {}),
             { params: { tenantSlug: 'acme', id: 'pol-1' } },
         );
@@ -628,7 +643,7 @@ describe('policies bulk verbs require BOTH halves of assertCanAdminPolicies', ()
         mockGetTenantCtx.mockResolvedValue(makeRequestContext('ADMIN'));
         mockBulkDeletePolicy.mockResolvedValue({ deleted: 1 });
 
-        const res = await (policiesBulkDelete as Handler)(
+        const res = await asHandler(policiesBulkDelete)(
             makeReq('/api/t/acme/policies/bulk/delete', { policyIds: ['pol-1'] }),
             { params: { tenantSlug: 'acme' } },
         );

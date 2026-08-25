@@ -18,18 +18,33 @@ refusal visible. Belt and braces, not a move.
 
 ### The census (the denominator, so it is auditable)
 
-Population: every `src/app/api/**/route.ts` from `git ls-files`, kept if the file
-exports a `DELETE` handler **or** its path carries a destructive verb segment
-(`purge|restore|delete|archive|revoke|wipe|deactivate|disable|remove|reset`).
-Classified on whether the comment-stripped source contains a literal
-`requirePermission(` / `requireAnyPermission(` / `requireAllPermissions(` — the
-last two delegate to the first, so they audit identically.
+**The census now lives in `tests/guardrails/destructive-route-denial-census.test.ts`,
+not here.** The numbers below are a snapshot for reading; the test is the
+measurement, and it is re-run on every PR.
+
+That move was forced by this note getting it wrong. The prose said 87 files and
+37 ungated; the real figures are **88** and **38**. Worse, the rule as written
+would not have reproduced even its own number: it scanned for a literal
+`requirePermission(`, while the routes are written `requirePermission<Params>(...)`
+with a generic, so the pattern missed every gated route. A census nobody can
+re-run is a claim, not a measurement.
+
+The test's rule: every `src/app/api/**/route.ts` tracked by git, kept if it
+exports a `DELETE` handler **or** any path *segment* is one of
+`purge|restore|delete|archive|revoke|wipe|deactivate|disable|remove|reset`;
+classified on whether the comment-stripped source matches
+`require(Any|All)?Permissions?\s*[(<]` — the bracket class is what admits the
+generic form, and its absence is the bug above.
+
+It holds the ungated set as a **list**, not a count: a count is the shape where
+two branches each edit one line to a different value, git merges both cleanly,
+and main is wrong with no conflict to catch it.
 
 | | before | after |
 | --- | ---: | ---: |
-| destructive route files | 87 | 87 |
+| destructive route files | 88 | 88 |
 | route-level gate present | 44 | **50** |
-| no route-level gate | 43 | **37** |
+| no route-level gate | 44 | **38** |
 
 ### Migrated here (6)
 
@@ -108,13 +123,13 @@ the caller set is provably unchanged and only the recording layer moves.
   DELETE row assert a method the request never carries — passing, and describing
   a request nobody makes.
 
-## Residual — 37 destructive route files still without a route gate
+## Residual — 38 destructive route files still without a route gate
 
 Named rather than summarised, because "a coherent subset" is only honest if the
-remainder is legible. Counts sum to 37.
+remainder is legible. Counts sum to 38.
 
-**(a) Not tenant-role authorization — 10.** `account/avatar`, `sso`,
-`scim/v2/Users/[id]`, and seven under `org/[orgSlug]/**` (initiatives ×2,
+**(a) Not tenant-role authorization — 11.** `account/avatar`, `sso`,
+`scim/v2/Users/[id]`, `scim/v2/Groups/[id]`, and seven under `org/[orgSlug]/**` (initiatives ×2,
 invites, members, tenants, dashboard widgets ×2). `requirePermission` resolves a
 *tenant* role; these resolve an org membership, a SCIM bearer token, or the
 session's own user. A different mechanism is needed, not this one.
@@ -149,7 +164,7 @@ role-tier asserts.
 **(e) Self-service — 1.** `security/mfa/enroll` DELETE removes the caller's own
 factor; already an `EXCLUDED_ROUTES` entry with a written reason.
 
-### Not in the 37, but still the defect: gate present, weaker than the assert (2)
+### Not in the 38, but still the defect: gate present, weaker than the assert (2)
 
 `assets/[id]/restore` and `tasks/[taskId]/restore` declare `.edit` keys over a
 `restoreEntity` → `assertCanAdmin` usecase, so an EDITOR passes the middleware
