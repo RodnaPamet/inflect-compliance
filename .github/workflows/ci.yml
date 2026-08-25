@@ -903,10 +903,14 @@ jobs:
       # red rather than quiet. Read the contract table at the top of the
       # suite before changing this.
       #
-      # Cost: MEASURED at 6.3-7.2 s wall (median 6.9 s over 3 runs) with
-      # CI=true and no reachable Postgres, i.e. this job's shape. Jest reports
-      # 3.5 s of suite time inside that; the rest is jest boot + globalSetup's
-      # fail-fast DB probe. The measurement itself — evaluating 732 client
+      # Cost: jest suite time is 3.5-4.0 s. That half is corroborated — an
+      # independent reviewer re-measured it on a different machine WITH a
+      # reachable Postgres and got the same band. Wall-clock was 6.3-7.2 s
+      # (median 6.9 s over 3 runs) in the author's environment, the balance
+      # being jest boot plus globalSetup's fail-fast DB probe; that figure was
+      # taken with no reachable Postgres and has NOT been independently
+      # reproduced, so treat the wall number as indicative and the suite time
+      # as measured. The measurement itself — evaluating 732 client
       # reference manifests and gzipping 265 distinct chunks once each — is
       # ~2.0 s. The job it joins spends ~3.5-5 min in `next build` alone.
       #
