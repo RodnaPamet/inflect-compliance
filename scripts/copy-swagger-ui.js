@@ -19,6 +19,12 @@
  * pinned to exactly `patch-package` (locked by
  * tests/e2e/csp-nonce-coverage.spec.ts).
  *
+ * Because the re-vendor is manual, forgetting it is the default
+ * failure — and it happened, for two months and six bumps (#2125).
+ * tests/guardrails/vendored-swagger-ui-matches-dependency.test.ts now
+ * fails CI whenever `public/swagger-ui/` is not byte-identical to the
+ * installed `swagger-ui-dist`, and tells you to run this script.
+ *
  * Plain Node (`.js`, CommonJS — package.json has no `"type"`), not tsx,
  * so it runs with the always-present `node`. If `swagger-ui-dist` isn't
  * installed (e.g. a production `--omit=dev` tree) it SKIPS cleanly.
