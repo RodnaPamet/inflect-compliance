@@ -1,13 +1,8 @@
 {
-    "ci.yml:coverage": {
-        "kind": "never",
-        "reason": "Coverage shards run on push/schedule/workflow_dispatch only. The merged-coverage model needs all four shards' output combined, which is why it was never wired to PRs.",
-        "coveredBy": "NOT COVERED AT PR TIME \u2014 this is the flagship open instance of the class. A coverage regression is only ever seen after merge. Folding coverage into the existing Test shards is the proposed fix; until then this is an accepted, tracked gap."
-    },
     "ci.yml:coverage-gate": {
-        "kind": "never",
-        "reason": "The >=60% gate consumes the coverage shards above, so it inherits their push/schedule/dispatch-only condition.",
-        "coveredBy": "NOT COVERED AT PR TIME \u2014 same gap as ci.yml:coverage; the two must be fixed together."
+        "kind": "conditional",
+        "reason": "Carries `if: !cancelled()` so it still reports when a producing job fails; the evaluator cannot resolve cancelled() and classifies it conditional. It has NO github.event_name condition — since the Coverage matrix was folded into the Test shards (2026-08-25) this gate runs on pull requests like any other check.",
+        "coveredBy": "FULLY COVERED AT PR TIME. It consumes five coverage artifacts (Test shards 1-4 + Ratchets), all of which are unconditionally PR-reachable, so a coverage regression now fails the PR rather than the first main push after it. tests/guardrails/coverage-gate-population.test.ts holds the population and artifact-count invariants."
     },
     "ci.yml:load-smoke": {
         "kind": "never",
@@ -31,12 +26,12 @@
     },
     "bundle-analyze.yml:analyze": {
         "kind": "conditional",
-        "reason": "Runs on push to main, and on PRs only when labelled `perf-watch`. A dependency bump that breaks the analyzer build therefore lands green \u2014 which is how next 16.3.1's build-time memory regression reached main.",
+        "reason": "Runs on push to main, and on PRs only when labelled `perf-watch`. A dependency bump that breaks the analyzer build therefore lands green — which is how next 16.3.1's build-time memory regression reached main.",
         "coveredBy": "PARTIAL: tests/guardrails/bundle-size-budget.test.ts runs in Ratchets on every PR, but it self-skips when .next/app-build-manifest.json is absent, which is always on a PR. Making that fail closed is the proposed fix; treat this as NOT COVERED today."
     },
     "release.yml:release": {
         "kind": "never",
-        "reason": "semantic-release runs on push to main only, and does real work only when a commit actually cuts a release \u2014 so a broken release toolchain stays latent until the next fix:/feat: commit.",
+        "reason": "semantic-release runs on push to main only, and does real work only when a commit actually cuts a release — so a broken release toolchain stays latent until the next fix:/feat: commit.",
         "coveredBy": "`npm run release:check-notes` in the Lint job renders release notes through the real plugin on every PR. This is the worked example of closing an instance of this class."
     },
     "ghcr-publish.yml:build-push": {
@@ -46,32 +41,32 @@
     },
     "deploy.yml:gate": {
         "kind": "never",
-        "reason": "workflow_dispatch-only deployment job that resolves the target environment and approval gate. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
+        "reason": "workflow_dispatch-only deployment job that resolves the target environment and approval gate. Deployment is inherently post-merge — there is no artifact to deploy from an unmerged PR.",
         "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
     },
     "deploy.yml:build-image": {
         "kind": "never",
-        "reason": "workflow_dispatch-only deployment job that builds the deployable image. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
+        "reason": "workflow_dispatch-only deployment job that builds the deployable image. Deployment is inherently post-merge — there is no artifact to deploy from an unmerged PR.",
         "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
     },
     "deploy.yml:deploy-staging": {
         "kind": "never",
-        "reason": "workflow_dispatch-only deployment job that deploys to staging. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
+        "reason": "workflow_dispatch-only deployment job that deploys to staging. Deployment is inherently post-merge — there is no artifact to deploy from an unmerged PR.",
         "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
     },
     "deploy.yml:smoke-staging": {
         "kind": "never",
-        "reason": "workflow_dispatch-only deployment job that smoke-tests staging. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
+        "reason": "workflow_dispatch-only deployment job that smoke-tests staging. Deployment is inherently post-merge — there is no artifact to deploy from an unmerged PR.",
         "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
     },
     "deploy.yml:deploy-production": {
         "kind": "never",
-        "reason": "workflow_dispatch-only deployment job that deploys to production. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
+        "reason": "workflow_dispatch-only deployment job that deploys to production. Deployment is inherently post-merge — there is no artifact to deploy from an unmerged PR.",
         "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
     },
     "deploy.yml:smoke-production": {
         "kind": "never",
-        "reason": "workflow_dispatch-only deployment job that smoke-tests production. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
+        "reason": "workflow_dispatch-only deployment job that smoke-tests production. Deployment is inherently post-merge — there is no artifact to deploy from an unmerged PR.",
         "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
     },
     "dast.yml:zap-baseline": {
@@ -82,7 +77,7 @@
     "dast-full.yml:zap-full": {
         "kind": "never",
         "reason": "Weekly full/active ZAP scan; same constraint as the baseline scan and considerably more expensive.",
-        "coveredBy": "Same as dast.yml:zap-baseline \u2014 static analysis at PR time, dynamic scanning accepted as post-merge."
+        "coveredBy": "Same as dast.yml:zap-baseline — static analysis at PR time, dynamic scanning accepted as post-merge."
     },
     "load-test.yml:load": {
         "kind": "never",
@@ -102,7 +97,7 @@
     "restore-test.yml:restore-test-dr": {
         "kind": "never",
         "reason": "Quarterly cross-region DR restore; same constraint as the monthly restore and slower still.",
-        "coveredBy": "Same as restore-test.yml:restore-test \u2014 accepted as a scheduled production drill."
+        "coveredBy": "Same as restore-test.yml:restore-test — accepted as a scheduled production drill."
     },
     "terraform.yml:plan": {
         "kind": "conditional",
@@ -117,11 +112,11 @@
     "terraform.yml:apply-production": {
         "kind": "never",
         "reason": "Applies to production, additionally requiring staging to have applied successfully. Same reasoning as apply-staging, with a higher blast radius.",
-        "coveredBy": "fmt-validate and plan at PR time, plus the staging apply must succeed first \u2014 production apply is never the first execution of a change."
+        "coveredBy": "fmt-validate and plan at PR time, plus the staging apply must succeed first — production apply is never the first execution of a change."
     },
     "helm-validate.yml:pull_request.paths": {
         "kind": "path-scoped",
-        "reason": "Scoped to infra/helm/** and the observability dashboards, so it does not run on unrelated PRs. Content-scoping, not base-branch scoping \u2014 a PR that touches those paths always gets the check.",
+        "reason": "Scoped to infra/helm/** and the observability dashboards, so it does not run on unrelated PRs. Content-scoping, not base-branch scoping — a PR that touches those paths always gets the check.",
         "coveredBy": "The jobs only validate files under those paths, so a PR that does not touch them has nothing for this workflow to check."
     },
     "terraform.yml:pull_request.paths": {

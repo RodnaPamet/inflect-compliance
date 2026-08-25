@@ -959,9 +959,22 @@ than guessing.
   so `global` means "the declared scope minus those four folders", not
   "everything". `npm run test:coverage` reports but does not gate —
   enforcement is `scripts/check-merged-coverage.ts` in the
-  `Coverage (≥60%)` CI job, which runs on pushes to `main`, the schedule,
-  and `workflow_dispatch`, **never on a PR**. Check a branch with
-  `gh workflow run ci.yml --ref <branch>`.
+  `Coverage (≥60%)` CI job, which **runs on pull requests** (since
+  2026-08-25 — it was `push`/`schedule`/`dispatch`-only while a separate
+  `Coverage (shard N/4)` matrix re-ran the whole suite to instrument it).
+
+  It now merges **five** artifacts, and which five is load-bearing.
+  Coverage is collected by the jobs that already run the suite: the four
+  `Test` shards (`JEST_SKIP_RATCHETS=1`, 1386 files) and `Ratchets`
+  (guards + guardrails + contracts, 654 files). Those two sets are
+  disjoint and exhaustive — together they are the whole suite, which is
+  what makes the merged numbers comparable to the old single-matrix ones.
+  Since a path key removes its files from `global`, changing WHICH tests
+  contribute changes what every floor means with no number in the diff,
+  so `tests/guardrails/coverage-gate-population.test.ts` pins the
+  partition, the `--coverage` flag on each job, the uploads, and the
+  expected-artifact count. If you add a Jest job to `ci.yml`, it collects
+  coverage and uploads a `coverage-shard-*` artifact, or that guard fails.
 
 ### Index & query-shape guardrails
 

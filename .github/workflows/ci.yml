@@ -530,10 +530,37 @@ jobs:
       #
       # If a future runner has more cores, re-measure before switching:
       # the conclusion is about this runner shape, not about Jest.
+      #
+      # COVERAGE IS COLLECTED HERE, not in a second job that runs the same
+      # suite again. Until 2026-08-25 a parallel `Coverage (shard N/4)`
+      # matrix re-ran Jest with instrumentation — ~45 job-minutes to
+      # re-derive a signal these shards had already computed — and it was
+      # `push`/`schedule`-only, so a coverage regression was invisible
+      # until after merge. Instrumenting the run that already happens
+      # costs ~2 minutes per shard and makes the gate PR-reachable.
+      #
+      # `--coverageReporters=json` only: this shard MEASURES and uploads
+      # raw counters. It does NOT gate. `--coverageThreshold` here would
+      # compare a QUARTER of the data against floors calibrated on all of
+      # it, so every shard would report most of `src/` uncovered and fail.
+      # The floors are checked once, on the merged total, by the
+      # `Coverage (>=60%)` job.
       - name: "Run tests: unit + integration (shard)"
         env:
           JEST_SKIP_RATCHETS: '1'
-        run: npx jest --runInBand --no-coverage --shard=${{ matrix.shard }}/${{ matrix.total }}
+        run: |
+          npx jest --runInBand --coverage --coverageReporters=json \
+            --shard=${{ matrix.shard }}/${{ matrix.total }}
+
+      # One of the FIVE artifacts the merged gate expects. The other four
+      # are the three sibling shards and the `Ratchets` job — see the
+      # population note on `coverage-gate`.
+      - name: Upload shard coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: coverage/coverage-final.json
+          retention-days: 1
 
   # ═══════════════════════════════════════════════════════════════
   #  Job 3a: Ratchets — the source-text guard suite, ONCE, with no DB
@@ -580,11 +607,30 @@ jobs:
       #   2. `npx jest tests/contracts/ -u`     (updates per-schema snapshots)
       #   3. Commit both files together, so the reviewer sees the contract
       #      diff and approves it explicitly.
+      #
+      # THIS RUN IS INSTRUMENTED, and that is load-bearing for the coverage
+      # gate rather than incidental. The gate's population must be the WHOLE
+      # suite. These 654 files are the exact complement of what the shards
+      # run under `JEST_SKIP_RATCHETS=1` — verified disjoint and exhaustive
+      # via `jest --listTests` (1386 + 654 = 2040, intersection empty) — and
+      # they are not decoration in the report: measured on 2026-08-25 they
+      # alone execute 4125 in-scope statements across 326 files, including
+      # 14.58% of `./src/lib/`. Dropping them from the merged total would
+      # silently change what every floor in `jest.thresholds.json` means.
+      # If this job ever stops emitting coverage, bump nothing — fix it.
       - name: "Run tests: architectural guards + API contracts"
         run: |
           npx jest tests/guards tests/guardrails tests/contracts \
             --testPathIgnorePatterns '/node_modules/' 'rls-coverage\.test\.ts' \
-            --maxWorkers=2 --forceExit --no-coverage --ci
+            --maxWorkers=2 --forceExit --ci \
+            --coverage --coverageReporters=json
+
+      - name: Upload shard coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-ratchets
+          path: coverage/coverage-final.json
+          retention-days: 1
 
   # ═══════════════════════════════════════════════════════════════
   #  Job 3b: Test (summary) — single required check for the matrix
@@ -636,145 +682,53 @@ jobs:
           echo "All Test shards and the ratchet suite passed."
 
   # ═══════════════════════════════════════════════════════════════
-  #  Job 4: Coverage — enforce minimum test coverage threshold
-  #  Blocking gate: fails if coverage drops below 60%.
+  #  Job 4: Coverage gate — merge the shards, then enforce the floors
   #
-  #  RUNS ON MAIN PUSH + WEEKLY SCHEDULE ONLY.
+  #  RUNS ON EVERY EVENT, PULL REQUESTS INCLUDED (since 2026-08-25).
   #
-  #  Rationale: the Test matrix above (sharded) is the per-PR pass/
-  #  fail gate; Coverage runs the SAME Jest suite a second time with
-  #  instrumentation, adding ~30 min of CPU to every PR for what is
-  #  effectively a duplicate signal at the PR level (coverage drift
-  #  comes from MERGED code). Catching it on main + nightly is
-  #  enough — if a PR causes a regression, the FIRST main push will
-  #  block.
-  # ═══════════════════════════════════════════════════════════════
-  coverage:
-    name: "Coverage (shard ${{ matrix.shard }}/${{ matrix.total }})"
-    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-        total: [4]
-    # Sharded 4 ways as of 2026-08-05. History of the UNSHARDED job, kept
-    # because it is the argument for sharding: 25 → 35 (#716) → 50 on
-    # 2026-08-03, after it was cancelled at 35m15s on `main` (2604e5e14)
-    # and took main red. It had been sitting at 94-97% of budget and
-    # passing for three consecutive runs —
-    #
-    #   7ad55ee70  32m53s  pass
-    #   57e5bda43  33m56s  pass
-    #   2604e5e14  35m15s  CANCELLED (hit the 35-min ceiling)
-    #
-    # — so nothing signalled until it tipped over, and the previous
-    # comment's own advice was "shard the coverage run the way `test` is
-    # sharded rather than raising this number a fourth time". This is
-    # that change. 25 minutes per shard is generous against an expected
-    # ~9-12, and leaves the growth headroom the raises were buying.
-    #
-    # ⚠️ Still `push`/`schedule`-only (see the `if:` above): it does NOT
-    # run on pull requests, so a change that slows it stays invisible
-    # until it lands on `main`. Sharding makes running it per-PR
-    # affordable; that is a deliberate follow-up, not part of this
-    # change, because it needs a required-check rename in branch
-    # protection (one check became five).
-    timeout-minutes: 25
-
-    env:
-      DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
-      DATABASE_URL_TEST: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
-      DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
-      # GAP-03 — see comment on the `test` job above. Same deterministic
-      # value so the coverage run sees identical encryption setup.
-      DATA_ENCRYPTION_KEY: ci-test-data-encryption-key-32-chars-or-more-deterministic-x
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: ci
-          POSTGRES_PASSWORD: ci_password
-          POSTGRES_DB: ci_testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U ci -d ci_testdb"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Node + Prisma client
-        uses: ./.github/actions/setup-node-prisma
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # ── Create roles required by RLS migrations ──
-      - name: Create PostgreSQL roles for RLS
-        run: |
-          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
-          DO $$ BEGIN
-            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
-            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
-          END $$;
-          GRANT app_user TO ci;
-          GRANT app_user TO postgres;
-          SQL
-
-      - name: Apply Prisma migrations
-        run: ./node_modules/.bin/prisma migrate deploy
-
-      # ── Coverage gate: Jest enforces thresholds via --coverageThreshold ──
-      # The threshold values live in `jest.thresholds.json` (single source
-      # of truth, also referenced by `jest.config.js`). They are passed
-      # via the `--coverageThreshold` CLI flag because jest 29.7.0's
-      # `coverageThreshold` config (top-level OR per-project) is silently
-      # NOT enforced when `projects:` is set — runs exit 0 even on
-      # observed coverage of 9% against a 99% floor. The CLI flag IS
-      # enforced (exit 1 + "coverage threshold ... not met" message).
-      # Empirical evidence + alternative paths considered:
-      # docs/implementation-notes/2026-04-27-gap-15-coverage-enforcement.md
-      #
-      # Current floors (calibrated 2026-04-27, observed − 3% buffer):
-      #   global   branches=56 functions=54 lines=70 statements=69
-      #   usecases branches=37 functions=30 lines=49 statements=46
-      #   lib      branches=48 functions=48 lines=57 statements=54
-      # This shard MEASURES; it does not gate. `--coverageThreshold` here
-      # would compare a quarter of the data against floors calibrated on
-      # all of it — every shard would report most of `src/` uncovered and
-      # fail. The floors are checked once, on the merged total, in the
-      # `coverage-gate` job below.
-      #
-      # `--runInBand`, deliberately — see the `test` job for the measurement.
-      - name: "Measure coverage (shard ${{ matrix.shard }}/${{ matrix.total }})"
-        run: |
-          npx jest --coverage --forceExit --runInBand \
-            --shard=${{ matrix.shard }}/${{ matrix.total }} \
-            --coverageReporters=json
-
-      - name: Upload shard coverage
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-shard-${{ matrix.shard }}
-          path: coverage/coverage-final.json
-          retention-days: 1
-
-  # ═══════════════════════════════════════════════════════════════
-  #  Job 4b: Coverage gate — merge the shards, then enforce the floors
+  #  It used to be `push`/`schedule`/`dispatch`-only, and so did the
+  #  `Coverage (shard N/4)` matrix that fed it, because that matrix was
+  #  a SECOND full Jest run — ~45 job-minutes to re-derive a number the
+  #  Test shards had already computed without instrumentation. The price
+  #  of that duplication was paid in the wrong currency: a coverage
+  #  regression could only ever be reported AFTER the commit was on
+  #  main, on a check the PR author never saw.
+  #
+  #  The matrix is gone. Coverage now comes from the runs that already
+  #  happen — the four Test shards and the Ratchets job — so the gate
+  #  costs ~2 min/shard instead of a parallel suite, and it runs at PR
+  #  time.
+  #
+  #  THE POPULATION IS THE LOAD-BEARING PART. `jest.thresholds.json`
+  #  has five keys, and a path key REMOVES its files from `global` —
+  #  so `global` is a residue, and changing WHICH tests contribute
+  #  changes what every floor means without changing a single number.
+  #  The old matrix ran the whole suite in one command. The five jobs
+  #  that replace it must therefore partition that same suite exactly:
+  #
+  #    Test shards 1-4  (JEST_SKIP_RATCHETS=1)  1386 test files
+  #    Ratchets         (guards+guardrails+contracts, minus
+  #                      rls-coverage, which stays in the shards)
+  #                                              654 test files
+  #                                             ---- 2040 = the whole
+  #                                                  suite, disjoint
+  #
+  #  Verified with `jest --listTests` on 2026-08-25: the two sets are
+  #  disjoint and their union is byte-identical to the unfiltered list.
+  #  `tests/guardrails/coverage-gate-population.test.ts` re-derives that
+  #  partition from THIS file, so a fifth shard, a dropped `--coverage`,
+  #  or a missing upload fails a test rather than quietly shrinking the
+  #  measured population.
   # ═══════════════════════════════════════════════════════════════
   coverage-gate:
     name: "Coverage (≥60%)"
     runs-on: ubuntu-latest
-    needs: [coverage]
+    needs: [test, ratchets]
     # `needs` alone would skip this job when any shard fails, and a
     # skipped required check reads as "not failing". Run whenever the
-    # shards were not cancelled, so a failed shard still surfaces here
-    # as a failed gate.
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    # producing jobs were not cancelled, so a failed shard still
+    # surfaces here as a failed gate.
+    if: ${{ !cancelled() }}
     timeout-minutes: 10
 
     steps:
@@ -791,7 +745,8 @@ jobs:
           pattern: coverage-shard-*
           path: coverage-shards
 
-      # Merges the four `coverage-final.json` files and compares the total
+      # Merges the five `coverage-final.json` files (four Test shards +
+      # Ratchets) and compares the total
       # against jest.thresholds.json — reproducing what Jest's own
       # `--coverageThreshold` did before the job was sharded, including
       # the rule that a path group's files are REMOVED from `global`.
@@ -800,7 +755,7 @@ jobs:
       # make the gate stricter-looking while measuring less.
       # Semantics are pinned by tests/unit/scripts/check-merged-coverage.test.ts.
       - name: "Gate: test coverage thresholds"
-        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 4
+        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 5
 
       # Only kept for post-mortem on a RED run.
       - name: Upload merged coverage inputs
