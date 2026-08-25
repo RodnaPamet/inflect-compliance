@@ -882,6 +882,50 @@ jobs:
       - name: Build worker + scheduler bundle
         run: npm run build:worker
 
+      # Per-route First Load JS budgets, enforced at PR TIME.
+      #
+      # This step exists because the budget gate was, for its whole life, a
+      # green pass that could not fail. It ran in `Ratchets` on every PR;
+      # that job never builds, so the build output it reads was always absent
+      # and the suite took its skip branch. Net effect: a PR could double a
+      # route's JS payload and every check stayed green.
+      #
+      # And it was not merely PR-blind. The file it read,
+      # `.next/app-build-manifest.json`, was REMOVED from Next in v16, so it
+      # had been skipping inside `Bundle Analyze` too — the one job that
+      # builds. Every route budget had been dead since the Next 16 upgrade
+      # with nothing to say so, because "no manifest" was spelled "pass".
+      #
+      # This job has already run `next build` above, so the build output is
+      # right there. `BUNDLE_BUDGET_REQUIRE_MANIFEST` is the caller's promise
+      # that it is: with it set, MISSING build output fails the job instead
+      # of skipping, so the next time Next moves these files the gate goes
+      # red rather than quiet. Read the contract table at the top of the
+      # suite before changing this.
+      #
+      # Cost: jest suite time is 3.5-4.0 s. That half is corroborated — an
+      # independent reviewer re-measured it on a different machine WITH a
+      # reachable Postgres and got the same band. Wall-clock was 6.3-7.2 s
+      # (median 6.9 s over 3 runs) in the author's environment, the balance
+      # being jest boot plus globalSetup's fail-fast DB probe; that figure was
+      # taken with no reachable Postgres and has NOT been independently
+      # reproduced, so treat the wall number as indicative and the suite time
+      # as measured. The measurement itself — evaluating 732 client
+      # reference manifests and gzipping 265 distinct chunks once each — is
+      # ~2.0 s. The job it joins spends ~3.5-5 min in `next build` alone.
+      #
+      # `--no-coverage` because coverage instrumentation of a guardrail that
+      # only reads build output measures nothing, and `--ci` for stable snapshot
+      # behaviour. The wiring itself — this step, its env var, and its
+      # position AFTER the build — is asserted by
+      # tests/guardrails/bundle-budget-runs-after-build.test.ts.
+      - name: Enforce per-route First Load JS budgets
+        env:
+          BUNDLE_BUDGET_REQUIRE_MANIFEST: '1'
+        run: |
+          npx jest tests/guardrails/bundle-size-budget.test.ts \
+            --maxWorkers=2 --no-coverage --ci
+
       # Hand the compiled app to `load-smoke`, which builds the SAME
       # artifact (`NODE_ENV=production`, no other build-time flags) and
       # was recompiling this SHA from scratch to get it.

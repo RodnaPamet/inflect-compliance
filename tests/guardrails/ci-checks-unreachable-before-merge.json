@@ -27,7 +27,7 @@
     "bundle-analyze.yml:analyze": {
         "kind": "conditional",
         "reason": "Runs on push to main, and on PRs only when labelled `perf-watch`. A dependency bump that breaks the analyzer build therefore lands green — which is how next 16.3.1's build-time memory regression reached main.",
-        "coveredBy": "PARTIAL: tests/guardrails/bundle-size-budget.test.ts runs in Ratchets on every PR, but it self-skips when .next/app-build-manifest.json is absent, which is always on a PR. Making that fail closed is the proposed fix; treat this as NOT COVERED today."
+        "coveredBy": "ci.yml `Build` runs tests/guardrails/bundle-size-budget.test.ts on every PR against the manifest its own `next build` just produced, with BUNDLE_BUDGET_REQUIRE_MANIFEST=1 so an absent manifest fails rather than skips (added 2026-08-25). The per-route First Load JS budgets are therefore enforced at PR time. RESIDUAL: only the analyzer BUILD itself (@next/bundle-analyzer plugin + its heap) and the HTML report stay label/main-gated."
     },
     "release.yml:release": {
         "kind": "never",
