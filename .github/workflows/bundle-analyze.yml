@@ -84,8 +84,26 @@ jobs:
         run: npm run analyze
 
       - name: Enforce per-route First Load JS budgets
-        # The build above produced .next/app-build-manifest.json, so the
-        # budget gate is live here (it skips in the no-build jest job).
+        # The build above produced the client reference manifests the budget
+        # gate measures, so it is live here.
+        #
+        # It was NOT live here before 2026-08-25, despite this job building:
+        # the suite read `.next/app-build-manifest.json`, which Next removed
+        # in v16, so it silently skipped and reported green on every run.
+        #
+        # BUNDLE_BUDGET_REQUIRE_MANIFEST is the caller's promise that a
+        # production build ran in this job. With it set, an ABSENT manifest
+        # fails instead of skipping — otherwise an analyze build that stops
+        # emitting one turns this step into a silent no-op that still
+        # reports green. Same contract as the ci.yml `Build` step; see the
+        # table at the top of the suite.
+        #
+        # NOTE this is no longer the only place the budget is measured:
+        # ci.yml `Build` runs it on every PR. This invocation stays because
+        # it is the one paired with the analyzer HTML uploaded below, which
+        # is what you read when a budget actually fails.
+        env:
+          BUNDLE_BUDGET_REQUIRE_MANIFEST: '1'
         run: npx jest tests/guardrails/bundle-size-budget.test.ts --no-coverage
 
       # Only needed to inspect what grew when a budget FAILS — the
