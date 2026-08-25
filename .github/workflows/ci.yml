@@ -44,7 +44,12 @@ on:
       - "LICENSE"
       - ".gitignore"
   pull_request:
-    branches: [main]
+    # NO `branches:` filter, deliberately. `branches: [main]` meant a PR whose
+    # base is another feature branch fired ZERO jobs from this workflow — not
+    # "skipped" (which still reports a neutral context), but never triggered, so
+    # the PR page showed no checks at all and there was nothing visibly missing
+    # to notice. Removed 2026-08-25;
+    # tests/guardrails/ci-check-reachability-before-merge.test.ts fails if it returns.
     # NO paths-ignore here, deliberately — see the push trigger above, which
     # keeps one.
     #
@@ -901,6 +906,26 @@ jobs:
           # the real curve. 7168 x 2 = 14 GB is the next step up if needed.
           NODE_OPTIONS: "--max-old-space-size=6144"
           NODE_ENV: production
+
+      # The worker/scheduler bundle. Until 2026-08-25 this ran in exactly ONE
+      # place — `RUN npm run build:worker` at Dockerfile:68 — and the only job
+      # reaching it is `Docker Build`, which the `container` path filter skips
+      # on any PR touching only `src/`. esbuild inlines every `src/` import
+      # into dist/worker.mjs, so a source change that broke that bundle passed
+      # every PR check and turned main red after merge — or shipped a broken
+      # worker image that Watchtower pulls into production.
+      #
+      # It costs 0.31 s. There was never a cost reason for it to live only in
+      # the image build.
+      #
+      # LIMIT, stated because this step is easy to over-read: esbuild runs with
+      # `packages: "external"`, so an unresolvable BARE specifier is
+      # externalised rather than failing here. This catches syntax and
+      # resolution errors in the entrypoints and their relative/aliased
+      # imports, not every broken import. Typechecking `scripts/` is the
+      # complementary fix — it currently sits in tsconfig `exclude`.
+      - name: Build worker + scheduler bundle
+        run: npm run build:worker
 
       # Hand the compiled app to `load-smoke`, which builds the SAME
       # artifact (`NODE_ENV=production`, no other build-time flags) and
