@@ -124,16 +124,54 @@ const gateEntry = Object.entries(jobs).find(([, job]) =>
     ),
 );
 
+/**
+ * Jest invocations that deliberately do NOT feed the merged total.
+ *
+ * The rule above — every Jest job instruments and uploads — is the right
+ * default, but it is over-strict for a job that runs ONE suite for its own
+ * purposes. Making such a job contribute would be actively wrong: the merge
+ * zero-fills every file the artifact does not mention, so a single-suite
+ * artifact drags the global percentages DOWN rather than adding signal.
+ *
+ * Each entry states why the job's Jest run is not part of the population, and
+ * the gate's expected-artifact count excludes it. An unlisted uninstrumented
+ * Jest job still fails: this is an allowlist, not a hole.
+ */
+const NON_CONTRIBUTING_JEST_JOBS: Record<string, string> = {
+    build:
+        'Runs ONLY tests/guardrails/bundle-size-budget.test.ts, against the ' +
+        '.next manifest its own `next build` just produced — the one place a ' +
+        'real production build exists on a PR. It is a single-suite check, so ' +
+        'contributing it would add a sixth artifact whose zero-fill lowers the ' +
+        'merged global percentages instead of measuring anything. The suite ' +
+        'itself is already in the Ratchets population and counted there.',
+};
+
+const contributing = producers.filter((p) => !(p.id in NON_CONTRIBUTING_JEST_JOBS));
+
 describe('the coverage gate measures the whole suite', () => {
     it('the census is plausibly sized (guards against a vacuous pass)', () => {
-        // Every assertion below iterates `producers`. A parse that yields an
+        // Every assertion below iterates the producer census. A parse that yields an
         // empty list would pass all of them while checking nothing.
         expect(producers.length).toBeGreaterThanOrEqual(2);
         expect(gateEntry).toBeDefined();
     });
 
+    it('every exemption names a real Jest job and carries a reason', () => {
+        // A stale exemption is a hole that looks like a decision: the job is
+        // gone (or renamed) and the entry silently excuses nothing while
+        // implying the question was considered.
+        const ids = new Set(producers.map((p) => p.id));
+        for (const [jobId, reason] of Object.entries(NON_CONTRIBUTING_JEST_JOBS)) {
+            expect(ids.has(jobId)).toBe(true);
+            expect(reason.length).toBeGreaterThan(60);
+        }
+        // And the exemption must not swallow the whole census.
+        expect(contributing.length).toBeGreaterThanOrEqual(2);
+    });
+
     it('every job that runs Jest collects coverage', () => {
-        const uninstrumented = producers
+        const uninstrumented = contributing
             .filter((p) => !/--coverage\b/.test(p.command) || /--no-coverage\b/.test(p.command))
             .map((p) => p.id);
         // A Jest job that skips instrumentation removes its files from the
@@ -143,14 +181,14 @@ describe('the coverage gate measures the whole suite', () => {
     });
 
     it('every job that runs Jest uploads its coverage to the gate', () => {
-        const notUploading = producers
+        const notUploading = contributing
             .filter((p) => p.artifactName === null || p.artifactPath !== 'coverage/coverage-final.json')
             .map((p) => `${p.id} (name=${p.artifactName}, path=${p.artifactPath})`);
         expect(notUploading).toEqual([]);
     });
 
     it('the gate expects exactly as many artifacts as CI produces', () => {
-        const expectedTotal = producers.reduce((n, p) => n + p.artifacts, 0);
+        const expectedTotal = contributing.reduce((n, p) => n + p.artifacts, 0);
         expect(expectedTotal).toBeGreaterThanOrEqual(5);
 
         const [, gateJob] = gateEntry!;
@@ -164,7 +202,7 @@ describe('the coverage gate measures the whole suite', () => {
     it('the gate waits for every producing job', () => {
         const [, gateJob] = gateEntry!;
         const needs = Array.isArray(gateJob.needs) ? gateJob.needs : [gateJob.needs].filter(Boolean);
-        const missing = producers.map((p) => p.id).filter((id) => !needs.includes(id));
+        const missing = contributing.map((p) => p.id).filter((id) => !needs.includes(id));
         expect(missing).toEqual([]);
     });
 
@@ -190,7 +228,7 @@ describe('the coverage gate measures the whole suite', () => {
 
         // The flag is set via the step's `env:`, not inline in the command,
         // so the complement is "every Jest job that does NOT set it".
-        const claimants = producers.filter((p) => !p.setsSkipFlag).map((p) => p.command);
+        const claimants = contributing.filter((p) => !p.setsSkipFlag).map((p) => p.command);
         // Vacuity again: if nothing is left after the filter, `unclaimed`
         // below would be the full skip list and the test would fail loudly
         // rather than pass — but assert it anyway so the reason is legible.
