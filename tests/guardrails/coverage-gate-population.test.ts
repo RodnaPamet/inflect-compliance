@@ -79,6 +79,8 @@ interface Producer {
     artifacts: number;
     artifactName: string | null;
     artifactPath: string | null;
+    /** Whether the Jest step narrows the suite via JEST_SKIP_RATCHETS. */
+    setsSkipFlag: boolean;
 }
 
 const producers: Producer[] = [];
@@ -109,6 +111,9 @@ for (const [id, job] of Object.entries(jobs)) {
         artifacts: artifactName === null ? 0 : perLeg ? shardLegs : 1,
         artifactName,
         artifactPath: (upload?.with?.path as string | undefined) ?? null,
+        setsSkipFlag: JSON.stringify(
+            (jestStep as unknown as { env?: Record<string, unknown> }).env ?? {},
+        ).includes('JEST_SKIP_RATCHETS'),
     });
 }
 
@@ -183,31 +188,16 @@ describe('the coverage gate measures the whole suite', () => {
         // Vacuity: the branch really does list paths.
         expect(skipped.length).toBeGreaterThanOrEqual(3);
 
-        const otherCommands = producers
-            .filter((p) => !p.command.includes('JEST_SKIP_RATCHETS'))
-            .map((p) => p.command);
-        const shardEnvJobs = Object.entries(jobs).filter(([, job]) =>
-            (job.steps ?? []).some((s) => s.run?.includes('npx jest')),
-        );
-        // The shards declare the flag via `env:`, not inline, so pick the
-        // complement by asking which producer does NOT set it.
-        const complement = shardEnvJobs
-            .filter(([, job]) =>
-                !(job.steps ?? []).some(
-                    (s) =>
-                        s.run?.includes('npx jest') &&
-                        JSON.stringify((s as unknown as { env?: unknown }).env ?? {}).includes(
-                            'JEST_SKIP_RATCHETS',
-                        ),
-                ),
-            )
-            .map(([, job]) =>
-                flatten(
-                    (job.steps ?? []).find((s) => s.run?.includes('npx jest'))!.run!,
-                ),
-            );
-        const haystack = [...otherCommands, ...complement].join(' ');
-        const unclaimed = [...new Set(skipped)].filter((p) => !haystack.includes(p));
+        // The flag is set via the step's `env:`, not inline in the command,
+        // so the complement is "every Jest job that does NOT set it".
+        const claimants = producers.filter((p) => !p.setsSkipFlag).map((p) => p.command);
+        // Vacuity again: if nothing is left after the filter, `unclaimed`
+        // below would be the full skip list and the test would fail loudly
+        // rather than pass — but assert it anyway so the reason is legible.
+        expect(claimants.length).toBeGreaterThanOrEqual(1);
+
+        const haystack = claimants.join(' ');
+        const unclaimed = [...new Set(skipped)].filter((dir) => !haystack.includes(dir));
         expect(unclaimed).toEqual([]);
     });
 });
