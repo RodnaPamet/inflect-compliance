@@ -201,3 +201,52 @@ describe('the coverage gate measures the whole suite', () => {
         expect(unclaimed).toEqual([]);
     });
 });
+
+/**
+ * The population can also be narrowed WITHOUT touching JEST_SKIP_RATCHETS.
+ *
+ * An adversarial review of this branch found the hole by mutation: adding
+ * `'tests/guardrails/.*'` to the Ratchets job's `--testPathIgnorePatterns`
+ * removes ~530 test files from CI *and* from the merged coverage total — and
+ * every guard in this file still passed, including this one's own suite, which
+ * the pattern had just excluded from running at all.
+ *
+ * So the ignore list is pinned by exact equality rather than by inspection. A
+ * new pattern fails here until somebody writes down why it is not a silent
+ * coverage cut. That is the same reasoning as the JEST_SKIP_RATCHETS check
+ * above: the population of the merged total is the thing being protected, and
+ * there is more than one lever on it.
+ */
+const IGNORE_PATTERN_ALLOWLIST: Record<string, Record<string, string>> = {
+    ratchets: {
+        '/node_modules/': 'Jest default; excludes dependencies, not repo tests.',
+        'rls-coverage\\.test\\.ts':
+            'DB-backed RLS guard — needs a live Postgres with policies applied, ' +
+            'which the Ratchets job has no service container for. It runs in the ' +
+            'Test shards instead, so its files are still in the merged population.',
+    },
+};
+
+describe('the merged population is not narrowed by an ignore pattern', () => {
+    it('every producer\'s --testPathIgnorePatterns is exactly the allowlisted set', () => {
+        for (const p of producers) {
+            const m = /--testPathIgnorePatterns\s+((?:'[^']*'\s*)+)/.exec(p.command);
+            const found = m
+                ? Array.from(m[1].matchAll(/'([^']*)'/g)).map((x) => x[1] as string).sort()
+                : [];
+            const allowed = Object.keys(IGNORE_PATTERN_ALLOWLIST[p.id] ?? {}).sort();
+            expect({ job: p.id, patterns: found }).toEqual({ job: p.id, patterns: allowed });
+        }
+    });
+
+    it('the allowlist has a written reason per pattern and no stale entries', () => {
+        const producerIds = new Set(producers.map((p) => p.id));
+        for (const [jobId, patterns] of Object.entries(IGNORE_PATTERN_ALLOWLIST)) {
+            expect(producerIds.has(jobId)).toBe(true);
+            for (const [pattern, reason] of Object.entries(patterns)) {
+                expect(typeof pattern).toBe('string');
+                expect(reason.length).toBeGreaterThan(30);
+            }
+        }
+    });
+});

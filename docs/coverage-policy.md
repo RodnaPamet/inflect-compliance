@@ -231,11 +231,14 @@ discipline.
 ## Enforcement
 
 - **Source of truth:** `jest.thresholds.json` (global + per-folder
-  keys). Four `Coverage (shard N/4)` jobs MEASURE — `jest --coverage
-  --coverageReporters=json`, no threshold flag, because a shard holds a
-  quarter of the data and would report most of the scope as uncovered.
-  The `Coverage (≥60%)` job merges the four artifacts and enforces the
-  floors once, via `npx tsx scripts/check-merged-coverage.ts`. Its
+  keys). **Five** jobs MEASURE — the four `Test (shard N/4)` legs plus
+  `Ratchets` — each running `jest --coverage --coverageReporters=json`
+  with no threshold flag, because a shard holds a fraction of the data and
+  would report most of the scope as uncovered. There is no longer a
+  separate `Coverage (shard N/4)` matrix: it ran the same tests a second
+  time, and only on `main`. The `Coverage (≥60%)` job merges the **five**
+  artifacts and enforces the floors once, via
+  `npx tsx scripts/check-merged-coverage.ts`. Its
   semantics — including the rule that a path key REMOVES its files from
   `global` — are pinned by `tests/unit/scripts/check-merged-coverage.test.ts`.
 - **Jest itself enforces nothing.** `jest.config.js` loads the same JSON
