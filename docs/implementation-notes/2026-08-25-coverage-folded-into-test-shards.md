@@ -48,12 +48,27 @@ the Test shards — is **not** equivalent, because those shards run with
 | the Ratchets job's own path list | 654 |
 
 1386 + 654 = 2040, and `comm -12` on the two sorted lists is **empty** — the
-partition is exact. And the ratchet half is not decoration in the report: run
-alone with `--coverage` it executes **4125 in-scope statements across 326
-files**, including **14.58% of `./src/lib/`** and 20-25% of `policies/` and
-`events/`. How much of that is *uniquely* theirs was never measured, and that is
-the point — dropping a population that large from the merged total is a change
-whose size nobody knows, disguised as a refactor.
+partition is exact.
+
+The ratchet half is not decoration in the report, and this was measured rather
+than assumed. Merging real artifacts through `check-merged-coverage.ts` — one
+instrumented Test shard alone, then the same shard plus the instrumented
+Ratchets run:
+
+| group | shard 1 only | shard 1 + ratchets | delta |
+| --- | --- | --- | --- |
+| `global` statements | 37.08% | 44.58% | **+7.50pp** |
+| `./src/app-layer/usecases/` statements | 31.58% | 38.16% | **+6.58pp** |
+| `./src/lib/` statements | 49.61% | 56.91% | **+7.30pp** |
+| `./src/app-layer/policies/` statements | 55.91% | 55.91% | 0.00pp |
+| `./src/app-layer/events/` statements | 62.44% | 62.44% | 0.00pp |
+
+Against floors of 85 / 87 / 88 those first three columns are not a rounding
+question. The true delta over all four shards is smaller — more of the ratchets'
+coverage is redundant once the other three shards are in — but it is provably
+not zero, and quantifying it exactly would need the full before/after run the
+whole change is meant to avoid paying for. The two zero rows are the useful
+control: they show the delta is real coverage, not an artifact of the merge.
 
 So the Ratchets job collects and uploads coverage too, and the gate expects
 **five** artifacts rather than four. Nothing about the merge or the floors
@@ -68,6 +83,30 @@ changed; only the number of files feeding it, which is held equal.
 | `tests/guardrails/ci-checks-unreachable-before-merge.json` | `ci.yml:coverage` removed (job gone); `ci.yml:coverage-gate` re-triaged `never` -> `conditional` (it is `!cancelled()`, which the evaluator cannot resolve) with a corrected reason |
 | `tests/guards/ci-flake-hardening.test.ts` | Timeout floor follows the work: the `Coverage (shard N/4)` entry becomes `Test (shard N/4)` 20 + `Ratchets` 10 |
 | `docs/coverage-policy.md`, `CLAUDE.md` | The "does not run on pull requests" claim was authoritative and is now false — rewritten, with the population rule stated where the floors are documented |
+
+## Measured cost
+
+One Test shard (shard 1/4, `JEST_SKIP_RATCHETS=1`, `--maxWorkers=2`, local
+8-core box with the DB on 5434):
+
+| run | wall clock | suites |
+| --- | --- | --- |
+| `--no-coverage` | 1591 s | 343 passed, 4 failed to run (environment — see below) |
+| `--coverage --coverageReporters=json` | **1808 s** | 346 passed, 1 failed to run |
+
+**+217 s, +13.6%.** The Ratchets job measured separately: 114.5 s -> 174.4 s
+(+52%), the higher ratio being what you would expect from fast source-scanning
+tests where instrumenting the modules they import dominates.
+
+The four failures in the uninstrumented run were environmental and three did not
+recur: a jsdom worker OOM under parallel load, and two integration suites that
+lost their per-worker database while other Jest invocations were running against
+the same shared Postgres. The one that reproduces in both runs is
+`tests/rendered/dashboard-grid-and-picker.test.tsx`, and it is a **git-worktree
+artifact**: `moduleNameMapper` resolves `react-grid-layout/legacy` to
+`<rootDir>/node_modules/react-grid-layout/dist/legacy.js`, and a worktree's
+`node_modules` is an empty directory. Zero tests failed in either run
+(7223 and 7258 assertions passed).
 
 ## Decisions
 
