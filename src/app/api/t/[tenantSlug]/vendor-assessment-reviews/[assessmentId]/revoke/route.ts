@@ -11,26 +11,34 @@
  *
  * Idempotent: revoking an already-revoked link returns the original
  * timestamp rather than erroring.
+ *
+ * ─── Why the route gate (#2117) ────────────────────────────────────
+ *
+ * Revoking is a credential-lifecycle verb, and the security value of one is
+ * that the attempt is on the record whichever way it goes. Before this the
+ * route authorized only through `revokeAssessmentLink`'s
+ * `assertCanRunAssessment`: a correct 403, and no row — `AUTHZ_DENIED` is
+ * written by `requirePermission` and by nothing else. A denied revoke of a
+ * leaked respondent link is exactly the event a reviewer would go looking
+ * for afterwards, and it was not there.
+ *
+ * `vendors.edit` is the same predicate the usecase evaluates —
+ * `assertCanRunAssessment` reads `ctx.appPermissions.vendors.edit` — so who
+ * may revoke is unchanged. The usecase assert stays for non-HTTP callers.
  */
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { revokeAssessmentLink } from '@/app-layer/usecases/vendor-assessment-send';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
+type Params = { tenantSlug: string; assessmentId: string };
+
 export const POST = withApiErrorHandling(
-    async (
-        req: NextRequest,
-        {
-            params: paramsPromise,
-        }: { params: Promise<{ tenantSlug: string; assessmentId: string }> },
-    ) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+    requirePermission<Params>('vendors.edit', async (_req, { params }, ctx) => {
         const result = await revokeAssessmentLink(ctx, params.assessmentId);
         return jsonResponse({
             assessmentId: result.assessmentId,
             revokedAt: result.revokedAt.toISOString(),
         });
-    },
+    }),
 );

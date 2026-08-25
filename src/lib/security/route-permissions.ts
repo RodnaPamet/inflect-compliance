@@ -652,6 +652,66 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'assert, so an EDITOR passed the middleware and was refused deeper ' +
             'where nothing writes an audit row. Not an access change.',
     },
+
+    // ── Destructive register verbs, second tranche (#2117) ──────────
+    // Same defect, the single-entity half of the population: a correct
+    // usecase refusal that writes no AUTHZ_DENIED row. The first tranche
+    // above took the bulk + purge/restore verbs; these are per-record
+    // destruction and credential revocation.
+    //
+    // The three vendor rules are the strongest form of "mirror the
+    // assert": assertCanManageVendors, assertCanManageVendorDocs and
+    // assertCanRunAssessment each read `appPermissions.vendors.edit`
+    // DIRECTLY — the same object and the same flag `requirePermission`
+    // evaluates. So the caller set is provably unchanged and only the
+    // layer that records the refusal moves.
+    {
+        path: new RegExp(`^${T}\\/vendors\\/[^/]+\\/documents\\/[^/]+(\\/extract)?$`),
+        methods: ['POST', 'DELETE'],
+        permission: 'vendors.edit',
+        note:
+            'Removing a vendor due-diligence artefact (the SOC 2 report or DPA ' +
+            'an assessment was signed off against), and the AI extraction over ' +
+            'it. vendors.edit IS the predicate assertCanManageVendorDocs reads.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vendors\\/[^/]+\\/links\\/[^/]+$`),
+        methods: ['DELETE'],
+        permission: 'vendors.edit',
+        note:
+            'Detaching a vendor from the control, risk or asset it bears on — ' +
+            'the traceability edge disappears from the governance view. ' +
+            'vendors.edit IS the predicate assertCanManageVendors reads.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vendor-assessment-reviews\\/[^/]+\\/revoke$`),
+        methods: ['POST'],
+        permission: 'vendors.edit',
+        note:
+            'Killing an external respondent link — a credential-lifecycle verb, ' +
+            'where a refused attempt is exactly what a reviewer looks for after ' +
+            'a leak. vendors.edit IS the predicate assertCanRunAssessment reads.',
+    },
+    {
+        path: new RegExp(`^${T}\\/policies\\/[^/]+\\/archive$`),
+        methods: ['POST'],
+        permission: ['admin.manage', 'policies.edit'],
+        mode: 'all',
+        note:
+            'Archiving ONE policy. Two keys, matching its bulk/archive twin: ' +
+            'archivePolicy asserts assertCanAdminPolicies, a conjunction, so a ' +
+            'one-key gate would admit a role the usecase then refuses silently. ' +
+            'Unlike the purge/restore rule above, which takes admin.manage alone.',
+    },
+    {
+        path: new RegExp(`^${T}\\/loss-events\\/[^/]+$`),
+        methods: ['DELETE'],
+        permission: 'admin.manage',
+        note:
+            'Soft-delete of a recorded loss actual. deleteLossEvent asserts ' +
+            'canAdmin because actuals are evidence, so the gate matches at ' +
+            'admin.manage; DELETE-only, the GET/PATCH siblings are ordinary.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

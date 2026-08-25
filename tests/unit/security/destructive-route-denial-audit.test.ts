@@ -27,6 +27,16 @@
  * one actually reaching these usecases and being thrown out invisibly;
  * a READER would have been stopped further up on most surfaces and would
  * make the test weaker while looking the same.
+ *
+ * ─── The vendors.edit routes flip the pair, deliberately ───────────
+ *
+ * The second tranche added routes whose usecase asserts read
+ * `appPermissions.vendors.edit` directly, so EDITOR is the AUTHORIZED
+ * role there and READER the refused one. The table below therefore
+ * carries the pair per route rather than assuming it. That is not a
+ * weakening: on those routes the point being proven is that EDITOR —
+ * the population that legitimately uses them — is unaffected by the new
+ * gate, while the caller who was refused invisibly is now on the record.
  */
 
 // ─── Mocks (before imports) ────────────────────────────────────────
@@ -55,16 +65,44 @@ const mockBulkDeletePolicy = jest.fn();
 const mockBulkArchivePolicy = jest.fn();
 const mockPurgePolicy = jest.fn();
 const mockRestorePolicy = jest.fn();
+const mockArchivePolicy = jest.fn();
 jest.mock('@/app-layer/usecases/policy', () => ({
     bulkDeletePolicy: (...a: unknown[]) => mockBulkDeletePolicy(...a),
     bulkArchivePolicy: (...a: unknown[]) => mockBulkArchivePolicy(...a),
     purgePolicy: (...a: unknown[]) => mockPurgePolicy(...a),
     restorePolicy: (...a: unknown[]) => mockRestorePolicy(...a),
+    archivePolicy: (...a: unknown[]) => mockArchivePolicy(...a),
 }));
 
 const mockBulkDeleteVendor = jest.fn();
+const mockRemoveVendorDocument = jest.fn();
+const mockRemoveVendorLink = jest.fn();
 jest.mock('@/app-layer/usecases/vendor', () => ({
     bulkDeleteVendor: (...a: unknown[]) => mockBulkDeleteVendor(...a),
+    removeVendorDocument: (...a: unknown[]) => mockRemoveVendorDocument(...a),
+    removeVendorLink: (...a: unknown[]) => mockRemoveVendorLink(...a),
+}));
+
+const mockRevokeAssessmentLink = jest.fn();
+jest.mock('@/app-layer/usecases/vendor-assessment-send', () => ({
+    revokeAssessmentLink: (...a: unknown[]) => mockRevokeAssessmentLink(...a),
+}));
+
+const mockDeleteLossEvent = jest.fn();
+jest.mock('@/app-layer/usecases/loss-event', () => ({
+    deleteLossEvent: (...a: unknown[]) => mockDeleteLossEvent(...a),
+}));
+
+const mockDeleteProcessMap = jest.fn();
+jest.mock('@/app-layer/usecases/process-map', () => ({
+    // The processes/[id] route file also exports GET / PUT / PATCH, which
+    // import these four. They are not under test — the module factory has to
+    // supply them or the import of the route file throws.
+    getProcessMap: jest.fn(),
+    saveProcessMap: jest.fn(),
+    setProcessMapCanvasMode: jest.fn(),
+    setProcessMapStatus: jest.fn(),
+    deleteProcessMap: (...a: unknown[]) => mockDeleteProcessMap(...a),
 }));
 
 const mockBulkDeleteTestPlan = jest.fn();
@@ -98,17 +136,32 @@ import { POST as vendorsBulkDelete } from '@/app/api/t/[tenantSlug]/vendors/bulk
 import { POST as testPlansBulkDelete } from '@/app/api/t/[tenantSlug]/tests/plans/bulk/delete/route';
 import { POST as testPlansBulkRestore } from '@/app/api/t/[tenantSlug]/tests/plans/bulk/restore/route';
 import { POST as tasksBulkDelete } from '@/app/api/t/[tenantSlug]/tasks/bulk/delete/route';
+import { DELETE as vendorDocumentDelete } from '@/app/api/t/[tenantSlug]/vendors/[vendorId]/documents/[docId]/route';
+import { DELETE as vendorLinkDelete } from '@/app/api/t/[tenantSlug]/vendors/[vendorId]/links/[linkId]/route';
+import { POST as assessmentRevoke } from '@/app/api/t/[tenantSlug]/vendor-assessment-reviews/[assessmentId]/revoke/route';
+import { DELETE as lossEventDelete } from '@/app/api/t/[tenantSlug]/loss-events/[id]/route';
+import { DELETE as processMapDelete } from '@/app/api/t/[tenantSlug]/processes/[id]/route';
+import { POST as policyArchive } from '@/app/api/t/[tenantSlug]/policies/[id]/archive/route';
 
 // ─── Fixtures ──────────────────────────────────────────────────────
 
+type RouteParams = { tenantSlug: string } & Record<string, string>;
+
 type Handler = (
     req: NextRequest,
-    routeArgs: { params: { tenantSlug: string; id?: string } },
+    routeArgs: { params: RouteParams },
 ) => Promise<Response>;
 
-function makeReq(path: string, body?: unknown): NextRequest {
+/**
+ * The method is a parameter, not a constant. `auditPermissionDenied`
+ * copies `req.method` into the AUTHZ_DENIED row, so hard-coding POST
+ * would have made the DELETE routes' rows assert a method they never
+ * carry — the assertion would still pass and would be describing a
+ * request nobody makes.
+ */
+function makeReq(path: string, body?: unknown, method: string = 'POST'): NextRequest {
     return {
-        method: 'POST',
+        method,
         url: `https://app.example.com${path}`,
         headers: new Headers(),
         nextUrl: {
@@ -143,6 +196,12 @@ beforeEach(() => {
         mockBulkDeleteTestPlan,
         mockBulkRestoreTestPlan,
         mockBulkDeleteTask,
+        mockRemoveVendorDocument,
+        mockRemoveVendorLink,
+        mockRevokeAssessmentLink,
+        mockDeleteLossEvent,
+        mockDeleteProcessMap,
+        mockArchivePolicy,
     ].forEach((m) => m.mockReset());
     mockAppendAuditEntry.mockResolvedValue({ id: 'a1', entryHash: 'h', previousHash: null });
 });
@@ -187,13 +246,26 @@ const ROUTES: ReadonlyArray<{
     name: string;
     handler: Handler;
     path: string;
-    params: { tenantSlug: string; id?: string };
+    params: RouteParams;
     body?: unknown;
+    /** Defaults to POST. */
+    method?: string;
     key: string;
     usecase: jest.Mock;
     /** Args the handler must forward on the success path. */
     forwards: unknown[];
+    /** The JSON body the route must return. */
     result: unknown;
+    /**
+     * What the usecase resolves with, when the route reshapes it before
+     * responding (the revoke route stringifies a Date). Defaults to
+     * `result` for the routes that pass the value straight through.
+     */
+    usecaseReturns?: unknown;
+    /** Role that must still get through. Defaults to ADMIN. */
+    allowedRole?: string;
+    /** Role that must be refused AND recorded. Defaults to EDITOR. */
+    deniedRole?: string;
 }> = [
     {
         name: 'POST /evidence/bulk/delete',
@@ -312,16 +384,124 @@ const ROUTES: ReadonlyArray<{
         forwards: [['t-1']],
         result: { deleted: 1 },
     },
+
+    // ── Second tranche: single-entity destruction + revocation ─────
+    //
+    // The three vendor rows run EDITOR-allowed / READER-refused because
+    // `vendors.edit` is the exact flag their usecase asserts read. Using
+    // the default ADMIN/EDITOR pair here would have asserted nothing
+    // about the population that actually calls these routes.
+    {
+        name: 'DELETE /vendors/[vendorId]/documents/[docId]',
+        handler: vendorDocumentDelete as Handler,
+        path: '/api/t/acme/vendors/v-1/documents/doc-1',
+        params: { tenantSlug: 'acme', vendorId: 'v-1', docId: 'doc-1' },
+        method: 'DELETE',
+        key: 'vendors.edit',
+        usecase: mockRemoveVendorDocument,
+        forwards: ['doc-1', 'v-1'],
+        result: { deleted: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /vendors/[vendorId]/links/[linkId]',
+        handler: vendorLinkDelete as Handler,
+        path: '/api/t/acme/vendors/v-1/links/lk-1',
+        params: { tenantSlug: 'acme', vendorId: 'v-1', linkId: 'lk-1' },
+        method: 'DELETE',
+        key: 'vendors.edit',
+        usecase: mockRemoveVendorLink,
+        forwards: ['lk-1', 'v-1'],
+        result: { deleted: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /vendor-assessment-reviews/[assessmentId]/revoke',
+        handler: assessmentRevoke as Handler,
+        path: '/api/t/acme/vendor-assessment-reviews/as-1/revoke',
+        params: { tenantSlug: 'acme', assessmentId: 'as-1' },
+        key: 'vendors.edit',
+        usecase: mockRevokeAssessmentLink,
+        forwards: ['as-1'],
+        // The route reshapes the usecase's Date into an ISO string, so the
+        // asserted body is not the mock's return value verbatim.
+        result: {
+            assessmentId: 'as-1',
+            revokedAt: '2026-08-20T00:00:00.000Z',
+        },
+        usecaseReturns: {
+            assessmentId: 'as-1',
+            revokedAt: new Date('2026-08-20T00:00:00.000Z'),
+        },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /loss-events/[id]',
+        handler: lossEventDelete as Handler,
+        path: '/api/t/acme/loss-events/le-1',
+        params: { tenantSlug: 'acme', id: 'le-1' },
+        method: 'DELETE',
+        key: 'admin.manage',
+        usecase: mockDeleteLossEvent,
+        forwards: ['le-1'],
+        result: { success: true },
+    },
+    {
+        name: 'DELETE /processes/[id]',
+        handler: processMapDelete as Handler,
+        path: '/api/t/acme/processes/pm-1',
+        params: { tenantSlug: 'acme', id: 'pm-1' },
+        method: 'DELETE',
+        key: 'admin.manage',
+        usecase: mockDeleteProcessMap,
+        forwards: ['pm-1'],
+        result: { deleted: true },
+    },
+    {
+        // The single-policy twin of policies/bulk/archive, which has carried
+        // the two-key gate since the first tranche. `key` is the comma-joined
+        // form requirePermission writes into the row, so a regression to one
+        // key fails here rather than passing on "some 403 happened".
+        name: 'POST /policies/[id]/archive',
+        handler: policyArchive as Handler,
+        path: '/api/t/acme/policies/pol-1/archive',
+        params: { tenantSlug: 'acme', id: 'pol-1' },
+        key: 'admin.manage,policies.edit',
+        usecase: mockArchivePolicy,
+        forwards: ['pol-1'],
+        result: { archived: true },
+    },
 ];
 
-describe.each(ROUTES.map((r) => [r.name, r] as const))('%s', (_name, route) => {
-    it('an ADMIN still reaches the usecase', async () => {
-        mockGetTenantCtx.mockResolvedValue(makeRequestContext('ADMIN'));
-        route.usecase.mockResolvedValue(route.result);
+/**
+ * A table-driven suite hides its own deletions: remove a row and the three
+ * tests it generated simply stop existing, and the run is still green. The
+ * count is therefore asserted, and it only goes up — 11 after the first
+ * tranche, 17 after the second.
+ */
+it('the migrated population does not silently shrink', () => {
+    expect(ROUTES.length).toBeGreaterThanOrEqual(17);
+    // Every row must name a distinct handler, so a copy-paste that leaves two
+    // rows pointing at the same route reads as coverage it is not.
+    expect(new Set(ROUTES.map((r) => r.path)).size).toBe(ROUTES.length);
+});
 
-        const res = await route.handler(makeReq(route.path, route.body), {
-            params: route.params,
-        });
+describe.each(ROUTES.map((r) => [r.name, r] as const))('%s', (_name, route) => {
+    const method = route.method ?? 'POST';
+    const allowed = route.allowedRole ?? 'ADMIN';
+    const denied = route.deniedRole ?? 'EDITOR';
+    const req = () => makeReq(route.path, route.body, method);
+
+    it(`an authorized ${allowed} still reaches the usecase`, async () => {
+        mockGetTenantCtx.mockResolvedValue(makeRequestContext(allowed));
+        route.usecase.mockResolvedValue(
+            'usecaseReturns' in route ? route.usecaseReturns : route.result,
+        );
+
+        const res = await route.handler(req(), { params: route.params });
 
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual(route.result);
@@ -335,21 +515,19 @@ describe.each(ROUTES.map((r) => [r.name, r] as const))('%s', (_name, route) => {
         expect(denialEntries()).toEqual([]);
     });
 
-    it('an EDITOR is refused BEFORE the usecase runs', async () => {
-        mockGetTenantCtx.mockResolvedValue(makeRequestContext('EDITOR'));
+    it(`a ${denied} is refused BEFORE the usecase runs`, async () => {
+        mockGetTenantCtx.mockResolvedValue(makeRequestContext(denied));
 
-        const res = await route.handler(makeReq(route.path, route.body), {
-            params: route.params,
-        });
+        const res = await route.handler(req(), { params: route.params });
 
         expect(res.status).toBe(403);
         expect(route.usecase).not.toHaveBeenCalled();
     });
 
     it('the refusal WRITES an AUTHZ_DENIED row naming the key', async () => {
-        mockGetTenantCtx.mockResolvedValue(makeRequestContext('EDITOR'));
+        mockGetTenantCtx.mockResolvedValue(makeRequestContext(denied));
 
-        await route.handler(makeReq(route.path, route.body), { params: route.params });
+        await route.handler(req(), { params: route.params });
 
         expect(denialEntries()).toEqual([
             expect.objectContaining({
@@ -366,7 +544,7 @@ describe.each(ROUTES.map((r) => [r.name, r] as const))('%s', (_name, route) => {
         expect(entry.tenantId).toBe('tenant-1');
         expect(entry.userId).toBe('user-1');
         expect(entry.detailsJson.category).toBe('access');
-        expect(entry.detailsJson.method).toBe('POST');
+        expect(entry.detailsJson.method).toBe(method);
         expect(entry.detailsJson.path).toBe(route.path);
     });
 });
@@ -394,18 +572,24 @@ describe('policies bulk verbs require BOTH halves of assertCanAdminPolicies', ()
         });
 
     it.each([
-        ['delete', policiesBulkDelete as Handler, '/api/t/acme/policies/bulk/delete', mockBulkDeletePolicy],
-        ['archive', policiesBulkArchive as Handler, '/api/t/acme/policies/bulk/archive', mockBulkArchivePolicy],
-    ])('bulk/%s refuses admin.manage-without-policies.edit, and records it', async (
+        ['bulk/delete', policiesBulkDelete as Handler, '/api/t/acme/policies/bulk/delete', mockBulkDeletePolicy, { tenantSlug: 'acme' }],
+        ['bulk/archive', policiesBulkArchive as Handler, '/api/t/acme/policies/bulk/archive', mockBulkArchivePolicy, { tenantSlug: 'acme' }],
+        // The single-entity archive joined the two-key set in the second
+        // tranche. Included here rather than trusted to the table above,
+        // because the table pins the key as a STRING — this is the assertion
+        // that the second key actually changes an outcome.
+        ['[id]/archive', policyArchive as Handler, '/api/t/acme/policies/pol-1/archive', mockArchivePolicy, { tenantSlug: 'acme', id: 'pol-1' }],
+    ])('%s refuses admin.manage-without-policies.edit, and records it', async (
         _verb,
         handler,
         path,
         usecase,
+        params,
     ) => {
         mockGetTenantCtx.mockResolvedValue(adminWithoutPolicyEdit());
 
         const res = await handler(makeReq(path, { policyIds: ['pol-1'] }), {
-            params: { tenantSlug: 'acme' },
+            params: params as RouteParams,
         });
 
         expect(res.status).toBe(403);
