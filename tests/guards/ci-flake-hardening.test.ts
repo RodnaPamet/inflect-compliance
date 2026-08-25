@@ -152,17 +152,29 @@ describe('CI timeout ceilings', () => {
             // the "Coverage (≥60%)" name — that job is now a download +
             // merge + threshold check with no test execution in it at
             // all. This is not a floor being lowered on the same work;
-            // it is the same work split, and the floor follows the work:
+            // it is the same work split, and the floor follows the work.
             //
-            //   Coverage (shard N/4)   the 35-min unsharded tail / 4
-            //                          ≈ 9 min, plus the ~6-min npm ci
-            //                          retry path this map accounts for
-            //                          everywhere else -> 20
-            //   Coverage (≥60%)        merge of four JSON files -> 8
+            // On 2026-08-25 the work moved AGAIN, and the floor follows
+            // it again. The separate `Coverage (shard N/4)` matrix is
+            // gone: it re-ran the same Jest suite a second time purely
+            // to instrument it. Coverage is now collected by the runs
+            // that already happen, so the ~9-minute instrumented tail
+            // that used to need its own 20-minute ceiling now lands
+            // inside these two:
             //
-            // If the shards are ever de-sharded back into one job, this
-            // entry has to go back to 50 in the same diff.
-            'Coverage (shard ${{ matrix.shard }}/${{ matrix.total }})': 20,
+            //   Test (shard N/4)   8-9 min uninstrumented + ~2 min of
+            //                      instrumentation + the ~6-min npm ci
+            //                      retry path this map accounts for
+            //                      everywhere else -> 20
+            //   Ratchets           114s -> 174s under --coverage
+            //                      (measured 2026-08-25), + npm ci
+            //                      retry -> 10
+            //   Coverage (≥60%)    merge of five JSON files -> 8
+            //
+            // If the shards are ever de-sharded back into one job, the
+            // Test entry has to go to 50 in the same diff.
+            'Test (shard ${{ matrix.shard }}/${{ matrix.total }})': 20,
+            Ratchets: 10,
             'Coverage (≥60%)': 8,
             'Trivy Image Scan': 25,
             Security: 12,

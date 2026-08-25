@@ -252,10 +252,23 @@ discipline.
 - **Per-layer keys** carve their folders OUT of `global` and hold them to
   a higher bar. Adding a key therefore SHRINKS `global` — check what is
   left before adding one.
-- **The gate does not run on pull requests.** It runs on pushes to
-  `main`, the weekly schedule, and `workflow_dispatch`, so a regression
-  otherwise surfaces on the first main push after merge. To check a
-  branch first: `gh workflow run ci.yml --ref <branch>`.
+- **The gate runs on pull requests** (since 2026-08-25). It used to be
+  `push` / `schedule` / `workflow_dispatch`-only, because it was fed by a
+  separate `Coverage (shard N/4)` matrix that re-ran the whole Jest suite
+  a second time with instrumentation — ~45 job-minutes nobody wanted on
+  every PR. That matrix is gone. Coverage now comes from the runs that
+  already happen: the four `Test` shards and the `Ratchets` job each pass
+  `--coverage --coverageReporters=json` and upload a `coverage-shard-*`
+  artifact, and `Coverage (≥60%)` merges all **five** of them.
+- **Those five jobs must keep partitioning the whole suite.** A path key
+  removes its files from `global`, so `global` is a residue — change
+  which tests contribute and every floor means something different with
+  no number in the diff. The `Test` shards run under
+  `JEST_SKIP_RATCHETS=1` (1386 files) and `Ratchets` runs exactly what
+  that flag drops (654 files); the two are disjoint and exhaustive.
+  `tests/guardrails/coverage-gate-population.test.ts` holds that
+  invariant, the per-job `--coverage` flag, the uploads, and the
+  expected-artifact count handed to `scripts/check-merged-coverage.ts`.
 
 ### The ratchet guard
 
