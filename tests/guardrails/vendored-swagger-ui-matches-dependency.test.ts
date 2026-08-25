@@ -49,12 +49,21 @@ function sha256(file: string): string {
 }
 
 /**
- * Where `swagger-ui-dist` actually lives, via Node's own resolution
- * starting at the repo root. NOT a hard-coded `<root>/node_modules/…`:
- * this repo is routinely checked out into `.claude/worktrees/<id>/`,
- * where the install lives further up the tree, and a guard that reports
- * "not installed" there would be a false failure of exactly the kind
- * that teaches people to ignore it.
+ * Where `swagger-ui-dist` actually lives, via Node's own resolution.
+ *
+ * NOT a hard-coded `<root>/node_modules/…`: this repo is routinely checked
+ * out into `.claude/worktrees/<id>/`, where the install lives further up the
+ * tree, and a guard that reported "not installed" there would be a false
+ * failure of exactly the kind that teaches people to ignore it.
+ *
+ * The `paths` option is INERT here and kept only for a non-jest caller:
+ * jest-resolve ignores it and resolves from THIS module instead. That still
+ * covers the worktree case — resolution walks up the directory chain and
+ * finds the parent checkout's `node_modules` — but it works for a different
+ * reason than `paths` suggests. An earlier version of this comment claimed
+ * resolution "starts at the repo root", which is not what happens; a review
+ * disproved it by pointing ROOT at an empty tree and watching this resolve
+ * anyway. Do not rely on `paths` to redirect it.
  */
 const DIST_DIR: string | null = (() => {
     try {
