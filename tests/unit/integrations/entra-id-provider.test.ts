@@ -19,6 +19,10 @@ jest.mock('@/lib/observability/logger', () => ({
 }));
 
 import { EntraIdProvider } from '@/app-layer/integrations/providers/entra-id';
+import {
+    IntegrationAuthError,
+    IntegrationTerminalError,
+} from '@/app-layer/integrations/http-resilience';
 
 const CONFIG = { tenantId: 't-1', clientId: 'c-1' };
 const SECRETS = { clientSecret: 's-1' };
@@ -212,6 +216,70 @@ describe('EntraIdProvider — directory enumeration', () => {
         expect(userUrls[0]).toContain('signInActivity');
         expect(userUrls[1]).not.toContain('signInActivity');
         expect(res.accounts).toHaveLength(1);
+    });
+
+    it('retries without signInActivity when the tenant THROWS 403 for it', async () => {
+        // THE SHAPE PRODUCTION ACTUALLY PRODUCES. The test above hands back
+        // `{ ok: false, status: 403 }`, but the real `doFetch` is
+        // `resilientFetch`, which THROWS IntegrationAuthError on 401/403 rather
+        // than returning the response — so the `!res.ok` branch could never see
+        // a 403, and 403 is exactly what Graph answers for `signInActivity` on a
+        // tenant without Entra ID P1/P2.
+        //
+        // Observed in production: a connection with every permission consented
+        // and a valid token failed every sync with
+        // `Integration auth failed (403): …/v1.0/users`, and the fallback's warn
+        // line had never once been logged.
+        let call = 0;
+        const fetchImpl = jest.fn(async (url: string | URL) => {
+            const u = String(url);
+            if (u.includes('/users')) {
+                call += 1;
+                if (call === 1) throw new IntegrationAuthError(403, u);
+                return jsonOk({ value: [graphUser()] }) as unknown as Response;
+            }
+            return jsonOk({ value: [] }) as unknown as Response;
+        });
+
+        const res = await provider(withToken({ fetchImpl })).listAccounts(CONFIG);
+
+        const userUrls = fetchImpl.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/users'));
+        expect(userUrls[0]).toContain('signInActivity');
+        expect(userUrls[1]).not.toContain('signInActivity');
+        expect(res.accounts).toHaveLength(1);
+    });
+
+    it('still fails when the credential itself is bad, not just the premium field', async () => {
+        // THE CONTROL, and it is the reason the retry is safe. A genuinely
+        // rejected credential throws on the retry too, so it propagates and the
+        // connection is still marked. Without this, the fix above would convert
+        // every real 403 into a silent success.
+        const fetchImpl = jest.fn(async (url: string | URL) => {
+            throw new IntegrationAuthError(403, String(url));
+        });
+
+        await expect(
+            provider(withToken({ fetchImpl })).listAccounts(CONFIG),
+        ).rejects.toBeInstanceOf(IntegrationAuthError);
+
+        // It really did try twice — once with the field, once without — so the
+        // failure is a verdict rather than a refusal to look.
+        const userUrls = fetchImpl.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/users'));
+        expect(userUrls).toHaveLength(2);
+        expect(userUrls[0]).toContain('signInActivity');
+        expect(userUrls[1]).not.toContain('signInActivity');
+    });
+
+    it('does not retry a 5xx as though it were a premium-field refusal', async () => {
+        // Only 4xx is a permissions answer. A 500 must surface, not be retried
+        // into a quieter select that hides a broken directory.
+        const fetchImpl = jest.fn(async (url: string | URL) => {
+            throw new IntegrationTerminalError(500, String(url));
+        });
+        await expect(
+            provider(withToken({ fetchImpl })).listAccounts(CONFIG),
+        ).rejects.toBeInstanceOf(IntegrationTerminalError);
+        expect(fetchImpl.mock.calls.filter(([u]) => String(u).includes('/users'))).toHaveLength(1);
     });
 
     it('throws when a non-first page fails', async () => {

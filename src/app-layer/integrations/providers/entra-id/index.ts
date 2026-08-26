@@ -58,7 +58,7 @@ import {
 } from '../identity/types';
 import { logger } from '@/lib/observability/logger';
 import { fetchOAuthToken } from '../../oauth-token-fetch';
-import { resilientFetch } from '../../http-resilience';
+import { resilientFetch, IntegrationTerminalError } from '../../http-resilience';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
@@ -243,17 +243,52 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
         // A resumed URL already carries its own $select, so the
         // signInActivity fallback below must not rewrite it from scratch.
         let first = !resuming;
+        /**
+         * True when this failure is the tenant refusing `signInActivity`, and we
+         * have not already dropped it.
+         *
+         * BOTH SHAPES, and that is the whole point. `resilientFetch` THROWS
+         * `IntegrationAuthError` on 401/403 rather than returning the response,
+         * so the `!res.ok` branch below could never see a 403 — and 403 is
+         * exactly what Graph answers for `signInActivity` on a tenant without
+         * Entra ID P1/P2. The fallback existed for that case and was unreachable
+         * from it: observed in production as a connection that consented every
+         * permission, obtained a valid token, and still failed every sync with
+         * `Integration auth failed (403): …/v1.0/users`.
+         */
+        const isPremiumFieldRefusal = (status: number): boolean =>
+            first && select === USER_SELECT_FULL && status >= 400 && status < 500;
+
+        const dropSignInActivity = (status: number): string => {
+            logger.warn('Entra users fetch with signInActivity failed; retrying without last-sign-in (needs AuditLog.Read.All + premium)', {
+                component: 'integration-entra-id',
+                status,
+            });
+            select = USER_SELECT_BASE;
+            return `${GRAPH_BASE}/users?$top=${PAGE_SIZE}&$select=${select}`;
+        };
+
         while (url && out.length < MAX_USERS) {
-            const res: Response = await doFetch(url, { headers: authHeaders });
+            let res: Response;
+            try {
+                res = await doFetch(url, { headers: authHeaders });
+            } catch (err) {
+                // A thrown auth error on the FIRST page is ambiguous between "the
+                // credential is bad" and "this tenant cannot serve signInActivity".
+                // Retrying without the premium field disambiguates: a genuinely bad
+                // credential throws again on the retry and propagates untouched, so
+                // the connection is still marked. Only 4xx is retried — a 5xx or a
+                // network throw is not a permissions answer.
+                const status = err instanceof IntegrationTerminalError ? err.status : 0;
+                if (isPremiumFieldRefusal(status)) {
+                    url = dropSignInActivity(status);
+                    continue;
+                }
+                throw err;
+            }
             if (!res.ok) {
-                if (first && select === USER_SELECT_FULL) {
-                    // Retry the whole enumeration without signInActivity.
-                    logger.warn('Entra users fetch with signInActivity failed; retrying without last-sign-in (needs AuditLog.Read.All + premium)', {
-                        component: 'integration-entra-id',
-                        status: res.status,
-                    });
-                    select = USER_SELECT_BASE;
-                    url = `${GRAPH_BASE}/users?$top=${PAGE_SIZE}&$select=${select}`;
+                if (isPremiumFieldRefusal(res.status)) {
+                    url = dropSignInActivity(res.status);
                     continue;
                 }
                 throw new Error(`Entra users fetch failed (HTTP ${res.status})`);
