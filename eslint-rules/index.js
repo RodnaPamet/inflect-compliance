@@ -52,6 +52,7 @@ module.exports = {
         version: '1.0.0',
     },
     rules: {
+        'no-request-derived-public-url': require('./rules/no-request-derived-public-url'),
         'no-fail-open-teardown-filter': noFailOpenTeardownFilter,
     },
 };

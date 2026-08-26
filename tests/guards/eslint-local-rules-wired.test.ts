@@ -20,7 +20,10 @@ const ROOT = path.resolve(__dirname, '../..');
 const CONFIG = path.join(ROOT, 'eslint.config.mjs');
 
 /** Rules the local plugin ships, each of which must be wired at `error`. */
-const LOCAL_RULES = ['no-fail-open-teardown-filter'] as const;
+const LOCAL_RULES = [
+    'no-fail-open-teardown-filter',
+    'no-request-derived-public-url',
+] as const;
 
 describe('local ESLint rules are wired at error', () => {
     const config = fs.readFileSync(CONFIG, 'utf8');

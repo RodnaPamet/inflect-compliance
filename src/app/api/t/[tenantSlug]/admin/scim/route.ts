@@ -14,6 +14,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import prisma from '@/lib/prisma';
 import { jsonResponse } from '@/lib/api-response';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
 
 /**
  * GET — list SCIM tokens for tenant (admin.scim only).
@@ -34,7 +35,7 @@ export const GET = withApiErrorHandling(
         });
 
         // Also return the SCIM endpoint base URL for admin visibility
-        const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+        const baseUrl = publicBaseUrl(req);
 
         return jsonResponse({
             tokens,

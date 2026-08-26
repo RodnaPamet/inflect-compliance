@@ -21,6 +21,7 @@ import {
 } from '@/app-layer/usecases/integrations';
 import { registry } from '@/app-layer/integrations/registry';
 import { jsonResponse } from '@/lib/api-response';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
 
 /**
  * GET — list all integration connections for this tenant.
@@ -32,7 +33,7 @@ export const GET = withApiErrorHandling(
     const connections = await listIntegrationConnections(ctx) as Array<Record<string, unknown>>;
 
     // Build webhook endpoint URL for display
-    const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+    const baseUrl = publicBaseUrl(req);
 
     return jsonResponse({
         connections: connections.map((c: Record<string, unknown>) => ({

@@ -7,8 +7,8 @@ import {
     encodeSamlRelayState,
 } from '@/lib/security/saml-client';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
-import { env } from '@/env';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
 import {
     badRequest,
     notFound,
@@ -92,7 +92,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     }
 
     // ── Build SAML instance ──
-    const baseUrl = env.APP_URL || req.nextUrl.origin;
+    const baseUrl = publicBaseUrl(req);
     const callbackUrl = `${baseUrl}/api/auth/sso/saml/callback`;
     const spIssuer = `${baseUrl}/saml/metadata/${tenant.slug}`;
 

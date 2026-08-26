@@ -95,6 +95,10 @@ const config = [
             // is one `if (…)`, and a warning would not fail CI anyway
             // (`npm run lint` passes no --max-warnings).
             'local/no-fail-open-teardown-filter': 'error',
+            // Externally-published URLs come from publicBaseUrl(), never the
+            // request — behind a proxy `nextUrl.host` is the internal bind
+            // address, which shipped as 0.0.0.0:3000 in production webhook URLs.
+            'local/no-request-derived-public-url': 'error',
             '@typescript-eslint/no-explicit-any': 'warn',
             '@typescript-eslint/ban-ts-comment': [
                 'warn',
