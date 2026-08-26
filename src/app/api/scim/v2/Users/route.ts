@@ -11,11 +11,12 @@ import { authenticateScimRequest, ScimAuthError } from '@/lib/scim/auth';
 import { scimError, scimListResponse } from '@/lib/scim/types';
 import { scimListUsers, scimCreateUser, type ScimCreateUserInput } from '@/app-layer/usecases/scim-users';
 import { jsonResponse } from '@/lib/api-response';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
 
 export async function GET(req: NextRequest) {
     try {
         const ctx = await authenticateScimRequest(req);
-        const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+        const baseUrl = publicBaseUrl(req);
 
         const startIndex = parseInt(req.nextUrl.searchParams.get('startIndex') || '1', 10);
         const count = parseInt(req.nextUrl.searchParams.get('count') || '100', 10);
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     try {
         const ctx = await authenticateScimRequest(req);
-        const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+        const baseUrl = publicBaseUrl(req);
 
         const body = await req.json() as ScimCreateUserInput;
 

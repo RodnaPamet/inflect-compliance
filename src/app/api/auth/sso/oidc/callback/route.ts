@@ -14,6 +14,7 @@ import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { env } from '@/env';
 import jwt from 'jsonwebtoken';
 import { sanitizeRedirectPath } from '@/lib/auth/guard';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Exchange code for tokens ──
-    const baseUrl = env.APP_URL || req.nextUrl.origin;
+    const baseUrl = publicBaseUrl(req);
     const callbackUrl = `${baseUrl}/api/auth/sso/oidc/callback`;
 
     let tokens;
@@ -274,7 +275,10 @@ function redirectToLogin(
     errorCode: string,
     errorMessage?: string
 ): NextResponse {
-    const loginUrl = new URL('/login', req.nextUrl.origin);
+    // publicBaseUrl, not req.nextUrl.origin: this becomes a Location
+        // header, and behind the proxy the request origin is the app's
+        // internal bind address — the browser cannot follow it.
+        const loginUrl = new URL('/login', publicBaseUrl(req));
     loginUrl.searchParams.set('error', errorCode);
     if (errorMessage) {
         loginUrl.searchParams.set('error_description', errorMessage);

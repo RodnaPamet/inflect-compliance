@@ -19,6 +19,7 @@ import {
     type ScimCreateUserInput,
 } from '@/app-layer/usecases/scim-users';
 import { jsonResponse } from '@/lib/api-response';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest, props: RouteContext) {
     const params = await props.params;
     try {
         const ctx = await authenticateScimRequest(req);
-        const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+        const baseUrl = publicBaseUrl(req);
 
         const user = await scimGetUser(ctx, params.id, baseUrl);
         if (!user) {
@@ -51,7 +52,7 @@ export async function PATCH(req: NextRequest, props: RouteContext) {
     const params = await props.params;
     try {
         const ctx = await authenticateScimRequest(req);
-        const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+        const baseUrl = publicBaseUrl(req);
 
         const body = await req.json() as ScimPatchOp;
 
@@ -85,7 +86,7 @@ export async function PUT(req: NextRequest, props: RouteContext) {
     const params = await props.params;
     try {
         const ctx = await authenticateScimRequest(req);
-        const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+        const baseUrl = publicBaseUrl(req);
 
         const body = await req.json() as ScimCreateUserInput;
 
