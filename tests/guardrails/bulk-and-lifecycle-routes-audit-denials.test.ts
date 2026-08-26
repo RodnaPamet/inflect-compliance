@@ -95,6 +95,14 @@ const GATED: Record<string, string> = {
 const GATED_MULTI: Record<string, readonly string[]> = {
     'policies/bulk/delete/route.ts': ['admin.manage', 'policies.edit'],
     'policies/bulk/archive/route.ts': ['admin.manage', 'policies.edit'],
+    // The SINGLE-policy archive, added in the #2117 second tranche. It runs
+    // the same `assertCanAdminPolicies` as its bulk twin and had no route gate
+    // at all, so "archive one at a time" was the same action with its refusal
+    // unrecorded. Two keys for the same conjunction reason as the bulk pair —
+    // note this is why it lives HERE and not beside `policies/[id]/purge` in
+    // GATED, which takes admin.manage alone because purgeEntity never reaches
+    // assertCanAdminPolicies.
+    'policies/[id]/archive/route.ts': ['admin.manage', 'policies.edit'],
 };
 
 describe('bulk + lifecycle routes gate at the permission layer', () => {

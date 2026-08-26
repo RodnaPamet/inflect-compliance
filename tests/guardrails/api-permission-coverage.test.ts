@@ -223,6 +223,29 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/tasks/bulk/delete',
         why: 'Bulk delete of the task register — admin.manage. This one already had a gate; it declared tasks.edit while the usecase asserted canAdmin, so the denial it existed to log was the one it let through.',
     },
+    // ── Destructive register verbs, second tranche (#2117) ──────────
+    // The single-entity half: per-record destruction and credential
+    // revocation, same defect and same leaf-root discipline as above.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/vendors/[vendorId]/documents/[docId]',
+        why: 'Removing a vendor due-diligence artefact — vendors.edit, the exact flag assertCanManageVendorDocs reads. The root also covers the extract/ POST beneath it, which already declared vendors.edit; the documents/ COLLECTION route one level up (list + upload) is NOT in scope and stays on usecase-layer authorization.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/vendors/[vendorId]/links/[linkId]',
+        why: 'Detaching a vendor from a control / risk / asset — vendors.edit, the exact flag assertCanManageVendors reads. Narrow leaf root: the links/ collection route (list + create) is not destructive and is not in scope.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/vendor-assessment-reviews/[assessmentId]/revoke',
+        why: 'Killing a leaked external respondent link — vendors.edit, the exact flag assertCanRunAssessment reads. Narrow leaf root: the close/reminder/resend/review siblings are ordinary assessment workflow and were not triaged in this tranche.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/policies/[id]/archive',
+        why: 'Archiving one policy — admin.manage + policies.edit, the two halves of assertCanAdminPolicies, matching the already-in-scope policies/bulk/archive. Narrow leaf root, like its purge/restore siblings above.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/loss-events/[id]',
+        why: 'Soft-delete of a recorded loss actual — admin.manage, matching the assertCanAdmin in deleteLossEvent (actuals are evidence). Narrow leaf root: the collection and aggregate routes are reads and are not in scope.',
+    },
 ];
 
 /**
