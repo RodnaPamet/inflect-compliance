@@ -19,6 +19,12 @@
  * pinned to exactly `patch-package` (locked by
  * tests/e2e/csp-nonce-coverage.spec.ts).
  *
+ * Because the re-vendor is manual, forgetting it is the default
+ * failure — and it happened, for two months and six bumps (#2125).
+ * tests/guardrails/vendored-swagger-ui-matches-dependency.test.ts now
+ * fails CI whenever `public/swagger-ui/` is not byte-identical to the
+ * installed `swagger-ui-dist`, and tells you to run this script.
+ *
  * Plain Node (`.js`, CommonJS — package.json has no `"type"`), not tsx,
  * so it runs with the always-present `node`. If `swagger-ui-dist` isn't
  * installed (e.g. a production `--omit=dev` tree) it SKIPS cleanly.
@@ -36,16 +42,33 @@ const ASSETS = [
 
 function main() {
     const repoRoot = path.resolve(__dirname, '..');
-    const srcDir = path.join(repoRoot, 'node_modules', 'swagger-ui-dist');
     const destDir = path.join(repoRoot, 'public', 'swagger-ui');
 
-    if (!fs.existsSync(srcDir)) {
-        // Production install (--omit=dev) or a checkout without deps.
-        // /api/docs is 404 in production, so this is a no-op, not an error.
-        console.log(
-            '[copy-swagger-ui] swagger-ui-dist not installed — skipping ' +
-                '(expected in production --omit=dev installs).',
+    // Resolve the same way the guard does, rather than hard-coding
+    // `<repoRoot>/node_modules`. This repo is routinely checked out into
+    // `.claude/worktrees/<id>/`, where the install lives further up the tree —
+    // a hard-coded path misses it there, so the guard would report drift while
+    // the command it names to fix that drift silently did nothing.
+    let srcDir = null;
+    try {
+        srcDir = path.dirname(require.resolve('swagger-ui-dist/package.json'));
+    } catch {
+        srcDir = null;
+    }
+
+    if (srcDir === null || !fs.existsSync(srcDir)) {
+        // This script has exactly one caller: `npm run swagger-ui:vendor`, run
+        // deliberately. It is NOT a postinstall hook, so there is no
+        // production `--omit=dev` path through here. Somebody asked for a
+        // re-vendor and we cannot do it — exiting 0 would report success for
+        // work that did not happen, and the guard would keep failing while the
+        // fix appeared to run cleanly.
+        console.error(
+            '[copy-swagger-ui] swagger-ui-dist is not installed, so there is ' +
+                'nothing to vendor from. Run `npm ci` (it is a devDependency) ' +
+                'and try again.',
         );
+        process.exitCode = 1;
         return;
     }
 

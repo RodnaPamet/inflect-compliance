@@ -36,9 +36,16 @@
 import { NextResponse } from 'next/server';
 import { withApiErrorHandling } from '@/lib/errors/api';
 
-// Pinned to the `swagger-ui-dist` devDependency version. The assets are
-// served from `/swagger-ui/` (vendored into public/ by postinstall),
-// NOT from a CDN — keep this in sync with package.json if bumped.
+// Served from `/swagger-ui/`, NOT from a CDN. The files are COMMITTED
+// under `public/swagger-ui/` and re-vendored MANUALLY with
+// `npm run swagger-ui:vendor` after a `swagger-ui-dist` bump —
+// `postinstall` is pinned to exactly `patch-package`, so nothing
+// regenerates them on install or build.
+//
+// "Keep it in sync" is enforced, not requested:
+// tests/guardrails/vendored-swagger-ui-matches-dependency.test.ts fails
+// when these bytes are not the declared version's bytes. It went two
+// months and six bumps unnoticed before that guard existed (#2125).
 const SWAGGER_CSS = '/swagger-ui/swagger-ui.css';
 const SWAGGER_JS = '/swagger-ui/swagger-ui-bundle.js';
 const SWAGGER_PRESET_JS = '/swagger-ui/swagger-ui-standalone-preset.js';
