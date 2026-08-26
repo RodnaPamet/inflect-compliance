@@ -41,7 +41,7 @@ export function publicBaseUrl(req: Pick<NextRequest, 'nextUrl'>): string {
         return configured.replace(/\/+$/, '');
     }
 
-    if (process.env.NODE_ENV === 'production') {
+    if (env.NODE_ENV === 'production') {
         // Not fatal — refusing to serve the page would be a worse failure than
         // showing a host the operator can recognise as wrong. But it is never
         // correct in production, so it should be findable in the logs rather

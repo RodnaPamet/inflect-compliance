@@ -10,7 +10,7 @@
  */
 import type { NextRequest } from 'next/server';
 
-const mockEnv: { APP_URL?: string } = {};
+const mockEnv: { APP_URL?: string; NODE_ENV?: string } = {};
 jest.mock('@/env', () => ({
     get env() {
         return mockEnv;
@@ -35,14 +35,10 @@ const behindProxy = (): Pick<NextRequest, 'nextUrl'> =>
     >;
 
 describe('publicBaseUrl', () => {
-    const originalNodeEnv = process.env.NODE_ENV;
-
     beforeEach(() => {
         delete mockEnv.APP_URL;
+        mockEnv.NODE_ENV = 'test';
         warn.mockClear();
-    });
-    afterEach(() => {
-        Object.defineProperty(process.env, 'NODE_ENV', { value: originalNodeEnv, configurable: true });
     });
 
     it('uses APP_URL, not the proxied request host — the reported bug', () => {
@@ -70,14 +66,14 @@ describe('publicBaseUrl', () => {
     });
 
     it('warns when it has to fall back in production', () => {
-        Object.defineProperty(process.env, 'NODE_ENV', { value: 'production', configurable: true });
+        mockEnv.NODE_ENV = 'production';
         publicBaseUrl(behindProxy());
         expect(warn).toHaveBeenCalledTimes(1);
         expect(String(warn.mock.calls[0]?.[0])).toMatch(/APP_URL is unset in production/);
     });
 
     it('does not warn when APP_URL is set in production', () => {
-        Object.defineProperty(process.env, 'NODE_ENV', { value: 'production', configurable: true });
+        mockEnv.NODE_ENV = 'production';
         mockEnv.APP_URL = 'https://app.inflect.bg';
         publicBaseUrl(behindProxy());
         expect(warn).not.toHaveBeenCalled();
