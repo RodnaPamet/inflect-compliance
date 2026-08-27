@@ -76,7 +76,7 @@ than an instruction it cannot follow.
 | `src/app-layer/usecases/identity-disable-account.ts` | `DecisionBasis` + `DisableResult.basis`; `DisableAccountInput` carries `onPremStateObservedAt` (the timestamp) instead of a pre-collapsed boolean; tail extracted to `decideWithTarget` so the basis has one merge point |
 | `src/app-layer/usecases/identity-leaver-pass.ts` | the basis rides into `resultJson.decisions[]`, deliberately unscrubbed |
 | `src/lib/observability/integration-metrics.ts` | the `REFUSED_TARGET` on-call prose now describes three meanings, not two |
-| `src/app/t/[tenantSlug]/(app)/admin/identity-leaver-passes/LeaverPassesClient.tsx` | the "Basis" column, tone-separated, degrading to `—` for pre-basis rows |
+| `src/app/t/[tenantSlug]/(app)/admin/identity-leaver-passes/LeaverPassesClient.tsx` | the "Basis" column — quiet text beside the loud outcome badge, degrading to `—` for pre-basis rows |
 | `messages/{en,bg}.json` | nine `admin.leaverPasses.basis*` keys |
 
 ## Decisions
@@ -130,10 +130,16 @@ than an instruction it cannot follow.
   where a Json column accepts an object literal and rejects the identical value
   once a helper widens it.
 
-- **The verdict is not relabelled.** The decisions table still renders the raw
-  `DisableOutcome` (`DRY_RUN`, `REFUSED_TARGET`). The basis is a new column beside
-  it rather than a rewrite of the outcome or of the pass's own authored sentence —
-  the page keeps rendering what the pass said, and adds what it knew.
+- **The verdict is not relabelled, and the basis does not compete with it.** The
+  decisions table still renders the raw `DisableOutcome` (`DRY_RUN`,
+  `REFUSED_TARGET`). The basis is a new column beside it rather than a rewrite of
+  the outcome or of the pass's own authored sentence — the page keeps rendering
+  what the pass said and adds what it knew. It renders as quiet TEXT, not a second
+  `<StatusBadge>`: the outcome is the row's one loud signal, and a pill beside a
+  pill reads as two competing alarms with neither winning. The labels carry the
+  whole distinction anyway — "awaiting the next sync" and "reports no on-premises
+  state" are not two shades of one word. `tests/guards/badge-density.test.ts`
+  caught the first draft, which used a badge and pushed the file from 4 to 5.
 
 - **Not display-only.** Worth stating because it was the first hypothesis: the UI
   *does* already render `reason` verbatim, so if the reason had varied per rule this

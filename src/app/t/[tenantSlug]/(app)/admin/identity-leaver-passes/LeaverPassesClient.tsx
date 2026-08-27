@@ -154,21 +154,6 @@ const BASIS_LABEL: Record<string, string> = {
     UNSUPPORTED_DIRECTORY: 'basisUnsupportedDirectory',
 };
 
-/**
- * The two REFUSED bases an operator must not confuse.
- *
- * `NEVER_OBSERVED` clears itself overnight — the un-backfilled #2144 migration
- * guarantees a population of them for one sync cycle, and the response is to
- * wait. `PROVIDER_CANNOT_OBSERVE` never clears. Toned apart so the difference
- * survives a scan of seven days of passes: warning is "come back tomorrow",
- * neutral is "there is nothing to come back for".
- */
-const BASIS_VARIANT: Record<string, StatusBadgeVariant> = {
-    NEVER_OBSERVED: 'warning',
-    PROVIDER_CANNOT_OBSERVE: 'neutral',
-    ON_PREM_MASTERED: 'warning',
-};
-
 /** Narrow the Json column without trusting it. */
 function readResult(value: unknown): PassResult {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -294,6 +279,14 @@ export function LeaverPassesClient() {
         {
             id: 'basis',
             header: t('leaverPasses.colBasis'),
+            // TEXT, NOT A BADGE, and that is a decision rather than an omission.
+            // The outcome beside it is this row's ONE loud signal; a second pill
+            // next to it reads as a competing alarm and neither wins the eye.
+            // The basis is a qualifier ON that verdict — "would disable, BECAUSE
+            // the directory answered" — so it belongs in the row's quiet
+            // register. The labels carry the whole distinction on their own:
+            // "awaiting the next sync" and "reports no on-premises state" are
+            // not two shades of one word.
             cell: ({ row }) => {
                 const basis = readBasis(row.original.basis);
                 // An older row genuinely recorded no basis. Say so with the same
@@ -303,12 +296,14 @@ export function LeaverPassesClient() {
                 if (!basis?.rule) return <span className="text-content-subtle">—</span>;
                 const key = BASIS_LABEL[basis.rule];
                 return (
-                    <span className="inline-flex flex-wrap items-center gap-tight">
-                        <StatusBadge variant={BASIS_VARIANT[basis.rule] ?? 'info'} size="sm">
-                            {key ? t(`leaverPasses.${key}`) : basis.rule}
-                        </StatusBadge>
+                    <span className="inline-flex flex-wrap items-center gap-tight text-content-muted">
+                        {/* Its own element, not concatenated with the date: the
+                            rule is the fact a reader scans for, and a label
+                            fused to a timestamp is neither scannable nor
+                            addressable by a test. */}
+                        <span>{key ? t(`leaverPasses.${key}`) : basis.rule}</span>
                         {basis.observedAt && (
-                            <span className="text-content-muted tabular-nums">
+                            <span className="tabular-nums">
                                 {t('leaverPasses.basisObserved', {
                                     when: formatDateTime(basis.observedAt),
                                 })}
