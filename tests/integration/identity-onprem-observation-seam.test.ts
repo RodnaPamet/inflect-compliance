@@ -29,8 +29,10 @@
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { findLeaverCandidates } from '@/app-layer/usecases/identity-disable-account';
-import { disableAccount } from '@/app-layer/usecases/identity-disable-account';
-import type { DirectoryWriter } from '@/app-layer/integrations/identity-writer-factory';
+import {
+    disableAccount,
+    type DirectoryWriter,
+} from '@/app-layer/usecases/identity-disable-account';
 
 /**
  * A writer that FAILS if anything asks it to write.
