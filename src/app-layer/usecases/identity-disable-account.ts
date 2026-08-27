@@ -190,6 +190,8 @@ export interface DisableAccountInput {
      */
     readonly email?: string | null;
     readonly onPremisesSyncEnabled: boolean | null;
+    /** Whether a sync actually answered the field above — see resolveWriteTarget. */
+    readonly onPremStateObserved?: boolean;
     /**
      * Break-glass / service account, excluded from automated offboarding.
      *
@@ -390,6 +392,7 @@ async function decideAndDisable(
     const target = resolveWriteTarget({
         provider: writer.provider,
         onPremisesSyncEnabled: input.onPremisesSyncEnabled,
+        onPremStateObserved: input.onPremStateObserved,
     });
 
     // ── 3. Read the current state. First network call, the capture, and now
@@ -769,6 +772,7 @@ export async function findLeaverCandidates(
                         email: true,
                         isProtected: true,
                         onPremisesSyncEnabled: true,
+                        onPremStateObservedAt: true,
                     },
                 },
             },
@@ -784,6 +788,16 @@ export async function findLeaverCandidates(
             // needing a hidden lookup to explain it.
             isProtected: r.connectedAccount.isProtected,
             onPremisesSyncEnabled: r.connectedAccount.onPremisesSyncEnabled,
+            // A timestamp on the row IS the observation; the rail only needs
+            // whether one exists, not when.
+            //
+            // `Boolean(...)`, NOT `!== null`. The strict form reads `undefined`
+            // as observed — and `undefined` is what an unselected column or a
+            // row shape that predates it produces, so the mistake fails OPEN on
+            // a rail whose entire job is to fail closed. A unit test caught it
+            // on a fixture with the field absent; production would have caught
+            // it by disabling something.
+            onPremStateObserved: Boolean(r.connectedAccount.onPremStateObservedAt),
         }));
     });
 }

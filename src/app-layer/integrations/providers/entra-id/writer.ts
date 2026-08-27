@@ -276,7 +276,14 @@ function scrubbedUrl(url: string): string {
  * knowing whether the writer of that era selected the field at all. So the
  * capture says which schema and which `$select` produced it.
  */
-const CAPTURE_SCHEMA = 'entra-id/disable-account/v1';
+// v2 adds `onPremStateObserved`. Bumped rather than left at v1 because leaving
+// it produces two different captures under one stamp — an absent key meaning
+// "the writer of that era did not record it" in older rows and "Graph did not
+// answer" in newer ones. That is precisely the ambiguity the whole docblock
+// above exists to prevent, and it is cheap to avoid now and unrecoverable
+// later: journal rows are immutable, so a reader six months from now would
+// have no way to date the shape.
+const CAPTURE_SCHEMA = 'entra-id/disable-account/v2';
 
 /** What Graph hands back for the fields we ask for. */
 interface GraphWriteUser {
@@ -900,6 +907,20 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                 // distinct from "Graph said false".
                 onPremisesSyncEnabled: user.onPremisesSyncEnabled ?? null,
 
+                // …and the line above cannot, on its own, tell "Graph omitted
+                // it" from "Graph said null", because `?? null` makes them one
+                // value. That difference decides whether the write may land:
+                // Graph's contract is `true` when the object is synced from an
+                // on-premises AD and "otherwise the user isn't being synced and
+                // can be managed in Microsoft Entra ID", so a null it actually
+                // SENT is that "otherwise" — while an absent property is the
+                // absence of an answer.
+                //
+                // Recorded rather than derived later, for the reason the
+                // capture comment above already gives: a reader months from now
+                // cannot recover it from the stored JSON.
+                onPremStateObserved: user.onPremisesSyncEnabled !== undefined,
+
                 // Deliberately narrow. `priorStateJson` is NOT in the field
                 // encryption manifest (`IdentityWriteJournal: ['detail']`), so
                 // this is a plaintext column — dumping the whole Graph user here
@@ -992,7 +1013,17 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                 { definitivelyNotApplied: true },
             );
         }
-        if (onPrem !== false) {
+        // `=== false` was the previous test here, and it refused a null Graph
+        // had actually SENT — which is the ordinary, permanent state of every
+        // user in a cloud-only tenant. That made the live path inert for those
+        // directories while the snapshot writer used in DRY_RUN, which never
+        // reaches this check, happily reported "would disable" for the same
+        // accounts. A dry run that disagrees with the live path is worse than
+        // one that refuses: the seven-day observation window exists precisely
+        // to let an operator compare the two.
+        //
+        // So the test is now on the ANSWER, not on the literal value.
+        if (prior.priorState.onPremStateObserved !== true) {
             throw new DirectoryWriteError(
                 `Refusing to disable account ${id}: its on-premises sync state was not observed on the read ` +
                     `taken just now. Unknown is not the same as cloud-only, and the two differ exactly where ` +

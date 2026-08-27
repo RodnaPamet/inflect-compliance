@@ -199,10 +199,21 @@ export function recordCalendarConsentRevoked(attrs: { provider: string }): void 
  *
  * `outcome` carries every refusal distinctly rather than collapsing them,
  * because an operator's next action differs for each: REFUSED_MODE is normal
- * for a tenant still climbing the ladder, REFUSED_TARGET means a hybrid account
- * needs the LDAPS connector, REFUSED_PROTECTED on any volume means the roster
- * is naming service accounts, and INDETERMINATE means somebody must go and look
- * at the directory.
+ * for a tenant still climbing the ladder, REFUSED_TARGET has TWO meanings (see
+ * below), REFUSED_PROTECTED on any volume means the roster is naming service
+ * accounts, and INDETERMINATE means somebody must go and look at the directory.
+ *
+ * REFUSED_TARGET — READ THE REASON, NOT JUST THE COUNT. It covers two
+ * situations with opposite responses:
+ *   • "…mastered on-premises…" — a hybrid account. Disable it in AD; the LDAPS
+ *     connector is what you want. This is the durable meaning.
+ *   • "…was never observed…" — nobody has recorded whether the directory
+ *     answered the on-premises question for that account. The response is to
+ *     WAIT for the nightly sync, not to wire anything up.
+ * The second dominates for one deploy cycle after the onPremStateObservedAt
+ * migration, which deliberately did not backfill: every pre-existing row refuses
+ * that way until its next sync stamps it. Paging on the count alone during that
+ * window sends someone to configure a connector they do not need.
  *
  * ALERT ON — even one INDETERMINATE, and REFUSED_PROTECTED above single
  * figures.

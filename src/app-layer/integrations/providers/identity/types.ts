@@ -45,6 +45,20 @@ export interface NormalizedIdentityAccount {
      * says the leaver was disabled.
      */
     onPremisesSyncEnabled: boolean | null;
+    /**
+     * Whether the provider ACTUALLY ASKED and got an answer for the field
+     * above — as opposed to being unable to determine it.
+     *
+     * Without this the two meanings of `null` are the same value, and the
+     * write-target rail has to refuse both. Graph returns null for a user that
+     * is not synced from on-premises, which is every user in a cloud-only
+     * tenant; Okta and Google Workspace return null because they genuinely
+     * cannot answer. Only the first is safe to write against.
+     *
+     * Default false — absent means NOT observed, so a provider that says
+     * nothing keeps the conservative behaviour it had.
+     */
+    onPremStateObserved?: boolean;
     /** Group / role names. */
     groups: string[];
     lastActiveAt?: Date | null;

@@ -124,6 +124,35 @@ describe('runIdentitySync', () => {
         expect(call.update.connectionId).toBe('conn-1');
     });
 
+    it('writes the observation stamp as a PAIR with the value, on BOTH arms', async () => {
+        // `onPremStateObservedAt` is the only thing separating "the directory
+        // answered null" from "nobody asked", and the write-target rail acts on
+        // that difference. Both arms matter and neither fails loudly if dropped:
+        // Prisma's explicit field lists mean an omission here is silent, and the
+        // one in `update` is the nastier half — it would leave a STALE stamp
+        // beside a freshly-refreshed value, which is exactly the lie the rail
+        // would then act on.
+        const provider = stubProvider([{ ...acct('a'), onPremStateObserved: true }]);
+        await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        const call = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+        expect(call.create.onPremStateObservedAt).toEqual(NOW);
+        expect(call.update.onPremStateObservedAt).toEqual(NOW);
+    });
+
+    it('CLEARS the stamp when the provider did not answer, rather than leaving it stale', async () => {
+        // The failure this prevents: a provider stops answering (a $select is
+        // trimmed, a permission is lost), the value goes null-because-unasked,
+        // and a surviving stamp from an earlier pass tells the rail the null was
+        // observed. It would then allow a disable on an observation nobody made.
+        const provider = stubProvider([acct('a')]); // no onPremStateObserved
+        await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        const call = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+        expect(call.create.onPremStateObservedAt).toBeNull();
+        expect(call.update.onPremStateObservedAt).toBeNull();
+    });
+
     it('H3 — a PARTIAL (truncated) enumeration does NOT deprovision and marks ERROR', async () => {
         // Directory larger than the cap: complete=false. Accounts past the cap
         // weren't observed, so deprovisioning "everything not seen" would be

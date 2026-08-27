@@ -194,6 +194,12 @@ export async function runIdentitySync(input: {
                     // No `?? false` — nullable in the column too, because
                     // "unknown" must not read as "safe to disable here".
                     onPremisesSyncEnabled: a.onPremisesSyncEnabled,
+                    // Written as a PAIR with the line above, always from the
+                    // same pass. `null` when the provider did not answer, so
+                    // the value and the claim to have observed it can never
+                    // describe different syncs — a stale stamp beside a fresh
+                    // unknown would be a lie the rail would act on.
+                    onPremStateObservedAt: a.onPremStateObserved ? now : null,
                     groupsJson: a.groups,
                     lastActiveAt: a.lastActiveAt ?? null,
                     syncedAt: now,
@@ -226,6 +232,12 @@ export async function runIdentitySync(input: {
                     // No `?? false` — nullable in the column too, because
                     // "unknown" must not read as "safe to disable here".
                     onPremisesSyncEnabled: a.onPremisesSyncEnabled,
+                    // Written as a PAIR with the line above, always from the
+                    // same pass. `null` when the provider did not answer, so
+                    // the value and the claim to have observed it can never
+                    // describe different syncs — a stale stamp beside a fresh
+                    // unknown would be a lie the rail would act on.
+                    onPremStateObservedAt: a.onPremStateObserved ? now : null,
                     groupsJson: a.groups,
                     lastActiveAt: a.lastActiveAt ?? null,
                     syncedAt: now,

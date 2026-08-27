@@ -32,6 +32,26 @@ model ConnectedIdentityAccount {
   /// Nullable rather than defaulted false: "we do not know" and "cloud-only" are
   /// different answers, and only one of them is safe to write against.
   onPremisesSyncEnabled Boolean?
+  /// WHEN a provider last actually ANSWERED the question above — not when it was
+  /// last written. This exists because `onPremisesSyncEnabled` alone cannot say
+  /// which of two very different things a NULL means:
+  ///
+  ///   • the directory told us "this user is not being synced from on-premises"
+  ///     — an observation, and the ordinary permanent state of every user in a
+  ///     cloud-only Entra tenant; or
+  ///   • nobody asked, or the provider cannot answer (Okta and Google Workspace
+  ///     hardcode null for exactly that reason).
+  ///
+  /// The column above says "we do not know and cloud-only are different
+  /// answers"; without this one they were the same value, so the write-target
+  /// rail refused both. Measured on the first real Entra tenant: 10 of 10
+  /// accounts came back NULL from a fully-consented, completed sync, so the
+  /// leaver path was permanently inert for cloud-only directories.
+  ///
+  /// Set ONLY by a provider that genuinely selected the field and received an
+  /// answer. Never backfilled: an observation is recorded by the code that
+  /// observed it, not asserted retroactively over rows nobody watched.
+  onPremStateObservedAt DateTime?
   /// The connection whose sync observed this account.
   ///
   /// One tenant may hold SEVERAL connections for one provider — IntegrationConnection
