@@ -50,7 +50,7 @@ import { seedDefaultOrgDashboard } from './org-dashboard-presets';
 
 // ─── Permission helpers ────────────────────────────────────────────────
 
-function assertCanRead(ctx: OrgContext): void {
+function assertCanReadOrgWidgets(ctx: OrgContext): void {
     if (!ctx.permissions.canViewPortfolio) {
         throw forbidden(
             'You do not have permission to view dashboard widgets for this organization',
@@ -58,7 +58,7 @@ function assertCanRead(ctx: OrgContext): void {
     }
 }
 
-function assertCanWrite(ctx: OrgContext): void {
+function assertCanWriteOrgWidgets(ctx: OrgContext): void {
     if (!ctx.permissions.canConfigureDashboard) {
         throw forbidden(
             'You do not have permission to configure dashboard widgets for this organization',
@@ -113,7 +113,7 @@ function rowToDto(row: WidgetRow): OrgDashboardWidgetDto {
 export async function listOrgDashboardWidgets(
     ctx: OrgContext,
 ): Promise<OrgDashboardWidgetDto[]> {
-    assertCanRead(ctx);
+    assertCanReadOrgWidgets(ctx);
 
     const rows = await prisma.orgDashboardWidget.findMany({
         where: { organizationId: ctx.organizationId },
@@ -128,7 +128,7 @@ export async function createOrgDashboardWidget(
     ctx: OrgContext,
     input: CreateOrgDashboardWidgetInput,
 ): Promise<OrgDashboardWidgetDto> {
-    assertCanWrite(ctx);
+    assertCanWriteOrgWidgets(ctx);
 
     const row = await prisma.orgDashboardWidget.create({
         data: {
@@ -170,7 +170,7 @@ export async function updateOrgDashboardWidget(
     widgetId: string,
     input: UpdateOrgDashboardWidgetInput,
 ): Promise<OrgDashboardWidgetDto> {
-    assertCanWrite(ctx);
+    assertCanWriteOrgWidgets(ctx);
 
     const existing = await prisma.orgDashboardWidget.findFirst({
         where: { id: widgetId, organizationId: ctx.organizationId },
@@ -219,7 +219,7 @@ export async function deleteOrgDashboardWidget(
     ctx: OrgContext,
     widgetId: string,
 ): Promise<{ deleted: true; id: string }> {
-    assertCanWrite(ctx);
+    assertCanWriteOrgWidgets(ctx);
 
     // updateMany / deleteMany would scope on organizationId without a
     // pre-fetch; we use deleteMany to keep the cross-org-id case as a
@@ -255,7 +255,7 @@ export async function deleteOrgDashboardWidget(
 export async function resetOrgDashboardToPreset(
     ctx: OrgContext,
 ): Promise<OrgDashboardWidgetDto[]> {
-    assertCanWrite(ctx);
+    assertCanWriteOrgWidgets(ctx);
 
     await prisma.$transaction(async (tx) => {
         await tx.orgDashboardWidget.deleteMany({
