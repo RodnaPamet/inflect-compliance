@@ -4,6 +4,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { updateKri, deleteKri } from '@/app-layer/usecases/key-risk-indicator';
 import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
 /** RQ-6 — single KRI: PATCH update, DELETE. */
@@ -29,11 +30,11 @@ export const PATCH = withApiErrorHandling(
     }),
 );
 
+type DeleteParams = { tenantSlug: string; kriId: string };
+
 export const DELETE = withApiErrorHandling(
-    async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; kriId: string }> }) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+    requirePermission<DeleteParams>('risks.edit', async (_req, { params }, ctx) => {
         await deleteKri(ctx, params.kriId);
         return jsonResponse({ success: true });
-    },
+    }),
 );

@@ -52,6 +52,33 @@ jest.mock('@/lib/audit', () => ({
     appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
 }));
 
+// ── Tranche 3: routes that gated on the coarse `assertCanWrite` ──
+const mockArchiveEvidence = jest.fn();
+jest.mock('@/app-layer/usecases/evidence-retention', () => ({
+    archiveEvidence: (...a: unknown[]) => mockArchiveEvidence(...a),
+}));
+const mockDeleteNode = jest.fn();
+jest.mock('@/app-layer/usecases/risk-hierarchy', () => ({
+    deleteNode: (...a: unknown[]) => mockDeleteNode(...a),
+    updateNode: jest.fn(),
+    aggregateByHierarchy: jest.fn(),
+}));
+const mockDeleteKri = jest.fn();
+jest.mock('@/app-layer/usecases/key-risk-indicator', () => ({
+    deleteKri: (...a: unknown[]) => mockDeleteKri(...a),
+    updateKri: jest.fn(),
+}));
+const mockDeleteSchedule = jest.fn();
+jest.mock('@/app-layer/usecases/risk-report', () => ({
+    deleteSchedule: (...a: unknown[]) => mockDeleteSchedule(...a),
+    updateSchedule: jest.fn(),
+}));
+const mockArchiveScenario = jest.fn();
+jest.mock('@/app-layer/usecases/risk-scenario', () => ({
+    archiveScenario: (...a: unknown[]) => mockArchiveScenario(...a),
+    getScenario: jest.fn(),
+}));
+
 const mockBulkDeleteEvidence = jest.fn();
 const mockPurgeEvidence = jest.fn();
 const mockRestoreEvidence = jest.fn();
@@ -125,6 +152,11 @@ import { makeRequestContext } from '../../helpers/make-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { assertCanAdmin } from '@/app-layer/policies/common';
 
+import { POST as evidenceArchive } from '@/app/api/t/[tenantSlug]/evidence/[id]/archive/route';
+import { DELETE as riskNodeDelete } from '@/app/api/t/[tenantSlug]/risks/hierarchy/[nodeId]/route';
+import { DELETE as kriDelete } from '@/app/api/t/[tenantSlug]/risks/kri/[kriId]/route';
+import { DELETE as scheduleDelete } from '@/app/api/t/[tenantSlug]/risks/reports/schedules/[scheduleId]/route';
+import { DELETE as scenarioDelete } from '@/app/api/t/[tenantSlug]/risks/scenarios/[scenarioId]/route';
 import { POST as evidenceBulkDelete } from '@/app/api/t/[tenantSlug]/evidence/bulk/delete/route';
 import { POST as evidencePurge } from '@/app/api/t/[tenantSlug]/evidence/[id]/purge/route';
 import { POST as evidenceRestore } from '@/app/api/t/[tenantSlug]/evidence/[id]/restore/route';
@@ -201,6 +233,15 @@ beforeEach(() => {
         mockGetTenantCtx,
         mockAppendAuditEntry,
         mockBulkDeleteEvidence,
+        // Tranche 3. NOTE this list is hand-maintained: a mock omitted here
+        // keeps calls from the previous case, and the "usecase was not
+        // reached" assertion then fails for a reason that has nothing to do
+        // with the gate under test.
+        mockArchiveEvidence,
+        mockDeleteNode,
+        mockDeleteKri,
+        mockDeleteSchedule,
+        mockArchiveScenario,
         mockPurgeEvidence,
         mockRestoreEvidence,
         mockBulkDeletePolicy,
@@ -282,6 +323,73 @@ const ROUTES: ReadonlyArray<{
     /** Role that must be refused AND recorded. Defaults to EDITOR. */
     deniedRole?: string;
 }> = [
+    // ── Tranche 3 ─────────────────────────────────────────────────────
+    // These five gated ONLY on `assertCanWrite`, which reads
+    // `permissions.canWrite` — computed from the built-in role tier alone,
+    // ignoring custom-role overrides — and writes nothing when it refuses.
+    // `deniedRole` is READER, not the table's EDITOR default: `risks.edit`
+    // and `evidence.edit` are both TRUE for EDITOR, so an EDITOR is correctly
+    // admitted here and would make a denial assertion vacuous.
+    {
+        name: 'POST /evidence/[id]/archive',
+        handler: asHandler(evidenceArchive),
+        path: '/api/t/acme/evidence/ev-1/archive',
+        params: { tenantSlug: 'acme', id: 'ev-1' },
+        key: 'evidence.edit',
+        usecase: mockArchiveEvidence,
+        forwards: ['ev-1'],
+        result: { archived: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /risks/hierarchy/[nodeId]',
+        handler: asHandler(riskNodeDelete),
+        path: '/api/t/acme/risks/hierarchy/node-1',
+        params: { tenantSlug: 'acme', nodeId: 'node-1' },
+        key: 'risks.edit',
+        usecase: mockDeleteNode,
+        forwards: ['node-1'],
+        result: { success: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /risks/kri/[kriId]',
+        handler: asHandler(kriDelete),
+        path: '/api/t/acme/risks/kri/kri-1',
+        params: { tenantSlug: 'acme', kriId: 'kri-1' },
+        key: 'risks.edit',
+        usecase: mockDeleteKri,
+        forwards: ['kri-1'],
+        result: { success: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /risks/reports/schedules/[scheduleId]',
+        handler: asHandler(scheduleDelete),
+        path: '/api/t/acme/risks/reports/schedules/sch-1',
+        params: { tenantSlug: 'acme', scheduleId: 'sch-1' },
+        key: 'risks.edit',
+        usecase: mockDeleteSchedule,
+        forwards: ['sch-1'],
+        result: { success: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /risks/scenarios/[scenarioId]',
+        handler: asHandler(scenarioDelete),
+        path: '/api/t/acme/risks/scenarios/scn-1',
+        params: { tenantSlug: 'acme', scenarioId: 'scn-1' },
+        key: 'risks.edit',
+        usecase: mockArchiveScenario,
+        forwards: ['scn-1'],
+        result: { success: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
     {
         name: 'POST /evidence/bulk/delete',
         handler: asHandler(evidenceBulkDelete),
