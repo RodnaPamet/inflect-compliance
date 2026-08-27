@@ -7,14 +7,43 @@
 #  does NOT gate on size deltas (that's a later phase); it only produces
 #  the report.
 #
-#  Runs on: push to main, and PRs labelled `perf-watch` (opt-in, so we
-#  don't pay a full analyze build on every PR).
+#  Runs ON DEMAND ONLY: `workflow_dispatch`, or a PR labelled
+#  `perf-watch`. It deliberately does NOT run on push to main.
+#
+#  WHY IT STOPPED RUNNING ON MAIN (2026-08-27). It had failed EVERY push
+#  since 2026-08-24 — eleven consecutive runs — with the analyze build
+#  OOMing before the budget gate was reached. Three fixes were tried and
+#  measured; all three are wrong:
+#
+#    • raise `--max-old-space-size` — the ceiling is PER PROCESS and
+#      `webpackBuildWorker` splits the compile in two, so 8192 already
+#      meant 16 GB nominal on a 16 GB runner;
+#    • lower it to 6144 to match ci.yml — measured on a labelled PR, still
+#      FATAL, just sooner (`Mark-Compact 5823.9 (6237.0)`). This is the
+#      loud single-heap-needs-more form, not ci.yml's over-subscription
+#      form, so ci.yml's answer does not transfer;
+#    • set `vars.LARGE_RUNNER` — ci.yml already records that it CANNOT be
+#      set: larger runners need Team/Enterprise and this org is on Free.
+#
+#  So the analyze build wants more memory in ONE process than any runner
+#  available here can give, and no setting reconciles that.
+#
+#  Why removing the trigger is the answer rather than a retreat: this job
+#  enforces NOTHING unique. The per-route First Load JS budget it runs is
+#  ALSO run by ci.yml's `Build` step on every PR, so coverage never
+#  depended on it. Its only unique product is the analyzer HTML, uploaded
+#  `if: failure()` and — in the words of the step below — "never read on a
+#  green run". Eleven red runs bought an artefact nobody wanted, from a job
+#  that gates nothing, in the one place nobody looks.
+#
+#  To get a report: run the workflow manually, or label a PR `perf-watch`.
 # ───────────────────────────────────────────────────────────────
 name: Bundle Analyze
 
 on:
-  push:
-    branches: [main]
+  # On demand. See the header for why `push: main` was removed rather than
+  # the OOM being "fixed" with a number.
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
   # Merge queue — present so this workflow can ANSWER a `merge_group`
@@ -36,16 +65,17 @@ concurrency:
 jobs:
   analyze:
     name: "Analyze client/server bundles"
-    # Push to main always; PRs only when labelled perf-watch.
+    # Manual dispatch, or a PR labelled perf-watch. No push arm — see header.
     #
     # Merge-queue lean set: SKIP. `github.event.pull_request` is undefined
     # under `merge_group`, so the label test could never be true anyway —
     # spelling the event out keeps the intent explicit rather than relying
-    # on null-propagation. Bundle size is a trend signal measured on the
-    # opted-in PR and on every push to `main`; it is not a merge-collision
-    # class, and the analyze build is a 30-min 8 GB-heap job.
+    # on null-propagation. Bundle size is a trend signal measured on
+    # the opted-in PR; the per-route BUDGET is enforced by ci.yml `Build`
+    # on every PR regardless. It is not a merge-collision class, and the
+    # analyze build is a 30-min heap-bound job.
     if: >-
-      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'perf-watch'))
     # Match the main CI Build job's runner — the analyzer build is heavier than
