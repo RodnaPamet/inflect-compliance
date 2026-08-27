@@ -116,8 +116,16 @@ describe('GUARDRAIL: org dashboard widget integrity', () => {
         it('the reset action is permission-gated (canConfigureDashboard)', () => {
             // resetOrgDashboardToPreset must assert write permission, like the
             // other widget mutations.
+            //
+            // The assert is `assertCanWriteOrgWidgets`, NOT the `assertCanWrite`
+            // exported by policies/common.ts. They are different functions over
+            // different context types — this one takes an OrgContext and reads
+            // `permissions.canConfigureDashboard`. It was renamed when a guard
+            // started refusing file-local redeclarations of the shared policy
+            // names, because a name-keyed census cannot tell the two apart and
+            // had already mis-attributed org routes as tenant-gated.
             const fn = USECASE.slice(USECASE.indexOf('resetOrgDashboardToPreset'));
-            expect(fn).toMatch(/assertCanWrite\(/);
+            expect(fn).toMatch(/assertCanWriteOrgWidgets\(/);
         });
 
         it('the reset API route exists', () => {
