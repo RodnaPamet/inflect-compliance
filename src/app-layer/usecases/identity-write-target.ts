@@ -30,6 +30,22 @@
  */
 
 /** The subset of a stored account this decision needs. */
+/**
+ * Providers whose documented contract makes a NULL mean "not synced from
+ * on-premises" rather than "no answer".
+ *
+ * Deliberately a set of one, and deliberately not inferred from the observation
+ * flag alone. A provider author adding `onPremStateObserved: true` to their
+ * normalizer — reasonably, since their API *was* asked — would otherwise
+ * silently convert "this directory cannot answer the question" into "this
+ * account is writable". The flag says we asked; this says the answer means what
+ * we think it means, and only Microsoft's is quoted in the branch below.
+ *
+ * Okta and Google Workspace hardcode null for the opposite reason: there is no
+ * on-premises concept to report. They must stay refused.
+ */
+const NULL_MEANS_NOT_SYNCED = new Set(['entra-id']);
+
 export interface WriteTargetInput {
     readonly provider: string;
     /** Observed during sync. `null` = not synced from on-prem, OR unanswered. */
@@ -95,7 +111,10 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
         };
     }
 
-    if (account.onPremisesSyncEnabled === null && !account.onPremStateObserved) {
+    const nullMeansCloudOnly =
+        NULL_MEANS_NOT_SYNCED.has(account.provider) && account.onPremStateObserved === true;
+
+    if (account.onPremisesSyncEnabled === null && !nullMeansCloudOnly) {
         return {
             allowed: false,
             reason:

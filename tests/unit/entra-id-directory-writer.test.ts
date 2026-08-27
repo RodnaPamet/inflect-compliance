@@ -682,20 +682,60 @@ describe('the on-premises flag is re-read, not trusted from the database', () =>
         expect(calls.filter(isPatch)).toHaveLength(0);
     });
 
-    it('refuses when Graph omitted the flag entirely', async () => {
+    it('refuses when Graph OMITTED the flag entirely', async () => {
+        // The property is genuinely absent — no answer at all. This test used to
+        // pass `onPremisesSyncEnabled: null` while claiming to test omission,
+        // which is a different case and the reason the two were conflated for so
+        // long: the name described the risk, the fixture exercised the other one.
         const { impl, calls } = scriptedFetch([
             tokenRoute(TOKEN_WITH_WRITE),
             { when: isMemberOf, reply: () => json({ value: [] }) },
-            { when: isUserGet, reply: () => json(graphUser({ onPremisesSyncEnabled: null })) },
+            {
+                when: isUserGet,
+                reply: () => {
+                    // The key is genuinely REMOVED, not set to undefined and not
+                    // set to null. `graphUser()` defaults it to `false`, so
+                    // omission has to be constructed deliberately — which is
+                    // itself why this case went untested for so long.
+                    const u = graphUser();
+                    delete u.onPremisesSyncEnabled;
+                    return json(u);
+                },
+            },
         ]);
         const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
         const state = await writer.readState(USER_ID);
 
         // Unknown is not cloud-only, and the two differ exactly where it matters.
-        expect(state.priorState.onPremisesSyncEnabled).toBeNull();
+        expect(state.priorState.onPremSyncObserved).toBe(false);
         const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
         expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
         expect(calls.filter(isPatch)).toHaveLength(0);
+    });
+
+    it('DISABLES when Graph answered null — the cloud-only case', async () => {
+        // Graph's contract: `true` when synced from an on-premises AD, and
+        // "otherwise the user isn't being synced and can be managed in Microsoft
+        // Entra ID". A null it actually SENT is that "otherwise", and it is the
+        // permanent state of every user in a tenant without AD Connect.
+        //
+        // The live writer must agree with the write-target rail here. When it
+        // did not, DRY_RUN — which uses the snapshot writer and never reaches
+        // this check — reported "would disable" for accounts this path refused,
+        // so the seven-day observation window compared two different answers.
+        const { impl, calls } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => new Response(null, { status: 204 }) },
+            { when: isUserGet, reply: () => json(graphUser({ onPremisesSyncEnabled: null })) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+
+        expect(state.priorState.onPremisesSyncEnabled).toBeNull();
+        expect(state.priorState.onPremSyncObserved).toBe(true);
+        await writer.disable(USER_ID, state);
+        expect(calls.filter(isPatch)).toHaveLength(1);
     });
 });
 

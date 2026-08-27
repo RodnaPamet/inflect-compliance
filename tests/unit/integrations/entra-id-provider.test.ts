@@ -198,9 +198,42 @@ describe('EntraIdProvider — directory enumeration', () => {
         // synced from on-premises"; it is only safe to act on because the field
         // was in the $select and the directory replied. Both select sets carry
         // it, so this holds on the signInActivity fallback path too.
-        const fetchImpl = graphFetch({ users: [{ value: [graphUser()] }] });
+        // Graph SENDS null for a user not synced from on-premises — the
+        // ordinary, permanent state of every account in a cloud-only tenant,
+        // and the case this whole change exists for. Set explicitly, because
+        // the default fixture omits the property and omission is the OTHER case.
+        const fetchImpl = graphFetch({
+            users: [{ value: [graphUser({ onPremisesSyncEnabled: null })] }],
+        });
         const res = await provider(withToken({ fetchImpl })).listAccounts(CONFIG);
         expect(res.accounts[0].onPremStateObserved).toBe(true);
+        expect(res.accounts[0].onPremisesSyncEnabled).toBeNull();
+    });
+
+    it('does NOT claim an observation when Graph omitted the property', async () => {
+        // The fail-open this replaces: the flag was a hardcoded `true`, which
+        // would survive somebody trimming the field out of a $select and turn
+        // "we never asked" into "cloud-only, go ahead".
+        const fetchImpl = graphFetch({
+            users: [{ value: [{ id: 'u-x', userPrincipalName: 'x@corp.example', accountEnabled: true }] }],
+        });
+        const res = await provider(withToken({ fetchImpl })).listAccounts(CONFIG);
+        expect(res.accounts[0].onPremStateObserved).toBe(false);
+        expect(res.accounts[0].onPremisesSyncEnabled).toBeNull();
+    });
+
+    it('both $select sets carry onPremisesSyncEnabled, which the observation claim rests on', async () => {
+        // Pinning the premise rather than the value. The connector reports an
+        // observation because the field is ASKED FOR; if a select ever loses it,
+        // the observation becomes a lie and this fails first.
+        const fetchImpl = graphFetch({
+            users: (url: string, call: number) =>
+                call === 0 ? { ok: false, status: 400 } : jsonOk({ value: [graphUser()] }),
+        });
+        await provider(withToken({ fetchImpl })).listAccounts(CONFIG);
+        const userUrls = fetchImpl.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/users'));
+        expect(userUrls).toHaveLength(2);
+        for (const u of userUrls) expect(u).toContain('onPremisesSyncEnabled');
     });
 
     it('requests the full select with signInActivity first', async () => {

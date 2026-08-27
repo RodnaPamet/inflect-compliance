@@ -130,14 +130,18 @@ function normalizeGraphUser(u: GraphUser): NormalizedIdentityAccount {
         // `?? null` keeps "Graph omitted the field" distinct from "Graph said
         // false" — an absent property must not read as cloud-only.
         onPremisesSyncEnabled: u.onPremisesSyncEnabled ?? null,
-        // Graph was ASKED: `onPremisesSyncEnabled` is in BOTH select sets, so a
-        // user object reaching here carries the directory's answer whichever
-        // select was used — including the signInActivity fallback. Per Graph's
-        // own contract the field is `true` when the object is synced from an
-        // on-premises AD and "otherwise the user isn't being synced and can be
-        // managed in Microsoft Entra ID", so a null here is that "otherwise",
-        // not an absence of information.
-        onPremStateObserved: true,
+        // DERIVED FROM THE RESPONSE, never hardcoded. Both select sets carry
+        // the field today, so `true` would be right today — and it would stay
+        // `true` the day somebody trimmed a select, turning "we never asked"
+        // into "cloud-only, go ahead" on a rail built to prevent exactly that.
+        // The line above collapses absent into null; this one is the only place
+        // the difference still exists, so it must be read here or not at all.
+        //
+        // Per Graph's contract the field is `true` when the object is synced
+        // from an on-premises AD and "otherwise the user isn't being synced and
+        // can be managed in Microsoft Entra ID" — so a null Graph SENT is that
+        // "otherwise", while an absent property is no answer at all.
+        onPremStateObserved: u.onPremisesSyncEnabled !== undefined,
         // H2 — per-user SSO federation is derived from domain authenticationType
         // in the enrichment pass; unknown until then.
         ssoEnrolled: null,

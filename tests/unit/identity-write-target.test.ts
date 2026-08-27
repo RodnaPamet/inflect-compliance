@@ -81,6 +81,23 @@ describe('an OBSERVED null is cloud-only, and writable', () => {
         expect(r.allowed === false && r.retargetTo).toBe('active-directory');
     });
 
+    it('an observation from a provider whose null means something ELSE is still refused', () => {
+        // The narrowing that keeps this fix from widening past its evidence. A
+        // provider author could reasonably set `onPremStateObserved` — their API
+        // WAS asked — without their null meaning "not synced from on-premises".
+        // The flag says we asked; only a verified contract says what the answer
+        // means. If this ever starts allowing, the allow has outrun the evidence.
+        for (const provider of ['okta', 'google-workspace']) {
+            expect(
+                resolveWriteTarget({
+                    provider,
+                    onPremisesSyncEnabled: null,
+                    onPremStateObserved: true,
+                }).allowed,
+            ).toBe(false);
+        }
+    });
+
     it('providers that CANNOT answer are unaffected — they set no observation', () => {
         // Okta and Google Workspace hardcode null because they genuinely do not
         // know. If this ever starts allowing them, the fix has widened past the
