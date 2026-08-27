@@ -60,11 +60,51 @@ export interface WriteTargetInput {
     readonly onPremStateObserved?: boolean;
 }
 
+/**
+ * WHICH RULE DECIDED — the fact a dry-run report has to carry.
+ *
+ * The verdict alone is not enough for the seven-day observation window. Its
+ * reader is being asked whether to grant this thing unattended authority over a
+ * customer's directory, and "would disable" is not an answer they can weigh;
+ * "would disable, because the directory answered that this account is
+ * cloud-only" is. Widening the rail (#2144 moved a whole population from
+ * REFUSED_TARGET to would-disable) is invisible in a report that only says what
+ * the verdict was.
+ *
+ * The two REFUSED bases are the pair that matter most, and they were one string
+ * until now. `NEVER_OBSERVED` means the provider CAN answer and has not yet for
+ * this row — the response is to wait for the nightly sync, and it clears
+ * itself. `PROVIDER_CANNOT_OBSERVE` means the provider has no such flag to
+ * report, so no sync will ever record one and waiting is not a plan. An
+ * operator's next action differs completely, and the un-backfilled migration
+ * put both on the same page at the same time.
+ */
+export type WriteTargetBasis =
+    /** The on-prem directory itself: the write lands at the source of authority. */
+    | 'ON_PREM_DIRECTORY'
+    /** Observed `false` — the directory says this account is not synced from on-prem. */
+    | 'NOT_ON_PREM_SYNCED'
+    /** Observed `null` from a provider whose null MEANS not-synced. The widened rule. */
+    | 'CLOUD_ONLY_OBSERVED'
+    /** Observed `true` — mastered on-premises, so a cloud write would be reverted. */
+    | 'ON_PREM_MASTERED'
+    /** The provider can answer; nothing has asked for this account yet. WAIT. */
+    | 'NEVER_OBSERVED'
+    /** The provider has no on-premises concept to report. Waiting will not help. */
+    | 'PROVIDER_CANNOT_OBSERVE'
+    /** Not a directory this platform disables accounts in. */
+    | 'UNSUPPORTED_DIRECTORY';
+
 export type WriteTarget =
     /** The write may go to this provider's API. */
-    | { readonly allowed: true }
+    | { readonly allowed: true; readonly basis: WriteTargetBasis }
     /** It may not, and this is why. */
-    | { readonly allowed: false; readonly reason: string; readonly retargetTo?: string };
+    | {
+          readonly allowed: false;
+          readonly basis: WriteTargetBasis;
+          readonly reason: string;
+          readonly retargetTo?: string;
+      };
 
 /**
  * Cloud directories whose accounts we may write to directly, PROVIDED the
@@ -88,11 +128,13 @@ const ON_PREM_DIRECTORY = 'active-directory';
 export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
     // The on-prem directory masters its own accounts. This is the one provider
     // where a write is unambiguously landing at the source of authority.
-    if (account.provider === ON_PREM_DIRECTORY) return { allowed: true };
+    if (account.provider === ON_PREM_DIRECTORY)
+        return { allowed: true, basis: 'ON_PREM_DIRECTORY' };
 
     if (!CLOUD_DIRECTORIES.has(account.provider)) {
         return {
             allowed: false,
+            basis: 'UNSUPPORTED_DIRECTORY',
             reason:
                 `Refusing to write to "${account.provider}": not a directory this platform disables ` +
                 `accounts in. Only ${[...CLOUD_DIRECTORIES, ON_PREM_DIRECTORY].sort().join(', ')} are supported.`,
@@ -102,6 +144,7 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
     if (account.onPremisesSyncEnabled === true) {
         return {
             allowed: false,
+            basis: 'ON_PREM_MASTERED',
             reason:
                 'Refusing to disable a directory-synced account through the cloud directory: it is mastered ' +
                 'on-premises, so the write is reverted at the next Azure AD Connect cycle. The account would ' +
@@ -115,13 +158,36 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
         NULL_MEANS_NOT_SYNCED.has(account.provider) && account.onPremStateObserved === true;
 
     if (account.onPremisesSyncEnabled === null && !nullMeansCloudOnly) {
-        return {
-            allowed: false,
-            reason:
-                'Refusing to disable an account whose on-premises sync state was never observed. Unknown is ' +
-                'not the same as cloud-only, and the two differ exactly where it matters. Run a successful ' +
-                'directory sync first so the flag is recorded, then retry.',
-        };
+        // TWO REFUSALS, NOT ONE — and they were the same sentence until now.
+        //
+        // Whether the provider CAN answer is decided by the same set the allow
+        // above consults, so the split costs nothing and cannot drift from it.
+        //
+        // The distinction is the operator's whole next action. A provider that
+        // answers has simply not answered for THIS row yet — the un-backfilled
+        // migration guarantees a population of those for one sync cycle — and
+        // the refusal clears itself overnight. A provider that has no such flag
+        // will never record one, so "run a sync first, then retry" was advice
+        // that could not be taken, aimed at the operator least able to tell.
+        const providerCanObserve = NULL_MEANS_NOT_SYNCED.has(account.provider);
+        return providerCanObserve
+            ? {
+                  allowed: false,
+                  basis: 'NEVER_OBSERVED',
+                  reason:
+                      'Refusing to disable an account whose on-premises sync state was never observed. Unknown ' +
+                      'is not the same as cloud-only, and the two differ exactly where it matters. Run a ' +
+                      'successful directory sync first so the flag is recorded, then retry.',
+              }
+            : {
+                  allowed: false,
+                  basis: 'PROVIDER_CANNOT_OBSERVE',
+                  reason:
+                      `Refusing to disable an account in "${account.provider}", which does not report whether ` +
+                      'an account is mastered on-premises. Unlike an account nothing has looked at yet, there ' +
+                      'is no sync to wait for here — this directory has no such flag to record — so the ' +
+                      'refusal stands until the platform can tell one of its accounts from a synced one.',
+              };
     }
 
     // Reached by an observed `false` AND by an observed `null`, and the second
@@ -138,5 +204,8 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
     // they had already run successfully. The refusal survives untouched for a
     // genuine unknown: Okta and Google Workspace hardcode null precisely
     // because they cannot answer, and they set no observation.
-    return { allowed: true };
+    return {
+        allowed: true,
+        basis: account.onPremisesSyncEnabled === null ? 'CLOUD_ONLY_OBSERVED' : 'NOT_ON_PREM_SYNCED',
+    };
 }

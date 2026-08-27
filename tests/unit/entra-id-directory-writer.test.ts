@@ -195,7 +195,7 @@ describe('the provider id resolveWriteTarget matches on', () => {
         expect(ENTRA_WRITER_PROVIDER_ID).toBe('entra-id');
         expect(
             resolveWriteTarget({ provider: writer.provider, onPremisesSyncEnabled: false }),
-        ).toEqual({ allowed: true });
+        ).toEqual({ allowed: true, basis: 'NOT_ON_PREM_SYNCED' });
     });
 });
 

@@ -849,7 +849,18 @@ describe('candidate selection demands FRESH link evidence', () => {
         expect(db.identityAccountLink.findMany).not.toHaveBeenCalled();
     });
 
-    it('carries the sync flag through, so the target check can use it', async () => {
+    it('carries the sync flag AND the observation timestamp through', async () => {
+        // The timestamp travels WHOLE rather than collapsed to a boolean here.
+        // The rail still consumes only "did anything answer" — that
+        // `Boolean(...)` lives against the rail, in `decideAndDisable` — but a
+        // report an operator reads for seven days has to distinguish an account
+        // observed last night from one nothing has looked at, and a boolean
+        // cannot carry that.
+        //
+        // Asserted with a REAL date, deliberately. `toEqual` ignores an
+        // `undefined` property, so a fixture that omits the column would leave
+        // this green while the field silently stopped being mapped.
+        const observedAt = new Date('2026-08-26T02:00:00.000Z');
         db.identityAccountLink.findMany.mockResolvedValue([
             {
                 id: 'l1',
@@ -858,6 +869,7 @@ describe('candidate selection demands FRESH link evidence', () => {
                     email: 'a@corp.example',
                     isProtected: true,
                     onPremisesSyncEnabled: true,
+                    onPremStateObservedAt: observedAt,
                 },
             },
         ]);
@@ -869,14 +881,30 @@ describe('candidate selection demands FRESH link evidence', () => {
                 email: 'a@corp.example',
                 isProtected: true,
                 onPremisesSyncEnabled: true,
-                // Absent on the fixture row → NOT observed, and asserting that
-                // explicitly is the point. The first version of the mapping used
-                // `!== null`, which reads `undefined` as observed and fails OPEN
-                // on a rail whose whole job is to fail closed. This fixture is
-                // what caught it.
-                onPremStateObserved: false,
+                onPremStateObservedAt: observedAt,
             },
         ]);
+    });
+
+    it('passes a NULL observation through as null, not as a claim that one exists', async () => {
+        // The un-backfilled #2144 migration guarantees a population of these
+        // for one sync cycle. Paired with the assertion above so neither can
+        // pass on a row that simply stopped being mapped.
+        db.identityAccountLink.findMany.mockResolvedValue([
+            {
+                id: 'l1',
+                externalUserId: 'x1',
+                connectedAccount: {
+                    externalUserId: 'x1',
+                    email: null,
+                    isProtected: false,
+                    onPremisesSyncEnabled: null,
+                    onPremStateObservedAt: null,
+                },
+            },
+        ]);
+        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        expect(out[0].onPremStateObservedAt).toBeNull();
     });
 
     it('SELECTS the email, which is the only thing that makes the self-lockout guard work', async () => {
@@ -904,6 +932,167 @@ describe('candidate selection demands FRESH link evidence', () => {
             // `toEqual` ignores it.
             isProtected: true,
             onPremisesSyncEnabled: true,
+            // The observation timestamp. Dropping it from the select maps to
+            // `undefined`, which the rail reads as NOT observed — so the whole
+            // cloud-only population would silently go back to REFUSED_TARGET,
+            // which is precisely the inert state #2144 was written to end.
+            onPremStateObservedAt: true,
         });
     });
 });
+
+describe('every decision the write-target shaped says WHICH rule shaped it', () => {
+    /**
+     * The seven-day DRY_RUN window exists so an operator can read what the pass
+     * WOULD have done and decide whether to grant it unattended authority. Every
+     * DRY_RUN row carries the same fixed reason sentence, so before the basis the
+     * report could not say which of a hundred identical "would disable" rows
+     * rested on the cloud-only rule #2144 widened.
+     */
+    const OBSERVED = new Date('2026-08-26T02:00:00.000Z');
+
+    beforeEach(() => setMode('DRY_RUN', new Date('2026-08-01T00:00:00Z')));
+
+    it('a would-disable names the cloud-only rule AND when the directory answered', async () => {
+        const r = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremisesSyncEnabled: null, onPremStateObservedAt: OBSERVED }),
+        );
+
+        expect(r.outcome).toBe('DRY_RUN');
+        expect(r.basis).toEqual({
+            rule: 'CLOUD_ONLY_OBSERVED',
+            onPremisesSyncEnabled: null,
+            observedAt: OBSERVED.toISOString(),
+        });
+    });
+
+    it('an observed-false would-disable is a DIFFERENT rule from the widened one', async () => {
+        // Both are DRY_RUN and both read "would disable". Collapsing them is
+        // exactly what makes a widened rail invisible in the report.
+        const widened = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremisesSyncEnabled: null, onPremStateObservedAt: OBSERVED }),
+        );
+        const plain = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremisesSyncEnabled: false, onPremStateObservedAt: OBSERVED }),
+        );
+
+        expect(widened.outcome).toBe(plain.outcome);
+        expect(widened.basis?.rule).toBe('CLOUD_ONLY_OBSERVED');
+        expect(plain.basis?.rule).toBe('NOT_ON_PREM_SYNCED');
+    });
+
+    it('a not-yet-re-synced refusal is distinguishable from an unobservable one', async () => {
+        // The pair the no-backfill decision put on one page at one time, and the
+        // operator's response differs completely: wait vs there is nothing to
+        // wait for.
+        const notYet = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremisesSyncEnabled: null }),
+        );
+        const cannot = await disableAccount(
+            ctx,
+            fakeWriter({ provider: 'okta' }),
+            input({ onPremisesSyncEnabled: null }),
+        );
+
+        expect(notYet.outcome).toBe('REFUSED_TARGET');
+        expect(cannot.outcome).toBe('REFUSED_TARGET');
+        expect(notYet.basis?.rule).toBe('NEVER_OBSERVED');
+        expect(cannot.basis?.rule).toBe('PROVIDER_CANNOT_OBSERVE');
+        // Neither claims an observation, and that is the fact the label rests on.
+        expect(notYet.basis?.observedAt).toBeUndefined();
+        expect(cannot.basis?.observedAt).toBeUndefined();
+    });
+
+    it.each([
+        ['absent (undefined)', undefined],
+        ['NULL — the value the Prisma column actually yields', null],
+    ])('an observation that is %s fails CLOSED', async (_label, observedAt) => {
+        // BOTH values, and the second is the one that matters. The first version
+        // of this test passed only `undefined`, which cannot discriminate: the
+        // fail-open mutation `Boolean(x)` -> `x !== undefined` ALSO refuses
+        // undefined, so the test stayed green against the very defect it names.
+        //
+        // Production supplies `null` — `onPremStateObservedAt` is a nullable
+        // column and Prisma returns null, not undefined — and `null !== undefined`
+        // is TRUE, i.e. reads as observed and allows the write. The guard has to
+        // refuse both, and only the null case proves it does.
+        const r = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremisesSyncEnabled: null, onPremStateObservedAt: observedAt }),
+        );
+
+        expect(r.outcome).toBe('REFUSED_TARGET');
+        expect(r.basis?.rule).toBe('NEVER_OBSERVED');
+    });
+
+    it('carries the basis onto a hybrid refusal and an already-disabled account too', async () => {
+        const hybrid = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremisesSyncEnabled: true, onPremStateObservedAt: OBSERVED }),
+        );
+        const already = await disableAccount(
+            ctx,
+            fakeWriter({ readState: async () => ({ enabled: false, priorState: {} }) }),
+            input({ onPremStateObservedAt: OBSERVED }),
+        );
+
+        expect(hybrid.basis?.rule).toBe('ON_PREM_MASTERED');
+        expect(already.outcome).toBe('ALREADY_DISABLED');
+        expect(already.basis?.rule).toBe('NOT_ON_PREM_SYNCED');
+    });
+
+    it('the refusals decided BEFORE the target carry no basis at all', async () => {
+        // A basis on one of these would describe a rule that never ran. Paired
+        // with a positive assertion so "no basis" cannot pass on a call that
+        // simply did not happen.
+        const protectedAcct = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ isProtected: true, onPremStateObservedAt: OBSERVED }),
+        );
+        expect(protectedAcct.outcome).toBe('REFUSED_PROTECTED');
+        expect(protectedAcct.basis).toBeUndefined();
+
+        setMode('DISABLED');
+        const modeOff = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremStateObservedAt: OBSERVED }),
+        );
+        expect(modeOff.outcome).toBe('REFUSED_MODE');
+        expect(modeOff.basis).toBeUndefined();
+    });
+
+    it('names no account — the basis is safe to persist unscrubbed', async () => {
+        // `IntegrationExecution.resultJson` is not encrypted at rest and outlives
+        // the pass, which is why every free-text field recorded there is scrubbed
+        // of directory identifiers. The basis is exempt only because it cannot
+        // carry one; this is the assertion that keeps that true.
+        const r = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({
+                externalUserId: 'e1f4c2aa-0000-4d1f-9c3b-secretguid',
+                email: 'leaver@corp.example',
+                onPremisesSyncEnabled: null,
+                onPremStateObservedAt: OBSERVED,
+            }),
+        );
+
+        expect(r.basis).toBeDefined();
+        const serialised = JSON.stringify(r.basis);
+        expect(serialised).not.toMatch(/secretguid/);
+        expect(serialised).not.toMatch(/leaver@corp\.example/);
+    });
+});
+

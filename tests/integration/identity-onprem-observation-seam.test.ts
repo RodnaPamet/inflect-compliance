@@ -29,7 +29,27 @@
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { findLeaverCandidates } from '@/app-layer/usecases/identity-disable-account';
-import { resolveWriteTarget } from '@/app-layer/usecases/identity-write-target';
+import {
+    disableAccount,
+    type DirectoryWriter,
+} from '@/app-layer/usecases/identity-disable-account';
+
+/**
+ * A writer that FAILS if anything asks it to write.
+ *
+ * The tenant sits at DRY_RUN, so `disableAccount` must decide and stop. If a
+ * future change let a real write through, this turns that into a loud test
+ * failure rather than a silent behaviour change in an integration test that
+ * looks like it is only reading.
+ */
+const dryRunWriter = (): DirectoryWriter =>
+    ({
+        provider: 'entra-id',
+        readState: async () => ({ enabled: true, priorState: { accountEnabled: true } }),
+        disable: async () => {
+            throw new Error('the snapshot rung must never reach a real write');
+        },
+    }) as unknown as DirectoryWriter;
 import { makeRequestContext } from '../helpers/make-context';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -44,6 +64,7 @@ async function clearOwnRows(): Promise<void> {
     await prisma.connectedIdentityAccount.deleteMany({ where });
     await prisma.integrationConnection.deleteMany({ where });
     await prisma.employee.deleteMany({ where });
+    await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: T } });
     await prisma.tenant.deleteMany({ where: { id: T } });
 }
 
@@ -97,6 +118,12 @@ d('the on-prem observation survives the DB seam', () => {
         await resetDatabase(prisma);
         await clearOwnRows();
         await prisma.tenant.create({ data: { id: T, name: 'Obs Seam', slug: T } });
+        // The ladder is re-read PER ACCOUNT inside `decideAndDisable`, so without
+        // this the outcome is REFUSED_MODE and the test would assert nothing
+        // about the observation at all.
+        await prisma.tenantSecuritySettings.create({
+            data: { tenantId: T, identityLeaverMode: 'DRY_RUN', identityLeaverDryRunSince: new Date() },
+        });
     });
 
     afterAll(async () => {
@@ -105,32 +132,44 @@ d('the on-prem observation survives the DB seam', () => {
     });
 
     it('an OBSERVED null reaches the rail as observed, and the rail allows it', async () => {
-        const { linkId, employeeId } = await seed(new Date());
+        const observedAt = new Date('2026-08-26T02:00:00.000Z');
+        const { linkId, employeeId } = await seed(observedAt);
         const ctx = makeRequestContext('OWNER', { tenantId: T });
 
         const candidates = await findLeaverCandidates(ctx, 'entra-id', [employeeId], FRESH_SINCE);
         const candidate = candidates.find((c) => c.linkId === linkId);
 
-        // The seam itself: a timestamp in Postgres became a boolean on the
-        // candidate. A misspelled select or a `!== null` mapping breaks HERE,
-        // and nothing at either end of the chain would have noticed.
+        // The seam itself: a timestamp in Postgres has to arrive on the
+        // candidate as that same timestamp. A misspelled select breaks HERE, and
+        // nothing at either end of the chain would have noticed.
         expect(candidate).toBeDefined();
         expect(candidate!.onPremisesSyncEnabled).toBeNull();
-        expect(candidate!.onPremStateObserved).toBe(true);
+        // The VALUE, not merely its truthiness. The candidate carries the whole
+        // timestamp because the dry-run report has to say WHEN the directory
+        // answered — "would disable — cloud-only, observed on the 26th" is a
+        // claim an operator can weigh; "would disable" is not. Asserting the
+        // instant is also what catches a select that silently stopped returning
+        // it, since an `undefined` would satisfy any truthiness check written
+        // the lazy way round.
+        expect(candidate!.onPremStateObservedAt).toEqual(observedAt);
 
-        expect(
-            resolveWriteTarget({
-                provider: 'entra-id',
-                onPremisesSyncEnabled: candidate!.onPremisesSyncEnabled,
-                onPremStateObserved: candidate!.onPremStateObserved,
-            }).allowed,
-        ).toBe(true);
+        // THROUGH `disableAccount`, not through a hand-written collapse.
+        //
+        // The candidate now carries the raw `onPremStateObservedAt`, and the
+        // boolean the rail reads is derived INSIDE `disableAccount`. Computing
+        // that derivation here — `onPremStateObserved: Boolean(candidate!...)` —
+        // would make this assertion true by construction with respect to the one
+        // guard the whole file exists to protect: the test would pass against a
+        // production collapse that fails open, because the test did its own.
+        const decided = await disableAccount(ctx, dryRunWriter(), candidate!);
+        expect(decided.outcome).toBe('DRY_RUN');
+        expect(decided.basis?.rule).toBe('CLOUD_ONLY_OBSERVED');
     });
 
     it('an UNOBSERVED null reaches the rail as unobserved, and the rail refuses', async () => {
         // The control, and the direction that must never regress: a row nobody
         // observed must not be writable. Without this the test above would pass
-        // just as happily against a mapping hardcoded to `true`.
+        // just as happily against a mapping hardcoded to a fixed date.
         const { linkId, employeeId } = await seed(null);
         const ctx = makeRequestContext('OWNER', { tenantId: T });
 
@@ -138,14 +177,15 @@ d('the on-prem observation survives the DB seam', () => {
         const candidate = candidates.find((c) => c.linkId === linkId);
 
         expect(candidate).toBeDefined();
-        expect(candidate!.onPremStateObserved).toBe(false);
+        expect(candidate!.onPremStateObservedAt).toBeNull();
 
-        const verdict = resolveWriteTarget({
-            provider: 'entra-id',
-            onPremisesSyncEnabled: candidate!.onPremisesSyncEnabled,
-            onPremStateObserved: candidate!.onPremStateObserved,
-        });
-        expect(verdict.allowed).toBe(false);
-        expect(verdict.allowed === false && verdict.reason).toMatch(/never observed/i);
+        const decided = await disableAccount(ctx, dryRunWriter(), candidate!);
+        expect(decided.outcome).toBe('REFUSED_TARGET');
+        expect(decided.reason).toMatch(/never observed/i);
+        // NEVER_OBSERVED, not PROVIDER_CANNOT_OBSERVE: entra DOES answer this
+        // question, so this row clears itself at the next sync. The un-backfilled
+        // #2144 migration guarantees a population of exactly these for one cycle,
+        // and telling an operator to investigate them would be wrong.
+        expect(decided.basis?.rule).toBe('NEVER_OBSERVED');
     });
 });

@@ -16,6 +16,7 @@ describe('a cloud-mastered account may be written in the cloud directory', () =>
     it('allows an Entra account observed as NOT synced from on-prem', () => {
         expect(resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: false })).toEqual({
             allowed: true,
+            basis: 'NOT_ON_PREM_SYNCED',
         });
     });
 
@@ -66,7 +67,7 @@ describe('an OBSERVED null is cloud-only, and writable', () => {
                 onPremisesSyncEnabled: null,
                 onPremStateObserved: true,
             }),
-        ).toEqual({ allowed: true });
+        ).toEqual({ allowed: true, basis: 'CLOUD_ONLY_OBSERVED' });
     });
 
     it('an observed TRUE is still refused — observation does not override the answer', () => {
@@ -161,5 +162,86 @@ describe('an unrecognised provider is refused outright', () => {
         // The provider allowlist is checked BEFORE the flag, so a made-up
         // provider cannot talk its way in by setting the flag conveniently.
         expect(resolveWriteTarget({ provider: 'made-up', onPremisesSyncEnabled: false }).allowed).toBe(false);
+    });
+});
+
+describe('the verdict says WHICH rule produced it', () => {
+    // The seven-day observation window's reader is deciding whether to grant
+    // this thing unattended authority over their directory. `allowed: true` is
+    // the same two words whether the account was observed cloud-only or whether
+    // a rail was widened underneath them — #2144 widened one, moving a whole
+    // population from REFUSED_TARGET to would-disable, and nothing in the report
+    // said which rows rested on it.
+
+    it('separates an observed cloud-only allow from an observed not-synced one', () => {
+        // Both allow. Only one of them is the widened rule, and a report that
+        // cannot tell them apart cannot show what #2144 changed.
+        const cloudOnly = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObserved: true,
+        });
+        const notSynced = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+        });
+        expect(cloudOnly.allowed).toBe(true);
+        expect(notSynced.allowed).toBe(true);
+        expect(cloudOnly.basis).toBe('CLOUD_ONLY_OBSERVED');
+        expect(notSynced.basis).toBe('NOT_ON_PREM_SYNCED');
+        expect(cloudOnly.basis).not.toBe(notSynced.basis);
+    });
+
+    it('labels the on-prem directory and the unsupported provider distinctly', () => {
+        expect(
+            resolveWriteTarget({ provider: 'active-directory', onPremisesSyncEnabled: null }).basis,
+        ).toBe('ON_PREM_DIRECTORY');
+        expect(
+            resolveWriteTarget({ provider: 'sharepoint', onPremisesSyncEnabled: false }).basis,
+        ).toBe('UNSUPPORTED_DIRECTORY');
+    });
+
+    it('labels a hybrid refusal ON_PREM_MASTERED', () => {
+        expect(
+            resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: true }).basis,
+        ).toBe('ON_PREM_MASTERED');
+    });
+});
+
+describe('an UNOBSERVABLE account is not a NOT-YET-OBSERVED one', () => {
+    // The pair #2144's no-backfill decision put on the same page at the same
+    // time. Both refuse REFUSED_TARGET; the operator's response differs
+    // completely — wait vs there is nothing to wait for — and until now both
+    // carried the same sentence telling them to run a sync.
+
+    it('an entra row nothing has looked at yet is NEVER_OBSERVED, and clears itself', () => {
+        const r = resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: null });
+        expect(r.allowed).toBe(false);
+        expect(r.basis).toBe('NEVER_OBSERVED');
+        // The advice is followable: entra DOES answer, so a sync will stamp it.
+        expect(r.allowed === false && r.reason).toMatch(/run a successful directory sync/i);
+    });
+
+    it('okta and google are PROVIDER_CANNOT_OBSERVE, and are told so', () => {
+        for (const provider of ['okta', 'google-workspace']) {
+            const r = resolveWriteTarget({ provider, onPremisesSyncEnabled: null });
+            expect(r.allowed).toBe(false);
+            expect(r.basis).toBe('PROVIDER_CANNOT_OBSERVE');
+            // Positive: the message names the permanence.
+            expect(r.allowed === false && r.reason).toMatch(/no sync to wait for/i);
+            // Negative, paired with it: it does NOT repeat the entra advice,
+            // which for these providers is an instruction nobody can carry out
+            // — no sync will ever record a flag the directory does not have.
+            expect(r.allowed === false && r.reason).not.toMatch(/run a successful directory sync/i);
+        }
+    });
+
+    it('the two refusals are genuinely different strings, not one relabelled', () => {
+        const entra = resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: null });
+        const okta = resolveWriteTarget({ provider: 'okta', onPremisesSyncEnabled: null });
+        expect(entra.allowed === false && okta.allowed === false && entra.reason).not.toBe(
+            okta.allowed === false ? okta.reason : '',
+        );
+        expect(entra.basis).not.toBe(okta.basis);
     });
 });

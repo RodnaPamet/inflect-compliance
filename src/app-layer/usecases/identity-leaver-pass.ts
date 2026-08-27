@@ -144,6 +144,19 @@ async function recordPassExecution(
         ...(r.reason
             ? { reason: redactDirectoryIdentifiers(r.reason, identifierByLink.get(r.linkId)) }
             : {}),
+        // The BASIS goes in unscrubbed, and that is not an oversight. Every
+        // reason above is a provider- or rail-authored SENTENCE, and sentences
+        // embed the account they are about; a basis is an enum, a tri-state
+        // boolean and a timestamp, and can name nothing. `DecisionBasis` says so
+        // in its own docblock, which is the invariant to preserve if a field is
+        // ever added to it.
+        //
+        // Recorded even though every decision in a DRY_RUN pass shares one
+        // `reason` string. That is exactly why: the reason is fixed, so it
+        // cannot distinguish an account the directory answered for from one
+        // nothing has looked at yet — and after #2144 widened the rail, telling
+        // those apart is the seven-day window's whole job.
+        ...(r.basis ? { basis: r.basis } : {}),
     }));
     const truncated = results.length > reported.length;
 
