@@ -49,6 +49,7 @@ import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
 import { getIdentityWritePolicy } from './identity-write-policy';
+import { OBSERVATION_FRESHNESS_MS } from './identity-write-target';
 import {
     disableAccountsForLeaver,
     findLeaverCandidates,
@@ -71,11 +72,13 @@ export const LEAVER_MAX_MODE = 'DRY_RUN' as const;
 /**
  * How recently a link must have been re-observed to be actable.
  *
- * Two days rather than one: the sync is daily, so a one-day bound turns a single
- * missed run into a silent no-op pass, and "we disabled nobody" would look
- * identical to "nobody left".
+ * An ALIAS, not a copy — see OBSERVATION_FRESHNESS_MS for the reasoning behind
+ * the number. Both bounds ask whether the daily sync refreshed this row recently
+ * enough, and a pass that accepted a link one bound calls fresh while the
+ * write-target rail calls its observation stale would just refuse later, having
+ * done the work.
  */
-export const LINK_FRESHNESS_MS = 2 * 24 * 60 * 60 * 1000;
+export const LINK_FRESHNESS_MS = OBSERVATION_FRESHNESS_MS;
 
 /**
  * Bound on the per-decision detail carried into the execution report.

@@ -65,7 +65,7 @@ describe('an OBSERVED null is cloud-only, and writable', () => {
             resolveWriteTarget({
                 provider: 'entra-id',
                 onPremisesSyncEnabled: null,
-                onPremStateObserved: true,
+                onPremStateObservedAt: new Date(),
             }),
         ).toEqual({ allowed: true, basis: 'CLOUD_ONLY_OBSERVED' });
     });
@@ -76,7 +76,7 @@ describe('an OBSERVED null is cloud-only, and writable', () => {
         const r = resolveWriteTarget({
             provider: 'entra-id',
             onPremisesSyncEnabled: true,
-            onPremStateObserved: true,
+            onPremStateObservedAt: new Date(),
         });
         expect(r.allowed).toBe(false);
         expect(r.allowed === false && r.retargetTo).toBe('active-directory');
@@ -84,7 +84,7 @@ describe('an OBSERVED null is cloud-only, and writable', () => {
 
     it('an observation from a provider whose null means something ELSE is still refused', () => {
         // The narrowing that keeps this fix from widening past its evidence. A
-        // provider author could reasonably set `onPremStateObserved` — their API
+        // provider author could reasonably set `onPremStateObservedAt` — their API
         // WAS asked — without their null meaning "not synced from on-premises".
         // The flag says we asked; only a verified contract says what the answer
         // means. If this ever starts allowing, the allow has outrun the evidence.
@@ -93,7 +93,7 @@ describe('an OBSERVED null is cloud-only, and writable', () => {
                 resolveWriteTarget({
                     provider,
                     onPremisesSyncEnabled: null,
-                    onPremStateObserved: true,
+                    onPremStateObservedAt: new Date(),
                 }).allowed,
             ).toBe(false);
         }
@@ -107,6 +107,87 @@ describe('an OBSERVED null is cloud-only, and writable', () => {
             expect(
                 resolveWriteTarget({ provider, onPremisesSyncEnabled: null }).allowed,
             ).toBe(false);
+        }
+    });
+});
+
+describe('an observation has to be RECENT, not merely present', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const NOW = new Date('2026-08-28T12:00:00Z');
+    const at = (ms: number) => new Date(NOW.getTime() - ms);
+
+    it('a stale answer refuses with its OWN basis, not "never observed"', () => {
+        // The two have opposite remedies. "Never observed" clears itself at the
+        // next sync; a stale row usually cannot, because the usual cause is a
+        // connection that was soft-disabled — its rows freeze while a surviving
+        // connection's provider-scoped link reconcile keeps their links fresh.
+        const r = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: at(30 * DAY),
+            now: NOW,
+        });
+        expect(r.allowed).toBe(false);
+        expect(r.basis).toBe('OBSERVATION_STALE');
+        expect(r.allowed === false && r.reason).toMatch(/re-enable it, or remove the accounts/i);
+    });
+
+    it('gates the observed-FALSE branch too, not only the null one', () => {
+        // The branch the first version of this fix skipped. Graph documents
+        // `false` as "previously synced, since removed from sync scope" — the
+        // value most likely to have flipped back to on-prem-mastered since, so
+        // exempting it aimed the age bound away from the case it most needed.
+        const stale = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+            onPremStateObservedAt: at(30 * DAY),
+            now: NOW,
+        });
+        expect(stale.allowed).toBe(false);
+        expect(stale.basis).toBe('OBSERVATION_STALE');
+
+        // Control: the same value, observed recently, still writes.
+        const fresh = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+            onPremStateObservedAt: at(1 * DAY),
+            now: NOW,
+        });
+        expect(fresh.allowed).toBe(true);
+        expect(fresh.basis).toBe('NOT_ON_PREM_SYNCED');
+    });
+
+    it('tolerates clock skew but refuses a stamp that cannot BE skew', () => {
+        // Unbounded future would let a forward-skewed worker freeze a row as
+        // permanently fresh — defeating the bound in the one failure mode it
+        // exists to catch.
+        const skew = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: new Date(NOW.getTime() + 5 * 60 * 1000),
+            now: NOW,
+        });
+        expect(skew.allowed).toBe(true);
+
+        const impossible = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: new Date(NOW.getTime() + 30 * DAY),
+            now: NOW,
+        });
+        expect(impossible.allowed).toBe(false);
+        expect(impossible.basis).toBe('OBSERVATION_STALE');
+    });
+
+    it('unparseable and absent both fail CLOSED', () => {
+        for (const bad of ['not-a-date', null, undefined]) {
+            const r = resolveWriteTarget({
+                provider: 'entra-id',
+                onPremisesSyncEnabled: null,
+                onPremStateObservedAt: bad as never,
+                now: NOW,
+            });
+            expect(r.allowed).toBe(false);
         }
     });
 });
@@ -179,7 +260,7 @@ describe('the verdict says WHICH rule produced it', () => {
         const cloudOnly = resolveWriteTarget({
             provider: 'entra-id',
             onPremisesSyncEnabled: null,
-            onPremStateObserved: true,
+            onPremStateObservedAt: new Date(),
         });
         const notSynced = resolveWriteTarget({
             provider: 'entra-id',

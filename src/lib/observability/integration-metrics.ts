@@ -203,7 +203,7 @@ export function recordCalendarConsentRevoked(attrs: { provider: string }): void 
  * below), REFUSED_PROTECTED on any volume means the roster is naming service
  * accounts, and INDETERMINATE means somebody must go and look at the directory.
  *
- * REFUSED_TARGET — READ THE BASIS, NOT JUST THE COUNT. It covers three
+ * REFUSED_TARGET — READ THE BASIS, NOT JUST THE COUNT. It covers four
  * situations with different responses, and the per-decision `basis.rule` on the
  * leaver pass report names which:
  *   • ON_PREM_MASTERED — a hybrid account. Disable it in AD; the LDAPS
@@ -211,6 +211,13 @@ export function recordCalendarConsentRevoked(attrs: { provider: string }): void 
  *   • NEVER_OBSERVED — the provider CAN answer the on-premises question and has
  *     not yet for that account. The response is to WAIT for the nightly sync,
  *     not to wire anything up; it clears itself.
+ *   • OBSERVATION_STALE — the provider DID answer, too long ago to act on.
+ *     Reads like NEVER_OBSERVED and takes the opposite response: waiting does
+ *     NOT clear it. The usual cause is that the connection which observed these
+ *     accounts was soft-disabled, so the dispatch skips it and nothing
+ *     re-stamps them — while a surviving connection's provider-scoped link
+ *     reconcile keeps their links looking fresh. Re-enable that connection, or
+ *     remove the accounts it left behind.
  *   • PROVIDER_CANNOT_OBSERVE — okta / google-workspace, which report no
  *     on-premises flag at all. There is no sync to wait for and nothing an
  *     operator can do; the refusal is permanent until the platform learns to
