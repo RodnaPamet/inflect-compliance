@@ -31,14 +31,20 @@
  *
  * ═══ THE UNIT IS (TENANT, PROVIDER) ═══
  *
- * Not per connection — still. `ConnectedIdentityAccount` now RECORDS a
- * `connectionId`, but it is nullable, and an account synced before the column
- * existed or one whose connection was removed cannot say which directory it came
- * from. So with two enabled connections for one provider the factory still
- * refuses outright, rather than addressing a disable at a forest the account may
- * not live in. The unit becomes per-connection when that column is mandatory and
- * the factory resolves a writer per account; until then this comment describes
- * a deliberate conservatism, not a missing column.
+ * Not per connection — still. `ConnectedIdentityAccount.connectionId` is NOT
+ * NULL as of phase 2, so the accounts themselves are attributable; what is not
+ * yet per-connection is the WRITER, which `resolveDirectoryWriter` still picks
+ * per (tenant, provider). So with two ENABLED connections for one provider the
+ * factory refuses outright rather than addressing a disable at a forest the
+ * account may not live in.
+ *
+ * Read that refusal narrowly. It counts only ENABLED connections, and the
+ * candidate query is provider-scoped, so a connection soft-disabled by
+ * `removeIntegrationConnection` still contributes its old account rows to every
+ * pass — with a `lastVerifiedAt` kept fresh by the OTHER connection's sync,
+ * because `reconcileIdentityAccountLinks` is provider-scoped too. The
+ * observation age bound in `identity-write-target` is what stops those rows
+ * being acted on; AMBIGUOUS_CONNECTION never sees that shape.
  *
  * @module usecases/identity-leaver-pass
  */
@@ -49,6 +55,7 @@ import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
 import { getIdentityWritePolicy } from './identity-write-policy';
+import { OBSERVATION_FRESHNESS_MS } from './identity-write-target';
 import {
     disableAccountsForLeaver,
     findLeaverCandidates,
@@ -74,8 +81,15 @@ export const LEAVER_MAX_MODE = 'DRY_RUN' as const;
  * Two days rather than one: the sync is daily, so a one-day bound turns a single
  * missed run into a silent no-op pass, and "we disabled nobody" would look
  * identical to "nobody left".
+ *
+ * AN ALIAS OF `OBSERVATION_FRESHNESS_MS`, not a second copy of the number. The
+ * link bound and the on-prem observation bound are two predicates over two
+ * different facts, and the candidate query applies them separately — but they
+ * must be the SAME instant, because whichever is weaker silently governs what a
+ * pass is willing to act on. Tuning one and not the other is the failure this
+ * spelling makes impossible.
  */
-export const LINK_FRESHNESS_MS = 2 * 24 * 60 * 60 * 1000;
+export const LINK_FRESHNESS_MS = OBSERVATION_FRESHNESS_MS;
 
 /**
  * Bound on the per-decision detail carried into the execution report.

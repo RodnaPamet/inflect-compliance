@@ -30,7 +30,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
-import { resolveWriteTarget } from './identity-write-target';
+import { isObservationFresh, resolveWriteTarget } from './identity-write-target';
 import { beginWrite } from './identity-write-journal';
 import { getIdentityWritePolicy } from './identity-write-policy';
 import { checkDisableBlastRadius } from './identity-write-breaker';
@@ -743,6 +743,21 @@ const MAX_CANDIDATES = 1_000;
  * Requires the link to have been re-verified since `staleBefore`. A pairing
  * last confirmed months ago is evidence about a directory that has since
  * changed, and acting on it is the failure the link model exists to avoid.
+ *
+ * TWO INDEPENDENT AGE BOUNDS, because two independent things go stale. The
+ * link bound above is the caller's `staleBefore`; the on-prem observation is
+ * bounded here against `OBSERVATION_FRESHNESS_MS`, which is the same number by
+ * construction (`LINK_FRESHNESS_MS` aliases it). They are separate predicates
+ * because the two facts are refreshed by different passes at different scopes
+ * — see `isObservationFresh` — so one being fresh is no evidence about the
+ * other.
+ *
+ * A row whose observation has gone stale STAYS IN THE RESULT, carrying
+ * `onPremStateObserved: false`. Dropping it from the query would be the silent
+ * kind of nothing this subsystem is most prone to: the candidate would vanish
+ * from the dry-run artefact with no refusal recorded anywhere, which reads
+ * exactly like "this person had no account". Kept, it reaches the write-target
+ * rail and is refused BY NAME, in a row an operator can see.
  */
 export async function findLeaverCandidates(
     ctx: RequestContext,
@@ -751,6 +766,10 @@ export async function findLeaverCandidates(
     staleBefore: Date,
 ): Promise<DisableAccountInput[]> {
     if (employeeIds.length === 0) return [];
+    // ONE instant for the whole batch. Reading the clock per row would let a
+    // long page straddle the boundary, so two accounts observed by the same
+    // sync could disagree about whether that sync was recent enough.
+    const observedSince = new Date();
     return runInTenantContext(ctx, async (db) => {
         const rows = await db.identityAccountLink.findMany({
             where: {
@@ -788,16 +807,35 @@ export async function findLeaverCandidates(
             // needing a hidden lookup to explain it.
             isProtected: r.connectedAccount.isProtected,
             onPremisesSyncEnabled: r.connectedAccount.onPremisesSyncEnabled,
-            // A timestamp on the row IS the observation; the rail only needs
-            // whether one exists, not when.
+            // WHEN the row was observed, not merely THAT it was. The column is
+            // a DateTime for this reason and this line used to discard the
+            // half that matters.
             //
-            // `Boolean(...)`, NOT `!== null`. The strict form reads `undefined`
-            // as observed — and `undefined` is what an unselected column or a
-            // row shape that predates it produces, so the mistake fails OPEN on
-            // a rail whose entire job is to fail closed. A unit test caught it
-            // on a fixture with the field absent; production would have caught
-            // it by disabling something.
-            onPremStateObserved: Boolean(r.connectedAccount.onPremStateObservedAt),
+            // The link filter above is not the backstop it looks like. It
+            // bounds the PAIRING and is PROVIDER-scoped —
+            // `reconcileIdentityAccountLinks` stamps `lastVerifiedAt` across
+            // every account row this tenant holds for the provider — while the
+            // sync that writes the observation is CONNECTION-scoped and touches
+            // only the accounts its own enumeration returned. One healthy
+            // connection therefore keeps links fresh for rows a second,
+            // soft-disabled connection last observed months ago:
+            // `removeIntegrationConnection` only sets `isEnabled: false`, the
+            // deprovision reconcile is connection-scoped so those rows stay
+            // ACTIVE, and `resolveDirectoryWriter` refuses AMBIGUOUS_CONNECTION
+            // only when more than one connection is ENABLED — so nothing else
+            // on this path notices.
+            //
+            // FAILS CLOSED, and `isObservationFresh` is where that lives:
+            // absent, unparseable and too-old all answer `false`, which routes
+            // into the rail's existing refusal. `undefined` matters most —
+            // it is what an unselected column or a row shape predating the
+            // field produces, and the original `!== null` form read it as
+            // OBSERVED. A unit test caught that on a fixture with the field
+            // absent; production would have caught it by disabling something.
+            onPremStateObserved: isObservationFresh(
+                r.connectedAccount.onPremStateObservedAt,
+                observedSince,
+            ),
         }));
     });
 }

@@ -213,11 +213,15 @@ describe('the snapshot reader', () => {
         //
         // `priorState` is a Record<string, unknown>, so this assertion is the
         // only thing making the two captures agree.
+        //
+        // RELATIVE, never a literal date. This assertion used to pin
+        // `2026-08-27` — fine while the capture answered on mere presence, and
+        // a time bomb the moment it answers on age.
         mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
             status: 'ACTIVE',
             updatedAt: new Date(),
             onPremisesSyncEnabled: null,
-            onPremStateObservedAt: new Date('2026-08-27T00:00:00Z'),
+            onPremStateObservedAt: new Date(),
         });
         const observed = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
         expect(observed.priorState).toMatchObject({ onPremStateObserved: true });
@@ -230,6 +234,25 @@ describe('the snapshot reader', () => {
         });
         const unobserved = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
         expect(unobserved.priorState).toMatchObject({ onPremStateObserved: false });
+    });
+
+    it('answers it with the AGE, the same way the candidate query does', async () => {
+        // PARITY IS ABOUT THE PREDICATE, NOT JUST THE COLUMN. `findLeaverCandidates`
+        // bounds the observation by `OBSERVATION_FRESHNESS_MS`; a capture that
+        // answered on presence alone would call the same row observed that the
+        // rail calls unobserved, and the disagreement would only surface once
+        // the Entra gate is hoisted above the network — as two passes refusing
+        // different accounts, each defensible on its own terms.
+        mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
+            status: 'ACTIVE',
+            updatedAt: new Date(),
+            onPremisesSyncEnabled: null,
+            // The shape a soft-disabled sibling connection leaves behind: a row
+            // nothing sweeps, carrying whatever it last observed.
+            onPremStateObservedAt: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000),
+        });
+        const stale = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
+        expect(stale.priorState).toMatchObject({ onPremStateObserved: false });
     });
 
     it('marks its evidence stale, so nothing settles a journal row from it', async () => {

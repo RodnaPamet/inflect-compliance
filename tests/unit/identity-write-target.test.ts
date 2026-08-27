@@ -10,7 +10,11 @@
  * succeeded. That is worse than an outright failure, which is why every
  * ambiguous case below refuses.
  */
-import { resolveWriteTarget } from '@/app-layer/usecases/identity-write-target';
+import {
+    isObservationFresh,
+    OBSERVATION_FRESHNESS_MS,
+    resolveWriteTarget,
+} from '@/app-layer/usecases/identity-write-target';
 
 describe('a cloud-mastered account may be written in the cloud directory', () => {
     it('allows an Entra account observed as NOT synced from on-prem', () => {
@@ -161,5 +165,95 @@ describe('an unrecognised provider is refused outright', () => {
         // The provider allowlist is checked BEFORE the flag, so a made-up
         // provider cannot talk its way in by setting the flag conveniently.
         expect(resolveWriteTarget({ provider: 'made-up', onPremisesSyncEnabled: false }).allowed).toBe(false);
+    });
+});
+
+describe('an observation has an AGE, and the rail refuses a stale one', () => {
+    /**
+     * WHY THIS PREDICATE EXISTS AT ALL
+     *
+     * `onPremStateObservedAt` is a DateTime and the leaver path reduced it to
+     * `Boolean(...)` — "a directory answered at some point in this row's
+     * history". The link-freshness filter looked like the backstop and is not:
+     * it bounds the PAIRING, is PROVIDER-scoped, and is stamped by a reconciler
+     * that runs after ANY connection's complete sync, while the observation is
+     * written by a CONNECTION-scoped sync that touches only the accounts its own
+     * enumeration returned.
+     */
+    const NOW = new Date('2026-08-27T12:00:00Z');
+    const ms = (n: number): Date => new Date(NOW.getTime() - n);
+
+    it('accepts an observation inside the bound', () => {
+        expect(isObservationFresh(ms(0), NOW)).toBe(true);
+        expect(isObservationFresh(ms(OBSERVATION_FRESHNESS_MS - 1), NOW)).toBe(true);
+    });
+
+    it('accepts the boundary itself, so a bound-aged observation is not refused by a millisecond', () => {
+        // The bound is "as fresh as", inclusive — the same reading
+        // `lastVerifiedAt: { gte: staleBefore }` gives the link.
+        expect(isObservationFresh(ms(OBSERVATION_FRESHNESS_MS), NOW)).toBe(true);
+    });
+
+    it('refuses one past the bound', () => {
+        expect(isObservationFresh(ms(OBSERVATION_FRESHNESS_MS + 1), NOW)).toBe(false);
+        expect(isObservationFresh(new Date('2026-01-01T00:00:00Z'), NOW)).toBe(false);
+    });
+
+    it('FAILS CLOSED on absence — null and undefined both refuse', () => {
+        // `undefined` is the one that matters: it is what an unselected column
+        // or a row shape predating the field produces, and the pre-existing
+        // `!== null` spelling read it as OBSERVED.
+        expect(isObservationFresh(null, NOW)).toBe(false);
+        expect(isObservationFresh(undefined, NOW)).toBe(false);
+    });
+
+    it('FAILS CLOSED on a value it cannot read as a time', () => {
+        expect(isObservationFresh('not-a-date', NOW)).toBe(false);
+        expect(isObservationFresh(new Date('nonsense'), NOW)).toBe(false);
+    });
+
+    it('reads an ISO string, because a serialised row is still a row', () => {
+        expect(isObservationFresh(ms(0).toISOString(), NOW)).toBe(true);
+        expect(isObservationFresh('2026-01-01T00:00:00.000Z', NOW)).toBe(false);
+    });
+
+    it('treats a FUTURE stamp as fresh — clock skew is not a directory condition', () => {
+        // Nothing writes a forward stamp: identity-sync stores its own `now`.
+        // Refusing on skew between the worker that synced and the pass that
+        // reads would make the rail inert for a reason unrelated to the estate.
+        expect(isObservationFresh(new Date(NOW.getTime() + 60_000), NOW)).toBe(true);
+    });
+
+    it('defaults to the real clock, so a caller cannot forget to pass one', () => {
+        expect(isObservationFresh(new Date())).toBe(true);
+        expect(isObservationFresh(new Date(Date.now() - OBSERVATION_FRESHNESS_MS - 60_000))).toBe(false);
+    });
+
+    it('a stale observation lands in the rail exactly where an absent one does', () => {
+        // The consequence, not just the predicate. A cloud-only Entra account
+        // is writable ONLY on a fresh observation; feed the rail what a stale
+        // one produces and it must refuse for the same reason an unobserved row
+        // is refused — which is the refusal an operator already has a runbook
+        // for.
+        const stale = isObservationFresh(new Date('2026-01-01T00:00:00Z'), NOW);
+        const verdict = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObserved: stale,
+        });
+        expect(verdict.allowed).toBe(false);
+        expect(verdict.allowed === false && verdict.reason).toMatch(/observed too long ago|never observed/i);
+    });
+
+    it('the same account with a FRESH observation is allowed — the bound is the only difference', () => {
+        // The control. Without it the assertion above would pass just as
+        // happily against a rail hardcoded to refuse, which is the shape that
+        // silently re-inerts the cloud-only path.
+        const verdict = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObserved: isObservationFresh(new Date(NOW.getTime() - 60_000), NOW),
+        });
+        expect(verdict.allowed).toBe(true);
     });
 });

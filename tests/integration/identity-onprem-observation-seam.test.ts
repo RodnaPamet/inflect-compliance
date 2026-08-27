@@ -25,6 +25,11 @@
  * A misspelled Prisma field would ship silently.
  *
  * So these tests write real rows and read them back through the real query.
+ *
+ * The chain later grew a third state. `onPremStateObservedAt` is a DateTime and
+ * the mapping reduced it to "is it set", so a stamp from another epoch reached
+ * the rail as a live observation — see the STALE case below for why a fresh
+ * link is no evidence about the age of the observation beside it.
  */
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -51,15 +56,15 @@ async function clearOwnRows(): Promise<void> {
  * One terminated worker linked to one Entra account, with the observation
  * stamp set or not. Returns the link id so an assertion can name the row.
  */
-async function seed(observedAt: Date | null): Promise<{ linkId: string; employeeId: string }> {
+async function seed(observedAt: Date | null, tag = observedAt ? 'obs' : 'uno'): Promise<{ linkId: string; employeeId: string }> {
     const conn = await prisma.integrationConnection.create({
-        data: { tenantId: T, provider: 'entra-id', name: `entra-${observedAt ? 'obs' : 'uno'}`, configJson: {} },
+        data: { tenantId: T, provider: 'entra-id', name: `entra-${tag}`, configJson: {} },
     });
     const employee = await prisma.employee.create({
         data: {
             tenantId: T,
             fullName: 'Terminated Worker',
-            workEmail: `leaver-${observedAt ? 'obs' : 'uno'}@acme.test`,
+            workEmail: `leaver-${tag}@acme.test`,
             status: 'TERMINATED',
         },
     });
@@ -68,7 +73,7 @@ async function seed(observedAt: Date | null): Promise<{ linkId: string; employee
             tenantId: T,
             provider: 'entra-id',
             connectionId: conn.id,
-            externalUserId: `ext-${observedAt ? 'obs' : 'uno'}`,
+            externalUserId: `ext-${tag}`,
             email: employee.workEmail,
             syncedAt: new Date(),
             // The pair the whole feature turns on: Graph answered NULL, and
@@ -147,5 +152,71 @@ d('the on-prem observation survives the DB seam', () => {
         });
         expect(verdict.allowed).toBe(false);
         expect(verdict.allowed === false && verdict.reason).toMatch(/never observed/i);
+    });
+
+    it('a STALE observation reaches the rail as unobserved, and the rail refuses', async () => {
+        /**
+         * The third state, and the one the column's DateTime-ness exists for.
+         *
+         * The row below is the exact shape a real estate produces: a link kept
+         * FRESH (`lastVerifiedAt` now) beside an observation from another
+         * epoch. That combination is not hypothetical — `lastVerifiedAt` is
+         * stamped by `reconcileIdentityAccountLinks`, which is PROVIDER-scoped
+         * and runs after any connection's complete sync, while
+         * `onPremStateObservedAt` is written by a CONNECTION-scoped sync that
+         * upserts only the accounts its own enumeration returned. One healthy
+         * connection therefore refreshes links pointing at rows a
+         * soft-disabled sibling connection has not touched since it was turned
+         * off, and nothing sweeps those rows: `removeIntegrationConnection`
+         * only sets `isEnabled: false`, and the deprovision reconcile is
+         * connection-scoped.
+         *
+         * Two ends of that chain were already covered — the pure predicate and
+         * the fresh/absent seam. Neither would notice a mapping that read the
+         * column and ignored its value, which is what shipped.
+         */
+        const { linkId, employeeId } = await seed(
+            new Date(Date.now() - 400 * 24 * 60 * 60 * 1000),
+            'stale',
+        );
+        const ctx = makeRequestContext('OWNER', { tenantId: T });
+
+        const candidates = await findLeaverCandidates(ctx, 'entra-id', [employeeId], FRESH_SINCE);
+        const candidate = candidates.find((c) => c.linkId === linkId);
+
+        // KEPT as a candidate. Dropping it in the query would remove it from
+        // the dry-run artefact with no refusal recorded — indistinguishable
+        // from "this worker had no directory account".
+        expect(candidate).toBeDefined();
+        expect(candidate!.onPremStateObserved).toBe(false);
+
+        const verdict = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: candidate!.onPremisesSyncEnabled,
+            onPremStateObserved: candidate!.onPremStateObserved,
+        });
+        expect(verdict.allowed).toBe(false);
+        expect(verdict.allowed === false && verdict.reason).toMatch(/too long ago/i);
+    });
+
+    it('the stamp is what decides it — same row, fresh stamp, opposite verdict', async () => {
+        // The control for the test above. Without it, that assertion would pass
+        // just as happily against a mapping hardcoded to `false` — which is the
+        // regression that re-inerts the cloud-only leaver path entirely, and
+        // looks exactly like the bug this column was added to fix.
+        const { linkId, employeeId } = await seed(new Date(), 'fresh');
+        const ctx = makeRequestContext('OWNER', { tenantId: T });
+
+        const candidates = await findLeaverCandidates(ctx, 'entra-id', [employeeId], FRESH_SINCE);
+        const candidate = candidates.find((c) => c.linkId === linkId);
+
+        expect(candidate!.onPremStateObserved).toBe(true);
+        expect(
+            resolveWriteTarget({
+                provider: 'entra-id',
+                onPremisesSyncEnabled: candidate!.onPremisesSyncEnabled,
+                onPremStateObserved: candidate!.onPremStateObserved,
+            }).allowed,
+        ).toBe(true);
     });
 });

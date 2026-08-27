@@ -56,6 +56,7 @@ import {
     type DirectoryAccountState,
     type DirectoryWriter,
 } from '../usecases/identity-disable-account';
+import { isObservationFresh } from '../usecases/identity-write-target';
 import { createEntraIdWriter } from './providers/entra-id/writer';
 import { createActiveDirectoryWriter } from './providers/active-directory/writer';
 
@@ -76,13 +77,20 @@ export type WriterRefusal =
     /**
      * More than one enabled connection for this (tenant, provider).
      *
-     * Refused rather than guessed. `ConnectedIdentityAccount` now carries a
-     * `connectionId`, but it is NULLABLE and nothing here selects a connection
-     * per account yet: a row observed before that column existed, or one whose
-     * connection was deleted, cannot say which directory it came from. Until
-     * the column is NOT NULL and this factory resolves a writer per account
-     * rather than per (tenant, provider), picking either connection still means
-     * a disable addressed at a forest the account may not live in.
+     * Refused rather than guessed. `ConnectedIdentityAccount.connectionId` is
+     * NOT NULL as of phase 2, so the ACCOUNTS are no longer ambiguous — but a
+     * writer is still resolved per (tenant, provider), so one connection would
+     * have to be chosen for all of them, and a disable would be addressed at a
+     * forest the account may not live in.
+     *
+     * COUNTS ONLY ENABLED CONNECTIONS, which is narrower than it reads. A
+     * connection soft-disabled by `removeIntegrationConnection` keeps every
+     * account row it ever observed, and those rows keep whatever
+     * `onPremisesSyncEnabled` / `onPremStateObservedAt` they last held —
+     * nothing sweeps them, because the deprovision reconcile is
+     * connection-scoped. So this refusal is NOT a guard against acting on
+     * another connection's stale rows; the age bound in
+     * `identity-write-target` is.
      */
     | 'AMBIGUOUS_CONNECTION'
     /** The connection's secrets did not decrypt. */
@@ -193,8 +201,17 @@ export function createSnapshotWriter(
                     //
                     // `priorState` is a Record<string, unknown>, so nothing but
                     // this comment and the test below makes the two captures
-                    // agree. Read from the same column the rail reads.
-                    onPremStateObserved: row.onPremStateObservedAt != null,
+                    // agree. Read from the same column the rail reads, THROUGH
+                    // THE SAME PREDICATE: `findLeaverCandidates` now bounds the
+                    // observation by age, and a capture that answered on mere
+                    // presence would disagree with it the moment the Entra
+                    // gate is hoisted above the network — the two would refuse
+                    // different accounts and neither would be wrong on its own
+                    // terms.
+                    //
+                    // `!= null` is what this used to be, and it is exactly the
+                    // fail-open shape the rail side already learned to avoid.
+                    onPremStateObserved: isObservationFresh(row.onPremStateObservedAt),
                     staleEvidence: true,
                 },
             };

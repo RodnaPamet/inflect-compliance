@@ -68,6 +68,8 @@ import {
     findLeaverCandidates,
     type DirectoryWriter,
 } from '@/app-layer/usecases/identity-disable-account';
+import { OBSERVATION_FRESHNESS_MS } from '@/app-layer/usecases/identity-write-target';
+import { LINK_FRESHNESS_MS } from '@/app-layer/usecases/identity-leaver-pass';
 import { makeRequestContext } from '../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 't1', userId: 'admin-1' });
@@ -904,6 +906,91 @@ describe('candidate selection demands FRESH link evidence', () => {
             // `toEqual` ignores it.
             isProtected: true,
             onPremisesSyncEnabled: true,
+            // The AGE, not just the flag. Dropping this from the select maps
+            // every row to `undefined` — which `isObservationFresh` refuses, so
+            // the failure is inert rather than open, but it is inert for EVERY
+            // candidate in every cloud-only tenant, which is the exact
+            // silent-nothing this subsystem keeps re-learning.
+            onPremStateObservedAt: true,
         });
+    });
+});
+
+describe('the on-prem observation is bounded by AGE, not merely by presence', () => {
+    /**
+     * WHY THE LINK FILTER IS NOT THE BACKSTOP IT LOOKS LIKE
+     *
+     * `lastVerifiedAt >= staleBefore` bounds the PAIRING and is stamped by
+     * `reconcileIdentityAccountLinks`, which is PROVIDER-scoped and runs after
+     * ANY connection's complete sync. `onPremStateObservedAt` is written by
+     * `identity-sync`, which is CONNECTION-scoped and upserts only the accounts
+     * its own enumeration returned. So one healthy connection keeps links fresh
+     * for rows a soft-disabled sibling connection last observed months ago —
+     * `removeIntegrationConnection` sets `isEnabled: false` and deletes
+     * nothing, and `resolveDirectoryWriter` refuses AMBIGUOUS_CONNECTION only
+     * when more than one connection is ENABLED.
+     *
+     * The rail then DISABLES an account on the strength of that flag, and in
+     * DRY_RUN — the rung every tenant is clamped at — the snapshot reader makes
+     * no live call, so the stored stamp is the only evidence there is.
+     */
+    const row = (onPremStateObservedAt: Date | null) => ({
+        id: 'l1',
+        connectedAccount: {
+            externalUserId: 'x1',
+            email: 'a@corp.example',
+            isProtected: false,
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt,
+        },
+    });
+
+    it('a stamp inside the bound reaches the rail as OBSERVED', async () => {
+        db.identityAccountLink.findMany.mockResolvedValue([row(new Date())]);
+        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        expect(out[0].onPremStateObserved).toBe(true);
+    });
+
+    it('a stamp older than the bound reaches the rail as UNOBSERVED', async () => {
+        // The defect: this row used to arrive as observed on the strength of a
+        // timestamp from another epoch, and the write-target rail allows a
+        // cloud-only Entra disable on exactly that.
+        db.identityAccountLink.findMany.mockResolvedValue([
+            row(new Date(Date.now() - 400 * 24 * 60 * 60 * 1000)),
+        ]);
+        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        expect(out[0].onPremStateObserved).toBe(false);
+    });
+
+    it('a stale row STAYS a candidate, so its refusal is reported rather than silent', async () => {
+        // Dropping it in the query would remove it from the dry-run artefact
+        // with no refusal recorded anywhere — indistinguishable from "this
+        // person had no account". It must reach the rail and be refused by name.
+        db.identityAccountLink.findMany.mockResolvedValue([
+            row(new Date(Date.now() - 400 * 24 * 60 * 60 * 1000)),
+        ]);
+        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        expect(out).toHaveLength(1);
+        expect(out[0].linkId).toBe('l1');
+
+        // And the query must not have grown a predicate that would have done it.
+        expect(
+            db.identityAccountLink.findMany.mock.calls[0][0].where.connectedAccount,
+        ).toEqual({ provider: 'entra-id' });
+    });
+
+    it('the two bounds are ONE number, so tuning the link bound cannot leave the observation behind', async () => {
+        // LINK_FRESHNESS_MS is an alias of OBSERVATION_FRESHNESS_MS. Two copies
+        // would mean the weaker one silently governs what a pass acts on.
+        expect(LINK_FRESHNESS_MS).toBe(OBSERVATION_FRESHNESS_MS);
+
+        // Exactly at the shared bound, an observation is still actable — the
+        // same inclusive reading `lastVerifiedAt: { gte: staleBefore }` gives
+        // the link.
+        db.identityAccountLink.findMany.mockResolvedValue([
+            row(new Date(Date.now() - OBSERVATION_FRESHNESS_MS + 5_000)),
+        ]);
+        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        expect(out[0].onPremStateObserved).toBe(true);
     });
 });
