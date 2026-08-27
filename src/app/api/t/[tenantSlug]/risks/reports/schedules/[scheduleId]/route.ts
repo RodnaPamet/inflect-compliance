@@ -4,6 +4,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { updateSchedule, deleteSchedule } from '@/app-layer/usecases/risk-report';
 import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
 /** RQ-10 — single schedule: PATCH (pause/resume/edit), DELETE. */
@@ -31,11 +32,11 @@ export const PATCH = withApiErrorHandling(
     }),
 );
 
+type DeleteParams = { tenantSlug: string; scheduleId: string };
+
 export const DELETE = withApiErrorHandling(
-    async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; scheduleId: string }> }) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+    requirePermission<DeleteParams>('risks.edit', async (_req, { params }, ctx) => {
         await deleteSchedule(ctx, params.scheduleId);
         return jsonResponse({ success: true });
-    },
+    }),
 );
