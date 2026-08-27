@@ -1011,11 +1011,24 @@ describe('every decision the write-target shaped says WHICH rule shaped it', () 
         expect(cannot.basis?.observedAt).toBeUndefined();
     });
 
-    it('an ABSENT observation still fails CLOSED — the rail never reads undefined as observed', async () => {
-        // The mistake #2144's own review caught once already, moved here with
-        // the guard. `!= null` would read `undefined` as OBSERVED and allow the
-        // write; `Boolean(...)` refuses it.
-        const r = await disableAccount(ctx, fakeWriter(), input({ onPremisesSyncEnabled: null }));
+    it.each([
+        ['absent (undefined)', undefined],
+        ['NULL — the value the Prisma column actually yields', null],
+    ])('an observation that is %s fails CLOSED', async (_label, observedAt) => {
+        // BOTH values, and the second is the one that matters. The first version
+        // of this test passed only `undefined`, which cannot discriminate: the
+        // fail-open mutation `Boolean(x)` -> `x !== undefined` ALSO refuses
+        // undefined, so the test stayed green against the very defect it names.
+        //
+        // Production supplies `null` — `onPremStateObservedAt` is a nullable
+        // column and Prisma returns null, not undefined — and `null !== undefined`
+        // is TRUE, i.e. reads as observed and allows the write. The guard has to
+        // refuse both, and only the null case proves it does.
+        const r = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremisesSyncEnabled: null, onPremStateObservedAt: observedAt }),
+        );
 
         expect(r.outcome).toBe('REFUSED_TARGET');
         expect(r.basis?.rule).toBe('NEVER_OBSERVED');
