@@ -1,0 +1,31 @@
+-- Distinguish "the directory answered: not synced from on-premises" from
+-- "nobody asked / the provider cannot answer".
+--
+-- WHY. `ConnectedIdentityAccount.onPremisesSyncEnabled` is nullable on purpose
+-- — its own schema comment says "we do not know" and "cloud-only" are different
+-- answers, and only one of them is safe to write against. But the value alone
+-- cannot carry that difference, so the write-target rail refused every NULL.
+--
+-- Microsoft Graph returns NULL for a user that is not being synced from an
+-- on-premises AD, which is the ordinary and permanent state of every user in a
+-- cloud-only tenant. Measured on the first real Entra directory this product
+-- ever synced: 10 of 10 accounts NULL, from a fully-consented enumeration that
+-- reached PASSED. The leaver path was therefore permanently inert for
+-- cloud-only directories — it refused every candidate, every night, and told
+-- the operator to "run a successful directory sync first", which they had.
+--
+-- NO BACKFILL, DELIBERATELY. Existing rows stay NULL and keep refusing until a
+-- sync observes them again, which is one click. Stamping rows this migration
+-- did not watch would assert an observation that nobody made — the precise
+-- confusion the column exists to end. The cost of waiting is a re-sync; the
+-- cost of guessing is a wrongly-enabled write path.
+--
+-- Nullable with no default for the same reason: a default would make every
+-- existing row claim to have been observed at deploy time.
+--
+-- ROLLBACK
+--   ALTER TABLE "ConnectedIdentityAccount" DROP COLUMN "onPremStateObservedAt";
+-- Safe at any time: nothing reads it except the write-target rail, which
+-- treats its absence as "not observed" — i.e. the pre-migration behaviour.
+
+ALTER TABLE "ConnectedIdentityAccount" ADD COLUMN "onPremStateObservedAt" TIMESTAMP(3);

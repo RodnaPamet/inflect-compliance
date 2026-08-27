@@ -869,6 +869,12 @@ describe('candidate selection demands FRESH link evidence', () => {
                 email: 'a@corp.example',
                 isProtected: true,
                 onPremisesSyncEnabled: true,
+                // Absent on the fixture row → NOT observed, and asserting that
+                // explicitly is the point. The first version of the mapping used
+                // `!== null`, which reads `undefined` as observed and fails OPEN
+                // on a rail whose whole job is to fail closed. This fixture is
+                // what caught it.
+                onPremStateObserved: false,
             },
         ]);
     });

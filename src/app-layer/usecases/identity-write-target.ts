@@ -32,8 +32,16 @@
 /** The subset of a stored account this decision needs. */
 export interface WriteTargetInput {
     readonly provider: string;
-    /** Observed during sync. `null` = the provider could not answer. */
+    /** Observed during sync. `null` = not synced from on-prem, OR unanswered. */
     readonly onPremisesSyncEnabled: boolean | null;
+    /**
+     * Whether a sync actually got an ANSWER for the field above.
+     *
+     * This is what separates the two meanings of `null`. Absent/false keeps the
+     * pre-existing conservative refusal, so a provider that says nothing — and
+     * every row written before the column existed — behaves exactly as before.
+     */
+    readonly onPremStateObserved?: boolean;
 }
 
 export type WriteTarget =
@@ -87,7 +95,7 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
         };
     }
 
-    if (account.onPremisesSyncEnabled === null) {
+    if (account.onPremisesSyncEnabled === null && !account.onPremStateObserved) {
         return {
             allowed: false,
             reason:
@@ -97,6 +105,19 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
         };
     }
 
-    // Observed false: cloud-mastered, so the cloud directory IS the authority.
+    // Reached by an observed `false` AND by an observed `null`, and the second
+    // one is the point.
+    //
+    // Graph's contract for `onPremisesSyncEnabled` is `true` when the object is
+    // synced from an on-premises AD and, verbatim, "otherwise the user isn't
+    // being synced and can be managed in Microsoft Entra ID". So `null` from a
+    // directory that was ASKED is that "otherwise" — it is the ordinary and
+    // permanent state of every user in a cloud-only tenant, not a gap.
+    //
+    // Treating it as a gap made this rail refuse every candidate in every
+    // cloud-only directory, forever, while advising the operator to run a sync
+    // they had already run successfully. The refusal survives untouched for a
+    // genuine unknown: Okta and Google Workspace hardcode null precisely
+    // because they cannot answer, and they set no observation.
     return { allowed: true };
 }

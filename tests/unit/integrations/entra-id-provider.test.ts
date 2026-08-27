@@ -193,6 +193,16 @@ describe('EntraIdProvider.listAccounts — injected override', () => {
 });
 
 describe('EntraIdProvider — directory enumeration', () => {
+    it('records that the directory ANSWERED the on-prem question', async () => {
+        // The pair the write-target rail reads. Graph returning null means "not
+        // synced from on-premises"; it is only safe to act on because the field
+        // was in the $select and the directory replied. Both select sets carry
+        // it, so this holds on the signInActivity fallback path too.
+        const fetchImpl = graphFetch({ users: [{ value: [graphUser()] }] });
+        const res = await provider(withToken({ fetchImpl })).listAccounts(CONFIG);
+        expect(res.accounts[0].onPremStateObserved).toBe(true);
+    });
+
     it('requests the full select with signInActivity first', async () => {
         const fetchImpl = graphFetch({ users: [{ value: [graphUser()] }] });
         await provider(withToken({ fetchImpl })).listAccounts(CONFIG);

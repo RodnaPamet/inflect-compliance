@@ -49,8 +49,52 @@ describe('a directory-synced account is refused and retargeted', () => {
     });
 });
 
+describe('an OBSERVED null is cloud-only, and writable', () => {
+    // The bug this closes, measured on the first real Entra tenant: 10 of 10
+    // accounts came back NULL from a fully-consented sync that reached PASSED,
+    // so every candidate was refused REFUSED_TARGET and the leaver path was
+    // permanently inert for cloud-only directories.
+    //
+    // Graph's contract: `true` when the object is synced from an on-premises
+    // AD, and "otherwise the user isn't being synced and can be managed in
+    // Microsoft Entra ID". A null from a directory that WAS asked is that
+    // "otherwise" — an answer, not a gap.
+    it('allows an Entra account the directory answered null for', () => {
+        expect(
+            resolveWriteTarget({
+                provider: 'entra-id',
+                onPremisesSyncEnabled: null,
+                onPremStateObserved: true,
+            }),
+        ).toEqual({ allowed: true });
+    });
+
+    it('an observed TRUE is still refused — observation does not override the answer', () => {
+        // The flag says "we asked", not "go ahead". A synced account stays
+        // refused and retargeted no matter how confidently it was observed.
+        const r = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: true,
+            onPremStateObserved: true,
+        });
+        expect(r.allowed).toBe(false);
+        expect(r.allowed === false && r.retargetTo).toBe('active-directory');
+    });
+
+    it('providers that CANNOT answer are unaffected — they set no observation', () => {
+        // Okta and Google Workspace hardcode null because they genuinely do not
+        // know. If this ever starts allowing them, the fix has widened past the
+        // case it was written for.
+        for (const provider of ['okta', 'google-workspace']) {
+            expect(
+                resolveWriteTarget({ provider, onPremisesSyncEnabled: null }).allowed,
+            ).toBe(false);
+        }
+    });
+});
+
 describe('unknown is refused — it is not the same as cloud-only', () => {
-    it('refuses when the flag was never observed', () => {
+    it('refuses when the flag was never observed (no observation recorded)', () => {
         // The whole reason the column is nullable. A provider that could not
         // answer must not be read as having answered "no".
         const r = resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: null });
