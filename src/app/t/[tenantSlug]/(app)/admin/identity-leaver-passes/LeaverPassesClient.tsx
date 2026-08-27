@@ -150,6 +150,7 @@ const BASIS_LABEL: Record<string, string> = {
     CLOUD_ONLY_OBSERVED: 'basisCloudOnlyObserved',
     ON_PREM_MASTERED: 'basisOnPremMastered',
     NEVER_OBSERVED: 'basisNeverObserved',
+    OBSERVATION_STALE: 'basisObservationStale',
     PROVIDER_CANNOT_OBSERVE: 'basisProviderCannotObserve',
     UNSUPPORTED_DIRECTORY: 'basisUnsupportedDirectory',
 };

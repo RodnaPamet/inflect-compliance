@@ -5004,6 +5004,7 @@
             "basisCloudOnlyObserved": "Cloud-only — the directory answered",
             "basisOnPremMastered": "Mastered on-premises",
             "basisNeverObserved": "Never observed — awaiting the next sync",
+            "basisObservationStale": "Last observed too long ago — waiting will not clear it",
             "basisProviderCannotObserve": "This directory reports no on-premises state",
             "basisUnsupportedDirectory": "Not a directory we write to",
             "basisObserved": "observed {when}",

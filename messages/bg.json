@@ -5004,6 +5004,7 @@
             "basisCloudOnlyObserved": "Само в облака — директорията отговори",
             "basisOnPremMastered": "Управляван локално",
             "basisNeverObserved": "Никога не е наблюдаван — изчаква следващата синхронизация",
+            "basisObservationStale": "Наблюдаван е твърде отдавна — изчакването няма да го изчисти",
             "basisProviderCannotObserve": "Тази директория не съобщава локално състояние",
             "basisUnsupportedDirectory": "Не е директория, в която записваме",
             "basisObserved": "наблюдаван {when}",
