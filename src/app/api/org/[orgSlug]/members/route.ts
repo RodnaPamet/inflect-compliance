@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
 import { withValidatedBody } from '@/lib/validation/route';
 import {
     AddOrgMemberInput,
@@ -107,13 +108,21 @@ export const PUT = withApiErrorHandling(
     ),
 );
 
-export const DELETE = withApiErrorHandling(
-    async (req: NextRequest, routeCtx: RouteContext) => {
-        const ctx = await getOrgCtx((await routeCtx.params), req);
-        if (!ctx.permissions.canManageMembers) {
-            throw forbidden('You do not have permission to manage members of this organization');
-        }
+type DeleteParams = { orgSlug: string };
 
+/**
+ * Gated on `canManageMembers`. The inline check this replaces recorded nothing
+ * on refusal; the gate writes an `ORG_AUTHZ_DENIED` row (#2147).
+ *
+ * `removeOrgMember` gained `assertCanManageOrgMembers` in the same diff, so
+ * this is additive rather than relocating the only check.
+ *
+ * POST and PUT keep their inline checks: they are not destructive verbs, and
+ * migrating them raises the same `withValidatedBody` composition question
+ * deferred on the tenant side.
+ */
+export const DELETE = withApiErrorHandling(
+    requireOrgPermission<DeleteParams>('canManageMembers', async (req, _args, ctx) => {
         const userId = req.nextUrl.searchParams.get('userId');
         if (!userId) {
             throw badRequest('Missing userId query parameter');
@@ -131,5 +140,5 @@ export const DELETE = withApiErrorHandling(
                   }
                 : null,
         });
-    },
+    }),
 );

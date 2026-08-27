@@ -7,27 +7,26 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
 import { revokeOrgInvite } from '@/app-layer/usecases/org-invites';
-import { forbidden } from '@/lib/errors/types';
 
 interface RouteContext {
     params: Promise<{ orgSlug: string; inviteId: string }>;
 }
 
+type DeleteParams = { orgSlug: string; inviteId: string };
+
+/**
+ * Gated on `canManageMembers`. The inline check this replaces recorded nothing
+ * on refusal; the gate writes an `ORG_AUTHZ_DENIED` row (#2147).
+ *
+ * `revokeOrgInvite` gained `assertCanManageOrgInvites` in the same diff, so
+ * this is additive rather than relocating the only check.
+ */
 export const DELETE = withApiErrorHandling(
-    async (req: NextRequest, routeCtx: RouteContext) => {
-        const ctx = await getOrgCtx(
-            { orgSlug: (await routeCtx.params).orgSlug },
-            req,
-        );
-        if (!ctx.permissions.canManageMembers) {
-            throw forbidden(
-                'You do not have permission to revoke invites for this organization',
-            );
-        }
-        await revokeOrgInvite(ctx, { inviteId: (await routeCtx.params).inviteId });
+    requireOrgPermission<DeleteParams>('canManageMembers', async (_req, { params }, ctx) => {
+        await revokeOrgInvite(ctx, { inviteId: params.inviteId });
         return NextResponse.json({ revoked: true });
-    },
+    }),
 );

@@ -16,16 +16,22 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
 import { resetOrgDashboardToPreset } from '@/app-layer/usecases/org-dashboard-widgets';
 
 interface RouteContext {
     params: Promise<{ orgSlug: string }>;
 }
 
+type ResetParams = { orgSlug: string };
+
+/**
+ * Gated on `canConfigureDashboard`, mirroring `assertCanWriteOrgWidgets`.
+ * The gate makes the refusal auditable; the usecase assert stays.
+ */
 export const POST = withApiErrorHandling(
-    async (req: NextRequest, routeCtx: RouteContext) => {
-        const ctx = await getOrgCtx((await routeCtx.params), req);
+    requireOrgPermission<ResetParams>('canConfigureDashboard', async (_req, _args, ctx) => {
         const widgets = await resetOrgDashboardToPreset(ctx);
         return NextResponse.json({ widgets });
-    },
+    }),
 );

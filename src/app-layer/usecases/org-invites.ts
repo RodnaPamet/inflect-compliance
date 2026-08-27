@@ -189,10 +189,25 @@ export async function createOrgInviteToken(
  * the DB so admins (and the audit ledger) can see the revocation
  * history. 404 if already accepted/revoked.
  */
+/**
+ * Invite lifecycle requires `canManageMembers`.
+ *
+ * ADDED alongside the route gate, not moved from it: the check lived only at
+ * the route, so a non-HTTP caller reached this usecase with none at all.
+ */
+function assertCanManageOrgInvites(ctx: OrgContext): void {
+    if (!ctx.permissions.canManageMembers) {
+        throw forbidden(
+            'You do not have permission to revoke invites for this organization',
+        );
+    }
+}
+
 export async function revokeOrgInvite(
     ctx: OrgContext,
     input: { inviteId: string },
 ): Promise<void> {
+    assertCanManageOrgInvites(ctx);
     const invite = await prisma.orgInvite.findFirst({
         where: {
             id: input.inviteId,

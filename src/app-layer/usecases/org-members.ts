@@ -60,6 +60,7 @@ import {
 import { ConflictError, NotFoundError, ValidationError } from '@/lib/errors/types';
 import { hashForLookup } from '@/lib/security/encryption';
 import type { OrgContext } from '@/app-layer/types';
+import { forbidden } from '@/lib/errors/types';
 import { OrgAuditAction, type OrgRole } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { appendAuditEntry } from '@/lib/audit';
@@ -393,10 +394,25 @@ export interface RemoveOrgMemberResult {
     deprovision?: DeprovisionResult;
 }
 
+/**
+ * Org membership changes require `canManageMembers`.
+ *
+ * ADDED alongside the route gate, not moved from it: the check lived only at
+ * the route, so a non-HTTP caller reached this usecase with none at all.
+ */
+function assertCanManageOrgMembers(ctx: OrgContext): void {
+    if (!ctx.permissions.canManageMembers) {
+        throw forbidden(
+            'You do not have permission to manage members of this organization',
+        );
+    }
+}
+
 export async function removeOrgMember(
     ctx: OrgContext,
     input: RemoveOrgMemberInput,
 ): Promise<RemoveOrgMemberResult> {
+    assertCanManageOrgMembers(ctx);
     const userId = input.userId?.trim();
     if (!userId) {
         throw new ValidationError('userId is required');

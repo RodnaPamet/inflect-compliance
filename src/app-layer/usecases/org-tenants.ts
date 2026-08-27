@@ -29,6 +29,7 @@ import { generateAndWrapDek } from '@/lib/security/tenant-keys';
 import { provisionAllOrgAdminsToTenant } from './org-provisioning';
 import { ConflictError, notFound } from '@/lib/errors/types';
 import type { OrgContext } from '@/app-layer/types';
+import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import { getBillingMode, type Plan } from '@/lib/billing/entitlements';
 import { recordTenantDeleted } from '@/lib/observability/business-metrics';
@@ -167,10 +168,29 @@ export async function createTenantUnderOrg(
  * The caller MUST have passed the `canManageTenants` permission check at
  * the route layer.
  */
+/**
+ * Org-tenant management requires `canManageTenants`.
+ *
+ * ADDED alongside the route gate, not moved from it. Before this, the check
+ * lived ONLY at the route handler, so any non-HTTP caller — a job, a script,
+ * the MCP surface — reached `deleteTenantUnderOrg` with no permission check at
+ * all. Replacing the route check with `requireOrgPermission` without this
+ * would have removed the only check there was: a defence-in-depth regression
+ * wearing a refactor's clothes.
+ */
+function assertCanManageOrgTenants(ctx: OrgContext): void {
+    if (!ctx.permissions.canManageTenants) {
+        throw forbidden(
+            'You do not have permission to remove tenants from this organization',
+        );
+    }
+}
+
 export async function deleteTenantUnderOrg(
     ctx: OrgContext,
     tenantId: string,
 ): Promise<{ tenant: { id: string; slug: string; name: string } }> {
+    assertCanManageOrgTenants(ctx);
     const tenant = await prisma.tenant.findFirst({
         where: {
             id: tenantId,
