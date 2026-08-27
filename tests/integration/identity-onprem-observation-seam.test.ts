@@ -105,24 +105,32 @@ d('the on-prem observation survives the DB seam', () => {
     });
 
     it('an OBSERVED null reaches the rail as observed, and the rail allows it', async () => {
-        const { linkId, employeeId } = await seed(new Date());
+        const observedAt = new Date('2026-08-26T02:00:00.000Z');
+        const { linkId, employeeId } = await seed(observedAt);
         const ctx = makeRequestContext('OWNER', { tenantId: T });
 
         const candidates = await findLeaverCandidates(ctx, 'entra-id', [employeeId], FRESH_SINCE);
         const candidate = candidates.find((c) => c.linkId === linkId);
 
-        // The seam itself: a timestamp in Postgres became a boolean on the
-        // candidate. A misspelled select or a `!== null` mapping breaks HERE,
-        // and nothing at either end of the chain would have noticed.
+        // The seam itself: a timestamp in Postgres has to arrive on the
+        // candidate as that same timestamp. A misspelled select breaks HERE, and
+        // nothing at either end of the chain would have noticed.
         expect(candidate).toBeDefined();
         expect(candidate!.onPremisesSyncEnabled).toBeNull();
-        expect(candidate!.onPremStateObserved).toBe(true);
+        // The VALUE, not merely its truthiness. The candidate carries the whole
+        // timestamp because the dry-run report has to say WHEN the directory
+        // answered — "would disable — cloud-only, observed on the 26th" is a
+        // claim an operator can weigh; "would disable" is not. Asserting the
+        // instant is also what catches a select that silently stopped returning
+        // it, since an `undefined` would satisfy any truthiness check written
+        // the lazy way round.
+        expect(candidate!.onPremStateObservedAt).toEqual(observedAt);
 
         expect(
             resolveWriteTarget({
                 provider: 'entra-id',
                 onPremisesSyncEnabled: candidate!.onPremisesSyncEnabled,
-                onPremStateObserved: candidate!.onPremStateObserved,
+                onPremStateObserved: Boolean(candidate!.onPremStateObservedAt),
             }).allowed,
         ).toBe(true);
     });
@@ -130,7 +138,7 @@ d('the on-prem observation survives the DB seam', () => {
     it('an UNOBSERVED null reaches the rail as unobserved, and the rail refuses', async () => {
         // The control, and the direction that must never regress: a row nobody
         // observed must not be writable. Without this the test above would pass
-        // just as happily against a mapping hardcoded to `true`.
+        // just as happily against a mapping hardcoded to a fixed date.
         const { linkId, employeeId } = await seed(null);
         const ctx = makeRequestContext('OWNER', { tenantId: T });
 
@@ -138,14 +146,19 @@ d('the on-prem observation survives the DB seam', () => {
         const candidate = candidates.find((c) => c.linkId === linkId);
 
         expect(candidate).toBeDefined();
-        expect(candidate!.onPremStateObserved).toBe(false);
+        expect(candidate!.onPremStateObservedAt).toBeNull();
 
         const verdict = resolveWriteTarget({
             provider: 'entra-id',
             onPremisesSyncEnabled: candidate!.onPremisesSyncEnabled,
-            onPremStateObserved: candidate!.onPremStateObserved,
+            onPremStateObserved: Boolean(candidate!.onPremStateObservedAt),
         });
         expect(verdict.allowed).toBe(false);
         expect(verdict.allowed === false && verdict.reason).toMatch(/never observed/i);
+        // NEVER_OBSERVED, not PROVIDER_CANNOT_OBSERVE: entra DOES answer this
+        // question, so this row clears itself at the next sync. The un-backfilled
+        // #2144 migration guarantees a population of exactly these for one cycle,
+        // and telling an operator to investigate them would be wrong.
+        expect(verdict.basis).toBe('NEVER_OBSERVED');
     });
 });

@@ -111,6 +111,47 @@ describe('the durable record a dry run leaves behind', () => {
         expect(data.resultJson.decisionsTruncated).toBe(false);
     });
 
+    it('carries the decision BASIS into the row, unscrubbed and verbatim', async () => {
+        // Every DRY_RUN decision shares one fixed reason sentence, so the report
+        // could show a hundred identical "would disable" rows and say nothing
+        // about which of them rested on the cloud-only rule #2144 widened. The
+        // basis is the only field that separates them, and it survives the
+        // scrubbing pass untouched because it can name no account: an enum, a
+        // tri-state boolean and a timestamp.
+        const basis = {
+            rule: 'CLOUD_ONLY_OBSERVED',
+            onPremisesSyncEnabled: null,
+            observedAt: '2026-08-19T02:00:00.000Z',
+        };
+        disableBatch.mockResolvedValue({
+            results: [{ outcome: 'DRY_RUN', linkId: 'l1', reason: 'Dry-run mode.', basis }],
+        });
+
+        await run();
+
+        const decisions = mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson.decisions;
+        expect(decisions).toEqual([
+            { linkId: 'l1', outcome: 'DRY_RUN', reason: 'Dry-run mode.', basis },
+        ]);
+    });
+
+    it('omits the basis rather than inventing one when a decision made none', async () => {
+        // The refusals decided before the write-target rail carry no basis, and
+        // the row must not manufacture one — a `null` or a guessed rule would be
+        // indistinguishable on screen from a determination the pass made.
+        disableBatch.mockResolvedValue({
+            results: [{ outcome: 'REFUSED_PROTECTED', linkId: 'l1', reason: 'service account' }],
+        });
+
+        await run();
+
+        const decisions = mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson.decisions;
+        expect(decisions[0]).not.toHaveProperty('basis');
+        // Paired positive: the decision itself IS in the row, so the absence
+        // above is about the basis and not about a row that never got written.
+        expect(decisions[0].outcome).toBe('REFUSED_PROTECTED');
+    });
+
     it('keys decisions by link id and never by directory identifier', async () => {
         // IntegrationExecution is not encrypted at rest — the Epic B manifest is
         // String-only, so a Json column cannot join it — and these rows outlive

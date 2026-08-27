@@ -132,11 +132,68 @@ const PASSED_PASS = {
         batchRefused: null,
         counts: { DRY_RUN: 1, REFUSED_PROTECTED: 1 },
         decisions: [
-            { linkId: 'lnk-okta-1', outcome: 'DRY_RUN' },
+            {
+                linkId: 'lnk-okta-1',
+                outcome: 'DRY_RUN',
+                // The widened rule. Without a basis this row is the same two
+                // words as every other DRY_RUN row on the page.
+                basis: {
+                    rule: 'CLOUD_ONLY_OBSERVED',
+                    onPremisesSyncEnabled: null,
+                    observedAt: '2026-08-19T01:00:00.000Z',
+                },
+            },
             {
                 linkId: 'lnk-okta-2',
                 outcome: 'REFUSED_PROTECTED',
                 reason: 'The account this connection authenticates as.',
+                // Decided before the write-target rail ran, so it genuinely has
+                // no basis — the page must not invent one.
+            },
+        ],
+        decisionsTruncated: false,
+    },
+};
+
+/**
+ * The pair whose confusion #2144's no-backfill decision made possible.
+ *
+ * Both refuse REFUSED_TARGET. One clears itself at the next sync and the other
+ * never will, and the operator's response differs completely — wait vs there is
+ * nothing to wait for. `basis.rule` is the only thing on the row that says
+ * which, so the page has to render them differently.
+ */
+const BASIS_PASS = {
+    id: 'pass-basis',
+    provider: 'entra_id',
+    status: 'PASSED',
+    executedAt: '2026-08-17T02:00:00.000Z',
+    completedAt: '2026-08-17T02:00:04.000Z',
+    resultJson: {
+        mode: 'DRY_RUN',
+        evidence: 'snapshot',
+        terminatedWorkers: 3,
+        candidates: 3,
+        population: 90,
+        batchRefused: null,
+        counts: { REFUSED_TARGET: 2, DRY_RUN: 1 },
+        decisions: [
+            {
+                linkId: 'lnk-waiting',
+                outcome: 'REFUSED_TARGET',
+                reason: 'Refusing to disable an account whose on-premises sync state was never observed.',
+                basis: { rule: 'NEVER_OBSERVED', onPremisesSyncEnabled: null },
+            },
+            {
+                linkId: 'lnk-unobservable',
+                outcome: 'REFUSED_TARGET',
+                reason: 'Refusing to disable an account in "okta", which does not report it.',
+                basis: { rule: 'PROVIDER_CANNOT_OBSERVE', onPremisesSyncEnabled: null },
+            },
+            {
+                linkId: 'lnk-legacy',
+                outcome: 'DRY_RUN',
+                // A row written before the basis existed. Must degrade, not throw.
             },
         ],
         decisionsTruncated: false,
@@ -159,6 +216,10 @@ const REFUSED_PASS = {
     },
 };
 
+// BASIS_PASS is deliberately NOT in here. It is a second PASSED row, and the
+// three-statuses test below resolves each label with a singular query — two
+// rows sharing a status would fail it for a reason that has nothing to do with
+// what it asserts. Its own suite arranges it alone.
 const ALL_PASSES = [PARTIAL_PASS, PASSED_PASS, REFUSED_PASS];
 
 // ── Harness ────────────────────────────────────────────────────────────
@@ -330,3 +391,60 @@ describe('leaver pass report — nothing recorded yet', () => {
         expect(screen.getByRole('heading', { name: M.title })).toBeInTheDocument();
     });
 });
+
+describe('leaver pass report — a decision says which rule produced it', () => {
+    /**
+     * Every DRY_RUN decision carries the SAME fixed reason sentence ("the
+     * disable was decided but not performed"), so before the basis column the
+     * table could show a screen of identical "would disable" rows and no reader
+     * could tell which of them rested on the cloud-only rule #2144 widened — the
+     * exact question the seven-day observation window is meant to answer.
+     */
+    it('names the cloud-only rule and when the directory answered', async () => {
+        arrange(ALL_PASSES);
+        await renderReport();
+
+        await act(async () => {
+            fireEvent.click(await rowFor('okta'));
+        });
+
+        // Positive: the widened rule is named on the row in words.
+        expect(await screen.findByText(M.basisCloudOnlyObserved)).toBeInTheDocument();
+        // …and it says WHEN, which is what turns it from a label into evidence.
+        expect(screen.getByText(/observed /)).toBeInTheDocument();
+        // Paired: the decision it belongs to is the one on screen.
+        expect(screen.getByText('lnk-okta-1')).toBeInTheDocument();
+    });
+
+    it('renders a waiting refusal differently from an unobservable one', async () => {
+        // Arranged alone, so it is the default selection and no click is needed.
+        arrange([BASIS_PASS]);
+        await renderReport();
+
+        // Both rows are REFUSED_TARGET and both are on screen…
+        expect(await screen.findByText('lnk-waiting')).toBeInTheDocument();
+        expect(screen.getByText('lnk-unobservable')).toBeInTheDocument();
+        // …and the basis is what separates them. Wait vs investigate.
+        expect(screen.getByText(M.basisNeverObserved)).toBeInTheDocument();
+        expect(screen.getByText(M.basisProviderCannotObserve)).toBeInTheDocument();
+        // Two DIFFERENT strings — a mapping collapsed to one label would still
+        // find "a" label for each and this test would pass without the meaning.
+        expect(M.basisNeverObserved).not.toBe(M.basisProviderCannotObserve);
+    });
+
+    it('degrades a pre-basis decision to a dash rather than guessing one', async () => {
+        // The Json column is read verbatim, so rows written before the basis
+        // existed are permanent. A guessed basis would be indistinguishable on
+        // screen from a determination the pass actually made.
+        arrange([BASIS_PASS]);
+        await renderReport();
+
+        // Positive: the basis-less decision rendered at all.
+        const legacyRow = (await screen.findByText('lnk-legacy')).closest('tr');
+        expect(legacyRow).not.toBeNull();
+        // Negative, paired with it: its basis cell claims nothing.
+        expect(legacyRow!.textContent).toContain('—');
+        expect(legacyRow!.textContent).not.toContain(M.basisCloudOnlyObserved);
+    });
+});
+

@@ -30,9 +30,13 @@ import { runInTenantContext } from '@/lib/db-context';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
-import { resolveWriteTarget } from './identity-write-target';
+import {
+    resolveWriteTarget,
+    type WriteTarget,
+    type WriteTargetBasis,
+} from './identity-write-target';
 import { beginWrite } from './identity-write-journal';
-import { getIdentityWritePolicy } from './identity-write-policy';
+import { getIdentityWritePolicy, type IdentityWriteMode } from './identity-write-policy';
 import { checkDisableBlastRadius } from './identity-write-breaker';
 import {
     recordIdentityBatchRefused,
@@ -57,7 +61,12 @@ export type DisableOutcome =
     | 'DISABLED'
     /** The mode is DISABLED, or below the rung that permits a real write. */
     | 'REFUSED_MODE'
-    /** Mastered on-prem, or the sync flag was never observed. */
+    /**
+     * The write cannot LAND here. Three situations with different responses —
+     * mastered on-prem, not yet observed, or a provider that cannot observe —
+     * and `DisableResult.basis.rule` is what says which. The counter cannot: an
+     * operator reading REFUSED_TARGET alone learns nothing about what to do.
+     */
     | 'REFUSED_TARGET'
     /**
      * The account is the one this connection authenticates AS, or is otherwise
@@ -77,10 +86,68 @@ export type DisableOutcome =
      */
     | 'INDETERMINATE';
 
+/**
+ * WHY the decision went the way it did, from facts already in hand.
+ *
+ * The seven-day DRY_RUN window exists so an operator can read what the product
+ * WOULD have done and decide whether to grant it unattended authority over a
+ * customer's directory. `outcome` alone does not support that decision: "would
+ * disable" is the same two words whether the directory answered that the
+ * account is cloud-only or whether a rail was widened underneath the reader.
+ * #2144 widened one — a whole population moved from REFUSED_TARGET to
+ * would-disable — and nothing in the report said which rows rested on it.
+ *
+ * Every field is READ, never re-derived from a fresh lookup. `rule` is the
+ * verdict `resolveWriteTarget` already returned; the other two are the account
+ * row's own columns, already selected by `findLeaverCandidates` for the rail.
+ * There is no query here and there must not be one: a report costing a read per
+ * decision is a report somebody turns off.
+ *
+ * SAFE TO PERSIST VERBATIM, and that is a property to keep rather than a
+ * coincidence. `IntegrationExecution.resultJson` is not encrypted at rest and
+ * outlives the pass, so every free-text field this module records is scrubbed
+ * of directory identifiers on the way in. A basis is an enum, a tri-state
+ * boolean and a timestamp — it can name no account. Do not add a field here
+ * that can.
+ *
+ * A `type`, NOT an `interface`, and the difference is load-bearing rather than
+ * stylistic. This value is written straight into `IntegrationExecution.resultJson`,
+ * whose Prisma parameter is `InputJsonValue` — an assignability check that needs
+ * an index signature. TypeScript synthesises one for an object TYPE ALIAS and
+ * refuses to for an interface, because an interface stays open to declaration
+ * merging and so cannot be proven to hold only JSON. Written as an interface
+ * this compiles everywhere except the one line that persists it, and every unit
+ * test still passes, because Jest does not typecheck. It was written as an
+ * interface first; `tsc` is what caught it.
+ */
+export type DecisionBasis = {
+    /** Which write-target rule decided. */
+    readonly rule: WriteTargetBasis;
+    /**
+     * The stored on-prem sync flag, verbatim.
+     *
+     * `null` carries BOTH "the directory answered: not synced" and "nobody
+     * asked" — `observedAt` is what separates them, which is the whole reason
+     * the pair travels together rather than as one collapsed word.
+     */
+    readonly onPremisesSyncEnabled: boolean | null;
+    /** ISO timestamp of the sync that ANSWERED. Absent = none ever did. */
+    readonly observedAt?: string;
+};
+
 export interface DisableResult {
     readonly outcome: DisableOutcome;
     readonly reason?: string;
     readonly journalId?: string;
+    /**
+     * Present on every outcome the write-target rail participated in, absent on
+     * the refusals decided before it (self-lockout, protected, mode).
+     *
+     * Optional rather than always-present because those earlier refusals make
+     * no write-target determination at all, and stamping one on them would be a
+     * claim about a rule that never ran.
+     */
+    readonly basis?: DecisionBasis;
 }
 
 /**
@@ -190,8 +257,23 @@ export interface DisableAccountInput {
      */
     readonly email?: string | null;
     readonly onPremisesSyncEnabled: boolean | null;
-    /** Whether a sync actually answered the field above — see resolveWriteTarget. */
-    readonly onPremStateObserved?: boolean;
+    /**
+     * When a sync last ANSWERED the field above. `null` / absent = never.
+     *
+     * The TIMESTAMP, where the rail takes a boolean, and ONE field rather than
+     * both. The rail needs only whether an observation exists and gets exactly
+     * that, from a `Boolean(...)` at its single call site below — so an absent
+     * key still reads as NOT observed and the rail still fails closed. The
+     * REPORT needs when: "would disable — cloud-only, observed on the 3rd" and
+     * an unqualified "would disable" are different claims to the operator being
+     * asked to grant this thing unattended authority.
+     *
+     * Carrying the boolean here as well would be two representations of one
+     * fact that a later edit can set independently — the shape #2144's own
+     * review had to unpick when `onPremSyncObserved` and `onPremStateObserved`
+     * turned out to be one concept under two names.
+     */
+    readonly onPremStateObservedAt?: Date | null;
     /**
      * Break-glass / service account, excluded from automated offboarding.
      *
@@ -392,9 +474,57 @@ async function decideAndDisable(
     const target = resolveWriteTarget({
         provider: writer.provider,
         onPremisesSyncEnabled: input.onPremisesSyncEnabled,
-        onPremStateObserved: input.onPremStateObserved,
+        // `Boolean(...)`, NOT `!= null`. The strict form reads `undefined` as
+        // OBSERVED — and `undefined` is what an unselected column or a row shape
+        // predating it produces, so the mistake fails OPEN on a rail whose whole
+        // job is to fail closed. The guard now sits against the rail it protects
+        // rather than a module away at the query, which is the only place it can
+        // be read while deciding whether it is still right.
+        onPremStateObserved: Boolean(input.onPremStateObservedAt),
     });
 
+    // ═══ THE ONE PLACE A BASIS IS ATTACHED ═══
+    //
+    // Everything from here down is decided WITH the target, and every one of
+    // those outcomes has to be able to say which rule produced it. Merging once,
+    // over the whole tail, is why: eight returns live below, and a ninth added
+    // later inherits the basis instead of having to remember it. The obligation
+    // is discharged by the call graph, not by memory.
+    //
+    // The refusals ABOVE this line — self-lockout, protected, mode — deliberately
+    // carry none. No write-target determination was made for them, and a basis
+    // on such a row would describe a rule that never ran.
+    return {
+        ...(await decideWithTarget(ctx, writer, input, policy.mode, target)),
+        basis: {
+            rule: target.basis,
+            onPremisesSyncEnabled: input.onPremisesSyncEnabled,
+            ...(input.onPremStateObservedAt
+                ? { observedAt: input.onPremStateObservedAt.toISOString() }
+                : {}),
+        },
+    };
+}
+
+/**
+ * The tail of the decision: everything the write-target verdict participates in.
+ *
+ * Split from `decideAndDisable` so the basis has ONE merge point rather than
+ * eight — see the comment at the call. The two halves also read as what they
+ * are: refusals that need no verdict, then the decisions the verdict shapes.
+ *
+ * `target` is passed in rather than recomputed. `resolveWriteTarget` is pure and
+ * cheap, so a second call would be correct — and it would still be a second
+ * evaluation of a safety rail, which is the thing this subsystem refuses to have
+ * anywhere else.
+ */
+async function decideWithTarget(
+    ctx: RequestContext,
+    writer: DirectoryWriter,
+    input: DisableAccountInput,
+    mode: IdentityWriteMode,
+    target: WriteTarget,
+): Promise<DisableResult> {
     // ── 3. Read the current state. First network call, the capture, and now
     //       also the evidence a held target refusal is answered by. ──
     //
@@ -497,7 +627,7 @@ async function decideAndDisable(
         return { outcome: 'REFUSED_TARGET', reason: target.reason };
     }
 
-    if (policy.mode === 'DRY_RUN') {
+    if (mode === 'DRY_RUN') {
         // Everything above was decided for real. Nothing is written, and no
         // journal row is created: a DRY_RUN did not replace anything, so a
         // capture of what it "replaced" would be a lie a restore could read.
@@ -516,7 +646,7 @@ async function decideAndDisable(
         provider: writer.provider,
         externalUserId: input.externalUserId,
         action: 'DISABLE_ACCOUNT',
-        mode: policy.mode,
+        mode,
         priorState: state.priorState,
     });
 
@@ -788,16 +918,16 @@ export async function findLeaverCandidates(
             // needing a hidden lookup to explain it.
             isProtected: r.connectedAccount.isProtected,
             onPremisesSyncEnabled: r.connectedAccount.onPremisesSyncEnabled,
-            // A timestamp on the row IS the observation; the rail only needs
-            // whether one exists, not when.
+            // A timestamp on the row IS the observation, and it is carried WHOLE
+            // rather than collapsed to a boolean here.
             //
-            // `Boolean(...)`, NOT `!== null`. The strict form reads `undefined`
-            // as observed — and `undefined` is what an unselected column or a
-            // row shape that predates it produces, so the mistake fails OPEN on
-            // a rail whose entire job is to fail closed. A unit test caught it
-            // on a fixture with the field absent; production would have caught
-            // it by disabling something.
-            onPremStateObserved: Boolean(r.connectedAccount.onPremStateObservedAt),
+            // The rail still consumes only "did anything answer" — the
+            // `Boolean(...)` that guarantees an absent value fails CLOSED moved
+            // to `decideAndDisable`, immediately against the rail it protects.
+            // What the timestamp buys is the report: an operator reading seven
+            // days of dry runs has to tell an account nothing has looked at yet
+            // from one observed last night, and a boolean cannot say that.
+            onPremStateObservedAt: r.connectedAccount.onPremStateObservedAt,
         }));
     });
 }

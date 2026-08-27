@@ -26,6 +26,15 @@
  * tell apart during the observation window — rendering it as an absence would put
  * back exactly the silence the record was built to break.
  *
+ * THE BASIS COLUMN IS NOT DECORATION. Every DRY_RUN decision carries the same
+ * fixed reason sentence ("the disable was decided but not performed"), so before
+ * it the table could show a hundred identical rows and no reader could tell
+ * which of them rested on the cloud-only rule #2144 widened — nor, among the
+ * refusals, which account is genuinely unobservable and which has simply not
+ * been re-synced since that migration deliberately declined to backfill. Those
+ * two call for opposite responses (investigate vs wait), and the basis is the
+ * only thing on the row that separates them.
+ *
  * `resultJson` is a Json column read back verbatim, so every field is narrowed
  * defensively rather than trusted: a row written by an older build, or by a
  * future one, must degrade to a thinner render, never to a thrown page.
@@ -45,11 +54,25 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { EmptyState } from '@/components/ui/empty-state';
 
+/**
+ * Why the decision went the way it did, as `DecisionBasis` wrote it.
+ *
+ * Narrowed loosely on purpose: this is a Json column, so a row written by an
+ * older build carries no basis at all and a row from a future one may carry a
+ * `rule` this build has no label for. Both must degrade to a thinner cell.
+ */
+interface DecisionBasisJson {
+    rule?: string;
+    onPremisesSyncEnabled?: boolean | null;
+    observedAt?: string;
+}
+
 /** One decision, keyed by `IdentityAccountLink.id` with its reason already scrubbed. */
 interface PassDecision {
     linkId: string;
     outcome: string;
     reason?: string;
+    basis?: DecisionBasisJson;
 }
 
 /** The `resultJson` payload, as written by `writeExecutionRow`. */
@@ -108,11 +131,55 @@ const OUTCOME_VARIANT: Record<string, StatusBadgeVariant> = {
     INDETERMINATE: 'error',
 };
 
+/**
+ * Rule code → the i18n key that says it in words.
+ *
+ * The report's reader is deciding whether to grant this thing unattended
+ * authority over their directory, and `DRY_RUN` alone does not support that
+ * decision — every dry-run row carries the same fixed reason sentence, so the
+ * table could not say which of them rested on the cloud-only rule #2144
+ * widened. The basis is what separates them.
+ *
+ * A `rule` with no entry here falls back to the raw code rather than to an
+ * empty cell: an unrecognised basis is still information, and a blank would
+ * read as "no basis was recorded", which is a different fact.
+ */
+const BASIS_LABEL: Record<string, string> = {
+    ON_PREM_DIRECTORY: 'basisOnPremDirectory',
+    NOT_ON_PREM_SYNCED: 'basisNotOnPremSynced',
+    CLOUD_ONLY_OBSERVED: 'basisCloudOnlyObserved',
+    ON_PREM_MASTERED: 'basisOnPremMastered',
+    NEVER_OBSERVED: 'basisNeverObserved',
+    PROVIDER_CANNOT_OBSERVE: 'basisProviderCannotObserve',
+    UNSUPPORTED_DIRECTORY: 'basisUnsupportedDirectory',
+};
+
+/**
+ * The two REFUSED bases an operator must not confuse.
+ *
+ * `NEVER_OBSERVED` clears itself overnight — the un-backfilled #2144 migration
+ * guarantees a population of them for one sync cycle, and the response is to
+ * wait. `PROVIDER_CANNOT_OBSERVE` never clears. Toned apart so the difference
+ * survives a scan of seven days of passes: warning is "come back tomorrow",
+ * neutral is "there is nothing to come back for".
+ */
+const BASIS_VARIANT: Record<string, StatusBadgeVariant> = {
+    NEVER_OBSERVED: 'warning',
+    PROVIDER_CANNOT_OBSERVE: 'neutral',
+    ON_PREM_MASTERED: 'warning',
+};
+
 /** Narrow the Json column without trusting it. */
 function readResult(value: unknown): PassResult {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
         ? (value as PassResult)
         : {};
+}
+
+function readBasis(value: unknown): DecisionBasisJson | null {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+    const b = value as DecisionBasisJson;
+    return typeof b.rule === 'string' ? b : null;
 }
 
 function readDecisions(result: PassResult): PassDecision[] {
@@ -223,6 +290,33 @@ export function LeaverPassesClient() {
                     {row.original.outcome}
                 </StatusBadge>
             ),
+        },
+        {
+            id: 'basis',
+            header: t('leaverPasses.colBasis'),
+            cell: ({ row }) => {
+                const basis = readBasis(row.original.basis);
+                // An older row genuinely recorded no basis. Say so with the same
+                // em-dash the other optional cells use, rather than inventing
+                // one from the outcome — a guess here would be indistinguishable
+                // on screen from a determination the pass actually made.
+                if (!basis?.rule) return <span className="text-content-subtle">—</span>;
+                const key = BASIS_LABEL[basis.rule];
+                return (
+                    <span className="inline-flex flex-wrap items-center gap-tight">
+                        <StatusBadge variant={BASIS_VARIANT[basis.rule] ?? 'info'} size="sm">
+                            {key ? t(`leaverPasses.${key}`) : basis.rule}
+                        </StatusBadge>
+                        {basis.observedAt && (
+                            <span className="text-content-muted tabular-nums">
+                                {t('leaverPasses.basisObserved', {
+                                    when: formatDateTime(basis.observedAt),
+                                })}
+                            </span>
+                        )}
+                    </span>
+                );
+            },
         },
         {
             id: 'reason',
