@@ -51,13 +51,21 @@ export interface WriteTargetInput {
     /** Observed during sync. `null` = not synced from on-prem, OR unanswered. */
     readonly onPremisesSyncEnabled: boolean | null;
     /**
-     * Whether a sync actually got an ANSWER for the field above.
+     * WHEN a sync got an ANSWER for the field above, or null/absent if none did.
      *
-     * This is what separates the two meanings of `null`. Absent/false keeps the
-     * pre-existing conservative refusal, so a provider that says nothing — and
-     * every row written before the column existed — behaves exactly as before.
+     * This is what separates the two meanings of `null` — and, since it is a
+     * timestamp rather than a flag, how recently. Absent keeps the conservative
+     * refusal, so a provider that says nothing, and every row written before the
+     * column existed, behaves exactly as before.
+     *
+     * A TIMESTAMP, NOT A BOOLEAN, and the rail owns the age rather than trusting
+     * a caller's reading of it. A boolean here would let one producer apply the
+     * bound and another forget, which is how two callers of the same rail end up
+     * disagreeing about whether an account may be disabled.
      */
-    readonly onPremStateObserved?: boolean;
+    readonly onPremStateObservedAt?: Date | string | null;
+    /** Injectable clock, for tests. Defaults to now at the call. */
+    readonly now?: Date;
 }
 
 /**
@@ -90,6 +98,8 @@ export type WriteTargetBasis =
     | 'ON_PREM_MASTERED'
     /** The provider can answer; nothing has asked for this account yet. WAIT. */
     | 'NEVER_OBSERVED'
+    /** It DID answer, too long ago to act on. Waiting alone may not clear it. */
+    | 'OBSERVATION_STALE'
     /** The provider has no on-premises concept to report. Waiting will not help. */
     | 'PROVIDER_CANNOT_OBSERVE'
     /** Not a directory this platform disables accounts in. */
@@ -111,6 +121,70 @@ export type WriteTarget =
  * account is not mastered somewhere else.
  */
 const CLOUD_DIRECTORIES = new Set(['entra-id', 'okta', 'google-workspace']);
+
+/**
+ * How recently a directory must have ANSWERED for the answer to authorise a
+ * disable.
+ *
+ * Two days rather than one, for the reason the link bound uses the same number:
+ * the sync is daily, so a one-day bound turns a single missed run into a silent
+ * no-op pass, and "we disabled nobody" would look identical to "nobody left".
+ *
+ * THE CANONICAL BOUND FOR BOTH. `LINK_FRESHNESS_MS` aliases this rather than
+ * repeating the literal, because the two answer one question — did the sync
+ * that refreshes this row run recently enough — and are refreshed by the same
+ * 03:00 job. Left as two independent literals, the weaker one silently governs
+ * and a future edit to either moves a bound its author was not thinking about.
+ */
+export const OBSERVATION_FRESHNESS_MS = 2 * 24 * 60 * 60 * 1000;
+
+/**
+ * Tolerance for a stamp in the FUTURE.
+ *
+ * Small forward skew between the worker that synced and the pass that reads is
+ * ordinary, and refusing on it would make the rail inert for a reason that has
+ * nothing to do with the directory. An UNBOUNDED future is different: a
+ * forward-skewed clock would freeze a row as permanently fresh, defeating the
+ * bound in the one failure mode it exists to catch. So: tolerate skew, refuse
+ * a stamp that cannot be skew.
+ */
+const OBSERVATION_SKEW_TOLERANCE_MS = 60 * 60 * 1000;
+
+/**
+ * Was this account's on-premises state answered RECENTLY ENOUGH to act on?
+ *
+ * Fails closed on every ambiguity: absent, null, unparseable, too old, or so
+ * far in the future it cannot be clock skew.
+ *
+ * The age matters because the rung every tenant is clamped at is DRY_RUN, and
+ * the snapshot writer used there performs NO live read — the stored stamp is
+ * the only evidence the decision has.
+ */
+/**
+ * Render the stamp for the refusal text WITHOUT the possibility of throwing.
+ *
+ * `new Date('nonsense').toISOString()` raises RangeError, and a rail that throws
+ * instead of returning a verdict turns one bad row into an aborted candidate
+ * with an unhandled error — strictly worse than the refusal it was computing.
+ * Found by the unparseable-input test, which is why that case is worth having.
+ */
+function describeObservedAt(value: Date | string | null | undefined): string {
+    if (value === null || value === undefined) return 'never';
+    const t = value instanceof Date ? value.getTime() : Date.parse(value);
+    return Number.isFinite(t) ? new Date(t).toISOString() : 'at an unreadable timestamp';
+}
+
+export function isObservationFresh(
+    observedAt: Date | string | null | undefined,
+    now: Date = new Date(),
+): boolean {
+    if (observedAt === null || observedAt === undefined) return false;
+    const at = observedAt instanceof Date ? observedAt.getTime() : Date.parse(observedAt);
+    if (!Number.isFinite(at)) return false;
+    const t = now.getTime();
+    if (at > t + OBSERVATION_SKEW_TOLERANCE_MS) return false;
+    return at >= t - OBSERVATION_FRESHNESS_MS;
+}
 
 /** The on-prem directory. A write here lands where authority already lives. */
 const ON_PREM_DIRECTORY = 'active-directory';
@@ -154,8 +228,41 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
         };
     }
 
+    // FRESHNESS IS CHECKED ONCE, HERE, AND APPLIES TO BOTH REMAINING BRANCHES.
+    //
+    // The first version of this gated only the `null` branch, which left the
+    // `false` branch — the value Graph documents for "previously synced, since
+    // removed from sync scope" — able to authorise a disable from an
+    // arbitrarily old observation. That is the shape MOST likely to have
+    // flipped back to on-prem-mastered since, so exempting it inverted the
+    // intent: the age bound skipped precisely the value it most needed to hold.
+    const observedFresh = isObservationFresh(account.onPremStateObservedAt, account.now);
+    const staleAnswer = account.onPremStateObservedAt != null && !observedFresh;
+
+    if (staleAnswer) {
+        // ITS OWN REFUSAL, and its own remedy. Merged into "never observed" this
+        // told the operator to run a sync — which is the right advice there and
+        // useless here, because the usual cause is a row whose CONNECTION was
+        // disabled: `removeIntegrationConnection` is a soft disable, the
+        // dispatch skips disabled connections, and the deprovision reconcile is
+        // connection-scoped, so those rows freeze while a SURVIVING connection's
+        // provider-scoped link reconcile keeps their links looking fresh. No
+        // amount of waiting refreshes them.
+        return {
+            allowed: false,
+            basis: 'OBSERVATION_STALE',
+            reason:
+                `Refusing to disable an account whose on-premises sync state was last observed ` +
+                `${describeObservedAt(account.onPremStateObservedAt)}, which is not recent enough for ` +
+                `this platform to act on. An observation that old is a statement about a directory that ` +
+                `has had time to change. If no sync has refreshed it, the usual cause is that the ` +
+                `connection which observed this account has been disabled — re-enable it, or remove the ` +
+                `accounts it left behind. Waiting alone will not clear this.`,
+        };
+    }
+
     const nullMeansCloudOnly =
-        NULL_MEANS_NOT_SYNCED.has(account.provider) && account.onPremStateObserved === true;
+        NULL_MEANS_NOT_SYNCED.has(account.provider) && observedFresh;
 
     if (account.onPremisesSyncEnabled === null && !nullMeansCloudOnly) {
         // TWO REFUSALS, NOT ONE — and they were the same sentence until now.

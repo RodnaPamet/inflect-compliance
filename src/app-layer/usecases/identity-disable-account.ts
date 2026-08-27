@@ -480,7 +480,11 @@ async function decideAndDisable(
         // job is to fail closed. The guard now sits against the rail it protects
         // rather than a module away at the query, which is the only place it can
         // be read while deciding whether it is still right.
-        onPremStateObserved: Boolean(input.onPremStateObservedAt),
+        // The RAW timestamp, not a boolean the caller derived. The rail owns
+        // the age bound — see isObservationFresh — so two producers cannot
+        // disagree about whether an account may be disabled, which is exactly
+        // what a per-caller `Boolean(...)` invites.
+        onPremStateObservedAt: input.onPremStateObservedAt,
     });
 
     // ═══ THE ONE PLACE A BASIS IS ATTACHED ═══
