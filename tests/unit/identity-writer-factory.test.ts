@@ -203,7 +203,7 @@ describe('the snapshot reader', () => {
     it('answers the on-prem observation question, like the live capture does', async () => {
         // PARITY, and it is about a gate that cannot fire here YET.
         // `EntraIdDirectoryWriter.disable` refuses on
-        // `priorState.onPremSyncObserved !== true`. That check is unreachable in
+        // `priorState.onPremStateObserved !== true`. That check is unreachable in
         // DRY_RUN only because the usecase returns before `writer.disable` — and
         // the writer's own header says decisions that need no network belong
         // ABOVE that line, so hoisting it is the obvious next edit. If this bag
@@ -220,7 +220,7 @@ describe('the snapshot reader', () => {
             onPremStateObservedAt: new Date('2026-08-27T00:00:00Z'),
         });
         const observed = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
-        expect(observed.priorState).toMatchObject({ onPremSyncObserved: true });
+        expect(observed.priorState).toMatchObject({ onPremStateObserved: true });
 
         mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
             status: 'ACTIVE',
@@ -229,7 +229,7 @@ describe('the snapshot reader', () => {
             onPremStateObservedAt: null,
         });
         const unobserved = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
-        expect(unobserved.priorState).toMatchObject({ onPremSyncObserved: false });
+        expect(unobserved.priorState).toMatchObject({ onPremStateObserved: false });
     });
 
     it('marks its evidence stale, so nothing settles a journal row from it', async () => {

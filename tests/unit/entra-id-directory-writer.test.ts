@@ -395,7 +395,12 @@ describe('readState', () => {
         });
         // A plaintext JSON column six months later cannot tell an absent key
         // from a field the writer of that era never selected.
-        expect(state.priorState.captureSchema).toBe('entra-id/disable-account/v1');
+        // v2 since `onPremStateObserved` joined the capture. Version and shape are
+        // asserted TOGETHER on purpose: bumping one without the other is the
+        // ambiguity the stamp exists to prevent — an absent key would otherwise
+        // mean "that era did not record it" and "Graph did not answer" at once.
+        expect(state.priorState.captureSchema).toBe('entra-id/disable-account/v2');
+        expect(state.priorState).toHaveProperty('onPremStateObserved');
         expect(state.priorState.capturedSelect).toContain('accountEnabled');
         expect(state.priorState.capturedAt).toBe(new Date(1_700_000_000_000).toISOString());
     });
@@ -682,6 +687,33 @@ describe('the on-premises flag is re-read, not trusted from the database', () =>
         expect(calls.filter(isPatch)).toHaveLength(0);
     });
 
+    it('BOTH write selects carry onPremisesSyncEnabled — the observation claim rests on it', async () => {
+        // The connector got this test in the same diff; the writer is the half
+        // that actually authorises the live write and only its FULL select was
+        // pinned. WRITE_SELECT_MINIMAL is the fallback taken whenever a tenant
+        // 4xxs on assignedLicenses — a real and expected condition here — so
+        // trimming the field from it would make `onPremStateObserved` claim an
+        // answer nobody asked for, on the path that writes.
+        const { impl, calls } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isUserGet,
+                reply: (n: number) => (n === 0 ? graphForbidden() : json(graphUser())),
+            },
+        ]);
+        await createEntraIdWriter(BASE_CONFIG, deps(impl)).readState(USER_ID);
+
+        // `/users/{id}/memberOf` is also under /users/ and selects only `id`,
+        // so it must be excluded — otherwise this fails for a reason that has
+        // nothing to do with what it is checking.
+        const gets = calls.filter(
+            (c) => c.method === 'GET' && c.url.includes('/users/') && !c.url.includes('memberOf'),
+        );
+        expect(gets.length).toBeGreaterThanOrEqual(2); // full select, then the fallback
+        for (const g of gets) expect(g.url).toContain('onPremisesSyncEnabled');
+    });
+
     it('refuses when Graph OMITTED the flag entirely', async () => {
         // The property is genuinely absent — no answer at all. This test used to
         // pass `onPremisesSyncEnabled: null` while claiming to test omission,
@@ -707,7 +739,7 @@ describe('the on-premises flag is re-read, not trusted from the database', () =>
         const state = await writer.readState(USER_ID);
 
         // Unknown is not cloud-only, and the two differ exactly where it matters.
-        expect(state.priorState.onPremSyncObserved).toBe(false);
+        expect(state.priorState.onPremStateObserved).toBe(false);
         const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
         expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
         expect(calls.filter(isPatch)).toHaveLength(0);
@@ -733,7 +765,7 @@ describe('the on-premises flag is re-read, not trusted from the database', () =>
         const state = await writer.readState(USER_ID);
 
         expect(state.priorState.onPremisesSyncEnabled).toBeNull();
-        expect(state.priorState.onPremSyncObserved).toBe(true);
+        expect(state.priorState.onPremStateObserved).toBe(true);
         await writer.disable(USER_ID, state);
         expect(calls.filter(isPatch)).toHaveLength(1);
     });

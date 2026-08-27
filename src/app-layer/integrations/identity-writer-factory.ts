@@ -180,7 +180,7 @@ export function createSnapshotWriter(
                     // though nothing reads it here yet.
                     //
                     // `EntraIdDirectoryWriter.disable` gates on
-                    // `priorState.onPremSyncObserved !== true`. That gate is
+                    // `priorState.onPremStateObserved !== true`. That gate is
                     // unreachable in DRY_RUN today only because the usecase
                     // returns before `writer.disable` — but this writer's own
                     // module header says every decision that can be made without
@@ -194,7 +194,7 @@ export function createSnapshotWriter(
                     // `priorState` is a Record<string, unknown>, so nothing but
                     // this comment and the test below makes the two captures
                     // agree. Read from the same column the rail reads.
-                    onPremSyncObserved: row.onPremStateObservedAt != null,
+                    onPremStateObserved: row.onPremStateObservedAt != null,
                     staleEvidence: true,
                 },
             };
