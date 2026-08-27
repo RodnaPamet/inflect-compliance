@@ -92,6 +92,32 @@ Exempting it pointed the age bound away from the case it most needed to hold.
   worse than the refusal it was in the middle of computing. Found by the
   unparseable-input test, which is the argument for having written that case.
 
+- **The bound makes the rail stricter than the live writer's own gate, and that
+  asymmetry is deliberate.** `entra-id/writer.ts::disable` refuses unless
+  `priorState.onPremStateObserved === true`, but it reads that from a directory
+  read *taken just now* — its observation is seconds old by construction, so it
+  can never be stale. The rail, sitting upstream, judges the STORED row. So in a
+  future `AUTOMATIC` pass the rail will refuse rows the live read would have
+  re-observed a moment later.
+
+  That is the safe direction and worth keeping. #2144's first review killed the
+  opposite asymmetry — a dry run promising "would disable" for accounts the live
+  path refuses — because the observation window exists to let an operator compare
+  the two, and a dry run that over-promises poisons it. A dry run that
+  *under*-promises costs a day's latency on a leaver whose row refreshes at 03:00.
+  Anyone raising `LEAVER_MAX_MODE` should know the tradeoff was priced this way
+  round on purpose.
+
+- **The snapshot's `onPremStateObserved` boolean was deliberately left alone.**
+  It now applies a weaker predicate than the rail — "observed at all" rather than
+  "observed and fresh" — so a stale row is captured as `true` beside a refusal
+  citing staleness. Changing it would bump the `priorState` schema version and
+  churn six tests to fix a cosmetic disagreement in a record whose job is to say
+  what the directory reported at capture time, which "it was observed" truthfully
+  does. It is not a second input to the verdict: the rail decides before the
+  writer is reached, so the weaker downstream gate cannot pass anything the rail
+  refused.
+
 - **Both new behaviours are mutation-proved.** Exempting the `false` branch from
   the bound, and removing the skew ceiling, each turn exactly one test red. The
   guard here is a value comparison rather than a shape, so a passing suite is
