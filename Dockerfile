@@ -82,8 +82,29 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# System deps for Prisma
-RUN apk add --no-cache openssl
+# System deps for Prisma, carrying an explicit SECURITY FLOOR.
+#
+# `apk add --no-cache openssl` was not enough, and the reason is Docker, not
+# apk. `--no-cache` is an APK flag — "do not keep the package index" — and has
+# nothing to do with Docker's layer cache. CI builds with `cache-from:
+# type=gha`, so once this layer exists it is restored verbatim and keeps
+# shipping whatever Alpine happened to have the day it was built.
+#
+# That is how CVE-2026-14456 (openssl QUIC DoS, HIGH) came to sit in the
+# published image while `apk add openssl` against a current index would have
+# fixed it on its own: verified against node:24-alpine, a fresh
+# `apk add --no-cache openssl` upgrades libcrypto3/libssl3 3.5.7-r0 -> 3.5.8-r0
+# unprompted. The package manager was right; the layer was old.
+#
+# The floor does two things a bare `add` cannot:
+#   • RAISING IT BUSTS THIS LAYER. That is the documented remediation for the
+#     next advisory — bump the floor, and every layer from here rebuilds. A
+#     one-off edit would clear today's finding and then go stale again, which
+#     is the failure being fixed, not a fix for it.
+#   • IT FAILS THE BUILD. `apk add "openssl>=X"` exits 1 when Alpine cannot
+#     satisfy the constraint (verified), so a version pulled from the repo is
+#     loud at build time instead of quietly resolving to something older.
+RUN apk add --no-cache "openssl>=3.5.8-r0"
 
 # Upgrade the npm CLI bundled in the base image.
 #
