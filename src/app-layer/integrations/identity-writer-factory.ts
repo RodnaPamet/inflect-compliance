@@ -144,7 +144,14 @@ export function createSnapshotWriter(
                     // Prisma happened to order first, and a dry run would report a
                     // decision about the wrong directory.
                     where: { tenantId: ctx.tenantId, provider, connectionId, externalUserId },
-                    select: { status: true, updatedAt: true, onPremisesSyncEnabled: true },
+                    select: {
+                        status: true,
+                        updatedAt: true,
+                        onPremisesSyncEnabled: true,
+                        // Selected so the snapshot capture below can answer the
+                        // SAME question the live capture answers. See there.
+                        onPremStateObservedAt: true,
+                    },
                 }),
             );
             if (!row) {
@@ -168,6 +175,26 @@ export function createSnapshotWriter(
                     observedStatus: row.status,
                     observedAt: row.updatedAt?.toISOString?.() ?? null,
                     onPremisesSyncEnabled: row.onPremisesSyncEnabled ?? null,
+
+                    // PARITY WITH THE LIVE CAPTURE, and it is load-bearing even
+                    // though nothing reads it here yet.
+                    //
+                    // `EntraIdDirectoryWriter.disable` gates on
+                    // `priorState.onPremSyncObserved !== true`. That gate is
+                    // unreachable in DRY_RUN today only because the usecase
+                    // returns before `writer.disable` — but this writer's own
+                    // module header says every decision that can be made without
+                    // the network belongs ABOVE that line, so hoisting the check
+                    // is the natural next edit. The moment it moves, a snapshot
+                    // bag missing this key satisfies `!== true` by ABSENCE and
+                    // every dry-run candidate refuses — inverting the observation
+                    // window from "would disable" to "would disable nobody",
+                    // silently, with no failing test.
+                    //
+                    // `priorState` is a Record<string, unknown>, so nothing but
+                    // this comment and the test below makes the two captures
+                    // agree. Read from the same column the rail reads.
+                    onPremSyncObserved: row.onPremStateObservedAt != null,
                     staleEvidence: true,
                 },
             };

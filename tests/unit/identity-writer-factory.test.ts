@@ -200,6 +200,38 @@ describe('the snapshot reader', () => {
         expect((await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1')).enabled).toBe(false);
     });
 
+    it('answers the on-prem observation question, like the live capture does', async () => {
+        // PARITY, and it is about a gate that cannot fire here YET.
+        // `EntraIdDirectoryWriter.disable` refuses on
+        // `priorState.onPremSyncObserved !== true`. That check is unreachable in
+        // DRY_RUN only because the usecase returns before `writer.disable` — and
+        // the writer's own header says decisions that need no network belong
+        // ABOVE that line, so hoisting it is the obvious next edit. If this bag
+        // lacked the key when that happened, `!== true` would be satisfied by
+        // ABSENCE and every dry-run candidate would refuse, inverting the
+        // observation window with nothing failing.
+        //
+        // `priorState` is a Record<string, unknown>, so this assertion is the
+        // only thing making the two captures agree.
+        mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
+            status: 'ACTIVE',
+            updatedAt: new Date(),
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: new Date('2026-08-27T00:00:00Z'),
+        });
+        const observed = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
+        expect(observed.priorState).toMatchObject({ onPremSyncObserved: true });
+
+        mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
+            status: 'ACTIVE',
+            updatedAt: new Date(),
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: null,
+        });
+        const unobserved = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
+        expect(unobserved.priorState).toMatchObject({ onPremSyncObserved: false });
+    });
+
     it('marks its evidence stale, so nothing settles a journal row from it', async () => {
         // Settling INDETERMINATE -> APPLIED asserts "our earlier write landed",
         // inferred from the account being disabled NOW. Sound from a live read;
