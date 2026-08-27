@@ -870,9 +870,21 @@ rows as evidence a pass ran.
 
 **Refusal order matters when reading an outcome.** `ALREADY_DISABLED` is checked
 before the write-target rail, so an account that last synced as suspended returns
-silently. `onPremisesSyncEnabled` maps absent/null to `null`, which the target
-rail refuses as never-observed — an unflagged directory yields `REFUSED_TARGET`
-on every candidate, which is the rail working, not a broken sync.
+silently. `onPremisesSyncEnabled` maps absent/null to `null`, and **a null alone
+no longer decides the outcome** — `onPremStateObservedAt` does. Three outcomes,
+all reported as one `null`:
+
+| `onPremStateObservedAt` | basis | operator response |
+| --- | --- | --- |
+| absent | `NEVER_OBSERVED` | wait for the nightly sync; it clears itself |
+| within 2 days | `CLOUD_ONLY_OBSERVED` | **allowed** — the directory answered |
+| older than 2 days | `OBSERVATION_STALE` | waiting will NOT clear it: re-enable the soft-disabled connection that observed these accounts |
+
+The middle row is what makes the leaver path reachable at all for a cloud-only
+Entra tenant; before it, every such candidate refused and the path was
+permanently inert without AD Connect. The migration deliberately did not
+backfill, so every pre-existing row refuses `NEVER_OBSERVED` until its next sync
+stamps it — that window is the rail working, not a broken sync.
 
 **Adding to this subsystem:** a new writable provider goes in
 `WRITABLE_IDENTITY_PROVIDERS` and needs a writer plus an entry in the factory's

@@ -474,13 +474,14 @@ async function decideAndDisable(
     const target = resolveWriteTarget({
         provider: writer.provider,
         onPremisesSyncEnabled: input.onPremisesSyncEnabled,
-        // `Boolean(...)`, NOT `!= null`. The strict form reads `undefined` as
-        // OBSERVED — and `undefined` is what an unselected column or a row shape
-        // predating it produces, so the mistake fails OPEN on a rail whose whole
-        // job is to fail closed. The guard now sits against the rail it protects
-        // rather than a module away at the query, which is the only place it can
-        // be read while deciding whether it is still right.
-        // The RAW timestamp, not a boolean the caller derived. The rail owns
+        // The RAW timestamp, not a boolean the caller derived.
+        //
+        // This used to be `Boolean(...)`, guarding against `undefined` — what an
+        // unselected column or a pre-migration row shape produces — reading as
+        // OBSERVED and failing OPEN on a rail whose whole job is to fail closed.
+        // That guard is not gone, it MOVED: `isObservationFresh` fails closed on
+        // undefined, null, unparseable and out-of-range alike, so the collapse no
+        // longer happens here and must not be reintroduced. The rail owns
         // the age bound — see isObservationFresh — so two producers cannot
         // disagree about whether an account may be disabled, which is exactly
         // what a per-caller `Boolean(...)` invites.
