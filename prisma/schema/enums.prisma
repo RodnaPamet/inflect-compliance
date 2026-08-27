@@ -74,6 +74,12 @@ enum OrgAuditAction {
   // Portfolio security-initiative lifecycle (substantive actions).
   ORG_INITIATIVE_CREATED
   ORG_INITIATIVE_STATUS_CHANGED
+  // A refused authorization on the org surface. Every other member of this
+  // enum records something that HAPPENED; this one records something that was
+  // prevented, which is the same distinction AuditLog draws with AUTHZ_DENIED.
+  // Org denials cannot use AuditLog at all — its tenantId is NOT NULL with an
+  // FK to Tenant, and OrgContext has no tenant.
+  ORG_AUTHZ_DENIED
 }
 
 enum MembershipStatus {

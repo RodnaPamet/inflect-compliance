@@ -1,0 +1,25 @@
+-- Org-surface authorization denials (#2147 / #2148).
+--
+-- Seven destructive /api/org/** routes refuse correctly and record nothing.
+-- They cannot use AuditLog: its `tenantId` is NOT NULL with an FK to Tenant
+-- (audit-trail.prisma:28) and OrgContext carries no tenant. OrgAuditLog is the
+-- right home, and `appendOrgAuditEntry` already writes it hash-chained under a
+-- per-org advisory lock — but OrgAuditAction had no denial member, so a refusal
+-- had nothing to be recorded AS.
+--
+-- ALTER TYPE … ADD VALUE is forward-compatible: an old container still serving
+-- through a rolling deploy reads the enlarged type without error, and nothing
+-- writes the value until the new image is up. The reverse order — code first,
+-- then the value — is what breaks, which is why this ships in the same change
+-- as the writer that uses it.
+--
+-- IF NOT EXISTS so a re-run against a partially-migrated database is a no-op
+-- rather than a failed deploy.
+--
+-- NOT REVERSIBLE by design: Postgres cannot drop an enum value, and once a row
+-- carries it the type cannot be narrowed without rewriting those rows. The
+-- repo's migration policy is forward-fix only (docs/change-management-policy.md),
+-- and rolling back this change means redeploying the prior image — the enlarged
+-- type is harmless to it.
+
+ALTER TYPE "OrgAuditAction" ADD VALUE IF NOT EXISTS 'ORG_AUTHZ_DENIED';

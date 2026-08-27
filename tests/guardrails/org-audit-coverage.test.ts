@@ -124,8 +124,27 @@ function readOrgAuditActionValues(): string[] {
         .filter((l) => /^[A-Z_]+$/.test(l));
 }
 
+/**
+ * Directories that may legitimately EMIT an OrgAuditAction.
+ *
+ * Usecases are the normal home. The org permission gate
+ * (`src/lib/security/org-permission-middleware.ts`) is the deliberate second
+ * one: it records `ORG_AUTHZ_DENIED` when it refuses a request, and a
+ * permission gate is not a usecase — it runs BEFORE one, and on the denial
+ * path no usecase runs at all. Scanning only usecases would have forced the
+ * emission into the wrong layer to satisfy a scan.
+ *
+ * This widens WHERE an emission may live; it does not weaken the rule that
+ * every enum value must have one. A value emitted nowhere is still dead
+ * taxonomy and still fails.
+ */
+const EMISSION_DIRS = [
+    USECASES_DIR,
+    path.join(REPO_ROOT, 'src/lib/security'),
+];
+
 function readAllUsecaseSources(): string {
-    return listTsFiles(USECASES_DIR)
+    return EMISSION_DIRS.flatMap((d) => listTsFiles(d))
         .map((f) => fs.readFileSync(f, 'utf8'))
         .join('\n');
 }
