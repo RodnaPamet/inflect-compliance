@@ -73,7 +73,33 @@ jobs:
           # heap-bumped tsc) — V8 grows lazily, so this only lets the analyzer
           # climb past the 6144 wall to the ~6.5 GB it actually needs; it fits a
           # 16 GB large runner comfortably and the standard runner's RAM too.
-          NODE_OPTIONS: '--max-old-space-size=8192'
+          # 6144 PER PROCESS, matching ci.yml's `Build` — this job never got
+          # the correction that one did, and has failed every push to main
+          # since 2026-08-24 as a result.
+          #
+          # `--max-old-space-size` arrives via NODE_OPTIONS and is PER PROCESS.
+          # `experimental.webpackBuildWorker` (next.config.js) splits the
+          # compile into a parent AND a worker, so both inherit it: 8192 here
+          # meant an effective 16 GB ceiling on a 16 GB runner. ci.yml measured
+          # that state in-job on a run that PASSED — 15783 MB used / 206 MB
+          # available at peak — and moved to 6144 x 2 (~12 GB, leaving ~4 GB).
+          #
+          # The failure signature matches that over-subscription rather than a
+          # heap genuinely needing more: "allocation failure; scavenge might
+          # not succeed" is V8 unable to GROW under OS pressure, not a single
+          # compilation legitimately exceeding its ceiling.
+          #
+          # Do NOT "fix" this by raising the number, and do NOT disable the
+          # build worker for this job. Both were tried in analysis and both are
+          # backwards: raising it deepens the over-subscription, and without the
+          # worker all three compilations share one heap — the state
+          # next.config.js documents as OOMing at 6144 (deterministic V8) AND
+          # at 8192 (kernel OOM-kill).
+          #
+          # If 6144 x 2 proves insufficient, the documented next step is
+          # 7168 x 2 = 14 GB, and the failure will be LOUD (V8 "Reached heap
+          # limit" with a stack) rather than a silent cancellation.
+          NODE_OPTIONS: '--max-old-space-size=6144'
           # `npm run analyze` → `npm run build`, which runs
           # `scripts/validate-env.ts` before `next build`. That script hard-
           # checks `DATABASE_URL` (it predates SKIP_ENV_VALIDATION and does not
