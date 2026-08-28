@@ -951,6 +951,35 @@ describe('every decision the write-target shaped says WHICH rule shaped it', () 
      */
     const OBSERVED = new Date('2026-08-26T02:00:00.000Z');
 
+    /**
+     * FREEZE THE CLOCK. `isObservationFresh(observedAt, now = new Date())`
+     * defaults to real wall time, and #2158 gave it a 48-hour bound — so a
+     * literal OBSERVED ages out of the window while the file sits unchanged.
+     * These three cases passed at 44.9 h and failed at 50.3 h: same commit,
+     * green one evening and red the next morning, with the failure landing on
+     * whichever branch happened to run first past the line.
+     *
+     * Frozen here rather than injected, because `DisableAccountInput` carries
+     * no clock — `WriteTargetInput.now` exists and is documented "injectable
+     * for tests", but `disableAccount` does not forward it to
+     * `resolveWriteTarget`, so there is no seam to use from this entry point.
+     * Plumbing one is a change to the rail itself and belongs in its own diff.
+     *
+     * What is asserted here is WHICH RULE fires, not the staleness bound. The
+     * bound is covered in tests/unit/identity-write-target.test.ts, which CAN
+     * inject the clock (`resolveWriteTarget` takes `WriteTargetInput`, and
+     * that type carries `now`) and pins it at a literal. So freezing time here
+     * removes no coverage — it moves these cases off a dependency they never
+     * meant to have.
+     */
+    const NOW = new Date(OBSERVED.getTime() + 60 * 60 * 1000);
+
+    beforeAll(() => {
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+        jest.setSystemTime(NOW);
+    });
+    afterAll(() => jest.useRealTimers());
+
     beforeEach(() => setMode('DRY_RUN', new Date('2026-08-01T00:00:00Z')));
 
     it('a would-disable names the cloud-only rule AND when the directory answered', async () => {
