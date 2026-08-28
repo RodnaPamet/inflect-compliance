@@ -1,12 +1,24 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
 import { unlinkEvidence } from '@/app-layer/usecases/control';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
-export const DELETE = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string; linkId: string }> }) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    await unlinkEvidence(ctx, params.controlId, params.linkId);
-    return jsonResponse({ success: true });
-});
+type Params = { tenantSlug: string; controlId: string; linkId: string };
+
+/**
+ * Gated on `controls.edit`, mirroring `assertCanLinkEvidence` in
+ * control.policies.ts — which reads the coarse `permissions.canWrite`
+ * despite its control-specific name. For every built-in role the two agree
+ * exactly (OWNER/ADMIN/EDITOR true, AUDITOR/READER false), so no built-in
+ * role's access moves; what changes is that a custom role denying
+ * `controls.edit` is now honoured, where `canWrite` ignored it.
+ *
+ * The gate is what makes the refusal auditable — the assert throws 403 and
+ * records nothing (#2117). The usecase assert stays.
+ */
+export const DELETE = withApiErrorHandling(
+    requirePermission<Params>('controls.edit', async (_req, { params }, ctx) => {
+        await unlinkEvidence(ctx, params.controlId, params.linkId);
+        return jsonResponse({ success: true });
+    }),
+);
