@@ -860,7 +860,12 @@ describe('candidate selection demands FRESH link evidence', () => {
         // Asserted with a REAL date, deliberately. `toEqual` ignores an
         // `undefined` property, so a fixture that omits the column would leave
         // this green while the field silently stopped being mapped.
-        const observedAt = new Date('2026-08-26T02:00:00.000Z');
+        //
+        // RELATIVE, never a literal instant. A real Date is what this argument
+        // needs; a FIXED one is a fuse. This case refuses on protection before
+        // freshness is evaluated, so a literal is inert here today — and one
+        // fixture edit away from the failure that took main red on 2026-08-28.
+        const observedAt = new Date(Date.now() - 60 * 60 * 1000);
         db.identityAccountLink.findMany.mockResolvedValue([
             {
                 id: 'l1',
@@ -949,7 +954,15 @@ describe('every decision the write-target shaped says WHICH rule shaped it', () 
      * report could not say which of a hundred identical "would disable" rows
      * rested on the cloud-only rule #2144 widened.
      */
-    const OBSERVED = new Date('2026-08-26T02:00:00.000Z');
+    // RELATIVE, AND THIS ONE IS LOAD-BEARING.
+    //
+    // `resolveWriteTarget` bounds the observation by OBSERVATION_FRESHNESS_MS
+    // (2 days) against the wall clock, and `disableAccount` passes no injected
+    // `now`. A literal instant therefore decides these assertions by the date
+    // CI happens to run: `2026-08-26T02:00Z` was green when #2158 merged at
+    // 22:54Z and red by 02:00Z the next morning — main broke with no diff at
+    // all, three hours after a fully green merge.
+    const OBSERVED = new Date(Date.now() - 60 * 60 * 1000);
 
     beforeEach(() => setMode('DRY_RUN', new Date('2026-08-01T00:00:00Z')));
 

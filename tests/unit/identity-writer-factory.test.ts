@@ -217,7 +217,10 @@ describe('the snapshot reader', () => {
             status: 'ACTIVE',
             updatedAt: new Date(),
             onPremisesSyncEnabled: null,
-            onPremStateObservedAt: new Date('2026-08-27T00:00:00Z'),
+            // RELATIVE. Inert while the capture answers on presence
+            // (`identity-writer-factory.ts:197` is `!= null`), and a fuse the
+            // moment anyone makes it answer on age.
+            onPremStateObservedAt: new Date(Date.now() - 60 * 60 * 1000),
         });
         const observed = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
         expect(observed.priorState).toMatchObject({ onPremStateObserved: true });
