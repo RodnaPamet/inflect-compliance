@@ -98,11 +98,32 @@ export const PATCH = withApiErrorHandling(
  * Registering the route would put the WHOLE FILE in the coverage guardrail's
  * population, and the guardrail is satisfied by `requirePermission` appearing
  * anywhere in a file. GET / PUT / PATCH here still authorize through
- * `getTenantCtx` + a usecase assert; they were not triaged in this tranche
- * and are not destructive. A registry entry would therefore assert coverage
- * this diff did not earn. The gate below writes the audit row regardless —
- * registration is a CI-visibility question, not an enforcement one. Same
- * shape, and the same reasoning, as `calendar/connections/route.ts`.
+ * `getTenantCtx` + a usecase assert. A registry entry would therefore assert
+ * coverage this diff did not earn. The gate below writes the audit row
+ * regardless — registration is a CI-visibility question, not an enforcement
+ * one. Same shape, and the same reasoning, as `calendar/connections/route.ts`.
+ *
+ * ═══ WHY PUT / PATCH ARE STILL UNGATED, HAVING NOW BEEN TRIAGED ═══
+ *
+ * They were examined in the mixed-module tranche and deliberately left alone.
+ * `saveProcessMap` / `setProcessMapCanvasMode` / `setProcessMapStatus` all
+ * assert `assertCanWrite`, and there is NO permission key that means "write a
+ * process map": `PermissionSet` has no `processes` domain, `route-permissions`
+ * has no processes entry, and the collection POST is ungated for the same
+ * reason. The two ways to gate them today are both wrong:
+ *
+ *   • Reuse `admin.manage` (what DELETE uses). It mirrors `assertCanAdmin`,
+ *     which is a strictly higher bar than the `assertCanWrite` these verbs
+ *     enforce — so it would REFUSE every EDITOR who can legitimately save a
+ *     process map. That is a behavioural regression wearing an audit fix's
+ *     clothes.
+ *   • Invent `processes.edit`. That is an authorization-model change — it
+ *     touches `PermissionSet`, role resolution, custom-role overrides and the
+ *     UI — and belongs in a diff somebody reviews as such, not in a tranche
+ *     whose subject is whether refusals are recorded.
+ *
+ * So the honest state is: these verbs refuse correctly and record nothing,
+ * and closing that needs a permission key this subsystem never got.
  */
 export const DELETE = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; id: string }>(

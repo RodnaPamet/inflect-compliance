@@ -1,8 +1,6 @@
-import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getTenantCtx } from '@/app-layer/context';
 import { updateKri, deleteKri } from '@/app-layer/usecases/key-risk-indicator';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
@@ -21,19 +19,30 @@ const PatchSchema = z.object({
     isActive: z.boolean().optional(),
 });
 
+type KriParams = { tenantSlug: string; kriId: string };
+
+/**
+ * PATCH and DELETE both gate on `risks.edit`, mirroring `assertCanWrite` in
+ * `updateKri` / `deleteKri`. The gate is what makes a refusal auditable: a
+ * usecase assert throws 403 and records nothing, while `AUTHZ_DENIED` is
+ * written by `requirePermission` and by nothing else. The asserts stay — they
+ * protect non-HTTP callers.
+ *
+ * PATCH reads its body with `parseJsonBody` rather than composing
+ * `withValidatedBody`, whose handler takes the parsed body in the third
+ * argument `requirePermission` uses for `ctx`. Authorization therefore runs
+ * BEFORE the body is parsed, which is the order we want.
+ */
 export const PATCH = withApiErrorHandling(
-    withValidatedBody(PatchSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; kriId: string }> }, body) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+    requirePermission<KriParams>('risks.edit', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, PatchSchema);
         await updateKri(ctx, params.kriId, body);
         return jsonResponse({ success: true });
     }),
 );
 
-type DeleteParams = { tenantSlug: string; kriId: string };
-
 export const DELETE = withApiErrorHandling(
-    requirePermission<DeleteParams>('risks.edit', async (_req, { params }, ctx) => {
+    requirePermission<KriParams>('risks.edit', async (_req, { params }, ctx) => {
         await deleteKri(ctx, params.kriId);
         return jsonResponse({ success: true });
     }),
