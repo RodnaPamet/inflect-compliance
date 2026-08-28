@@ -30,8 +30,25 @@ import { repoFiles, repoRelative } from '../helpers/repo-files';
  */
 const AGE_BOUNDED_FIELDS = ['onPremStateObservedAt'] as const;
 
-/** `new Date('…')` / `new Date("…")` — a fixed instant. Not `new Date(expr)`. */
-const FIXED_INSTANT = String.raw`new Date\(\s*['"]`;
+/**
+ * `new Date('…')` / `new Date("…")` — captures the literal so it can be parsed.
+ * Deliberately does NOT match `new Date(expr)`, which is already relative.
+ */
+const DATE_LITERAL = String.raw`new Date\(\s*['"]([^'"]*)['"]\s*\)`;
+
+/**
+ * A fixed INSTANT, which is narrower than a string literal.
+ *
+ * `new Date('nonsense')` is a literal and is not an instant — it is an
+ * Invalid Date, used on purpose to drive the fail-closed path. Flagging it
+ * would be a false positive, and this guard found exactly that against its own
+ * suite on the first full run.
+ */
+function isFixedInstant(source: string): boolean {
+    const m = new RegExp(DATE_LITERAL).exec(source);
+    if (m === null) return false;
+    return Number.isFinite(Date.parse(m[1]));
+}
 
 describe('a fixture for an age-bounded column is relative, never a fixed instant', () => {
     const testFiles = repoFiles({ under: 'tests', extensions: ['.ts', '.tsx'] });
@@ -47,7 +64,7 @@ describe('a fixture for an age-bounded column is relative, never a fixed instant
             lines.forEach((line, i) => {
                 if (!line.includes(field)) return;
                 const window = `${line}\n${lines[i + 1] ?? ''}`;
-                if (new RegExp(FIXED_INSTANT).test(window)) {
+                if (isFixedInstant(window)) {
                     offenders.push(`${repoRelative(abs)}:${i + 1}`);
                 }
             });
@@ -61,13 +78,23 @@ describe('a fixture for an age-bounded column is relative, never a fixed instant
         // nothing, which is the failure mode a "no offenders" test cannot tell
         // apart from success.
         const sample = `            onPremStateObservedAt: new Date('2026-08-26T02:00:00.000Z'),`;
-        expect(new RegExp(FIXED_INSTANT).test(sample)).toBe(true);
+        expect(isFixedInstant(sample)).toBe(true);
         expect(sample.includes(AGE_BOUNDED_FIELDS[0])).toBe(true);
     });
 
     it('a relative seed is NOT caught', () => {
         const sample = `            onPremStateObservedAt: new Date(Date.now() - 60 * 60 * 1000),`;
-        expect(new RegExp(FIXED_INSTANT).test(sample)).toBe(false);
+        expect(isFixedInstant(sample)).toBe(false);
+    });
+
+    it('a deliberately INVALID literal is NOT caught', () => {
+        // The distinction the first full run forced. `new Date('nonsense')` is
+        // a string literal and is not a fixed instant — it is the fixture that
+        // drives the unparseable-stamp path, and it cannot expire because it
+        // was never a point in time. A guard that flagged it would push authors
+        // toward deleting a fail-closed test to satisfy a lint.
+        const sample = `            onPremStateObservedAt: new Date('nonsense'),`;
+        expect(isFixedInstant(sample)).toBe(false);
     });
 
     it('scans a real population', () => {
