@@ -112,13 +112,28 @@ import { appendOrgAuditEntry } from '@/lib/audit/org-audit-writer';
 import { provisionOrgAdminToTenants } from '@/app-layer/usecases/org-provisioning';
 import type { OrgContext } from '@/app-layer/types';
 
+/**
+ * `permissions` used to be `{}` here, which was harmless while
+ * `revokeOrgInvite` had no permission check of its own. It now asserts
+ * `canManageMembers` (added with the org denial-audit work, #2147), so an
+ * empty set means ORG_ADMIN is refused — which this context is not meant to
+ * represent. Grant what the declared `orgRole` actually implies.
+ */
 const orgCtx: OrgContext = {
     requestId: 'req-test',
     userId: 'user-actor',
     organizationId: 'org-1',
     orgSlug: 'acme',
     orgRole: 'ORG_ADMIN' as any,
-    permissions: {} as any,
+    permissions: { canManageMembers: true } as any,
+};
+
+/** The same org, seen by someone who may not manage members. */
+const readerCtx: OrgContext = {
+    ...orgCtx,
+    userId: 'user-reader',
+    orgRole: 'ORG_READER' as any,
+    permissions: { canManageMembers: false } as any,
 };
 
 beforeEach(() => {
@@ -228,6 +243,17 @@ describe('createOrgInviteToken', () => {
 // revokeOrgInvite
 // ──────────────────────────────────────────────────────────────────────
 describe('revokeOrgInvite', () => {
+    it('refuses a caller without canManageMembers — the check the route no longer owns', async () => {
+        // Added with the org denial-audit work (#2147). Before it, this usecase
+        // had NO permission check: the route was the only gate, so any
+        // non-HTTP caller reached it unguarded. Moving the route check into
+        // `requireOrgPermission` without this would have removed the only
+        // check there was.
+        await expect(
+            revokeOrgInvite(readerCtx, { inviteId: 'inv-1' }),
+        ).rejects.toMatchObject({ name: 'ForbiddenError' });
+    });
+
     it('throws notFound when the invite is missing OR already accepted/revoked', async () => {
         // The findFirst filter already excludes accepted/revoked rows,
         // so any null result is the not-found path — collapsing all

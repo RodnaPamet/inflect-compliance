@@ -48,10 +48,34 @@ const ctx = {
     orgSlug: 'acme',
     requestId: 'req-1',
     orgRole: 'ORG_ADMIN',
-    permissions: {},
+    // Was `{}`, which was harmless while `deleteTenantUnderOrg` had no
+    // permission check of its own. It now asserts `canManageTenants` (added
+    // with the org denial-audit work, #2147), so an empty set refuses the very
+    // ORG_ADMIN this context is meant to represent.
+    permissions: { canManageTenants: true },
+} as unknown as OrgContext;
+
+/** The same org, seen by someone who may not manage tenants. */
+const readerCtx = {
+    organizationId: 'org-1',
+    userId: 'user-reader',
+    orgSlug: 'acme',
+    requestId: 'req-2',
+    orgRole: 'ORG_READER',
+    permissions: { canManageTenants: false },
 } as unknown as OrgContext;
 
 describe('deleteTenantUnderOrg', () => {
+    it('refuses a caller without canManageTenants — the check the route no longer owns', async () => {
+        // Added with #2147: before it, this usecase had NO permission check and
+        // the route was the only gate, so a non-HTTP caller reached it
+        // unguarded. Moving that check into `requireOrgPermission` without this
+        // would have removed the only check there was.
+        await expect(
+            deleteTenantUnderOrg(readerCtx, 'tenant-1'),
+        ).rejects.toMatchObject({ name: 'ForbiddenError' });
+    });
+
     beforeEach(() => {
         findFirst.mockReset();
         update.mockReset();

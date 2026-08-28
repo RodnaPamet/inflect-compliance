@@ -260,6 +260,18 @@ describe('addOrgMember', () => {
 // ── removeOrgMember ────────────────────────────────────────────────────
 
 describe('removeOrgMember', () => {
+    it('refuses a caller without canManageMembers — the check the route no longer owns', async () => {
+        // Added with #2147. Before it, this usecase had NO permission check and
+        // the route was the only gate, so a non-HTTP caller reached it
+        // unguarded. This context builder already grants every flag, so the
+        // refusal has to be asked for explicitly — otherwise the assert would
+        // never be exercised here at all.
+        const ctx = ctxFor({ permissions: { canManageMembers: false } as never });
+        await expect(
+            removeOrgMember(ctx, { userId: 'user-2' }),
+        ).rejects.toMatchObject({ name: 'ForbiddenError' });
+    });
+
     it('deprovisions and deletes when removing an ORG_ADMIN (count > 1)', async () => {
         orgMembershipFindUniqueMock.mockResolvedValue({ id: 'mem-1', role: 'ORG_ADMIN' });
         orgMembershipCountMock.mockResolvedValue(2); // not the last admin

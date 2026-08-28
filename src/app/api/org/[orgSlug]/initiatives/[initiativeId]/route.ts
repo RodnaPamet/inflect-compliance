@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
 import { withValidatedBody } from '@/lib/validation/route';
 import {
     getInitiative,
@@ -38,9 +39,19 @@ export const PATCH = withApiErrorHandling(
     }),
 );
 
-export const DELETE = withApiErrorHandling(async (req: NextRequest, rc: RC) => {
-    const { initiativeId, ...rest } = await rc.params;
-    const ctx = await getOrgCtx(rest, req);
-    await deleteInitiative(ctx, initiativeId);
-    return NextResponse.json({ ok: true });
-});
+type DeleteParams = { orgSlug: string; initiativeId: string };
+
+/**
+ * Gated on `canConfigureDashboard` — the flag `assertWrite` in
+ * org-security-initiative.ts actually reads. The dashboard permission is
+ * reused for this surface; preserved as-is, because changing which flag
+ * governs initiatives is a decision, not a migration detail.
+ *
+ * The usecase assert stays: it protects non-HTTP callers.
+ */
+export const DELETE = withApiErrorHandling(
+    requireOrgPermission<DeleteParams>('canConfigureDashboard', async (_req, { params }, ctx) => {
+        await deleteInitiative(ctx, params.initiativeId);
+        return NextResponse.json({ ok: true });
+    }),
+);

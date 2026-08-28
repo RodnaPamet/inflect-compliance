@@ -35,8 +35,28 @@ const DESTRUCTIVE_SEGMENTS = new Set([
     'wipe', 'deactivate', 'disable', 'remove', 'reset',
 ]);
 
-/** Both generic and plain call forms; `requirePermission<Params>(` is the norm. */
-const ROUTE_GATE = /require(?:Any|All)?Permissions?\s*[(<]/;
+/**
+ * The route-level gates whose denials are AUDITED.
+ *
+ * Two families, named explicitly rather than pattern-matched loosely:
+ *
+ *   requirePermission / requireAnyPermission / requireAllPermissions
+ *     — tenant surface, writes AUTHZ_DENIED to AuditLog.
+ *   requireOrgPermission
+ *     — org surface, writes ORG_AUTHZ_DENIED to OrgAuditLog. It needs its own
+ *       alternative because `Org` sits between `require` and `Permission`, so
+ *       the tenant pattern does not match it — verified, not assumed.
+ *
+ * Org routes CANNOT use the tenant gate: it resolves a tenant role, and
+ * `AuditLog.tenantId` is NOT NULL with an FK to Tenant while `OrgContext`
+ * carries no tenant. That is why there are two, not one with a wider regex.
+ *
+ * Both call forms are admitted: `X<Params>(` and `X(`. The bracket class is
+ * what allows the generic form, and omitting it was a real bug in an earlier
+ * census — it matched no gated route at all and reported a 37% coverage
+ * figure that was off by roughly a factor of three.
+ */
+const ROUTE_GATE = /require(?:Any|All)?Permissions?\s*[(<]|requireOrgPermission\s*[(<]/;
 
 const stripComments = (s: string): string =>
     s.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -47,13 +67,6 @@ const stripComments = (s: string): string =>
  */
 const UNGATED_DESTRUCTIVE_ROUTES: readonly string[] = [
     'account/avatar/route.ts',
-    'org/[orgSlug]/dashboard/widgets/[widgetId]/route.ts',
-    'org/[orgSlug]/dashboard/widgets/reset/route.ts',
-    'org/[orgSlug]/initiatives/[initiativeId]/links/[linkId]/route.ts',
-    'org/[orgSlug]/initiatives/[initiativeId]/route.ts',
-    'org/[orgSlug]/invites/[inviteId]/route.ts',
-    'org/[orgSlug]/members/route.ts',
-    'org/[orgSlug]/tenants/[tenantId]/route.ts',
     'scim/v2/Groups/[id]/route.ts',
     'scim/v2/Users/[id]/route.ts',
     'sso/route.ts',
