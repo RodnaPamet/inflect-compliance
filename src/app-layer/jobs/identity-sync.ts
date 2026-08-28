@@ -21,7 +21,10 @@ import { runInTenantContext } from '@/lib/db-context';
 import { buildSystemContext } from '@/app-layer/context-system';
 import type { RequestContext } from '@/app-layer/types';
 import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
-import { reconcileIdentityAccountLinks } from '@/app-layer/usecases/identity-account-link';
+import {
+    reconcileIdentityAccountLinks,
+    type LinkMatchResult,
+} from '@/app-layer/usecases/identity-account-link';
 import { recordIdentityLinkReconcile } from '@/lib/observability/integration-metrics';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
@@ -129,12 +132,114 @@ async function reconcileLinksAfterSync(
             contradicted: r.contradicted,
             unmatched: r.unmatched,
         });
+        await recordLinkReconcileOnExecution(ctx, result.executionId, result.provider, r);
     } catch (err) {
         recordIdentityLinkReconcile({ provider: result.provider, outcome: 'error' });
         logger.error('identity link reconcile failed; the sync itself succeeded', {
             component: 'identity-sync',
             tenantId: ctx.tenantId,
             provider: result.provider,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
+/**
+ * Carry the reconcile's own report onto the row the sync already wrote.
+ *
+ * WHY THIS EXISTS. `reconcileIdentityAccountLinks` names the accounts it could
+ * not link and why — `NO_EMPLOYEE`, `AMBIGUOUS_EMPLOYEE`, `LINKED_ELSEWHERE`,
+ * each wanting a different response. Its only caller logged the four COUNTS and
+ * dropped the array, so the feature was defeated at its call site: "9 unmatched"
+ * is exactly the unactionable number naming them was meant to replace, and an
+ * account with no HR counterpart is one offboarding will never disable.
+ *
+ * WHY THE SYNC'S OWN EXECUTION ROW, NOT A SECOND ONE. `runIdentitySync` creates
+ * exactly one `IntegrationExecution` per run and hands back its id, and the
+ * reconcile is part of that run. A second row would double every connection's
+ * history, and it would also land on the tenant-wide automated-checks list,
+ * which is reachable with `controls.view` while the rest of this chain is
+ * admin-gated — letting where-we-store-a-fact decide who-can-see-it.
+ *
+ * WHY THESE IDS MAY BE PERSISTED THOUGH THEY ARE NOT LOGGED.
+ * `connectedAccountId` is our own cuid and `reason` is one of three fixed
+ * literals, so neither can name a person — unlike a leaver decision's
+ * provider-authored `reason` sentence, which has to be scrubbed. The
+ * destination is a tenant-scoped, RLS-bound row read under admin permission,
+ * which is precisely what a log line is not.
+ *
+ * READ-MODIFY-WRITE, because Prisma has no JSON merge and the sync's own
+ * counters already occupy the column. Safe here and only here: the
+ * per-connection sync lock is still held, and nothing else writes this row once
+ * `runIdentitySync` has returned.
+ */
+async function recordLinkReconcileOnExecution(
+    ctx: RequestContext,
+    executionId: string,
+    provider: string,
+    r: LinkMatchResult,
+): Promise<void> {
+    // Defensive only. Every arm of `runIdentitySync` carries a real id, and this
+    // is reached solely on PASSED — so this is a guard against a future arm, not
+    // a case that exists today.
+    if (!executionId) return;
+
+    // Its own try/catch, deliberately NOT the caller's. The reconcile has
+    // already happened and already counted itself `reconciled`; letting a failed
+    // annotation fall through would emit `outcome: 'error'` for the same pass
+    // immediately after, and one pass reported twice under contradictory
+    // outcomes is worse than one whose report is missing.
+    try {
+        await runInTenantContext(ctx, async (db) => {
+            const row = await db.integrationExecution.findFirst({
+                where: { id: executionId, tenantId: ctx.tenantId },
+                select: { resultJson: true },
+            });
+            if (!row) return;
+            const prev = row.resultJson;
+            // A Json column can hold a scalar or an array. Spreading either
+            // would silently discard the sync's own counters, so anything that
+            // is not a plain object is replaced rather than merged into.
+            const base =
+                prev !== null && typeof prev === 'object' && !Array.isArray(prev)
+                    ? (prev as Record<string, unknown>)
+                    : {};
+            await db.integrationExecution.update({
+                where: { id: executionId },
+                data: {
+                    resultJson: {
+                        ...base,
+                        linkReconcile: {
+                            created: r.created,
+                            verified: r.verified,
+                            contradicted: r.contradicted,
+                            unmatched: r.unmatched,
+                            // Field by field rather than a spread, so a field
+                            // added to `UnresolvedAccount` later is opted INTO a
+                            // persisted row by a diff somebody reads, rather
+                            // than swept into one.
+                            unresolved: r.unresolved.map((u) => ({
+                                connectedAccountId: u.connectedAccountId,
+                                reason: u.reason,
+                            })),
+                            // DERIVED, not assumed. The sample is capped at
+                            // MAX_UNRESOLVED_REPORTED while `unmatched` counts
+                            // every one — `noteUnresolved` is the sole
+                            // incrementer of both — so the two disagreeing IS
+                            // the truncation signal. A short report says it is
+                            // short, instead of reading as a complete list.
+                            unresolvedTruncated: r.unresolved.length < r.unmatched,
+                        },
+                    },
+                },
+            });
+        });
+    } catch (err) {
+        logger.error('link reconcile ran, but its report could not be recorded', {
+            component: 'identity-sync',
+            tenantId: ctx.tenantId,
+            provider,
+            executionId,
             error: err instanceof Error ? err.message : String(err),
         });
     }
