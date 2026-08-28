@@ -11,8 +11,20 @@ jest.mock('@/lib/prisma', () => ({ __esModule: true, default: {} }));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
+// A REAL double, not `{}`. The reconcile report is written through this client,
+// and `{}` would make every access throw into the writer's own try/catch — the
+// feature would be dead while every test in this file stayed green.
+const execFindFirst = jest.fn();
+const execUpdate = jest.fn();
 jest.mock('@/lib/db-context', () => ({
-    runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn({})),
+    runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>
+        fn({
+            integrationExecution: {
+                findFirst: (...a: unknown[]) => execFindFirst(...a),
+                update: (...a: unknown[]) => execUpdate(...a),
+            },
+        }),
+    ),
 }));
 jest.mock('@/app-layer/integrations/connection-lock', () => ({
     acquireSyncLock: jest.fn(async () => 'lock-token'),
@@ -64,6 +76,99 @@ beforeEach(() => {
     acquire.mockResolvedValue('lock-token');
     synced.mockResolvedValue(syncResult());
     reconciled.mockResolvedValue({ created: 3, verified: 40, unmatched: 2, unresolved: [], contradicted: 1 });
+    execFindFirst.mockResolvedValue({ resultJson: { upserted: 12, deprovisioned: 0, total: 12 } });
+    execUpdate.mockResolvedValue({});
+});
+
+/** The `linkReconcile` block written onto the sync's own execution row. */
+const written = () => execUpdate.mock.calls.at(-1)?.[0]?.data?.resultJson?.linkReconcile;
+
+describe('the reconcile report reaches somewhere an operator can read it', () => {
+    const unresolvedOf = (n: number, reason = 'NO_EMPLOYEE') =>
+        Array.from({ length: n }, (_, i) => ({ connectedAccountId: `acc-${i}`, reason }));
+
+    it('names the accounts, on the execution row the sync already wrote', async () => {
+        // The defect this closes: the reconciler computes WHICH accounts could
+        // not be linked and why, and its only caller logged four counts and
+        // dropped the array. "9 unmatched" is exactly the unactionable number
+        // that naming them was meant to replace.
+        reconciled.mockResolvedValue({
+            created: 1, verified: 0, unmatched: 2, contradicted: 0,
+            unresolved: [
+                { connectedAccountId: 'acc-1', reason: 'NO_EMPLOYEE' },
+                { connectedAccountId: 'acc-2', reason: 'AMBIGUOUS_EMPLOYEE' },
+            ],
+        });
+        await runIdentitySyncJob(PAYLOAD);
+
+        // The SYNC's row — not a second execution row, which would double every
+        // connection's history and surface on a list gated by a weaker
+        // permission than the rest of this chain.
+        expect(execUpdate.mock.calls.at(-1)?.[0].where).toEqual({ id: 'exec-1' });
+        expect(written().unresolved).toEqual([
+            { connectedAccountId: 'acc-1', reason: 'NO_EMPLOYEE' },
+            { connectedAccountId: 'acc-2', reason: 'AMBIGUOUS_EMPLOYEE' },
+        ]);
+    });
+
+    it('MERGES — the sync\'s own counters survive', async () => {
+        // Prisma has no JSON merge, so this is read-modify-write. Overwriting
+        // would erase `upserted` / `deprovisioned` from the row an operator
+        // reads to find out what the sync did.
+        await runIdentitySyncJob(PAYLOAD);
+        const json = execUpdate.mock.calls.at(-1)?.[0].data.resultJson;
+        expect(json).toMatchObject({ upserted: 12, deprovisioned: 0, total: 12 });
+        expect(json.linkReconcile).toBeDefined();
+    });
+
+    it('replaces, rather than spreads, a resultJson that is not an object', async () => {
+        // A Json column can hold a scalar or an array. Spreading either yields
+        // index keys or nothing, silently losing the block being written.
+        execFindFirst.mockResolvedValue({ resultJson: ['not', 'an', 'object'] });
+        await runIdentitySyncJob(PAYLOAD);
+        const json = execUpdate.mock.calls.at(-1)?.[0].data.resultJson;
+        expect(json.linkReconcile).toBeDefined();
+        expect(json['0']).toBeUndefined();
+    });
+
+    it('says so when the sample is truncated — derived, never assumed', async () => {
+        // The reconciler caps the sample at MAX_UNRESOLVED_REPORTED while
+        // `unmatched` counts every one, so the two disagreeing IS the signal.
+        // Without it a capped list of 50 reads as a complete list of 50.
+        reconciled.mockResolvedValue({
+            created: 0, verified: 0, unmatched: 137, contradicted: 0,
+            unresolved: unresolvedOf(50),
+        });
+        await runIdentitySyncJob(PAYLOAD);
+        expect(written().unresolvedTruncated).toBe(true);
+        expect(written().unmatched).toBe(137);
+        expect(written().unresolved).toHaveLength(50);
+    });
+
+    it('does not claim truncation when the report is complete', async () => {
+        reconciled.mockResolvedValue({
+            created: 0, verified: 0, unmatched: 2, contradicted: 0,
+            unresolved: unresolvedOf(2),
+        });
+        await runIdentitySyncJob(PAYLOAD);
+        expect(written().unresolvedTruncated).toBe(false);
+    });
+
+    it('a failed write never fails the pass it is reporting on', async () => {
+        // The reconcile already happened and already counted itself
+        // `reconciled`. Letting this throw would emit `outcome: 'error'` for the
+        // same pass immediately after — one pass reported twice under
+        // contradictory outcomes is worse than one whose report is missing.
+        execUpdate.mockRejectedValue(new Error('ledger down'));
+        await expect(runIdentitySyncJob(PAYLOAD)).resolves.toBeDefined();
+
+        // NOT `toHaveBeenCalledWith('reconciled')` — that passes if ANY call
+        // matches, so it stayed green when the writer was made to throw: the
+        // caller's own catch then emitted 'error' AS WELL, which is the exact
+        // double-report this guard exists to prevent. Assert on the whole set.
+        const outcomes = metric.mock.calls.map((c) => c[0].outcome);
+        expect(outcomes).toEqual(['reconciled']);
+    });
 });
 
 describe('the reconciler is hooked at all', () => {
