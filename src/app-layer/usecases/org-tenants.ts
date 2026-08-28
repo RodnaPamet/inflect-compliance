@@ -48,14 +48,19 @@ export interface CreateTenantUnderOrgResult {
 }
 
 /**
- * Create a tenant linked to the org named on `ctx`. The caller must
- * have already passed the `canManageTenants` permission check at the
- * route layer.
+ * Create a tenant linked to the org named on `ctx`.
+ *
+ * Permission is asserted HERE as well as at the route. This used to say the
+ * caller "must have already passed the check at the route layer" — which was
+ * true and load-bearing in the wrong direction: it meant a non-HTTP caller
+ * created a tenant, provisioned every org admin into it and minted a DEK with
+ * no check at all.
  */
 export async function createTenantUnderOrg(
     ctx: OrgContext,
     input: CreateTenantUnderOrgInput,
 ): Promise<CreateTenantUnderOrgResult> {
+    assertCanManageOrgTenants(ctx);
     const name = input.name.trim();
     const slug = input.slug.trim().toLowerCase();
 
@@ -164,7 +169,7 @@ export async function createTenantUnderOrg(
 function assertCanManageOrgTenants(ctx: OrgContext): void {
     if (!ctx.permissions.canManageTenants) {
         throw forbidden(
-            'You do not have permission to remove tenants from this organization',
+            'You do not have permission to manage tenants in this organization',
         );
     }
 }

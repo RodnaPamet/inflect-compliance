@@ -81,7 +81,7 @@ export interface RedeemOrgInviteResult {
  * Mint a new OrgInvite row and return the invite + a relative URL.
  *
  * Security invariants:
- *   - Caller must hold canManageMembers (gated at the route layer).
+ *   - Caller must hold canManageMembers (asserted here AND at the route).
  *   - Rejects if email already has an org membership.
  *   - Upserts on (organizationId, email) refreshing token + expiry +
  *     clearing acceptedAt/revokedAt — so re-inviting after expiry or
@@ -93,6 +93,7 @@ export async function createOrgInviteToken(
     ctx: OrgContext,
     input: { email: string; role: OrgRole },
 ): Promise<CreateOrgInviteResult> {
+    assertCanManageOrgInvites(ctx);
     const normalizedEmail = input.email.toLowerCase().trim();
     if (!normalizedEmail) throw badRequest('email is required');
     if (input.role !== 'ORG_ADMIN' && input.role !== 'ORG_READER') {
@@ -190,15 +191,15 @@ export async function createOrgInviteToken(
  * ADDED alongside the route gate, not moved from it: the check lived only at
  * the route, so a non-HTTP caller reached this usecase with none at all.
  *
- * REVOKE ONLY. `createOrgInviteToken` above is still gated at the route alone,
- * which is deliberate — this diff covers the destructive routes, and minting an
- * invite is not one. Naming this for the whole "invite lifecycle" would claim a
- * coverage it does not have.
+ * BOTH create and revoke, as of the privileged-mutation pass. It was
+ * revoke-only when it landed with the destructive-routes diff; minting an
+ * invite grants org access, so leaving it route-gated only meant a refused
+ * attempt to invite an ORG_ADMIN recorded nothing.
  */
 function assertCanManageOrgInvites(ctx: OrgContext): void {
     if (!ctx.permissions.canManageMembers) {
         throw forbidden(
-            'You do not have permission to revoke invites for this organization',
+            'You do not have permission to manage invites for this organization',
         );
     }
 }

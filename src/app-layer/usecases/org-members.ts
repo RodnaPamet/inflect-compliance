@@ -269,6 +269,10 @@ export async function addOrgMember(
     ctx: OrgContext,
     input: AddOrgMemberInput,
 ): Promise<AddOrgMemberResult> {
+    // FIRST, above validation. A caller who may not manage members must get the
+    // same refusal whether or not their payload is well-formed — otherwise the
+    // 400/403 split tells them which fields exist.
+    assertCanManageOrgMembers(ctx);
     const email = input.userEmail.trim().toLowerCase();
     if (!email) {
         throw new ValidationError('userEmail is required');
@@ -564,6 +568,12 @@ export async function changeOrgMemberRole(
     ctx: OrgContext,
     input: ChangeOrgMemberRoleInput,
 ): Promise<ChangeOrgMemberRoleResult> {
+    // The escalation path, and until now the route's inline check was the ONLY
+    // authorization on it. A READER→ADMIN promotion fans Role.ADMIN membership
+    // rows into every tenant in the org (org-provisioning.ts), and the success
+    // is audited as ORG_MEMBER_ROLE_CHANGED — so the ledger recorded every
+    // escalation that worked and nothing about one that was blocked.
+    assertCanManageOrgMembers(ctx);
     const userId = input.userId?.trim();
     if (!userId) {
         throw new ValidationError('userId is required');

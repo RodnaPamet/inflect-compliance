@@ -135,10 +135,33 @@ function orgCtx(overrides: Partial<any> = {}): import('@/app-layer/types').OrgCo
         // satisfying the OrgContext shape without pulling in @prisma/client
         // (which is heavy + mocked in this test).
         orgRole: 'ORG_ADMIN' as never,
-        permissions: {} as any,
+        // The bag has to AGREE with the role above. It was `{}` while the role
+        // said ORG_ADMIN, which only went unnoticed because nothing read it —
+        // `createTenantUnderOrg` now asserts `canManageTenants`, and an admin
+        // whose permission bag grants nothing is not a state the app produces.
+        permissions: { canManageTenants: true } as never,
         ...overrides,
     };
 }
+
+describe('createTenantUnderOrg — authorization', () => {
+    it('refuses a caller without canManageTenants, before opening the transaction', async () => {
+        // The route gate refuses over HTTP; this is the check that covers every
+        // OTHER caller — a job, a script, the MCP surface. Deleting the assert
+        // in the usecase leaves the route test green and this one red, which is
+        // the whole point of asserting in both places.
+        await expect(
+            createTenantUnderOrg(orgCtx({ permissions: { canManageTenants: false } as never }), {
+                name: 'Nope',
+                slug: 'nope',
+            }),
+        ).rejects.toThrow(/permission/i);
+
+        // Not merely "it threw" — nothing was created. A refusal that still ran
+        // the transaction would mint a Tenant, an OWNER membership and a DEK.
+        expect(txCalls.tenantCreate).not.toHaveBeenCalled();
+    });
+});
 
 describe('createTenantUnderOrg — happy path', () => {
     it('creates tenant + OWNER membership + onboarding in one tx, then provisions org admins', async () => {
