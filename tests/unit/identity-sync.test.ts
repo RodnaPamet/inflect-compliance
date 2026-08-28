@@ -311,6 +311,22 @@ describe('runIdentitySync — resumable enumeration', () => {
         });
 
         expect(r.status).toBe('PARTIAL');
+
+        // AND THE PERSISTED ROW SAYS SO TOO.
+        //
+        // This assertion is the one that was missing, and its absence is why
+        // the defect survived: the RETURN was always 'PARTIAL' — the job reads
+        // it and correctly skips the reconcile — while the row written for the
+        // operator said 'PASSED'. A green badge, zero links, and nothing on the
+        // connection page distinguishing it from a complete sync. Asserting
+        // only `r.status` checks the half that was already right.
+        const persisted = mockDb.integrationExecution.update.mock.calls.at(-1)?.[0].data;
+        expect(persisted.status).toBe('PARTIAL');
+        // Not an error: a resumable partial continues next pass, so the row
+        // must not carry an errorMessage that would read as a failure.
+        expect(persisted.errorMessage).toBeNull();
+        expect(persisted.resultJson).toMatchObject({ partial: true, resuming: true });
+
         const stored = mockDb.integrationConnection.updateMany.mock.calls
             .map((c) => c[0].data)
             .find((d) => typeof d.syncCursor === 'string');

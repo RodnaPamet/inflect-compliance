@@ -268,7 +268,23 @@ export async function runIdentitySync(input: {
                 await db.integrationExecution.update({
                     where: { id: execution.id },
                     data: {
-                        status: 'PASSED',
+                        // PARTIAL, not PASSED. This arm RETURNS 'PARTIAL' — the
+                        // job reads that and correctly skips the link reconcile
+                        // — while the row an operator reads said the sync
+                        // passed. Green badge, zero links, nothing on the page
+                        // distinguishing it from a complete sync.
+                        //
+                        // The enum value already existed for exactly this, and
+                        // its own doc comment names the same defect one
+                        // subsystem over: the SharePoint audit-pack export
+                        // "used to record those runs as PASSED, so the
+                        // operator's only durable record of an incomplete pack
+                        // said it was clean".
+                        //
+                        // `errorMessage` stays null deliberately: a resumable
+                        // partial is not an error, it is an incomplete success
+                        // that continues next pass. PARTIAL is what carries that.
+                        status: 'PARTIAL',
                         errorMessage: null,
                         resultJson: { upserted, deprovisioned: 0, total: accounts.length, partial: true, resuming: true },
                         durationMs: Date.now() - start,
