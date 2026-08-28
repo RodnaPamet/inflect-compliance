@@ -132,7 +132,9 @@ d('the on-prem observation survives the DB seam', () => {
     });
 
     it('an OBSERVED null reaches the rail as observed, and the rail allows it', async () => {
-        const observedAt = new Date('2026-08-26T02:00:00.000Z');
+        // RELATIVE — the rail bounds this by age against the wall clock, so a
+        // literal instant makes the assertion expire rather than fail.
+        const observedAt = new Date(Date.now() - 60 * 60 * 1000);
         const { linkId, employeeId } = await seed(observedAt);
         const ctx = makeRequestContext('OWNER', { tenantId: T });
 
