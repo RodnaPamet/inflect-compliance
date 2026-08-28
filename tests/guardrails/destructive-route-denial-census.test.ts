@@ -110,18 +110,51 @@ const UNGATED_DESTRUCTIVE_ROUTES: readonly string[] = [
     't/[tenantSlug]/vendors/[vendorId]/bundles/[bundleId]/route.ts',
 ];
 
+/**
+ * Split a route module into per-EXPORT blocks.
+ *
+ * The census used to read the whole file, which made the claim it reports
+ * imprecise: a file was "gated" if the pattern appeared ANYWHERE in it. A route
+ * module with a gated DELETE beside an ungated destructive sibling therefore
+ * read as clean, and the output said "this file", not "this handler".
+ *
+ * Splitting on the export boundary makes the unit the handler, which is the
+ * thing that is actually gated or not.
+ */
+const handlerBlocks = (src: string): Array<{ verb: string; block: string }> => {
+    const boundary = /export\s+(?:async\s+)?(?:function|const)\s+(GET|POST|PUT|PATCH|DELETE)\b/g;
+    const marks: Array<{ verb: string; at: number }> = [];
+    for (let m = boundary.exec(src); m !== null; m = boundary.exec(src)) {
+        marks.push({ verb: m[1], at: m.index });
+    }
+    return marks.map((mark, i) => ({
+        verb: mark.verb,
+        block: src.slice(mark.at, i + 1 < marks.length ? marks[i + 1].at : undefined),
+    }));
+};
+
 const census = (): { destructive: string[]; ungated: string[] } => {
     const destructive: string[] = [];
     const ungated: string[] = [];
     for (const rel of repoRelativeFiles()) {
         if (!rel.startsWith('src/app/api/') || !rel.endsWith('route.ts')) continue;
         const src = stripComments(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-        const hasDelete = /export\s+(async\s+)?(function|const)\s+DELETE/.test(src);
         const verbSegment = rel.split('/').some((s) => DESTRUCTIVE_SEGMENTS.has(s));
-        if (!hasDelete && !verbSegment) continue;
         const key = rel.replace('src/app/api/', '');
+
+        // A destructive HANDLER is a DELETE, or any mutating verb on a path
+        // whose segment already says the route destroys something.
+        const blocks = handlerBlocks(src).filter(
+            (h) => h.verb === 'DELETE' || (verbSegment && h.verb !== 'GET'),
+        );
+        if (blocks.length === 0) continue;
+
         destructive.push(key);
-        if (!ROUTE_GATE.test(src)) ungated.push(key);
+        // The file is reported ungated when ANY destructive handler in it is —
+        // so a gated DELETE can no longer certify an ungated sibling. Keys stay
+        // file-level so the declared list below keeps its shape; the change is
+        // what the boolean MEANS, not how it is named.
+        if (blocks.some((h) => !ROUTE_GATE.test(h.block))) ungated.push(key);
     }
     return { destructive: destructive.sort(), ungated: ungated.sort() };
 };
