@@ -26,20 +26,49 @@ jest.mock('@/lib/observability', () => ({
 // Usecases must never be reached on a denial — mocked so a leak is visible.
 const mockDeleteWidget = jest.fn();
 const mockResetWidgets = jest.fn();
+const mockCreateWidget = jest.fn();
+const mockUpdateWidget = jest.fn();
 jest.mock('@/app-layer/usecases/org-dashboard-widgets', () => ({
     deleteOrgDashboardWidget: (...a: unknown[]) => mockDeleteWidget(...a),
     resetOrgDashboardToPreset: (...a: unknown[]) => mockResetWidgets(...a),
-    updateOrgDashboardWidget: jest.fn(),
+    createOrgDashboardWidget: (...a: unknown[]) => mockCreateWidget(...a),
+    updateOrgDashboardWidget: (...a: unknown[]) => mockUpdateWidget(...a),
     listOrgDashboardWidgets: jest.fn(),
 }));
 const mockDeleteInitiative = jest.fn();
 const mockUnlinkWork = jest.fn();
+const mockCreateInitiative = jest.fn();
+const mockUpdateInitiative = jest.fn();
+const mockChangeStatus = jest.fn();
+const mockLinkWork = jest.fn();
 jest.mock('@/app-layer/usecases/org-security-initiative', () => ({
     deleteInitiative: (...a: unknown[]) => mockDeleteInitiative(...a),
     unlinkWork: (...a: unknown[]) => mockUnlinkWork(...a),
+    createInitiative: (...a: unknown[]) => mockCreateInitiative(...a),
+    updateInitiative: (...a: unknown[]) => mockUpdateInitiative(...a),
+    changeInitiativeStatus: (...a: unknown[]) => mockChangeStatus(...a),
+    linkWork: (...a: unknown[]) => mockLinkWork(...a),
     getInitiative: jest.fn(),
-    updateInitiative: jest.fn(),
     getInitiativeProgress: jest.fn(),
+    listInitiatives: jest.fn(),
+    // Enum consts the route modules import at load time. Omit one and the
+    // route's `z.enum(...)` throws on import, which surfaces as a mystery
+    // failure in a file that never mentions initiatives.
+    INITIATIVE_STATUSES: ['PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE'],
+    INITIATIVE_LINK_TYPES: ['RISK', 'CONTROL', 'TASK'],
+}));
+const mockSetThreatLevel = jest.fn();
+jest.mock('@/app-layer/usecases/org-threat-level', () => ({
+    setOrgThreatLevel: (...a: unknown[]) => mockSetThreatLevel(...a),
+    getCurrentOrgThreatLevel: jest.fn(),
+    ORG_THREAT_TIERS: ['LOW', 'MODERATE', 'ELEVATED', 'SEVERE'],
+}));
+const mockSetMaturity = jest.fn();
+jest.mock('@/app-layer/usecases/org-maturity', () => ({
+    setOrgMaturityRating: (...a: unknown[]) => mockSetMaturity(...a),
+    getCurrentOrgMaturity: jest.fn(),
+    MATURITY_DOMAINS: ['GOVERNANCE'],
+    MATURITY_LEVELS: ['INITIAL'],
 }));
 const mockRevokeInvite = jest.fn();
 const mockCreateInvite = jest.fn();
@@ -83,6 +112,14 @@ import {
 } from '@/app/api/org/[orgSlug]/members/route';
 import { POST as inviteCreate } from '@/app/api/org/[orgSlug]/invites/route';
 import { POST as tenantCreate } from '@/app/api/org/[orgSlug]/tenants/route';
+import { PUT as threatLevelSet } from '@/app/api/org/[orgSlug]/threat-level/route';
+import { PUT as maturitySet } from '@/app/api/org/[orgSlug]/maturity/route';
+import { POST as initiativeCreate } from '@/app/api/org/[orgSlug]/initiatives/route';
+import { PATCH as initiativeUpdate } from '@/app/api/org/[orgSlug]/initiatives/[initiativeId]/route';
+import { PUT as initiativeStatus } from '@/app/api/org/[orgSlug]/initiatives/[initiativeId]/status/route';
+import { POST as initiativeLink } from '@/app/api/org/[orgSlug]/initiatives/[initiativeId]/links/route';
+import { POST as widgetCreate } from '@/app/api/org/[orgSlug]/dashboard/widgets/route';
+import { PATCH as widgetUpdate } from '@/app/api/org/[orgSlug]/dashboard/widgets/[widgetId]/route';
 import { DELETE as tenantDelete } from '@/app/api/org/[orgSlug]/tenants/[tenantId]/route';
 
 type Handler = (req: NextRequest, args: { params: unknown }) => Promise<Response>;
@@ -168,13 +205,59 @@ const ROUTES: Array<{
       body: { name: 'New Co', slug: 'new-co' },
       url: '/api/org/acme/tenants', params: { orgSlug: 'acme' },
       flag: 'canManageTenants', usecase: mockCreateTenant },
+
+    // The eight that had NO route check at all — the usecase assert was the
+    // only gate, so a refusal threw an unaudited ForbiddenError. These rows are
+    // the whole evidence for that change: nothing else in the suite fails if a
+    // gate here is dropped, because the usecase would still refuse.
+    { name: 'PUT /threat-level', handler: asHandler(threatLevelSet), method: 'PUT',
+      body: { level: 'SEVERE', summary: 'x' },
+      url: '/api/org/acme/threat-level', params: { orgSlug: 'acme' },
+      flag: 'canSetThreatLevel', usecase: mockSetThreatLevel },
+    { name: 'PUT /maturity', handler: asHandler(maturitySet), method: 'PUT',
+      body: { domain: 'GOVERNANCE', level: 'INITIAL' },
+      url: '/api/org/acme/maturity', params: { orgSlug: 'acme' },
+      flag: 'canSetMaturity', usecase: mockSetMaturity },
+    { name: 'POST /initiatives', handler: asHandler(initiativeCreate), method: 'POST',
+      body: { title: 'Harden SSO' },
+      url: '/api/org/acme/initiatives', params: { orgSlug: 'acme' },
+      flag: 'canConfigureDashboard', usecase: mockCreateInitiative },
+    { name: 'PATCH /initiatives/[initiativeId]', handler: asHandler(initiativeUpdate), method: 'PATCH',
+      body: { title: 'Renamed' },
+      url: '/api/org/acme/initiatives/i-1', params: { orgSlug: 'acme', initiativeId: 'i-1' },
+      flag: 'canConfigureDashboard', usecase: mockUpdateInitiative },
+    { name: 'PUT /initiatives/[initiativeId]/status', handler: asHandler(initiativeStatus), method: 'PUT',
+      body: { status: 'IN_PROGRESS' },
+      url: '/api/org/acme/initiatives/i-1/status', params: { orgSlug: 'acme', initiativeId: 'i-1' },
+      flag: 'canConfigureDashboard', usecase: mockChangeStatus },
+    { name: 'POST /initiatives/[initiativeId]/links', handler: asHandler(initiativeLink), method: 'POST',
+      body: { tenantId: 't-1', entityType: 'RISK', entityId: 'r-1' },
+      url: '/api/org/acme/initiatives/i-1/links', params: { orgSlug: 'acme', initiativeId: 'i-1' },
+      flag: 'canConfigureDashboard', usecase: mockLinkWork },
+    { name: 'POST /dashboard/widgets', handler: asHandler(widgetCreate), method: 'POST',
+      // A REAL body: CreateOrgDashboardWidgetInput is the typed shape
+      // intersected with the layout fields, so an invented one fails the
+      // authorized case while the denial case passes — the gate refuses before
+      // parsing, which is exactly the ordering under test.
+      body: {
+          type: 'ORG_THREAT_LEVEL', chartType: 'banner', config: {},
+          position: { x: 0, y: 0 }, size: { w: 4, h: 2 },
+      },
+      url: '/api/org/acme/dashboard/widgets', params: { orgSlug: 'acme' },
+      flag: 'canConfigureDashboard', usecase: mockCreateWidget },
+    { name: 'PATCH /dashboard/widgets/[widgetId]', handler: asHandler(widgetUpdate), method: 'PATCH',
+      body: { enabled: true },
+      url: '/api/org/acme/dashboard/widgets/w-1', params: { orgSlug: 'acme', widgetId: 'w-1' },
+      flag: 'canConfigureDashboard', usecase: mockUpdateWidget },
 ];
 
 beforeEach(() => {
     [mockAppendOrgAuditEntry, mockGetOrgCtx, mockDeleteWidget, mockResetWidgets,
      mockDeleteInitiative, mockUnlinkWork, mockRevokeInvite, mockRemoveMember,
      mockDeleteTenant, mockAddMember, mockChangeRole, mockCreateInvite,
-     mockCreateTenant].forEach((m) => m.mockReset());
+     mockCreateTenant, mockSetThreatLevel, mockSetMaturity, mockCreateInitiative,
+     mockUpdateInitiative, mockChangeStatus, mockLinkWork, mockCreateWidget,
+     mockUpdateWidget].forEach((m) => m.mockReset());
     mockAppendOrgAuditEntry.mockResolvedValue({ id: 'a', entryHash: 'h', previousHash: null });
 });
 

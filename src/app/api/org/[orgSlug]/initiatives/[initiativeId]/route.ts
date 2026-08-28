@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import {
     getInitiative,
     updateInitiative,
@@ -31,15 +31,19 @@ export const GET = withApiErrorHandling(async (req: NextRequest, rc: RC) => {
     return NextResponse.json({ initiative, progress });
 });
 
-export const PATCH = withApiErrorHandling(
-    withValidatedBody(UpdateSchema, async (req: NextRequest, rc: RC, body) => {
-        const { initiativeId, ...rest } = await rc.params;
-        const ctx = await getOrgCtx(rest, req);
-        return NextResponse.json({ initiative: await updateInitiative(ctx, initiativeId, body) });
-    }),
-);
+type InitiativeParams = { orgSlug: string; initiativeId: string };
 
-type DeleteParams = { orgSlug: string; initiativeId: string };
+export const PATCH = withApiErrorHandling(
+    requireOrgPermission<InitiativeParams>(
+        'canConfigureDashboard',
+        async (req, { params }, ctx) => {
+            const body = await parseJsonBody(req, UpdateSchema);
+            return NextResponse.json({
+                initiative: await updateInitiative(ctx, params.initiativeId, body),
+            });
+        },
+    ),
+);
 
 /**
  * Gated on `canConfigureDashboard` — the flag `assertWrite` in
@@ -50,7 +54,7 @@ type DeleteParams = { orgSlug: string; initiativeId: string };
  * The usecase assert stays: it protects non-HTTP callers.
  */
 export const DELETE = withApiErrorHandling(
-    requireOrgPermission<DeleteParams>('canConfigureDashboard', async (_req, { params }, ctx) => {
+    requireOrgPermission<InitiativeParams>('canConfigureDashboard', async (_req, { params }, ctx) => {
         await deleteInitiative(ctx, params.initiativeId);
         return NextResponse.json({ ok: true });
     }),
