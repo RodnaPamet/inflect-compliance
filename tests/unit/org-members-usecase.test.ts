@@ -257,6 +257,33 @@ describe('addOrgMember', () => {
     });
 });
 
+// ── addOrgMember / changeOrgMemberRole ────────────────────────────────
+
+describe('the two member mutations the destructive-routes pass did not cover', () => {
+    it('addOrgMember refuses a caller without canManageMembers', async () => {
+        const ctx = ctxFor({ permissions: { canManageMembers: false } as never });
+        await expect(
+            addOrgMember(ctx, { userEmail: 'new@corp.example', role: 'ORG_READER' as never }),
+        ).rejects.toMatchObject({ name: 'ForbiddenError' });
+        // Refused BEFORE any write. A throw that still upserted the user would
+        // leave a real account behind for a caller who may not add members.
+        expect(userUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('changeOrgMemberRole refuses a caller without canManageMembers', async () => {
+        // The sharpest of the set. This is the escalation path: a READER→ADMIN
+        // promotion fans Role.ADMIN membership rows into every tenant in the
+        // org, and the SUCCESS is audited as ORG_MEMBER_ROLE_CHANGED — so
+        // without this the ledger recorded every escalation that worked and
+        // nothing about one that was blocked.
+        const ctx = ctxFor({ permissions: { canManageMembers: false } as never });
+        await expect(
+            changeOrgMemberRole(ctx, { userId: 'user-2', role: 'ORG_ADMIN' as never }),
+        ).rejects.toMatchObject({ name: 'ForbiddenError' });
+        expect(orgMembershipFindUniqueMock).not.toHaveBeenCalled();
+    });
+});
+
 // ── removeOrgMember ────────────────────────────────────────────────────
 
 describe('removeOrgMember', () => {

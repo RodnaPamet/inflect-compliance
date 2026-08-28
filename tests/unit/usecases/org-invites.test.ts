@@ -163,6 +163,17 @@ beforeEach(() => {
 // createOrgInviteToken
 // ──────────────────────────────────────────────────────────────────────
 describe('createOrgInviteToken', () => {
+    it('refuses a caller who may not manage members, before validating anything', async () => {
+        // Minting an invite GRANTS org access, so it belongs behind the same
+        // check as revoking one — it was route-gated only until the
+        // privileged-mutation pass. Asserted ahead of validation so a refused
+        // caller cannot use the 400/403 split to probe the payload shape.
+        await expect(
+            createOrgInviteToken(readerCtx, { email: 'x@y.z', role: 'ORG_ADMIN' as any }),
+        ).rejects.toMatchObject({ name: 'ForbiddenError' });
+        expect(mockPrisma.orgInvite.upsert).not.toHaveBeenCalled();
+    });
+
     it('rejects empty email with badRequest', async () => {
         await expect(
             createOrgInviteToken(orgCtx, { email: '   ', role: 'ORG_READER' as any }),
