@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { UpdateOrgDashboardWidgetInput } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import {
     updateOrgDashboardWidget,
@@ -25,25 +25,15 @@ interface RouteContext {
     params: Promise<{ orgSlug: string; widgetId: string }>;
 }
 
-export const PATCH = withApiErrorHandling(
-    withValidatedBody(
-        UpdateOrgDashboardWidgetInput,
-        async (req: NextRequest, routeCtx: RouteContext, body) => {
-            const ctx = await getOrgCtx(
-                { orgSlug: (await routeCtx.params).orgSlug },
-                req,
-            );
-            const widget = await updateOrgDashboardWidget(
-                ctx,
-                (await routeCtx.params).widgetId,
-                body,
-            );
-            return NextResponse.json({ widget });
-        },
-    ),
-);
+type WidgetParams = { orgSlug: string; widgetId: string };
 
-type DeleteParams = { orgSlug: string; widgetId: string };
+export const PATCH = withApiErrorHandling(
+    requireOrgPermission<WidgetParams>('canConfigureDashboard', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, UpdateOrgDashboardWidgetInput);
+        const widget = await updateOrgDashboardWidget(ctx, params.widgetId, body);
+        return NextResponse.json({ widget });
+    }),
+);
 
 /**
  * Gated on `canConfigureDashboard`, mirroring `assertCanWriteOrgWidgets` in
@@ -52,7 +42,7 @@ type DeleteParams = { orgSlug: string; widgetId: string };
  * assert stays: it protects non-HTTP callers.
  */
 export const DELETE = withApiErrorHandling(
-    requireOrgPermission<DeleteParams>('canConfigureDashboard', async (_req, { params }, ctx) => {
+    requireOrgPermission<WidgetParams>('canConfigureDashboard', async (_req, { params }, ctx) => {
         const result = await deleteOrgDashboardWidget(ctx, params.widgetId);
         return NextResponse.json(result);
     }),

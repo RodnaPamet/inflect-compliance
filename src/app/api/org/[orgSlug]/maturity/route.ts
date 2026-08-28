@@ -11,7 +11,8 @@ import { z } from 'zod';
 
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { withValidatedBody } from '@/lib/validation/route';
+import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
+import { parseJsonBody } from '@/lib/validation/route';
 import {
     getCurrentOrgMaturity,
     setOrgMaturityRating,
@@ -40,8 +41,8 @@ export const GET = withApiErrorHandling(
 );
 
 export const PUT = withApiErrorHandling(
-    withValidatedBody(SetMaturitySchema, async (req: NextRequest, routeCtx: RouteContext, body) => {
-        const ctx = await getOrgCtx(await routeCtx.params, req);
+    requireOrgPermission<{ orgSlug: string }>('canSetMaturity', async (req, _args, ctx) => {
+        const body = await parseJsonBody(req, SetMaturitySchema);
         const rating = await setOrgMaturityRating(ctx, {
             domain: body.domain,
             level: body.level,
