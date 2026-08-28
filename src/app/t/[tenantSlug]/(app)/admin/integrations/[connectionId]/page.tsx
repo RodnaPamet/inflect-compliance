@@ -34,6 +34,13 @@ interface ExecutionRow {
     completedAt: string | null;
 }
 
+/**
+ * A loose Record with a `?? 'neutral'` fallback at the call site, so a status
+ * missing here renders as a neutral badge rather than failing to compile. That
+ * is the right default and the reason this needs watching: PARTIAL would have
+ * shown up grey, reading as a non-status beside a red ERROR, while meaning "the
+ * directory was only partly read".
+ */
 const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     PASSED: 'success',
     FAILED: 'error',
@@ -41,6 +48,9 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     RUNNING: 'info',
     PENDING: 'neutral',
     NOT_APPLICABLE: 'neutral',
+    // Not an error — the pass continues from a stored cursor — but not clean
+    // either, and the difference is the whole point of recording it.
+    PARTIAL: 'warning',
 };
 
 export default function ConnectionOutcomePage() {
