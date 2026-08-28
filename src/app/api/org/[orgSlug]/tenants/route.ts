@@ -16,38 +16,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { withValidatedBody } from '@/lib/validation/route';
+import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
+import { parseJsonBody } from '@/lib/validation/route';
 import { CreateOrgTenantInput } from '@/app-layer/schemas/organization.schemas';
 import { createTenantUnderOrg } from '@/app-layer/usecases/org-tenants';
-import { forbidden } from '@/lib/errors/types';
 
 interface RouteContext {
     params: Promise<{ orgSlug: string }>;
 }
 
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        CreateOrgTenantInput,
-        async (req: NextRequest, routeCtx: RouteContext, body) => {
-            const ctx = await getOrgCtx((await routeCtx.params), req);
-            if (!ctx.permissions.canManageTenants) {
-                throw forbidden('You do not have permission to create tenants in this organization');
-            }
+    requireOrgPermission<{ orgSlug: string }>('canManageTenants', async (req, _args, ctx) => {
+        const body = await parseJsonBody(req, CreateOrgTenantInput);
 
-            const result = await createTenantUnderOrg(ctx, {
-                name: body.name,
-                slug: body.slug,
-            });
+        const result = await createTenantUnderOrg(ctx, {
+            name: body.name,
+            slug: body.slug,
+        });
 
-            return NextResponse.json(
-                {
-                    tenant: result.tenant,
-                    provisionedAdmins: result.provisionedAdmins,
-                },
-                { status: 201 },
-            );
-        },
-    ),
+        return NextResponse.json(
+            {
+                tenant: result.tenant,
+                provisionedAdmins: result.provisionedAdmins,
+            },
+            { status: 201 },
+        );
+    }),
 );
 
 export const GET = withApiErrorHandling(

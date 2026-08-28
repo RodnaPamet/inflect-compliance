@@ -14,7 +14,8 @@ import { z } from 'zod';
 
 import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { withValidatedBody } from '@/lib/validation/route';
+import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
+import { parseJsonBody } from '@/lib/validation/route';
 import {
     createOrgInviteToken,
     listPendingOrgInvites,
@@ -38,49 +39,41 @@ const CreateOrgInviteInput = z.object({
 });
 
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        CreateOrgInviteInput,
-        async (req: NextRequest, routeCtx: RouteContext, body) => {
-            const ctx = await getOrgCtx((await routeCtx.params), req);
-            if (!ctx.permissions.canManageMembers) {
-                throw forbidden(
-                    'You do not have permission to invite members to this organization',
-                );
-            }
-            const result = await createOrgInviteToken(ctx, {
-                email: body.email,
-                role: body.role,
-            });
+    requireOrgPermission<{ orgSlug: string }>('canManageMembers', async (req, _args, ctx) => {
+        const body = await parseJsonBody(req, CreateOrgInviteInput);
+        const result = await createOrgInviteToken(ctx, {
+            email: body.email,
+            role: body.role,
+        });
 
-            // Email the acceptance link to the recipient. Best-effort:
-            // the invite is already committed, so a mailer failure never
-            // fails creation — the `url` below is the copy-paste fallback
-            // and `emailSent` tells the admin whether it went out.
-            const { sent } = await sendInviteEmail({
-                to: result.invite.email,
-                acceptUrl: resolvePublicOrigin(req) + result.url,
-                kind: 'organization',
-                spaceName: ctx.orgSlug,
-                roleLabel: ORG_ROLE_LABEL[body.role] ?? body.role,
-                expiresAt: result.invite.expiresAt,
-            });
+        // Email the acceptance link to the recipient. Best-effort:
+        // the invite is already committed, so a mailer failure never
+        // fails creation — the `url` below is the copy-paste fallback
+        // and `emailSent` tells the admin whether it went out.
+        const { sent } = await sendInviteEmail({
+            to: result.invite.email,
+            acceptUrl: resolvePublicOrigin(req) + result.url,
+            kind: 'organization',
+            spaceName: ctx.orgSlug,
+            roleLabel: ORG_ROLE_LABEL[body.role] ?? body.role,
+            expiresAt: result.invite.expiresAt,
+        });
 
-            return NextResponse.json(
-                {
-                    invite: {
-                        id: result.invite.id,
-                        email: result.invite.email,
-                        role: result.invite.role,
-                        expiresAt: result.invite.expiresAt.toISOString(),
-                        createdAt: result.invite.createdAt.toISOString(),
-                    },
-                    url: result.url,
-                    emailSent: sent,
+        return NextResponse.json(
+            {
+                invite: {
+                    id: result.invite.id,
+                    email: result.invite.email,
+                    role: result.invite.role,
+                    expiresAt: result.invite.expiresAt.toISOString(),
+                    createdAt: result.invite.createdAt.toISOString(),
                 },
-                { status: 201 },
-            );
-        },
-    ),
+                url: result.url,
+                emailSent: sent,
+            },
+            { status: 201 },
+        );
+    }),
 );
 
 export const GET = withApiErrorHandling(

@@ -22,10 +22,9 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getOrgCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import {
     AddOrgMemberInput,
     ChangeOrgMemberRoleInput,
@@ -35,61 +34,23 @@ import {
     changeOrgMemberRole,
     removeOrgMember,
 } from '@/app-layer/usecases/org-members';
-import { badRequest, forbidden } from '@/lib/errors/types';
+import { badRequest } from '@/lib/errors/types';
 
-interface RouteContext {
-    params: Promise<{ orgSlug: string }>;
-}
+type OrgParams = { orgSlug: string };
 
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        AddOrgMemberInput,
-        async (req: NextRequest, routeCtx: RouteContext, body) => {
-            const ctx = await getOrgCtx((await routeCtx.params), req);
-            if (!ctx.permissions.canManageMembers) {
-                throw forbidden('You do not have permission to manage members of this organization');
-            }
+    requireOrgPermission<OrgParams>('canManageMembers', async (req, _args, ctx) => {
+        const body = await parseJsonBody(req, AddOrgMemberInput);
 
-            const result = await addOrgMember(ctx, {
-                userEmail: body.userEmail,
-                role: body.role,
-            });
+        const result = await addOrgMember(ctx, {
+            userEmail: body.userEmail,
+            role: body.role,
+        });
 
-            return NextResponse.json(
-                {
-                    membership: result.membership,
-                    user: result.user,
-                    provisioned: result.provision
-                        ? {
-                              created: result.provision.created,
-                              skipped: result.provision.skipped,
-                              totalConsidered: result.provision.totalConsidered,
-                          }
-                        : null,
-                },
-                { status: 201 },
-            );
-        },
-    ),
-);
-
-export const PUT = withApiErrorHandling(
-    withValidatedBody(
-        ChangeOrgMemberRoleInput,
-        async (req: NextRequest, routeCtx: RouteContext, body) => {
-            const ctx = await getOrgCtx((await routeCtx.params), req);
-            if (!ctx.permissions.canManageMembers) {
-                throw forbidden('You do not have permission to manage members of this organization');
-            }
-
-            const result = await changeOrgMemberRole(ctx, {
-                userId: body.userId,
-                role: body.role,
-            });
-
-            return NextResponse.json({
+        return NextResponse.json(
+            {
                 membership: result.membership,
-                transition: result.transition,
+                user: result.user,
                 provisioned: result.provision
                     ? {
                           created: result.provision.created,
@@ -97,18 +58,40 @@ export const PUT = withApiErrorHandling(
                           totalConsidered: result.provision.totalConsidered,
                       }
                     : null,
-                deprovisioned: result.deprovision
-                    ? {
-                          deleted: result.deprovision.deleted,
-                          tenantIds: result.deprovision.tenantIds,
-                      }
-                    : null,
-            });
-        },
-    ),
+            },
+            { status: 201 },
+        );
+    }),
 );
 
-type DeleteParams = { orgSlug: string };
+export const PUT = withApiErrorHandling(
+    requireOrgPermission<OrgParams>('canManageMembers', async (req, _args, ctx) => {
+        const body = await parseJsonBody(req, ChangeOrgMemberRoleInput);
+
+        const result = await changeOrgMemberRole(ctx, {
+            userId: body.userId,
+            role: body.role,
+        });
+
+        return NextResponse.json({
+            membership: result.membership,
+            transition: result.transition,
+            provisioned: result.provision
+                ? {
+                      created: result.provision.created,
+                      skipped: result.provision.skipped,
+                      totalConsidered: result.provision.totalConsidered,
+                  }
+                : null,
+            deprovisioned: result.deprovision
+                ? {
+                      deleted: result.deprovision.deleted,
+                      tenantIds: result.deprovision.tenantIds,
+                  }
+                : null,
+        });
+    }),
+);
 
 /**
  * Gated on `canManageMembers`. The inline check this replaces recorded nothing
@@ -117,12 +100,20 @@ type DeleteParams = { orgSlug: string };
  * `removeOrgMember` gained `assertCanManageOrgMembers` in the same diff, so
  * this is additive rather than relocating the only check.
  *
- * POST and PUT keep their inline checks: they are not destructive verbs, and
- * migrating them raises the same `withValidatedBody` composition question
- * deferred on the tenant side.
+ * All three verbs are gated the same way now. POST and PUT kept inline checks
+ * until the privileged-mutation pass because they are not destructive verbs —
+ * which was exactly the blind spot. The census admits this FILE on the strength
+ * of the DELETE below and then tests the whole file, so one gated DELETE
+ * certified two ungated siblings as clean.
+ *
+ * The `withValidatedBody` composition question that deferred them is answered by
+ * `parseJsonBody`: both wrappers want the third handler argument, so the body is
+ * parsed INSIDE the gate rather than around it. That also fixes the ordering —
+ * an unauthorized caller is refused before their payload is read, where before a
+ * malformed body from a reader returned 400 and disclosed the schema.
  */
 export const DELETE = withApiErrorHandling(
-    requireOrgPermission<DeleteParams>('canManageMembers', async (req, _args, ctx) => {
+    requireOrgPermission<OrgParams>('canManageMembers', async (req, _args, ctx) => {
         const userId = req.nextUrl.searchParams.get('userId');
         if (!userId) {
             throw badRequest('Missing userId query parameter');

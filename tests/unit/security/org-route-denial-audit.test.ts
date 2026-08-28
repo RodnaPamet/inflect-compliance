@@ -42,19 +42,33 @@ jest.mock('@/app-layer/usecases/org-security-initiative', () => ({
     getInitiativeProgress: jest.fn(),
 }));
 const mockRevokeInvite = jest.fn();
+const mockCreateInvite = jest.fn();
 jest.mock('@/app-layer/usecases/org-invites', () => ({
     revokeOrgInvite: (...a: unknown[]) => mockRevokeInvite(...a),
+    // Listed because the POST route imports it. This factory names exports one
+    // by one, so a route that reaches for one not listed here gets `undefined`
+    // and fails somewhere unrelated — adding a row to ROUTES means checking
+    // this block too.
+    createOrgInviteToken: (...a: unknown[]) => mockCreateInvite(...a),
+    listPendingOrgInvites: jest.fn(),
 }));
+// The invite POST mails the recipient on the AUTHORIZED path. Unmocked it would
+// attempt real delivery from a unit test.
+jest.mock('@/lib/email/invite-email', () => ({ sendInviteEmail: jest.fn(async () => ({ sent: true })) }));
 const mockRemoveMember = jest.fn();
+const mockAddMember = jest.fn();
+const mockChangeRole = jest.fn();
 jest.mock('@/app-layer/usecases/org-members', () => ({
     removeOrgMember: (...a: unknown[]) => mockRemoveMember(...a),
-    addOrgMember: jest.fn(),
-    changeOrgMemberRole: jest.fn(),
+    addOrgMember: (...a: unknown[]) => mockAddMember(...a),
+    changeOrgMemberRole: (...a: unknown[]) => mockChangeRole(...a),
     listOrgMembers: jest.fn(),
 }));
 const mockDeleteTenant = jest.fn();
+const mockCreateTenant = jest.fn();
 jest.mock('@/app-layer/usecases/org-tenants', () => ({
     deleteTenantUnderOrg: (...a: unknown[]) => mockDeleteTenant(...a),
+    createTenantUnderOrg: (...a: unknown[]) => mockCreateTenant(...a),
 }));
 
 import { DELETE as widgetDelete } from '@/app/api/org/[orgSlug]/dashboard/widgets/[widgetId]/route';
@@ -62,7 +76,13 @@ import { POST as widgetReset } from '@/app/api/org/[orgSlug]/dashboard/widgets/r
 import { DELETE as initiativeDelete } from '@/app/api/org/[orgSlug]/initiatives/[initiativeId]/route';
 import { DELETE as linkDelete } from '@/app/api/org/[orgSlug]/initiatives/[initiativeId]/links/[linkId]/route';
 import { DELETE as inviteDelete } from '@/app/api/org/[orgSlug]/invites/[inviteId]/route';
-import { DELETE as memberDelete } from '@/app/api/org/[orgSlug]/members/route';
+import {
+    DELETE as memberDelete,
+    POST as memberAdd,
+    PUT as memberRoleChange,
+} from '@/app/api/org/[orgSlug]/members/route';
+import { POST as inviteCreate } from '@/app/api/org/[orgSlug]/invites/route';
+import { POST as tenantCreate } from '@/app/api/org/[orgSlug]/tenants/route';
 import { DELETE as tenantDelete } from '@/app/api/org/[orgSlug]/tenants/[tenantId]/route';
 
 type Handler = (req: NextRequest, args: { params: unknown }) => Promise<Response>;
@@ -85,11 +105,15 @@ const ctxWith = (flags: Partial<typeof ALL_FALSE>) => ({
  * inner handler runs, so a bare `{ method, nextUrl }` stub is not enough — the
  * wrapper is part of the route export under test.
  */
-const req = (url: string, method = 'DELETE'): NextRequest =>
+const req = (url: string, method = 'DELETE', body?: unknown): NextRequest =>
     ({
         method,
         nextUrl: new URL(`https://app.example.com${url}`),
         headers: new Headers(),
+        // The DENIAL path never calls this — the gate refuses before the body is
+        // read, which is itself part of the contract. The paired authorized case
+        // does, so the stub has to be real.
+        json: async () => body ?? {},
     }) as unknown as NextRequest;
 
 const denialRows = () =>
@@ -100,6 +124,7 @@ const denialRows = () =>
 const ROUTES: Array<{
     name: string; handler: Handler; url: string; params: Record<string, string>;
     flag: keyof typeof ALL_FALSE; usecase: jest.Mock;
+    method?: string; body?: unknown;
 }> = [
     { name: 'DELETE /dashboard/widgets/[widgetId]', handler: asHandler(widgetDelete),
       url: '/api/org/acme/dashboard/widgets/w-1', params: { orgSlug: 'acme', widgetId: 'w-1' },
@@ -123,12 +148,33 @@ const ROUTES: Array<{
     { name: 'DELETE /tenants/[tenantId]', handler: asHandler(tenantDelete),
       url: '/api/org/acme/tenants/t-1', params: { orgSlug: 'acme', tenantId: 't-1' },
       flag: 'canManageTenants', usecase: mockDeleteTenant },
+
+    // The four the destructive-verb census could never see. `members` is the
+    // reason granularity matters: its DELETE above satisfied a whole-file gate
+    // check while these two authorized inline.
+    { name: 'POST /members', handler: asHandler(memberAdd), method: 'POST',
+      body: { userEmail: 'new@corp.example', role: 'ORG_READER' },
+      url: '/api/org/acme/members', params: { orgSlug: 'acme' },
+      flag: 'canManageMembers', usecase: mockAddMember },
+    { name: 'PUT /members (role change — the escalation path)', handler: asHandler(memberRoleChange),
+      method: 'PUT', body: { userId: 'u-2', role: 'ORG_ADMIN' },
+      url: '/api/org/acme/members', params: { orgSlug: 'acme' },
+      flag: 'canManageMembers', usecase: mockChangeRole },
+    { name: 'POST /invites', handler: asHandler(inviteCreate), method: 'POST',
+      body: { email: 'new@corp.example', role: 'ORG_READER' },
+      url: '/api/org/acme/invites', params: { orgSlug: 'acme' },
+      flag: 'canManageMembers', usecase: mockCreateInvite },
+    { name: 'POST /tenants', handler: asHandler(tenantCreate), method: 'POST',
+      body: { name: 'New Co', slug: 'new-co' },
+      url: '/api/org/acme/tenants', params: { orgSlug: 'acme' },
+      flag: 'canManageTenants', usecase: mockCreateTenant },
 ];
 
 beforeEach(() => {
     [mockAppendOrgAuditEntry, mockGetOrgCtx, mockDeleteWidget, mockResetWidgets,
      mockDeleteInitiative, mockUnlinkWork, mockRevokeInvite, mockRemoveMember,
-     mockDeleteTenant].forEach((m) => m.mockReset());
+     mockDeleteTenant, mockAddMember, mockChangeRole, mockCreateInvite,
+     mockCreateTenant].forEach((m) => m.mockReset());
     mockAppendOrgAuditEntry.mockResolvedValue({ id: 'a', entryHash: 'h', previousHash: null });
 });
 
@@ -140,7 +186,7 @@ describe.each(ROUTES)('$name', (route) => {
         // thrown AppError into an HTTP response — so this RESOLVES with a 403
         // rather than rejecting. The middleware's own suite asserts the throw;
         // here the observable contract is the response.
-        const res = await route.handler(req(route.url), {
+        const res = await route.handler(req(route.url, route.method, route.body), {
             params: Promise.resolve(route.params),
         });
         expect(res.status).toBe(403);
@@ -155,7 +201,9 @@ describe.each(ROUTES)('$name', (route) => {
         mockGetOrgCtx.mockResolvedValue(ctxWith({ [route.flag]: true }));
         route.usecase.mockResolvedValue({ ok: true, tenant: {}, deprovision: null });
 
-        await route.handler(req(route.url), { params: Promise.resolve(route.params) });
+        await route.handler(req(route.url, route.method, route.body), {
+            params: Promise.resolve(route.params),
+        });
 
         expect(route.usecase).toHaveBeenCalled();
         expect(denialRows()).toHaveLength(0);
