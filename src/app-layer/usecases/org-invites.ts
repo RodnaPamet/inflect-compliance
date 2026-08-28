@@ -185,15 +185,15 @@ export async function createOrgInviteToken(
 // ─── revokeOrgInvite ────────────────────────────────────────────────
 
 /**
- * Revoke a pending invite by setting `revokedAt`. The row stays in
- * the DB so admins (and the audit ledger) can see the revocation
- * history. 404 if already accepted/revoked.
- */
-/**
- * Invite lifecycle requires `canManageMembers`.
+ * Revoking an invite requires `canManageMembers`.
  *
  * ADDED alongside the route gate, not moved from it: the check lived only at
  * the route, so a non-HTTP caller reached this usecase with none at all.
+ *
+ * REVOKE ONLY. `createOrgInviteToken` above is still gated at the route alone,
+ * which is deliberate — this diff covers the destructive routes, and minting an
+ * invite is not one. Naming this for the whole "invite lifecycle" would claim a
+ * coverage it does not have.
  */
 function assertCanManageOrgInvites(ctx: OrgContext): void {
     if (!ctx.permissions.canManageMembers) {
@@ -203,6 +203,11 @@ function assertCanManageOrgInvites(ctx: OrgContext): void {
     }
 }
 
+/**
+ * Revoke a pending invite by setting `revokedAt`. The row stays in
+ * the DB so admins (and the audit ledger) can see the revocation
+ * history. 404 if already accepted/revoked.
+ */
 export async function revokeOrgInvite(
     ctx: OrgContext,
     input: { inviteId: string },

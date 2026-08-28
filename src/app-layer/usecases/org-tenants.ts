@@ -152,23 +152,6 @@ export async function createTenantUnderOrg(
 }
 
 /**
- * Soft-delete ("remove") a tenant from the org admin panel.
- *
- * Sets `Tenant.deletedAt`, which the tenant resolver (getTenantContext →
- * 404), the portfolio + org tenant listings, the tenant picker, and the
- * JWT membership claims all filter on — so the tenant becomes
- * inaccessible immediately, everywhere, while its data is retained for
- * compliance and a possible restore. A hard purge (wiping the tenant's
- * rows) is a separate, deliberate operation and is NOT done here.
- *
- * Org-scoped: only a tenant that belongs to THIS org (and isn't already
- * removed) can be deleted — a foreign / unknown id is a `notFound`, so
- * an org admin can never reach across into another org's tenant.
- *
- * The caller MUST have passed the `canManageTenants` permission check at
- * the route layer.
- */
-/**
  * Org-tenant management requires `canManageTenants`.
  *
  * ADDED alongside the route gate, not moved from it. Before this, the check
@@ -186,6 +169,26 @@ function assertCanManageOrgTenants(ctx: OrgContext): void {
     }
 }
 
+/**
+ * Soft-delete ("remove") a tenant from the org admin panel.
+ *
+ * Sets `Tenant.deletedAt`, which the tenant resolver (getTenantContext →
+ * 404), the portfolio + org tenant listings, the tenant picker, and the
+ * JWT membership claims all filter on — so the tenant becomes
+ * inaccessible immediately, everywhere, while its data is retained for
+ * compliance and a possible restore. A hard purge (wiping the tenant's
+ * rows) is a separate, deliberate operation and is NOT done here.
+ *
+ * Org-scoped: only a tenant that belongs to THIS org (and isn't already
+ * removed) can be deleted — a foreign / unknown id is a `notFound`, so
+ * an org admin can never reach across into another org's tenant.
+ *
+ * Permission is asserted HERE as well as at the route. This used to read
+ * "the caller MUST have passed the `canManageTenants` check at the route
+ * layer", which stopped being true in this diff: the route gate became
+ * `requireOrgPermission` so denials are audited, and
+ * `assertCanManageOrgTenants` above now covers every non-HTTP caller.
+ */
 export async function deleteTenantUnderOrg(
     ctx: OrgContext,
     tenantId: string,
