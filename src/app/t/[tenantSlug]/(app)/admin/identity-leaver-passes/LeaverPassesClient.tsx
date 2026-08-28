@@ -155,11 +155,27 @@ const BASIS_LABEL: Record<string, string> = {
     UNSUPPORTED_DIRECTORY: 'basisUnsupportedDirectory',
 };
 
-/** Narrow the Json column without trusting it. */
+/**
+ * Narrow the Json column without trusting it — and derive the one refusal code
+ * the server did not always record.
+ *
+ * Rows written before a batch refusal was recorded as a refusal carry only the
+ * breaker's SENTENCE in `batchRefused`, with no `refusal` key. Deriving it here
+ * rather than in the cell keeps the two surfaces that read this row agreeing:
+ * the list column and the detail notice would otherwise describe the same row
+ * differently.
+ *
+ * Deliberately does NOT touch the status badge. A legacy row reading
+ * "Ran — complete" beside BATCH_REFUSED is correct and is the point — the
+ * renderer must not overrule a stored audit record, and the mismatch is the
+ * visible trace of when the defect was fixed.
+ */
 function readResult(value: unknown): PassResult {
-    return value !== null && typeof value === 'object' && !Array.isArray(value)
-        ? (value as PassResult)
-        : {};
+    const raw =
+        value !== null && typeof value === 'object' && !Array.isArray(value)
+            ? (value as PassResult)
+            : {};
+    return raw.refusal || !raw.batchRefused ? raw : { ...raw, refusal: 'BATCH_REFUSED' };
 }
 
 function readBasis(value: unknown): DecisionBasisJson | null {

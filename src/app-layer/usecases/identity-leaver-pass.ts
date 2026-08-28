@@ -146,6 +146,7 @@ async function recordPassExecution(
     candidates: readonly DisableAccountInput[],
     results: readonly LeaverDisableResult[],
     summary: Record<string, unknown>,
+    refused: string | undefined,
 ): Promise<void> {
     const identifierByLink = new Map(candidates.map((c) => [c.linkId, c.externalUserId]));
     const reported = results.slice(0, MAX_REPORTED_DECISIONS);
@@ -175,8 +176,27 @@ async function recordPassExecution(
     // what a truncated decision list is, and is NOT what a FAILED or
     // INDETERMINATE outcome is. Those are results the pass is reporting
     // correctly, and they are in `counts`.
-    await writeExecutionRow(ctx, provider, truncated ? 'PARTIAL' : 'PASSED', {
+    // A REFUSED BATCH IS NOT A COMPLETE PASS.
+    //
+    // The breaker returns `results: []` for the whole batch, so this row was
+    // being written as PASSED — which the badge renders as "Ran — complete"
+    // beside an empty Refusal cell and a decision count of 0. The one outcome
+    // that means "the pass deliberately did nothing because the blast radius
+    // looked wrong" was the one that read as a clean night.
+    //
+    // NOT_APPLICABLE rather than ERROR: nothing failed, and `errorCount24h`
+    // counts `status: 'ERROR'` only, so ERROR would inflate a diagnostics
+    // counter for a rail working exactly as designed. The WRITER_* refusals
+    // below already record NOT_APPLICABLE with a non-zero candidate count, so
+    // this follows the file's own precedent rather than the enum's
+    // empty-population wording.
+    //
+    // The ternary is order-safe: `refused` is set at exactly one place, and that
+    // return carries `results: []`, so a refusal and a truncated decision list
+    // are mutually exclusive by construction — a real PARTIAL cannot be masked.
+    await writeExecutionRow(ctx, provider, refused ? 'NOT_APPLICABLE' : truncated ? 'PARTIAL' : 'PASSED', {
         ...summary,
+        ...(refused ? { refusal: 'BATCH_REFUSED' } : {}),
         decisions,
         decisionsTruncated: truncated,
     });
@@ -313,6 +333,10 @@ export type LeaverPassRefusal =
     | 'MODE_ABOVE_CLAMP'
     | 'NO_TERMINATED_WORKERS'
     | 'NO_FRESH_LINKS'
+    // The breaker refused the WHOLE batch. Distinct from every refusal above:
+    // those stop before any decision is made, this one stops after the pass has
+    // looked at a real population and judged the blast radius wrong.
+    | 'BATCH_REFUSED'
     | `WRITER_${WriterRefusal}`;
 
 export interface LeaverPassResult {
@@ -500,15 +524,22 @@ export async function runIdentityLeaverPass(input: {
             // are already made and already reported; losing the record of them
             // is worth an alert, not a retry of a pass that ran.
             try {
-                await recordPassExecution(ctx, input.provider, candidates, outcome.results, {
-                    mode,
-                    evidence: resolution.kind,
-                    terminatedWorkers: terminated.length,
-                    candidates: candidates.length,
-                    population,
-                    batchRefused: outcome.refused ?? null,
-                    counts,
-                });
+                await recordPassExecution(
+                    ctx,
+                    input.provider,
+                    candidates,
+                    outcome.results,
+                    {
+                        mode,
+                        evidence: resolution.kind,
+                        terminatedWorkers: terminated.length,
+                        candidates: candidates.length,
+                        population,
+                        batchRefused: outcome.refused ?? null,
+                        counts,
+                    },
+                    outcome.refused,
+                );
             } catch (err) {
                 logger.error('leaver pass ran but its record could not be written', {
                     component: 'identity-leaver-pass',
@@ -523,7 +554,11 @@ export async function runIdentityLeaverPass(input: {
                 outcome: outcome.refused ? 'batch_refused' : 'completed',
             });
             return {
-                status: 'PASSED',
+                // Matches the row written above. The two disagreeing is the
+                // defect one subsystem over (a resumable sync returned PARTIAL
+                // while persisting PASSED), and it is worth not repeating.
+                status: outcome.refused ? 'NOT_APPLICABLE' : 'PASSED',
+                ...(outcome.refused ? { refusal: 'BATCH_REFUSED' as const } : {}),
                 mode,
                 counts,
                 terminatedWorkers: terminated.length,

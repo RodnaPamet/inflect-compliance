@@ -391,6 +391,47 @@ describe('the batch', () => {
         expect(r.batchRefused).toMatch(/broken feed/);
         expect(passMetric).toHaveBeenCalledWith({ provider: 'entra-id', outcome: 'batch_refused' });
     });
+
+    it('records the refusal as a refusal — in the RETURN and in the ROW', async () => {
+        // The gap this closes. `batchRefused` was carried through and the metric
+        // fired, but the recorded status stayed PASSED — which the passes page
+        // renders as "Ran — complete" beside an empty Refusal cell and a
+        // decision count of 0. The one outcome meaning "the pass deliberately
+        // did nothing because the blast radius looked wrong" read as a clean
+        // night, and the two assertions above are both green against that.
+        disableBatch.mockResolvedValue({
+            refused: 'Refusing to disable 6 of 10 account(s) (60.0%)',
+            results: [],
+        });
+
+        const r = await run();
+
+        expect(r.status).toBe('NOT_APPLICABLE');
+        expect(r.refusal).toBe('BATCH_REFUSED');
+
+        const data = mockDb.integrationExecution.create.mock.calls.at(-1)?.[0].data;
+        expect(data.status).toBe('NOT_APPLICABLE');
+        expect(data.resultJson.refusal).toBe('BATCH_REFUSED');
+
+        // Positive controls: the row was actually written, and the operator can
+        // still read WHY — the sentence and the empty decision list are what
+        // make "wanted 6 of 10" legible rather than merely refused.
+        expect(mockDb.integrationExecution.create).toHaveBeenCalledTimes(1);
+        expect(data.resultJson.batchRefused).toMatch(/60\.0%/);
+        expect(data.resultJson.decisions).toEqual([]);
+    });
+
+    it('a normal pass is still PASSED, and carries no refusal', async () => {
+        // The other direction, so the change above cannot be satisfied by
+        // marking every pass NOT_APPLICABLE.
+        const r = await run();
+
+        expect(r.status).toBe('PASSED');
+        expect(r.refusal).toBeUndefined();
+        const data = mockDb.integrationExecution.create.mock.calls.at(-1)?.[0].data;
+        expect(data.status).toBe('PASSED');
+        expect(data.resultJson.refusal).toBeUndefined();
+    });
 });
 
 describe('disposal', () => {

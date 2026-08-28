@@ -235,8 +235,22 @@ beforeEach(() => {
     (global as unknown as { fetch: typeof fetchMock }).fetch = fetchMock;
 });
 
-function arrange(passes: unknown[]) {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ passes }) });
+/**
+ * URL-DISPATCH, not a blanket `mockResolvedValue`.
+ *
+ * The page makes TWO calls now — the passes list, and the write-policy summary
+ * the empty state reads to say WHY it is empty. A blanket mock answers both with
+ * `{ passes }`, so `ladder.directions` is undefined and every assertion about
+ * the mode silently exercises the unknown-mode fallback: green against a page
+ * that never reads the real mode at all. Nothing in this file asserts a call
+ * count, so that failure would be silent.
+ */
+function arrange(passes: unknown[], policy: unknown = {}) {
+    fetchMock.mockImplementation(async (url: unknown) =>
+        String(url).includes('identity-write-policy')
+            ? { ok: true, json: async () => policy }
+            : { ok: true, json: async () => ({ passes }) },
+    );
 }
 
 async function renderReport() {
@@ -287,6 +301,42 @@ describe('leaver pass report — the three statuses read as three different thin
         // reads as "nothing here" to an operator scanning the window.
         expect(screen.queryByText('NOT_APPLICABLE')).toBeNull();
         expect(screen.queryByText('PARTIAL')).toBeNull();
+    });
+
+    it('names BATCH_REFUSED on a LEGACY row the server recorded as PASSED', async () => {
+        // The rows already in the ledger. Before the server recorded a batch
+        // refusal as a refusal, such a pass was stored as PASSED with the
+        // breaker's sentence in `batchRefused` and NO `refusal` key — so the
+        // Refusal column showed an em-dash and the row read as a clean night.
+        //
+        // THE LEGACY SHAPE IS LOAD-BEARING. A fixture carrying `refusal` renders
+        // through the unchanged cell and is green against the broken client;
+        // only a row without it exercises the derivation.
+        const LEGACY = {
+            id: 'p-legacy',
+            provider: 'entra_legacy',
+            executedAt: '2026-08-20T05:00:00.000Z',
+            status: 'PASSED',
+            resultJson: {
+                mode: 'DRY_RUN',
+                candidates: 10,
+                population: 10,
+                batchRefused: 'Refusing to disable 6 of 10 account(s) (60.0%)',
+                counts: {},
+                decisions: [],
+            },
+        };
+        arrange([LEGACY]);
+        await renderReport();
+
+        const row = await rowFor('entra_legacy');
+        expect(row.textContent).toContain('BATCH_REFUSED');
+
+        // Paired positives: the row still reads as the server stored it. The
+        // renderer must not overrule an audit record — the mismatch between
+        // "Ran — complete" and a named refusal is the visible trace of when this
+        // was fixed, not something to paper over client-side.
+        expect(row.textContent).toContain(M.statusPassed);
     });
 
     it('names the refusal on the refused row and in its detail, rather than showing an empty pass', async () => {
