@@ -31,14 +31,22 @@
  *
  * ═══ THE UNIT IS (TENANT, PROVIDER) ═══
  *
- * Not per connection — still. `ConnectedIdentityAccount` now RECORDS a
- * `connectionId`, but it is nullable, and an account synced before the column
- * existed or one whose connection was removed cannot say which directory it came
- * from. So with two enabled connections for one provider the factory still
- * refuses outright, rather than addressing a disable at a forest the account may
- * not live in. The unit becomes per-connection when that column is mandatory and
- * the factory resolves a writer per account; until then this comment describes
- * a deliberate conservatism, not a missing column.
+ * Not per connection — still, though no longer for want of a column.
+ * `ConnectedIdentityAccount.connectionId` is NOT NULL as of migration
+ * `20260821170000_connected_identity_account_connection_required`, so every
+ * account row now says which directory it came from. The WRITER is what is
+ * still per (tenant, provider): with two enabled connections for one provider
+ * the factory refuses outright rather than picking one and addressing a disable
+ * at a forest the account may not live in. The unit becomes per-connection when
+ * the factory resolves a writer per account — that is the only remaining step,
+ * and the schema no longer blocks it.
+ *
+ * A soft-disabled connection does NOT reduce that count, and its account rows
+ * are never swept — the deprovision reconcile is connection-scoped, so they
+ * freeze holding whatever they last observed. What refuses to act on a frozen
+ * row is not this unit choice but the age bound on the observation, which lives
+ * in `resolveWriteTarget` (`identity-write-target.ts`) and is applied to the raw
+ * timestamp the candidate carries whole (`identity-disable-account.ts`).
  *
  * @module usecases/identity-leaver-pass
  */

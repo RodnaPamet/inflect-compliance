@@ -76,13 +76,27 @@ export type WriterRefusal =
     /**
      * More than one enabled connection for this (tenant, provider).
      *
-     * Refused rather than guessed. `ConnectedIdentityAccount` now carries a
-     * `connectionId`, but it is NULLABLE and nothing here selects a connection
-     * per account yet: a row observed before that column existed, or one whose
-     * connection was deleted, cannot say which directory it came from. Until
-     * the column is NOT NULL and this factory resolves a writer per account
-     * rather than per (tenant, provider), picking either connection still means
-     * a disable addressed at a forest the account may not live in.
+     * Refused rather than guessed — but NOT for the reason this comment used to
+     * give. `ConnectedIdentityAccount.connectionId` is NOT NULL as of migration
+     * `20260821170000_connected_identity_account_connection_required`
+     * (`prisma/schema/personnel.prisma:70`), so the ACCOUNTS are no longer
+     * ambiguous about which directory they came from.
+     *
+     * What remains ambiguous is the WRITER: it is resolved per
+     * (tenant, provider), not per account, so one connection would have to be
+     * chosen for all of them — and a disable would still be addressed at a
+     * forest the account may not live in. The release condition is therefore
+     * this factory resolving a writer per account, which the column now makes
+     * possible; it is no longer waiting on the schema.
+     *
+     * COUNTS ONLY ENABLED CONNECTIONS, which is narrower than it reads. A
+     * connection soft-disabled by `removeIntegrationConnection` keeps every
+     * account row it ever observed, and those rows keep whatever
+     * `onPremisesSyncEnabled` / `onPremStateObservedAt` they last held —
+     * nothing sweeps them, because the deprovision reconcile is
+     * connection-scoped. So this refusal is NOT a guard against acting on
+     * another connection's frozen rows; the age bound in
+     * `identity-write-target` is.
      */
     | 'AMBIGUOUS_CONNECTION'
     /** The connection's secrets did not decrypt. */

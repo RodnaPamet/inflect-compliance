@@ -10,7 +10,10 @@
  * succeeded. That is worse than an outright failure, which is why every
  * ambiguous case below refuses.
  */
-import { resolveWriteTarget } from '@/app-layer/usecases/identity-write-target';
+import {
+    resolveWriteTarget,
+    OBSERVATION_FRESHNESS_MS,
+} from '@/app-layer/usecases/identity-write-target';
 
 describe('a cloud-mastered account may be written in the cloud directory', () => {
     it('allows an Entra account observed as NOT synced from on-prem', () => {
@@ -189,6 +192,83 @@ describe('an observation has to be RECENT, not merely present', () => {
             });
             expect(r.allowed).toBe(false);
         }
+    });
+
+    it('an Invalid DATE OBJECT refuses without throwing', () => {
+        // NOT the same path as the string 'not-a-date' above, and that is the
+        // whole point. `describeObservedAt` branches on `instanceof Date`: a
+        // string goes through `Date.parse`, a Date through `getTime()`. Only
+        // this case reaches the second branch holding NaN, and only this case
+        // reaches the refusal FORMATTER with a value it cannot render.
+        //
+        // Simplify that formatter to `if (value instanceof Date) return
+        // value.toISOString()` and the rail throws RangeError instead of
+        // returning a verdict — one malformed row becomes an aborted candidate
+        // with an unhandled error. Every other test in this file stays green.
+        const r = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: new Date('nonsense'),
+            now: NOW,
+        });
+        expect(r.allowed).toBe(false);
+        expect(r.basis).toBe('OBSERVATION_STALE');
+        expect(r.allowed === false && r.reason).toMatch(/unreadable timestamp/i);
+    });
+
+    it('the bound is INCLUSIVE at its edge', () => {
+        // `>=` versus `>` at the comparison is invisible to every other test
+        // here, and the constant governs two rails — `LINK_FRESHNESS_MS` is an
+        // alias of it, so the same off-by-one would move the candidate query's
+        // floor too.
+        const exactlyAtBound = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: new Date(NOW.getTime() - OBSERVATION_FRESHNESS_MS),
+            now: NOW,
+        });
+        expect(exactlyAtBound.allowed).toBe(true);
+
+        const oneMsPast = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: new Date(NOW.getTime() - OBSERVATION_FRESHNESS_MS - 1),
+            now: NOW,
+        });
+        expect(oneMsPast.allowed).toBe(false);
+        expect(oneMsPast.basis).toBe('OBSERVATION_STALE');
+    });
+
+    it('accepts an ISO STRING, in both directions', () => {
+        // The field is declared `Date | string | null`, and the string arm is
+        // exercised above only in the FAILING direction. Replace `Date.parse`
+        // with `NaN` and this file stays green without this case — every string
+        // would simply fail closed, which the existing test already expects.
+        //
+        // No caller passes a string today (`identity-disable-account.ts` types
+        // it `Date | null`), so this pins the declared contract rather than a
+        // live path. That is deliberate: the contract is what a future caller
+        // will rely on.
+        const fresh = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: new Date(NOW.getTime() - 1 * DAY).toISOString(),
+            now: NOW,
+        });
+        expect(fresh.allowed).toBe(true);
+        expect(fresh.basis).toBe('CLOUD_ONLY_OBSERVED');
+
+        const old = new Date(NOW.getTime() - 30 * DAY).toISOString();
+        const stale = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: null,
+            onPremStateObservedAt: old,
+            now: NOW,
+        });
+        expect(stale.allowed).toBe(false);
+        // The string is echoed back, so the operator sees WHEN, not just that
+        // it was too old.
+        expect(stale.allowed === false && stale.reason).toContain(old);
     });
 });
 

@@ -50,6 +50,7 @@ import {
     LINK_FRESHNESS_MS,
     MAX_REPORTED_DECISIONS,
 } from '@/app-layer/usecases/identity-leaver-pass';
+import { OBSERVATION_FRESHNESS_MS } from '@/app-layer/usecases/identity-write-target';
 
 const mockDb = {
     employee: { findMany: jest.fn() },
@@ -323,6 +324,32 @@ describe('link freshness is the completeness gate', () => {
         await run();
         const staleBefore = findCandidates.mock.calls[0][3] as Date;
         expect(staleBefore.getTime()).toBe(NOW.getTime() - LINK_FRESHNESS_MS);
+    });
+
+    it('is the SAME band the write-target rail applies', () => {
+        // Two bounds over one question — did the daily sync refresh this row
+        // recently enough — and they must not drift. `LINK_FRESHNESS_MS` is
+        // written as an alias, so this is cheap; what it defends is somebody
+        // later "inlining" it back to a literal. Divergence is silent and
+        // asymmetric: a pass would accept a link one bound calls fresh, then
+        // refuse it at the rail, having already done the work.
+        expect(LINK_FRESHNESS_MS).toBe(OBSERVATION_FRESHNESS_MS);
+    });
+
+    it('survives one missed nightly sync — the reason it is two days, not one', () => {
+        // THE VALUE, not just the comparison. Nothing else pins it: the
+        // assertion above derives its expectation from the same constant, so
+        // setting the bound to 1 ms leaves this whole file green while every
+        // pass refuses NO_FRESH_LINKS — a product that has silently stopped
+        // offboarding, reported as a clean run.
+        //
+        // Expressed as the domain claim rather than as `toBe(172800000)`,
+        // because the literal would only restate the source. `identity-sync`
+        // is dispatched daily, so a bound at or below one day turns a single
+        // missed run into an empty candidate set, and "we disabled nobody"
+        // looks exactly like "nobody left".
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+        expect(LINK_FRESHNESS_MS).toBeGreaterThan(ONE_DAY_MS);
     });
 
     it('reports "no fresh links" as its OWN refusal, not as a quiet success', async () => {
