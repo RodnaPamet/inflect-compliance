@@ -22,6 +22,30 @@
  * TO SHRINK IT: migrate a route to `requirePermission` and delete its line
  * here in the same diff. Adding a new ungated destructive route fails until
  * somebody either gates it or records why it cannot be gated.
+ *
+ * RESOLUTION — what this does NOT prove. The scan is per FILE, not per
+ * HANDLER: a route module counts as gated when ANY gate appears anywhere in
+ * it. So a file exporting a gated POST and an ungated DELETE passes, and this
+ * list reads "gated" over it.
+ *
+ * Measured, not assumed: renaming BOTH gates in a two-handler file fails the
+ * guard; renaming only one passes it. That bound is worth knowing before
+ * reading a shrinking number as "every destructive handler is gated" — it
+ * means "every destructive route module has at least one gate".
+ *
+ * Closing it would mean parsing each `export const <VERB>` and attributing
+ * gates to handlers, which is a real parser rather than a grep.
+ *
+ * SEVEN MIXED MODULES EXIST TODAY, so this is not hypothetical. They are a
+ * by-product of the #2117 tranches: each gated its DELETE and left a PATCH or
+ * PUT on the old path, because those compose through `withValidatedBody` and
+ * were deferred. That reason has since evaporated — `parseJsonBody` composes
+ * with `requirePermission` and 58 routes already pair them — so the remaining
+ * verbs are now migratable and simply have not been migrated yet.
+ *
+ * Until they are, read this list as "every destructive route module has at
+ * least one gate", never as "every destructive handler is gated". A guard that
+ * overstates its own reach is the failure mode this suite exists to prevent.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -70,7 +94,6 @@ const UNGATED_DESTRUCTIVE_ROUTES: readonly string[] = [
     'scim/v2/Groups/[id]/route.ts',
     'scim/v2/Users/[id]/route.ts',
     'sso/route.ts',
-    't/[tenantSlug]/assets/[id]/controls/[controlId]/route.ts',
     't/[tenantSlug]/assets/[id]/evidence/attached/[evidenceId]/route.ts',
     't/[tenantSlug]/assets/[id]/risks/[riskId]/route.ts',
     't/[tenantSlug]/audits/auditors/[auditorId]/route.ts',
@@ -78,10 +101,6 @@ const UNGATED_DESTRUCTIVE_ROUTES: readonly string[] = [
     't/[tenantSlug]/automation/rules/[id]/route.ts',
     't/[tenantSlug]/business-continuity/[id]/dependencies/[depId]/route.ts',
     't/[tenantSlug]/business-continuity/[id]/route.ts',
-    't/[tenantSlug]/controls/[controlId]/requirements/route.ts',
-    't/[tenantSlug]/controls/[controlId]/risks/[riskId]/route.ts',
-    't/[tenantSlug]/evidence/[id]/controls/[controlId]/route.ts',
-    't/[tenantSlug]/policies/[id]/control-links/route.ts',
     't/[tenantSlug]/processes/[id]/snapshots/[version]/restore/route.ts',
     't/[tenantSlug]/risks/[id]/evidence/attached/[evidenceId]/route.ts',
     't/[tenantSlug]/risks/correlations/route.ts',
