@@ -132,7 +132,18 @@ d('the on-prem observation survives the DB seam', () => {
     });
 
     it('an OBSERVED null reaches the rail as observed, and the rail allows it', async () => {
-        const observedAt = new Date('2026-08-26T02:00:00.000Z');
+        // RELATIVE to now, not a literal. `isObservationFresh` compares this
+        // against real wall time under a 48-hour bound (#2158), so a fixed date
+        // ages out of the window while the file sits unchanged — this case
+        // asserts CLOUD_ONLY_OBSERVED and would silently become
+        // OBSERVATION_STALE on a schedule rather than on a diff.
+        //
+        // Relative rather than frozen with fake timers, unlike the unit-level
+        // sibling in tests/unit/identity-disable-account.test.ts: this suite
+        // talks to a real database, and faking timers around Prisma's own
+        // internals buys a different class of flake than it removes. One hour
+        // ago is unambiguously inside the window and stays that way.
+        const observedAt = new Date(Date.now() - 60 * 60 * 1000);
         const { linkId, employeeId } = await seed(observedAt);
         const ctx = makeRequestContext('OWNER', { tenantId: T });
 
