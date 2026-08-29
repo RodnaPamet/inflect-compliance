@@ -96,9 +96,6 @@ const UNGATED_DESTRUCTIVE_ROUTES: readonly string[] = [
     'sso/route.ts',
     't/[tenantSlug]/assets/[id]/evidence/attached/[evidenceId]/route.ts',
     't/[tenantSlug]/assets/[id]/risks/[riskId]/route.ts',
-    't/[tenantSlug]/audits/auditors/[auditorId]/route.ts',
-    't/[tenantSlug]/audits/auditors/access/route.ts',
-    't/[tenantSlug]/automation/rules/[id]/route.ts',
     't/[tenantSlug]/business-continuity/[id]/dependencies/[depId]/route.ts',
     't/[tenantSlug]/business-continuity/[id]/route.ts',
     't/[tenantSlug]/processes/[id]/snapshots/[version]/restore/route.ts',
@@ -106,8 +103,6 @@ const UNGATED_DESTRUCTIVE_ROUTES: readonly string[] = [
     't/[tenantSlug]/risks/correlations/route.ts',
     't/[tenantSlug]/risks/hierarchy/[nodeId]/links/route.ts',
     't/[tenantSlug]/security/mfa/enroll/route.ts',
-    't/[tenantSlug]/tests/runs/[runId]/evidence/[linkId]/route.ts',
-    't/[tenantSlug]/vendors/[vendorId]/bundles/[bundleId]/route.ts',
 ];
 
 /**

@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 import {
     getAutomationRule,
@@ -27,7 +28,32 @@ const PatchAutomationRuleSchema = z
     });
 
 type Ctx = { params: Promise<{ tenantSlug: string; id: string }> };
+type RuleParams = { tenantSlug: string; id: string };
 
+/**
+ * #2117 — all three write verbs gate on `admin.manage`, which mirrors
+ * `assertCanManageAutomation`: it reads `ctx.permissions.canAdmin`, the same
+ * predicate every other role-tier assert in this issue was mirrored onto. The
+ * asserts stay — they protect jobs and any non-HTTP caller; the route gate is
+ * what makes an HTTP refusal VISIBLE, because `AUTHZ_DENIED` is written by
+ * `requirePermission` and by nothing else.
+ *
+ * PUT and PATCH are gated alongside DELETE deliberately. Gating only the
+ * destructive verb would leave this file a MIXED MODULE — a gated DELETE
+ * certifying an ungated sibling — which is the blind spot #2168 / #2171 had to
+ * go back and close for seven other files. Reconfiguring a rule that fires
+ * side-effects on the tenant's behalf is a privileged act; a refused attempt
+ * belongs on the record just as much as an archive does.
+ *
+ * Both bodies are read with `parseJsonBody` INSIDE the handler rather than by
+ * composing `withValidatedBody`, whose handler takes the parsed body in the
+ * third argument `requirePermission` uses for `ctx`. Authorization therefore
+ * runs BEFORE the body is parsed, which is the order we want.
+ *
+ * GET keeps usecase-layer authorization (`assertCanReadAutomation`, the canRead
+ * tier) — no key means "view automation rules", and this issue is about
+ * destructive and write refusals.
+ */
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: Ctx) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
@@ -36,9 +62,8 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
 });
 
 export const PUT = withApiErrorHandling(
-    withValidatedBody(UpdateAutomationRuleSchema, async (req, { params: paramsPromise }: Ctx, body) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+    requirePermission<RuleParams>('admin.manage', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, UpdateAutomationRuleSchema);
         const rule = await updateAutomationRule(ctx, params.id, {
             name: body.name,
             description: body.description,
@@ -62,9 +87,8 @@ export const PUT = withApiErrorHandling(
 );
 
 export const PATCH = withApiErrorHandling(
-    withValidatedBody(PatchAutomationRuleSchema, async (req, { params: paramsPromise }: Ctx, body) => {
-        const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+    requirePermission<RuleParams>('admin.manage', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, PatchAutomationRuleSchema);
         // Priority first (if present), then the status toggle, so a combined
         // PATCH lands both. The toggle is the authoritative return.
         let rule;
@@ -78,9 +102,8 @@ export const PATCH = withApiErrorHandling(
     }),
 );
 
-export const DELETE = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: Ctx) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const rule = await archiveAutomationRule(ctx, params.id);
-    return jsonResponse(rule);
-});
+export const DELETE = withApiErrorHandling(
+    requirePermission<RuleParams>('admin.manage', async (_req, { params }, ctx) =>
+        jsonResponse(await archiveAutomationRule(ctx, params.id)),
+    ),
+);
