@@ -36,7 +36,7 @@ export async function generateRiskSuggestions(
     apiInput: RiskAssessmentApiInput,
 ) {
     // 1. Feature gate (global flag + per-feature flag + role + optional plan)
-    enforceFeatureGate(ctx, 'risk');
+    await enforceFeatureGate(ctx, 'risk');
 
     // 2. Permission check (admin/editor only — redundant with feature gate but explicit)
     if (!ctx.permissions.canWrite) {
@@ -428,7 +428,7 @@ export async function getSession(ctx: RequestContext, sessionId: string) {
 
 export async function applySession(ctx: RequestContext, sessionId: string, input: ApplySessionInput) {
     // Feature gate + permission check
-    enforceFeatureGate(ctx, 'risk');
+    await enforceFeatureGate(ctx, 'risk');
     if (!ctx.permissions.canWrite) {
         throw forbidden('Only editors and admins can apply AI risk suggestions');
     }
@@ -568,7 +568,7 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
 
 export async function dismissSession(ctx: RequestContext, sessionId: string) {
     // Feature gate + permission check
-    enforceFeatureGate(ctx, 'risk');
+    await enforceFeatureGate(ctx, 'risk');
     if (!ctx.permissions.canWrite) {
         throw forbidden('Only editors and admins can dismiss AI risk suggestions');
     }

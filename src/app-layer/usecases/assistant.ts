@@ -56,7 +56,7 @@ export async function askAssistant(
     ctx: RequestContext,
     input: z.infer<typeof AskAssistantSchema>,
 ): Promise<AssistantAnswer> {
-    enforceFeatureGate(ctx, 'assistant');
+    await enforceFeatureGate(ctx, 'assistant');
     await checkRateLimit(ctx.tenantId, ctx.userId);
     const question = input.question;
 

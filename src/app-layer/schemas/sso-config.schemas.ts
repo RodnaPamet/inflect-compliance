@@ -14,10 +14,26 @@ export type IdentityProviderType = z.infer<typeof IdentityProviderTypeSchema>;
 
 // ─── SAML Configuration ──────────────────────────────────────────────
 
+/**
+ * SAML provider configuration.
+ *
+ * `entityId` + `ssoUrl` + `certificate` are ALWAYS required.
+ *
+ * `metadataUrl` is accepted as a reference/documentation field, but it is
+ * NOT a substitute for those three: nothing in this codebase fetches or
+ * parses IdP metadata XML. The schema used to accept a metadataUrl-only
+ * config, which saved successfully and then failed at sign-in with a
+ * `configurationError` from `/api/auth/sso/saml/start` — the admin got a
+ * success message and a provider that could never work. Rejecting at save
+ * time keeps the failure where the operator can act on it.
+ *
+ * If metadata fetch/parse is ever implemented, relax this refinement in
+ * the SAME diff that lands the fetcher — never before.
+ */
 export const SamlConfigSchema = z.object({
-    /** URL to the IdP's SAML metadata XML */
+    /** URL to the IdP's SAML metadata XML — reference only; NOT fetched or parsed. */
     metadataUrl: z.string().url().optional(),
-    /** IdP Entity ID (if not using metadata URL) */
+    /** IdP Entity ID */
     entityId: z.string().min(1).optional(),
     /** SSO login URL */
     ssoUrl: z.string().url().optional(),
@@ -29,10 +45,22 @@ export const SamlConfigSchema = z.object({
     nameIdFormat: z.string().optional(),
     /** Whether to sign authn requests */
     signRequests: z.boolean().default(false),
-}).refine(
-    (data) => data.metadataUrl || (data.entityId && data.ssoUrl && data.certificate),
-    { message: 'Provide either metadataUrl or (entityId + ssoUrl + certificate)' }
-);
+}).superRefine((data, ctx) => {
+    const missing = (['entityId', 'ssoUrl', 'certificate'] as const).filter((k) => !data[k]);
+    if (missing.length === 0) return;
+
+    const message = data.metadataUrl
+        ? `A metadata URL alone is not enough — this deployment does not fetch IdP metadata. ` +
+          `Enter the values from your IdP's metadata directly. Missing: ${missing.join(', ')}.`
+        : `SAML requires entityId, ssoUrl and certificate. Missing: ${missing.join(', ')}.`;
+
+    // Attach the issue to every missing field so a form can highlight them,
+    // and once at the object root so a plain error read still says why.
+    for (const key of missing) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message });
+    }
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message });
+});
 
 export type SamlConfig = z.infer<typeof SamlConfigSchema>;
 

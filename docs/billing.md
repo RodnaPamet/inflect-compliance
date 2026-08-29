@@ -126,6 +126,37 @@ that violated the plan. Read paths and UI rendering are NOT
 considered the enforcement boundary — anything visible to the user
 must be considered "advisory" until the server-side gate has run.
 
+### Tier gating, as distinct from numeric limits
+
+`assertWithinLimit` answers "how many of these may this tenant
+have?". A second, simpler question — "is this tenant's plan high
+enough to use this capability at all?" — is answered by reading
+`getEffectivePlan(ctx)` directly and comparing tiers.
+
+The AI feature gate is the one consumer today. It is **off by
+default**: `AI_RISK_PLAN_REQUIRED` is empty unless an operator sets
+it, and while it is empty the AI gate performs no plan resolution
+and no DB read at all. When it IS set (`free` / `trial` / `pro` /
+`enterprise`), `checkPlanEntitlement` in
+`src/app-layer/ai/risk-assessment/feature-gate.ts` refuses any
+tenant below that tier, and `enforceFeatureGate` surfaces the
+refusal as a `403`.
+
+Both modes carry through unchanged. Under `SELFHOSTED`,
+`getEffectivePlan` returns `ENTERPRISE` without touching the DB, so
+setting `AI_RISK_PLAN_REQUIRED` on a self-hosted deployment refuses
+nobody. Under `SAAS`, the tier comes from `BillingAccount.plan`
+(absent row → `FREE`), exactly as it does for the numeric limits.
+
+The gate **fails closed**: if `AI_RISK_PLAN_REQUIRED` names no
+recognised plan, or the plan cannot be resolved at all, the request
+is refused rather than allowed. An entitlement check whose error
+path is "allow" is not an entitlement check.
+
+If you add another tier-gated capability, read
+`getEffectivePlan(ctx)` through this module — do not re-derive a
+plan from a `BillingAccount` query of your own.
+
 ### Failure shape
 
 When the gate trips, it throws `forbidden(...)` from

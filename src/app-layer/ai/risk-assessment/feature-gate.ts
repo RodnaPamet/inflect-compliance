@@ -7,8 +7,11 @@
  * 3. Role-based access (admin/editor only)
  * 4. Optional plan-based gating (env: AI_RISK_PLAN_REQUIRED)
  *
- * When billing/entitlements are added, extend `checkPlanEntitlement`
- * to query the tenant's subscription plan.
+ * Gates 1-3 are synchronous (env + role). Gate 4 needs the tenant's
+ * effective billing plan, which is a DB read — so the AUTHORITATIVE
+ * entry point is the Promise-returning `enforceFeatureGate`.
+ * `checkFeatureGate` remains synchronous and evaluates gates 1-3 only;
+ * it is an advisory pre-check, never the enforcement seam.
  */
 import { forbidden } from '@/lib/errors/types';
 import type { RequestContext } from '@/app-layer/types';
@@ -42,11 +45,29 @@ const FEATURE_LABEL: Readonly<Record<AiFeature, string>> = {
 };
 
 /**
- * If set, AI risk assessment requires this plan tier.
- * Values: 'pro', 'enterprise', or empty (no plan gating).
- * When billing is implemented, check tenant.plan against this value.
+ * If set, the AI features require this plan tier or higher.
+ * Values: 'free' | 'trial' | 'pro' | 'enterprise', or empty (no plan gating).
+ *
+ * Empty (the default) short-circuits the plan gate entirely — no DB read,
+ * no behaviour change for any deployment that has not opted in.
  */
-const AI_RISK_PLAN_REQUIRED = env.AI_RISK_PLAN_REQUIRED ?? '';
+const AI_RISK_PLAN_REQUIRED = (env.AI_RISK_PLAN_REQUIRED ?? '').trim();
+
+/**
+ * Plan ladder, mirroring `PLAN_LEVEL` in `src/lib/entitlements.ts`.
+ * A tenant is entitled when its own level is >= the required level.
+ */
+const PLAN_LEVEL: Readonly<Record<string, number>> = {
+    FREE: 0,
+    TRIAL: 1,
+    PRO: 2,
+    ENTERPRISE: 3,
+};
+
+/** Required level, resolved once. `null` = the env value names no known plan. */
+const REQUIRED_PLAN_LEVEL: number | null = AI_RISK_PLAN_REQUIRED
+    ? (PLAN_LEVEL[AI_RISK_PLAN_REQUIRED.toUpperCase()] ?? null)
+    : null;
 
 // ─── Feature Gate ───
 
@@ -85,9 +106,9 @@ const AI_ACCESS_ALLOWLIST: ReadonlyArray<(ctx: RequestContext, feature: AiFeatur
         ctx.permissions.canWrite
             ? { allowed: true }
             : { allowed: false, reason: 'AI features require Editor or Admin role' },
-    // 4. Plan entitlement, when a required plan is configured.
-    (ctx) =>
-        AI_RISK_PLAN_REQUIRED ? checkPlanEntitlement(ctx, AI_RISK_PLAN_REQUIRED) : { allowed: true },
+    // Gate 4 (plan entitlement) is NOT in this list: it needs an async
+    // plan resolution. It runs in `checkFeatureGateWithPlan` /
+    // `enforceFeatureGate`, AFTER every predicate here has passed.
 ];
 
 export function checkFeatureGate(ctx: RequestContext, feature: AiFeature = 'risk'): FeatureGateResult {
@@ -101,37 +122,103 @@ export function checkFeatureGate(ctx: RequestContext, feature: AiFeature = 'risk
 }
 
 /**
- * Enforce the feature gate — throws forbidden if not allowed.
+ * The full gate: the synchronous predicates above PLUS the plan
+ * entitlement (gate 4), which needs a DB-backed plan resolution.
+ *
+ * When `AI_RISK_PLAN_REQUIRED` is empty — the default — this is exactly
+ * `checkFeatureGate` with no additional work and no DB read.
+ */
+export async function checkFeatureGateWithPlan(
+    ctx: RequestContext,
+    feature: AiFeature = 'risk',
+): Promise<FeatureGateResult> {
+    const sync = checkFeatureGate(ctx, feature);
+    if (!sync.allowed) return sync;
+    if (!AI_RISK_PLAN_REQUIRED) return { allowed: true };
+    return checkPlanEntitlement(ctx);
+}
+
+/**
+ * Enforce the feature gate — rejects with `forbidden` if not allowed.
  *
  * @param feature — which AI feature is being gated (defaults to 'risk'
  *   for backward compatibility). Each feature carries an independent
  *   enable flag ANDed with the global master switch.
+ *
+ * Deliberately NOT an `async function`. The synchronous gates (flag +
+ * role) throw SYNCHRONOUSLY, so a caller that forgets `await` still gets
+ * exactly the enforcement this function had before the plan gate
+ * existed — a missing `await` can never make the gate weaker than it
+ * was. Only the plan gate rides on the returned Promise.
  */
-export function enforceFeatureGate(ctx: RequestContext, feature: AiFeature = 'risk'): void {
-    const result = checkFeatureGate(ctx, feature);
-    if (!result.allowed) {
-        throw forbidden(result.reason ?? 'This AI feature is not available');
+export function enforceFeatureGate(ctx: RequestContext, feature: AiFeature = 'risk'): Promise<void> {
+    const sync = checkFeatureGate(ctx, feature);
+    if (!sync.allowed) {
+        throw forbidden(sync.reason ?? 'This AI feature is not available');
     }
+    // Opted out of plan gating (the default) — nothing async to do.
+    if (!AI_RISK_PLAN_REQUIRED) return Promise.resolve();
+
+    return checkPlanEntitlement(ctx).then((result) => {
+        if (!result.allowed) {
+            throw forbidden(result.reason ?? 'This AI feature is not available');
+        }
+    });
 }
 
 /**
- * Check plan entitlement for the tenant.
+ * Gate 4 — plan entitlement for the tenant.
  *
- * STUB: Currently always returns { allowed: true } since billing is not yet implemented.
- * When billing is added, query the tenant's subscription plan here.
+ * Only reached when the operator set `AI_RISK_PLAN_REQUIRED`. It resolves
+ * the tenant's effective plan through the SAME seam the rest of billing
+ * uses (`getEffectivePlan` in `@/lib/billing/entitlements`), so the two
+ * documented modes carry through unchanged (see `docs/billing.md`):
  *
- * Example future implementation:
- * ```
- * const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
- * if (tenant.plan !== requiredPlan && tenant.plan !== 'enterprise') {
- *   return { allowed: false, reason: `AI risk assessment requires ${requiredPlan} plan` };
- * }
- * ```
+ *   • SELF-HOSTED (`STRIPE_SECRET_KEY` unset) — every tenant resolves to
+ *     ENTERPRISE with no DB read, so this gate ALWAYS allows. Turning on
+ *     `AI_RISK_PLAN_REQUIRED` on a self-hosted deployment must not start
+ *     refusing anybody.
+ *   • SAAS (`STRIPE_SECRET_KEY` set) — the plan comes from
+ *     `BillingAccount.plan`, defaulting to FREE for a tenant with no row.
+ *
+ * FAIL-CLOSED in two places, because this is an entitlement check and the
+ * wrong default for one is "allow":
+ *   1. the env var names no known plan (operator typo) — refuse rather
+ *      than silently ignore the setting;
+ *   2. plan resolution throws (DB down, import failure) — refuse.
+ *
+ * The billing module is imported lazily so a deployment that has NOT
+ * opted into plan gating pays no import cost and pulls no DB client into
+ * the AI path.
  */
+async function checkPlanEntitlement(ctx: RequestContext): Promise<FeatureGateResult> {
+    if (REQUIRED_PLAN_LEVEL === null) {
+        // Fail closed: the operator asked for gating we cannot interpret.
+        return {
+            allowed: false,
+            reason: 'AI features are gated by plan, but the required plan is misconfigured',
+        };
+    }
 
-function checkPlanEntitlement(_ctx: RequestContext, _requiredPlan: string): FeatureGateResult {
-    // TODO: Implement plan-based gating when billing/entitlements are available
-    // For now, always allow (feature flag + role check are the active gates)
+    let plan: string;
+    try {
+        const { getEffectivePlan } = await import('@/lib/billing/entitlements');
+        plan = await getEffectivePlan(ctx);
+    } catch {
+        // Fail closed: an entitlement check that cannot resolve must refuse.
+        return {
+            allowed: false,
+            reason: 'AI features are unavailable while the plan could not be verified',
+        };
+    }
+
+    const level = PLAN_LEVEL[plan.toUpperCase()] ?? -1;
+    if (level < REQUIRED_PLAN_LEVEL) {
+        return {
+            allowed: false,
+            reason: `AI features require the ${AI_RISK_PLAN_REQUIRED.toUpperCase()} plan or higher (current plan: ${plan})`,
+        };
+    }
     return { allowed: true };
 }
 
