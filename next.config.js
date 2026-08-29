@@ -279,4 +279,44 @@ const nextConfig = {
         ignoreBuildErrors: true,
     },
 };
-module.exports = withBundleAnalyzer(withNextIntl(nextConfig));
+const baseConfig = withNextIntl(nextConfig);
+const analyzedConfig = withBundleAnalyzer(baseConfig);
+
+/**
+ * THE ANALYZER RUNS ON THE CLIENT COMPILATION ONLY.
+ *
+ * `@next/bundle-analyzer` installs its plugin from a `webpack(config, options)`
+ * hook and keys `reportFilename` on `options.nextRuntime`, so wrapping the
+ * whole config installs THREE plugin instances — one per compilation. Next
+ * compiles them in the order server, edge-server, client
+ * (next/dist/build/webpack-build/index.js), and each instance calls
+ * `stats.toJson()` plus `getViewerData()` on `compiler.hooks.done`, holding the
+ * full module graph for that compilation live at once.
+ *
+ * So the SERVER pass runs first and is what exhausts the heap — before the
+ * client report, the only one anyone reads, is ever produced. Measured locally
+ * on 2026-08-29 at a 13000 MB ceiling: 13.87 GB peak RSS, killed ~6 minutes
+ * after the server output stopped growing, with `.next/server` complete and no
+ * `.next/static` and no `.next/analyze` written at all.
+ *
+ * `nodejs.html` and `edge.html` have no consumer in this repo and have not been
+ * produced since 2026-08-24; the workflow uploads `.next/analyze/*.html` and
+ * the budget it protects is the per-route First Load JS check, which is client.
+ *
+ * PRODUCTION OUTPUT IS UNCHANGED. With ANALYZE unset the factory returns its
+ * input by identity (`if (!enabled) return nextConfig`), so `analyzedConfig`
+ * IS `baseConfig` and this wrapper is a strict pass-through. `nextConfig` has
+ * no `webpack` hook of its own — the one on `baseConfig` comes from
+ * next-intl — so delegating preserves it, and `webpackBuildWorker` is
+ * untouched.
+ */
+module.exports = {
+    ...analyzedConfig,
+    webpack(config, options) {
+        // `nextRuntime` is undefined for the client compilation and 'nodejs' /
+        // 'edge' for the others — the same discriminator the analyzer itself
+        // uses to name its reports.
+        const target = options.nextRuntime ? baseConfig : analyzedConfig;
+        return typeof target.webpack === 'function' ? target.webpack(config, options) : config;
+    },
+};

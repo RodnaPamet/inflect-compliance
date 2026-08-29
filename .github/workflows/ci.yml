@@ -229,9 +229,15 @@ env:
   #
   # 6144 was that headroom until 2026-08-19, when `Test (shard 1/4)` OOM'd
   # again on PR #2021 — exit 134, while shards 2-4 passed. The suite simply
-  # grew into the ceiling. 8192 is the next step, and the runners have 16 GB:
-  # every in-band job is ONE heap, so this is a per-job ceiling and not a
-  # reservation.
+  # grew into the ceiling. 8192 is the next step, and the runners have 16 GB.
+  #
+  # "Every in-band job is ONE heap" is what this used to say, and it is not
+  # true: `Ratchets` runs jest with --maxWorkers=2, and the bundle-budget step
+  # does too, so each is a parent plus two children all inheriting this
+  # ceiling. It remains a per-process PERMISSION rather than a reservation —
+  # a process takes what it needs, not its cap — which is why summing caps
+  # against runner RAM is a category error (see #2126). But do not read this
+  # value as bounding a job's total footprint.
   #
   # Note what makes this fail confusingly. `--shard` is a deterministic hash
   # over file paths, so ADDING a test file reshuffles which files land on
@@ -825,6 +831,22 @@ jobs:
             ${{ runner.os }}-next-prod-${{ hashFiles('package-lock.json') }}-
             ${{ runner.os }}-next-prod-
 
+      # Sampled INSIDE the job, copied from `e2e-bundle` below. Build had no
+      # instrumentation at all, which is why run 33249331681 left a bare
+      # "The runner has received a shutdown signal" and nothing to diagnose:
+      # a kernel kill prints no Mark-Compact line and no heap number. Without
+      # this, "parent + compile worker together over-subscribed the runner" and
+      # "one process spiked" are indistinguishable — and they have opposite
+      # answers. Cost is one background shell loop.
+      - name: Start memory sampler
+        run: |
+          nohup bash -c 'while true; do
+            echo "$(date -u +%H:%M:%S) $(free -m | awk "NR==2{print \$3, \$7}")"
+            sleep 2
+          done' > /tmp/mem-samples.log 2>/dev/null &
+          echo $! > /tmp/mem-sampler.pid
+          echo "sampler started; columns = time used_MB available_MB"
+
       - name: Build Next.js (production)
         # --webpack: nonce strict-CSP chunks (see Dockerfile + impl note).
         run: npx next build --webpack
@@ -876,12 +898,23 @@ jobs:
           #
           # But note what is NOT true: the app did not simply outgrow 6144
           # everywhere. `e2e-bundle` below builds the SAME app at the SAME 6144
-          # and stayed green throughout. The difference is job-local — this job
-          # restores a `.next/cache` and e2e-bundle does not, and a warm webpack
-          # cache is resident during the compile. So the ceiling is raised HERE
-          # ONLY; e2e-bundle keeps 6144 and keeps its memory sampler, which makes
-          # it the control if this recurs. Raising both would destroy that
-          # comparison.
+          # and stayed green throughout.
+          #
+          # THE STATED REASON FOR THAT DIFFERENCE WAS WRONG. This comment used
+          # to say the difference is that "this job restores a `.next/cache` and
+          # e2e-bundle does not". It does — see the `Cache Next.js build cache
+          # (test mode)` step below, which restores `.next-test/cache` on the
+          # same key shape, `.next-test` being the distDir under NEXT_TEST_MODE.
+          # Both jobs compile with a warm webpack cache. So the discriminator
+          # that justified raising HERE ONLY does not exist, and on the very
+          # commit where this job died at 7168, e2e-bundle passed at 6144.
+          #
+          # The ceiling difference is therefore unexplained, not justified. It
+          # is left in place because BOTH sides are now measured failing —
+          # 6144 gives a legible V8 abort, 7168 gave a silent kernel kill — and
+          # changing it a third time in one week on reasoning rather than data
+          # is how this got here. The sampler added above is what will settle
+          # it. e2e-bundle remains the control.
           #
           # 7168 x 2 = 14 GB worst case on a 16 GB runner. Deliberately no
           # higher: the 8192-era peak was measured at 15783 MB / 16 GB, and
