@@ -245,6 +245,29 @@ describe('the durable record a dry run leaves behind', () => {
         expect(mockDb.integrationExecution.create).not.toHaveBeenCalled();
     });
 
+    it('does NOT record a tenant set ABOVE the clamp either', async () => {
+        // THE TRIPWIRE for how the empty-page problem was solved.
+        //
+        // An empty passes page had at least three causes that looked identical,
+        // and the obvious fix was to record a row for these two ladder refusals
+        // so the page explains itself. That was rejected: it writes one row per
+        // (tenant, provider) every night forever with no retention, evicting the
+        // actual observation record from a bounded window — and it still covers
+        // only two of the causes. The page reads the tenant's mode instead.
+        //
+        // This test is what makes the two approaches mutually exclusive in one
+        // diff: implement the row-writing version and it goes red.
+        getPolicy.mockResolvedValue({
+            leaver: { mode: 'AUTOMATIC', dryRunSince: NOW },
+            joiner: { mode: 'DISABLED' },
+        });
+
+        const r = await run();
+
+        expect(r).toMatchObject({ refusal: 'MODE_ABOVE_CLAMP' });
+        expect(mockDb.integrationExecution.create).not.toHaveBeenCalled();
+    });
+
     it('a refusal whose record fails is still a refusal, not an ERROR', async () => {
         findCandidates.mockResolvedValue([]);
         mockDb.integrationExecution.create.mockRejectedValue(new Error('db is on fire'));

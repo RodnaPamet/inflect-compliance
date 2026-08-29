@@ -53,6 +53,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { EmptyState } from '@/components/ui/empty-state';
+import type { IdentityWriteMode } from '@/app-layer/usecases/identity-write-policy';
 
 /**
  * Why the decision went the way it did, as `DecisionBasis` wrote it.
@@ -195,13 +196,50 @@ function readDecisions(result: PassResult): PassDecision[] {
         : [];
 }
 
+/**
+ * What the write-policy route returns, as much of it as this page reads.
+ *
+ * Every field optional on purpose — same posture as `PassResult`. A sibling
+ * endpoint's shape is something we consume, not something we can hold still,
+ * and this page must degrade rather than blank if it changes.
+ */
+interface LadderSummary {
+    directions?: { leaver?: { mode?: IdentityWriteMode; dryRunSince?: string | null } };
+    honoured?: { leaver?: { maxMode?: IdentityWriteMode } };
+}
+
+/** Most recent 05:00 UTC at or before `now` — the leaver dispatch cron. */
+function lastDueAt(now: Date): Date {
+    const due = new Date(now);
+    due.setUTCHours(5, 0, 0, 0);
+    if (due > now) due.setUTCDate(due.getUTCDate() - 1);
+    return due;
+}
+
 export function LeaverPassesClient() {
     const t = useTranslations('admin');
     const tenantHref = useTenantHref();
     const { data, error, isLoading } = useTenantSWR<{ passes: LeaverPassRow[] }>(
         '/admin/identity-leaver-passes',
     );
+    // The report must NEVER gate on this call — `error` and `isLoading` are
+    // deliberately dropped. A sibling endpoint returning 500 must not blank a
+    // page whose own data loaded fine; the empty state simply falls back to the
+    // copy that names no cause.
+    const { data: ladder } = useTenantSWR<LadderSummary>('/admin/identity-write-policy');
     const [selectedId, setSelectedId] = useState<string | null>(null);
+
+    const mode = ladder?.directions?.leaver?.mode;
+    const clamp = ladder?.honoured?.leaver?.maxMode;
+    const dryRunSince = ladder?.directions?.leaver?.dryRunSince;
+    // Mirrors the PASS's own gate, which is an INEQUALITY (`mode !== clamp`),
+    // not an ordering comparison. They agree only while the clamp is the second
+    // rung, and the pass is the one that decides, so match the pass.
+    const clampMismatch = !!mode && !!clamp && mode !== 'DISABLED' && mode !== clamp;
+    // A tenant that switched on at 05:01 has not missed anything yet. Without
+    // this the fault copy fires for up to 23h59m on the one day someone is
+    // actually watching.
+    const overdue = !!dryRunSince && new Date(dryRunSince) < lastDueAt(new Date());
 
     const rows = useMemo(() => data?.passes ?? [], [data]);
     // Derived, not stored: a selection that no longer exists after a
@@ -370,6 +408,14 @@ export function LeaverPassesClient() {
             />
             <Heading level={1}>{t('leaverPasses.title')}</Heading>
             <p className="max-w-3xl text-sm text-content-muted">{t('leaverPasses.intro')}</p>
+            {mode && (
+                <p id="leaver-pass-mode" className="max-w-3xl text-sm text-content-muted">
+                    {t('leaverPasses.currentMode', {
+                        mode: t(`writeLadder.mode.${mode}`),
+                        clamp: clamp ? t(`writeLadder.mode.${clamp}`) : '—',
+                    })}
+                </p>
+            )}
 
             <Card className="space-y-default p-6">
                 <Heading level={2}>{t('leaverPasses.passesHeading')}</Heading>
@@ -378,12 +424,83 @@ export function LeaverPassesClient() {
                 ) : isLoading ? (
                     <p className="text-sm text-content-subtle">{t('integrations.fetching')}</p>
                 ) : rows.length === 0 ? (
-                    <EmptyState
-                        variant="no-records"
-                        size="sm"
-                        title={t('leaverPasses.empty')}
-                        description={t('leaverPasses.emptyDescription')}
-                    />
+                    // FIVE ARMS, because an empty page had one sentence and at
+                    // least three causes — nobody switched it on, it is set
+                    // above the clamp so every pass refuses without recording,
+                    // or the worker is dead. Those want completely different
+                    // responses and looked identical.
+                    //
+                    // Compared against `clamp`, never a hardcoded 'DRY_RUN':
+                    // after a clamp raise a PROPOSE tenant whose passes DO run
+                    // would match no arm and fall back to the very sentence this
+                    // exists to replace.
+                    (() => {
+                        const ladderLink = {
+                            label: t('writeLadder.linkLabel'),
+                            href: tenantHref('/admin/identity-write-policy'),
+                        };
+                        if (mode === 'DISABLED') {
+                            return (
+                                <EmptyState
+                                    variant="no-records"
+                                    size="sm"
+                                    title={t('leaverPasses.emptyDisabled')}
+                                    description={t('leaverPasses.emptyDisabledDescription')}
+                                    secondaryAction={ladderLink}
+                                />
+                            );
+                        }
+                        if (clampMismatch) {
+                            return (
+                                <EmptyState
+                                    variant="missing-prereqs"
+                                    size="sm"
+                                    title={t('leaverPasses.emptyClampMismatch')}
+                                    description={t('leaverPasses.emptyClampMismatchDescription', {
+                                        mode: t(`writeLadder.mode.${mode}`),
+                                        clamp: clamp ? t(`writeLadder.mode.${clamp}`) : '—',
+                                    })}
+                                    secondaryAction={ladderLink}
+                                />
+                            );
+                        }
+                        if (mode && mode === clamp && overdue) {
+                            // The only arm that says something is WRONG. A pass
+                            // was due and would have recorded a row even if it
+                            // refused, so silence here is not a configuration
+                            // fact.
+                            return (
+                                <EmptyState
+                                    variant="missing-prereqs"
+                                    size="sm"
+                                    title={t('leaverPasses.emptyOverdue')}
+                                    description={t('leaverPasses.emptyOverdueDescription')}
+                                    secondaryAction={ladderLink}
+                                />
+                            );
+                        }
+                        if (mode && mode === clamp) {
+                            return (
+                                <EmptyState
+                                    variant="no-records"
+                                    size="sm"
+                                    title={t('leaverPasses.emptyAwaitingFirstPass')}
+                                    description={t('leaverPasses.emptyAwaitingFirstPassDescription')}
+                                />
+                            );
+                        }
+                        // Degradation arm: the ladder call failed or has not
+                        // resolved. Today's copy, which names no cause — correct
+                        // when we do not know one.
+                        return (
+                            <EmptyState
+                                variant="no-records"
+                                size="sm"
+                                title={t('leaverPasses.empty')}
+                                description={t('leaverPasses.emptyDescription')}
+                            />
+                        );
+                    })()
                 ) : (
                     <DataTable
                         data={rows}

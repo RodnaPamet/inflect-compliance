@@ -90,6 +90,8 @@ import LeaverPassesPage from '@/app/t/[tenantSlug]/(app)/admin/identity-leaver-p
 import en from '../../messages/en.json';
 
 const M = (en as { admin: { leaverPasses: Record<string, string> } }).admin.leaverPasses;
+const EN_MODE = (en as { admin: { writeLadder: { mode: Record<string, string> } } }).admin.writeLadder
+    .mode;
 
 // ── Fixture ────────────────────────────────────────────────────────────
 
@@ -283,6 +285,93 @@ async function rowFor(provider: string): Promise<HTMLElement> {
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
+
+describe('an empty page says WHY it is empty', () => {
+    // One sentence had at least three causes: nobody switched it on, it is set
+    // above the clamp so every pass refuses WITHOUT recording, or the worker is
+    // dead. Those want completely different responses and looked identical.
+    const policy = (
+        mode: string | undefined,
+        maxMode = 'DRY_RUN',
+        dryRunSince: string | null = null,
+    ) => ({
+        directions: { leaver: { mode, dryRunSince } },
+        honoured: { leaver: { maxMode } },
+    });
+    // The dispatch cron is 05:00 UTC. "Long ago" is unambiguously overdue;
+    // "just now" cannot be, whatever time the suite runs.
+    const LONG_AGO = '2020-01-01T00:00:00.000Z';
+    const JUST_NOW = () => new Date(Date.now() - 60_000).toISOString();
+
+    it('names the switched-off case, and does not raise an alarm', async () => {
+        arrange([], policy('DISABLED'));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyDisabled)).toBeInTheDocument();
+        // Paired negative: nothing here is broken, so the fault copy must not
+        // appear. Without this the test passes against a page that prints all
+        // five strings at once.
+        expect(screen.queryByText(M.emptyOverdue)).toBeNull();
+    });
+
+    it('names a setting above the clamp, with both values', async () => {
+        arrange([], policy('PROPOSE', 'DRY_RUN'));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyClampMismatch)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyDisabled)).toBeNull();
+    });
+
+    it('a pass that was DUE and left no record reads as a fault', async () => {
+        arrange([], policy('DRY_RUN', 'DRY_RUN', LONG_AGO));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyOverdue)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyAwaitingFirstPass)).toBeNull();
+    });
+
+    it('a tenant switched on since the last 05:00 is NOT overdue', async () => {
+        // The arm that must not be skipped. Without the age bound the fault copy
+        // fires for up to 23h59m after someone switches on — on the one day they
+        // are actually watching the page.
+        arrange([], policy('DRY_RUN', 'DRY_RUN', JUST_NOW()));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyAwaitingFirstPass)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyOverdue)).toBeNull();
+    });
+
+    it('survives a clamp raise — PROPOSE at a PROPOSE clamp still reports', async () => {
+        // The only one of these that survives LEAVER_MAX_MODE being raised.
+        // Comparing against a hardcoded 'DRY_RUN' would drop this tenant into
+        // the nameless fallback the whole item exists to remove.
+        arrange([], policy('PROPOSE', 'PROPOSE', LONG_AGO));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyOverdue)).toBeInTheDocument();
+    });
+
+    it('degrades to the nameless copy when the ladder is unknown', async () => {
+        // A sibling endpoint returning nothing must not blank the report or
+        // print the literal string "undefined".
+        arrange([], {});
+        await renderReport();
+
+        expect(await screen.findByText(M.empty)).toBeInTheDocument();
+        expect(screen.queryByText(/undefined/)).toBeNull();
+    });
+
+    it('states the current mode even when rows DO exist', async () => {
+        // Each row carries its own `mode`, but that is a historical echo of the
+        // setting at the time the pass ran — not what is configured now.
+        arrange(ALL_PASSES, policy('DRY_RUN'));
+        await renderReport();
+
+        const line = document.getElementById('leaver-pass-mode');
+        expect(line).not.toBeNull();
+        expect(line!.textContent).toContain(EN_MODE.DRY_RUN);
+    });
+});
 
 describe('leaver pass report — the three statuses read as three different things', () => {
     it('labels PASSED, PARTIAL and NOT_APPLICABLE distinguishably, and never as the raw enum', async () => {
