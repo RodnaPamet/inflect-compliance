@@ -31,11 +31,11 @@ describe('SSO Config Schemas', () => {
     // ─── SAML Config ─────────────────────────────────────────────────
 
     describe('SamlConfigSchema', () => {
-        it('accepts config with metadataUrl', () => {
+        it('REJECTS config with metadataUrl alone — it is reference-only, never fetched', () => {
             const result = SamlConfigSchema.safeParse({
                 metadataUrl: 'https://idp.example.com/metadata',
             });
-            expect(result.success).toBe(true);
+            expect(result.success).toBe(false);
         });
 
         it('accepts config with entityId + ssoUrl + certificate', () => {
@@ -57,6 +57,9 @@ describe('SSO Config Schemas', () => {
 
         it('rejects invalid metadataUrl', () => {
             const result = SamlConfigSchema.safeParse({
+                entityId: 'https://idp.example.com',
+                ssoUrl: 'https://idp.example.com/sso',
+                certificate: 'MIICzjCCAb...',
                 metadataUrl: 'not-a-url',
             });
             expect(result.success).toBe(false);
@@ -64,7 +67,9 @@ describe('SSO Config Schemas', () => {
 
         it('defaults signRequests to false', () => {
             const result = SamlConfigSchema.parse({
-                metadataUrl: 'https://idp.example.com/metadata',
+                entityId: 'https://idp.example.com',
+                ssoUrl: 'https://idp.example.com/sso',
+                certificate: 'MIICzjCCAb...',
             });
             expect(result.signRequests).toBe(false);
         });
@@ -125,7 +130,21 @@ describe('SSO Config Schemas', () => {
     // ─── UpsertSsoConfigInput ────────────────────────────────────────
 
     describe('UpsertSsoConfigInput', () => {
-        it('accepts valid SAML input with metadataUrl', () => {
+        it('accepts valid SAML input', () => {
+            const result = UpsertSsoConfigInput.safeParse({
+                name: 'Okta SSO',
+                type: 'SAML',
+                config: {
+                    entityId: 'https://okta.example.com',
+                    ssoUrl: 'https://okta.example.com/sso',
+                    certificate: 'MIICzjCCAb...',
+                    metadataUrl: 'https://okta.example.com/metadata',
+                },
+            });
+            expect(result.success).toBe(true);
+        });
+
+        it('rejects SAML input whose config is metadataUrl-only', () => {
             const result = UpsertSsoConfigInput.safeParse({
                 name: 'Okta SSO',
                 type: 'SAML',
@@ -133,7 +152,7 @@ describe('SSO Config Schemas', () => {
                     metadataUrl: 'https://okta.example.com/metadata',
                 },
             });
-            expect(result.success).toBe(true);
+            expect(result.success).toBe(false);
         });
 
         it('accepts valid OIDC input', () => {
@@ -165,7 +184,7 @@ describe('SSO Config Schemas', () => {
             const result = UpsertSsoConfigInput.safeParse({
                 name: '',
                 type: 'SAML',
-                config: { metadataUrl: 'https://idp.example.com/metadata' },
+                config: { entityId: 'https://idp.example.com', ssoUrl: 'https://idp.example.com/sso', certificate: 'MIICzjCCAb...' },
             });
             expect(result.success).toBe(false);
         });
@@ -175,7 +194,7 @@ describe('SSO Config Schemas', () => {
                 name: 'Okta',
                 type: 'SAML',
                 emailDomains: ['acme.com', 'acme.io'],
-                config: { metadataUrl: 'https://idp.example.com/metadata' },
+                config: { entityId: 'https://idp.example.com', ssoUrl: 'https://idp.example.com/sso', certificate: 'MIICzjCCAb...' },
             });
             expect(result.success).toBe(true);
             if (result.success) {
@@ -188,7 +207,7 @@ describe('SSO Config Schemas', () => {
                 name: 'Okta',
                 type: 'SAML',
                 emailDomains: ['@invalid', ''],
-                config: { metadataUrl: 'https://idp.example.com/metadata' },
+                config: { entityId: 'https://idp.example.com', ssoUrl: 'https://idp.example.com/sso', certificate: 'MIICzjCCAb...' },
             });
             expect(result.success).toBe(false);
         });
@@ -198,7 +217,7 @@ describe('SSO Config Schemas', () => {
                 name: 'Okta',
                 type: 'SAML',
                 emailDomains: ['ACME.COM'],
-                config: { metadataUrl: 'https://idp.example.com/metadata' },
+                config: { entityId: 'https://idp.example.com', ssoUrl: 'https://idp.example.com/sso', certificate: 'MIICzjCCAb...' },
             });
             expect(result.emailDomains).toEqual(['acme.com']);
         });
@@ -207,7 +226,7 @@ describe('SSO Config Schemas', () => {
             const result = UpsertSsoConfigInput.parse({
                 name: 'Okta',
                 type: 'SAML',
-                config: { metadataUrl: 'https://idp.example.com/metadata' },
+                config: { entityId: 'https://idp.example.com', ssoUrl: 'https://idp.example.com/sso', certificate: 'MIICzjCCAb...' },
             });
             expect(result.isEnabled).toBe(false);
             expect(result.isEnforced).toBe(false);
@@ -218,7 +237,7 @@ describe('SSO Config Schemas', () => {
                 id: 'clxyz123456789',
                 name: 'Okta Updated',
                 type: 'SAML',
-                config: { metadataUrl: 'https://idp.example.com/metadata' },
+                config: { entityId: 'https://idp.example.com', ssoUrl: 'https://idp.example.com/sso', certificate: 'MIICzjCCAb...' },
             });
             expect(result.success).toBe(true);
         });

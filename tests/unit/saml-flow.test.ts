@@ -61,11 +61,11 @@ describe('SAML Client', () => {
     // ─── SAML Config Schema ──────────────────────────────────────────
 
     describe('SamlConfigSchema', () => {
-        it('accepts config with metadataUrl only', () => {
+        it('REJECTS config with metadataUrl only — nothing fetches IdP metadata', () => {
             const result = SamlConfigSchema.safeParse({
                 metadataUrl: 'https://idp.example.com/saml/metadata',
             });
-            expect(result.success).toBe(true);
+            expect(result.success).toBe(false);
         });
 
         it('accepts config with manual fields', () => {
@@ -87,6 +87,9 @@ describe('SAML Client', () => {
 
         it('accepts optional fields', () => {
             const result = SamlConfigSchema.parse({
+                entityId: 'https://idp.example.com',
+                ssoUrl: 'https://idp.example.com/sso',
+                certificate: 'MIICzjCCAb...',
                 metadataUrl: 'https://idp.example.com/metadata',
                 sloUrl: 'https://idp.example.com/slo',
                 nameIdFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
@@ -99,7 +102,9 @@ describe('SAML Client', () => {
 
         it('defaults signRequests to false', () => {
             const result = SamlConfigSchema.parse({
-                metadataUrl: 'https://idp.example.com/metadata',
+                entityId: 'https://idp.example.com',
+                ssoUrl: 'https://idp.example.com/sso',
+                certificate: 'MIICzjCCAb...',
             });
             expect(result.signRequests).toBe(false);
         });

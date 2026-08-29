@@ -103,7 +103,7 @@ export interface AutofillResult {
 }
 
 export async function autofillQuestionnaire(ctx: RequestContext, questionnaireId: string): Promise<AutofillResult> {
-    enforceFeatureGate(ctx, 'questionnaire');
+    await enforceFeatureGate(ctx, 'questionnaire');
     if (!ctx.permissions?.canWrite) throw forbidden('You do not have permission to autofill questionnaires.');
     await checkRateLimit(ctx.tenantId, ctx.userId);
     const provider = getQuestionnaireProvider();
