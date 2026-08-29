@@ -76,6 +76,19 @@ offending sites).
   `reports/soa/SoAClient.tsx`. Both numbers were traced by hand rather than assumed
   equal.
 
+- **Two stale rationales in `raw-color-ratchet` were corrected, not just the counts.**
+  The hotspot comment described the audit-pack viewer as rendering on "a fixed light
+  surface for external auditors"; it actually paints `bg-slate-900` / `text-white`
+  and shades with slate-700/800 — a hand-rolled replica of the app's *dark* theme.
+  And the lone `EXEMPT_DIRS` entry, `vendor-assessment`, is now inert: that page was
+  tokenised at some point after its exemption landed (37 semantic-token classes, zero
+  raw colours), so removing the entry today would not move the count. Both claims
+  would have justified an exemption that the evidence does not support, which is the
+  same class of decay as the drifted numbers.
+
 - **Not addressed here:** `src/app/audit/shared/[token]/page.tsx` is now the entire
-  raw-colour count (51 of 51). See the summary in the PR for the tokenise-vs-exempt
-  recommendation; this diff deliberately only re-seats and does not move that surface.
+  raw-colour count (51 of 51). This diff deliberately only re-seats. The note left in
+  the guard for whoever picks it up: exempting that directory would take the count to
+  0 and leave the ratchet asserting nothing across all of `src/app`, and the
+  `vendor-assessment` precedent shows a public shell-less page did not end up needing
+  the exemption it was granted.

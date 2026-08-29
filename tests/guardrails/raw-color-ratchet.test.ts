@@ -49,14 +49,22 @@ const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b
 //
 // The ONE remaining hotspot, and it is the whole count:
 //   51  audit/shared/[token]/page.tsx  — public audit-pack viewer.
-//       Unauthenticated, does not mount the app shell, and renders on
-//       a fixed light surface for external auditors.
+//       Unauthenticated, mounts no app shell, and has no layout.tsx of
+//       its own. It is NOT a print or light surface: it paints
+//       `bg-slate-900` + `text-white` and shades with slate-700/800 —
+//       a hand-rolled replica of the app's dark theme. So the classes
+//       here have semantic-token equivalents; nothing about the surface
+//       resists tokenisation.
 //
 // Every other file the old comment listed (reports/soa/print/
 // SoAPrintView.tsx, login/page.tsx, error.tsx, not-found.tsx,
 // security/mfa/page.tsx) now matches zero times — they were tokenised
 // and the enumeration was never updated. Do not re-add a surface here
 // without re-running the count.
+//
+// Read this number together with EXEMPT_DIRS below: exempting the audit
+// viewer would take the count to 0 and leave this ratchet asserting
+// nothing across all of src/app.
 const BASELINE = 51;
 
 // How far above the live count `BASELINE` may sit before the sentinel
@@ -71,11 +79,21 @@ const DRIFT_ALLOWANCE = 5;
 // public, unauthenticated page that doesn't share the app's dark
 // theme tokens.
 const EXEMPT_DIRS = new Set<string>([
-    // Epic G-3 — public vendor questionnaire respondent page. Lives
-    // at /vendor-assessment/[id], does NOT mount the app shell, and
-    // intentionally uses a light, neutral palette so external
-    // recipients (likely on a corporate-branded mail client) see a
-    // clean independent surface rather than the in-app dark theme.
+    // Epic G-3 — public vendor questionnaire respondent page at
+    // /vendor-assessment/[id], which does NOT mount the app shell.
+    //
+    // This entry is now INERT, and that fact is the useful part. It was
+    // added on the rationale that the page "intentionally uses a light,
+    // neutral palette" and so could not use the tokens; the page has
+    // since been tokenised anyway (37 semantic-token classes, zero raw
+    // colours as of 2026-08-29), so removing the exemption today would
+    // not change the count by one.
+    //
+    // Kept rather than deleted only as the worked precedent for the
+    // question this list invites: a public, shell-less, unauthenticated
+    // surface turned out NOT to need an exemption. Weigh that before
+    // adding a directory here — and re-run the count first, because an
+    // exemption that removes the last hits makes the ratchet vacuous.
     'vendor-assessment',
 ]);
 
