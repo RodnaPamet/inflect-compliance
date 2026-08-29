@@ -1,0 +1,408 @@
+[
+  {
+    "code": "TSC-CC1-1",
+    "title": "Code of conduct and annual acknowledgement",
+    "description": "Maintain a written code of conduct covering ethical behaviour, confidentiality, and acceptable use, require every employee and contractor to acknowledge it at hire and annually thereafter, and act on reported violations. Implements SOC 2 CC1.1.",
+    "category": "Control Environment",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "People Ops / General Counsel",
+    "requirements": ["CC1.1"],
+    "tasks": [
+      { "title": "Review and approve the code of conduct", "description": "Have management review the code of conduct annually and record the approval date and approver." },
+      { "title": "Collect annual acknowledgements", "description": "Send the code to every active employee and contractor and retain a per-person acknowledgement record as evidence." },
+      { "title": "Record disciplinary outcomes", "description": "Document how reported conduct violations were investigated and what action was taken, without exposing personal data unnecessarily." }
+    ]
+  },
+  {
+    "code": "TSC-CC1-2",
+    "title": "Board and management oversight of security",
+    "description": "Hold a recurring governance meeting at which management reports the security and compliance posture — open risks, incidents, control failures, audit findings — to a body independent of day-to-day operations, and minute the decisions taken. Implements SOC 2 CC1.2.",
+    "category": "Control Environment",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "CISO / Board Secretary",
+    "requirements": ["CC1.2"],
+    "tasks": [
+      { "title": "Prepare the governance reporting pack", "description": "Assemble the posture report: risk register movement, incidents, control-test failures, and outstanding remediation." },
+      { "title": "Hold the oversight meeting", "description": "Present the pack to the board or an equivalent oversight body and capture the challenges raised." },
+      { "title": "Minute decisions and owners", "description": "Record every decision, its owner, and its due date, and carry open items to the next meeting." }
+    ]
+  },
+  {
+    "code": "TSC-CC1-3",
+    "title": "Personnel screening and onboarding",
+    "description": "Screen candidates before they are granted access — identity, right to work, references, and, where the role and local law permit, a criminal-record or credit check — and complete security onboarding before production access is granted. Implements SOC 2 CC1.1.",
+    "category": "Control Environment",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "People Ops",
+    "requirements": ["CC1.1"],
+    "tasks": [
+      { "title": "Define screening requirements by role", "description": "Document which checks apply to which roles, and the legal basis and retention period for each." },
+      { "title": "Evidence screening before access", "description": "Retain the screening outcome per hire and confirm it completed before the first production access grant." },
+      { "title": "Confirm security onboarding completion", "description": "Verify each new joiner completed security onboarding and signed the confidentiality agreement." }
+    ]
+  },
+  {
+    "code": "TSC-CC1-4",
+    "title": "Security roles, responsibilities, and accountability",
+    "description": "Document who is accountable for each security and compliance responsibility — policy ownership, control operation, incident command, vendor review — keep the assignments current as people move, and hold owners to their commitments. Implements SOC 2 CC1.1 and CC1.2.",
+    "category": "Control Environment",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "CISO",
+    "requirements": ["CC1.1", "CC1.2"],
+    "tasks": [
+      { "title": "Maintain the responsibility assignment matrix", "description": "Record the named owner and backup for each security responsibility and every control in the control matrix." },
+      { "title": "Reassign on role change", "description": "Review assignments whenever an owner changes role or leaves, and update the matrix before their access is removed." },
+      { "title": "Confirm owners accept their assignments", "description": "Have each owner confirm in writing that they accept the responsibility and understand what evidence they must produce." }
+    ]
+  },
+  {
+    "code": "TSC-CC2-1",
+    "title": "Information security policy set",
+    "description": "Maintain an approved set of information security policies covering acceptable use, access control, data classification, change management, incident response, and vendor management; review and re-approve them at least annually and publish them where all staff can reach them. Implements SOC 2 CC2.1.",
+    "category": "Communication",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "CISO / Compliance Lead",
+    "requirements": ["CC2.1"],
+    "tasks": [
+      { "title": "Review each policy against current practice", "description": "Walk each policy against how the organisation actually operates and correct anything that has drifted." },
+      { "title": "Obtain management approval", "description": "Record the approver, approval date, and version for every policy in the set." },
+      { "title": "Publish and notify staff", "description": "Publish the approved versions to the internal policy portal and notify staff of material changes." }
+    ]
+  },
+  {
+    "code": "TSC-CC2-2",
+    "title": "Security awareness training",
+    "description": "Deliver security awareness training to every employee and contractor at onboarding and at least annually, cover the threats the organisation actually faces (phishing, social engineering, data handling), and track completion against a named list. Implements SOC 2 CC2.1 and CC1.1.",
+    "category": "Communication",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "Security Awareness Lead / People Ops",
+    "requirements": ["CC2.1", "CC1.1"],
+    "tasks": [
+      { "title": "Refresh the training content", "description": "Update the curriculum to reflect current threats, incidents seen in the last period, and any new regulatory obligations." },
+      { "title": "Assign and track completion", "description": "Assign training to every active person, chase non-completers to closure, and retain the completion report." },
+      { "title": "Run a phishing simulation", "description": "Run at least one simulated phishing exercise and provide follow-up coaching to those who fail it." }
+    ]
+  },
+  {
+    "code": "TSC-CC2-3",
+    "title": "Internal and external reporting channels",
+    "description": "Provide and publicise channels through which staff, customers, and external researchers can report security concerns — including an anonymous internal channel and a monitored external security contact — and ensure reports reach an accountable owner within a defined time. Implements SOC 2 CC2.1.",
+    "category": "Communication",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "CISO / General Counsel",
+    "requirements": ["CC2.1"],
+    "tasks": [
+      { "title": "Publish the reporting channels", "description": "Document the internal whistleblower route and the external security contact, and make both easy to find." },
+      { "title": "Verify the channels are monitored", "description": "Send a test report through each channel and confirm it was received and triaged within the committed time." },
+      { "title": "Report channel activity to management", "description": "Summarise reports received, how they were handled, and any themes, in the governance reporting pack." }
+    ]
+  },
+  {
+    "code": "TSC-CC3-1",
+    "title": "Annual enterprise risk assessment",
+    "description": "Perform a documented risk assessment at least annually that states the entity's objectives, identifies threats to them across the in-scope systems, rates likelihood and impact on a defined scale, and records the treatment decision and owner for each risk. Implements SOC 2 CC3.1.",
+    "category": "Risk Assessment",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "Risk Manager / CISO",
+    "requirements": ["CC3.1"],
+    "tasks": [
+      { "title": "Restate the objectives and scope", "description": "Write down the service commitments and system requirements the assessment is measured against, and the systems in scope." },
+      { "title": "Identify and rate risks", "description": "Enumerate threats and vulnerabilities, rate likelihood and impact on the documented scale, and record the resulting score." },
+      { "title": "Assign treatment and owners", "description": "Decide accept, mitigate, transfer, or avoid for each risk, name an owner, and set a review date." }
+    ]
+  },
+  {
+    "code": "TSC-CC3-2",
+    "title": "Fraud risk consideration",
+    "description": "Explicitly consider fraud scenarios — misappropriation, unauthorised data disclosure for gain, management override of controls — as part of the risk assessment, and record the controls relied on to address each. Implements SOC 2 CC3.1.",
+    "category": "Risk Assessment",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "Risk Manager / Finance Lead",
+    "requirements": ["CC3.1"],
+    "tasks": [
+      { "title": "Enumerate fraud scenarios", "description": "List plausible fraud scenarios for the business model, including insider misuse of privileged access." },
+      { "title": "Map each scenario to a control", "description": "Identify which existing control addresses each scenario and flag scenarios with no control as a gap." },
+      { "title": "Review management-override exposure", "description": "Assess where a privileged user could bypass a control undetected, and confirm monitoring covers it." }
+    ]
+  },
+  {
+    "code": "TSC-CC3-3",
+    "title": "Risk assessment of significant change",
+    "description": "Assess the security and availability impact of significant changes — new products, material architecture changes, new sub-service organisations, acquisitions, regulatory change — before they take effect, and feed the result into the risk register and the change record. Implements SOC 2 CC3.1 and CC8.1.",
+    "category": "Risk Assessment",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "Risk Manager / Engineering Leadership",
+    "requirements": ["CC3.1", "CC8.1"],
+    "tasks": [
+      { "title": "Define what counts as significant", "description": "Write the trigger criteria so teams know when a change requires an assessment rather than judging case by case." },
+      { "title": "Assess changes against the criteria", "description": "For each qualifying change, document the risks introduced, the mitigations, and who approved proceeding." },
+      { "title": "Update the risk register", "description": "Add or update risk entries arising from the change and link them to the change record." }
+    ]
+  },
+  {
+    "code": "TSC-CC4-1",
+    "title": "Continuous control monitoring",
+    "description": "Monitor whether controls are operating — automated checks where possible, scheduled control tests otherwise — on a defined cadence, and record the result of each evaluation together with the evidence examined. Implements SOC 2 CC4.1.",
+    "category": "Monitoring Activities",
+    "defaultFrequency": "MONTHLY",
+    "defaultOwnerHint": "Compliance Lead",
+    "requirements": ["CC4.1"],
+    "tasks": [
+      { "title": "Set a test cadence per control", "description": "Assign each control a monitoring method (automated check or manual test) and a frequency proportionate to its risk." },
+      { "title": "Execute and evidence the tests", "description": "Run the scheduled tests, record pass or fail, and attach the evidence examined." },
+      { "title": "Escalate failed tests", "description": "Raise a deficiency for every failed test and route it to the control owner with a due date." }
+    ]
+  },
+  {
+    "code": "TSC-CC4-2",
+    "title": "Control deficiency tracking and remediation",
+    "description": "Track every identified control deficiency — from control testing, audits, penetration tests, or incidents — in one register with a severity, an owner, and a remediation due date, and report ageing items to management until they are closed. Implements SOC 2 CC4.1.",
+    "category": "Monitoring Activities",
+    "defaultFrequency": "MONTHLY",
+    "defaultOwnerHint": "Compliance Lead",
+    "requirements": ["CC4.1"],
+    "tasks": [
+      { "title": "Log deficiencies in a single register", "description": "Record source, description, severity, owner, and due date for every deficiency, regardless of which activity found it." },
+      { "title": "Verify remediation before closure", "description": "Re-test the control and retain the evidence before marking a deficiency closed." },
+      { "title": "Report overdue items to management", "description": "Include ageing and overdue deficiencies in the governance reporting pack." }
+    ]
+  },
+  {
+    "code": "TSC-CC4-3",
+    "title": "Independent security assessment",
+    "description": "Obtain an independent assessment of the in-scope environment at least annually — a penetration test or an equivalent third-party technical review — scoped to the production system, and remediate findings against severity-based SLAs. Implements SOC 2 CC4.1.",
+    "category": "Monitoring Activities",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "CISO / AppSec Lead",
+    "requirements": ["CC4.1"],
+    "tasks": [
+      { "title": "Scope and commission the assessment", "description": "Agree the scope, methodology, and rules of engagement with an independent assessor and record the agreement." },
+      { "title": "Triage findings against SLAs", "description": "Assign each finding a severity and a remediation SLA, and track it in the deficiency register." },
+      { "title": "Obtain retest confirmation", "description": "Have the assessor or an independent internal reviewer confirm that high-severity findings are fixed." }
+    ]
+  },
+  {
+    "code": "TSC-CC5-1",
+    "title": "Control matrix and control ownership",
+    "description": "Maintain a matrix listing every control relied on for the SOC 2 report, the criterion it addresses, its owner, its operating frequency, and the evidence it produces, and keep it current as controls are added or retired. Implements SOC 2 CC5.1.",
+    "category": "Control Activities",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "Compliance Lead",
+    "requirements": ["CC5.1"],
+    "tasks": [
+      { "title": "Map every control to a criterion", "description": "Confirm each control is linked to at least one Trust Services criterion, and that every criterion has at least one control." },
+      { "title": "Record the evidence each control produces", "description": "State what artefact demonstrates the control operated, and where it is stored." },
+      { "title": "Retire superseded controls deliberately", "description": "When a control is replaced, record why and confirm the criterion remains covered." }
+    ]
+  },
+  {
+    "code": "TSC-CC5-2",
+    "title": "Segregation of duties",
+    "description": "Separate conflicting duties so no single person can both make and approve a sensitive change — code deployment, privileged access grants, payments, and audit-log administration — and compensate with detective monitoring where separation is impractical. Implements SOC 2 CC5.1 and CC6.1.",
+    "category": "Control Activities",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "Engineering Leadership / Finance Lead",
+    "requirements": ["CC5.1", "CC6.1"],
+    "tasks": [
+      { "title": "Document conflicting duty pairs", "description": "List the duty combinations that must not be held by one person and the systems where they apply." },
+      { "title": "Test for conflicts", "description": "Review current assignments and permissions for violations of the documented pairs." },
+      { "title": "Record compensating controls", "description": "Where separation is not possible, document the detective control that covers it and evidence that it runs." }
+    ]
+  },
+  {
+    "code": "TSC-CC6-1",
+    "title": "Access provisioning and timely revocation",
+    "description": "Grant access only on documented approval from the resource owner, based on job role and least privilege, and revoke all access on termination or role change within the committed time — driven from an authoritative HR record, not from ad-hoc notification. Implements SOC 2 CC6.1.",
+    "category": "Logical Access",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "IT Operations / People Ops",
+    "requirements": ["CC6.1"],
+    "tasks": [
+      { "title": "Evidence approval before each grant", "description": "Retain the approval record for new access requests, showing the approver and the role justification." },
+      { "title": "Revoke on the leaver trigger", "description": "Revoke access on the termination date from the authoritative HR record and evidence the revocation timestamp." },
+      { "title": "Reconcile accounts to active personnel", "description": "Compare accounts in each in-scope system against active staff and investigate any account with no owner." }
+    ]
+  },
+  {
+    "code": "TSC-CC6-2",
+    "title": "Authentication and multi-factor enforcement",
+    "description": "Require unique named accounts, enforce a password policy that rejects weak and known-breached credentials, and require multi-factor authentication for remote access, administrative access, and access to the production environment. Implements SOC 2 CC6.1.",
+    "category": "Logical Access",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "IT Operations / Identity Lead",
+    "requirements": ["CC6.1"],
+    "tasks": [
+      { "title": "Confirm MFA coverage", "description": "List the in-scope systems and evidence that MFA is enforced on every one, with any exception documented and approved." },
+      { "title": "Verify the password policy settings", "description": "Capture the configured policy from each identity provider and confirm it matches the documented standard." },
+      { "title": "Review shared and service accounts", "description": "Identify accounts not tied to a named person, justify each, and confirm credential custody and rotation." }
+    ]
+  },
+  {
+    "code": "TSC-CC6-3",
+    "title": "Periodic user access review",
+    "description": "Have resource owners review who holds access to each in-scope system at least quarterly, confirming that both the account and its privilege level are still warranted, and remove or downgrade access that is not. Implements SOC 2 CC6.1 and CC4.1.",
+    "category": "Logical Access",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "IT Operations / System Owners",
+    "requirements": ["CC6.1", "CC4.1"],
+    "tasks": [
+      { "title": "Generate the access listing", "description": "Export the current user and privilege listing per in-scope system, dated, as the review population." },
+      { "title": "Obtain owner attestation", "description": "Have each system owner review the listing and record their decision per account, including privilege level." },
+      { "title": "Action and evidence removals", "description": "Remove or downgrade the flagged access and retain evidence that the change was made." }
+    ]
+  },
+  {
+    "code": "TSC-CC6-4",
+    "title": "Encryption in transit and at rest",
+    "description": "Encrypt customer data in transit over untrusted networks using current TLS configurations, and at rest in databases, object storage, and backups, with keys held in a managed key store under restricted access and a documented rotation schedule. Implements SOC 2 CC6.1.",
+    "category": "Logical Access",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "Platform Engineering / Security Engineering",
+    "requirements": ["CC6.1"],
+    "tasks": [
+      { "title": "Verify transport encryption configuration", "description": "Confirm every public endpoint enforces TLS with an approved protocol and cipher set, and that weak versions are refused." },
+      { "title": "Verify encryption at rest", "description": "Evidence that databases, object storage, and backup copies are encrypted, and record the mechanism used." },
+      { "title": "Review key access and rotation", "description": "Confirm who can use or export each key, and that rotation happened per the documented schedule." }
+    ]
+  },
+  {
+    "code": "TSC-CC6-5",
+    "title": "Physical access and secure media disposal",
+    "description": "Restrict physical access to facilities and equipment holding in-scope data to authorised personnel, review the authorised list periodically, and destroy or securely wipe media before disposal or reuse — including equipment handled by a sub-service organisation. Implements SOC 2 CC6.1.",
+    "category": "Logical Access",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "IT Operations / Facilities",
+    "requirements": ["CC6.1"],
+    "tasks": [
+      { "title": "Review the physical access list", "description": "Review who holds badge or key access to in-scope areas and remove those who no longer need it." },
+      { "title": "Evidence data-centre controls", "description": "For hosted infrastructure, obtain and review the provider's current attestation covering physical security." },
+      { "title": "Record media destruction", "description": "Retain certificates of destruction or wipe logs for retired equipment and storage media." }
+    ]
+  },
+  {
+    "code": "TSC-CC6-6",
+    "title": "Network segmentation and boundary protection",
+    "description": "Separate the production environment from corporate and development networks, restrict inbound and outbound traffic to what is required, deny administrative access from the public internet outside a controlled path, and review the rule set for drift. Implements SOC 2 CC6.1.",
+    "category": "Logical Access",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "Platform Engineering / Network Lead",
+    "requirements": ["CC6.1"],
+    "tasks": [
+      { "title": "Document the intended boundaries", "description": "Record the network zones, what may cross between them, and the enforcement point for each boundary." },
+      { "title": "Review firewall and security-group rules", "description": "Compare the live rule set against the documented intent and remove rules that are broader than needed or unused." },
+      { "title": "Confirm no unmanaged admin exposure", "description": "Verify administrative interfaces are not reachable from the public internet except through the approved access path." }
+    ]
+  },
+  {
+    "code": "TSC-CC7-1",
+    "title": "Vulnerability management and patching",
+    "description": "Scan infrastructure, container images, and dependencies for known vulnerabilities on a defined schedule, rate findings by severity, and remediate within published SLAs, with exceptions approved and time-bound. Implements SOC 2 CC7.1.",
+    "category": "System Operations",
+    "defaultFrequency": "MONTHLY",
+    "defaultOwnerHint": "Platform Engineering / Security Engineering",
+    "requirements": ["CC7.1"],
+    "tasks": [
+      { "title": "Run the scheduled scans", "description": "Scan hosts, images, and dependencies on the documented cadence and retain the scan output." },
+      { "title": "Remediate within SLA", "description": "Track findings to closure against the severity SLA and evidence the fix or the accepted, time-bound exception." },
+      { "title": "Review overdue findings", "description": "Report vulnerabilities past their SLA to management with the reason and the recovery plan." }
+    ]
+  },
+  {
+    "code": "TSC-CC7-2",
+    "title": "Security event logging, monitoring, and alerting",
+    "description": "Collect security-relevant logs from the in-scope systems into protected storage, retain them for the committed period, and alert on defined conditions — authentication anomalies, privilege changes, configuration drift — to a monitored destination with a named responder. Implements SOC 2 CC7.1.",
+    "category": "System Operations",
+    "defaultFrequency": "MONTHLY",
+    "defaultOwnerHint": "Security Engineering / SRE",
+    "requirements": ["CC7.1"],
+    "tasks": [
+      { "title": "Confirm log source coverage", "description": "Compare the systems in scope against the sources actually delivering logs, and close any gap." },
+      { "title": "Verify alerts reach a responder", "description": "Test that a triggering condition produces an alert that reaches the on-call responder, and record the test." },
+      { "title": "Protect log integrity and retention", "description": "Confirm logs cannot be altered or deleted by the accounts they record, and that retention meets the commitment." }
+    ]
+  },
+  {
+    "code": "TSC-CC7-3",
+    "title": "Security incident response",
+    "description": "Maintain an incident response plan defining severity levels, roles, internal escalation, and customer and regulator notification obligations; record every incident with its timeline and root cause; and exercise the plan at least annually. Implements SOC 2 CC7.1.",
+    "category": "System Operations",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "CISO / Incident Commander",
+    "requirements": ["CC7.1"],
+    "tasks": [
+      { "title": "Keep the response plan current", "description": "Review the plan for accurate contacts, escalation paths, and notification deadlines, and re-approve it." },
+      { "title": "Record incidents end to end", "description": "For each incident, record detection time, severity, actions taken, notifications made, and root cause." },
+      { "title": "Run a response exercise", "description": "Run a tabletop or simulated incident at least annually and record the lessons and the resulting plan changes." }
+    ]
+  },
+  {
+    "code": "TSC-CC7-4",
+    "title": "Backup and restoration testing",
+    "description": "Back up in-scope data on a schedule that meets the committed recovery point objective, protect backups against modification and deletion, and test restoration at least annually by actually recovering data and verifying its integrity. Implements SOC 2 CC7.1.",
+    "category": "System Operations",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "SRE / Platform Engineering",
+    "requirements": ["CC7.1"],
+    "tasks": [
+      { "title": "Confirm backups run to schedule", "description": "Evidence successful backup completion for the period and investigate every failed or skipped run." },
+      { "title": "Perform a restoration test", "description": "Restore from backup into an isolated environment and verify the restored data is complete and usable." },
+      { "title": "Protect backup copies", "description": "Confirm backups are encrypted and that routine operational accounts cannot delete or overwrite them." }
+    ]
+  },
+  {
+    "code": "TSC-CC8-1",
+    "title": "Software change management and approval",
+    "description": "Require every production change to be tracked, peer reviewed, tested, and approved by someone other than its author before release, with an emergency path that is documented and reviewed after the fact. Implements SOC 2 CC8.1.",
+    "category": "Change Management",
+    "defaultFrequency": "MONTHLY",
+    "defaultOwnerHint": "Engineering Leadership",
+    "requirements": ["CC8.1"],
+    "tasks": [
+      { "title": "Enforce review before merge", "description": "Confirm the repository requires an approving review from a second person before code can reach the production branch." },
+      { "title": "Evidence testing before release", "description": "Retain the automated test and security-check results associated with each release." },
+      { "title": "Review emergency changes", "description": "List changes that bypassed the standard path, confirm each was justified, and evidence the retrospective approval." }
+    ]
+  },
+  {
+    "code": "TSC-CC8-2",
+    "title": "Infrastructure configuration baselines",
+    "description": "Define hardened configuration baselines for the systems that make up the production environment, apply infrastructure changes through the same reviewed and approved path as code, and detect and correct drift from the baseline. Implements SOC 2 CC8.1.",
+    "category": "Change Management",
+    "defaultFrequency": "QUARTERLY",
+    "defaultOwnerHint": "Platform Engineering",
+    "requirements": ["CC8.1"],
+    "tasks": [
+      { "title": "Document the baselines", "description": "Record the hardening standard applied to each system class and the source it is derived from." },
+      { "title": "Route infrastructure changes through review", "description": "Confirm infrastructure changes are made as reviewed, version-controlled definitions rather than console edits." },
+      { "title": "Detect and correct drift", "description": "Run drift detection on the documented cadence and record what drifted and how it was corrected." }
+    ]
+  },
+  {
+    "code": "TSC-CC9-1",
+    "title": "Vendor due diligence and ongoing monitoring",
+    "description": "Assess the security posture of vendors and sub-service organisations before onboarding, proportionate to the data and access they receive, put the required contractual terms in place, and re-assess on a risk-based schedule — reviewing their attestation reports and the complementary user entity controls they assume. Implements SOC 2 CC9.1.",
+    "category": "Risk Mitigation",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "Vendor Risk Manager / Procurement",
+    "requirements": ["CC9.1"],
+    "tasks": [
+      { "title": "Assess before onboarding", "description": "Complete and retain a security assessment sized to the vendor's data access before granting it." },
+      { "title": "Confirm contractual terms", "description": "Verify security, confidentiality, breach-notification, and, where relevant, data-processing terms are executed." },
+      { "title": "Review attestations annually", "description": "Obtain each critical vendor's current attestation report, review the exceptions and the complementary user entity controls, and record the conclusion." }
+    ]
+  },
+  {
+    "code": "TSC-CC9-2",
+    "title": "Business continuity and disaster recovery",
+    "description": "Maintain business continuity and disaster recovery plans covering the in-scope services, with recovery objectives that match the commitments made to customers, and test them at least annually against a realistic disruption scenario. Implements SOC 2 CC9.1 and CC7.1.",
+    "category": "Risk Mitigation",
+    "defaultFrequency": "ANNUALLY",
+    "defaultOwnerHint": "SRE / Business Continuity Lead",
+    "requirements": ["CC9.1", "CC7.1"],
+    "tasks": [
+      { "title": "Confirm recovery objectives match commitments", "description": "Check the documented RTO and RPO against what has been committed to customers and reconcile any difference." },
+      { "title": "Exercise the plan", "description": "Run a recovery exercise against a realistic scenario and record what was recovered, how long it took, and what failed." },
+      { "title": "Update the plan from the exercise", "description": "Feed the exercise findings back into the plan, the risk register, and the deficiency register." }
+    ]
+  }
+]

@@ -9,11 +9,12 @@
  * (`FrameworkRequirement.code`), so the mapping resolves against installed
  * frameworks with no dangling refs.
  *
- * FRAMEWORK NOTE: IC's library has SOC 2 (codes CC1.1/CC2.1/CC3.1/CC5.1/CC6.1/
- * CC7.1/CC8.1) but does NOT yet have NIST CSF 2.0 as a requirement library
- * (it exists only as the maturity-radar domain enum). The foundation therefore
- * maps to SOC 2. When a NIST CSF 2.0 framework is seeded, add a `nistCsf` key
- * to these entries — the connector + runtime resolver are framework-agnostic.
+ * FRAMEWORK NOTE: IC's library has SOC 2 (codes CC1.1/CC1.2/CC2.1/CC3.1/CC4.1/
+ * CC5.1/CC6.1/CC7.1/CC8.1/CC9.1) but does NOT yet have NIST CSF 2.0 as a
+ * requirement library (it exists only as the maturity-radar domain enum).
+ * The foundation therefore maps to SOC 2. When a NIST CSF 2.0 framework is
+ * seeded, add a `nistCsf` key to these entries — the connector + runtime
+ * resolver are framework-agnostic.
  *
  * Powerpipe control ids below are the stable check names emitted in the
  * benchmark JSON (`control.<name>`); each maps to the SOC 2 Trust Services

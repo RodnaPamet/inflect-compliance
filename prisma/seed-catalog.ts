@@ -61,14 +61,19 @@ async function main() {
         update: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
         create: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
     });
+    // Keep in lockstep with `soc2Reqs` in prisma/seed.ts — the SOC 2 Starter
+    // Pack's control templates link against these criterion codes.
     const soc2Reqs = [
         { code: 'CC1.1', title: 'COSO principle 1 — Integrity and ethical values', category: 'Control Environment' },
+        { code: 'CC1.2', title: 'Board independence and oversight', category: 'Control Environment' },
         { code: 'CC2.1', title: 'Information for internal controls', category: 'Communication' },
         { code: 'CC3.1', title: 'Specifies objectives', category: 'Risk Assessment' },
+        { code: 'CC4.1', title: 'Evaluates and communicates control deficiencies', category: 'Monitoring Activities' },
         { code: 'CC5.1', title: 'Selects and develops control activities', category: 'Control Activities' },
         { code: 'CC6.1', title: 'Logical and physical access controls', category: 'Logical Access' },
         { code: 'CC7.1', title: 'System operations monitoring', category: 'System Operations' },
         { code: 'CC8.1', title: 'Change management', category: 'Change Management' },
+        { code: 'CC9.1', title: 'Risk mitigation — business disruption and vendors', category: 'Risk Mitigation' },
     ];
     for (let i = 0; i < soc2Reqs.length; i++) {
         const req = soc2Reqs[i];

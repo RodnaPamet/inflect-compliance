@@ -281,7 +281,13 @@ function detectByCodePrefix(
     code: string,
 ): { frameworkKey: string; frameworkLabel: string } | null {
     if (!code) return null;
-    if (/^CC\d/i.test(code))
+    // SOC 2: bare criterion codes ("CC6.1") AND the SOC 2 Starter Pack's
+    // 'TSC-' curated control codes ("TSC-CC6-3"). The starter pack cannot use
+    // a 'SOC2-' prefix — that one is owned by the SOC2_BASELINE backfill,
+    // which packs by code prefix — so the prefix is listed here instead, or
+    // its 29 controls would fall through to the untagged "other" bucket in the
+    // Controls browse rail.
+    if (/^(CC\d|TSC-)/i.test(code))
         return { frameworkKey: 'soc2', frameworkLabel: FRAMEWORK_LABELS.soc2 };
     if (/^NIS2[-.]/i.test(code))
         return { frameworkKey: 'nis2', frameworkLabel: FRAMEWORK_LABELS.nis2 };

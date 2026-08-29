@@ -83,6 +83,20 @@ describe('control-taxonomy', () => {
             });
         });
 
+        it('tags the SOC 2 Starter Pack TSC- controls as SOC 2, not the untagged bucket', () => {
+            // The starter pack cannot use a 'SOC2-' prefix (SOC2_BASELINE's
+            // backfill packs by that prefix), so its codes are 'TSC-CC6-3'.
+            // Without the prefix here they would fall through to the "other"
+            // framework bucket in the Controls browse rail.
+            expect(
+                categorizeControl({ code: 'TSC-CC6-3', category: 'Logical Access' }),
+            ).toEqual({
+                frameworkKey: 'soc2',
+                frameworkLabel: 'SOC 2',
+                category: 'Logical Access',
+            });
+        });
+
         it('falls back to the framework label when SOC 2 has no persisted category', () => {
             expect(categorizeControl({ code: 'CC1.1', category: null })).toEqual({
                 frameworkKey: 'soc2',
