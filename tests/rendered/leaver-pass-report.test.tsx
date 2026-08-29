@@ -90,6 +90,8 @@ import LeaverPassesPage from '@/app/t/[tenantSlug]/(app)/admin/identity-leaver-p
 import en from '../../messages/en.json';
 
 const M = (en as { admin: { leaverPasses: Record<string, string> } }).admin.leaverPasses;
+const EN_MODE = (en as { admin: { writeLadder: { mode: Record<string, string> } } }).admin.writeLadder
+    .mode;
 
 // ── Fixture ────────────────────────────────────────────────────────────
 
@@ -235,8 +237,22 @@ beforeEach(() => {
     (global as unknown as { fetch: typeof fetchMock }).fetch = fetchMock;
 });
 
-function arrange(passes: unknown[]) {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ passes }) });
+/**
+ * URL-DISPATCH, not a blanket `mockResolvedValue`.
+ *
+ * The page makes TWO calls now — the passes list, and the write-policy summary
+ * the empty state reads to say WHY it is empty. A blanket mock answers both with
+ * `{ passes }`, so `ladder.directions` is undefined and every assertion about
+ * the mode silently exercises the unknown-mode fallback: green against a page
+ * that never reads the real mode at all. Nothing in this file asserts a call
+ * count, so that failure would be silent.
+ */
+function arrange(passes: unknown[], policy: unknown = {}) {
+    fetchMock.mockImplementation(async (url: unknown) =>
+        String(url).includes('identity-write-policy')
+            ? { ok: true, json: async () => policy }
+            : { ok: true, json: async () => ({ passes }) },
+    );
 }
 
 async function renderReport() {
@@ -270,6 +286,93 @@ async function rowFor(provider: string): Promise<HTMLElement> {
 
 // ── Tests ──────────────────────────────────────────────────────────────
 
+describe('an empty page says WHY it is empty', () => {
+    // One sentence had at least three causes: nobody switched it on, it is set
+    // above the clamp so every pass refuses WITHOUT recording, or the worker is
+    // dead. Those want completely different responses and looked identical.
+    const policy = (
+        mode: string | undefined,
+        maxMode = 'DRY_RUN',
+        dryRunSince: string | null = null,
+    ) => ({
+        directions: { leaver: { mode, dryRunSince } },
+        honoured: { leaver: { maxMode } },
+    });
+    // The dispatch cron is 05:00 UTC. "Long ago" is unambiguously overdue;
+    // "just now" cannot be, whatever time the suite runs.
+    const LONG_AGO = '2020-01-01T00:00:00.000Z';
+    const JUST_NOW = () => new Date(Date.now() - 60_000).toISOString();
+
+    it('names the switched-off case, and does not raise an alarm', async () => {
+        arrange([], policy('DISABLED'));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyDisabled)).toBeInTheDocument();
+        // Paired negative: nothing here is broken, so the fault copy must not
+        // appear. Without this the test passes against a page that prints all
+        // five strings at once.
+        expect(screen.queryByText(M.emptyOverdue)).toBeNull();
+    });
+
+    it('names a setting above the clamp, with both values', async () => {
+        arrange([], policy('PROPOSE', 'DRY_RUN'));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyClampMismatch)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyDisabled)).toBeNull();
+    });
+
+    it('a pass that was DUE and left no record reads as a fault', async () => {
+        arrange([], policy('DRY_RUN', 'DRY_RUN', LONG_AGO));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyOverdue)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyAwaitingFirstPass)).toBeNull();
+    });
+
+    it('a tenant switched on since the last 05:00 is NOT overdue', async () => {
+        // The arm that must not be skipped. Without the age bound the fault copy
+        // fires for up to 23h59m after someone switches on — on the one day they
+        // are actually watching the page.
+        arrange([], policy('DRY_RUN', 'DRY_RUN', JUST_NOW()));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyAwaitingFirstPass)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyOverdue)).toBeNull();
+    });
+
+    it('survives a clamp raise — PROPOSE at a PROPOSE clamp still reports', async () => {
+        // The only one of these that survives LEAVER_MAX_MODE being raised.
+        // Comparing against a hardcoded 'DRY_RUN' would drop this tenant into
+        // the nameless fallback the whole item exists to remove.
+        arrange([], policy('PROPOSE', 'PROPOSE', LONG_AGO));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyOverdue)).toBeInTheDocument();
+    });
+
+    it('degrades to the nameless copy when the ladder is unknown', async () => {
+        // A sibling endpoint returning nothing must not blank the report or
+        // print the literal string "undefined".
+        arrange([], {});
+        await renderReport();
+
+        expect(await screen.findByText(M.empty)).toBeInTheDocument();
+        expect(screen.queryByText(/undefined/)).toBeNull();
+    });
+
+    it('states the current mode even when rows DO exist', async () => {
+        // Each row carries its own `mode`, but that is a historical echo of the
+        // setting at the time the pass ran — not what is configured now.
+        arrange(ALL_PASSES, policy('DRY_RUN'));
+        await renderReport();
+
+        const line = document.getElementById('leaver-pass-mode');
+        expect(line).not.toBeNull();
+        expect(line!.textContent).toContain(EN_MODE.DRY_RUN);
+    });
+});
+
 describe('leaver pass report — the three statuses read as three different things', () => {
     it('labels PASSED, PARTIAL and NOT_APPLICABLE distinguishably, and never as the raw enum', async () => {
         arrange(ALL_PASSES);
@@ -287,6 +390,42 @@ describe('leaver pass report — the three statuses read as three different thin
         // reads as "nothing here" to an operator scanning the window.
         expect(screen.queryByText('NOT_APPLICABLE')).toBeNull();
         expect(screen.queryByText('PARTIAL')).toBeNull();
+    });
+
+    it('names BATCH_REFUSED on a LEGACY row the server recorded as PASSED', async () => {
+        // The rows already in the ledger. Before the server recorded a batch
+        // refusal as a refusal, such a pass was stored as PASSED with the
+        // breaker's sentence in `batchRefused` and NO `refusal` key — so the
+        // Refusal column showed an em-dash and the row read as a clean night.
+        //
+        // THE LEGACY SHAPE IS LOAD-BEARING. A fixture carrying `refusal` renders
+        // through the unchanged cell and is green against the broken client;
+        // only a row without it exercises the derivation.
+        const LEGACY = {
+            id: 'p-legacy',
+            provider: 'entra_legacy',
+            executedAt: '2026-08-20T05:00:00.000Z',
+            status: 'PASSED',
+            resultJson: {
+                mode: 'DRY_RUN',
+                candidates: 10,
+                population: 10,
+                batchRefused: 'Refusing to disable 6 of 10 account(s) (60.0%)',
+                counts: {},
+                decisions: [],
+            },
+        };
+        arrange([LEGACY]);
+        await renderReport();
+
+        const row = await rowFor('entra_legacy');
+        expect(row.textContent).toContain('BATCH_REFUSED');
+
+        // Paired positives: the row still reads as the server stored it. The
+        // renderer must not overrule an audit record — the mismatch between
+        // "Ran — complete" and a named refusal is the visible trace of when this
+        // was fixed, not something to paper over client-side.
+        expect(row.textContent).toContain(M.statusPassed);
     });
 
     it('names the refusal on the refused row and in its detail, rather than showing an empty pass', async () => {
