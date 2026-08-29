@@ -22,7 +22,6 @@ type Params = { tenantSlug: string; controlId: string; riskId: string };
 export const DELETE = withApiErrorHandling(
     requirePermission<Params>('controls.edit', async (_req, { params }, ctx) => {
         await unmapControlFromRisk(ctx, params.controlId, params.riskId);
-    await unmapControlFromRisk(ctx, params.controlId, params.riskId);
-    return jsonResponse({ ok: true });
+        return jsonResponse({ ok: true });
     }),
 );
