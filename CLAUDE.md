@@ -54,13 +54,19 @@ execution environment is ephemeral — only committed files survive.
 npm run dev               # Start Next.js dev server
 npm run build             # Validate env + build
 npm run typecheck         # tsc --noEmit
-npm run lint              # Next.js lint
+npm run lint              # eslint . (flat config, eslint.config.mjs)
 
 # Database
-# The Prisma schema lives in a folder, not a single file:
-#   prisma/schema/{base,enums,auth,compliance,vendor,audit,automation,schema}.prisma
-# Prisma's `prismaSchemaFolder` preview feature (enabled in base.prisma)
-# concatenates them at generate / migrate time. See prisma/schema/README.md.
+# The Prisma schema lives in a folder of 26 files, not a single file —
+# base/enums/auth/vendor/audit-trail/audit-workflow/automation/processes plus
+# the compliance-domain split (controls, evidence, risk, frameworks, policy,
+# tasks, assets, personnel, findings, incidents, questionnaire, nis2,
+# ai-governance, trust-center, agentic, analytics). See the Layer Structure
+# section below and prisma/schema/README.md — `compliance.prisma` is an empty
+# stub and `audit.prisma` no longer exists.
+# Prisma reads every `.prisma` file in the folder and concatenates them at
+# generate / migrate time — no flag needed (`prismaSchemaFolder` went GA in
+# Prisma 6 and was removed as a preview feature in v7). See prisma/schema/README.md.
 npm run db:generate       # Regenerate Prisma client after schema changes
 npm run db:push           # Push schema to DB (no migration file)
 npm run db:migrate        # Create + apply a named migration interactively
@@ -68,7 +74,7 @@ npm run db:reset          # Drop, recreate, and reseed the DB
 
 # Tests
 npm test                  # Jest (parallel)
-npm run test:ci           # Jest (sequential, used in CI)
+npm run test:ci           # Jest (sequential, no coverage — used by scripts/ci-local.mjs; GitHub CI runs sharded `npx jest --shard=K/4`)
 npm run test:coverage     # Jest with coverage report
 npm run test:e2e          # Playwright browser tests
 
@@ -78,7 +84,7 @@ npx jest tests/unit/golden-path.test.ts
 # Run a single Playwright test file
 npx playwright test tests/e2e/core-flow.spec.ts
 
-# Docker (local dev stack — PostgreSQL + Redis)
+# Docker (local dev stack — PostgreSQL + PgBouncer + Redis + ClamAV)
 docker-compose up -d
 ```
 
@@ -112,7 +118,7 @@ Back up any file before editing it (the existing
 
 ### Framework baseline
 
-**Next.js 16.2.6** (App Router) + **React 19.2** + **TypeScript 5.5**.
+**Next.js 16.3.1** (App Router) + **React 19.2** + **TypeScript 5.9** (declared `^5.5.0`).
 The React 18 → 19 bump (#67) is complete: React 19 removed
 `propTypes`, function-component `defaultProps`, string refs and
 legacy context — the codebase carries none of those.
@@ -130,14 +136,15 @@ CI if either gate is silently re-lowered (`moderate` → `high` /
 `critical`, or `CRITICAL,HIGH` → `CRITICAL`) or `next` is downgraded
 back to 14.x.
 
-Async-request-API caveat: wrapped route handlers still type
-`params` synchronously; the transparent-await shim in
-`src/lib/errors/api.ts::withApiErrorHandling` resolves the Promise
-before forwarding ctx to the inner handler so existing call sites stay
-correct. The codebase now runs on Next 16 — migrating every site to
-explicit `await params` (retiring the shim) is the remaining
-outstanding follow-up. See
-`docs/implementation-notes/2026-04-25-gap-05-next15-migration.md`.
+Async-request-API: this migration is COMPLETE. Every dynamic route
+handler types `params` as `Promise<…>` and awaits it itself (354 of
+them; zero type it synchronously), and the transparent-await shim that
+`src/lib/errors/api.ts::withApiErrorHandling` once carried was removed
+in Roadmap-6 P3 — the wrapper now forwards `ctx` through untouched.
+Unit tests that pass a plain sync `params` object still work, because a
+migrated handler's `await params` resolves a non-thenable to itself.
+`tests/guards/async-params-route-typing.test.ts` blocks a regression.
+See `docs/implementation-notes/2026-04-25-gap-05-next15-migration.md`.
 
 ### Layer Structure
 
@@ -145,7 +152,7 @@ outstanding follow-up. See
 src/app/api/           → Next.js route handlers (HTTP boundary only — parse input, call usecases, return responses)
 src/app-layer/usecases/→ Business logic orchestration (thin: validate → call policy → call repo → emit event)
 src/app-layer/policies/→ Authorization checks (assertCanRead/Write/Admin/Audit) — always called before data access
-src/app-layer/repositories/ → All Prisma queries (every query must filter by tenantId)
+src/app-layer/repositories/ → Prisma queries for tenant-scoped models (every query filters by tenantId). Org-scoped, SSO/MFA/SCIM and pre-membership flows use the global client from the usecase — see the allowlists in tests/unit/no-direct-prisma.test.ts
 src/app-layer/jobs/    → BullMQ job definitions (background tasks)
 src/app-layer/services/→ Cross-cutting domain services (library import, cross-framework traceability)
 src/app-layer/events/  → Audit event writers (immutable, hash-chained audit trail)
@@ -191,7 +198,7 @@ prisma/schema/         → Multi-file Prisma schema (GAP-09):
 
 ### Request Context (`RequestContext`)
 
-Every usecase and repository receives a `RequestContext` (defined in `src/app-layer/types.ts`) containing `userId`, `tenantId`, `role`, `permissions`, and `appPermissions`. This is propagated via AsyncLocalStorage — never thread through manually. Access via `getRequestContext()` from `src/lib/observability`.
+Every usecase and repository receives a `RequestContext` (defined in `src/app-layer/types.ts`) containing `requestId`, `userId`, `tenantId`, `role`, `permissions`, and `appPermissions`. It is built once per request by `getTenantCtx()` in `src/app-layer/context.ts` and threaded EXPLICITLY as the first argument to every usecase and repository call — there is no AsyncLocalStorage for it. Separately, `getRequestContext()` from `src/lib/observability` returns `RequestContextData` (`requestId`, `tenantId?`, `userId?`, `route?`, `startTime`), which IS AsyncLocalStorage-propagated but carries no `role` / `permissions` / `appPermissions` — it is for logging and tracing only, never for authorization.
 
 ### Multi-Tenant Isolation
 
@@ -224,8 +231,7 @@ runbook in `docs/rate-limiting.md`.
 `withApiErrorHandling` gets `API_MUTATION_LIMIT` (60/min) on
 POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
-`{ rateLimit: { config, scope } }` options on specific routes. Keyed
-`(IP, userId)`. Storage: in-process Map (Node runtime).
+`{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route today because no route supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
 
 **Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
 through `API_READ_LIMIT` (120/min) at the Edge middleware via
@@ -244,7 +250,7 @@ Tiered per-endpoint policy at the Edge: 10/min for sign-in callbacks,
 30/min for session probes, 60/min for csrf/providers. Keyed `(IP,
 ua-hash)` because it runs pre-authentication.
 
-429 responses carry `Retry-After` + `X-RateLimit-*` + `x-request-id`.
+429 responses carry `Retry-After` + `X-RateLimit-*`; the mutation- and read-tier 429s also carry `x-request-id`. The auth-tier 429 does NOT — `middleware()` returns it early (src/middleware.ts, the `/api/auth/` block) before the request-id header is stamped on the response.
 Body never contains IP/userId/tenantSlug. Bypass via
 `RATE_LIMIT_ENABLED=0` env or inside tests (automatic). All presets
 live in `src/lib/security/rate-limit.ts`; the Node wrapper is
@@ -280,7 +286,11 @@ and `docs/rls-tenant-isolation.md` for the RLS deep dive.
 
 Business-content fields (Finding.description, Risk.treatmentNotes,
 PolicyVersion.contentText, TaskComment.body, …) are encrypted at
-rest by a Prisma `$use` middleware. The manifest lives in
+rest by a Prisma `$extends` query extension. The wiring is
+`withEncryptionExtension` in `src/lib/db/encryption-middleware.ts`,
+composed onto the client in `src/lib/prisma.ts` (Prisma 7 removed
+`$use`; `registerEncryptionMiddleware` survives only as a deprecated
+no-op stub for legacy test imports). The manifest lives in
 `src/lib/security/encrypted-fields.ts`; **never** add or remove
 encrypted columns outside it. Add a model here ⇒ its manifest
 fields encrypt on every write and decrypt on every read
@@ -303,8 +313,10 @@ chars, or equal to the documented dev fallback:
   2. startup hook in `src/instrumentation.ts` (web) +
      `scripts/worker.ts` (BullMQ worker) + `scripts/scheduler.ts`
      (deploy-time scheduler) — exits 1 with `[startup] FATAL: …`.
-     The web tier additionally runs an encrypt → decrypt sentinel
-     to catch keys that pass structural checks but break HKDF/AES.
+     The web and worker tiers additionally run an encrypt → decrypt
+     sentinel (`runEncryptionSentinel`) to catch keys that pass
+     structural checks but break HKDF/AES; the scheduler runs the
+     presence check only.
   3. Compose `:?error` syntax in `docker-compose.prod.yml` /
      `docker-compose.staging.yml` / `deploy/docker-compose.prod.yml`
      — aborts container start before the app process is spawned.
@@ -356,12 +368,23 @@ sub-epic has the others as backstops.
 (CodeQL SAST, Trivy container CVEs, npm audit) there is now a *dynamic*
 one: the nightly `.github/workflows/dast.yml` boots the full app +
 Postgres + Redis and runs an OWASP **ZAP Baseline** (passive) scan,
-publishing SARIF to the Security tab (`category: zap-baseline`) + an
-HTML artifact + an auto-issue. PR-1 is **unauthenticated + non-blocking**
-(`fail_action: false`, sunset 2026-07-24 → blocking on HIGH+). The
-false-positive allowlist is `.zap/rules.tsv`; authenticated-OWNER,
-multi-role, and the weekly Full/active scan are tracked follow-ups. See
-**`docs/dast.md`**. Guarded by `tests/guardrails/dast-workflow-pinning.test.ts`.
+publishing SARIF to the Security tab (one analysis per role,
+`category: zap-baseline-<role>`) + an HTML artifact + an auto-issue.
+The scan is **authenticated and multi-role** — a matrix logs in as each
+seeded role (owner / editor / reader / auditor) through the real
+NextAuth credentials flow and scans that role's reachable surface. Note
+that is per-role PASSIVE surface coverage, NOT broken-access-control
+detection; BAC is enforced and tested at the app layer.
+
+The weekly **active** scan has also shipped, as
+`.github/workflows/dast-full.yml` (Sundays 05:00 UTC, OWNER session,
+SARIF `category: zap-full`). Both are still **non-blocking**
+(`fail_action: false` + `continue-on-error`), and the 2026-07-24 sunset
+to HIGH+ blocking has LAPSED without being actioned — flipping it is
+the outstanding follow-up, along with multi-role active scanning. The
+false-positive allowlist is `.zap/rules.tsv`, shared by both workflows.
+See **`docs/dast.md`**. Guarded by
+`tests/guardrails/dast-workflow-pinning.test.ts`.
 
 **C.1 — API permission middleware.** Wrap every privileged API
 handler with `requirePermission(<key>, …)` from
@@ -373,9 +396,10 @@ key itself is never echoed to the client. The route ↔ map sync is
 guarded by `tests/guardrails/api-permission-coverage.test.ts`;
 new admin/privileged routes MUST add a rule in
 `src/lib/security/route-permissions.ts` and use
-`requirePermission(...)`. Avoid the legacy
-`requireAdminCtx` helper for new code — it still works but the
-permission-key model is the canonical pattern.
+`requirePermission(...)`. The legacy `requireAdminCtx` /
+`requireWriteCtx` / `requireRoleCtx` helpers no longer exist — they were
+removed on 2026-05-21 and `tests/guardrails/no-legacy-admin-guard.test.ts`
+keeps them from returning.
 
 **Two layers, and they are not interchangeable.**
 `api-permission-coverage.test.ts` is LAYER 1 — a curated
@@ -396,7 +420,10 @@ through the call graph (`tests/helpers/route-authorization-graph.ts`,
 CI still verifies is present. **It makes no ordering, sufficiency
 or liveness claim** — a check that runs after the destructive
 write passes it. The residual with no authorization at all is
-capped at 2, each carrying its tracking issue. A new route lands
+ZERO, pinned by exact equality — both original members were fixed
+rather than reclassified (#2109 csp-report GET, #2108 avatar reads),
+and a route reaching that bucket is a finding to fix, not an entry to
+add. A new route lands
 IN by default: adding one under an existing exempt prefix still
 fails until it is triaged. See
 `docs/implementation-notes/2026-08-22-api-authorization-two-layers.md`.
@@ -445,8 +472,11 @@ via `AUDIT_STREAM_RETRY_ENABLED=0`.
 `sanitizeRichTextHtml` / `sanitizePlainText` /
 `sanitizePolicyContent` from `@/lib/security/sanitize` BEFORE
 persisting any user-supplied rich-text. Already wired into
-`policy.createPolicy`, `policy.createPolicyVersion`,
-`task.addTaskComment`, `issue.addIssueComment`. New write paths
+`policy.createPolicy`, `policy.createPolicyVersion` and
+`task.addTaskComment` (the former `issue.addIssueComment` was deleted
+with the retired `/issues` routes), plus the further write paths
+enumerated in `RICH_TEXT_COVERAGE` in
+`tests/guardrails/sanitize-rich-text-coverage.test.ts`. New write paths
 that accept HTML or comment text MUST sanitise at the usecase
 layer (not just at render time) — render-time sanitisation alone
 would leave the row dangerous to PDF export, audit-pack share
@@ -484,7 +514,8 @@ NULL-INSERT-under-app_user rejects; NULL-row-claim-to-other-tenant
 rejects; etc.).
 
 **D.2 — Encrypted-field write paths sanitised.** Five usecase
-files (`finding`, `risk`, `vendor`, `audit`, `control-test`) wrote
+files (`finding`, `risk`, `vendor`, `audit`, and the control-test-plan
+usecase now at `usecases/control/test-plans.ts`) wrote
 to encrypted free-text columns without server-side sanitisation.
 Encryption protects confidentiality at rest; sanitisation protects
 every downstream renderer (UI, PDF export, audit-pack share link,
@@ -494,10 +525,14 @@ field. All five now route user-supplied free text through
 the per-file `sanitizeOptional` helper that preserves the
 undefined/null/string three-state contract). The
 `tests/guardrails/sanitize-rich-text-coverage.test.ts` ratchet has
-`SANITISER_COVERAGE_FLOOR = 8`; a future PR cannot silently drop
-one of the eight known sanitised usecases without bumping the
-floor in the same diff. The companion
-`tests/unit/security/sanitize-write-paths.test.ts` carries 20
+no numeric floor any more: it derives the rich-text inventory from
+`ENCRYPTED_FIELDS` in `src/lib/security/encrypted-fields.ts` and fails
+unless every encrypted business-content model is classified in exactly
+one of `RICH_TEXT_COVERAGE`, `NON_RICH_TEXT_MODELS` or the ratcheting
+`KNOWN_UNCOVERED`. A new encrypted free-text column therefore fails CI
+until somebody sanitises it or writes down why it need not be. The
+companion
+`tests/unit/security/sanitize-write-paths.test.ts` carries 19
 write-path assertions — one positive XSS-strip per call site.
 
 **D.3 — Legacy `requireAdminCtx` migrated to `requirePermission`.**
@@ -634,7 +669,7 @@ per gated-route request. The new `type HttpMethod = 'GET' | 'POST'
 time, so the hot path drops the `.map(...)` allocation.
 Ratchet: `tests/guardrails/route-permissions-uppercase.test.ts`
 catches `as` casts, lowercase union-member additions, and type
-widening back to `readonly string[]`. Separately, `encryption.ts:139`
+widening back to `readonly string[]`. Separately, `encryption.ts:141`
 now carries a three-state sentinel comment explaining that
 `_lastPreviousKeySource: string | null | undefined` uses all three
 states deliberately (undefined = never checked, null = checked-no-key,
@@ -664,11 +699,14 @@ superior to ADMIN — it gains `admin.tenant_lifecycle` (delete
 tenant, rotate DEK, transfer ownership) and `admin.owner_management`
 (invite/remove OWNERs, assign OWNER role). ADMIN has every other
 admin flag but explicitly denies those two. The `PermissionSet`
-resolution in `src/lib/permissions.ts` enforces the distinction at
-compile time; `getPermissionsForRole('ADMIN').admin.tenant_lifecycle`
-is `false` by type.
+resolution in `src/lib/permissions.ts` hard-codes the distinction: the
+`ADMIN` branch of `getPermissionsForRole` returns
+`tenant_lifecycle: false, owner_management: false` explicitly. That is a
+value guarantee, not a type-level one (the declared field type is
+`boolean`), so the custom-role path — which CAN express those flags — is
+re-checked at runtime by `permissionsExceeding`.
 
-**Membership creation is explicit.** Only three paths can write a
+**Membership creation is explicit.** Eight allowlisted paths can write a
 `TenantMembership` row today:
 (a) `redeemInvite` in `src/app-layer/usecases/tenant-invites.ts` —
 token-bound, email-bound, atomically consumed via an `updateMany`
@@ -677,21 +715,27 @@ token is burnt on email mismatch.
 (b) `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts` —
 platform-admin tenant bootstrap, gated by `PLATFORM_ADMIN_API_KEY`
 (constant-time compared via `verifyPlatformApiKey`).
-(c) `/api/auth/register` — credentials self-service signup (AUTH_TEST_MODE-gated).
-Plus the legitimate SSO + SCIM provisioning paths. Every site is
+(c) `/api/auth/register` — credentials self-service signup. It is NOT `AUTH_TEST_MODE`-gated: the route carries no such gate and the Credentials provider is always registered (`src/auth.ts:342-349`), so a self-registered production account is usable. Its only throttle is `TENANT_CREATE_LIMIT` (5/hour). Whether public signup should be open is an open product decision — see the note at the top of `src/app/api/auth/register/route.ts`.
+Plus the legitimate SSO + SCIM provisioning paths, the two Epic O-2 org
+paths (`org-provisioning.ts` fans ADMIN rows into every tenant under an
+org for an existing ORG_ADMIN; `org-tenants.ts::createTenantUnderOrg`
+writes the OWNER row), and the staging-only seed route. Every site is
 allowlisted in `tests/guardrails/no-auto-join.test.ts` with a
-one-line reason; a fourth-not-listed site fails CI.
+one-line reason; a ninth-not-listed site fails CI. `OrgMembership` has
+its own `ALLOWLISTED_ORG_MEMBERSHIP_SITES` list in the same file.
 
 **Middleware tenant-access gate.** `/t/:slug/**` and
-`/api/t/:slug/**` require the JWT's `tenantSlug` claim to match the
-URL's slug. Mismatch → `/no-tenant` (web) or `403 no_tenant_access`
-(API). Uses the JWT claim only — no per-request DB hit. Carve-outs
+`/api/t/:slug/**` require the URL's slug to appear in the JWT's
+`memberships[]` array — R-1 replaced the old single-slug `tenantSlug`
+check, so a multi-tenant user passes for any tenant they hold. Mismatch → `/no-tenant` (web) or `403 cross_tenant_access_denied`
+(API); a user with no memberships at all gets `/no-tenant` or
+`403 no_tenant_access`. Uses the JWT claim only — no per-request DB hit. Carve-outs
 for `/invite/<token>`, `/api/invites/**`, and `/no-tenant` itself.
 Logic lives in `src/lib/auth/guard.ts::checkTenantAccess`.
 
 **Last-OWNER protection — two layers.** Usecase layer
-(`updateTenantMemberRole`, `deactivateTenantMember`) counts ACTIVE
-OWNERs and throws `forbidden('Cannot demote/deactivate the last
+(`updateTenantMemberRole`, `deactivateTenantMember`, `removeTenantMember`)
+counts ACTIVE OWNERs and throws `forbidden('Cannot demote/deactivate the last
 OWNER...')`. DB trigger `tenant_membership_last_owner_guard` is the
 backstop — raises SQLSTATE P0001 on any UPDATE or DELETE that would
 leave a tenant with zero ACTIVE OWNERs, catching bypass attempts
@@ -722,11 +766,11 @@ new tenant-membership creation path).
 
 ### Observability
 
-All structured logging, tracing, and metrics flow through `src/lib/observability/index.ts` (barrel export). Use `log(ctx, level, message, fields)` or `logger.info(...)` for logging. Use `traceUsecase()` / `traceOperation()` for OpenTelemetry spans. Never `console.log` in application code.
+All structured logging, tracing, and metrics flow through `src/lib/observability/index.ts` (barrel export). Use `log(level, message, fields)` or `logger.info(...)` for logging — the request context is read from AsyncLocalStorage inside `log`, never passed as an argument. Use `traceUsecase()` / `traceOperation()` for OpenTelemetry spans. Never `console.log` in application code.
 
 ### Auth
 
-NextAuth v4.24.14 (stable) is configured in `src/auth.ts`. Providers: Google OAuth, Microsoft Entra ID (via the v4 `azure-ad` provider — same OAuth endpoints, Microsoft renamed the product), SAML (via `src/app/api/auth/sso/`), and Credentials. The JWT carries `tenantId`, `role`, `mfaPending`, `memberships[]`, and the Epic C.3 `userSessionId`. Token refresh logic lives in `src/lib/auth/refresh.ts`.
+NextAuth v4.24.15 (stable, exact-pinned in `package.json`) is configured in `src/auth.ts`. Providers: Google OAuth, Microsoft Entra ID (via the v4 `azure-ad` provider — same OAuth endpoints, Microsoft renamed the product), enterprise SSO — SAML and OIDC (via `src/app/api/auth/sso/saml/` and `src/app/api/auth/sso/oidc/`), and Credentials. The JWT carries `tenantId`, `role`, `mfaPending`, `memberships[]`, and the Epic C.3 `userSessionId`. Token refresh logic lives in `src/lib/auth/refresh.ts`.
 
 **Bounded JWT membership payload.** The JWT is a fixed-size cookie credential — `memberships[]` / `orgMemberships[]` are capped at `MAX_JWT_MEMBERSHIPS` (50) in the `jwt` callback. Over the cap, `membershipsTruncated` / `orgMembershipsTruncated` is set and the middleware's `checkTenantAccess` / `checkOrgAccess` defers a slug-miss to the authoritative DB-backed server gate (`TenantLayout` / `getTenantCtx`) instead of denying. UI that needs the COMPLETE list (the `/tenants` picker) does its own server-side DB lookup — the JWT list is a bounded fast-path, not the source of truth. Old sessions (pre-cap, no flag) degrade gracefully: an absent flag reads as `false`, so they behave exactly as before until natural re-mint. Locked by `tests/guardrails/jwt-membership-bound.test.ts`.
 
@@ -740,19 +784,19 @@ NextAuth v4.24.14 (stable) is configured in `src/auth.ts`. Providers: Google OAu
 
 ### Background Jobs (BullMQ)
 
-Job definitions are in `src/app-layer/jobs/`. The executor registry is `src/app-layer/jobs/executor-registry.ts`. Jobs run inside `traceUsecase` spans and inherit request context.
+Job definitions are in `src/app-layer/jobs/`. The executor registry is `src/app-layer/jobs/executor-registry.ts`. Jobs wrap their body in `runJob()` from `@/lib/observability/job-runner`, which opens a fresh AsyncLocalStorage request context (`route: job:<name>`) and a `traceOperation` span; the BullMQ worker additionally runs each execution inside an `execute <jobName>` span linked to the originating `enqueue` span. No job uses `traceUsecase`.
 
 ### Data Retention
 
-**See `docs/data-retention.md`** — the policy document that categorizes all 139
+**See `docs/data-retention.md`** — the policy document that categorizes all 203
 Prisma models into 7 retention categories (Business record / Regulatory artefact /
 Operational / Security ephemeral / PII subject / Financial / Configuration),
 declares the *current* retention behaviour per entity, and surfaces the open
 legal/compliance/finance questions that block a formal retention commitment. It
 is the lifecycle companion to `docs/encryption-data-protection.md` (at-rest
 confidentiality). Today only **Evidence** has an end-to-end retention flow
-(`retentionUntil` → reminders → archive → 365-day hard purge); soft-deletes on 12
-`SOFT_DELETE_MODELS` are purged after 90 days by the `data-lifecycle` job;
+(`retentionUntil` → reminders → archive → 365-day hard purge); soft-deletes on the 13
+`SOFT_DELETE_MODELS` (`src/lib/soft-delete.ts`) are purged after 90 days by the `data-lifecycle` job;
 `AuditLog`/`OrgAuditLog` are immutable + hash-chained and never deleted by default.
 Adding a new model ⇒ classify it in the doc's inventory table (the
 `tests/guardrails/retention-policy-coverage.test.ts` ratchet fails CI until you do).
@@ -770,7 +814,10 @@ revert), and the audit trail (PR + CI + Environment approval + CHANGELOG). It is
 the policy twin of `docs/deployment.md` (operational) and cross-links
 `docs/incident-response.md` (on-call rotation). A SIGNIFICANT change — a schema
 migration, a security-middleware change, a dependency major bump — must carry a
-rollback plan + a second engineer's `Sign-off:` in the PR.
+rollback plan + a risk assessment in the PR, and (for human-authored PRs) a
+second engineer's `Sign-off:`. For assistant-driven PRs the owner waived the
+wait for that countersignature on 2026-08-18 — see the working agreements above
+and the "Owner waiver" bullet in the policy doc; the analysis is still required.
 
 ### Billing & entitlements (GAP-18)
 
@@ -860,7 +907,9 @@ row** — they emit a metric and a log line, but nothing lands on
 `DISABLED` looks identical, from inside the product, to a dead worker.
 
 **In `DRY_RUN` no directory writer is constructed.** `resolveDirectoryWriter`
-returns the snapshot arm before the live Entra writer, so a dry run needs neither
+returns the snapshot arm before either live writer (Entra / Active Directory) —
+but BELOW the `NO_CONNECTION` and `AMBIGUOUS_CONNECTION` refusals, so a dry run
+still needs exactly one enabled connection to get a snapshot at all, so a dry run needs neither
 `writesEnabled` nor `User.EnableDisableAccount.All` and opens no socket. It does
 still decrypt the connection secret (for self-account ids) and degrades to
 config-only with a WARN if that fails. Consequence worth knowing: `beginWrite` on
@@ -887,8 +936,10 @@ backfill, so every pre-existing row refuses `NEVER_OBSERVED` until its next sync
 stamps it — that window is the rail working, not a broken sync.
 
 **Adding to this subsystem:** a new writable provider goes in
-`WRITABLE_IDENTITY_PROVIDERS` and needs a writer plus an entry in the factory's
-refusal set; a new directory provider that only reads goes in
+`WRITABLE_IDENTITY_PROVIDERS` and needs a writer plus its own branch in
+`resolveDirectoryWriter`'s construction block — the last arm there falls through
+to `createActiveDirectoryWriter`, so a provider added without a branch silently
+gets an AD writer; a new directory provider that only reads goes in
 `IDENTITY_PROVIDERS` in `jobs/identity-sync.ts` (and the two other copies of that
 list — they are not shared). Follow
 [docs/new-subsystem-checklist.md](docs/new-subsystem-checklist.md) as usual.
@@ -914,7 +965,10 @@ than guessing.
   `tests/` that hands the repo root to a directory read, and carries no
   allowlist. See
   `docs/implementation-notes/2026-08-21-source-scan-population-from-git.md`.
-- **E2E tests**: Playwright in serial mode. **Structural isolation, not shared state** (`chore/e2e-isolation`):
+- **E2E tests**: Playwright fully parallel (`fullyParallel: true`,
+  2 workers in CI, auto locally — see
+  `docs/implementation-notes/2026-06-23-e2e-parallelization.md`).
+  **Structural isolation, not shared state** (`chore/e2e-isolation`):
     - **Read-only specs** (list pages, filters, a11y, theme, tooltips,
       responsive, display checks — navigate + assert, never
       create/edit/delete) keep the SHARED seeded tenant via
@@ -938,8 +992,8 @@ than guessing.
       `data-testid` only where neither exists.** In hand-written
       markup, do not sprinkle `data-testid` on an element merely to
       select it — give it a real `id`, or select it by role/label.
-      Measured practice in `tests/e2e`: `#id` locators 311 calls
-      (51%), `[data-testid=…]` 88 (14%), `getByRole` 84 (14%);
+      Measured practice in `tests/e2e` spec files: `#id` locators 304
+      calls, `[data-testid=…]` 101, `getByRole` 85;
       `getByTestId` is used **zero** times.
     - **`<DataTable>` is the documented exception, because there its
       `data-testid` prop IS the `id` setter.** `DataTableProps` has no
@@ -948,15 +1002,17 @@ than guessing.
       So passing `data-testid="risks-table"` is *how* you create the
       "existing HTML `id`" (`#risks-table`) the rule above tells specs
       to select on — it is not an extra attribute bolted on for tests.
-      Omitting it leaves the table addressable by neither. Nine `#id`
-      selectors across 25 E2E locator calls (`#controls-table`,
-      `#members-table`, `#evidence-table`, the `#org-*-table`s) exist
+      Omitting it leaves the table addressable by neither. Ten `#id`
+      selectors across 34 E2E locator calls (`#controls-table`,
+      `#members-table`, `#evidence-table`, `#soa-table`, the
+      `#linked-*-table`s and the `#org-*-table`s) exist
       only because that prop was passed. Every list page must pass it,
       on the `<DataTable>` itself or in the `table={{ … }}` config of
       `EntityListPage`; `tests/unit/data-table.test.ts` enforces it and
       `src/components/ui/table/GUIDE.md` shows the canonical call.
     - **Rendered (RTL) tests are testid-first** — `tests/rendered`
-      calls `getByTestId` 976 times across 130 files. A `data-testid`
+      calls `getByTestId` 806 times across 124 files (1,087 `*ByTestId`
+      queries across 130 files). A `data-testid`
       added because a rendered test needs a stable handle is correct
       and is not covered by the preference above.
     - Scope `#id` / role locators to `getByRole('main')` where a
@@ -977,8 +1033,8 @@ than guessing.
 
   It now merges **five** artifacts, and which five is load-bearing.
   Coverage is collected by the jobs that already run the suite: the four
-  `Test` shards (`JEST_SKIP_RATCHETS=1`, 1386 files) and `Ratchets`
-  (guards + guardrails + contracts, 654 files). Those two sets are
+  `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files) and `Ratchets`
+  (guards + guardrails + contracts, 661 files). Those two sets are
   disjoint and exhaustive — together they are the whole suite, which is
   what makes the merged numbers comparable to the old single-matrix ones.
   Since a path key removes its files from `global`, changing WHICH tests
@@ -1043,11 +1099,18 @@ Three codebase-hygiene invariants are held by structural guardrails
   accumulate); `tests/guards/no-explicit-any-ratchet.test.ts` caps
   `: any` / `<any>` / `as any` / `@ts-ignore`. Removing casts ⇒
   lower the baseline/caps in the same PR. `@typescript-eslint/no-explicit-any`
-  is intentionally `warn` (a large `: any` debt makes `error`
-  infeasible) — the ratchet is the enforcement.
+  is `warn` repo-wide (a large `: any` debt makes `error` infeasible)
+  — the ratchet is the enforcement — except on the security
+  perimeter: `eslint.config.mjs` overrides it to `error` for
+  `src/lib/security/**/*` and `src/middleware.ts`.
 - **Logging discipline applies to adapted code too.** No `console.*`
-  in server code (`tests/guardrails/logging-import-hygiene.test.ts`);
-  `src/lib/dub-utils/` is NOT exempt.
+  in server code (`tests/guardrails/logging-import-hygiene.test.ts`).
+  The vendored `src/lib/dub-utils/` tree that once held a blanket
+  exemption was deleted on 2026-06-04 (#829, de-Dub); the guardrail
+  still asserts no `lib/dub-utils/` prefix can return to the
+  allowlist. Today's allowlist is `lib/observability/edge-logger.ts`,
+  `lib/api-client.ts`, `instrumentation.ts`, plus four
+  `components/ui/` client-component prefixes.
 - **Route handlers type `params` as `Promise<…>`.** Next 15+
   contract; `tests/guards/async-params-route-typing.test.ts` blocks
   a regression. The old transparent-await shim is retired.
@@ -1117,8 +1180,12 @@ in it passes while checking nothing) and never slice a magic byte offset
 
 The `rq*` family predates this rule and escaped the 2026-08-05 sweep because
 `^rq` was missing from the pattern list. It is now a **downward ratchet** in
-`no-epic-named-ratchets.test.ts`: new `rq`-named guards are blocked, and the
-existing ones come out in tranches, each lowering the ceiling.
+`no-epic-named-ratchets.test.ts`: the count of `/^rq\d/` guards must
+equal `RQ_CEILING` exactly (35 today), so a new `rq<N>-` guard is
+blocked and each retirement tranche lowers the ceiling in the same
+diff. Note the filter needs the digit — `^rq` is still not in
+`EPIC_NAME_PATTERNS`, so a name like
+`rq-calibration-pd-recommendation.test.ts` slips past both checks.
 
 See `docs/implementation-notes/2026-08-05-retire-epic-ratchets.md` and
 `docs/implementation-notes/2026-08-06-retire-rq-epic-ratchets.md`.
@@ -1158,8 +1225,14 @@ stands for that PR only — not as a precedent.
 ## Key Conventions
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/`
-  and `src/lib/schemas/`. Both are **backend**: `src/lib/schemas/index.ts` is
-  ~1,135 lines of pure API request bodies with ZERO client importers, so the
+  and `src/lib/schemas/`. Both are backend-first but neither directory is
+  client-free — 13 `'use client'` files import values from
+  `@/app-layer/schemas/*` (`CALENDAR_EVENT_CATEGORIES` in `CalendarClient.tsx`,
+  `ENTRA_MAPPABLE_ROLES` in `GroupMappingsSection.tsx`), and the five
+  `src/lib/schemas/*-form.ts` files exist precisely to be imported by the
+  `_form/useNew*Form.ts` client hooks. What IS backend-only is
+  `src/lib/schemas/index.ts`: it is
+  ~1,270 lines of pure API request bodies with ZERO client importers, so the
   long-standing "(shared)" label here was wrong. The split is benign — nothing
   is duplicated across the two — so this is a doc correction, not a refactor
   brief. See `docs/calendar-surface-do-not-touch.md` §5.
@@ -1194,8 +1267,10 @@ stands for that PR only — not as a precedent.
   `checkTaskTransition`, `WorkItemStatusValue` → `TaskStatusValue`,
   `WORK_ITEM_TRANSITIONS` → `TASK_TRANSITIONS`, and the
   `*_WORK_ITEM_STATUSES` constants → `*_TASK_STATUSES`. There is no
-  `WorkItem*` identifier left in `src/` or `tests/`; the only surviving
-  occurrences are the five `@@map` pins above and prose in historical
+  `WorkItem*` identifier left in `src/` or `tests/` — the surviving
+  occurrences are the five `@@map` pins above, string literals inside the
+  two guards that assert them (`tests/integration/task-enum-db-mapping.test.ts`,
+  `tests/unit/task-repository-seam.test.ts`), and prose in historical
   implementation notes.
 
   `tests/unit/task-repository-seam.test.ts` refuses a re-introduced
@@ -1208,7 +1283,7 @@ stands for that PR only — not as a precedent.
 - **Error classes**: Use typed errors from `src/lib/errors/` rather than throwing raw `Error`.
 - **i18n**: UI strings go through `next-intl`. Message files are in `messages/`. Server components use `getTranslations()`, client components use `useTranslations()`.
 - **Path alias**: `@/` maps to `src/`. Always use this alias — never relative paths crossing layer boundaries.
-- **Two `DATABASE_URL` vars**: `DATABASE_URL` points to PgBouncer (transaction-mode, used at runtime). `DIRECT_DATABASE_URL` points directly to Postgres (used for Prisma migrations).
+- **Three DB connection vars**: `DATABASE_URL` points to PgBouncer (transaction-mode, used at runtime). `DIRECT_DATABASE_URL` points directly to Postgres (used for Prisma migrations). `DATABASE_READ_URL` is the optional read-replica string — when set, replica-tolerant reads route through `prismaRead` / `runInTenantReadContext`; unset means single-DB mode and `prismaRead === prisma`. See `docs/database-routing.md`.
 - **Page-section rhythm** (Roadmap-5 PR-9): the spacing scale
   (`tight` / `compact` / `default` / `section` / `page`) is rich, but
   vertical page rhythm wants only TWO answers most of the time.
@@ -1251,8 +1326,10 @@ stands for that PR only — not as a precedent.
 
   not `+ Risk` (in text) and not `Create Risk` / `New Risk` / `Add Risk`
   (verb-prefixed). The verb is dead weight once the Plus glyph is doing
-  the work, and the Button primitive's icon-balance ghost optically
-  centres `[+] Risk` as one symmetric unit.
+  the work, and the Button primitive is `justify-center` and hugs its
+  content, so the whole `[icon][gap][label]` unit centres as one symmetric
+  group (`src/components/ui/button.tsx` — the old icon-balance ghost was
+  reverted 2026-05-31).
 
   Caveats — where verbs still belong:
     - **Modal/dialog confirm buttons** keep their verbed form
@@ -1354,8 +1431,8 @@ keeps the markers honest — pick the right class when you add a doc.
   fails CI if an authoritative doc contains a future-tense marker
   (`coming soon`, `not yet`, `TODO`, `FIXME`, `WIP`, `will be`,
   `roadmap`) outside an allowed context: a fenced code block, a tail
-  `## Future work` / `## Future scaling` / `## Roadmap` section, a
-  markdown-link target, or a line carrying
+  `## Future work` / `## Future scaling` / `## Future direction` / `## Roadmap`
+  section, a markdown-link target, or a line carrying
   `<!-- docs-accuracy-allow: <reason> -->`. When something ships,
   rewrite the doc in present tense — don't leave "will be".
 
@@ -1366,9 +1443,11 @@ keeps the markers honest — pick the right class when you add a doc.
 
 - **`historical`** — a moment-in-time record. The ENTIRE
   `docs/implementation-notes/` subtree is historical by path (and
-  READ-ONLY — do not edit those except to fix typos); other historical
-  docs (dated audits, executed migration plans) carry
-  `> **Status: historical record (YYYY-MM-DD)** — …` and point at the
+  READ-ONLY — do not edit those except to fix typos). `docs/adr/` is
+  banner-exempt too (its location is the marker) but its class is still a
+  per-file decision. Every other historical doc (dated audits, executed
+  migration plans) carries
+  `> **Status: historical record (YYYY-MM-DD)** — …` and points at the
   current authoritative doc.
 
 - **`deprecated`** — the system it described is gone/superseded. Replace
@@ -1436,9 +1515,10 @@ the shell is a no-op and natural document scroll resumes.
 ```
 
 A new app page that imports `DataTable` MUST either wrap in
-`<ListPageShell>` OR add itself to `EXEMPTIONS` in
-`tests/guards/list-page-shell-coverage.test.ts` with a written
-reason. Exemptions exist for multi-section dashboards (Coverage,
+`<ListPageShell>` — or in `<EntityListPage>`, which mounts it
+internally; the ratchet accepts either — OR add itself to
+`EXEMPTIONS` in `tests/guards/list-page-shell-coverage.test.ts`
+with a written reason. Exemptions exist for multi-section dashboards (Coverage,
 admin/api-keys, admin/notifications, admin/integrations) and
 detail-page sub-tables / wizards (risks/import) where viewport-
 clamping doesn't fit. See `docs/epic-52-list-page-shell.md` for the
@@ -1446,9 +1526,9 @@ decision tree.
 
 ### Entity-page architecture (`EntityListPage` + `EntityDetailLayout`)
 
-Two composition shells live in `src/components/layout/` —
-`EntityListPage` (list pages) and `EntityDetailLayout` (detail
-pages). Both carry **layout, not business content**. Reach for them
+Three composition shells live in `src/components/layout/` —
+`EntityListPage` (list pages), `EntityDetailLayout` (detail
+pages), and `DashboardLayout` (dashboard composites). Both carry **layout, not business content**. Reach for them
 whenever you build a new entity page; never re-introduce the inline
 `<ListPageShell> + <FilterToolbar> + <DataTable>` block or the
 inline back-link / title / tab-bar / loading-skeleton dance.
@@ -1488,21 +1568,33 @@ and domain-specific tab bodies (e.g. `TraceabilityPanel`,
 
 **When NOT to reach for these shells.**
 
-  - Multi-section dashboards (already in the Epic 52 `EXEMPTIONS`
-    list — Coverage, admin/api-keys, admin/notifications,
-    admin/integrations).
+  - Multi-section dashboards — reach for `<DashboardLayout>`, the
+    third shell, not `EntityListPage`/`EntityDetailLayout`. They
+    remain in the Epic 52 `EXEMPTIONS` list (Coverage,
+    admin/api-keys, admin/notifications, admin/integrations)
+    because they are not viewport-clamped list pages; adoption is
+    tracked in `tests/guards/dashboard-shell-coverage.test.ts`.
   - Wizards / multi-step flows where the page isn't a single list or
     detail (risks/import).
   - Sub-tables nested inside a detail tab — `<DataTable>` directly
     is the right primitive there, not `<EntityListPage>`.
 
-**Adoption ratchet.** Each adoption is locked by a structural test
-that asserts the page mounts the shell and doesn't hand-roll the
-inline composition: `controls-client-shell-adoption.test.ts` (list)
-and `control-detail-shell-adoption.test.ts` (detail). When you
-migrate a new entity page (risks / policies / vendors / audits /
-…), add a sibling `*-shell-adoption.test.ts` next to the existing
-two — same shape, same regression-class lock.
+**Adoption ratchets.** Adoption is tracked by registry ratchets,
+not one test per page: `tests/guards/entity-detail-shell-coverage.test.ts`
+and `tests/guards/entity-detail-layout-coverage.test.ts` carry an
+`adopted` flag plus a written note for every entity detail page,
+and `tests/guards/dashboard-shell-coverage.test.ts` does the same
+for dashboards. Three pages additionally carry a per-page
+structural test — `tests/unit/controls-client-shell-adoption.test.ts`
+and `tests/unit/policies-list-shell-adoption.test.ts` (list),
+`tests/unit/control-detail-shell-adoption.test.ts` (detail). When
+you migrate a new entity page, graduate its registry entry to
+`adopted: true`; a per-page `*-shell-adoption.test.ts` is optional.
+Already on `EntityListPage`: controls, policies, vendors,
+incidents, vulnerabilities, security-testing, AI systems,
+information registry, business-continuity, and admin
+devices/personnel/training. Risks is the notable holdout —
+`RisksClient.tsx` still hand-rolls `<ListPageShell>`.
 
 See `docs/implementation-notes/2026-04-30-entity-page-architecture.md`
 for the unified architecture rationale and
@@ -1511,8 +1603,9 @@ for the detail-shell extraction.
 
 ### Epic 53 — Enterprise Filter System
 
-Use `FilterToolbar` + `FilterProvider` + `useFilterContext` from
-`@/components/ui/filter/` for list-page filtering. Never build ad-hoc
+Use `FilterProvider` + `useFilterContext` from
+`@/components/ui/filter/` and `FilterToolbar` from
+`@/components/filters/FilterToolbar` for list-page filtering. Never build ad-hoc
 `useState` + manual URL sync. See
 `src/components/ui/filter/GUIDE.md` and `docs/filters.md`.
 
@@ -1594,10 +1687,12 @@ happens. The pending state lives at module scope (NOT in component
 state) so commits survive client-side navigation, mirroring Gmail's
 "undo send" UX.
 
-The wired sites today: cross-entity unlink in `TraceabilityPanel`,
-control-evidence + control-requirement unlink on the control detail
-page, task link removal on the task detail page, and vendor
-document removal on the vendor detail page. The structural ratchet
+The wired sites today number 14 — the authority is `SITE_CONTRACTS`
+itself, not this list. They include cross-entity unlink in
+`TraceabilityPanel`, control-evidence and control-requirement unlink on
+the control detail page, task link removal, vendor document removal,
+auditor pack-grant revoke, and BIA dependency removal. The structural
+ratchet
 at `tests/guards/epic-67-rollout-coverage.test.ts` locks the wiring
 in — adding a new site means appending it to `SITE_CONTRACTS`.
 
@@ -1619,8 +1714,12 @@ under `tests/guards/`).
 ### Epic 68 — List virtualization
 
 Single shared windowing primitive (`<VirtualizedList>`) wraps
-`react-window` + `react-virtualized-auto-sizer`. Don't import
-`react-window` directly — the primitive is the only seam.
+`react-window` + `react-virtualized-auto-sizer`. New surfaces go
+through the primitive rather than importing `react-window` directly.
+It is not the only seam today: `src/components/ui/table/virtual-table-body.tsx`
+(the `<VirtualTable>` behind `<DataTable>`) imports `react-window`
+directly, because a table body has to render `<tr>`/`<td>` into a
+`<tbody>` and cannot nest the primitive's own scroll container.
 
 Two production rollouts:
 
@@ -1632,8 +1731,10 @@ Two production rollouts:
   page contract). `virtualize={{ threshold: N }}` customises.
   Pages that legitimately need virtualization on smaller datasets
   should opt in explicitly. Falls back to the standard `<Table>`
-  automatically when pagination, column resizing, column pinning,
-  or empty/error/loading chrome is requested.
+  automatically when server-side pagination, aligned sub-rows
+  (`renderAlignedSubRows`), or empty/error/loading chrome is
+  requested. Column resizing is NOT a fallback trigger — it is
+  silently force-disabled while virtualizing.
 - **`<Combobox>` / `<UserCombobox>` dropdowns** — auto-virtualize
   when visible options exceed `COMBOBOX_VIRTUALIZE_THRESHOLD = 50`.
   cmdk's nav (which assumes items live in the DOM) is bypassed in
@@ -1651,7 +1752,7 @@ DOM-count invariant AND a wall-clock budget (1000 options + open in
 
 See `docs/list-virtualization.md` for the rollout decision tree
 (when to use the primitive directly vs reach for `<DataTable>` /
-`<Combobox>`), the four `VirtualizedList` contract rules, the
+`<Combobox>`), the five `VirtualizedList` contract rules, the
 DataTable + Combobox preserved/dropped feature lists, and the test
 layout.
 
@@ -1676,5 +1777,5 @@ every `rq3-*.test.ts` filename to appear in a markdown file meant
 shipping an RQ3 follow-up turned CI red until the filename was pasted
 into prose — and since the convention also asked for a ratchet per PR,
 the cheapest path back to green was writing another ratchet. See
-**[the epic-ratchet lifecycle](#epic-ratchet-lifecycle)** below for the
+**[the epic-ratchet lifecycle](#epic-ratchet-lifecycle)** above for the
 policy that replaced it.
