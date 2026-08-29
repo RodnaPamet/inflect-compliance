@@ -11,10 +11,18 @@
  * genuinely need a raw color (e.g. inside a print-only view where
  * tokens don't apply), carry that in the allowlist below and leave
  * the ratchet count alone.
+ *
+ * Lowering it is not optional politeness: a second test here is a
+ * DRIFT SENTINEL that fails when `BASELINE` sits more than
+ * `DRIFT_ALLOWANCE` above the live count. A ceiling above the tree is
+ * headroom a regression can spend with a green build, so the ratchet
+ * is required to stay seated in both directions.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+
+import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
 
 const APP_ROOT = path.resolve(__dirname, '../../src/app');
 
@@ -25,38 +33,67 @@ const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b
 
 // Baseline recorded at Epic 51 close-out. Lower only.
 //
-// Remaining hotspots are either deliberately out of theme scope or
-// rendering literal colors that can't be token-backed:
-//   - reports/soa/print/SoAPrintView.tsx  (PDF print view, tokens
-//     don't apply under @media print)
-//   - login/page.tsx                      (unauthenticated route,
-//     tenant context not yet active)
-//   - audit/shared/[token]/page.tsx       (public audit pack viewer)
-//   - error.tsx / not-found.tsx           (global error boundaries,
-//     render before ThemeProvider mounts)
-//   - security/mfa/page.tsx QR glyph      (QR code lives on a white
-//     surface and must render dark ink regardless of theme)
+// History
+//   92 → 95  (2026-04-22) absorbed pre-existing drift in the
+//            render-before-theme paths (error.tsx, login/page.tsx,
+//            audit/shared/[token]) that landed across the fix(login) +
+//            fix(auth) cluster of commits. CI had been red for weeks
+//            against the stale 92 baseline.
+//   95 → 51  (2026-08-29) re-seated to the live count. The tree had
+//            been tokenised well past the baseline without anyone
+//            lowering it, leaving 44 units of headroom a regression
+//            could have spent with a green build. That is the exact
+//            failure the drift sentinel below now makes visible — this
+//            ratchet had none, which is why the slack survived months
+//            of green CI.
 //
-// Baseline raised from 92 → 95 on 2026-04-22 to absorb pre-existing
-// drift in the allowlisted render-before-theme paths (error.tsx,
-// login/page.tsx, audit/shared/[token]) that landed across the
-// fix(login) + fix(auth) cluster of commits between 2026-04-20 and
-// 2026-04-22. CI had been red for weeks against the stale 92 baseline;
-// these occurrences are defensible for their paths but should have
-// bumped the baseline at merge-time. Lower again when those files
-// get a future theme-aware re-render pass.
-const BASELINE = 95;
+// The ONE remaining hotspot, and it is the whole count:
+//   51  audit/shared/[token]/page.tsx  — public audit-pack viewer.
+//       Unauthenticated, mounts no app shell, and has no layout.tsx of
+//       its own. It is NOT a print or light surface: it paints
+//       `bg-slate-900` + `text-white` and shades with slate-700/800 —
+//       a hand-rolled replica of the app's dark theme. So the classes
+//       here have semantic-token equivalents; nothing about the surface
+//       resists tokenisation.
+//
+// Every other file the old comment listed (reports/soa/print/
+// SoAPrintView.tsx, login/page.tsx, error.tsx, not-found.tsx,
+// security/mfa/page.tsx) now matches zero times — they were tokenised
+// and the enumeration was never updated. Do not re-add a surface here
+// without re-running the count.
+//
+// Read this number together with EXEMPT_DIRS below: exempting the audit
+// viewer would take the count to 0 and leave this ratchet asserting
+// nothing across all of src/app.
+const BASELINE = 51;
+
+// How far above the live count `BASELINE` may sit before the sentinel
+// reports it as unspent headroom. Five, matching the model sentinel in
+// `no-explicit-any-ratchet.test.ts`: enough that a small tokenisation
+// pass need not touch this file, small enough that the drift which put
+// the baseline 44 above the tree cannot recur unnoticed.
+const DRIFT_ALLOWANCE = 5;
 
 // Directories that are intentionally outside the internal design
 // system. Adding entries here is allowed when the surface is a
 // public, unauthenticated page that doesn't share the app's dark
 // theme tokens.
 const EXEMPT_DIRS = new Set<string>([
-    // Epic G-3 — public vendor questionnaire respondent page. Lives
-    // at /vendor-assessment/[id], does NOT mount the app shell, and
-    // intentionally uses a light, neutral palette so external
-    // recipients (likely on a corporate-branded mail client) see a
-    // clean independent surface rather than the in-app dark theme.
+    // Epic G-3 — public vendor questionnaire respondent page at
+    // /vendor-assessment/[id], which does NOT mount the app shell.
+    //
+    // This entry is now INERT, and that fact is the useful part. It was
+    // added on the rationale that the page "intentionally uses a light,
+    // neutral palette" and so could not use the tokens; the page has
+    // since been tokenised anyway (37 semantic-token classes, zero raw
+    // colours as of 2026-08-29), so removing the exemption today would
+    // not change the count by one.
+    //
+    // Kept rather than deleted only as the worked precedent for the
+    // question this list invites: a public, shell-less, unauthenticated
+    // surface turned out NOT to need an exemption. Weigh that before
+    // adding a directory here — and re-run the count first, because an
+    // exemption that removes the last hits makes the ratchet vacuous.
     'vendor-assessment',
 ]);
 
@@ -106,11 +143,29 @@ describe('Epic 51 — raw Tailwind color ratchet', () => {
         expect(total).toBeLessThanOrEqual(BASELINE);
     });
 
-    it('baseline is plausible and matches the current tree', () => {
+    it('baseline has not drifted above the live count (drift sentinel)', () => {
         const { total } = countRawColors();
-        // If the baseline drifts below the observed count, someone
-        // migrated a file — lower the baseline in this test.
-        expect(total).toBeLessThanOrEqual(BASELINE);
-        expect(BASELINE).toBeGreaterThanOrEqual(0);
+
+        // Positive control, against the REAL counter — an absence is
+        // ambiguous, so prove the sentinel can still fail before trusting
+        // it to pass. A baseline one unit past the allowance must be
+        // rejected; if someone neuters `ratchetSlackFailure` this line
+        // goes red rather than the whole check going quietly vacuous.
+        expect(
+            ratchetSlackFailure({
+                constantName: 'BASELINE',
+                baseline: total + DRIFT_ALLOWANCE + 1,
+                count: total,
+                allowance: DRIFT_ALLOWANCE,
+            }),
+        ).not.toBeNull();
+
+        assertRatchetSlack({
+            constantName: 'BASELINE',
+            baseline: BASELINE,
+            count: total,
+            allowance: DRIFT_ALLOWANCE,
+            what: 'raw bg-/text-/border-(slate|gray|neutral|zinc)-NN classes in src/app',
+        });
     });
 });

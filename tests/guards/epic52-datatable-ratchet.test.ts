@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
+
 const APP_PAGES = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 
 /** Paths that are intentionally excluded from the ratchet. */
@@ -77,10 +79,51 @@ describe('Epic 52 — DataTable migration ratchet', () => {
     /**
      * Baseline: Raw <table> count in app pages (excluding print/server-only).
      * Started at 22 tables across 16 files.
-     * After Epic 52 migration batch: reduced to target below.
-     * Lower this number whenever you migrate a surface.
+     * Lower this number whenever you migrate a surface — and note that
+     * lowering it is enforced, not merely encouraged: the drift sentinel
+     * below fails when the baseline sits more than DRIFT_ALLOWANCE above
+     * the live count, because that gap is headroom a regression can spend
+     * with a green build.
+     *
+     * History
+     *   12 → 9  (2026-08-29) re-seated to the live count. The trailing
+     *           comment enumerated a tree three migrations out of date —
+     *           controls/[controlId] (3) and access-reviews/[reviewId]/
+     *           AccessReviewDetailClient (1) no longer match, admin/members
+     *           dropped 2 → 1, vendors/[vendorId] 3 → 1 — while
+     *           risks/correlations, risks/scenarios, ControlsClient and
+     *           EvidenceClient joined.
+     *
+     * Live hits (2026-08-29). The scan is a text match, so a `<table`
+     * inside a COMMENT counts like markup; four of the nine are prose.
+     *   admin/roles/page.tsx        (2)  1 markup + 1 in the header comment
+     *   admin/members/page.tsx      (1)  comment only — migrated to DataTable
+     *   controls/ControlsClient.tsx (1)  comment only
+     *   evidence/EvidenceClient.tsx (1)  comment only
+     *   risks/correlations/page.tsx (1)  markup — correlation matrix
+     *   risks/scenarios/page.tsx    (1)  markup — scenario grid
+     *   tasks/[taskId]/page.tsx     (1)  comment only
+     *   vendors/[vendorId]/page.tsx (1)  comment only
      */
-    const RAW_TABLE_BASELINE = 12; // admin/members(2), admin/roles(2), controls/[controlId](3), tasks/[taskId](1), vendors/[vendorId](3) — admin/api-keys migrated to DataTable in the finishing pass; access-reviews/[reviewId]/AccessReviewDetailClient(1) — Epic G-4 master/detail with inline decision controls (same shape as AuditsClient, also excluded by table-platform-drift); reports/soa/SoAClient now in EXCLUDED_PATHS (bespoke per-row-styled master/detail)
+    const RAW_TABLE_BASELINE = 9;
+
+    /**
+     * Tolerance before the drift sentinel fires.
+     *
+     * Two, and the number is chosen against a concrete test rather than
+     * taste: an allowance must be STRICTLY SMALLER than the drift it is
+     * being introduced to correct, or the sentinel is calibrated to sleep
+     * through a repeat of the exact failure that motivated it. The drift
+     * corrected on 2026-08-29 was three (12 against a live 9), so three
+     * would have stayed green on it — the first draft of this constant
+     * did, and re-running the old baseline through the sentinel is what
+     * caught it.
+     *
+     * Two still absorbs an ordinary doc pass: four of the nine live hits
+     * are `<table` inside comments, and rewording two of them costs
+     * nothing here.
+     */
+    const DRIFT_ALLOWANCE = 2;
 
     it('raw <table> count does not exceed the baseline', () => {
         const { count, files } = countRawTables();
@@ -91,6 +134,29 @@ describe('Epic 52 — DataTable migration ratchet', () => {
                 `Migrate to <DataTable> or lower the baseline if this is an excluded surface.`
             );
         }
+    });
+
+    it('baseline has not drifted above the live count (drift sentinel)', () => {
+        const { count } = countRawTables();
+
+        // Positive control against the real counter: prove the sentinel
+        // can fail before reading its silence as good news.
+        expect(
+            ratchetSlackFailure({
+                constantName: 'RAW_TABLE_BASELINE',
+                baseline: count + DRIFT_ALLOWANCE + 1,
+                count,
+                allowance: DRIFT_ALLOWANCE,
+            }),
+        ).not.toBeNull();
+
+        assertRatchetSlack({
+            constantName: 'RAW_TABLE_BASELINE',
+            baseline: RAW_TABLE_BASELINE,
+            count,
+            allowance: DRIFT_ALLOWANCE,
+            what: 'raw `<table` occurrences in tenant app pages, excluding print/server-only surfaces',
+        });
     });
 
     it('DataTable adoption is growing', () => {
