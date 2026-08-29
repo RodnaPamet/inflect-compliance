@@ -246,6 +246,38 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/loss-events/[id]',
         why: 'Soft-delete of a recorded loss actual — admin.manage, matching the assertCanAdmin in deleteLossEvent (actuals are evidence). Narrow leaf root: the collection and aggregate routes are reads and are not in scope.',
     },
+    // ── Destructive register verbs, third tranche (#2117) ──────────
+    // The subset where an ALREADY-EXISTING key admits exactly the
+    // population the usecase assert admits. Four of the five are leaf
+    // roots, per the discipline above; the automation one is not, and
+    // says so where it sits.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/audits/auditors/access',
+        why: 'Granting / revoking one auditor\'s access to one audit pack — admin.manage, the population assertCanManageAuditors (OWNER+ADMIN by ctx.role) admits. Narrow leaf root: the auditors/ COLLECTION route one level up (list + invite) is NOT in scope and stays on usecase-layer authorization.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/audits/auditors/[auditorId]',
+        why: 'Account-level auditor revoke (REVOKED + every pack grant dropped) — admin.manage, same assertCanManageAuditors as its access sibling.',
+    },
+    // The one root in this tranche that is NOT a leaf. `automation/rules/[id]`
+    // has dry-run/, executions/ and re-trigger/ beneath it and `walkRouteFiles`
+    // recurses, so the root pulls all four in. Each of the three was READ
+    // before being excluded below — the leaf-root discipline exists to stop
+    // carve-outs describing routes nobody examined, not to stop exclusions as
+    // such. Taking the root is the stronger option: a fourth route added here
+    // now fails until somebody triages it.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/automation/rules/[id]',
+        why: 'Archive / reconfigure an automation rule — admin.manage on PUT, PATCH and DELETE alike, the ctx.permissions.canAdmin predicate assertCanManageAutomation reads behind all three. Gating DELETE alone would have left the file a mixed module. GET is a canRead-tier read; the three sub-routes stay on usecase-layer authorization and are excluded individually.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/vendors/[vendorId]/bundles/[bundleId]',
+        why: 'Removing an artefact from a due-diligence bundle, and the POST that adds one or freezes the bundle immutable — vendors.edit on both, the exact flag assertCanManageVendorDocs reads. GET is a vendors.view read and keeps usecase-layer authorization.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/tests/runs/[runId]/evidence/[linkId]',
+        why: 'Hard-deleting a control test run\'s evidence link and its frozen hash — tests.execute, the exact flag assertCanLinkTestEvidence reads.',
+    },
 ];
 
 /**
@@ -256,6 +288,23 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
  * uses), e.g. `api/t/[tenantSlug]/admin/foo/route.ts`.
  */
 const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
+    // Pulled in by the `automation/rules/[id]` root above, which exists for
+    // that file's migrated DELETE. None of these three is destructive, and
+    // none has an existing PermissionSet key that mirrors the coarse
+    // automation assert behind it, so gating them would either invent a key
+    // or out-strict the usecase. Named by what they actually authorise.
+    {
+        relPath: 'api/t/[tenantSlug]/automation/rules/[id]/executions/route.ts',
+        reason: 'Read of one rule\'s execution history — assertCanReadAutomationHistory (canRead OR canAudit, so AUDITOR is admitted where no single key would). Not destructive.',
+    },
+    {
+        relPath: 'api/t/[tenantSlug]/automation/rules/[id]/dry-run/route.ts',
+        reason: 'Evaluates a rule against sample data and persists nothing — assertCanExecuteAutomation (the canWrite tier). Not destructive.',
+    },
+    {
+        relPath: 'api/t/[tenantSlug]/automation/rules/[id]/re-trigger/route.ts',
+        reason: 'Replays an existing rule using its existing config — assertCanExecuteAutomation (the canWrite tier), deliberately a lower tier than reconfiguring. Not destructive.',
+    },
     // Epic D.3 — self-service security routes that are intentionally
     // NOT admin-gated. Any authenticated tenant member may operate on
     // their own MFA enrolment / challenge / current session. The

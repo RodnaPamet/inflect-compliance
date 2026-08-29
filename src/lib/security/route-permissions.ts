@@ -712,6 +712,77 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'canAdmin because actuals are evidence, so the gate matches at ' +
             'admin.manage; DELETE-only, the GET/PATCH siblings are ordinary.',
     },
+
+    // ── Destructive register verbs, third tranche (#2117) ───────────
+    // Same defect once more, on the subset where an ALREADY-EXISTING key
+    // admits exactly the population the usecase assert admits. Routes whose
+    // assert has no matching key (the business-continuity DELETEs, which
+    // gate on the coarse `assertCanWrite` and belong to no register with a
+    // PermissionSet domain) were deliberately left in the census rather than
+    // bound to an unrelated register's flag.
+    //
+    // Two of the five mirror their assert EXACTLY — `vendors.edit` and
+    // `tests.execute` are the very expressions the policy helpers read, so
+    // the caller set is unchanged for custom roles too. The other three
+    // (both auditor rules and automation) mirror a ROLE-tier predicate onto
+    // an appPermissions flag — the same coarse-to-granular swap the first
+    // tranche made for assertCanAdmin, and the key choice for the auditor
+    // pair specifically is argued in those route files.
+    {
+        path: new RegExp(`^${T}\\/audits\\/auditors\\/access$`),
+        methods: ['POST', 'DELETE'],
+        permission: 'admin.manage',
+        note:
+            'Granting / revoking one external auditor\'s access to one audit ' +
+            'pack. assertCanManageAuditors admits OWNER+ADMIN only, which is ' +
+            'the population admin.manage carries; audits.manage carries the ' +
+            'same built-in roles but is the flag a tenant would grant an ' +
+            'EDITOR-based custom role, which the ctx.role assert then refuses ' +
+            'with no row — the hole this closes.',
+    },
+    {
+        path: new RegExp(`^${T}\\/audits\\/auditors\\/[^/]+$`),
+        methods: ['DELETE'],
+        permission: 'admin.manage',
+        note:
+            'Account-level auditor revoke — REVOKED status plus every pack ' +
+            'grant dropped in one call. Same assertCanManageAuditors, same ' +
+            'admin.manage reasoning as the access sibling above. DELETE-only ' +
+            'so the collection route one level up is untouched.',
+    },
+    {
+        path: new RegExp(`^${T}\\/automation\\/rules\\/[^/]+$`),
+        methods: ['PUT', 'PATCH', 'DELETE'],
+        permission: 'admin.manage',
+        note:
+            'Archiving an automation rule silences a standing side-effect ' +
+            'producer, and reconfiguring one redirects it. All three write ' +
+            'verbs, not DELETE alone, because a gated DELETE beside an ungated ' +
+            'PATCH is the mixed-module blind spot #2171 had to reopen seven ' +
+            'files to close. assertCanManageAutomation reads ' +
+            'ctx.permissions.canAdmin behind every one of them. GET is a ' +
+            'canRead-tier read and stays at the usecase layer.',
+    },
+    {
+        path: new RegExp(`^${T}\\/vendors\\/[^/]+\\/bundles\\/[^/]+$`),
+        methods: ['POST', 'DELETE'],
+        permission: 'vendors.edit',
+        note:
+            'Pulling an artefact out of a due-diligence bundle an auditor was ' +
+            'pointed at, and the POST that adds one or FREEZES the bundle ' +
+            'immutable. vendors.edit IS the flag assertCanManageVendorDocs ' +
+            'reads behind both, so the caller set is provably unchanged. GET ' +
+            'is a vendors.view read and stays at the usecase layer.',
+    },
+    {
+        path: new RegExp(`^${T}\\/tests\\/runs\\/[^/]+\\/evidence\\/[^/]+$`),
+        methods: ['DELETE'],
+        permission: 'tests.execute',
+        note:
+            'Hard-deleting a control test run\'s evidence link, frozen hash and ' +
+            'all. tests.execute IS the flag assertCanLinkTestEvidence reads, so ' +
+            'route gate and usecase gate are the same predicate.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

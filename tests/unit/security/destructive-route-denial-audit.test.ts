@@ -134,9 +134,44 @@ jest.mock('@/app-layer/usecases/process-map', () => ({
 
 const mockBulkDeleteTestPlan = jest.fn();
 const mockBulkRestoreTestPlan = jest.fn();
+const mockUnlinkEvidenceFromRun = jest.fn();
 jest.mock('@/app-layer/usecases/control', () => ({
     bulkDeleteTestPlan: (...a: unknown[]) => mockBulkDeleteTestPlan(...a),
     bulkRestoreTestPlan: (...a: unknown[]) => mockBulkRestoreTestPlan(...a),
+    unlinkEvidenceFromRun: (...a: unknown[]) => mockUnlinkEvidenceFromRun(...a),
+}));
+
+// ── #2117 group A: routes an EXISTING key already gated correctly ──
+const mockRevokeAuditorAccount = jest.fn();
+const mockGrantAuditorAccess = jest.fn();
+const mockRevokeAuditorAccess = jest.fn();
+jest.mock('@/app-layer/usecases/audit-readiness', () => ({
+    revokeAuditorAccount: (...a: unknown[]) => mockRevokeAuditorAccount(...a),
+    grantAuditorAccess: (...a: unknown[]) => mockGrantAuditorAccess(...a),
+    revokeAuditorAccess: (...a: unknown[]) => mockRevokeAuditorAccess(...a),
+}));
+
+const mockArchiveAutomationRule = jest.fn();
+const mockUpdateAutomationRule = jest.fn();
+const mockToggleAutomationRule = jest.fn();
+jest.mock('@/app-layer/usecases/automation-rules', () => ({
+    // The rules/[id] route file also exports GET, which imports this one. It is
+    // not under test — the module factory has to supply it or the import of the
+    // route file throws.
+    getAutomationRule: jest.fn(),
+    updateAutomationRule: (...a: unknown[]) => mockUpdateAutomationRule(...a),
+    toggleAutomationRule: (...a: unknown[]) => mockToggleAutomationRule(...a),
+    archiveAutomationRule: (...a: unknown[]) => mockArchiveAutomationRule(...a),
+}));
+
+const mockRemoveBundleItem = jest.fn();
+const mockAddBundleItem = jest.fn();
+const mockFreezeBundle = jest.fn();
+jest.mock('@/app-layer/usecases/vendor-audit', () => ({
+    getEvidenceBundle: jest.fn(),
+    addBundleItem: (...a: unknown[]) => mockAddBundleItem(...a),
+    freezeBundle: (...a: unknown[]) => mockFreezeBundle(...a),
+    removeBundleItem: (...a: unknown[]) => mockRemoveBundleItem(...a),
 }));
 
 const mockBulkDeleteTask = jest.fn();
@@ -174,6 +209,22 @@ import { POST as assessmentRevoke } from '@/app/api/t/[tenantSlug]/vendor-assess
 import { DELETE as lossEventDelete } from '@/app/api/t/[tenantSlug]/loss-events/[id]/route';
 import { DELETE as processMapDelete } from '@/app/api/t/[tenantSlug]/processes/[id]/route';
 import { POST as policyArchive } from '@/app/api/t/[tenantSlug]/policies/[id]/archive/route';
+import { DELETE as auditorAccountRevoke } from '@/app/api/t/[tenantSlug]/audits/auditors/[auditorId]/route';
+import {
+    POST as auditorAccessGrant,
+    DELETE as auditorAccessRevoke,
+} from '@/app/api/t/[tenantSlug]/audits/auditors/access/route';
+import {
+    PUT as automationRuleUpdate,
+    PATCH as automationRulePatch,
+    DELETE as automationRuleArchive,
+} from '@/app/api/t/[tenantSlug]/automation/rules/[id]/route';
+import {
+    POST as vendorBundleItemAdd,
+    DELETE as vendorBundleItemRemove,
+} from '@/app/api/t/[tenantSlug]/vendors/[vendorId]/bundles/[bundleId]/route';
+import { DELETE as testRunEvidenceUnlink } from '@/app/api/t/[tenantSlug]/tests/runs/[runId]/evidence/[linkId]/route';
+import { assertCanManageAuditors } from '@/app-layer/policies/audit-readiness.policies';
 
 // ─── Fixtures ──────────────────────────────────────────────────────
 
@@ -206,16 +257,28 @@ const asHandler = (h: unknown): Handler => h as Handler;
  * carry — the assertion would still pass and would be describing a
  * request nobody makes.
  */
-function makeReq(path: string, body?: unknown, method: string = 'POST'): NextRequest {
+function makeReq(
+    path: string,
+    body?: unknown,
+    method: string = 'POST',
+    /**
+     * Query string WITHOUT the leading `?`, for the one handler that reads its
+     * target out of the search params rather than the path. It is appended to
+     * `url` only: `nextUrl.pathname` is what `auditPermissionDenied` copies
+     * into the row, and a path assertion that silently absorbed a query string
+     * would stop describing the route.
+     */
+    query?: string,
+): NextRequest {
     return {
         method,
-        url: `https://app.example.com${path}`,
+        url: `https://app.example.com${path}${query ? `?${query}` : ''}`,
         headers: new Headers(),
         nextUrl: {
             pathname: path,
             protocol: 'https:',
             host: 'app.example.com',
-            searchParams: new URLSearchParams(),
+            searchParams: new URLSearchParams(query ?? ''),
         },
         json: async () => body ?? {},
     } as unknown as NextRequest;
@@ -258,6 +321,17 @@ beforeEach(() => {
         mockDeleteLossEvent,
         mockDeleteProcessMap,
         mockArchivePolicy,
+        // #2117 group A.
+        mockRevokeAuditorAccount,
+        mockGrantAuditorAccess,
+        mockRevokeAuditorAccess,
+        mockArchiveAutomationRule,
+        mockRemoveBundleItem,
+        mockUnlinkEvidenceFromRun,
+        mockUpdateAutomationRule,
+        mockToggleAutomationRule,
+        mockAddBundleItem,
+        mockFreezeBundle,
     ].forEach((m) => m.mockReset());
     mockAppendAuditEntry.mockResolvedValue({ id: 'a1', entryHash: 'h', previousHash: null });
 });
@@ -322,6 +396,10 @@ const ROUTES: ReadonlyArray<{
     allowedRole?: string;
     /** Role that must be refused AND recorded. Defaults to EDITOR. */
     deniedRole?: string;
+    /** Success status when the route does not return 200 (e.g. a 201 create). */
+    successStatus?: number;
+    /** Query string (no leading `?`) for handlers that read search params. */
+    query?: string;
 }> = [
     // ── Tranche 3 ─────────────────────────────────────────────────────
     // These five gated ONLY on `assertCanWrite`, which reads
@@ -597,26 +675,118 @@ const ROUTES: ReadonlyArray<{
         forwards: ['pol-1'],
         result: { archived: true },
     },
+
+    // ── #2117 group A: an EXISTING key already mirrored the assert ──
+    //
+    // The first three run ADMIN-allowed / EDITOR-refused because their
+    // asserts sit at the coarse admin tier. The last two flip to
+    // EDITOR-allowed / READER-refused, because `vendors.edit` and
+    // `tests.execute` are the exact `appPermissions` flags their policy
+    // helpers read — an EDITOR is the population that legitimately uses
+    // those routes, so denying one would be a real access change rather
+    // than the recording change this is.
+    {
+        name: 'DELETE /audits/auditors/[auditorId]',
+        handler: asHandler(auditorAccountRevoke),
+        path: '/api/t/acme/audits/auditors/aud-1',
+        params: { tenantSlug: 'acme', auditorId: 'aud-1' },
+        method: 'DELETE',
+        key: 'admin.manage',
+        usecase: mockRevokeAuditorAccount,
+        forwards: ['aud-1'],
+        result: { id: 'aud-1', status: 'REVOKED' },
+    },
+    {
+        name: 'DELETE /audits/auditors/access',
+        handler: asHandler(auditorAccessRevoke),
+        path: '/api/t/acme/audits/auditors/access',
+        params: { tenantSlug: 'acme' },
+        body: { auditorId: 'aud-1', packId: 'pack-1' },
+        method: 'DELETE',
+        key: 'admin.manage',
+        usecase: mockRevokeAuditorAccess,
+        forwards: ['aud-1', 'pack-1'],
+        result: { revoked: true },
+    },
+    {
+        // The grant half of the same file. Included because the gate runs
+        // BEFORE the body is parsed now — a regression that reordered them
+        // would send an unauthorized caller's payload through Zod first.
+        name: 'POST /audits/auditors/access',
+        handler: asHandler(auditorAccessGrant),
+        path: '/api/t/acme/audits/auditors/access',
+        params: { tenantSlug: 'acme' },
+        body: { auditorId: 'aud-1', packId: 'pack-1' },
+        key: 'admin.manage',
+        usecase: mockGrantAuditorAccess,
+        forwards: ['aud-1', 'pack-1'],
+        result: { granted: true },
+        successStatus: 201,
+    },
+    {
+        name: 'DELETE /automation/rules/[id]',
+        handler: asHandler(automationRuleArchive),
+        path: '/api/t/acme/automation/rules/ar-1',
+        params: { tenantSlug: 'acme', id: 'ar-1' },
+        method: 'DELETE',
+        key: 'admin.manage',
+        usecase: mockArchiveAutomationRule,
+        forwards: ['ar-1'],
+        result: { id: 'ar-1', status: 'ARCHIVED' },
+    },
+    {
+        name: 'DELETE /vendors/[vendorId]/bundles/[bundleId]',
+        handler: asHandler(vendorBundleItemRemove),
+        path: '/api/t/acme/vendors/v-1/bundles/b-1',
+        params: { tenantSlug: 'acme', vendorId: 'v-1', bundleId: 'b-1' },
+        method: 'DELETE',
+        query: 'itemId=item-1',
+        key: 'vendors.edit',
+        usecase: mockRemoveBundleItem,
+        forwards: ['b-1', 'item-1'],
+        result: { removed: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /tests/runs/[runId]/evidence/[linkId]',
+        handler: asHandler(testRunEvidenceUnlink),
+        path: '/api/t/acme/tests/runs/run-1/evidence/link-1',
+        params: { tenantSlug: 'acme', runId: 'run-1', linkId: 'link-1' },
+        method: 'DELETE',
+        key: 'tests.execute',
+        usecase: mockUnlinkEvidenceFromRun,
+        forwards: ['run-1', 'link-1'],
+        // The route returns a fixed body; the usecase resolves undefined.
+        result: { ok: true },
+        usecaseReturns: undefined,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
 ];
 
 /**
  * A table-driven suite hides its own deletions: remove a row and the three
  * tests it generated simply stop existing, and the run is still green. The
  * count is therefore asserted, and it only goes up — 11 after the first
- * tranche, 17 after the second.
+ * tranche, 17 after the second, 23 after group A.
  */
 it('the migrated population does not silently shrink', () => {
-    expect(ROUTES.length).toBeGreaterThanOrEqual(17);
-    // Every row must name a distinct handler, so a copy-paste that leaves two
-    // rows pointing at the same route reads as coverage it is not.
-    expect(new Set(ROUTES.map((r) => r.path)).size).toBe(ROUTES.length);
+    expect(ROUTES.length).toBeGreaterThanOrEqual(23);
+    // Every row must name a distinct HANDLER, so a copy-paste that leaves two
+    // rows pointing at the same one reads as coverage it is not. The key is
+    // (method, path) rather than path alone: `/audits/auditors/access` carries
+    // a POST and a DELETE that gate separately, and a path-only key would have
+    // made covering both impossible while claiming to forbid duplication.
+    const handlers = ROUTES.map((r) => `${r.method ?? 'POST'} ${r.path}`);
+    expect(new Set(handlers).size).toBe(ROUTES.length);
 });
 
 describe.each(ROUTES.map((r) => [r.name, r] as const))('%s', (_name, route) => {
     const method = route.method ?? 'POST';
     const allowed = route.allowedRole ?? 'ADMIN';
     const denied = route.deniedRole ?? 'EDITOR';
-    const req = () => makeReq(route.path, route.body, method);
+    const req = () => makeReq(route.path, route.body, method, route.query);
 
     it(`an authorized ${allowed} still reaches the usecase`, async () => {
         mockGetTenantCtx.mockResolvedValue(makeRequestContext(allowed));
@@ -626,7 +796,7 @@ describe.each(ROUTES.map((r) => [r.name, r] as const))('%s', (_name, route) => {
 
         const res = await route.handler(req(), { params: route.params });
 
-        expect(res.status).toBe(200);
+        expect(res.status).toBe(route.successStatus ?? 200);
         expect(await res.json()).toEqual(route.result);
         expect(route.usecase).toHaveBeenCalledWith(
             expect.objectContaining({ tenantId: 'tenant-1' }),
@@ -758,5 +928,267 @@ describe('policies bulk verbs require BOTH halves of assertCanAdminPolicies', ()
 
         expect(res.status).toBe(200);
         expect(mockBulkDeletePolicy).toHaveBeenCalledTimes(1);
+    });
+});
+
+// ─── The auditor routes' key choice is load-bearing ────────────────
+
+describe('the auditor routes gate on admin.manage, NOT audits.manage', () => {
+    /**
+     * Both keys admit exactly {OWNER, ADMIN} among the BUILT-IN roles, so a
+     * "use the domain key, it reads better" change would look free. It is not,
+     * and this is the caller that shows why.
+     *
+     * `assertCanManageAuditors` reads `ctx.role` — the membership's base role,
+     * which a custom role does NOT change. `audits.manage` is an
+     * `appPermissions` flag, and it is precisely the flag a tenant would grant
+     * an EDITOR-based "audit coordinator" custom role. Under an audits.manage
+     * gate that caller PASSES the middleware and is then thrown out by the
+     * usecase, which writes nothing — the exact invisible denial #2117 exists
+     * to remove, reintroduced in a new place.
+     *
+     * The first assertion proves the usecase really would refuse them (so the
+     * scenario is not hypothetical); the rest prove the route refuses them at
+     * the gate instead, on the record.
+     */
+    const auditCoordinator = () =>
+        makeRequestContext('EDITOR', {
+            appPermissions: {
+                ...getPermissionsForRole('EDITOR'),
+                audits: { ...getPermissionsForRole('EDITOR').audits, manage: true },
+            },
+        });
+
+    it('the usecase assert refuses this caller and records nothing', () => {
+        expect(() => assertCanManageAuditors(auditCoordinator())).toThrow(/OWNER or ADMIN/i);
+        expect(mockAppendAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'DELETE /audits/auditors/[auditorId]',
+            asHandler(auditorAccountRevoke),
+            '/api/t/acme/audits/auditors/aud-1',
+            { tenantSlug: 'acme', auditorId: 'aud-1' },
+            mockRevokeAuditorAccount,
+        ],
+        [
+            'DELETE /audits/auditors/access',
+            asHandler(auditorAccessRevoke),
+            '/api/t/acme/audits/auditors/access',
+            { tenantSlug: 'acme' },
+            mockRevokeAuditorAccess,
+        ],
+    ])('%s refuses an audits.manage-only caller, and RECORDS it', async (
+        _name,
+        handler,
+        path,
+        params,
+        usecase,
+    ) => {
+        mockGetTenantCtx.mockResolvedValue(auditCoordinator());
+
+        const res = await handler(
+            makeReq(path, { auditorId: 'aud-1', packId: 'pack-1' }, 'DELETE'),
+            { params: params as RouteParams },
+        );
+
+        expect(res.status).toBe(403);
+        expect(usecase).not.toHaveBeenCalled();
+        // Naming the key is the point: swap the gate to audits.manage and this
+        // caller sails through the middleware, so both of the assertions above
+        // flip AND no row is written.
+        expect(denialEntries()).toEqual([
+            expect.objectContaining({ entityId: 'admin.manage' }),
+        ]);
+    });
+
+    it('an ADMIN is still admitted — the gate did not narrow the population', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeRequestContext('ADMIN'));
+        mockRevokeAuditorAccount.mockResolvedValue({ id: 'aud-1', status: 'REVOKED' });
+
+        const res = await asHandler(auditorAccountRevoke)(
+            makeReq('/api/t/acme/audits/auditors/aud-1', undefined, 'DELETE'),
+            { params: { tenantSlug: 'acme', auditorId: 'aud-1' } },
+        );
+
+        expect(res.status).toBe(200);
+        expect(mockRevokeAuditorAccount).toHaveBeenCalledTimes(1);
+        expect(denialEntries()).toEqual([]);
+    });
+});
+
+// ─── The parseJsonBody composition, pinned from both sides ─────────
+
+describe('the body-reading gated handlers authorize BEFORE they parse', () => {
+    /**
+     * Five handlers in this diff read a JSON body inside a `requirePermission`
+     * wrapper rather than composing `withValidatedBody` — the two cannot stack,
+     * because both want the third handler argument (the wrapper puts the parsed
+     * body there, the gate puts `ctx`).
+     *
+     * The ordering that buys is testable, and both directions matter:
+     *
+     *   - an unauthorized caller sending UNPARSEABLE JSON must get 403, not
+     *     400. A 400 would mean the body was read first, which is a route that
+     *     does work on behalf of someone it is about to refuse — and, worse,
+     *     never reaches `auditPermissionDenied`, so the refusal is invisible
+     *     again. That is the regression a revert to `withValidatedBody` causes.
+     *   - an authorized caller sending a TYPE-INVALID body must still get 400.
+     *     Otherwise "gate first" was achieved by dropping validation.
+     */
+    const badJsonReq = (path: string, method: string): NextRequest => {
+        const req = makeReq(path, undefined, method);
+        (req as unknown as { json: () => Promise<unknown> }).json = async () => {
+            throw new SyntaxError('Unexpected token');
+        };
+        return req;
+    };
+
+    const CASES: ReadonlyArray<{
+        name: string;
+        handler: Handler;
+        path: string;
+        params: RouteParams;
+        method: string;
+        key: string;
+        usecase: jest.Mock;
+        /** A body that parses as JSON but fails the schema. */
+        invalidBody: unknown;
+        deniedRole: string;
+        allowedRole: string;
+    }> = [
+        {
+            name: 'POST /audits/auditors/access',
+            handler: asHandler(auditorAccessGrant),
+            path: '/api/t/acme/audits/auditors/access',
+            params: { tenantSlug: 'acme' },
+            method: 'POST',
+            key: 'admin.manage',
+            usecase: mockGrantAuditorAccess,
+            invalidBody: { auditorId: '', packId: 42 },
+            deniedRole: 'EDITOR',
+            allowedRole: 'ADMIN',
+        },
+        {
+            name: 'DELETE /audits/auditors/access',
+            handler: asHandler(auditorAccessRevoke),
+            path: '/api/t/acme/audits/auditors/access',
+            params: { tenantSlug: 'acme' },
+            method: 'DELETE',
+            key: 'admin.manage',
+            usecase: mockRevokeAuditorAccess,
+            invalidBody: { auditorId: '', packId: 42 },
+            deniedRole: 'EDITOR',
+            allowedRole: 'ADMIN',
+        },
+        {
+            name: 'PATCH /automation/rules/[id]',
+            handler: asHandler(automationRulePatch),
+            path: '/api/t/acme/automation/rules/ar-1',
+            params: { tenantSlug: 'acme', id: 'ar-1' },
+            method: 'PATCH',
+            key: 'admin.manage',
+            usecase: mockToggleAutomationRule,
+            // Neither status nor priority — the schema's own refine rejects it.
+            invalidBody: {},
+            deniedRole: 'EDITOR',
+            allowedRole: 'ADMIN',
+        },
+        {
+            name: 'PUT /automation/rules/[id]',
+            handler: asHandler(automationRuleUpdate),
+            path: '/api/t/acme/automation/rules/ar-1',
+            params: { tenantSlug: 'acme', id: 'ar-1' },
+            method: 'PUT',
+            key: 'admin.manage',
+            usecase: mockUpdateAutomationRule,
+            invalidBody: { priority: 'not-a-number' },
+            deniedRole: 'EDITOR',
+            allowedRole: 'ADMIN',
+        },
+        {
+            name: 'POST /vendors/[vendorId]/bundles/[bundleId]',
+            handler: asHandler(vendorBundleItemAdd),
+            path: '/api/t/acme/vendors/v-1/bundles/b-1',
+            params: { tenantSlug: 'acme', vendorId: 'v-1', bundleId: 'b-1' },
+            method: 'POST',
+            key: 'vendors.edit',
+            usecase: mockAddBundleItem,
+            invalidBody: { entityType: 'NOT_A_KIND', entityId: 'x' },
+            deniedRole: 'READER',
+            allowedRole: 'EDITOR',
+        },
+    ];
+
+    it.each(CASES.map((c) => [c.name, c] as const))(
+        '%s answers an unauthorized caller with 403 even on unparseable JSON, and RECORDS it',
+        async (_name, c) => {
+            mockGetTenantCtx.mockResolvedValue(makeRequestContext(c.deniedRole));
+
+            const res = await c.handler(badJsonReq(c.path, c.method), { params: c.params });
+
+            expect(res.status).toBe(403);
+            expect(c.usecase).not.toHaveBeenCalled();
+            expect(denialEntries()).toEqual([
+                expect.objectContaining({ entityId: c.key, action: 'AUTHZ_DENIED' }),
+            ]);
+        },
+    );
+
+    it.each(CASES.map((c) => [c.name, c] as const))(
+        '%s still SCHEMA-validates an authorized caller\'s body',
+        async (_name, c) => {
+            mockGetTenantCtx.mockResolvedValue(makeRequestContext(c.allowedRole));
+
+            const res = await c.handler(
+                makeReq(c.path, c.invalidBody, c.method),
+                { params: c.params },
+            );
+
+            expect(res.status).toBe(400);
+            expect(c.usecase).not.toHaveBeenCalled();
+            // A schema rejection is not an authorization event.
+            expect(denialEntries()).toEqual([]);
+        },
+    );
+
+    it('the newly-gated write siblings admit their authorized caller', async () => {
+        // Without this, every assertion above is satisfied by a handler that
+        // refuses everyone — and gating PUT/PATCH/POST alongside their DELETE
+        // would then be a silent lockout rather than a recording change.
+        mockGetTenantCtx.mockResolvedValue(makeRequestContext('ADMIN'));
+        mockToggleAutomationRule.mockResolvedValue({ id: 'ar-1', status: 'DISABLED' });
+
+        const res = await asHandler(automationRulePatch)(
+            makeReq('/api/t/acme/automation/rules/ar-1', { status: 'DISABLED' }, 'PATCH'),
+            { params: { tenantSlug: 'acme', id: 'ar-1' } },
+        );
+
+        expect(res.status).toBe(200);
+        expect(mockToggleAutomationRule).toHaveBeenCalledWith(
+            expect.objectContaining({ tenantId: 'tenant-1' }),
+            'ar-1',
+            'DISABLED',
+        );
+        expect(denialEntries()).toEqual([]);
+    });
+
+    it('the bundle POST freeze branch is gated too — it never reads a body', async () => {
+        // The freeze branch returns before `parseJsonBody`, so the "unparseable
+        // JSON still 403s" case above cannot reach it. It is the branch that
+        // makes a bundle IMMUTABLE, so assert its refusal is recorded directly.
+        mockGetTenantCtx.mockResolvedValue(makeRequestContext('READER'));
+
+        const res = await asHandler(vendorBundleItemAdd)(
+            makeReq('/api/t/acme/vendors/v-1/bundles/b-1', undefined, 'POST', 'action=freeze'),
+            { params: { tenantSlug: 'acme', vendorId: 'v-1', bundleId: 'b-1' } },
+        );
+
+        expect(res.status).toBe(403);
+        expect(mockFreezeBundle).not.toHaveBeenCalled();
+        expect(denialEntries()).toEqual([
+            expect.objectContaining({ entityId: 'vendors.edit' }),
+        ]);
     });
 });
