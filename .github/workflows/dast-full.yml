@@ -17,9 +17,21 @@ name: DAST (ZAP Full Scan)
 #   - OWNER session only (single job). A 4-role matrix of a ~30-60 min
 #     active scan would be excessive; OWNER reaches the most surface.
 #     Multi-role active scanning is a future follow-up if warranted.
-#   - NON-BLOCKING (fail_action: false + continue-on-error) during
-#     roll-in, same posture as the baseline. Findings → Security tab
+#   - NON-BLOCKING FOR MEDIUM AND BELOW (fail_action: false +
+#     continue-on-error) during roll-in. Findings → Security tab
 #     (category zap-full) + HTML artifact + a weekly auto-issue.
+#     A High/Critical alert is NOT deferred: the "Fail on HIGH+" step
+#     below fails the job on one regardless, allowlisted or not.
+#
+# DAST-NON-BLOCKING-UNTIL: 2026-10-11 — the active scan has ~10 runs and
+#   two of them failed on app-boot/runner flake, so its findings baseline
+#   is younger than the nightly's. Six more Sunday runs establish whether
+#   the shared .zap/rules.tsv allowlist holds for actively-mutated
+#   requests; on that date, drop continue-on-error + set fail_action: true
+#   (as the baseline did on 2026-08-29) or move the date with a written
+#   reason. tests/guardrails/dast-workflow-pinning.test.ts compares this
+#   date against the real clock and FAILS once it passes — the deferral
+#   cannot outlive its own deadline unnoticed.
 on:
   workflow_dispatch:
   schedule:
@@ -181,6 +193,15 @@ jobs:
           allow_issue_writing: true
           artifact_name: 'zap_full_scan'
           fail_action: false
+
+      # ── HIGH+ gate ──
+      # The roll-in deferral above covers Medium and below only. An ACTIVE
+      # scan is the one that can find injection / XSS classes, so a High
+      # here fails the job today — and fails it even if a .zap/rules.tsv
+      # IGNORE line covers the rule, because a HIGH is fixed, not silenced.
+      - name: Fail on HIGH+ ZAP alerts
+        if: always()
+        run: node .zap/assert-no-high-risk.mjs report_json.json
 
       - name: Convert ZAP report to SARIF
         if: always()

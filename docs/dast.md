@@ -25,7 +25,8 @@ requests**. Those need the **Full (active) scan**, ZAP's destructive
 sibling, which fuzzes inputs + submits forms. That now runs as a
 **separate WEEKLY workflow** (`.github/workflows/dast-full.yml`,
 `zaproxy/action-full-scan`, Sundays 05:00 UTC + dispatch) — authenticated
-as OWNER, non-blocking during roll-in, SARIF category `zap-full`. It is
+as OWNER, non-blocking for Medium-and-below during roll-in (a HIGH
+still fails it), SARIF category `zap-full`. It is
 SAFE because it only ever targets the **ephemeral CI app** (fresh seeded
 Postgres, no real data, no SMTP, rate-limiting off) — never a real env.
 
@@ -62,13 +63,13 @@ Postgres, no real data, no SMTP, rate-limiting off) — never a real env.
 ## Reporting
 
 - **Security tab** — the scan's JSON report is converted to SARIF
-  (`.zap/zap-json-to-sarif.mjs`, dependency-free) and uploaded under
-  category `zap-baseline`, alongside CodeQL + Trivy.
+  (`.zap/zap-json-to-sarif.mjs`, dependency-free) and uploaded under a
+  per-role category `zap-baseline-<role>`, alongside CodeQL + Trivy.
 - **Artifact** — `report_html.html` (+ md/json) is uploaded as
-  `zap-baseline-report` (14-day retention) for human triage.
+  `zap-baseline-report-<role>` (7-day retention) for human triage.
 - **Auto-issue** — on findings, `zaproxy/action-baseline` opens/updates
-  a GitHub issue titled "ZAP Baseline Scan Findings (nightly)" (its
-  built-in `allow_issue_writing`; we do not roll our own).
+  a GitHub issue titled "ZAP Baseline Findings — `<role>` (nightly)"
+  (its built-in `allow_issue_writing`; we do not roll our own).
 
 ## Triaging a finding
 
@@ -82,6 +83,20 @@ Postgres, no real data, no SMTP, rate-limiting off) — never a real env.
      one-line `#` reason** (the `dast-workflow-pinning` guardrail
      requires the reason). Prefer `WARN` over `IGNORE` when you want it
      visible-but-non-failing.
+
+**An `IGNORE` covers Medium and below — never a High.** A pluginId entry
+silences that rule at every ZAP risk level, which is right for the
+framework false-positives the allowlist was built for and wrong for a
+High. So `.zap/assert-no-high-risk.mjs` runs after every scan and reads
+the report's `ignoredAlerts` as well as its live `alerts`: a High or
+Critical fails the job whether or not a rules.tsv line covers it. A HIGH
+is fixed, not allowlisted.
+
+**One id, several alerts.** A pluginId matches every alert the rule
+emits, including differently-named sub-alerts — `10055` alone covers
+"CSP: Wildcard Directive", "CSP: style-src unsafe-inline" and "CSP:
+Notices". Name each accepted sub-alert in the reason column, or the
+entry silently grows scope the next time ZAP splits a rule.
 
 `.zap/rules.tsv` is the single allowlist. Seeded with three well-known
 Next.js false-positives (10202 anti-CSRF, 10049 cacheable `/api/health`,
@@ -127,14 +142,55 @@ are accepted trade-offs documented in `.zap/rules.tsv`, not changes to
 make. (Tightening them would break functionality — the opposite of
 hardening.)
 
-## Gating posture & sunset
+## Gating posture
 
-- **First 30 days: NON-blocking** (`fail_action: false`). Baseline scans
-  produce false-positives that need allowlist tuning; a blocking gate on
-  day one would just be noise.
-- **On/after 2026-07-24: flip to blocking on HIGH+** (`fail_action:
-  true`), mirroring the Trivy `CRITICAL,HIGH` gate. Update the
-  `dast-workflow-pinning` guardrail in the same change. (Tracked task.)
+**Nightly baseline — BLOCKING since 2026-08-29** (`fail_action: true`,
+no `continue-on-error`). Two independent gates can fail the job:
+
+1. `fail_action: true` — any alert **not** listed in `.zap/rules.tsv`.
+2. the **Fail on HIGH+** step (`.zap/assert-no-high-risk.mjs`) — any
+   High/Critical alert, *including* one an `IGNORE` line covers.
+
+Dropping `continue-on-error` is load-bearing beyond the findings
+verdict: `action-baseline` calls `core.setFailed` on `zap-baseline.py`
+exit code 3 ("could not scan the target") regardless of `fail_action`,
+so `continue-on-error` was also masking a scan that never ran as a green
+nightly. A green run now means a scan actually happened.
+
+**Weekly full scan — deferred for Medium and below until 2026-10-11**,
+because the active scan's findings baseline is younger (11 runs, 2 lost
+to boot/runner flake). A High is *not* deferred: the same HIGH+ step
+runs there today.
+
+**How a deferral works.** A non-blocking scan must carry a
+machine-readable marker in its workflow file:
+
+```
+# DAST-NON-BLOCKING-UNTIL: YYYY-MM-DD — <written reason>
+```
+
+`tests/guardrails/dast-workflow-pinning.test.ts` parses that date and
+compares it **against the real clock**, failing the day after it passes,
+and rejects a date more than 180 days out. A scan with no marker must be
+blocking. So a deferral cannot outlive its own deadline unnoticed.
+
+> **Why the mechanism is shaped this way.** The original 30-day window
+> closed on **2026-07-24** and the flip did not happen for another 36
+> days. The guard that should have caught it only grepped for a comment
+> containing *some* date — it never parsed or compared one, so it was
+> structurally incapable of failing while reading, in CI, as coverage of
+> exactly that deadline. The date comparison above is now exercised
+> against fixed clocks in the guardrail, so an all-green population
+> cannot be mistaken for a check that never ran.
+
+### Flipping a scan to blocking
+
+Do it only on evidence, not on the calendar: pull the recent runs'
+`report_json.json` artifacts and confirm **zero un-allowlisted alerts**
+(`site[].alerts` empty) and **zero HIGH+** across every role. Then drop
+`continue-on-error`, set `fail_action: true`, and delete the marker in
+the same diff — the guardrail fails on a stale marker left beside a
+blocking scan.
 
 ## Roadmap
 
@@ -143,5 +199,9 @@ hardening.)
 2. ✅ **Multi-role scan** — OWNER/EDITOR/READER/AUDITOR matrix (per-role
    surface coverage; BAC itself is enforced + tested at the app layer).
 3. ✅ **Weekly Full (active) scan** — `.github/workflows/dast-full.yml`.
-4. ⏳ **Flip baseline to blocking** on the 2026-07-24 sunset (pending).
-   The Full scan would flip similarly once its findings are triaged.
+4. ✅ **Baseline blocking** — flipped 2026-08-29 on evidence of a
+   stable allowlist (0 un-allowlisted alerts, 0 HIGH+ across all four
+   roles), with the sunset check rebuilt to compare against the clock.
+5. ⏳ **Flip the weekly Full scan to blocking** on its
+   `DAST-NON-BLOCKING-UNTIL: 2026-10-11` marker, once the active scan's
+   findings are triaged against the shared allowlist.
