@@ -110,6 +110,31 @@ objects:
         assessable: true
         category: Security
 
+      # ─── CC4 — Monitoring Activities ────────────────────────────────
+
+      - urn: urn:inflect:req:soc2-2017:cc4
+        ref_id: CC4
+        name: Monitoring Activities
+        description: >
+          The organization selects, develops, and performs evaluations to
+          determine whether the components of internal control are present
+          and functioning, and communicates deficiencies. (Paraphrase)
+        depth: 1
+        assessable: false
+        category: Security
+
+      - urn: urn:inflect:req:soc2-2017:cc4.1
+        ref_id: CC4.1
+        name: Control Deficiency Evaluation
+        description: >
+          The entity selects, develops, and performs ongoing and separate
+          evaluations to ascertain whether the components of internal control
+          are present and functioning. (Paraphrase — COSO Principle 16)
+        parent_urn: urn:inflect:req:soc2-2017:cc4
+        depth: 2
+        assessable: true
+        category: Security
+
       # ─── CC5 — Control Activities ───────────────────────────────────
 
       - urn: urn:inflect:req:soc2-2017:cc5

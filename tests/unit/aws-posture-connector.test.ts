@@ -94,7 +94,7 @@ describe('aws-posture — control map', () => {
 
     it('every mapped SOC 2 code is a real IC SOC 2 requirement code', () => {
         // IC's SOC2 codes (seed.ts soc2Reqs).
-        const IC_SOC2 = new Set(['CC1.1', 'CC2.1', 'CC3.1', 'CC5.1', 'CC6.1', 'CC7.1', 'CC8.1']);
+        const IC_SOC2 = new Set(['CC1.1', 'CC1.2', 'CC2.1', 'CC3.1', 'CC4.1', 'CC5.1', 'CC6.1', 'CC7.1', 'CC8.1', 'CC9.1']);
         for (const code of allMappedRequirementCodes().soc2) {
             expect(IC_SOC2.has(code)).toBe(true);
         }

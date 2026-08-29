@@ -851,23 +851,83 @@ Reviewed at least annually.` },
         update: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
         create: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
     });
+    // The assessable Common Criteria the library (src/data/libraries/soc2-2017.yaml)
+    // declares — one criterion per CC category, plus CC1.2. The three added on
+    // 2026-08-29 (CC1.2, CC4.1, CC9.1) closed the gap between this list and the
+    // library: CC9.1 was already a mapping TARGET in
+    // mappings/iso27001-to-soc2.yaml with no requirement row to resolve against,
+    // and CC4 (Monitoring Activities) was missing from both.
     const soc2Reqs = [
         { code: 'CC1.1', title: 'COSO principle 1 — Integrity and ethical values', category: 'Control Environment' },
+        { code: 'CC1.2', title: 'Board independence and oversight', category: 'Control Environment' },
         { code: 'CC2.1', title: 'Information for internal controls', category: 'Communication' },
         { code: 'CC3.1', title: 'Specifies objectives', category: 'Risk Assessment' },
+        { code: 'CC4.1', title: 'Evaluates and communicates control deficiencies', category: 'Monitoring Activities' },
         { code: 'CC5.1', title: 'Selects and develops control activities', category: 'Control Activities' },
         { code: 'CC6.1', title: 'Logical and physical access controls', category: 'Logical Access' },
         { code: 'CC7.1', title: 'System operations monitoring', category: 'System Operations' },
         { code: 'CC8.1', title: 'Change management', category: 'Change Management' },
+        { code: 'CC9.1', title: 'Risk mitigation — business disruption and vendors', category: 'Risk Mitigation' },
     ];
+    const soc2ReqMap: Record<string, string> = {};
     for (let i = 0; i < soc2Reqs.length; i++) {
         const req = soc2Reqs[i];
-        await prisma.frameworkRequirement.upsert({
+        const r = await prisma.frameworkRequirement.upsert({
             where: { frameworkId_code: { frameworkId: soc2.id, code: req.code } },
             update: {},
             create: { frameworkId: soc2.id, code: req.code, title: req.title, category: req.category, sortOrder: i },
         });
+        soc2ReqMap[req.code] = r.id;
     }
+
+    // ─── SOC 2 Starter Pack (curated Trust Services Criteria controls) ───
+    // Curated control templates covering the Common Criteria CC1–CC9, each
+    // linked to the specific criterion (or criteria) it satisfies via
+    // soc2ReqMap, so installing the pack produces mapped coverage rather than
+    // the bare 0% a tenant used to get when it installed SOC 2.
+    //
+    // Distinct 'TSC-' code prefix. It must NOT be 'SOC2-': that prefix is owned
+    // by scripts/backfill-framework-catalog.mjs, which packs every
+    // 'SOC2-'-prefixed template into SOC2_BASELINE by code prefix — sharing the
+    // prefix would make the two packs swallow each other's templates.
+    const soc2StarterControls = require('./fixtures/soc2-control-templates.json') as Array<{
+        code: string; title: string; description: string; category: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
+    }>;
+    for (const c of soc2StarterControls) {
+        const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
+        if (!existing) {
+            const tmpl = await prisma.controlTemplate.create({
+                data: {
+                    code: c.code,
+                    title: c.title,
+                    description: c.description,
+                    category: c.category,
+                    defaultFrequency: c.defaultFrequency as ControlFrequency,
+                },
+            });
+            for (const task of c.tasks) {
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+            }
+            for (const rk of c.requirements) {
+                if (soc2ReqMap[rk]) {
+                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: soc2ReqMap[rk] } }).catch(() => { });
+                }
+            }
+        }
+    }
+    const soc2StarterTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'TSC-' } } });
+    const soc2StarterPack = await prisma.frameworkPack.upsert({
+        where: { key: 'SOC2_STARTER_PACK' },
+        update: { name: 'SOC 2 Starter Pack', frameworkId: soc2.id },
+        create: { key: 'SOC2_STARTER_PACK', name: 'SOC 2 Starter Pack', frameworkId: soc2.id, description: 'Curated SOC 2 Common Criteria controls (CC1–CC9) with default tasks, mapped to the Trust Services Criteria.' },
+    });
+    for (const tmpl of soc2StarterTmpls) {
+        await prisma.packTemplateLink.upsert({
+            where: { packId_templateId: { packId: soc2StarterPack.id, templateId: tmpl.id } },
+            create: { packId: soc2StarterPack.id, templateId: tmpl.id }, update: {},
+        });
+    }
+    console.log(`✅ SOC 2 + ${soc2Reqs.length} criteria + SOC 2 Starter Pack (${soc2StarterControls.length} curated controls) seeded`);
 
     // NIS2 — full fixture-driven
     const nis2Data = require('./fixtures/nis2_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;

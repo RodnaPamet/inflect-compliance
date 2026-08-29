@@ -44,6 +44,7 @@ const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string }> =
     'ISO27701-2019': { frameworkKey: 'ISO27701', packKey: 'ISO27701_BASELINE' },
     'CIS-CONTROLS-V8': { frameworkKey: 'CIS-V8', packKey: 'CIS_V8_IG1_PACK' },
     'OWASP-ASVS-4.0.3': { frameworkKey: 'OWASP-ASVS', packKey: 'ASVS_L1_PACK' },
+    'SOC2-2017': { frameworkKey: 'SOC2', packKey: 'SOC2_STARTER_PACK' },
 };
 
 /** Library frameworks intentionally shipped WITHOUT a starter pack. */
@@ -52,12 +53,6 @@ const BARE_FRAMEWORKS: Record<string, string> = {
         'Reference/companion framework — cloned as the structural template for ' +
         'NIST-PF and NIST-SSDF. Ships as library content only (no seed FrameworkPack ' +
         'or control templates); adopters use the derived frameworks, not CSF directly.',
-    'SOC2-2017':
-        'KNOWN GAP: the current seed wires the SOC 2 framework + Trust Services ' +
-        'Criteria requirements but no control-template starter pack. Tracked as a ' +
-        'follow-up (a curated SOC 2 CC starter pack, mirroring the SSDF pack). ' +
-        'Listed here so the gap is explicit rather than silent — remove this entry ' +
-        'and add a STARTER_PACKS row when the SOC 2 pack lands.',
     'GDPR':
         'Regulatory-reference framework: mapping target, not a control catalogue. ' +
         'GDPR articles are the obligations that ISO 27701 and other controls map ' +
