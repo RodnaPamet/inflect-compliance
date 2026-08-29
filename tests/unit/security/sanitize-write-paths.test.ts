@@ -69,6 +69,15 @@ const mockTestPlanGetById = jest.fn();
 const mockTestRunComplete = jest.fn();
 const mockTestRunGetById = jest.fn();
 
+// Epic D.2 tail — the last two KNOWN_UNCOVERED entries
+const mockEvidenceGetById = jest.fn();
+const mockEvidenceUpdate = jest.fn();
+const mockEvidenceAddReview = jest.fn();
+const mockEvidenceGetLatestSubmitters = jest.fn();
+const mockNotificationCreate = jest.fn();
+const mockNis2UpsertAnswer = jest.fn();
+const mockNis2AssignmentFindFirst = jest.fn();
+
 jest.mock('@/app-layer/repositories/PolicyRepository', () => ({
     PolicyRepository: {
         getById: (...args: unknown[]) => mockPolicyGetById(...args),
@@ -162,6 +171,36 @@ jest.mock('@/app-layer/repositories/TestEvidenceRepository', () => ({
     TestEvidenceRepository: {},
 }));
 
+jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
+    EvidenceRepository: {
+        getById: (...a: unknown[]) => mockEvidenceGetById(...a),
+        update: (...a: unknown[]) => mockEvidenceUpdate(...a),
+        addReview: (...a: unknown[]) => mockEvidenceAddReview(...a),
+        getLatestSubmitters: (...a: unknown[]) => mockEvidenceGetLatestSubmitters(...a),
+    },
+}));
+
+jest.mock('@/app-layer/repositories/Nis2GapAssessmentRepository', () => ({
+    Nis2GapAssessmentRepository: {
+        upsertAnswer: (...a: unknown[]) => mockNis2UpsertAnswer(...a),
+    },
+}));
+
+jest.mock('@/app-layer/policies/evidence.policies', () => ({
+    assertCanReadEvidence: jest.fn(),
+    assertCanEditEvidence: jest.fn(),
+    assertCanUploadEvidence: jest.fn(),
+}));
+
+jest.mock('@/lib/cache/list-cache', () => ({
+    cachedListRead: jest.fn(async (_k: unknown, fn: () => unknown) => fn()),
+    bumpEntityCacheVersion: jest.fn(async () => undefined),
+}));
+
+jest.mock('@/app-layer/usecases/nis2-readiness', () => ({
+    snapshotNis2Readiness: jest.fn(async () => undefined),
+}));
+
 // `runInTenantContext` returns a stub Prisma tx. Risk usecase uses
 // `tenant.findUnique` against it for maxScale lookup.
 jest.mock('@/lib/db-context', () => ({
@@ -196,6 +235,16 @@ jest.mock('@/lib/db-context', () => ({
             },
             // Defensive stub for the FAIL-cascade idempotency read.
             finding: { findFirst: async () => null, count: async () => 0 },
+            // reviewEvidence notifies the evidence owner; the notification
+            // body carries the reviewer comment, so it is a second renderer
+            // of the same free text and is asserted clean below.
+            notification: { create: (...a: unknown[]) => mockNotificationCreate(...a) },
+            // NIS2 delegated submit reads its assignment row then marks it
+            // SUBMITTED.
+            nis2GapAssignment: {
+                findFirst: (...a: unknown[]) => mockNis2AssignmentFindFirst(...a),
+                updateMany: async () => ({ count: 1 }),
+            },
         }),
     ),
 }));
@@ -268,6 +317,8 @@ import {
     updateTestPlan,
     completeTestRun,
 } from '@/app-layer/usecases/control';
+import { reviewEvidence } from '@/app-layer/usecases/evidence';
+import { submitAssignmentAnswers } from '@/app-layer/usecases/gap-assessment-assignment';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -284,11 +335,29 @@ beforeEach(() => {
         mockAuditCreate, mockAuditUpdate, mockAuditChecklistUpdate,
         mockTestPlanCreate, mockTestPlanUpdate, mockTestPlanUpdateNextDueAt,
         mockTestPlanGetById, mockTestRunComplete, mockTestRunGetById,
+        mockEvidenceGetById, mockEvidenceUpdate, mockEvidenceAddReview,
+        mockEvidenceGetLatestSubmitters, mockNotificationCreate,
+        mockNis2UpsertAnswer, mockNis2AssignmentFindFirst,
     ].forEach((m) => m.mockReset());
 
     mockPolicyGetById.mockResolvedValue({ id: 'p1', status: 'DRAFT' });
     mockPolicyVersionCreate.mockResolvedValue({ id: 'v1', versionNumber: 1 });
     mockTenantFindUnique.mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+    // No prior SUBMITTED review ⇒ segregation-of-duties falls back to
+    // `ownerUserId` ('owner-2'), which is not ctx.userId ('user-1').
+    mockEvidenceGetLatestSubmitters.mockResolvedValue(new Map());
+    mockEvidenceGetById.mockResolvedValue({
+        id: 'ev-1', status: 'SUBMITTED', title: 'Q3 access review export',
+        ownerUserId: 'owner-2',
+    });
+    mockEvidenceUpdate.mockResolvedValue({ id: 'ev-1' });
+    mockEvidenceAddReview.mockResolvedValue({ id: 'rev-1' });
+    mockNotificationCreate.mockResolvedValue({ id: 'n-1' });
+    mockNis2AssignmentFindFirst.mockResolvedValue({
+        id: 'asg-1', assessmentId: 'ass-1', assigneeUserId: 'user-1',
+        questionIds: ['q-1', 'q-2'],
+    });
+    mockNis2UpsertAnswer.mockResolvedValue({ id: 'ans-1' });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -629,5 +698,68 @@ describe('controlTest.completeTestRun sanitises notes + findingSummary', () => {
         const data = mockTestRunComplete.mock.calls[0][3];
         expect(data.notes).not.toMatch(/<script/);
         expect(data.findingSummary).not.toMatch(/<script/);
+    });
+});
+
+// ── evidence.ts — EvidenceReview.comment (Epic D.2 tail) ──────────
+
+describe('evidence.reviewEvidence sanitises the reviewer comment', () => {
+    it('strips <script> from the comment persisted to the encrypted EvidenceReview column', async () => {
+        await reviewEvidence(ctx, 'ev-1', {
+            action: 'REJECTED',
+            comment: `Screenshot is illegible ${XSS}`,
+        });
+        // addReview(db, ctx, evidenceId, action, comment) — 5th arg.
+        const comment = mockEvidenceAddReview.mock.calls[0][4];
+        expect(comment).not.toMatch(/<script/);
+        expect(comment).toContain('Screenshot is illegible');
+    });
+
+    it('strips <script> from the owner notification built from the same comment', async () => {
+        await reviewEvidence(ctx, 'ev-1', {
+            action: 'REJECTED',
+            comment: `Redo this ${XSS}`,
+        });
+        const data = mockNotificationCreate.mock.calls[0][0].data;
+        expect(data.message).not.toMatch(/<script/);
+    });
+
+    it('rejects a rejection reason that is nothing but markup', async () => {
+        // The reason is required; sanitising BEFORE the emptiness check is what
+        // stops a pure-markup string from satisfying it and landing as ''.
+        await expect(
+            reviewEvidence(ctx, 'ev-1', { action: 'REJECTED', comment: XSS }),
+        ).rejects.toThrow(/rejection reason is required/i);
+        expect(mockEvidenceAddReview).not.toHaveBeenCalled();
+    });
+
+    it('preserves the three-state contract — an omitted comment stays undefined', async () => {
+        await reviewEvidence(ctx, 'ev-1', { action: 'APPROVED' });
+        expect(mockEvidenceAddReview.mock.calls[0][4]).toBeUndefined();
+    });
+});
+
+// ── gap-assessment-assignment.ts — Nis2SelfAssessmentAnswer.note ──
+
+describe('nis2.submitAssignmentAnswers sanitises the answer note', () => {
+    it('strips <script> from every note handed to the repository', async () => {
+        await submitAssignmentAnswers(ctx, 'asg-1', [
+            { questionId: 'q-1', answer: 'PARTIALLY', note: `MFA on admins only ${XSS}` },
+            { questionId: 'q-2', answer: 'YES', note: `Signed off ${XSS}` },
+        ]);
+        const first = mockNis2UpsertAnswer.mock.calls[0][2];
+        const second = mockNis2UpsertAnswer.mock.calls[1][2];
+        expect(first.note).not.toMatch(/<script/);
+        expect(first.note).toContain('MFA on admins only');
+        expect(second.note).not.toMatch(/<script/);
+    });
+
+    it('normalises an absent or blank note to null (no empty-string rows)', async () => {
+        await submitAssignmentAnswers(ctx, 'asg-1', [
+            { questionId: 'q-1', answer: 'NA' },
+            { questionId: 'q-2', answer: 'NO', note: '   ' },
+        ]);
+        expect(mockNis2UpsertAnswer.mock.calls[0][2].note).toBeNull();
+        expect(mockNis2UpsertAnswer.mock.calls[1][2].note).toBeNull();
     });
 });

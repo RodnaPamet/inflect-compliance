@@ -153,6 +153,28 @@ const RICH_TEXT_COVERAGE: Readonly<
     // arriving over a public shared-pack token; sanitised at the single
     // addShareComment write seam before the Epic B middleware encrypts it.
     AuditPackShareComment: { usecases: ['src/app-layer/usecases/audit-readiness/sharing.ts'], sanitizer: 'sanitizePlainText' },
+    // `EvidenceReview.comment` is the reviewer's rationale — including the
+    // MANDATORY rejection reason. It is decrypted by the evidence UI, the owner
+    // notification, the audit trail, PDF export and the audit-pack share link,
+    // so it is sanitised at the single `reviewEvidence` write seam via the
+    // three-state-preserving `sanitizeOptional` wrapper. The bulk-approve path
+    // writes the source constant 'Bulk approved' — no user input reaches it.
+    EvidenceReview: {
+        usecases: ['src/app-layer/usecases/evidence.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
+    // `Nis2SelfAssessmentAnswer.note` (answer rationale) has TWO write seams and
+    // both sanitise: the wizard autosave (`onboarding-nis2.ts::saveNis2Answer`)
+    // and the delegated multi-respondent submit
+    // (`gap-assessment-assignment.ts::submitAssignmentAnswers`). Listing both is
+    // load-bearing — a sanitiser dropped from either one fails this guard.
+    Nis2SelfAssessmentAnswer: {
+        usecases: [
+            'src/app-layer/usecases/onboarding-nis2.ts',
+            'src/app-layer/usecases/gap-assessment-assignment.ts',
+        ],
+        sanitizer: 'sanitizePlainText',
+    },
 };
 
 /**
@@ -187,19 +209,15 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
  * place to silently park new rich-text surfaces.
  */
 const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
-    EvidenceReview:
-        'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
-        'rest but its write path is not yet registered with a ' +
-        'sanitiser. Ratchet target: identify the write usecase and ' +
-        'either register it in RICH_TEXT_COVERAGE (if it already ' +
-        'sanitises) or wire sanitizePlainText into it.',
-    Nis2SelfAssessmentAnswer:
-        'Nis2SelfAssessmentAnswer.note (answer rationale) is encrypted ' +
-        'at rest but has NO write usecase yet — the NIS2 gap-assessment ' +
-        'shipped as a DATA LAYER only (2026-06-26-nis2-gap-assessment-data). ' +
-        'Ratchet target: when the answer-write usecase lands it MUST run ' +
-        'note through sanitizePlainText and move this entry into ' +
-        'RICH_TEXT_COVERAGE.',
+    // EMPTY — the ratchet reached zero. The last two entries
+    // (EvidenceReview, Nis2SelfAssessmentAnswer) were closed by wiring
+    // sanitizePlainText into `evidence.ts::reviewEvidence` and
+    // `gap-assessment-assignment.ts::submitAssignmentAnswers`. The
+    // Nis2SelfAssessmentAnswer reason had also gone stale: it claimed "no write
+    // usecase yet", but by then TWO existed — `onboarding-nis2.ts` (already
+    // sanitising) and the delegated-submit path (not). A stale reason on a
+    // ratchet entry is how a real gap hides in plain sight, which is why the
+    // KNOWN_UNCOVERED cap below is now 0 rather than a standing allowance.
 };
 
 const fileExists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
@@ -269,11 +287,10 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         }
     });
 
-    it('KNOWN_UNCOVERED is a ratchet — it should trend to zero', () => {
-        // Not a hard cap — but a visible reminder. If this grows, the
-        // diff is the conversation. Today: 2 (EvidenceReview;
-        // Nis2SelfAssessmentAnswer — data-layer only, no write usecase yet).
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(2);
+    it('KNOWN_UNCOVERED is a ratchet — it is now at zero', () => {
+        // Reached zero. Re-admitting an entry here means raising this cap in
+        // the same diff, which is the conversation the ratchet exists to force.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(0);
     });
 
     const coverageEntries = Object.entries(RICH_TEXT_COVERAGE).flatMap(

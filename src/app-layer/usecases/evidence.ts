@@ -10,6 +10,19 @@ import type { EvidenceType, ReviewCadence } from '@prisma/client';
 import { z } from 'zod';
 import { CreateEvidenceSchema, UpdateEvidenceSchema } from '@/lib/schemas';
 import { isEvidenceContentEditable } from '@/lib/evidence-content';
+import { sanitizePlainText } from '@/lib/security/sanitize';
+
+/**
+ * Epic D.2 three-state preserving wrapper over `sanitizePlainText`.
+ * `undefined` = caller did not supply the field (leave it alone),
+ * `null` = caller explicitly cleared it. `sanitizePlainText` maps both
+ * to `''`, which would silently turn "not supplied" into "cleared".
+ */
+function sanitizeOptional(v: string | null | undefined): string | null | undefined {
+    if (v === undefined) return undefined;
+    if (v === null) return null;
+    return sanitizePlainText(v);
+}
 
 /**
  * EP-3 — collapse the many-to-many `controlIds` input + the legacy singular
@@ -473,7 +486,14 @@ async function notifyEvidenceOwner(
 }
 
 export async function reviewEvidence(ctx: RequestContext, id: string, data: { action: string; comment?: string | null }) {
-    const { action, comment } = data;
+    const { action } = data;
+    // Epic D.2 — `EvidenceReview.comment` is an encrypted free-text column, and
+    // encryption is confidentiality at rest only. The decrypted value is read
+    // back by the evidence UI, the owner notification, the audit trail, PDF
+    // export and the audit-pack share link, so it is sanitised HERE rather than
+    // at each renderer. Sanitising before the REJECTED reason check below is
+    // deliberate: a "reason" consisting only of markup must not satisfy it.
+    const comment = sanitizeOptional(data.comment);
 
     if (action === 'SUBMITTED') {
         assertCanEditEvidence(ctx); // EDITOR-tier evidence.edit grant
