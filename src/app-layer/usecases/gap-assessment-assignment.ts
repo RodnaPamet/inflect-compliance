@@ -33,6 +33,7 @@ import { NIS2_ANSWER } from '@/lib/schemas/nis2-gap-assessment';
 import { logEvent } from '../events/audit';
 import { createTask } from './task';
 import { snapshotNis2Readiness } from './nis2-readiness';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 
 export const NIS2_RESPONDENT_ROLES = ['CEO', 'IT', 'HR', 'PROCUREMENT', 'ANYONE'] as const;
 export type Nis2RespondentRole = (typeof NIS2_RESPONDENT_ROLES)[number];
@@ -257,11 +258,18 @@ export async function submitAssignmentAnswers(
 
         let written = 0;
         for (const a of answers) {
+            // Epic D.2 — `note` is an encrypted free-text column. Encryption is
+            // confidentiality at rest; the decrypted value is read back by the
+            // assessment UI, the readiness export and the audit pack. Sanitise
+            // at the write seam, matching the sibling NIS2 answer path in
+            // `onboarding-nis2.ts::saveNis2Answer`.
+            const note =
+                a.note != null && a.note.trim() !== '' ? sanitizePlainText(a.note) : null;
             await Nis2GapAssessmentRepository.upsertAnswer(db, ctx, {
                 assessmentId: assignment.assessmentId,
                 questionId: a.questionId,
                 answer: a.answer,
-                note: a.note ?? null,
+                note,
                 answeredById: ctx.userId ?? null,
             });
             written += 1;
