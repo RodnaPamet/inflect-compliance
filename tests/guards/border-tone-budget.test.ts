@@ -56,6 +56,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /**
@@ -100,7 +102,27 @@ const ROOT = path.resolve(__dirname, '../..');
  */
 // B3 (2026-06-07): −1 — the undo-toast's `border-border-default` was
 // replaced by the `.surface-popup-texture` class (token-based border).
-const BORDER_DEFAULT_BUDGET = 114;
+//
+// 114 → 111 (2026-08-29): re-seated to the live count. Three sites had
+// been migrated by PRs that did not drop the budget — exactly what the
+// sentinel below exists to surface, and it stayed quiet because its
+// 10-instance tolerance was wider than the drift.
+const BORDER_DEFAULT_BUDGET = 111;
+
+// Tolerance before the drift sentinel reports the budget as unseated.
+//
+// Two. This guard is the one that already HAD a sentinel and still let
+// three migrations go unrecorded, so its old allowance is evidence
+// rather than precedent: at ten, a budget sitting ten above the tree was
+// by construction unreportable, and the drift that accumulated (three)
+// was comfortably inside that. An allowance must be strictly smaller
+// than the drift it is meant to catch or it is decoration.
+//
+// Two is affordable here because `countMatches` STRIPS COMMENTS before
+// matching, so unlike the two `<table` ratchets this count moves only
+// when real markup changes — a doc pass cannot touch it. A PR that
+// migrates three border sites is a PR that should record the win.
+const DRIFT_ALLOWANCE = 2;
 
 function countMatches(re: RegExp): number {
     let total = 0;
@@ -132,14 +154,29 @@ describe('Border-tone budget (Roadmap-5 PR-10)', () => {
         expect(count).toBeLessThanOrEqual(BORDER_DEFAULT_BUDGET);
     });
 
-    it('budget is realistic (not vacuous)', () => {
-        // Sanity check: the budget shouldn't be astronomically
-        // higher than the actual count. If a future PR migrates
-        // 50 sites but forgets to drop the budget, this test
-        // makes the win visible.
+    it('budget has not drifted above the live count (drift sentinel)', () => {
+        // If a future PR migrates sites but forgets to drop the budget,
+        // this makes the win visible instead of leaving it as headroom a
+        // later regression can spend.
         const count = countMatches(/\bborder-border-default\b/g);
-        // Allow 10-instance slack so a small follow-up cleanup
-        // doesn't have to drop the budget on every PR.
-        expect(BORDER_DEFAULT_BUDGET).toBeLessThanOrEqual(count + 10);
+
+        // Positive control against the real counter — proves the sentinel
+        // still fails, so its silence is evidence rather than absence.
+        expect(
+            ratchetSlackFailure({
+                constantName: 'BORDER_DEFAULT_BUDGET',
+                baseline: count + DRIFT_ALLOWANCE + 1,
+                count,
+                allowance: DRIFT_ALLOWANCE,
+            }),
+        ).not.toBeNull();
+
+        assertRatchetSlack({
+            constantName: 'BORDER_DEFAULT_BUDGET',
+            baseline: BORDER_DEFAULT_BUDGET,
+            count,
+            allowance: DRIFT_ALLOWANCE,
+            what: '`border-border-default` occurrences in src/app + src/components',
+        });
     });
 });

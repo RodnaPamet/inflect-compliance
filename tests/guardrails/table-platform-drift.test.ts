@@ -13,6 +13,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
+
 const TABLE_MODULE_DIR = path.resolve(__dirname, '../../src/components/ui/table');
 const UI_DIR = path.resolve(__dirname, '../../src/components/ui');
 const CLIENT_DIR = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
@@ -273,22 +275,42 @@ const RATCHET_ALLOWLIST = new Set<string>([
 // `<table>` occurrences (a page with 3 sub-tables contributes 3 to
 // the total). Lower only.
 //
-// Remaining hotspots (occurrences per file, post-api-keys migration):
-//   3  controls/[controlId]/page.tsx    evidence + mappings + activity
-//   3  vendors/[vendorId]/page.tsx      docs + assessments + links
-//   2  admin/members/page.tsx           members + pending invites
-//   2  admin/rbac/page.tsx              permission matrix + roles
-//   2  admin/roles/page.tsx             role list + permission grid
-//   1  reports/soa/SoAClient.tsx        cross-cutting SoA grid (also
-//                                       in EXCLUDED_PAGES because of
-//                                       expandable-row UX)
-//   1  tasks/[taskId]/page.tsx          activity log table
-//   1  access-reviews/[reviewId]/AccessReviewDetailClient.tsx
-//                                       per-decision roster — same
-//                                       master/detail shape as
-//                                       AuditsClient (also listed in
-//                                       EXCLUDED_PAGES above).
-const RAW_TABLE_BASELINE = 15;
+// History
+//   15 → 11  (2026-08-29) re-seated to the live count. The enumeration
+//            that used to sit here described a tree that had since
+//            migrated — controls/[controlId] (3) and
+//            access-reviews/[reviewId]/AccessReviewDetailClient (1)
+//            no longer match at all, and vendors/[vendorId] dropped
+//            from 3 to 1 — leaving four units of headroom nothing
+//            reported.
+//
+// Live hits (2026-08-29). Note what this regex actually counts: the
+// pattern is a text scan, so a `<table` written in a COMMENT counts
+// exactly like markup. Six of the eleven are prose, which is why the
+// list below marks each one.
+//   2  admin/roles/page.tsx          1 markup (role/permission grid)
+//                                    + 1 in the header comment
+//   1  admin/members/page.tsx        comment only — migrated to DataTable
+//   1  admin/rbac/page.tsx           markup (server component)
+//   1  controls/ControlsClient.tsx   comment only
+//   1  evidence/EvidenceClient.tsx   comment only
+//   1  reports/soa/SoAClient.tsx     markup — cross-cutting SoA grid
+//                                    (also in EXCLUDED_PAGES: expandable-row UX)
+//   1  risks/correlations/page.tsx   markup (correlation matrix)
+//   1  risks/scenarios/page.tsx      markup (scenario grid)
+//   1  tasks/[taskId]/page.tsx       comment only
+//   1  vendors/[vendorId]/page.tsx   comment only
+//
+// So the real ad-hoc-markup residue is 5, and a PR that only reworded
+// a comment would move this number. That coupling is why
+// DRIFT_ALLOWANCE below is not zero.
+const RAW_TABLE_BASELINE = 11;
+
+// See `tests/helpers/ratchet-slack.ts`. Three, because the count is
+// small and partly comment-coupled: a doc pass should not have to edit
+// this guard, but the four units of drift that accumulated before
+// 2026-08-29 must not be able to accumulate again.
+const RAW_TABLE_DRIFT_ALLOWANCE = 3;
 const RAW_TABLE_RE = /<table\b/g;
 
 function countAdHocTables(): { total: number; byFile: Record<string, number> } {
@@ -329,5 +351,28 @@ describe('Ad-hoc <table> ratchet', () => {
         for (const rel of RATCHET_ALLOWLIST) {
             expect(fs.existsSync(path.join(CLIENT_DIR, rel))).toBe(true);
         }
+    });
+
+    it('baseline has not drifted above the live count (drift sentinel)', () => {
+        const { total } = countAdHocTables();
+
+        // Positive control against the real counter — proves the sentinel
+        // can still fail, so a pass below means something.
+        expect(
+            ratchetSlackFailure({
+                constantName: 'RAW_TABLE_BASELINE',
+                baseline: total + RAW_TABLE_DRIFT_ALLOWANCE + 1,
+                count: total,
+                allowance: RAW_TABLE_DRIFT_ALLOWANCE,
+            }),
+        ).not.toBeNull();
+
+        assertRatchetSlack({
+            constantName: 'RAW_TABLE_BASELINE',
+            baseline: RAW_TABLE_BASELINE,
+            count: total,
+            allowance: RAW_TABLE_DRIFT_ALLOWANCE,
+            what: '`<table` occurrences under the tenant (app) tree, excluding print views',
+        });
     });
 });
