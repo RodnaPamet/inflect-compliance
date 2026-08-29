@@ -16,8 +16,18 @@ name: DAST (ZAP Baseline)
 #     detection (BAC is enforced + tested at the app layer:
 #     tenant-crud-authz-parity + requirePermission; true BAC scanning
 #     would need ZAP's Access Control add-on / Automation Framework).
-#   - NON-BLOCKING for the first 30 days (fail_action: false +
-#     continue-on-error) while the .zap/rules.tsv allowlist is curated.
+#   - BLOCKING since 2026-08-29 (fail_action: true, no continue-on-error).
+#     The 30-day tuning window closed on 2026-07-24 and the .zap/rules.tsv
+#     allowlist has been stable at 0 un-allowlisted alerts across all four
+#     roles since. Two independent gates now fail the job:
+#       1. `fail_action: true` — any alert NOT in .zap/rules.tsv.
+#       2. the "Fail on HIGH+" step — any High/Critical alert, INCLUDING
+#          one an allowlist entry marked IGNORE. A HIGH is fixed, never
+#          silenced.
+#     Re-deferring the gate means adding a machine-readable
+#     `DAST-NON-BLOCKING-UNTIL: <YYYY-MM-DD>` marker, which
+#     tests/guardrails/dast-workflow-pinning.test.ts compares against the
+#     real clock and fails once the date passes.
 on:
   workflow_dispatch:
   schedule:
@@ -198,13 +208,12 @@ jobs:
       # report_html.html / report_md.md / report_json.json to the
       # workspace, and (on findings) opens/updates a GitHub issue.
       - name: ZAP Baseline scan (${{ matrix.user.role }})
-        # Non-blocking for the 30-day tuning window: action-baseline exits
-        # non-zero on WARN findings and `fail_action: false` alone does NOT
-        # reliably keep the run green in v0.13.0, so continue-on-error is
-        # the definitive non-blocking switch. Findings still flow to the
-        # Security tab + the auto-issue for triage. On 2026-07-24, REMOVE
-        # this line AND set fail_action: true to make HIGH+ blocking.
-        continue-on-error: true
+        # BLOCKING. `continue-on-error` was REMOVED here on 2026-08-29 and
+        # its removal is load-bearing beyond the findings gate: action-
+        # baseline calls core.setFailed on zap-baseline.py exit code 3
+        # ("could not scan the target") REGARDLESS of `fail_action`, so
+        # continue-on-error was also masking a scan that never ran as a
+        # green nightly. A green run now means a scan actually happened.
         uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:3006'
@@ -215,16 +224,32 @@ jobs:
           allow_issue_writing: true
           # Per-role artifact name so the four matrix jobs don't collide.
           artifact_name: 'zap_scan_${{ matrix.user.role }}'
-          # Non-blocking until 2026-07-24 — flip to fail_action: true once
-          # the .zap/rules.tsv allowlist is stable (mirrors the Trivy
-          # HIGH+ gate posture). Tracked + guarded by
+          # BLOCKING (mirrors the Trivy HIGH+ gate posture). zap-baseline.py
+          # exits 1 when a rules.tsv FAIL rule matched and 2 when an alert
+          # is not listed in .zap/rules.tsv at all (un-listed alerts default
+          # to WARN); `fail_action: true` turns both into a red job.
+          # Triage per docs/dast.md: fix the app, or add the rule id to
+          # .zap/rules.tsv with a written reason. Guarded by
           # tests/guardrails/dast-workflow-pinning.test.ts.
-          fail_action: false
+          fail_action: true
 
-      # ── Reporting (informational; mirrors the Trivy SARIF pattern) ──
+      # ── HIGH+ gate ──
+      # `fail_action` delegates the verdict to .zap/rules.tsv, where an
+      # IGNORE line silences an alert at ANY risk. That is right for the
+      # Medium-and-below false positives the allowlist was built for, and
+      # wrong for a High: this step re-reads the report and fails on any
+      # High/Critical alert whether or not it was allowlisted, so a HIGH
+      # cannot be answered with a one-line rules.tsv edit. `if: always()`
+      # so it still runs when the scan step already failed.
+      - name: Fail on HIGH+ ZAP alerts (${{ matrix.user.role }})
+        if: always()
+        run: node .zap/assert-no-high-risk.mjs report_json.json
+
+      # ── Reporting (mirrors the Trivy SARIF pattern) ──
       # action-baseline does not emit SARIF, so convert its JSON report
-      # with a small dependency-free script. Best-effort: a missing/empty
-      # report must not fail this (non-blocking) workflow.
+      # with a small dependency-free script. Best-effort HERE ONLY: a
+      # reporting hiccup must not be the thing that fails the job — the
+      # scan step and the HIGH+ gate above own the verdict.
       - name: Convert ZAP report to SARIF
         if: always()
         run: |

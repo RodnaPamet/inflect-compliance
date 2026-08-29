@@ -5,10 +5,19 @@
 # Lines starting with `#` are comments. The 3rd column (the reason) is
 # mandatory for every entry and is enforced by
 # tests/guardrails/dast-workflow-pinning.test.ts.
+#
+# SCOPE OF AN IGNORE, since the nightly baseline went BLOCKING on
+# 2026-08-29: an entry here silences an alert of Medium risk or below and
+# NOTHING ELSE. `.zap/assert-no-high-risk.mjs` runs after every scan and
+# reads the report's `ignoredAlerts` too, so a High/Critical fails the job
+# whether or not it is listed here. A HIGH is fixed, not allowlisted.
+#
+# A pluginId matches EVERY alert the rule emits, including sub-alerts with
+# different names (10055 alone covers three). Name each one in the reason.
 10202	IGNORE	Absence of Anti-CSRF Tokens: NextAuth/Next 16 use a double-submit cookie CSRF token ZAP cannot observe as a form field; CSRF is covered (src/auth.ts).
-10049	IGNORE	Storable and Cacheable Content: /api/health (+ livez/readyz) are intentionally cacheable, non-sensitive liveness probes that must stay reachable during an attack.
+10049	IGNORE	Caching: covers all three sub-alerts this rule emits. (a) "Storable and Cacheable Content" — /api/health (+ livez/readyz) are intentionally cacheable, non-sensitive liveness probes that must stay reachable during an attack. (b) "Storable but Non-Cacheable Content" and (c) "Non-Storable Content" — informational statements of a response's cacheability, not findings.
 10027	IGNORE	Information Disclosure - Suspicious Comments: matches framework-generated Next.js build-manifest/chunk comments, which carry no secrets.
-10055	IGNORE	CSP wildcard scheme-source (img-src/connect-src use `https:`): deliberate — narrowing to explicit hosts would break OAuth avatars, Sentry, Upstash, Stripe, OTel, HIBP, etc. The high-value directive script-src stays strict (nonce + strict-dynamic, no unsafe-inline). See src/lib/security/csp.ts.
+10055	IGNORE	CSP: covers all three sub-alerts this rule emits. (a) "Wildcard Directive" — img-src/connect-src use the `https:` scheme-source deliberately; narrowing to explicit hosts would break OAuth avatars, Sentry, Upstash, Stripe, OTel, HIBP, etc. (b) "style-src unsafe-inline" — deliberate per CSP L3: a nonce on style-src makes unsafe-inline be IGNORED, including for the `style=""` attributes the app's SSR progress bars/status colours emit; tests/guards/csp-style-guardrails.test.ts keeps <style> tags out instead. (c) "Notices" — informational. The high-value directive script-src stays strict (nonce + strict-dynamic, no unsafe-inline). See src/lib/security/csp.ts.
 90004	IGNORE	Cross-Origin-Embedder-Policy not set: REQUIRED omission — COEP require-corp would block cross-origin subresources without CORP/CORS, including the OAuth-provider avatar images. App deliberately sets COOP + CORP but not COEP (next.config.js).
 10038	IGNORE	CSP header not set on a few responses: only the static files excluded from the middleware matcher (robots.txt/sitemap.xml/favicon.ico) — CSP is meaningless on non-HTML static assets; all HTML + API responses get the per-request nonce CSP (src/middleware.ts).
 10109	IGNORE	Modern Web Application: informational only (ZAP noting the app is JS-heavy/SPA-like) — not a vulnerability.
