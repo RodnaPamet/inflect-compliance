@@ -22,7 +22,6 @@ type Params = { tenantSlug: string; id: string; controlId: string };
 export const DELETE = withApiErrorHandling(
     requirePermission<Params>('controls.edit', async (_req, { params }, ctx) => {
         await unmapAssetFromControl(ctx, params.id, params.controlId);
-    await unmapAssetFromControl(ctx, params.id, params.controlId);
-    return jsonResponse({ ok: true });
+        return jsonResponse({ ok: true });
     }),
 );
