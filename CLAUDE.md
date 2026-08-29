@@ -378,11 +378,30 @@ detection; BAC is enforced and tested at the app layer.
 
 The weekly **active** scan has also shipped, as
 `.github/workflows/dast-full.yml` (Sundays 05:00 UTC, OWNER session,
-SARIF `category: zap-full`). Both are still **non-blocking**
-(`fail_action: false` + `continue-on-error`), and the 2026-07-24 sunset
-to HIGH+ blocking has LAPSED without being actioned — flipping it is
-the outstanding follow-up, along with multi-role active scanning. The
-false-positive allowlist is `.zap/rules.tsv`, shared by both workflows.
+SARIF `category: zap-full`).
+
+The nightly baseline is **BLOCKING** since 2026-08-29 (`fail_action:
+true`, `continue-on-error` removed) — the 2026-07-24 sunset had lapsed
+36 days, and the flip was evidenced against the downloaded report JSON
+of three nightlies plus one weekly: zero un-allowlisted alerts, zero
+HIGH+, highest observed risk Medium. Removing `continue-on-error`
+matters beyond findings: `action-baseline` calls `core.setFailed` on
+zap-baseline.py exit 3 ("could not scan the target") REGARDLESS of
+`fail_action`, so it was also masking a scan that never ran as a green
+nightly. The weekly ACTIVE scan stays non-blocking on a real dated
+deferral (it mutates requests and has a younger baseline), but its
+HIGH+ gate runs today.
+
+The guard no longer accepts a non-blocking scan silently: a deferral
+must carry `DAST-NON-BLOCKING-UNTIL: <YYYY-MM-DD>`, which
+`tests/guardrails/dast-workflow-pinning.test.ts` PARSES and compares
+against the current date. The previous check only asserted that some
+date-shaped string existed beside `fail_action: true`, so no passage of
+time could turn it red — the missed flip was the symptom, that was the
+defect. The false-positive allowlist is `.zap/rules.tsv`, shared by
+both workflows; note an `IGNORE` there silences a pluginId at EVERY
+risk level, so `.zap/assert-no-high-risk.mjs` reads ignored alerts too
+and fails on riskcode>=3 whether allowlisted or not.
 See **`docs/dast.md`**. Guarded by
 `tests/guardrails/dast-workflow-pinning.test.ts`.
 
