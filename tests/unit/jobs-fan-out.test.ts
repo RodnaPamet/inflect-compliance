@@ -21,6 +21,61 @@ import {
 
 const T = (iso: string) => Date.parse(iso);
 
+/**
+ * BullMQ's ACTUAL rule, copied from node_modules/bullmq/dist/cjs/classes/job.js:
+ *
+ *     if (jobId.includes(':') && jobId.split(':').length !== 3) throw
+ *
+ * Asserted against the rule rather than against a paraphrase of it: the bug this
+ * covers existed precisely because everyone assumed "no colons", when the real
+ * constraint is "exactly three segments".
+ */
+const bullmqWouldReject = (jobId: string): boolean =>
+    jobId.includes(':') && jobId.split(':').length !== 3;
+
+describe('dispatchJobId — BullMQ will actually accept the id', () => {
+    it('a COMPOSITE key does not produce a fourth segment', async () => {
+        // The defect. `identity-leaver-dispatch` passed `${tenantId}:${provider}`,
+        // producing a four-segment id, so every enqueue threw
+        // `Custom Id cannot contain :` and the dispatch reported
+        // `dispatched: 0, failed: 1` — every night, from the day it was wired.
+        //
+        // Nothing looked wrong from outside: the schedule was registered, the
+        // worker was up, the 03:00 sync (a SINGLE key, three segments) ran fine,
+        // and a manual trigger passes no jobId at all — which is what the field
+        // walkthrough exercised, so it worked.
+        const id = dispatchJobId(
+            'identity-leaver-pass',
+            'cmo94mi360000fvnl1fv9ca9t:entra-id',
+            DAILY_BUCKET_MS,
+            T('2026-08-29T05:00:00Z'),
+        );
+
+        expect(bullmqWouldReject(id)).toBe(false);
+        expect(id.split(':')).toHaveLength(3);
+        // Both halves of the key survive, so the id still discriminates one
+        // tenant's pass from another's.
+        expect(id).toContain('cmo94mi360000fvnl1fv9ca9t');
+        expect(id).toContain('entra-id');
+    });
+
+    it('two units under one tenant still get DIFFERENT ids', async () => {
+        // Normalising the separator must not collapse distinct units into one
+        // id — that would silently dedupe a second provider's pass away.
+        const a = dispatchJobId('p', 't1:entra-id', DAILY_BUCKET_MS, T('2026-08-29T05:00:00Z'));
+        const b = dispatchJobId('p', 't1:active-directory', DAILY_BUCKET_MS, T('2026-08-29T05:00:00Z'));
+        expect(a).not.toBe(b);
+    });
+
+    it('the single-key form is unchanged', async () => {
+        // The sync dispatch already produced a valid three-segment id, and this
+        // fix must not move it — its dedupe behaviour is load-bearing.
+        const id = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, T('2026-08-29T03:00:00Z'));
+        expect(id).toBe(`identity-sync:conn-1:${Math.floor(T('2026-08-29T03:00:00Z') / DAILY_BUCKET_MS)}`);
+        expect(bullmqWouldReject(id)).toBe(false);
+    });
+});
+
 describe('dispatchJobId', () => {
     it('is stable within one bucket, so a dispatcher retry dedupes', async () => {
         const a = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, T('2026-08-17T03:00:00Z'));

@@ -103,8 +103,21 @@ describe('a re-dispatch inside the same day is a no-op', () => {
         await runIdentityLeaverDispatch();
 
         const opts = enqueued.mock.calls[0][2] as { jobId: string };
-        expect(opts.jobId).toContain('t1:entra-id');
+        // Both halves of the key, WITHOUT pinning the separator.
+        //
+        // This assertion used to read `toContain('t1:entra-id')`, which pinned
+        // the literal colon — and BullMQ rejects a custom id whose colons do not
+        // split it into exactly three parts. So the id this test certified was
+        // one every enqueue threw on: the dispatch reported `dispatched: 0,
+        // failed: 1` every night from the day it was wired, with this test green
+        // the whole time. It checked that the id carried the right key material
+        // and never that the id was VALID.
+        expect(opts.jobId).toContain('t1');
+        expect(opts.jobId).toContain('entra-id');
         expect(opts.jobId).not.toContain('c1');
+        // The rule the id actually has to satisfy, from
+        // node_modules/bullmq/dist/cjs/classes/job.js.
+        expect(opts.jobId.split(':')).toHaveLength(3);
     });
 });
 

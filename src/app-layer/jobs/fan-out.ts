@@ -79,7 +79,30 @@ export function dispatchJobId(
     if (!Number.isFinite(bucketMs) || bucketMs <= 0) {
         throw new Error(`dispatchJobId: bucketMs must be a positive number, got ${bucketMs}`);
     }
-    return `${jobName}:${key}:${Math.floor(now / bucketMs)}`;
+    // THE KEY MUST NOT CONTAIN A COLON, and this is not a style rule.
+    //
+    // BullMQ accepts a custom job id containing ':' ONLY when it splits into
+    // exactly three parts — a back-compat carve-out for old repeatable ids:
+    //
+    //     if (jobId.includes(':') && jobId.split(':').length !== 3) throw
+    //
+    // This template contributes exactly two colons, so a caller passing a
+    // composite key such as `${tenantId}:${provider}` produces four segments
+    // and every enqueue throws `Custom Id cannot contain :`.
+    //
+    // That is not hypothetical. The leaver dispatch passed that exact key, so
+    // from the day it was wired it reported `dispatched: 0, failed: 1` every
+    // night and the scheduled leaver path never ran once. It looked healthy
+    // from the outside: the schedule was registered, the worker was up, and a
+    // MANUAL trigger — which passes no jobId — worked perfectly, which is what
+    // the field walkthrough exercised.
+    //
+    // Normalised rather than rejected, deliberately. Throwing here converts a
+    // silent nightly no-op into a loud nightly crash, which is better but still
+    // broken; substituting a separator keeps the id stable, deterministic and
+    // dedupe-correct, which is what the caller actually wanted.
+    const safeKey = key.replace(/:/g, '_');
+    return `${jobName}:${safeKey}:${Math.floor(now / bucketMs)}`;
 }
 
 export interface FanOutResult {
