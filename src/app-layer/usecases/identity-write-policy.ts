@@ -25,11 +25,15 @@ import { badRequest, forbidden } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability/logger';
 
-export type IdentityWriteMode = 'DISABLED' | 'DRY_RUN' | 'PROPOSE' | 'AUTOMATIC';
+import { LADDER, type IdentityWriteMode } from '@/lib/identity/write-ladder';
+
+// Re-exported so the dozen existing importers keep their import path. The
+// definition moved to a server-free module because the admin client needs the
+// same ladder and cannot import a usecase.
+export type { IdentityWriteMode };
 export type IdentityDirection = 'leaver' | 'joiner';
 
 /** Widening order. Index is authority: higher means the product may do more. */
-const LADDER: readonly IdentityWriteMode[] = ['DISABLED', 'DRY_RUN', 'PROPOSE', 'AUTOMATIC'];
 
 /**
  * How long a direction must sit in DRY_RUN before it may widen further.

@@ -869,8 +869,9 @@ duplicating the limits table).
 
 The subsystem that can **disable accounts in a customer's own directory**. It is
 the highest-blast-radius capability in the product, and it is deliberately
-throttled: the leaver pass is clamped in source at `DRY_RUN`, and the joiner is
-not implemented at all.
+throttled — though less than it was: the leaver clamp was raised to `AUTOMATIC`
+on 2026-08-30 (#2187), so the ladder alone now governs how far a tenant may go.
+The joiner is not implemented at all.
 
 **The chain is three scheduled jobs, and the order is load-bearing.**
 
@@ -912,12 +913,22 @@ refuses multi-rung widening and refuses to leave `DRY_RUN` before
 `DRY_RUN_MIN_DAYS` (7). **Narrowing is always allowed**, and any move out of
 `DRY_RUN` — including narrowing — nulls `dryRunSince` and restarts the clock.
 
-`LEAVER_MAX_MODE = 'DRY_RUN'` is a **source constant, not config**, enforced at
-gate 1 of `runIdentityLeaverPass`. The ladder itself does not enforce it: a tenant
-can be stored at `PROPOSE`/`AUTOMATIC` and every pass will refuse
-`MODE_ABOVE_CLAMP`. The admin route reports the clamp to the UI in a `honoured`
-block so the surface can warn rather than accept a value the system discards.
-Raising the clamp must be a diff somebody reviews.
+`LEAVER_MAX_MODE` is a **source constant, not config**, enforced at gate 1 of
+`runIdentityLeaverPass`. It was `DRY_RUN` until 2026-08-30 and is now
+`AUTOMATIC` (#2187), so no rung the ladder can reach is refused by the clamp.
+What still governs is the ladder: DISABLED by default, one rung per widen, and
+`DRY_RUN_MIN_DAYS` before leaving dry run.
+
+**The gate is ORDINAL, and that is load-bearing.** It was `mode !== LEAVER_MAX_MODE`,
+which is correct only while the clamp sits at the second rung — at `AUTOMATIC` a
+tenant at `DRY_RUN` is not equal but is BELOW, and the inequality would have
+refused it `MODE_ABOVE_CLAMP`, a refusal that records no row. The ladder order
+now lives in one place, `src/lib/identity/write-ladder.ts`, used by the pass, the
+policy usecase and the admin client; it carries no server imports so a client
+component can hold it.
+
+The admin route reports the clamp to the UI in a `honoured` block. Lowering the
+clamp again must be a diff somebody reviews.
 
 **Both ladder refusals are the only ones that write no `IntegrationExecution`
 row** — they emit a metric and a log line, but nothing lands on
