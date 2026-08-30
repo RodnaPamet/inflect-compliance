@@ -11,7 +11,7 @@
  */
 import { Prisma, EvidenceType } from '@prisma/client';
 import type { RequestContext } from '../types';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 // Side-effect: register every provider into the registry IN THIS MODULE GRAPH.
 // The registry is a module singleton; relying on `instrumentation.ts` to
 // populate it does NOT work when Next bundles instrumentation and the route
@@ -716,6 +716,10 @@ export async function listConnectedAccounts(
                 protectionReason: true,
                 lastActiveAt: true,
                 syncedAt: true,
+                // Presence only. `connectedAccountId` carries a field-level
+                // @unique on the link side, so this is one row or none — a
+                // relation select, not an N+1.
+                identityLink: { select: { id: true } },
             },
             orderBy: [{ provider: 'asc' }, { email: 'asc' }],
             // Capped, with no `truncated` flag on the wire — so a caller can
@@ -724,8 +728,78 @@ export async function listConnectedAccounts(
             // the row count against it before it dares call a provider
             // unsynced. See src/lib/identity-roster.ts.
             take: options.limit ?? IDENTITY_ROSTER_PAGE_SIZE,
+        }).then(async (rows) => {
+            const reasons = await latestUnresolvedReasons(db, ctx.tenantId);
+            // FLATTENED to two scalar fields. The relation object is stripped
+            // because this response is consumed by the access-review page
+            // through an `Array.isArray` check that fails open — the docblock
+            // above says adding FIELDS is safe and changing the SHAPE is not,
+            // and a nested object on every row is closer to the second.
+            return rows.map(({ identityLink, ...account }) => ({
+                ...account,
+                linked: identityLink !== null,
+                // Only meaningful when unlinked. A linked account carries no
+                // reason, rather than a stale one from before it linked.
+                unlinkedReason: identityLink === null ? (reasons.get(account.id) ?? null) : null,
+            }));
         })
     );
+}
+
+/**
+ * Why the last reconcile could not link each account, keyed by account id.
+ *
+ * WHY THIS READS AN EXECUTION ROW RATHER THAN RECOMPUTING. The reconciler is the
+ * only thing that knows WHY — it holds the employee roster and the ambiguity
+ * rules at the moment it ran — and it persists that verdict on the sync's own
+ * IntegrationExecution row. Recomputing here would be a second implementation of
+ * the matching rules, free to drift from the one that actually decides.
+ *
+ * The corollary is that this is a SNAPSHOT, and the caller must treat it as one:
+ * `linked` is read live from the relation and is authoritative; the reason is
+ * from the last sync and is only offered for accounts that are still unlinked.
+ *
+ * An absent reason is not "no problem" — it is "the last reconcile did not name
+ * this one", which happens when the sample hit MAX_UNRESOLVED_REPORTED. The
+ * caller renders that as unknown, never as fine.
+ */
+async function latestUnresolvedReasons(
+    db: PrismaTx,
+    tenantId: string,
+): Promise<Map<string, string>> {
+    const rows = await db.integrationExecution.findMany({
+        where: { tenantId, automationKey: { endsWith: '.sync' } },
+        select: { automationKey: true, resultJson: true, executedAt: true },
+        orderBy: { executedAt: 'desc' },
+        // Bounded, and deliberately more than one: the map is built across
+        // providers, and each provider's latest sync is a different row.
+        take: 20,
+    });
+
+    const seenProvider = new Set<string>();
+    const out = new Map<string, string>();
+    for (const row of rows) {
+        // Only the MOST RECENT sync per provider contributes. An older one
+        // would resurrect a reason for an account that has since linked.
+        if (seenProvider.has(row.automationKey)) continue;
+        seenProvider.add(row.automationKey);
+
+        const result = row.resultJson;
+        if (result === null || typeof result !== 'object' || Array.isArray(result)) continue;
+        const reconcile = (result as Record<string, unknown>).linkReconcile;
+        if (reconcile === null || typeof reconcile !== 'object' || Array.isArray(reconcile)) continue;
+        const unresolved = (reconcile as Record<string, unknown>).unresolved;
+        if (!Array.isArray(unresolved)) continue;
+
+        for (const entry of unresolved) {
+            if (entry === null || typeof entry !== 'object') continue;
+            const { connectedAccountId, reason } = entry as Record<string, unknown>;
+            if (typeof connectedAccountId === 'string' && typeof reason === 'string') {
+                out.set(connectedAccountId, reason);
+            }
+        }
+    }
+    return out;
 }
 
 /**

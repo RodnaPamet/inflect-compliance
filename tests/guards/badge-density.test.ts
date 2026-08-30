@@ -112,7 +112,13 @@ const STATUS_BADGE_BUDGET: Record<string, number> = {
     "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx": 6,
     // P1 — synced-identity roster: provider / status / admin / MFA are each a
     // distinct, decision-relevant security signal (one per column, not stacked).
-    "src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx": 5,
+    // 5 → 6 for the HR-record column. It earns a loud badge because it is the
+    // only signal on this page that means the account is permanently OUTSIDE
+    // offboarding: a leaver pass acts on workers the HR feed marks TERMINATED,
+    // and a person the feed does not carry can never be marked anything. Only
+    // the EXCEPTION is badged — a matched account renders as quiet text, per
+    // this guard's own advice, so the page does not shout on every row.
+    "src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx": 6,
     // /tasks/dashboard retired in TP-7 (redirect shim, no badges).
     "src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx": 5,
     // Prompt 2 — the pack page's new share-links section adds a per-share
