@@ -34,6 +34,10 @@ interface AccountRow {
     syncedAt: string | null;
     isProtected: boolean;
     protectionReason: string | null;
+    /** Live, from the link relation — authoritative. */
+    linked: boolean;
+    /** From the LAST reconcile, and only when still unlinked. May be absent. */
+    unlinkedReason: string | null;
 }
 
 export default function IdentityAccountsPage() {
@@ -94,6 +98,45 @@ export default function IdentityAccountsPage() {
         { id: 'name', accessorKey: 'displayName', header: t('identityAccounts.colName'), cell: ({ getValue }) => <span className="text-content-muted">{String(getValue() ?? '—')}</span> },
         { id: 'status', accessorKey: 'status', header: t('integrations.colStatus'), cell: ({ row }) => <StatusBadge variant={row.original.status === 'ACTIVE' ? 'success' : 'neutral'}>{row.original.status}</StatusBadge> },
         { id: 'admin', accessorKey: 'isAdmin', header: t('identityAccounts.colAdmin'), cell: ({ row }) => row.original.isAdmin ? <StatusBadge variant="warning">{t('identityAccounts.admin')}</StatusBadge> : <span className="text-content-subtle">—</span> },
+        {
+            id: 'linked',
+            accessorKey: 'linked',
+            header: t('identityAccounts.colLinked'),
+            // THE OFFBOARDING GAP, RUNNING THE OTHER WAY.
+            //
+            // An account with no employee is one no leaver pass will ever act
+            // on: the pass reads workers the HR feed marks TERMINATED, and a
+            // person the feed does not carry can never be marked anything. So
+            // this account is not "not yet linked" — without intervention it is
+            // permanently outside offboarding, and nothing else on this page
+            // says so.
+            //
+            // The reconciler already computes WHY and records it on the sync's
+            // execution row; until now nothing read it.
+            cell: ({ row }) => {
+                // MATCHED IS THE NORMAL STATE, so it does not get a badge.
+                // The density guard's rule is one loud badge per row with
+                // secondaries quietened into the chrome, and it is right here:
+                // a page where every row shouts "Matched" buries the handful
+                // that say the opposite.
+                if (row.original.linked) {
+                    return <span className="text-content-subtle">{t('identityAccounts.linked')}</span>;
+                }
+                const reason = row.original.unlinkedReason;
+                return (
+                    <span className="inline-flex flex-wrap items-center gap-tight">
+                        <StatusBadge variant="warning">{t('identityAccounts.unlinked')}</StatusBadge>
+                        {/* An ABSENT reason is not "no problem" — it is "the last
+                            reconcile did not name this one", which happens when
+                            the sample hits its cap. Rendered as unknown, never
+                            as fine. */}
+                        <span className="font-mono text-xs text-content-muted">
+                            {reason ?? t('identityAccounts.unlinkedReasonUnknown')}
+                        </span>
+                    </span>
+                );
+            },
+        },
         {
             id: 'protected',
             accessorKey: 'isProtected',
