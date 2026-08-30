@@ -6,15 +6,26 @@
  * writers, and the orchestration. This is the code path from "the HR feed says
  * this person has left" to those rails being asked their questions.
  *
- * ═══ CLAMPED AT DRY_RUN, BY CONSTRUCTION ═══
+ * ═══ THE CLAMP IS THE TOP RUNG. WRITES ARE LIVE-CAPABLE ═══
  *
- * `LEAVER_MAX_MODE` is `DRY_RUN` and this module refuses above it. Wiring a
- * feature and moving a tenant to unattended writes are two decisions, and the
- * ladder exists so they cannot be taken in one change. A tenant configured at
- * PROPOSE or AUTOMATIC today reached that rung by ELAPSED TIME — the gate counts
- * days since `dryRunSince`, and no pass has ever run — so its configured mode is
- * a statement about waiting, not about anything anyone observed. Refusing it is
- * the reading that cannot be got wrong.
+ * `LEAVER_MAX_MODE` is `AUTOMATIC` as of 2026-08-30, so this module no longer
+ * refuses any rung the ladder can reach. Read that line (below, at its
+ * declaration) before reasoning about whether writes can happen — this header
+ * said `DRY_RUN` for one revision after the constant moved, and two separate
+ * analyses started from it and reached the wrong conclusion.
+ *
+ * Wiring a feature and moving a tenant to unattended writes are still two
+ * decisions; what separates them is now the LADDER alone, not the clamp. A
+ * tenant reaches PROPOSE or AUTOMATIC by elapsed time in DRY_RUN
+ * (`DRY_RUN_MIN_DAYS`), one rung at a time, and starts at DISABLED. What the
+ * clamp used to add — a blanket refusal above the second rung — is gone
+ * deliberately, on the owner's instruction.
+ *
+ * So the rails below are now the whole of the protection, not a second layer
+ * behind a ceiling: the blast-radius breaker, the account-protection flag, the
+ * write-target rail, the self-lockout refusal, and — outside this repo — the
+ * per-connection `writesEnabled` flag and the Entra consent without which a
+ * live writer cannot be constructed.
  *
  * ═══ WHY LINK FRESHNESS IS ALSO THE COMPLETENESS GATE ═══
  *
