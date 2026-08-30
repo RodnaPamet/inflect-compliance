@@ -185,7 +185,10 @@
         "docs/integration-registry-sync-architecture.md": {
             "class": "authoritative"
         },
-        "docs/keyboard-shortcuts.md": {
+        "docs/jml-joiner-design.md": {
+      "class": "living"
+    },
+    "docs/keyboard-shortcuts.md": {
             "class": "authoritative"
         },
         "docs/kpi-filterables.md": {
