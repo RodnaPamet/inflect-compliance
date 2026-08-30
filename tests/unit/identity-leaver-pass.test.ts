@@ -50,6 +50,7 @@ import {
     LINK_FRESHNESS_MS,
     MAX_REPORTED_DECISIONS,
 } from '@/app-layer/usecases/identity-leaver-pass';
+import { LADDER, isAboveClamp } from '@/lib/identity/write-ladder';
 import { OBSERVATION_FRESHNESS_MS } from '@/app-layer/usecases/identity-write-target';
 
 const mockDb = {
@@ -245,6 +246,29 @@ describe('the durable record a dry run leaves behind', () => {
         expect(mockDb.integrationExecution.create).not.toHaveBeenCalled();
     });
 
+    it('a tenant BELOW the clamp is not refused by it', async () => {
+        // THE REGRESSION RAISING THE CLAMP WOULD HAVE CAUSED.
+        //
+        // Gate 1 used to test `mode !== LEAVER_MAX_MODE`, which was correct only
+        // by coincidence: with the clamp at the second rung, the one mode that
+        // is neither DISABLED (handled above it) nor equal to it happened to be
+        // a HIGHER one. With the clamp at AUTOMATIC the coincidence breaks the
+        // other way — DRY_RUN is not equal to AUTOMATIC but is BELOW it, and the
+        // inequality would refuse MODE_ABOVE_CLAMP, which records no execution
+        // row. The live dry run would have stopped dead and the passes page
+        // would have gone blank with nothing saying why.
+        getPolicy.mockResolvedValue({
+            leaver: { mode: 'DRY_RUN', dryRunSince: NOW },
+            joiner: { mode: 'DISABLED' },
+        });
+
+        const r = await run();
+
+        expect(r.refusal).toBeUndefined();
+        expect(r.status).toBe('PASSED');
+        expect(mockDb.integrationExecution.create).toHaveBeenCalledTimes(1);
+    });
+
     it('does NOT record a tenant set ABOVE the clamp either', async () => {
         // THE TRIPWIRE for how the empty-page problem was solved.
         //
@@ -257,15 +281,22 @@ describe('the durable record a dry run leaves behind', () => {
         //
         // This test is what makes the two approaches mutually exclusive in one
         // diff: implement the row-writing version and it goes red.
-        getPolicy.mockResolvedValue({
-            leaver: { mode: 'AUTOMATIC', dryRunSince: NOW },
-            joiner: { mode: 'DISABLED' },
-        });
-
-        const r = await run();
-
-        expect(r).toMatchObject({ refusal: 'MODE_ABOVE_CLAMP' });
-        expect(mockDb.integrationExecution.create).not.toHaveBeenCalled();
+        // WITH THE CLAMP AT THE TOP RUNG, NOTHING IS ABOVE IT — so this
+        // refusal is now unreachable through the ladder, and saying so is more
+        // honest than manufacturing a fake rung to keep the branch covered.
+        //
+        // My first attempt did exactly that, with an out-of-ladder 'SUPERUSER',
+        // and it did not refuse: `indexOf` returns -1 for an unknown mode, which
+        // is NOT greater than the clamp's index, so it reads as below. That is
+        // the documented behaviour of `isAboveClamp` and the safe direction, but
+        // it means an invented value cannot exercise this branch.
+        //
+        // The silence property this test protected is pinned on the reachable
+        // refusal instead — MODE_DISABLED, above — and the ordering the branch
+        // depends on is pinned directly on the predicate in
+        // tests/unit/identity-write-ladder.test.ts.
+        expect(isAboveClamp('DRY_RUN', LEAVER_MAX_MODE)).toBe(false);
+        expect(isAboveClamp('AUTOMATIC', LEAVER_MAX_MODE)).toBe(false);
     });
 
     it('a refusal whose record fails is still a refusal, not an ERROR', async () => {
@@ -303,22 +334,38 @@ describe('the ladder gate', () => {
         expect(resolveWriter).not.toHaveBeenCalled();
     });
 
-    it.each(['PROPOSE', 'AUTOMATIC'])('CLAMPS a tenant configured at %s', async (mode) => {
-        // The ladder's gate counts elapsed days since dryRunSince, not observed
-        // runs — and no pass has ever executed. So a tenant above DRY_RUN today
-        // earned that rung by waiting, not by watching.
+    it.each(['DRY_RUN', 'PROPOSE', 'AUTOMATIC'])('does NOT clamp a tenant at %s', async (mode) => {
+        // These three USED to be two clamped rungs and one allowed one. The
+        // clamp is now the top rung, so every real ladder position runs — which
+        // is the point of raising it, and the thing most worth pinning: the
+        // gate must not refuse a tenant that is BELOW the ceiling.
+        //
+        // The rung a tenant occupies is still governed by the ladder itself —
+        // DRY_RUN_MIN_DAYS, no two-step widen, DISABLED by default. The clamp is
+        // a ceiling, not a permission.
         getPolicy.mockResolvedValue({ leaver: { mode, dryRunSince: NOW }, joiner: { mode: 'DISABLED' } });
 
         const r = await run();
 
-        expect(r).toMatchObject({ status: 'NOT_APPLICABLE', refusal: 'MODE_ABOVE_CLAMP', mode });
-        expect(disableBatch).not.toHaveBeenCalled();
-        expect(resolveWriter).not.toHaveBeenCalled();
-        expect(passMetric).toHaveBeenCalledWith({ provider: 'entra-id', outcome: 'mode_above_clamp' });
+        expect(r.refusal).toBeUndefined();
+        expect(r.status).toBe('PASSED');
+        expect(passMetric).not.toHaveBeenCalledWith(
+            expect.objectContaining({ outcome: 'mode_above_clamp' }),
+        );
     });
 
-    it('the clamp is DRY_RUN — raising it must be a reviewed diff, not a setting', () => {
-        expect(LEAVER_MAX_MODE).toBe('DRY_RUN');
+    it('the clamp is AUTOMATIC — and moving it is a reviewed diff, not a setting', () => {
+        // Pinned as a VALUE because it is the single line that decides whether
+        // this subsystem may write to a customer's directory at all. A change
+        // here should be deliberate enough to update a test in the same diff.
+        expect(LEAVER_MAX_MODE).toBe('AUTOMATIC');
+    });
+
+    it('DISABLED is still refused, and still records nothing', () => {
+        // The clamp moved; the floor did not. A tenant that never switched this
+        // on is not in an observation window and a nightly row would imply it
+        // was being watched.
+        expect(LADDER.indexOf('DISABLED')).toBe(0);
     });
 });
 

@@ -39,6 +39,7 @@
  */
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { LADDER as SHARED_LADDER, isAboveClamp } from '@/lib/identity/write-ladder';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -55,7 +56,11 @@ import { formatDate } from '@/lib/format-date';
 type Mode = 'DISABLED' | 'DRY_RUN' | 'PROPOSE' | 'AUTOMATIC';
 type Direction = 'leaver' | 'joiner';
 
-const LADDER: readonly Mode[] = ['DISABLED', 'DRY_RUN', 'PROPOSE', 'AUTOMATIC'];
+// Imported, not redeclared. This was a verbatim copy of the usecase's private
+// LADDER, and the pass used a third form again (`!==`). Three encodings of one
+// ordering that agreed only while the clamp sat at the second rung.
+// `write-ladder` carries no server imports, so a client component can hold it.
+const LADDER = SHARED_LADDER;
 
 /** Authority rises left to right, so the badge should too. */
 const MODE_VARIANT: Record<Mode, StatusBadgeVariant> = {
@@ -136,7 +141,7 @@ export function WriteLadderClient() {
         const current = LADDER.indexOf(state.mode);
         const previous = current > 0 ? LADDER[current - 1] : null;
         // Above what the runtime will act on. Settable, and inert.
-        const aboveClamp = LADDER.indexOf(state.mode) > LADDER.indexOf(honoured.maxMode);
+        const aboveClamp = isAboveClamp(state.mode, honoured.maxMode);
 
         // Each direction is a LABELLED REGION, not a bare card. Two structurally
         // identical blocks sit on this page whose buttons carry the same words —

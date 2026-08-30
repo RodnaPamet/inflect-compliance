@@ -58,6 +58,7 @@ import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
 import { getIdentityWritePolicy } from './identity-write-policy';
 import { OBSERVATION_FRESHNESS_MS } from './identity-write-target';
+import { isAboveClamp } from '@/lib/identity/write-ladder';
 import {
     disableAccountsForLeaver,
     findLeaverCandidates,
@@ -73,9 +74,29 @@ import { recordLeaverPassOutcome } from '@/lib/observability/integration-metrics
  * The highest rung this pass will act at.
  *
  * A constant rather than a config value on purpose: raising it must be a diff
- * somebody reviews, not a setting somebody flips.
+ * somebody reviews, not a setting somebody flips. This is that diff.
+ *
+ * RAISED TO AUTOMATIC on the owner's instruction, 2026-08-30. What it does and
+ * does not do, because the distinction is the whole safety story:
+ *
+ *   It does NOT make any tenant act. The clamp is a CEILING, and every tenant's
+ *   own rung still governs — the ladder still refuses a two-step widen, still
+ *   requires DRY_RUN_MIN_DAYS in dry run before leaving it, and still starts
+ *   every tenant at DISABLED. The one live tenant is at DRY_RUN with its window
+ *   open until 2026-09-05; this change does not move it and cannot.
+ *
+ *   What it DOES do is remove the ceiling that was making a widen inert. Before
+ *   this, a tenant that climbed to PROPOSE or AUTOMATIC was refused by gate 1
+ *   with no execution row — configured and silent. After it, a tenant that
+ *   completes its dry-run window and widens will actually write to the
+ *   directory.
+ *
+ * The rails below are what stand between that and a mistake: the blast-radius
+ * breaker, the account-protection flag, the write-target rail, the self-lockout
+ * refusal, and — outside this repo — the per-connection `writesEnabled` flag and
+ * the Entra admin consent that a live writer cannot be constructed without.
  */
-export const LEAVER_MAX_MODE = 'DRY_RUN' as const;
+export const LEAVER_MAX_MODE = 'AUTOMATIC' as const;
 
 /**
  * How recently a link must have been re-observed to be actable.
@@ -403,11 +424,20 @@ export async function runIdentityLeaverPass(input: {
             recordLeaverPassOutcome({ provider: input.provider, outcome: 'mode_disabled' });
             return refused(mode, 'MODE_DISABLED', 'Leaver writes are switched off for this tenant.');
         }
-        if (mode !== LEAVER_MAX_MODE) {
-            // The clamp. Not an error — a deliberate ceiling while the pass
-            // itself is new — but loud, because a tenant sitting at AUTOMATIC
-            // and seeing nothing happen deserves to find out why from a log
-            // rather than from an offboarding that quietly never ran.
+        if (isAboveClamp(mode, LEAVER_MAX_MODE)) {
+            // The clamp. Not an error — a deliberate ceiling — but loud,
+            // because a tenant configured above it and seeing nothing happen
+            // deserves to find out why from a log rather than from an
+            // offboarding that quietly never ran.
+            //
+            // ORDINAL, never `mode !== LEAVER_MAX_MODE`. That inequality was
+            // correct only by coincidence: with the clamp at the second rung,
+            // the sole mode that is neither DISABLED (handled above) nor equal
+            // to it happened to be a higher one. Raise the clamp and the
+            // coincidence breaks the other way — a tenant at DRY_RUN, BELOW an
+            // AUTOMATIC clamp, would fail `!==` and be refused MODE_ABOVE_CLAMP,
+            // which records no execution row. The dry run would stop dead and
+            // the passes page would go blank with nothing saying why.
             logger.warn('leaver pass clamped below the tenant’s configured mode', {
                 component: 'identity-leaver-pass',
                 tenantId: ctx.tenantId,
