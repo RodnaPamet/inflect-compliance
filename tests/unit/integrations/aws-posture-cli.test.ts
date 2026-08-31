@@ -368,3 +368,61 @@ describe('AwsPostureProvider.mapResultToEvidence', () => {
         ).toBeNull();
     });
 });
+
+
+describe('AwsPostureProvider — child-process edge shapes', () => {
+    /** Resolve the next execFile call with the RAW arguments given (no defaults). */
+    function rawCliResult(err: unknown, stdout?: string, stderr?: string) {
+        execFileMock.mockImplementationOnce(
+            (_file: string, _args: string[], _o: unknown, cb: Cb) => {
+                cb(err, stdout as string, stderr as string);
+            },
+        );
+    }
+
+    const input = () => ({
+        parsed: { checkType: 'soc2' },
+        connectionConfig: { benchmark: 'soc2', ...CREDS },
+    });
+
+    it('treats an error carrying no numeric code as a FAILURE, not a pass', async () => {
+        // A signal kill (`{signal: 'SIGKILL'}`, no `code`) is still a broken
+        // run — `ok: !err` is what keeps it off the pass path, and the
+        // exit-code fallback must not read as success.
+        rawCliResult(Object.assign(new Error('killed'), { signal: 'SIGKILL' }), '', '');
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('ERROR');
+        expect(res.summary).toBe('Powerpipe collector exited non-zero.');
+    });
+
+    it('treats an error carrying no numeric code as a credential failure at validate time', async () => {
+        rawCliResult(new Error('killed'), '', '');
+        const res = await provider().validateConnection({}, CREDS);
+        expect(res.valid).toBe(false);
+        expect(res.error).toContain('AWS credential check failed');
+    });
+
+    it('tolerates undefined stdout/stderr from the child', async () => {
+        // execFile hands back undefined streams on some failure shapes; the
+        // nullish coalesce inside runCli must keep this on the insufficient-
+        // data path rather than throwing `String(undefined)` into the parser.
+        rawCliResult(null, undefined, undefined);
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('ERROR');
+        expect(res.errorMessage).toBe('collector returned zero controls');
+    });
+
+    it('tolerates undefined stderr on a failing run', async () => {
+        rawCliResult(exitCode(1), undefined, undefined);
+
+        const res = await provider().validateConnection({}, CREDS);
+
+        expect(res.error).toBe(
+            'AWS credential check failed: sts:GetCallerIdentity denied',
+        );
+    });
+});
