@@ -176,7 +176,7 @@ export const MAX_REPORTED_DECISIONS = 200;
 export function leaverPassStatus(
     refused: string | undefined,
     resultCount: number,
-): LeaverPassStatus {
+): LeaverPassRanStatus {
     if (refused) return 'NOT_APPLICABLE';
     return resultCount > MAX_REPORTED_DECISIONS ? 'PARTIAL' : 'PASSED';
 }
@@ -328,7 +328,7 @@ async function safeRecordRefusal(
 async function writeExecutionRow(
     ctx: RequestContext,
     provider: string,
-    status: 'PASSED' | 'PARTIAL' | 'NOT_APPLICABLE',
+    status: LeaverPassRanStatus,
     // `Prisma.InputJsonValue`, not `Record<string, unknown>`. The two callers
     // used to pass object LITERALS, which Prisma accepted because their inferred
     // types were concrete; hoisting the create into one helper widened the
@@ -404,6 +404,22 @@ export async function listLeaverPasses(
  * cross-check against a union in another part of the file.
  */
 export type LeaverPassStatus = 'PASSED' | 'PARTIAL' | 'NOT_APPLICABLE' | 'ERROR';
+
+/**
+ * Every status a pass that RAN can produce — the full union minus `ERROR`.
+ *
+ * `ERROR` belongs to the catch path, which reports a pass that threw and never
+ * reached a decision. Keeping it out of this type is what lets the compiler
+ * check the distinction rather than a comment assert it: `writeExecutionRow`
+ * takes this type, so a future edit that tries to persist `ERROR` through the
+ * normal path fails to compile instead of writing a row that inflates
+ * `errorCount24h`.
+ *
+ * Derived with `Exclude` rather than spelled out again, so widening
+ * `LeaverPassStatus` widens this in the same edit. Spelling it out is how the
+ * two ternaries this file just consolidated came to disagree.
+ */
+export type LeaverPassRanStatus = Exclude<LeaverPassStatus, 'ERROR'>;
 
 export type LeaverPassRefusal =
     | 'MODE_DISABLED'
