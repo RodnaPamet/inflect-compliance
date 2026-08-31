@@ -156,6 +156,47 @@ describe('GitHubClient.testConnection — non-200 status arms', () => {
         expect(result).toEqual({ ok: false, message: 'Invalid or expired token' });
         expect(result.latencyMs).toBeUndefined();
     });
+
+    /**
+     * Every other test here injects a fetch, which bypasses the default arm of
+     * `BaseIntegrationClient`'s `fetchImpl ?? resilientFetch`. This one omits
+     * it, so the request has to travel the production path
+     * (resilientFetch → boundedFetch → global fetch) to reach the stub.
+     *
+     * Break the default (`fetchImpl!`, or a default that is not callable) and
+     * the request throws, testConnection's catch arm converts it to
+     * `ok: false`, and both assertions below fail.
+     */
+    test('a client constructed with no fetch impl reaches the network through the default resilient fetch', async () => {
+        const original = globalThis.fetch;
+        const stub = jest.fn(async (
+            _input: RequestInfo | URL,
+            _init?: RequestInit,
+        ): Promise<Response> => ({
+            status: 200,
+            ok: true,
+            json: async () => ({ full_name: 'acme/platform' }),
+            text: async () => '',
+            headers: new Headers(),
+        } as unknown as Response));
+        globalThis.fetch = stub as unknown as typeof globalThis.fetch;
+
+        try {
+            const client = new GitHubClient(CONFIG); // no fetchImpl → the `?? resilientFetch` arm
+            const result = await client.testConnection();
+
+            expect(result.ok).toBe(true);
+            expect(result.message).toBe('Connected to acme/platform');
+            expect(stub).toHaveBeenCalledTimes(1);
+            expect(String(stub.mock.calls[0][0])).toBe(REPO_URL);
+            // boundedFetch is in the chain, so the default arm also carries an
+            // abort signal the injected-fetch tests never see.
+            const init = stub.mock.calls[0][1] as RequestInit | undefined;
+            expect(init?.signal).toBeInstanceOf(AbortSignal);
+        } finally {
+            globalThis.fetch = original;
+        }
+    });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -410,14 +451,12 @@ describe('GitHubSyncOrchestrator — webhook payload extraction', () => {
     let store: InMemoryMappingStore;
     let localStore: InMemoryLocalStore;
     let orch: GitHubSyncOrchestrator;
-    let calls: RecordedCall[];
 
     beforeEach(() => {
         (enqueue as jest.Mock).mockClear();
         store = new InMemoryMappingStore();
         localStore = new InMemoryLocalStore();
         const rec = recordingFetch(200, { enforce_admins: { enabled: true } });
-        calls = rec.calls;
         orch = new GitHubSyncOrchestrator({
             config: CONFIG, store, localStore, fetchImpl: rec.fetch,
         });
@@ -499,16 +538,6 @@ describe('GitHubSyncOrchestrator — webhook payload extraction', () => {
         expect(result.syncCount).toBe(1);
         expect(store.mappings.get(mapping.id)!.syncStatus).toBe('STALE');
         expect(store.mappings.get(mapping.id)!.errorMessage).toBe('Remote object was deleted');
-    });
-
-    test('constructing without a logger or fetch impl still refuses cleanly and opens no socket', async () => {
-        const bare = new GitHubSyncOrchestrator({ config: CONFIG, store, localStore });
-        const result = await bare.handleWebhookEvent({
-            ctx, provider: 'github', eventType: 'updated', payload: {},
-        });
-        expect(result.processed).toBe(false);
-        expect(result.reason).toBe('Could not extract remote ID from updated payload');
-        expect(calls).toHaveLength(0);
     });
 });
 
