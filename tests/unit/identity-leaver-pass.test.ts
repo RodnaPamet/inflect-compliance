@@ -208,12 +208,64 @@ describe('the durable record a dry run leaves behind', () => {
         }));
         disableBatch.mockResolvedValue({ results: many });
 
-        await run();
+        const r = await run();
 
         const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
         expect(data.status).toBe('PARTIAL');
         expect(data.resultJson.decisions).toHaveLength(MAX_REPORTED_DECISIONS);
         expect(data.resultJson.decisionsTruncated).toBe(true);
+
+        // The half this test used to be missing. The row said PARTIAL and the
+        // value handed back to the job said PASSED, because they were two
+        // hand-written ternaries 400 lines apart and only one of them had ever
+        // learned the word. `executor-registry` puts this return straight onto
+        // the job result, so everything downstream of the queue read a truncated
+        // pass as a complete one.
+        expect(r.status).toBe('PARTIAL');
+    });
+
+    it.each([
+        [
+            'a plain pass',
+            () => {
+                /* the beforeEach defaults already describe one */
+            },
+        ],
+        [
+            'a refused batch',
+            () => {
+                disableBatch.mockResolvedValue({ results: [], refused: 'blast radius' });
+            },
+        ],
+        [
+            'a truncated report',
+            () => {
+                disableBatch.mockResolvedValue({
+                    results: Array.from({ length: MAX_REPORTED_DECISIONS + 1 }, (_, i) => ({
+                        outcome: 'DRY_RUN' as const,
+                        linkId: `l${i}`,
+                    })),
+                });
+            },
+        ],
+    ])('reports the same status it recorded, for %s', async (_label, arrange) => {
+        // The INVARIANT, stated once, rather than three statuses asserted
+        // separately and hoped to match. A test that pins each side to its own
+        // expected literal passes just as happily when both are wrong together,
+        // and says nothing at all about the property that actually broke: that
+        // the artefact an operator reads and the result the queue reports are
+        // the same claim about the same run.
+        //
+        // Written against the two REAL outputs, not against `leaverPassStatus`.
+        // Asserting both equal the helper would be true by construction the
+        // moment both call it — which is the state we are IN, so the assertion
+        // would survive one of them being rewired back to a literal.
+        arrange();
+
+        const r = await run();
+
+        const recorded = mockDb.integrationExecution.create.mock.calls[0][0].data.status;
+        expect(r.status).toBe(recorded);
     });
 
     it('records a pass that ran and REFUSED, so silence cannot look like a run', async () => {

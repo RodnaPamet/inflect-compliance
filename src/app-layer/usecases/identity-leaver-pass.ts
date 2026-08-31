@@ -133,6 +133,55 @@ export const LINK_FRESHNESS_MS = OBSERVATION_FRESHNESS_MS;
 export const MAX_REPORTED_DECISIONS = 200;
 
 /**
+ * The status of a pass, derived ONCE and read by both the row and the return.
+ *
+ * These were two expressions of the same fact sitting 400 lines apart, and they
+ * disagreed: the row could be written `PARTIAL` while the value handed back to
+ * the job was hardcoded `PASSED`. `executor-registry` carries that return
+ * straight onto the job result, so a truncated pass reported itself complete to
+ * everything downstream of the queue while its own artefact said otherwise.
+ *
+ * A helper rather than a variable threaded between them, because the two sites
+ * cannot share one: the record is written inside a try/catch whose whole purpose
+ * is that a failed write must not fail the pass, so on that path there is no
+ * value to thread. Deriving from the same inputs at both ends makes them equal
+ * by construction instead of by discipline — which is the property this
+ * subsystem has now failed to hold three times.
+ *
+ * WHY EACH STATUS
+ *
+ * PARTIAL means "produced output, and that output is incomplete" — which is what
+ * a truncated decision list is, and is NOT what a FAILED or INDETERMINATE
+ * outcome is. Those are results the pass is reporting correctly, and they are in
+ * `counts`.
+ *
+ * A REFUSED BATCH IS NOT A COMPLETE PASS. The breaker returns `results: []` for
+ * the whole batch, so the row was once written as PASSED — which the badge
+ * renders as "Ran — complete" beside an empty Refusal cell and a decision count
+ * of 0. The one outcome that means "the pass deliberately did nothing because
+ * the blast radius looked wrong" was the one that read as a clean night.
+ *
+ * NOT_APPLICABLE rather than ERROR for that refusal: nothing failed, and
+ * `errorCount24h` counts `status: 'ERROR'` only, so ERROR would inflate a
+ * diagnostics counter for a rail working exactly as designed. The WRITER_*
+ * refusals record NOT_APPLICABLE with a non-zero candidate count, so this
+ * follows the file's own precedent rather than the enum's empty-population
+ * wording.
+ *
+ * The refusal check comes FIRST and that order is safe: `refused` is set at
+ * exactly one place, and that return carries `results: []`, so a refusal and a
+ * truncated decision list are mutually exclusive by construction — a real
+ * PARTIAL cannot be masked by the branch above it.
+ */
+export function leaverPassStatus(
+    refused: string | undefined,
+    resultCount: number,
+): LeaverPassStatus {
+    if (refused) return 'NOT_APPLICABLE';
+    return resultCount > MAX_REPORTED_DECISIONS ? 'PARTIAL' : 'PASSED';
+}
+
+/**
  * Suffix identifying a leaver pass among integration executions.
  *
  * Exported because the tenant-wide "automated checks" list EXCLUDES it. Two
@@ -202,31 +251,16 @@ async function recordPassExecution(
         // those apart is the seven-day window's whole job.
         ...(r.basis ? { basis: r.basis } : {}),
     }));
-    const truncated = results.length > reported.length;
+    // Deliberately the SAME predicate `leaverPassStatus` applies, spelled the
+    // same way. The row carries truncation as a flag as well as a status, and
+    // the earlier `> reported.length` form was a second expression of the first
+    // — provably equal, which is exactly the reasoning that let the status
+    // itself drift.
+    const truncated = results.length > MAX_REPORTED_DECISIONS;
 
-    // PARTIAL means "produced output, and that output is incomplete" — which is
-    // what a truncated decision list is, and is NOT what a FAILED or
-    // INDETERMINATE outcome is. Those are results the pass is reporting
-    // correctly, and they are in `counts`.
-    // A REFUSED BATCH IS NOT A COMPLETE PASS.
-    //
-    // The breaker returns `results: []` for the whole batch, so this row was
-    // being written as PASSED — which the badge renders as "Ran — complete"
-    // beside an empty Refusal cell and a decision count of 0. The one outcome
-    // that means "the pass deliberately did nothing because the blast radius
-    // looked wrong" was the one that read as a clean night.
-    //
-    // NOT_APPLICABLE rather than ERROR: nothing failed, and `errorCount24h`
-    // counts `status: 'ERROR'` only, so ERROR would inflate a diagnostics
-    // counter for a rail working exactly as designed. The WRITER_* refusals
-    // below already record NOT_APPLICABLE with a non-zero candidate count, so
-    // this follows the file's own precedent rather than the enum's
-    // empty-population wording.
-    //
-    // The ternary is order-safe: `refused` is set at exactly one place, and that
-    // return carries `results: []`, so a refusal and a truncated decision list
-    // are mutually exclusive by construction — a real PARTIAL cannot be masked.
-    await writeExecutionRow(ctx, provider, refused ? 'NOT_APPLICABLE' : truncated ? 'PARTIAL' : 'PASSED', {
+    // Why each status: see `leaverPassStatus`. The choice is made there because
+    // the value handed back to the job has to make the identical one.
+    await writeExecutionRow(ctx, provider, leaverPassStatus(refused, results.length), {
         ...summary,
         ...(refused ? { refusal: 'BATCH_REFUSED' } : {}),
         decisions,
@@ -358,7 +392,18 @@ export async function listLeaverPasses(
     );
 }
 
-export type LeaverPassStatus = 'PASSED' | 'NOT_APPLICABLE' | 'ERROR';
+/**
+ * Mirrors the `IntegrationExecution.status` values a pass can persist.
+ *
+ * PARTIAL is the one that was missing. It means "ran, produced output, and that
+ * output is incomplete" — today only a truncated decision list, which the
+ * blast-radius breaker makes unreachable by refusing above 50 rather than
+ * trimming to 200. Unreachable is not the same as impossible, and the two ways
+ * it becomes reachable are both ordinary: raise MAX_DISABLES_PER_RUN, or lower
+ * MAX_REPORTED_DECISIONS. Either is a one-line change nobody would think to
+ * cross-check against a union in another part of the file.
+ */
+export type LeaverPassStatus = 'PASSED' | 'PARTIAL' | 'NOT_APPLICABLE' | 'ERROR';
 
 export type LeaverPassRefusal =
     | 'MODE_DISABLED'
@@ -595,10 +640,15 @@ export async function runIdentityLeaverPass(input: {
                 outcome: outcome.refused ? 'batch_refused' : 'completed',
             });
             return {
-                // Matches the row written above. The two disagreeing is the
-                // defect one subsystem over (a resumable sync returned PARTIAL
-                // while persisting PASSED), and it is worth not repeating.
-                status: outcome.refused ? 'NOT_APPLICABLE' : 'PASSED',
+                // The SAME derivation as the row written above, not a second
+                // expression of it. This used to be a hand-written ternary that
+                // had already drifted — it could not produce PARTIAL at all, so
+                // a truncated pass returned PASSED while its row said PARTIAL,
+                // which is the defect one subsystem over (#2170: a resumable
+                // sync RETURNED PARTIAL while PERSISTING PASSED) reproduced here
+                // in mirror image — same two sites disagreeing, opposite way
+                // round, which is why fixing that one did not find this one.
+                status: leaverPassStatus(outcome.refused, outcome.results.length),
                 ...(outcome.refused ? { refusal: 'BATCH_REFUSED' as const } : {}),
                 mode,
                 counts,
