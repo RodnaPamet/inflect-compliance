@@ -196,11 +196,20 @@ describe('the snapshot bag survives a row thinner than the happy path assumes', 
         // actually return. ISO rather than `.toString()` because the bag is
         // stored as JSON on a journal row and read back by another process,
         // where a locale-formatted date is not a timestamp.
+        //
+        // RELATIVE, not a literal instant. `onPremStateObservedAt` is bounded
+        // by OBSERVATION_FRESHNESS_MS against the wall clock elsewhere in this
+        // subsystem, so a fixed date here is a fuse that flips this suite red
+        // on a day nobody committed anything —
+        // tests/guards/observation-clock-is-relative.test.ts enforces that, and
+        // its docblock records the night it already happened. The assertion
+        // below stays exact by comparing against the same value.
+        const observedAt = new Date(Date.now() - 60 * 60 * 1000);
         mockDb.connectedIdentityAccount.findFirst.mockResolvedValue({
             status: 'SUSPENDED',
-            updatedAt: new Date('2026-08-20T03:00:00.000Z'),
+            updatedAt: observedAt,
             onPremisesSyncEnabled: false,
-            onPremStateObservedAt: new Date('2026-08-20T03:00:00.000Z'),
+            onPremStateObservedAt: observedAt,
         });
 
         const state = await createSnapshotWriter(ctx, 'entra-id', 'conn-1').readState('ext-1');
@@ -209,7 +218,7 @@ describe('the snapshot bag survives a row thinner than the happy path assumes', 
         expect(state.priorState).toMatchObject({
             source: 'SNAPSHOT',
             observedStatus: 'SUSPENDED',
-            observedAt: '2026-08-20T03:00:00.000Z',
+            observedAt: observedAt.toISOString(),
             onPremisesSyncEnabled: false,
         });
     });
