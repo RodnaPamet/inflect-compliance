@@ -885,3 +885,545 @@ describe('one connection, one domain controller — enforced rather than asserte
     });
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The refusal rails, one branch at a time.
+//
+// Everything above establishes that the happy path is a compare-and-swap and
+// that a proven refusal is distinguishable from a lost response. What follows
+// is the other half of a writer that disables accounts in someone else's
+// directory: every path on which it must decline, and — just as load-bearing —
+// the neighbouring paths on which it must NOT, because a writer that refuses
+// everything stops offboarding for a whole customer just as silently as one
+// that writes to the wrong object.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('userAccountControl is read as an integer or not at all', () => {
+    // Every decision this writer makes is a bit test on this one value,
+    // including the one deciding whether the account is already disabled — the
+    // guard that stops a second disable journalling "disabled" as the prior
+    // state. A value that cannot be read as a non-negative integer is therefore
+    // not something to coerce past, and each of these shapes arrives from a
+    // real directory or a real LDAP client.
+    it.each<[string, unknown]>([
+        ['an empty string', ''],
+        ['whitespace only', '   '],
+        ['a non-numeric string', 'not-a-number'],
+        ['a negative integer, which no UAC ever is', '-514'],
+        ['an empty multi-value attribute', []],
+    ])('refuses to disable an account whose UAC arrives as %s', async (_label, value) => {
+        const fake = fakeAd({ entries: [userEntry({ userAccountControl: value })] });
+
+        await expect(makeWriter(fake).readState(GUID)).rejects.toThrow(
+            /no readable userAccountControl/,
+        );
+        // Refused at the capture, so nothing downstream ever sees a defaulted
+        // integer to compare-and-swap against.
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it.each<[string, unknown]>([
+        ['a single-element array, which is how ldapts returns most attributes', [String(ENABLED_UAC)]],
+        ['a Buffer, which is how it returns anything it thinks is binary', Buffer.from(String(ENABLED_UAC))],
+    ])('reads the stored integer when it arrives as %s', async (_label, value) => {
+        const fake = fakeAd({ entries: [userEntry({ userAccountControl: value })] });
+        const writer = makeWriter(fake);
+
+        const state = await writer.readState(GUID);
+        expect(state.enabled).toBe(true);
+        expect(state.priorState.userAccountControl).toBe(ENABLED_UAC);
+
+        // And the CAS comparand is that same integer, spelled decimal — not the
+        // array or the Buffer it arrived in, which would match nothing on the
+        // wire and turn every disable into a spurious result 16.
+        await writer.disable(GUID, state);
+        expect(fake.modifies[0].changes[0].values).toEqual([String(ENABLED_UAC)]);
+    });
+});
+
+describe('the capture records an absent attribute as null, never as undefined', () => {
+    it('nulls every optional attribute the directory did not return', async () => {
+        // priorState is JSON-serialised into IdentityWriteJournal.priorStateJson.
+        // `undefined` does not survive that round trip — the key vanishes — and a
+        // restore reading a capture with no `uSNChanged` KEY cannot tell "this
+        // writer never captured one" from "an older schema never had one".
+        const fake = fakeAd({
+            entries: [
+                {
+                    objectGUID: GUID_BYTES,
+                    distinguishedName: DN,
+                    userAccountControl: String(ENABLED_UAC),
+                },
+            ],
+        });
+
+        const prior = (await makeWriter(fake).readState(GUID)).priorState as unknown as AdPriorState;
+
+        expect(prior.sAMAccountName).toBeNull();
+        expect(prior.userPrincipalName).toBeNull();
+        expect(prior.uSNChanged).toBeNull();
+        expect(prior.whenChanged).toBeNull();
+        expect(prior.adminCount).toBeNull();
+        // Present as KEYS, so the round trip preserves the distinction.
+        expect(Object.keys(JSON.parse(JSON.stringify(prior)))).toEqual(
+            expect.arrayContaining(['sAMAccountName', 'uSNChanged', 'whenChanged', 'adminCount']),
+        );
+    });
+
+    it('records an unparseable adminCount as null rather than NaN', async () => {
+        // NaN serialises to `null` in JSON anyway, but it compares false against
+        // everything on the way there — including the `=== 0` test that decides
+        // whether an operator is told about AdminSDHolder.
+        const fake = fakeAd({ entries: [userEntry({ adminCount: 'yes' })] });
+        const prior = (await makeWriter(fake).readState(GUID)).priorState as unknown as AdPriorState;
+        expect(prior.adminCount).toBeNull();
+    });
+});
+
+describe('the DN a ModifyRequest would be addressed to', () => {
+    it('falls back to a DN-shaped account id when the entry carried no distinguishedName', async () => {
+        // `normalizeAdEntry` stores the DN as externalUserId whenever the raw
+        // GUID bytes will not format, so a DN-shaped id is a real stored
+        // identifier — and a directory that answers a base-scoped read without
+        // echoing the DN back has still told us exactly where the object is.
+        const fake = fakeAd({ entries: [userEntry({ distinguishedName: undefined })] });
+
+        const state = await makeWriter(fake).readState(DN);
+
+        expect(state.priorState.distinguishedName).toBe(DN);
+    });
+
+    it('refuses when neither the entry nor the id yields a DN, instead of writing nowhere', async () => {
+        // A GUID id cannot stand in for a DN, and a ModifyRequest needs one.
+        const fake = fakeAd({ entries: [userEntry({ distinguishedName: undefined })] });
+
+        await expect(makeWriter(fake).readState(GUID)).rejects.toThrow(
+            /no distinguishedName[\s\S]*nowhere to be addressed/,
+        );
+        expect(fake.modifies).toEqual([]);
+    });
+});
+
+describe('an account the directory does not return', () => {
+    it('says the account is gone and names the base DN it looked under', async () => {
+        // The likeliest cause is not deletion but an object moved out of the
+        // configured scope during offboarding — which looks identical from here
+        // and has a completely different remedy.
+        const fake = fakeAd({ entries: [] });
+
+        const err = await makeWriter(fake).readState(GUID).catch((e: unknown) => e);
+
+        expect((err as Error).message).toMatch(/has no account matching/);
+        expect((err as Error).message).toContain(CONNECTION.baseDN);
+        expect((err as Error).message).toMatch(/Nothing was written/);
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it('refuses an empty account id without searching for it', async () => {
+        const fake = fakeAd();
+
+        await expect(makeWriter(fake).readState('   ')).rejects.toThrow(/empty account id/);
+        expect(fake.searches.filter((s) => s.base !== '')).toEqual([]);
+    });
+
+    it('refuses an id that normalises to no DN components at all', async () => {
+        // ',,,' is not a GUID, so it takes the DN branch — and a naive
+        // containment test on an empty component list would find the base DN's
+        // suffix in nothing and read as "contained".
+        const fake = fakeAd();
+
+        const err = await makeWriter(fake).readState(',,,').catch((e: unknown) => e);
+
+        expect((err as Error).message).toMatch(/does not lie beneath the base DN/);
+        expect(fake.searches.filter((s) => s.base !== '')).toEqual([]);
+    });
+
+    it('reads an escaped comma inside a common name as one component, not two', async () => {
+        // `CN=Bloggs\, Jo,OU=Staff,…` is THREE components. Written as a plain
+        // TypeScript string literal `'\,'` is just a comma and the escape never
+        // reaches the parser, so this spells it with String.raw — the backslash
+        // has to survive into the DN for the walk to have anything to skip.
+        const escapedDn = String.raw`CN=Bloggs\, Jo,OU=Staff,DC=corp,DC=example,DC=com`;
+        expect(escapedDn).toContain('\\');
+        const fake = fakeAd({ entries: [userEntry({ distinguishedName: escapedDn })] });
+
+        const state = await makeWriter(fake).readState(escapedDn);
+
+        expect(state.priorState.distinguishedName).toBe(escapedDn);
+        expect(fake.searches.find((s) => s.base !== '')?.base).toBe(escapedDn);
+    });
+
+    it('refuses a DN whose last component is a dangling escape rather than normalising it away', async () => {
+        // A trailing backslash escapes the end of the string. Fail-closed is the
+        // only safe reading: the alternative is deciding, on a malformed DN,
+        // that it probably meant the one that IS in scope.
+        const fake = fakeAd();
+        const dangling = `${DN}\\`;
+
+        const err = await makeWriter(fake).readState(dangling).catch((e: unknown) => e);
+
+        expect((err as Error).message).toMatch(/does not lie beneath the base DN/);
+        expect(fake.searches.filter((s) => s.base !== '')).toEqual([]);
+    });
+});
+
+describe('a connection that was never configured never reaches the directory', () => {
+    /**
+     * A connection row with the key ABSENT, which is what the older ones are.
+     * Blanking the value takes a different path through the same coercion, and
+     * the absent one is the path a connection provisioned before this writer
+     * existed actually takes.
+     */
+    function connectionWithout(key: string): Record<string, unknown> {
+        const copy: Record<string, unknown> = { ...CONNECTION };
+        delete copy[key];
+        return copy;
+    }
+
+    it.each<[string, Record<string, unknown>, RegExp]>([
+        ['no URL at all', connectionWithout('url'), /needs an LDAPS URL/],
+        ['no base DN at all', connectionWithout('baseDN'), /needs a base DN/],
+        ['a base DN of nothing but whitespace', { ...CONNECTION, baseDN: '  ' }, /needs a base DN/],
+        ['no bind password at all', connectionWithout('bindPassword'), /needs bind credentials/],
+        ['no bind DN at all', connectionWithout('bindDN'), /needs bind credentials/],
+        [
+            // The half-configured write bind is the dangerous one: falling back
+            // to the read credential here would quietly attempt the write as the
+            // account the setup guide asks operators to provision READ-ONLY, and
+            // the result 50 that follows would send them to widen it.
+            'a write bind DN with no write password',
+            { ...CONNECTION, writeBindDN: 'CN=svc-write,DC=corp,DC=example,DC=com', writeBindPassword: '' },
+            /needs bind credentials/,
+        ],
+    ])('refuses %s before a socket is opened or a credential offered', async (_label, connection, message) => {
+        const fake = fakeAd();
+
+        await expect(makeWriter(fake, connection).readState(GUID)).rejects.toThrow(message);
+        expect(fake.clientsBuilt).toEqual([]);
+        expect(fake.binds).toEqual([]);
+    });
+
+    it('latches after three config failures without ever spending a bind, and does not cry lockout', async () => {
+        // The connect budget is one counter over two very different failures.
+        // Telling an operator with a blank base DN that their bind is being
+        // locked out sends them to the wrong screen entirely, so the refusal
+        // quotes what actually failed instead of interpreting it.
+        const fake = fakeAd();
+        const writer = makeWriter(fake, { ...CONNECTION, baseDN: '' });
+
+        for (let i = 0; i < 3; i += 1) await writer.readState(GUID).catch(() => undefined);
+        const err = await writer.readState(GUID).catch((e: unknown) => e);
+
+        expect((err as Error).message).toMatch(/failure of the CONNECTION, not of any one account/);
+        expect((err as Error).message).toContain('needs a base DN');
+        expect((err as Error).message).not.toMatch(/lock(ed)? ?out/i);
+        expect(fake.binds).toEqual([]);
+    });
+
+    it('quotes a non-Error bind rejection rather than rendering it as [object Object]', async () => {
+        const fake = fakeAd({ bindRejects: 'the directory hung up' });
+        const writer = makeWriter(fake);
+
+        for (let i = 0; i < 3; i += 1) await writer.readState(GUID).catch(() => undefined);
+        const err = await writer.readState(GUID).catch((e: unknown) => e);
+
+        expect((err as Error).message).toContain('the directory hung up');
+    });
+
+    it('opens ONE socket for two overlapping callers, not one each', async () => {
+        // Two sockets to `ldaps://dc.corp.example.com` are two sockets to
+        // possibly two different replicas — the exact split every later refusal
+        // is defending against, arriving before any of them can look.
+        const fake = fakeAd();
+        const writer = makeWriter(fake);
+
+        const [a, b] = await Promise.all([writer.readState(GUID), writer.readState(GUID)]);
+
+        expect(a.enabled).toBe(true);
+        expect(b.enabled).toBe(true);
+        expect(fake.clientsBuilt).toHaveLength(1);
+        expect(fake.binds).toHaveLength(1);
+    });
+});
+
+describe('the provider factory the writer builds its client through', () => {
+    it('defaults to the real Active Directory provider, whose ldaps:// gate still applies', async () => {
+        // No provider injected — the production shape. The scheme check lives in
+        // that factory precisely because it is the only way a client is built, so
+        // a writer that quietly built its own would bind in clear text with the
+        // service-account password on the wire.
+        const writer = createActiveDirectoryWriter({
+            connection: { ...CONNECTION, url: 'ldap://dc.corp.example.com:389' },
+        });
+
+        await expect(writer.readState(GUID)).rejects.toThrow(/ldaps:\/\//);
+    });
+});
+
+describe('which DC answered, when the RootDSE is only partly forthcoming', () => {
+    it('falls back to serverName when dnsHostName is not published', async () => {
+        const fake = fakeAd({ rootDse: { serverName: 'CN=DC01,CN=Servers,CN=Site,DC=corp' } });
+
+        const prior = (await makeWriter(fake).readState(GUID)).priorState as unknown as AdPriorState;
+
+        expect(prior.capturedFromDc).toBe('CN=DC01,CN=Servers,CN=Site,DC=corp');
+    });
+
+    it.each<[string, Record<string, unknown> | null]>([
+        ['the RootDSE names neither', {}],
+        ['the RootDSE returns no entry at all', null],
+    ])('records a null DC when %s, rather than a guess', async (_label, rootDse) => {
+        const fake = fakeAd({ rootDse });
+
+        const prior = (await makeWriter(fake).readState(GUID)).priorState as unknown as AdPriorState;
+
+        // Null costs uSNChanged its comparability, and the capture says so
+        // honestly instead of naming a DC nobody confirmed.
+        expect(prior.capturedFromDc).toBeNull();
+    });
+});
+
+describe('a capture this writer will not compare-and-swap against', () => {
+    /** A genuine capture, then one field bent out of shape. */
+    async function disableWithCapture(
+        mutate: (prior: Record<string, unknown>) => Record<string, unknown>,
+    ) {
+        const fake = fakeAd();
+        const writer = makeWriter(fake);
+        const state = await writer.readState(GUID);
+        const err = await writer
+            .disable(GUID, { enabled: true, priorState: mutate({ ...state.priorState }) })
+            .catch((e: unknown) => e);
+        return { err, fake };
+    }
+
+    it.each<[string, (prior: Record<string, unknown>) => Record<string, unknown>]>([
+        [
+            // A capture from the Entra writer replayed against AD. The schema
+            // tag alone is not enough: two providers could share one.
+            'it was produced by a different provider',
+            (p: Record<string, unknown>) => ({ ...p, provider: 'entra-id' }),
+        ],
+        [
+            'the journalled userAccountControl is a string, not a number',
+            (p: Record<string, unknown>) => ({ ...p, userAccountControl: String(ENABLED_UAC) }),
+        ],
+        [
+            'the journalled userAccountControl is negative',
+            (p: Record<string, unknown>) => ({ ...p, userAccountControl: -1 }),
+        ],
+        [
+            'the journalled userAccountControl is beyond safe-integer precision',
+            (p: Record<string, unknown>) => ({ ...p, userAccountControl: Number.MAX_SAFE_INTEGER + 2 }),
+        ],
+        [
+            'the journalled DN is blank',
+            (p: Record<string, unknown>) => ({ ...p, distinguishedName: '   ' }),
+        ],
+    ])('refuses, and sends nothing, when %s', async (_label, mutate) => {
+        const { err, fake } = await disableWithCapture(mutate);
+
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        // Nothing was sent, so this is one of the few refusals that genuinely
+        // proves the directory is unchanged.
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/unconditional replace/);
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it('refuses when the orchestrator says the account was already disabled, even if the capture looks enabled', async () => {
+        // `enabled` and the captured integer are two views of one read, so a
+        // disagreement means one of them is stale — and the direction that
+        // matters is the one where a second disable journals "disabled" as the
+        // prior state, which a later restore would then restore TO.
+        const fake = fakeAd();
+        const writer = makeWriter(fake);
+        const state = await writer.readState(GUID);
+
+        const err = await writer
+            .disable(GUID, { enabled: false, priorState: state.priorState })
+            .catch((e: unknown) => e);
+
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/restore would restore TO/);
+        expect(fake.modifies).toEqual([]);
+    });
+});
+
+describe('a capture replayed onto a connection this process opened later', () => {
+    const DC01 = { dnsHostName: 'dc01.corp.example.com' };
+
+    it('writes when the new connection is positively answered by the same DC', async () => {
+        // The same-socket test cannot pass here — the map that answers it is
+        // per-writer and the capture came from a different one — so this is the
+        // case the DC identity exists to rescue. Refusing it would strand every
+        // capture the moment a batch reconnects.
+        const fake = fakeAd();
+        const captured = await makeWriter(fake).readState(GUID);
+        expect(captured.priorState.capturedFromDc).toBe('dc01.corp.example.com');
+
+        const second = makeWriter(fake);
+        await second.disable(GUID, captured);
+
+        expect(fake.clientsBuilt).toHaveLength(2);
+        expect(fake.modifies).toHaveLength(1);
+        expect(fake.modifies[0].changes[0].values).toEqual([String(ENABLED_UAC)]);
+    });
+
+    it('refuses when the capture names a DC and the new connection cannot, naming both sides', async () => {
+        // The mirror of the case below, and the likelier one in the field: the
+        // capture is perfectly good and it is the connection in hand that cannot
+        // say who is answering it. Both refusals print the same sentence, so both
+        // halves of it have to be right.
+        const fake = fakeAd({ rootDseSequence: [DC01, null] });
+        const captured = await makeWriter(fake).readState(GUID);
+        expect(captured.priorState.capturedFromDc).toBe('dc01.corp.example.com');
+
+        const second = makeWriter(fake);
+        const err = await second.disable(GUID, captured).catch((e: unknown) => e);
+
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/could not be confirmed/);
+        expect((err as Error).message).toContain('capture from dc01.corp.example.com');
+        expect((err as Error).message).toContain('now an unidentified DC');
+        expect(fake.modifies).toEqual([]);
+    });
+
+    it('refuses when the capture names no DC and the new connection does, naming both sides', async () => {
+        // Neither piece of evidence is available: not the socket session (a
+        // different writer), and not the DC identity (the capture has none). A
+        // null DC is tolerable on the READ, where it only costs the change token
+        // its comparability; tolerating it here would mean writing with nothing
+        // at all tying the read and the write to one replica.
+        const fake = fakeAd({ rootDseSequence: [null, DC01] });
+        const captured = await makeWriter(fake).readState(GUID);
+        expect(captured.priorState.capturedFromDc).toBeNull();
+
+        const second = makeWriter(fake);
+        const err = await second.disable(GUID, captured).catch((e: unknown) => e);
+
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/could not be confirmed/);
+        expect((err as Error).message).toContain('capture from an unidentified DC');
+        expect((err as Error).message).toContain('now dc01.corp.example.com');
+        expect(fake.modifies).toEqual([]);
+    });
+});
+
+describe('the operator copy on a denial names the right runbook page', () => {
+    async function disableFailingWith(
+        thrown: unknown,
+        entryOverrides: Record<string, unknown> = {},
+        connection: Record<string, unknown> = CONNECTION,
+    ) {
+        const fake = fakeAd({ modifyThrows: thrown, entries: [userEntry(entryOverrides)] });
+        const writer = makeWriter(fake, connection);
+        const state = await writer.readState(GUID);
+        return (await writer.disable(GUID, state).catch((e: unknown) => e)) as DirectoryWriteError;
+    }
+
+    it('does not blame the read-only enumeration account when a dedicated write bind was used', async () => {
+        // The READ-ONLY note is a remedy: "configure writeBindDN". Printing it at
+        // an operator who already did tells them to fix something that is
+        // already fixed, and hides the real answer — the delegation on the OU.
+        const err = await disableFailingWith(ldapError(50, 'insufficient access'), {}, {
+            ...CONNECTION,
+            writeBindDN: 'CN=svc-inflect-write,OU=Service,DC=corp,DC=example,DC=com',
+            writeBindPassword: 'write-pw',
+        });
+
+        expect(err.message).toMatch(/Write permission on the userAccountControl property/);
+        expect(err.message).not.toMatch(/READ-ONLY/);
+        expect(err.message).not.toMatch(/no separate write bind/);
+        expect(err.definitivelyNotApplied).toBe(true);
+    });
+
+    it('stays quiet about AdminSDHolder when the account explicitly carries adminCount=0', async () => {
+        // adminCount=0 is an ordinary account that was once told about, not a
+        // protected one. Naming SDProp here sends an operator to the AdminSDHolder
+        // template for a plain missing delegation.
+        const err = await disableFailingWith(ldapError(50, 'insufficient access'), { adminCount: '0' });
+
+        expect(err.message).toMatch(/Write permission on the userAccountControl property/);
+        expect(err.message).not.toMatch(/AdminSDHolder/);
+    });
+
+    it('says the objectGUID was not captured when a moved object cannot be re-resolved by one', async () => {
+        // Result 32 means the DN is gone, and the remedy is to re-resolve by
+        // GUID — which is exactly what a capture with a null objectGUID cannot
+        // do. Printing "undefined" there reads as a bug in the tool rather than
+        // as the fact it is.
+        const fake = fakeAd({
+            modifyThrows: ldapError(32, 'no such object'),
+            entries: [userEntry({ objectGUID: undefined })],
+        });
+        const writer = makeWriter(fake);
+        const state = await writer.readState(DN);
+        expect((state.priorState as unknown as AdPriorState).objectGUID).toBeNull();
+
+        const err = (await writer.disable(DN, state).catch((e: unknown) => e)) as DirectoryWriteError;
+
+        expect(err.message).toMatch(/no longer exists at that DN/);
+        expect(err.message).toContain('not captured');
+        expect(err.definitivelyNotApplied).toBe(true);
+    });
+
+    it.each<[string, unknown]>([
+        [
+            // A DOMException that crossed a boundary and arrived as a plain
+            // error keeps the name and the legacy numeric code but loses the
+            // prototype — so the instanceof check cannot catch it, and the name
+            // is all that is left standing between an aborted request and a
+            // journal row that claims the directory is unchanged.
+            'a plain error wearing a DOM name and a colliding legacy code',
+            Object.assign(new Error('the request timed out'), { name: 'TimeoutError', code: 20 }),
+        ],
+        [
+            'a non-integer numeric code, which no LDAP result is',
+            Object.assign(new Error('odd'), { code: 16.5 }),
+        ],
+    ])('does not read %s as proof the directory was untouched', async (_label, thrown) => {
+        const err = await disableFailingWith(thrown);
+
+        expect(err.definitivelyNotApplied).toBe(false);
+        expect(err.message).toMatch(/UNKNOWN/);
+    });
+});
+
+describe('the bind identities the orchestrator must refuse to disable', () => {
+    it('surfaces the read bind when that is the only credential configured', async () => {
+        const fake = fakeAd();
+        const ids = makeWriter(fake).selfAccountIds;
+        expect(Array.from(new Set(ids))).toEqual([CONNECTION.bindDN]);
+    });
+
+    it('surfaces BOTH binds when a dedicated write credential is configured', async () => {
+        // A dedicated write bind does not make the READ bind expendable: the
+        // nightly sync authenticates as it, and disabling it lets every link go
+        // stale until each later leaver pass refuses NO_FRESH_LINKS — offboarding
+        // stops for everyone, quietly, and the account that did it looks like an
+        // ordinary leaver in the report.
+        const fake = fakeAd();
+        const writeDn = 'CN=svc-inflect-write,OU=Service,DC=corp,DC=example,DC=com';
+
+        const ids = makeWriter(fake, {
+            ...CONNECTION,
+            writeBindDN: writeDn,
+            writeBindPassword: 'write-pw',
+        }).selfAccountIds;
+
+        expect(ids).toContain(writeDn);
+        expect(ids).toContain(CONNECTION.bindDN);
+    });
+
+    it('lists nothing it was not given, rather than empty strings', async () => {
+        // An empty entry here would be compared against every candidate's UPN and
+        // objectGUID by the orchestrator's self-account guard, which is a
+        // comparison that should never accidentally match.
+        const fake = fakeAd();
+        const bare: Record<string, unknown> = { ...CONNECTION };
+        delete bare.bindDN;
+
+        expect(makeWriter(fake, bare).selfAccountIds).toEqual([]);
+    });
+});
