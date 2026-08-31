@@ -37,10 +37,42 @@ import {
 const jsonRes = (body: unknown, ok = true, status = 200): Response =>
     ({ ok, status, json: async () => body }) as unknown as Response;
 
-/** Matches tests/mocks/env.ts, which backs `@/env` in the node project. */
+/**
+ * The app-registration values these tests assert against.
+ *
+ * They are SET here rather than inherited. `tests/mocks/env.ts` backs `@/env`
+ * with a Proxy that reads `process.env[prop]` FIRST and only falls back to its
+ * own defaults, so a test asserting a mock default silently depends on that
+ * variable being UNSET in the ambient environment. It is unset locally and SET
+ * in CI (`MICROSOFT_TENANT_ID: ci-ms-tenant` in the workflow env), which is why
+ * the earlier version of this file passed on a laptop and failed only in a
+ * Test shard — the classic shape of a green suite that is testing the machine
+ * it runs on.
+ *
+ * Setting and restoring them makes the assertion hermetic: it now pins what the
+ * code does with a tenant id, not which tenant id the runner happens to export.
+ */
 const ENV_CLIENT_ID = 'test-ms-id';
 const ENV_CLIENT_SECRET = 'test-ms-secret';
 const ENV_TENANT_ID = 'test-tenant';
+
+const savedEnv: Record<string, string | undefined> = {};
+beforeAll(() => {
+    for (const [k, v] of Object.entries({
+        MICROSOFT_CLIENT_ID: ENV_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET: ENV_CLIENT_SECRET,
+        MICROSOFT_TENANT_ID: ENV_TENANT_ID,
+    })) {
+        savedEnv[k] = process.env[k];
+        process.env[k] = v;
+    }
+});
+afterAll(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+    }
+});
 
 beforeEach(() => jest.clearAllMocks());
 
