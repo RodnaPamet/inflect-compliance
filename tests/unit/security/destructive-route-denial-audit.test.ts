@@ -58,10 +58,38 @@ jest.mock('@/app-layer/usecases/evidence-retention', () => ({
     archiveEvidence: (...a: unknown[]) => mockArchiveEvidence(...a),
 }));
 const mockDeleteNode = jest.fn();
+// `linkRisk` / `unlinkRisk` join the SAME factory rather than a second
+// jest.mock of this module — a duplicate call would silently replace this one
+// and leave `deleteNode` undefined for the row above it.
+const mockLinkRisk = jest.fn();
+const mockUnlinkRisk = jest.fn();
 jest.mock('@/app-layer/usecases/risk-hierarchy', () => ({
     deleteNode: (...a: unknown[]) => mockDeleteNode(...a),
+    linkRisk: (...a: unknown[]) => mockLinkRisk(...a),
+    unlinkRisk: (...a: unknown[]) => mockUnlinkRisk(...a),
     updateNode: jest.fn(),
     aggregateByHierarchy: jest.fn(),
+}));
+
+// ── Tranche 4 (#2189): the link/detach verbs on the risk + asset graph ──
+const mockUnlinkAssetEvidence = jest.fn();
+jest.mock('@/app-layer/usecases/asset', () => ({
+    unlinkAssetEvidence: (...a: unknown[]) => mockUnlinkAssetEvidence(...a),
+}));
+const mockUnmapAssetFromRisk = jest.fn();
+jest.mock('@/app-layer/usecases/traceability', () => ({
+    unmapAssetFromRisk: (...a: unknown[]) => mockUnmapAssetFromRisk(...a),
+}));
+const mockUnlinkRiskEvidence = jest.fn();
+jest.mock('@/app-layer/usecases/risk', () => ({
+    unlinkRiskEvidence: (...a: unknown[]) => mockUnlinkRiskEvidence(...a),
+}));
+const mockSetCorrelation = jest.fn();
+const mockRemoveCorrelation = jest.fn();
+jest.mock('@/app-layer/usecases/risk-correlation', () => ({
+    setCorrelation: (...a: unknown[]) => mockSetCorrelation(...a),
+    removeCorrelation: (...a: unknown[]) => mockRemoveCorrelation(...a),
+    getCorrelationMatrix: jest.fn(),
 }));
 const mockDeleteKri = jest.fn();
 jest.mock('@/app-layer/usecases/key-risk-indicator', () => ({
@@ -224,6 +252,11 @@ import {
     DELETE as vendorBundleItemRemove,
 } from '@/app/api/t/[tenantSlug]/vendors/[vendorId]/bundles/[bundleId]/route';
 import { DELETE as testRunEvidenceUnlink } from '@/app/api/t/[tenantSlug]/tests/runs/[runId]/evidence/[linkId]/route';
+import { DELETE as assetEvidenceDetach } from '@/app/api/t/[tenantSlug]/assets/[id]/evidence/attached/[evidenceId]/route';
+import { DELETE as assetRiskUnmap } from '@/app/api/t/[tenantSlug]/assets/[id]/risks/[riskId]/route';
+import { DELETE as riskEvidenceDetach } from '@/app/api/t/[tenantSlug]/risks/[id]/evidence/attached/[evidenceId]/route';
+import { PUT as correlationSet, DELETE as correlationRemove } from '@/app/api/t/[tenantSlug]/risks/correlations/route';
+import { POST as hierarchyLinkAdd, DELETE as hierarchyLinkRemove } from '@/app/api/t/[tenantSlug]/risks/hierarchy/[nodeId]/links/route';
 import { assertCanManageAuditors } from '@/app-layer/policies/audit-readiness.policies';
 
 // ─── Fixtures ──────────────────────────────────────────────────────
@@ -292,46 +325,35 @@ function denialEntries(): Array<{ entity: string; entityId: string; action: stri
 }
 
 beforeEach(() => {
+    // DERIVED from the table, not hand-listed beside it.
+    //
+    // This was a literal roster of every usecase mock, carrying a comment
+    // warning that omitting one leaves stale calls and fails the "usecase was
+    // not reached" assertion for a reason unrelated to the gate. The warning
+    // did not prevent it: tranche 4 added seven rows, omitted seven names, and
+    // got exactly the seven failures the comment predicted.
+    //
+    // A roster that must be edited in lockstep with another list, in the same
+    // file, is bookkeeping — so it is computed. `ROUTES.map(r => r.usecase)`
+    // makes the row its own registration, and a mock can no longer be missed
+    // because there is nothing left to remember. `usecase` is the only mock a
+    // row owns; the mixed-module extras below are reset with it because they
+    // are reached by the same handlers.
+    //
+    // Referencing ROUTES from inside the callback is safe even though it is
+    // declared further down: the callback runs at test time, long after the
+    // module body has finished evaluating.
     [
         mockGetTenantCtx,
         mockAppendAuditEntry,
-        mockBulkDeleteEvidence,
-        // Tranche 3. NOTE this list is hand-maintained: a mock omitted here
-        // keeps calls from the previous case, and the "usecase was not
-        // reached" assertion then fails for a reason that has nothing to do
-        // with the gate under test.
-        mockArchiveEvidence,
-        mockDeleteNode,
-        mockDeleteKri,
-        mockDeleteSchedule,
-        mockArchiveScenario,
-        mockPurgeEvidence,
-        mockRestoreEvidence,
-        mockBulkDeletePolicy,
-        mockBulkArchivePolicy,
-        mockPurgePolicy,
-        mockRestorePolicy,
-        mockBulkDeleteVendor,
-        mockBulkDeleteTestPlan,
-        mockBulkRestoreTestPlan,
-        mockBulkDeleteTask,
-        mockRemoveVendorDocument,
-        mockRemoveVendorLink,
-        mockRevokeAssessmentLink,
-        mockDeleteLossEvent,
-        mockDeleteProcessMap,
-        mockArchivePolicy,
-        // #2117 group A.
-        mockRevokeAuditorAccount,
-        mockGrantAuditorAccess,
-        mockRevokeAuditorAccess,
-        mockArchiveAutomationRule,
-        mockRemoveBundleItem,
-        mockUnlinkEvidenceFromRun,
+        ...ROUTES.map((r) => r.usecase),
+        // Reached by handlers the table exercises but never asserts on
+        // directly, so they own no row and cannot be derived from one.
         mockUpdateAutomationRule,
         mockToggleAutomationRule,
         mockAddBundleItem,
         mockFreezeBundle,
+        mockGrantAuditorAccess,
     ].forEach((m) => m.mockReset());
     mockAppendAuditEntry.mockResolvedValue({ id: 'a1', entryHash: 'h', previousHash: null });
 });
@@ -763,16 +785,130 @@ const ROUTES: ReadonlyArray<{
         allowedRole: 'EDITOR',
         deniedRole: 'READER',
     },
+
+    // ── Tranche 4 (#2189): link/detach verbs on the risk + asset graph ──
+    // All seven gated ONLY on a coarse role-tier predicate — `assertCanWrite`
+    // reading `permissions.canWrite`, or (on the asset↔risk unmap) a file-local
+    // `assertCanManage` testing `ctx.role` against a literal role list. Neither
+    // writes anything when it refuses, and neither consults the custom-role
+    // overrides `appPermissions` carries.
+    //
+    // `deniedRole` is READER throughout: `risks.edit` and `assets.edit` are both
+    // TRUE for EDITOR, so an EDITOR is correctly admitted here and a denial
+    // assertion against one would be vacuous.
+    {
+        name: 'DELETE /assets/[id]/evidence/attached/[evidenceId]',
+        handler: asHandler(assetEvidenceDetach),
+        path: '/api/t/acme/assets/a-1/evidence/attached/ev-1',
+        params: { tenantSlug: 'acme', id: 'a-1', evidenceId: 'ev-1' },
+        method: 'DELETE',
+        key: 'assets.edit',
+        usecase: mockUnlinkAssetEvidence,
+        forwards: ['a-1', 'ev-1'],
+        result: { detached: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /assets/[id]/risks/[riskId]',
+        handler: asHandler(assetRiskUnmap),
+        path: '/api/t/acme/assets/a-1/risks/r-1',
+        params: { tenantSlug: 'acme', id: 'a-1', riskId: 'r-1' },
+        method: 'DELETE',
+        key: 'assets.edit',
+        usecase: mockUnmapAssetFromRisk,
+        forwards: ['a-1', 'r-1'],
+        // Fixed body; the usecase resolves undefined.
+        result: { ok: true },
+        usecaseReturns: undefined,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /risks/[id]/evidence/attached/[evidenceId]',
+        handler: asHandler(riskEvidenceDetach),
+        path: '/api/t/acme/risks/r-1/evidence/attached/ev-1',
+        params: { tenantSlug: 'acme', id: 'r-1', evidenceId: 'ev-1' },
+        method: 'DELETE',
+        key: 'risks.edit',
+        usecase: mockUnlinkRiskEvidence,
+        forwards: ['r-1', 'ev-1'],
+        result: { detached: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        // The PUT is here, not just the DELETE. Overwriting a coefficient is
+        // how you erase a correlation without removing its row.
+        name: 'PUT /risks/correlations',
+        handler: asHandler(correlationSet),
+        path: '/api/t/acme/risks/correlations',
+        params: { tenantSlug: 'acme' },
+        method: 'PUT',
+        body: { riskAId: 'r-1', riskBId: 'r-2', coefficient: 0.5 },
+        key: 'risks.edit',
+        usecase: mockSetCorrelation,
+        forwards: [{ riskAId: 'r-1', riskBId: 'r-2', coefficient: 0.5 }],
+        result: { success: true },
+        usecaseReturns: undefined,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /risks/correlations',
+        handler: asHandler(correlationRemove),
+        path: '/api/t/acme/risks/correlations',
+        params: { tenantSlug: 'acme' },
+        method: 'DELETE',
+        body: { riskAId: 'r-1', riskBId: 'r-2' },
+        key: 'risks.edit',
+        usecase: mockRemoveCorrelation,
+        forwards: ['r-1', 'r-2'],
+        result: { success: true },
+        usecaseReturns: undefined,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /risks/hierarchy/[nodeId]/links',
+        handler: asHandler(hierarchyLinkAdd),
+        path: '/api/t/acme/risks/hierarchy/node-1/links',
+        params: { tenantSlug: 'acme', nodeId: 'node-1' },
+        method: 'POST',
+        body: { riskId: 'r-1' },
+        key: 'risks.edit',
+        usecase: mockLinkRisk,
+        forwards: ['r-1', 'node-1'],
+        result: { success: true },
+        usecaseReturns: undefined,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /risks/hierarchy/[nodeId]/links',
+        handler: asHandler(hierarchyLinkRemove),
+        path: '/api/t/acme/risks/hierarchy/node-1/links',
+        params: { tenantSlug: 'acme', nodeId: 'node-1' },
+        method: 'DELETE',
+        body: { riskId: 'r-1' },
+        key: 'risks.edit',
+        usecase: mockUnlinkRisk,
+        forwards: ['r-1', 'node-1'],
+        result: { success: true },
+        usecaseReturns: undefined,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
 ];
 
 /**
  * A table-driven suite hides its own deletions: remove a row and the three
  * tests it generated simply stop existing, and the run is still green. The
  * count is therefore asserted, and it only goes up — 11 after the first
- * tranche, 17 after the second, 23 after group A.
+ * tranche, 17 after the second, 23 after group A, 30 after tranche 4.
  */
 it('the migrated population does not silently shrink', () => {
-    expect(ROUTES.length).toBeGreaterThanOrEqual(23);
+    expect(ROUTES.length).toBeGreaterThanOrEqual(30);
     // Every row must name a distinct HANDLER, so a copy-paste that leaves two
     // rows pointing at the same one reads as coverage it is not. The key is
     // (method, path) rather than path alone: `/audits/auditors/access` carries
