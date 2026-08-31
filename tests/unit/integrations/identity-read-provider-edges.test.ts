@@ -227,14 +227,24 @@ describe('EntraIdProvider — truncation and domain edges', () => {
         ).toHaveLength(1);
     });
 
-    it('leaves SSO unknown for an address whose domain part is empty', async () => {
-        // `ada@` has an `@` but nothing after it. Slicing blindly would look up
-        // the empty string, which cannot be in the verified-domain map — same
-        // answer by luck. Returning null is the answer by decision.
+    it('refuses to read an address with no "@" as a domain in its own right', async () => {
+        // `domainOf` returns null when there is no `@` at all; it does NOT fall
+        // back to the whole string. That distinction is only observable when a
+        // verified domain id collides with the malformed address — which is the
+        // point: without the guard the account's federation verdict is decided
+        // by a string that carries no domain, and the answer it produces is the
+        // permissive one (enrolled), not the safe one.
+        //
+        // The sibling case `ada@` (an `@` with nothing after it) is deliberately
+        // NOT tested here: `domainOf` guards it, the call site guards it again
+        // with `dom &&`, and `fetchFederatedDomains` refuses a falsy `d.id` so
+        // the empty string can never be a map key. Three independent reasons for
+        // the same `null` mean no external assertion can tell which one produced
+        // it, and a test that cannot fail is not coverage.
         const fetchImpl = jest.fn(async (url: string) => {
-            if (url.includes('/users')) return jsonOk({ value: [{ id: 'u-1', mail: 'ada@' }] });
+            if (url.includes('/users')) return jsonOk({ value: [{ id: 'u-1', mail: 'ada' }] });
             if (url.includes('/domains')) {
-                return jsonOk({ value: [{ id: 'acme.com', authenticationType: 'Federated' }] });
+                return jsonOk({ value: [{ id: 'ada', authenticationType: 'Federated' }] });
             }
             return jsonOk({ value: [] });
         }) as unknown as typeof fetch;
@@ -242,7 +252,7 @@ describe('EntraIdProvider — truncation and domain edges', () => {
         const p = new EntraIdProvider({ getAccessToken: async () => 'tok', fetchImpl });
         const { accounts } = await p.listAccounts(CONFIG);
 
-        expect(accounts[0].email).toBe('ada@');
+        expect(accounts[0].email).toBe('ada');
         expect(accounts[0].ssoEnrolled).toBeNull();
     });
 

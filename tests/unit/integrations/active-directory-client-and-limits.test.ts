@@ -33,6 +33,8 @@ jest.mock('ldapts', () => ({
     },
 }));
 
+import { promises as dnsPromises } from 'node:dns';
+
 import { ActiveDirectoryProvider, assertPrivateLdapHost } from '@/app-layer/integrations/providers/active-directory';
 
 const CONFIG = { url: 'ldaps://dc.corp.example.com:636', baseDN: 'DC=corp,DC=example,DC=com' };
@@ -186,8 +188,43 @@ describe('assertPrivateLdapHost', () => {
         );
     });
 
-    it('accepts a private IP literal without any resolution', async () => {
+});
+
+describe('assertPrivateLdapHost — the IP-literal short circuit', () => {
+    // `isPrivateAddress(host)` returns BEFORE the lookup. A result-only
+    // assertion cannot see that return: dns.lookup echoes an IP literal
+    // straight back, so deleting the short circuit reaches the same
+    // `resolves` through the resolution path. Only the resolver itself can
+    // testify to which path ran, so it is spied on here.
+    let lookup: jest.SpyInstance;
+
+    beforeEach(() => {
+        lookup = jest.spyOn(dnsPromises, 'lookup');
+    });
+
+    afterEach(() => {
+        lookup.mockRestore();
+    });
+
+    it('resolves a hostname before judging it — proving the spy sits in the real path', async () => {
+        // The positive companion. Without it, `not.toHaveBeenCalled()` below
+        // would pass just as happily if the spy were wired to nothing at all.
+        lookup.mockResolvedValue([{ address: '10.0.0.9', family: 4 }] as never);
+
+        await expect(assertPrivateLdapHost('ldaps://dc.corp.example.com:636')).resolves.toBeUndefined();
+
+        expect(lookup).toHaveBeenCalledWith('dc.corp.example.com', { all: true });
+    });
+
+    it('accepts a private IP literal without consulting the resolver at all', async () => {
+        // Armed to refuse: if the short circuit is gone, the fall-through hits
+        // this and the call rejects with "could not be resolved to any address"
+        // instead of resolving.
+        lookup.mockRejectedValue(new Error('dns.lookup must not be reached for an IP literal'));
+
         await expect(assertPrivateLdapHost('ldaps://10.1.2.3:636', 'directory-write')).resolves.toBeUndefined();
+
+        expect(lookup).not.toHaveBeenCalled();
     });
 });
 
