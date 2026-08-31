@@ -218,13 +218,25 @@ describe('AzurePostureProvider.runCheck — credential env', () => {
                 clientSecret: 'client-secret-value', // pragma: allowlist secret — synthetic placeholder
             }),
         );
-        expect(withSecret.calls[0].secretValues).toEqual(['client-secret-value']);
+        expect(withSecret.calls[0].secretValues).toStrictEqual(['client-secret-value']);
+    });
 
+    it('hands the redaction list NO undefined slot when the secret is absent', async () => {
+        // This is what `.filter((v): v is string => !!v)` in runCheck buys, and
+        // it needs `toStrictEqual` to be checkable at all: Jest's `toEqual`
+        // ignores undefined array members, so `expect([undefined]).toEqual([])`
+        // PASSES and a dropped filter is invisible to it. The list is declared
+        // `string[]` and every consumer downstream — today `scrubSecrets`, and
+        // any future redactor that does not happen to guard on truthiness —
+        // is entitled to that. A `[undefined]` here is a typed lie at the seam.
         const withoutSecret = recordingExec(OK_JSON);
         await new AzurePostureProvider({ exec: withoutSecret.exec }).runCheck(
             checkInput('azure-posture', 'soc2', { benchmark: 'soc2', clientId: 'client-guid' }),
         );
-        expect(withoutSecret.calls[0].secretValues).toEqual([]);
+        const handed = withoutSecret.calls[0].secretValues;
+        expect(handed).toStrictEqual([]);
+        expect(handed).toHaveLength(0);
+        expect(handed.every((v) => typeof v === 'string')).toBe(true);
     });
 
     it('redacts Azure GUIDs from surfaced collector output via its own pattern set', async () => {
@@ -433,13 +445,20 @@ describe('GcpPostureProvider.runCheck — with the exec seam injected', () => {
         await new GcpPostureProvider({ exec: withKey.exec }).runCheck(
             checkInput('gcp-posture', 'soc2', { benchmark: 'soc2', serviceAccountJson: key }),
         );
-        expect(withKey.calls[0].secretValues).toEqual([key]);
+        expect(withKey.calls[0].secretValues).toStrictEqual([key]);
+    });
 
+    it('hands the redaction list NO undefined slot when the SA key is absent', async () => {
+        // Twin of the Azure case above — same `toStrictEqual` requirement,
+        // because `toEqual` cannot tell `[]` from `[undefined]`.
         const withoutKey = recordingExec(OK_JSON);
         await new GcpPostureProvider({ exec: withoutKey.exec }).runCheck(
             checkInput('gcp-posture', 'soc2', { benchmark: 'soc2' }),
         );
-        expect(withoutKey.calls[0].secretValues).toEqual([]);
+        const handed = withoutKey.calls[0].secretValues;
+        expect(handed).toStrictEqual([]);
+        expect(handed).toHaveLength(0);
+        expect(handed.every((v) => typeof v === 'string')).toBe(true);
     });
 
     it('redacts service-account emails from surfaced collector output', async () => {

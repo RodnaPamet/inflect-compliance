@@ -476,14 +476,53 @@ describe('runPowerpipeBenchmark — durationMs', () => {
         expect(res.durationMs).toBe(32);
     });
 
-    it('falls back to the wall clock when no clock is injected', async () => {
-        const res = await runPowerpipeBenchmark({
-            benchmarkId: 'bench',
-            env: {},
-            secretValues: [],
-            exec: fakeExec(benchmarkJson([control('a', 'ok')])),
-        });
-        expect(res.durationMs).toBeGreaterThanOrEqual(0);
-        expect(res.durationMs).toBeLessThan(60_000);
+    it('falls back to Date.now — the REAL wall clock — when no clock is injected', async () => {
+        // The previous form of this test asserted `durationMs >= 0 && < 60_000`,
+        // which is true of almost any implementation: it stayed green with the
+        // fallback replaced by `() => 0`, so it read as protection while
+        // covering nothing. Pinning `Date.now` itself makes the branch
+        // falsifiable — the fallback must be Date.now specifically, not merely
+        // "some number that looks plausible".
+        const spy = jest.spyOn(Date, 'now');
+        try {
+            let call = 0;
+            spy.mockImplementation(() => (call++ === 0 ? 5_000 : 5_250));
+
+            const res = await runPowerpipeBenchmark({
+                benchmarkId: 'bench',
+                env: {},
+                secretValues: [],
+                exec: fakeExec(benchmarkJson([control('a', 'ok')])),
+            });
+
+            expect(res.durationMs).toBe(250);
+            expect(spy).toHaveBeenCalled();
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('prefers the injected clock over Date.now rather than consulting both', async () => {
+        // The other half of `input.now ?? Date.now`: when a clock IS supplied
+        // the wall clock must not be read at all, or a caller that injected a
+        // deterministic clock would still get non-determinism.
+        const spy = jest.spyOn(Date, 'now');
+        try {
+            spy.mockImplementation(() => 999_999);
+            const ticks = [100, 175];
+
+            const res = await runPowerpipeBenchmark({
+                benchmarkId: 'bench',
+                env: {},
+                secretValues: [],
+                exec: fakeExec(benchmarkJson([control('a', 'ok')])),
+                now: () => ticks.shift() ?? 9_999,
+            });
+
+            expect(res.durationMs).toBe(75);
+            expect(spy).not.toHaveBeenCalled();
+        } finally {
+            spy.mockRestore();
+        }
     });
 });

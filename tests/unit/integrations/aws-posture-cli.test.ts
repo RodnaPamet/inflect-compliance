@@ -387,8 +387,16 @@ describe('AwsPostureProvider — child-process edge shapes', () => {
 
     it('treats an error carrying no numeric code as a FAILURE, not a pass', async () => {
         // A signal kill (`{signal: 'SIGKILL'}`, no `code`) is still a broken
-        // run — `ok: !err` is what keeps it off the pass path, and the
-        // exit-code fallback must not read as success.
+        // run. `ok: !err` is what keeps it off the pass path, and that is the
+        // whole of what this test proves.
+        //
+        // It deliberately does NOT claim the `(err.code ?? 1)` fallback beside
+        // it: `runCli`'s `code` field has ZERO readers — neither `runCheck`
+        // nor `validateConnection` reads `res.code`, and `runCli` is
+        // module-private — so `?? 1` and `?? 0` are behaviourally identical
+        // and no test in this repo can distinguish them. The honest fix is to
+        // drop the dead field from `runCli`'s return type in src/; a test that
+        // "covered" it could only assert the mechanism back to itself.
         rawCliResult(Object.assign(new Error('killed'), { signal: 'SIGKILL' }), '', '');
 
         const res = await provider().runCheck(input() as never);
