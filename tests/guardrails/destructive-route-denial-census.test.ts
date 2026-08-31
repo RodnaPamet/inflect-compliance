@@ -94,14 +94,9 @@ const UNGATED_DESTRUCTIVE_ROUTES: readonly string[] = [
     'scim/v2/Groups/[id]/route.ts',
     'scim/v2/Users/[id]/route.ts',
     'sso/route.ts',
-    't/[tenantSlug]/assets/[id]/evidence/attached/[evidenceId]/route.ts',
-    't/[tenantSlug]/assets/[id]/risks/[riskId]/route.ts',
     't/[tenantSlug]/business-continuity/[id]/dependencies/[depId]/route.ts',
     't/[tenantSlug]/business-continuity/[id]/route.ts',
     't/[tenantSlug]/processes/[id]/snapshots/[version]/restore/route.ts',
-    't/[tenantSlug]/risks/[id]/evidence/attached/[evidenceId]/route.ts',
-    't/[tenantSlug]/risks/correlations/route.ts',
-    't/[tenantSlug]/risks/hierarchy/[nodeId]/links/route.ts',
     't/[tenantSlug]/security/mfa/enroll/route.ts',
 ];
 
