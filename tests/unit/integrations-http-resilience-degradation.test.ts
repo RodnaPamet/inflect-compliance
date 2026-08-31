@@ -16,7 +16,10 @@
  *      make the module hold a worker for longer or shorter than a minute.
  *   3. the DEFAULT sleep. Every existing test injects `sleepImpl`, so the real
  *      one has never run — and it is the only thing standing between a backoff
- *      and a busy loop.
+ *      and a busy loop. It is asserted here by MEASUREMENT, as the gap between
+ *      two consecutive attempts, at both of the two call sites that await it;
+ *      an assertion that merely bounds the total elapsed time above cannot
+ *      tell an awaited timer from a dropped one.
  */
 import {
     createResilientFetch,
@@ -135,25 +138,61 @@ describe('the absorb budget is a caller decision, not a constant', () => {
 });
 
 describe('the DEFAULT sleep really waits', () => {
-    it('retries through the built-in sleep when no sleepImpl is injected', async () => {
-        // `rand: () => 0` pins the jittered backoff to 0ms so this costs a tick
-        // rather than a second — but it is the real `setTimeout` promise, so a
-        // regression that dropped the `await` (or returned a non-promise) would
-        // turn every retry into a busy loop against a throttled provider, which
-        // is the amplification this module exists to prevent.
-        const inner = jest
-            .fn<Promise<Response>, unknown[]>()
-            .mockResolvedValueOnce(bare(502))
-            .mockResolvedValueOnce(bare(200));
+    it('holds the second attempt back by the computed backoff when no sleepImpl is injected', async () => {
+        // MEASURED, not merely exercised. The version of this test that shipped
+        // with the coverage commit pinned `rand: () => 0` and asserted only
+        // that the elapsed time stayed UNDER a second — which is exactly what a
+        // dropped `await`, a `sleep` that returned a non-promise, or no sleep at
+        // all would also produce. It ran the real timer and could not have
+        // failed if the timer stopped being awaited, which is the one regression
+        // the block is named for.
+        //
+        // So: jitter to a real, small interval (`0.06 * 1000ms` base on the
+        // first attempt = 60 ms) and assert the GAP BETWEEN THE TWO fetch calls
+        // spans it. setTimeout may fire late and never early, so the lower bound
+        // is the safe side of a flaky assertion; the upper bound keeps a
+        // dropped jitter injection from making the suite sleep for real.
+        const calledAt: number[] = [];
+        const inner = jest.fn<Promise<Response>, unknown[]>().mockImplementation(async () => {
+            calledAt.push(Date.now());
+            return calledAt.length === 1 ? bare(502) : bare(200);
+        });
 
-        const f = createResilientFetch({ fetchImpl: inner as unknown as typeof fetch, rand: () => 0 });
-        const started = Date.now();
+        const f = createResilientFetch({
+            fetchImpl: inner as unknown as typeof fetch,
+            rand: () => 0.06,
+        });
 
         await expect(f('https://acme.okta.com/api/v1/users')).resolves.toMatchObject({ status: 200 });
 
-        expect(inner).toHaveBeenCalledTimes(2);
-        // Bounded so the suite cannot start sleeping for real if the jitter
-        // injection is ever dropped.
-        expect(Date.now() - started).toBeLessThan(1_000);
+        expect(calledAt).toHaveLength(2);
+        expect(calledAt[1] - calledAt[0]).toBeGreaterThanOrEqual(50);
+        expect(calledAt[1] - calledAt[0]).toBeLessThan(1_000);
+    });
+
+    it('holds the retry back the same way when the failure was a thrown network error', async () => {
+        // The OTHER default-sleep call site. `createResilientFetch` sleeps in
+        // two places — once after a retryable STATUS and once inside the catch
+        // that handles a thrown fetch — and they are separate `await`s. The
+        // status arm above does not pin this one: dropping the await here left
+        // every assertion in this file green, which is how it earned its own
+        // test rather than a comment claiming the first one covered it.
+        const calledAt: number[] = [];
+        const inner = jest.fn<Promise<Response>, unknown[]>().mockImplementation(async () => {
+            calledAt.push(Date.now());
+            if (calledAt.length === 1) throw new Error('ECONNRESET');
+            return bare(200);
+        });
+
+        const f = createResilientFetch({
+            fetchImpl: inner as unknown as typeof fetch,
+            rand: () => 0.06,
+        });
+
+        await expect(f('https://acme.okta.com/api/v1/users')).resolves.toMatchObject({ status: 200 });
+
+        expect(calledAt).toHaveLength(2);
+        expect(calledAt[1] - calledAt[0]).toBeGreaterThanOrEqual(50);
+        expect(calledAt[1] - calledAt[0]).toBeLessThan(1_000);
     });
 });
