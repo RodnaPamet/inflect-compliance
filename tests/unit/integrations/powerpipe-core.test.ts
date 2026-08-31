@@ -34,6 +34,20 @@ import {
     type CloudPostureControlMapEntry,
 } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
 
+/**
+ * This repo augments `NodeJS.ProcessEnv` so `NODE_ENV` is REQUIRED, which a bare
+ * `{}` does not satisfy. These tests deliberately pass a MINIMAL env — several of
+ * them assert exactly which variables reach the child process — so injecting a
+ * `NODE_ENV` key to appease the type would corrupt the very assertion the test
+ * exists to make. They cast instead.
+ *
+ * A function rather than a shared constant: each call returns a fresh object, so
+ * no test can mutate the env another test is about to pass.
+ */
+const emptyEnv = (): NodeJS.ProcessEnv => ({}) as NodeJS.ProcessEnv;
+const asEnv = (o: Record<string, string>): NodeJS.ProcessEnv => o as NodeJS.ProcessEnv;
+
+
 type Cb = (err: unknown, stdout?: string, stderr?: string) => void;
 
 /** Resolve the next execFile call with the given stdout/stderr/error. */
@@ -183,7 +197,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
 
         await runPowerpipeBenchmark({
             benchmarkId: 'azure_compliance.benchmark.soc_2',
-            env: { AZURE_CLIENT_SECRET: SECRET, PATH: '/usr/bin' },
+            env: asEnv({ AZURE_CLIENT_SECRET: SECRET, PATH: '/usr/bin' }),
             secretValues: [SECRET],
         });
 
@@ -204,7 +218,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
 
     it('bounds the child: 64 MiB maxBuffer and a 15-minute timeout', async () => {
         cliResult({ stdout: benchmarkJson([control('c1', 'ok')]) });
-        await runPowerpipeBenchmark({ benchmarkId: 'b', env: {}, secretValues: [] });
+        await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
         const [, , opts] = execFileMock.mock.calls[0];
         expect(opts.maxBuffer).toBe(64 * 1024 * 1024);
         expect(opts.timeout).toBe(15 * 60_000);
@@ -217,7 +231,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
 
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'b',
-            env: {},
+            env: emptyEnv(),
             secretValues: [SECRET],
         });
 
@@ -231,7 +245,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
 
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'b',
-            env: {},
+            env: emptyEnv(),
             secretValues: [SECRET],
         });
 
@@ -248,7 +262,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
 
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'b',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             patterns: [/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi],
         });
@@ -260,7 +274,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
     it('reports a missing CLI (ENOENT) as the install-the-collector error', async () => {
         cliResult({ err: enoent(), stderr: 'spawn powerpipe ENOENT' });
 
-        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: {}, secretValues: [] });
+        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
 
         expect(res.status).toBe('ERROR');
         expect(res.summary).toBe('Powerpipe CLI not installed on the collector host.');
@@ -273,7 +287,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
         // sends someone to install a CLI that is already there.
         cliResult({ err: exitCode(1), stderr: 'ExpiredToken' });
 
-        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: {}, secretValues: [] });
+        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
 
         expect(res.summary).toBe('Powerpipe collector exited non-zero.');
         expect(res.errorMessage).toContain('ExpiredToken');
@@ -281,7 +295,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
 
     it('treats an error carrying no `code` as a collector error too', async () => {
         cliResult({ err: new Error('killed'), stderr: 'timed out' });
-        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: {}, secretValues: [] });
+        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
         expect(res.summary).toBe('Powerpipe collector exited non-zero.');
     });
 
@@ -291,7 +305,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
         // rather than throwing inside the collector.
         cliResult({});
 
-        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: {}, secretValues: [] });
+        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
 
         expect(res.status).toBe('ERROR');
         expect(res.errorMessage).toBe('collector returned zero controls');
@@ -305,7 +319,7 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
         // Valid, all-ok JSON on stdout must NOT rescue a `missing` run.
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec(benchmarkJson([control('a', 'ok')]), { ok: false, missing: true }),
         });
@@ -319,7 +333,7 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
         // with empty stdout, which used to parse to zero controls and PASS.
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec(benchmarkJson([control('a', 'ok')]), { ok: false, stderr: 'denied' }),
         });
@@ -331,7 +345,7 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
     it('truncates a huge stderr to 300 chars in the surfaced message', async () => {
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec('', { ok: false, stderr: 'E'.repeat(5000) }),
         });
@@ -341,7 +355,7 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
     it('ERRORs on unparseable collector output, carrying the stderr tail', async () => {
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec('not json at all', { stderr: 'warn: mod out of date' }),
         });
@@ -355,7 +369,7 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
     it('truncates a huge stderr to 300 chars on the parse-error path too', async () => {
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec('{', { stderr: 'W'.repeat(5000) }),
         });
@@ -365,7 +379,7 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
     it('treats empty stdout as `{}` — insufficient data, never a pass', async () => {
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec(''),
         });
@@ -386,7 +400,7 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
     it('ERRORs on a well-formed benchmark that contains no controls', async () => {
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec(JSON.stringify({ groups: [{ groups: [] }] })),
         });
@@ -401,7 +415,7 @@ describe('runPowerpipeBenchmark — verdict ladder', () => {
     const run = (controls: unknown[]) =>
         runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec(benchmarkJson(controls)),
         });
@@ -456,7 +470,7 @@ describe('runPowerpipeBenchmark — durationMs', () => {
         const ticks = [1_000, 4_500];
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec(benchmarkJson([control('a', 'ok')])),
             now: () => ticks.shift() ?? 9_999,
@@ -468,7 +482,7 @@ describe('runPowerpipeBenchmark — durationMs', () => {
         const ticks = [10, 42];
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
-            env: {},
+            env: emptyEnv(),
             secretValues: [],
             exec: fakeExec('', { ok: false, missing: true }),
             now: () => ticks.shift() ?? 9_999,
@@ -490,7 +504,7 @@ describe('runPowerpipeBenchmark — durationMs', () => {
 
             const res = await runPowerpipeBenchmark({
                 benchmarkId: 'bench',
-                env: {},
+                env: emptyEnv(),
                 secretValues: [],
                 exec: fakeExec(benchmarkJson([control('a', 'ok')])),
             });
@@ -513,7 +527,7 @@ describe('runPowerpipeBenchmark — durationMs', () => {
 
             const res = await runPowerpipeBenchmark({
                 benchmarkId: 'bench',
-                env: {},
+                env: emptyEnv(),
                 secretValues: [],
                 exec: fakeExec(benchmarkJson([control('a', 'ok')])),
                 now: () => ticks.shift() ?? 9_999,
