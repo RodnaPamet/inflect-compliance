@@ -1173,3 +1173,831 @@ describe('a 403 on the READ is not a write-permission problem', () => {
         expect((err as Error).message).toMatch(/re-consent the application/);
     });
 });
+
+// ════════════════════════════════════════════════════════════════════════
+// The rest of the refusal surface. Everything below is a branch the writer
+// takes when something is WRONG — a missing field, a body that says
+// nothing, a token that changed under it — which is the only kind of branch
+// this file exists for.
+// ════════════════════════════════════════════════════════════════════════
+
+// ── construction, the rest of it ────────────────────────────────────────
+
+describe('construction refuses a half-built connection before the batch starts', () => {
+    it('names the Directory (tenant) ID when it is missing or blank', () => {
+        const { impl } = scriptedFetch([]);
+        // A blank string is the shape a config row takes when the field was
+        // cleared rather than never set, and it has to end in the same refusal:
+        // the tenant id is spliced into the token endpoint's path, so an empty
+        // one would POST client credentials at `login.microsoftonline.com//…`.
+        for (const tenantId of [undefined, '', '   ']) {
+            expect(() => createEntraIdWriter({ ...BASE_CONFIG, tenantId }, deps(impl))).toThrow(
+                /needs a Directory \(tenant\) ID/,
+            );
+        }
+    });
+
+    it('names the Application (client) ID separately, so the operator knows which field', () => {
+        const { impl } = scriptedFetch([]);
+        for (const clientId of [undefined, '   ']) {
+            const err = (() => {
+                try {
+                    createEntraIdWriter({ ...BASE_CONFIG, clientId }, deps(impl));
+                    return null;
+                } catch (e) {
+                    return e as Error;
+                }
+            })();
+            expect(err?.message).toMatch(/needs an Application \(client\) ID/);
+            // Two different blank fields must not report as one message: the
+            // tenant id is checked first, so naming it here would send the
+            // operator to a box that is already filled in.
+            expect(err?.message).not.toMatch(/Directory \(tenant\) ID/);
+        }
+    });
+
+    it('explains a NUMBER that looks like an opt-in the same way it explains a string', () => {
+        // `1` is what a config row holds when a checkbox went through a form
+        // encoder rather than JSON. It reads as ON everywhere else on this
+        // connection and OFF here, which is the whole case the diagnostic exists
+        // for — repeating "tick the box" describes something already done.
+        const { impl } = scriptedFetch([]);
+        const err = (() => {
+            try {
+                createEntraIdWriter({ ...BASE_CONFIG, writesEnabled: 1 }, deps(impl));
+                return null;
+            } catch (e) {
+                return e as Error;
+            }
+        })();
+
+        expect(err?.message).toMatch(/not enabled for directory writes/);
+        expect(err?.message).toMatch(/stores writesEnabled as the number 1 rather than the boolean/);
+        expect(err?.message).toMatch(/Re-save the connection/);
+    });
+
+    it.each<[string, unknown]>([
+        ['a zero', 0],
+        ['an unrelated string', 'maybe'],
+        ['an object', { enabled: true }],
+    ])('says %s is NOT an opt-in, without telling the operator they already ticked it', (_l, value) => {
+        const { impl } = scriptedFetch([]);
+        const err = (() => {
+            try {
+                createEntraIdWriter({ ...BASE_CONFIG, writesEnabled: value }, deps(impl));
+                return null;
+            } catch (e) {
+                return e as Error;
+            }
+        })();
+
+        expect(err?.message).toMatch(/not enabled for directory writes/);
+        expect(err?.message).toMatch(/which is not an opt-in/);
+        // The affirmative-looking paragraph tells an operator that the checkbox
+        // they ticked is the problem. Printing it for a value nobody would read
+        // as a grant sends them hunting a UI bug that is not there.
+        expect(err?.message).not.toMatch(/reads as ON in the admin UI/);
+    });
+
+    it('builds its own bounded transport when none is injected, and still refuses pre-network', async () => {
+        // The default arm of `deps.fetchImpl ?? createBoundedFetch()`. The point
+        // is that the pre-network refusals belong to the WRITER and not to the
+        // test transport: a writer holding the real bounded fetch still makes no
+        // request for a malformed id. `global.fetch` is the throwing spy here,
+        // and afterEach asserts it was never called.
+        const writer = createEntraIdWriter(BASE_CONFIG);
+
+        await expect(
+            writer.readState('guest_acme.com#EXT#@contoso.onmicrosoft.com'),
+        ).rejects.toBeInstanceOf(DirectoryWriteError);
+    });
+});
+
+// ── the token exchange ──────────────────────────────────────────────────
+
+describe('a token exchange that does not produce a token', () => {
+    it('reports a non-credential 400 from the token endpoint by status', async () => {
+        // `fetchOAuthToken` converts only the RFC 6749 credential codes
+        // (invalid_grant / invalid_client / unauthorized_client) into an auth
+        // verdict. `invalid_request` is OUR malformed request, so the Response
+        // comes back intact and the writer's own `!res.ok` is what has to catch
+        // it — without that line the body below would be parsed for a token that
+        // is not there.
+        const { impl, calls } = scriptedFetch([
+            { when: isToken, reply: () => json({ error: 'invalid_request' }, 400) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        await expect(writer.readState(USER_ID)).rejects.toThrow(
+            /Entra token exchange failed \(HTTP 400\)/,
+        );
+        expect(calls.filter(isUserGet)).toHaveLength(0);
+    });
+
+    it('treats a 200 with no access_token as a failure rather than sending "Bearer undefined"', async () => {
+        const { impl, calls } = scriptedFetch([
+            { when: isToken, reply: () => json({ token_type: 'Bearer', expires_in: 3600 }) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        await expect(writer.readState(USER_ID)).rejects.toThrow(/returned no access_token/);
+        expect(calls.filter(isUserGet)).toHaveLength(0);
+    });
+
+    it('wraps a mid-batch token failure as proven-unapplied, and dispatches no PATCH', async () => {
+        // The shape that actually happens on a long run: the capture was taken
+        // with a healthy token, the token then went stale, and the re-exchange
+        // for the WRITE failed. Everything before the PATCH is dispatched is
+        // proven-unapplied because no request existed — and the row has to say
+        // so, or a capture nobody was told to look for is filed as INDETERMINATE
+        // and sits in the operator sweep forever.
+        let clock = 0;
+        const { impl, calls } = scriptedFetch([
+            {
+                when: isToken,
+                // 10 minutes, so the 5-minute skew makes it stale at t=5m.
+                reply: (n) =>
+                    n === 0
+                        ? json({ access_token: TOKEN_WITH_WRITE, expires_in: 600 })
+                        : json({ token_type: 'Bearer' }),
+            },
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl, { now: () => clock }));
+        const state = await writer.readState(USER_ID);
+
+        clock = 6 * 60_000;
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/no request was made and the directory is unchanged/);
+        // The underlying cause is quoted, not swallowed: "could not obtain a
+        // token" on its own tells an operator nothing about which half failed.
+        expect((err as Error).message).toMatch(/returned no access_token/);
+        expect((err as Error).cause).toBeInstanceOf(Error);
+        expect(calls.filter(isPatch)).toHaveLength(0);
+    });
+
+    it('names a non-Error rejection instead of stringifying it into nothing', async () => {
+        // A transport that rejects with a bare string (a proxy shim, an agent
+        // mock) must not produce "…is unchanged: undefined".
+        let clock = 0;
+        const { impl } = scriptedFetch([
+            {
+                when: isToken,
+                reply: (n) => {
+                    if (n === 0) return json({ access_token: TOKEN_WITH_WRITE, expires_in: 600 });
+                    throw 'the token endpoint closed the connection';
+                },
+            },
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl, { now: () => clock }));
+        const state = await writer.readState(USER_ID);
+
+        clock = 6 * 60_000;
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toContain('the token endpoint closed the connection');
+    });
+
+    it.each<[string, number | undefined]>([
+        ['omits expires_in', undefined],
+        ['sends a non-positive expires_in', 0],
+    ])('caches for the default hour when the endpoint %s', async (_label, expiresIn) => {
+        // Without the default TTL an absent `expires_in` computes an expiry of
+        // `now - 5min`, which is already in the past: EVERY Graph call in the
+        // batch would re-exchange, against an endpoint Entra throttles per
+        // app-per-tenant. The token cache would silently stop being a cache.
+        let clock = 0;
+        const { impl, calls } = scriptedFetch([
+            {
+                when: isToken,
+                reply: () =>
+                    json(
+                        expiresIn === undefined
+                            ? { access_token: TOKEN_WITH_WRITE }
+                            : { access_token: TOKEN_WITH_WRITE, expires_in: expiresIn },
+                    ),
+            },
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl, { now: () => clock }));
+
+        await writer.readState(USER_ID);
+        clock = 50 * 60_000;
+        await writer.readState(USER_ID);
+        expect(calls.filter(isToken)).toHaveLength(1);
+
+        // …and it is still renewed EARLY — one hour minus the five-minute skew.
+        clock = 56 * 60_000;
+        await writer.readState(USER_ID);
+        expect(calls.filter(isToken)).toHaveLength(2);
+    });
+});
+
+// ── the roles claim, when it cannot be read ─────────────────────────────
+
+describe('an undecodable roles claim is unknown, never zero-consent', () => {
+    /** A JWT whose payload is the given raw JSON text. */
+    function tokenWithRawPayload(payloadJson: string): string {
+        const head = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+        return `${head}.${Buffer.from(payloadJson).toString('base64url')}.sig`;
+    }
+
+    it.each<[string, string]>([
+        ['a payload that is a bare JSON string', tokenWithRawPayload('"not-an-object"')],
+        ['a payload that is JSON null', tokenWithRawPayload('null')],
+        ['a roles claim that is not an array', tokenWithRawPayload('{"roles":"User.ReadWrite.All"}')],
+        // Three segments, so it passes the shape check and only fails when the
+        // middle one is actually decoded — the case a `parts.length !== 3` guard
+        // alone would let through into a throw.
+        ['a payload segment that is not decodable at all', 'header.%%%not-base64%%%.sig'],
+    ])('%s lets the batch proceed instead of refusing on our own parse failure', async (_l, token) => {
+        const { impl, calls } = scriptedFetch([
+            {
+                when: isToken,
+                reply: () => json({ access_token: token, expires_in: 3600 }),
+            },
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => new Response(null, { status: 204 }) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        // Refusing here would take a working tenant offline over OUR parse
+        // failure. Reading a non-array `roles` as an EMPTY set would be worse
+        // still: empty is the shape that spells "nothing consented", so a tenant
+        // whose token we merely mis-parsed would be told to re-consent a
+        // permission it already holds.
+        await expect(writer.preflight()).resolves.toBeUndefined();
+        const state = await writer.readState(USER_ID);
+        await expect(writer.disable(USER_ID, state)).resolves.toBeUndefined();
+        expect(calls.filter(isPatch)).toHaveLength(1);
+    });
+
+    it('says so, and claims neither cause, when such a token meets a 403 with no error code', async () => {
+        const { impl } = scriptedFetch([
+            {
+                when: isToken,
+                reply: () => json({ access_token: tokenWithRawPayload('{"roles":"x"}'), expires_in: 3600 }),
+            },
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => json({}, 403) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect(err).not.toBeInstanceOf(EntraWritePermissionMissingError);
+        expect(err).not.toBeInstanceOf(EntraPrivilegedTargetError);
+        // Graph sent no code, so the message falls back to the one it always
+        // uses for this family rather than printing "403 null".
+        expect((err as Error).message).toMatch(/403 Authorization_RequestDenied/);
+        expect((err as Error).message).toMatch(/could not be decoded/);
+    });
+});
+
+// ── consent that changes mid-batch ──────────────────────────────────────
+
+describe('consent revoked between the pre-check and the PATCH', () => {
+    it('reports the FRESH token as the missing consent, not the target as privileged', async () => {
+        // The 401-refresh window is the one place the token can change under a
+        // single `disable`, and it is exactly where an admin revoking consent
+        // mid-run lands: the pre-check passed on the old token, the refresh
+        // brings back a read-only one, and Graph answers the retry 403. Reading
+        // that as a privileged target would send the operator to assign a
+        // directory role for an application that no longer has write consent at
+        // all.
+        const { impl, calls } = scriptedFetch([
+            {
+                when: isToken,
+                reply: (n) =>
+                    json({ access_token: n === 0 ? TOKEN_WITH_WRITE : TOKEN_READ_ONLY, expires_in: 3600 }),
+            },
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: (n) => (n === 0 ? new Response('', { status: 401 }) : graphForbidden()),
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(EntraWritePermissionMissingError);
+        expect(err).not.toBeInstanceOf(EntraPrivilegedTargetError);
+        expect((err as Error).message).toMatch(/re-consent the application/);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect(calls.filter(isPatch)).toHaveLength(2);
+        expect(calls.filter(isToken)).toHaveLength(2);
+    });
+
+    it('names the default Graph code when a privileged-target 403 carries no body code', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => json({ error: { message: 'Insufficient privileges.' } }, 403) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(EntraPrivilegedTargetError);
+        // The sentence explains what Graph answers "403 <code>" for; with no
+        // code in the body it still has to read as that sentence.
+        expect((err as Error).message).toMatch(/Graph answers 403 Authorization_RequestDenied when/);
+        expect((err as Error).message).toMatch(/Do NOT re-consent/);
+    });
+});
+
+// ── error bodies that say nothing ───────────────────────────────────────
+
+describe('a Graph failure whose body carries no error detail', () => {
+    async function ready(impl: typeof fetch) {
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+        return { writer, state };
+    }
+
+    it('reports an unparseable 500 body by status and stays INDETERMINATE', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: () =>
+                    new Response('<html>500 Internal Server Error</html>', {
+                        status: 500,
+                        headers: { 'content-type': 'text/html' },
+                    }),
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        // A message is not worth a failure — readGraphError swallows the parse
+        // error — but the STATUS still has to reach the operator, and 5xx is the
+        // canonical may-have-landed case, so proof must not be claimed.
+        expect((err as Error).message).toMatch(/HTTP 500/);
+        expect((err as Error).message).toMatch(/no error detail/);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+    });
+
+    it('does not print "null" for a JSON body with no error object', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => json({}, 409) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        const message = (err as Error).message;
+        expect(message).toMatch(/HTTP 409/);
+        expect(message).toMatch(/no error detail/);
+        expect(message).not.toContain('null');
+        // 409 is deliberately absent from the proven-unapplied allowlist: a
+        // conflict can reflect state that a partial application produced.
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+    });
+
+    it('does not throw on a body that parses to JSON null', async () => {
+        // `null` parses fine and then has no `.error` to reach through. A
+        // gateway answering a bare `null` must produce the same refusal as an
+        // empty object, not a TypeError from inside the classifier.
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: () =>
+                    new Response('null', { status: 500, headers: { 'content-type': 'application/json' } }),
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as Error).message).toMatch(/HTTP 500/);
+        expect((err as Error).message).toMatch(/no error detail/);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+    });
+
+    it('ignores non-string code and message fields rather than interpolating them', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => json({ error: { code: 42, message: { text: 'no' } } }, 422) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        const message = (err as Error).message;
+        expect(message).toMatch(/HTTP 422/);
+        expect(message).toMatch(/no error detail/);
+        expect(message).not.toContain('[object Object]');
+        // The code clause is appended only when there IS a string code, so a
+        // numeric one leaves "(HTTP 422)" with nothing after it.
+        expect(message).toContain('(HTTP 422)');
+        expect(message).not.toMatch(/HTTP 422, /);
+        // 422 IS on the allowlist — semantically rejected after parsing.
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+    });
+
+    it('classifies a response carrying no headers at all by its own status', async () => {
+        // `trueStatus` reads the cloak header through `?.get?.()` because the
+        // response it is handed is not always one Node built — a proxy shim or a
+        // mocked agent can return a bare object. Throwing there would turn a
+        // provider 500 into a TypeError from OUR module, and the journal row
+        // would carry our stack instead of Graph's status.
+        const headerless = {
+            ok: false,
+            status: 500,
+            json: async () => ({ error: { code: 'InternalServerError' } }),
+        } as unknown as Response;
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => headerless },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as Error).message).toMatch(/HTTP 500, InternalServerError/);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+    });
+
+    it('does not let an injected cloak header rewrite a status the cloak never hid', async () => {
+        // The cloak is an INTERNAL channel — set by this module's own wrapper on
+        // the way up. A non-numeric value arriving from outside it (an
+        // intermediary echoing headers, a test double) must leave `res.status`
+        // as the authority; honouring it would let something upstream decide
+        // whether a write is claimed proven-unapplied.
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: () =>
+                    json({ error: { code: 'ServiceUnavailable', message: 'try later' } }, 503, {
+                        'x-inflect-cloaked-status': 'not-a-number',
+                    }),
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect((err as Error).message).toMatch(/HTTP 503, ServiceUnavailable/);
+        // 503 is the canonical may-have-landed status; a garbage header must not
+        // be able to promote it into the proven-unapplied allowlist.
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+    });
+
+    it("carries Graph's own words on a 401, not just the status", async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: () =>
+                    json(
+                        {
+                            error: {
+                                code: 'InvalidAuthenticationToken',
+                                message: 'Access token has expired.',
+                            },
+                        },
+                        401,
+                    ),
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(EntraCredentialRejectedError);
+        // The string form of `cause` is Graph's own message, which names no
+        // account — that is what makes it safe to keep, unlike the
+        // IntegrationAuthError form the read path has to scrub.
+        expect((err as Error).cause).toBe('Access token has expired.');
+        expect((err as Error).cause).not.toContain(USER_ID);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+    });
+
+    it('falls back to the error CODE when a 401 body carries no message', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => json({ error: { code: 'InvalidAuthenticationToken' } }, 401) },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(EntraCredentialRejectedError);
+        expect((err as Error).cause).toBe('InvalidAuthenticationToken');
+    });
+});
+
+// ── a read 403 the token cannot explain ─────────────────────────────────
+
+describe('a 403 on the READ with nothing to go on', () => {
+    it('reports the undecodable token as a diagnostic and still refuses cleanly', async () => {
+        const { impl, calls } = scriptedFetch([
+            { when: isToken, reply: () => json({ access_token: 'opaque-not-a-jwt', expires_in: 3600 }) }, // pragma: allowlist secret — a deliberately non-JWT literal
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isUserGet, reply: () => json({}, 403) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const err = await writer.readState(USER_ID).catch((e: unknown) => e);
+        const message = (err as Error).message;
+
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect(message).toMatch(/refused to READ/);
+        // No code in the body, so the family default stands in — and with no
+        // message there is no dangling ": " before the next sentence.
+        expect(message).toMatch(/403 Authorization_RequestDenied\. Nothing was written/);
+        expect(message).toMatch(/token could not be decoded, so its consented permissions are unknown/);
+        // Still never the consent screen: the request that was refused is a read.
+        expect(message).not.toMatch(/re-consent/i);
+        // The FULL select is retried once without assignedLicenses before the
+        // refusal is reported — a tenant refusing that one field is a real
+        // state, and it must not be reported as an account-level refusal without
+        // the minimal select having been tried.
+        expect(calls.filter(isUserGet)).toHaveLength(2);
+        expect(calls.filter(isPatch)).toHaveLength(0);
+    });
+});
+
+// ── the capture, when Graph is stingy ───────────────────────────────────
+
+describe('the capture never records an identity it did not read', () => {
+    it('falls back to the requested object id when Graph omits it from the body', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isUserGet,
+                reply: () => {
+                    const u = graphUser();
+                    delete u.id;
+                    return json(u);
+                },
+            },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+
+        // `id` is the handle a restore looks the account up by — UPNs get
+        // renamed and recycled — so an undefined here strands the capture.
+        expect(state.priorState.id).toBe(USER_ID);
+    });
+
+    it('survives a memberOf read that THROWS, not just one that answers non-ok', async () => {
+        // The membership capture is best-effort by design, and the two ways it
+        // can fail are not the same code path: a non-ok response returns, while
+        // a 401/timeout out of `get` THROWS. Without the catch, a directory that
+        // refuses `/memberOf` would abort readState — which the orchestrator
+        // calls OUTSIDE its try/catch, so one such account would end the run.
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            {
+                when: isMemberOf,
+                reply: () =>
+                    new IntegrationTimeoutError(
+                        'https://graph.microsoft.com/v1.0/users/x/memberOf',
+                        30_000,
+                    ),
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const state = await writer.readState(USER_ID);
+
+        expect(state.enabled).toBe(true);
+        // And it still refuses to claim completeness about a list it never read.
+        expect(state.priorState.memberOf).toBe('unavailable');
+        expect(state.priorState.memberOfGroupIds).toBeNull();
+    });
+
+    it('records absent identity fields as null rather than dropping the keys', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isUserGet,
+                reply: () => json({ id: USER_ID, accountEnabled: true, onPremisesSyncEnabled: false }),
+            },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+
+        // An absent KEY in a plaintext JSON column, six months from now, cannot
+        // be told apart from a field this era's writer never selected. An
+        // explicit null can.
+        expect(state.priorState).toMatchObject({
+            userPrincipalName: null,
+            displayName: null,
+            userType: null,
+            assignedLicenseSkuIds: null,
+        });
+    });
+});
+
+// ── lost responses, the remaining shapes ────────────────────────────────
+
+describe('a lost response, and what the confirming read can and cannot prove', () => {
+    async function ready(impl: typeof fetch) {
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+        const state = await writer.readState(USER_ID);
+        return { writer, state };
+    }
+
+    it('an auth error thrown BY the write transport is a proven refusal, with no read-back', async () => {
+        // 401 proves the request was refused at the edge without being
+        // processed, so there is nothing a confirming read could add — and a
+        // read-back here would spend one extra Graph call per account on a batch
+        // whose credential is already known bad.
+        const thrown = new IntegrationAuthError(
+            401,
+            `https://graph.microsoft.com/v1.0/users/${USER_ID}`,
+        );
+        const { impl, calls } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => thrown },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(EntraCredentialRejectedError);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).cause).toBe(thrown);
+        // One GET for the capture and none after: no confirming read happened.
+        expect(calls.filter(isUserGet)).toHaveLength(1);
+    });
+
+    it('goes and looks when the post-401 RETRY is the attempt that loses its response', async () => {
+        // The retry after a token refresh is a second dispatch, and it can lose
+        // its response exactly like the first. If that were reported as a
+        // refusal, a write that landed would settle FAILED — the one outcome
+        // both journal readers exclude. So the same read-back rule applies to
+        // the retry, and here it shows the account disabled: the write landed.
+        const { impl, calls } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: (n) =>
+                    n === 0
+                        ? new Response('', { status: 401 })
+                        : new IntegrationTimeoutError('https://graph.microsoft.com/x', 30_000),
+            },
+            {
+                when: isUserGet,
+                // The capture, then the confirming read after the lost retry.
+                reply: (n) => json(graphUser({ accountEnabled: n === 0 })),
+            },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        await expect(writer.disable(USER_ID, state)).resolves.toBeUndefined();
+        expect(calls.filter(isPatch)).toHaveLength(2);
+        expect(calls.filter(isUserGet)).toHaveLength(2);
+    });
+
+    it('a confirming read the directory REFUSES leaves the outcome genuinely unknown', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => new IntegrationTimeoutError('https://graph.microsoft.com/x', 30_000) },
+            {
+                when: isUserGet,
+                // The capture read, then a read-back answered 404: the account is
+                // gone, which says nothing about whether OUR PATCH is what
+                // changed it.
+                reply: (n) =>
+                    n === 0
+                        ? json(graphUser())
+                        : json({ error: { code: 'Request_ResourceNotFound' } }, 404),
+            },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect((err as Error).message).toMatch(/confirming read also failed/);
+        // Never proof. A wrong TRUE settles the row FAILED, which
+        // findRestorableState and listUnsettledWrites BOTH exclude.
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+    });
+
+    it('a confirming read that omits accountEnabled is not evidence either', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            { when: isPatch, reply: () => new IntegrationTimeoutError('https://graph.microsoft.com/x', 30_000) },
+            {
+                when: isUserGet,
+                reply: (n) => (n === 0 ? json(graphUser()) : json({ id: USER_ID })),
+            },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        // A 200 that answered no question is exactly as informative as a failed
+        // read, and must not be reported as "still enabled".
+        expect((err as Error).message).toMatch(/confirming read also failed/);
+        expect((err as Error).message).not.toMatch(/still ENABLED/);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+    });
+
+    it('names a non-Error transport rejection in the message it hands the operator', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: () => {
+                    throw 'ECONNRESET from the egress proxy';
+                },
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect((err as Error).message).toContain('ECONNRESET from the egress proxy');
+        expect((err as Error).message).toMatch(/still ENABLED/);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+        // A string is not an IntegrationRateLimitedError, so the throttle clause
+        // must not appear on it.
+        expect((err as Error).message).not.toMatch(/throttled beyond/);
+    });
+});
+
+// ── the auth-class cloak, on the statuses it does not expect ────────────
+
+describe('an IntegrationAuthError that is not a 401 still cannot leave the writer', () => {
+    it('wraps it, scrubs the object id out of the retained cause, and does not accuse the credential', async () => {
+        // AUTH_STATUS is 401/403 today and the cloak takes 403 back before the
+        // classifier sees it, so this shape reaches `get` only if that set grows
+        // or the cloak is bypassed. It is wrapped anyway: the guarantee this file
+        // makes is about the CLASS escaping — `markAuthFailure` keys on exactly
+        // that — not about which statuses happen to produce it.
+        const raw = new IntegrationAuthError(
+            403,
+            `https://graph.microsoft.com/v1.0/users/${USER_ID}?$select=accountEnabled`,
+        );
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isUserGet, reply: () => raw },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const err = await writer.readState(USER_ID).catch((e: unknown) => e);
+
+        expect(err).not.toBeInstanceOf(IntegrationAuthError);
+        expect(err).toBeInstanceOf(DirectoryWriteError);
+        // Not diagnosed as a credential problem — that verdict is reserved for
+        // 401, the status that actually proves it.
+        expect(err).not.toBeInstanceOf(EntraCredentialRejectedError);
+        // 403 IS on the proven-unapplied allowlist: evaluated, then refused.
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+        expect((err as Error).message).toMatch(/HTTP 403/);
+        // The URL is scrubbed even in the writer's own message. (The account id
+        // itself is named there deliberately — every refusal in this file does,
+        // and a DirectoryWriteError is not what markAuthFailure persists.)
+        expect((err as Error).message).toContain('users/{objectId}');
+        expect((err as Error).message).not.toContain(`users/${USER_ID}`);
+
+        const cause = (err as Error).cause;
+        expect(cause).toBeInstanceOf(IntegrationAuthError);
+        // The retained cause is REBUILT scrubbed, so the seam this file leaves
+        // open — unwrap it, decide at the call site whether to mark the
+        // connection — is safe to actually use.
+        expect((cause as Error).message).not.toContain(USER_ID);
+        expect((cause as Error).message).toContain('{objectId}');
+        expect((cause as IntegrationAuthError).status).toBe(403);
+    });
+});
