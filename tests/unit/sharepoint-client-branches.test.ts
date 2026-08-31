@@ -209,12 +209,40 @@ describe('uploads — target URL and failure', () => {
         );
     });
 
-    it('skips a drive Graph returned without an id when deriving the allowlist', async () => {
-        const f = jest.fn();
-        f.mockResolvedValueOnce(jsonRes({ value: [{ name: 'no id here' }, { id: 'drive-ok' }] }));
-        f.mockResolvedValueOnce(jsonRes({ id: 'item-1' }));
+    it('refuses a falsy drive id that an id-less Graph drive would otherwise smuggle into the allowlist', async () => {
+        // `allowedDriveIds` skips a drive Graph returned without a usable id.
+        // Drop that skip and the row still lands in the Set — as `undefined`,
+        // or as `''` for a drive whose id came back empty. `assertDriveAllowed`
+        // is a plain Set-membership test, so the hole is not cosmetic: any
+        // caller arriving with that same falsy id now PASSES authorization and
+        // gets a PUT with the tenant's app-only token. Asserting only that the
+        // GOOD drive still uploads cannot see that — `has('drive-ok')` is true
+        // either way — so this pins the derived set exactly and then the
+        // refusal it is supposed to produce.
+        const drives = { value: [{ name: 'no id here' }, { id: '' }, { id: 'drive-ok' }] };
+
+        const derived = await client(jest.fn().mockResolvedValue(jsonRes(drives))).allowedDriveIds();
+        expect(derived).toEqual(new Set(['drive-ok']));
+
+        // The two falsy shapes are both refused, and refused BEFORE the PUT —
+        // one fetch (the drive lookup), never a second.
+        for (const smuggled of ['', undefined as unknown as string]) {
+            const f = jest.fn();
+            f.mockResolvedValueOnce(jsonRes(drives));
+            f.mockResolvedValueOnce(jsonRes({ id: 'item-1' }));
+            await expect(
+                client(f).uploadNewFile(smuggled, 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf'),
+            ).rejects.toThrow('is not in an approved site');
+            expect(f).toHaveBeenCalledTimes(1);
+        }
+
+        // Positive control: the refusals above are the allowlist working, not a
+        // fixture that refuses everything.
+        const ok = jest.fn();
+        ok.mockResolvedValueOnce(jsonRes(drives));
+        ok.mockResolvedValueOnce(jsonRes({ id: 'item-1' }));
         await expect(
-            client(f).uploadNewFile('drive-ok', 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf'),
+            client(ok).uploadNewFile('drive-ok', 'root', 'r.pdf', new Uint8Array([1]), 'application/pdf'),
         ).resolves.toMatchObject({ id: 'item-1' });
     });
 });
