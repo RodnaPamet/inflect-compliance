@@ -9,6 +9,8 @@
  * SECURITY: Secrets are encrypted with AES-256-GCM. Never logged in plaintext.
  */
 import { prisma } from '@/lib/prisma';
+import { appendAuditEntry } from '@/lib/audit';
+import { logger } from '@/lib/observability';
 import type { RequestContext } from '../types';
 import type { VerifyMfaInputType } from '../schemas/mfa.schemas';
 import {
@@ -150,6 +152,27 @@ export async function verifyMfaEnrollment(
  * Removes MFA enrollment for a user. Allowed for:
  * - The user themselves (self-service, only if tenant policy allows)
  * - An admin (force-remove for any user in the tenant)
+ *
+ * THE ADMIN BRANCH IS AN AUTHORIZATION DECISION, AND IT IS AUDITED HERE.
+ *
+ * Removing somebody else's second factor is the highest-value action on this
+ * surface: it turns an account defended by two factors into one defended by a
+ * password. A refused attempt at it is precisely what a reviewer looks for
+ * after a compromise, and until #2117 it left no trace — `forbidden()` throws
+ * and writes nothing, and `AUTHZ_DENIED` was written only by
+ * `requirePermission` at the route layer.
+ *
+ * The route cannot carry that gate. `DELETE /security/mfa/enroll` is dual-mode:
+ * with no body it removes the CALLER's enrolment and every member may do it;
+ * with `targetUserId` it is an admin action. One route-level permission would
+ * either break self-service or admit everyone, so the decision has to live
+ * where the two modes are distinguishable — which is here.
+ *
+ * The write is best-effort and swallows its own failures, matching
+ * `auditPermissionDenied`: a refusal must reach the caller even if audit
+ * storage is down. It is awaited rather than fired-and-forgotten because
+ * `appendAuditEntry` takes a per-tenant advisory lock inside its own
+ * transaction, and this function holds none.
  */
 export async function removeMfaEnrollment(
     ctx: RequestContext,
@@ -159,6 +182,7 @@ export async function removeMfaEnrollment(
 
     // Non-admins can only remove their own enrollment
     if (effectiveUserId !== ctx.userId && !ctx.permissions.canAdmin) {
+        await auditMfaRemovalDenied(ctx, effectiveUserId);
         throw forbidden('Only admins can remove other users\' MFA enrollment');
     }
 
@@ -174,6 +198,45 @@ export async function removeMfaEnrollment(
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
+
+/**
+ * Record a refused attempt to strip another user's MFA.
+ *
+ * Shape mirrors `auditPermissionDenied` in the permission middleware so the two
+ * are one population when an auditor filters on `action: 'AUTHZ_DENIED'` — same
+ * entity, same `category: 'access'`, same never-throws contract. `entityId`
+ * names the coarse predicate the check actually read (`permissions.canAdmin`),
+ * not a `PermissionKey`, because this decision is not keyed on one and claiming
+ * otherwise would put a key in the trail that no route gates on.
+ *
+ * `targetUserId` is recorded: who was attacked is the whole point of the row,
+ * and it is an opaque id, not an email.
+ */
+async function auditMfaRemovalDenied(ctx: RequestContext, targetUserId: string): Promise<void> {
+    try {
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            entity: 'Permission',
+            entityId: 'permissions.canAdmin',
+            action: 'AUTHZ_DENIED',
+            details: 'Denied removal of another user\'s MFA enrollment',
+            detailsJson: {
+                category: 'access',
+                event: 'authz_denied',
+                operation: 'mfa_enrollment_remove',
+                role: ctx.role,
+                targetUserId,
+            },
+        });
+    } catch (err) {
+        logger.error('failed to record an MFA-removal denial', {
+            component: 'mfa-enrollment',
+            tenantId: ctx.tenantId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
 
 function getAuthSecret(): string {
     const secret = env.AUTH_SECRET;
