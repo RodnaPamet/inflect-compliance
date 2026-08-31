@@ -89,16 +89,117 @@ const stripComments = (s: string): string =>
  * Every route that still authorizes only in its usecase, so its refusals are
  * invisible in the audit trail. Sorted; one line each so a diff is readable.
  */
-const UNGATED_DESTRUCTIVE_ROUTES: readonly string[] = [
-    'account/avatar/route.ts',
-    'scim/v2/Groups/[id]/route.ts',
-    'scim/v2/Users/[id]/route.ts',
-    'sso/route.ts',
-    't/[tenantSlug]/business-continuity/[id]/dependencies/[depId]/route.ts',
-    't/[tenantSlug]/business-continuity/[id]/route.ts',
-    't/[tenantSlug]/processes/[id]/snapshots/[version]/restore/route.ts',
-    't/[tenantSlug]/security/mfa/enroll/route.ts',
+/**
+ * A route with no route-level gate, and WHY it still has none.
+ *
+ * The list used to be bare strings, which made every entry mean the same
+ * thing: "not done yet". After four tranches that reading is wrong and
+ * actively misleading — what is left is what the `requirePermission`
+ * mechanism CANNOT take, and each one is a different reason. A residual
+ * nobody can tell apart from a backlog gets re-triaged from scratch every
+ * time somebody looks at it, which is exactly what happened when #2189 was
+ * filed calling these "straightforward gaps".
+ *
+ *   'todo'   — a real gap. Someone should close it. Names its issue.
+ *   'exempt' — a decision. The reason is the whole entry; if it stops being
+ *              true, the entry is wrong and should move to 'todo'.
+ *
+ * An exemption is NOT permission to leave a refusal unrecorded. Two of the
+ * three exempt routes below have no refusal to record; the third records it
+ * somewhere this file cannot see, and says where.
+ */
+type UngatedRoute = {
+    readonly route: string;
+    readonly disposition: 'todo' | 'exempt';
+    readonly reason: string;
+};
+
+const UNGATED_DESTRUCTIVE_ROUTES: readonly UngatedRoute[] = [
+    {
+        route: 'account/avatar/route.ts',
+        disposition: 'exempt',
+        reason:
+            'Self-service, structurally. Both handlers read the session and call ' +
+            'uploadOwnAvatar / removeOwnAvatar with session.user.id; there is no ' +
+            'userId parameter anywhere in the module, so one user cannot act on ' +
+            'another and there is no authorization decision to refuse or record.',
+    },
+    {
+        route: 'scim/v2/Groups/[id]/route.ts',
+        disposition: 'exempt',
+        reason:
+            'No refusal path exists. scim-groups.ts contains zero assertCan* and ' +
+            'zero forbidden() calls, authenticateScimRequest returns ' +
+            '{tenantId, tokenId, tokenLabel} rather than a RequestContext, and ' +
+            'TenantScimToken has no scope column — so a valid token is fully ' +
+            'authorized and an invalid one gets 401 at the door, which is ' +
+            'authentication. A gate here would be a check that never fires, and a ' +
+            'permanently-passing gate reads as coverage. Success IS audited, with ' +
+            'actorType SCIM. See #2190; the unscoped-token property is #2200.',
+    },
+    {
+        route: 'scim/v2/Users/[id]/route.ts',
+        disposition: 'exempt',
+        reason:
+            'Same as the Groups sibling: scim-users.ts has zero assertCan* and zero ' +
+            'forbidden() calls, so the DELETE has no authorization decision to ' +
+            'refuse. See #2190.',
+    },
+    {
+        route: 't/[tenantSlug]/security/mfa/enroll/route.ts',
+        disposition: 'exempt',
+        reason:
+            'DUAL-MODE, so no single route-level gate is correct: with no body the ' +
+            'DELETE removes the CALLER\'s enrolment and every member may do that; ' +
+            'with targetUserId it is an admin action. One permission would either ' +
+            'break self-service or admit everyone. The admin-branch refusal in ' +
+            'removeMfaEnrollment therefore writes its own AUTHZ_DENIED row — this ' +
+            'route is exempt from the GATE, not from the audit. Removing another ' +
+            'user\'s second factor is the one action on this surface a reviewer ' +
+            'most needs a refused attempt for.',
+    },
+    {
+        route: 'sso/route.ts',
+        disposition: 'todo',
+        reason:
+            'requirePermission cannot gate it: its handler type requires a ' +
+            'tenantSlug route param and resolves via getTenantCtx, and this path ' +
+            'has no slug — it uses getLegacyCtx, which resolves the tenant from ' +
+            'the session. Also an uncalled duplicate of the gated ' +
+            '/api/t/:slug/sso the UI reaches, so the fix is deprecation rather ' +
+            'than gating. #2196.',
+    },
+    {
+        route: 't/[tenantSlug]/business-continuity/[id]/dependencies/[depId]/route.ts',
+        disposition: 'todo',
+        reason:
+            'Gates on assertCanWrite, which reads permissions.canWrite (role-tier) ' +
+            'while requirePermission reads appPermissions, and PermissionSet has no ' +
+            'continuity domain — so no key carries the matching population. Binding ' +
+            'it to a neighbouring register\'s flag would change the caller set for a ' +
+            'reason unrelated to the route. #2197.',
+    },
+    {
+        route: 't/[tenantSlug]/business-continuity/[id]/route.ts',
+        disposition: 'todo',
+        reason:
+            'Deleting a whole Business Impact Analysis, and the PUT that rewrites ' +
+            'one. Same blocker as its dependencies sibling: assertCanWrite reads ' +
+            'the role-tier permissions bag and PermissionSet has no continuity ' +
+            'domain to gate on. #2197.',
+    },
+    {
+        route: 't/[tenantSlug]/processes/[id]/snapshots/[version]/restore/route.ts',
+        disposition: 'todo',
+        reason:
+            'Rolling a process map back to an earlier snapshot — destructive ' +
+            'because the current version is what it overwrites. Same blocker as ' +
+            'the business-continuity pair: assertCanWrite reads the role-tier bag ' +
+            'and PermissionSet has no processes domain. #2197.',
+    },
 ];
+
+const UNGATED_ROUTE_KEYS: readonly string[] = UNGATED_DESTRUCTIVE_ROUTES.map((r) => r.route);
 
 /**
  * Split a route module into per-EXPORT blocks.
@@ -160,14 +261,46 @@ describe('destructive routes whose denials are invisible', () => {
     });
 
     it('the set of ungated destructive routes is exactly the declared list', () => {
-        expect(ungated).toEqual([...UNGATED_DESTRUCTIVE_ROUTES].sort());
+        expect(ungated).toEqual([...UNGATED_ROUTE_KEYS].sort());
+    });
+
+    it('every entry says WHY it is still here', () => {
+        // The reason IS the entry. A disposition with a thin reason is the bare
+        // string list again wearing a type, and the bare list is what let a
+        // deliberate residual be re-read as a backlog.
+        for (const e of UNGATED_DESTRUCTIVE_ROUTES) {
+            // Asserted on a route-labelled object so a failure names the thin
+            // entry instead of printing two bare numbers.
+            expect({ route: e.route, thin: e.reason.length <= 80 }).toEqual({
+                route: e.route,
+                thin: false,
+            });
+        }
+    });
+
+    it('every remaining GAP names the issue tracking it', () => {
+        // Only 'todo' entries. An exemption is a decision that stands on its own
+        // reasoning and must not need an open issue to justify itself — requiring
+        // one would push people to file tickets nobody intends to action.
+        for (const e of UNGATED_DESTRUCTIVE_ROUTES.filter((x) => x.disposition === 'todo')) {
+            expect(e.reason).toMatch(/#\d{3,}/);
+        }
+    });
+
+    it('the number of real gaps only goes down', () => {
+        // A ratchet floor, not a restatement of the list: this is the count that
+        // must fall, and the exempt entries deliberately do not count toward it.
+        // Gating a route, or reclassifying one to 'exempt' with an argument,
+        // lowers this in the same diff.
+        const todo = UNGATED_DESTRUCTIVE_ROUTES.filter((e) => e.disposition === 'todo');
+        expect(todo.length).toBeLessThanOrEqual(4);
     });
 
     it('no declared entry is stale', () => {
         // A route that was gated, renamed or deleted must lose its line in the
         // same diff — otherwise the list decays into a set of claims about
         // files that no longer exist.
-        const stale = UNGATED_DESTRUCTIVE_ROUTES.filter((r) => !ungated.includes(r));
+        const stale = UNGATED_ROUTE_KEYS.filter((r) => !ungated.includes(r));
         expect(stale).toEqual([]);
     });
 });

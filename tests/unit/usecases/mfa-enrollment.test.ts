@@ -37,6 +37,15 @@ jest.mock('@/lib/security/totp-crypto', () => ({
     verifyTotpCode: jest.fn(),
 }));
 
+const mockAppendAuditEntry = jest.fn();
+jest.mock('@/lib/audit', () => ({
+    appendAuditEntry: (...a: unknown[]) => mockAppendAuditEntry(...a),
+}));
+
+jest.mock('@/lib/observability', () => ({
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
 jest.mock('@/env', () => ({
     env: { AUTH_SECRET: 'test-auth-secret-32-chars-or-more-xx' }, // pragma: allowlist secret — placeholder so totp encryption module loads under test
 }));
@@ -218,6 +227,55 @@ describe('removeMfaEnrollment', () => {
         // them in an MFA-required-but-unenrolled lockout AND opening
         // a re-enrolment window the attacker controls.
         expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('RECORDS that refusal, naming who was targeted', async () => {
+        // The half the test above cannot cover. Throwing is not recording, and
+        // this route cannot carry `requirePermission` — it is dual-mode, so a
+        // route-level key would either break self-service or admit everyone.
+        // Until #2117 that combination meant the single most attack-relevant
+        // refusal in the product left no trace at all.
+        mockAppendAuditEntry.mockResolvedValue({ id: 'a1' });
+
+        await expect(removeMfaEnrollment(userCtx, 'victim-id')).rejects.toThrow();
+
+        expect(mockAppendAuditEntry).toHaveBeenCalledTimes(1);
+        const entry = mockAppendAuditEntry.mock.calls[0][0];
+        expect(entry).toEqual(
+            expect.objectContaining({
+                tenantId: userCtx.tenantId,
+                userId: userCtx.userId,
+                entity: 'Permission',
+                action: 'AUTHZ_DENIED',
+            }),
+        );
+        // WHO was targeted is the point of the row — a denial that does not say
+        // whose second factor somebody tried to strip is not usable evidence.
+        expect(entry.detailsJson).toEqual(
+            expect.objectContaining({ category: 'access', targetUserId: 'victim-id' }),
+        );
+    });
+
+    it('still refuses when the audit write fails', async () => {
+        // The refusal must reach the caller even if audit storage is down —
+        // same contract as auditPermissionDenied. Inverting this would turn an
+        // audit outage into an authorization bypass, which is the one way a
+        // logging change can make a system LESS safe than logging nothing.
+        mockAppendAuditEntry.mockRejectedValue(new Error('audit storage down'));
+
+        await expect(
+            removeMfaEnrollment(userCtx, 'victim-id'),
+        ).rejects.toThrow(/Only admins/);
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('writes NO denial row when an admin is allowed through', async () => {
+        // Without this, a helper that recorded unconditionally would satisfy
+        // every assertion above while filling the trail with denials that never
+        // happened — the failure direction that misleads an auditor rather than
+        // leaving them short.
+        await removeMfaEnrollment(adminCtx, 'victim-id');
+        expect(mockAppendAuditEntry).not.toHaveBeenCalled();
     });
 
     it('lets ADMIN force-remove another user in the same tenant', async () => {
