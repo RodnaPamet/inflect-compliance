@@ -214,6 +214,7 @@ describe('Entra role-sync recording (EI-3)', () => {
             'gate_denied',
             'no_membership',
             'owner_immune',
+            'role_protected',
             'no_match',
             'no_mappings',
         ] as const) {

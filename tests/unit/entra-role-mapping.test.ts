@@ -11,7 +11,7 @@ const m = (aadGroupId: string, role: Role, priority = 0) => ({ aadGroupId, role,
 describe('resolveRoleFromGroups', () => {
     it('returns null when the user matches no mapped group', () => {
         const r = resolveRoleFromGroups(['g-x'], [m('g-1', 'EDITOR')]);
-        expect(r).toEqual({ role: null, matchedGroupIds: [] });
+        expect(r).toEqual({ role: null, matchedGroupIds: [], clampedGroupIds: [] });
     });
 
     it('returns the single matching mapping', () => {
@@ -58,5 +58,46 @@ describe('resolveRoleFromGroups', () => {
             [m('g-1', 'READER', 1), m('g-2', 'EDITOR', 2)],
         );
         expect(r.matchedGroupIds.sort()).toEqual(['g-1', 'g-2']);
+    });
+});
+
+/**
+ * The ceiling a restricted caller (SCIM Groups push) supplies. It filters the
+ * CANDIDATE POOL, not the winner — see `ResolveRoleOptions`.
+ */
+describe('resolveRoleFromGroups — assignableRoles ceiling', () => {
+    const CEILING = ['READER', 'EDITOR', 'AUDITOR'] as const;
+
+    it('drops an out-of-ceiling mapping instead of returning it', () => {
+        const r = resolveRoleFromGroups(['g-1'], [m('g-1', 'ADMIN', 10)], {
+            assignableRoles: CEILING,
+        });
+        expect(r.role).toBeNull();
+        expect(r.clampedGroupIds).toEqual(['g-1']);
+        // The gate + audit still see the group the user is genuinely in.
+        expect(r.matchedGroupIds).toEqual(['g-1']);
+    });
+
+    it('promotes the next eligible mapping — a clamp, not a refusal', () => {
+        // ADMIN outranks on priority AND seniority, so it wins unclamped.
+        const mappings = [m('g-admin', 'ADMIN', 10), m('g-editor', 'EDITOR', 1)];
+        expect(resolveRoleFromGroups(['g-admin', 'g-editor'], mappings).role).toBe('ADMIN');
+        expect(
+            resolveRoleFromGroups(['g-admin', 'g-editor'], mappings, {
+                assignableRoles: CEILING,
+            }).role,
+        ).toBe('EDITOR');
+    });
+
+    it('is inert when every matched mapping is already inside the ceiling', () => {
+        const r = resolveRoleFromGroups(['g-1'], [m('g-1', 'EDITOR', 1)], {
+            assignableRoles: CEILING,
+        });
+        expect(r.role).toBe('EDITOR');
+        expect(r.clampedGroupIds).toEqual([]);
+    });
+
+    it('omitting the option leaves the sign-in path unclamped', () => {
+        expect(resolveRoleFromGroups(['g-1'], [m('g-1', 'ADMIN', 1)]).role).toBe('ADMIN');
     });
 });

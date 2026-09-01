@@ -443,7 +443,9 @@ describe('scimDeleteUser — soft-delete', () => {
 
     it('soft-deletes (status=DEACTIVATED, NOT removed/hard-deleted) and audits', async () => {
         mockMembershipFindFirst.mockResolvedValueOnce({
-            id: 'm1', status: 'ACTIVE',
+            // `role` is load-bearing since #2200: SCIM refuses to deactivate an
+            // ADMIN/OWNER membership, and an absent role fails CLOSED.
+            id: 'm1', status: 'ACTIVE', role: 'READER',
             user: { email: 'a@b.com' },
         } as never);
 
