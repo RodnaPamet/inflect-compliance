@@ -36,6 +36,7 @@ import { decryptField } from '@/lib/security/encryption';
 import { markAuthFailure, clearAuthFailure } from '@/app-layer/integrations/connection-health';
 import { IntegrationAuthError } from '@/app-layer/integrations/http-resilience';
 import { runAwsPostureCollection } from '@/app-layer/usecases/aws-posture';
+import { logger } from '@/lib/observability/logger';
 import type { CheckResult } from '@/app-layer/integrations/types';
 
 const runInTenant = runInTenantContext as unknown as jest.Mock;
@@ -54,6 +55,35 @@ const MAPPED = 'iam_root_user_mfa_enabled';
 /** A DIFFERENT mapped control, also dual-framework — needed to tell a dedupe
  *  set scoped per benchmark control from one scoped across the whole run. */
 const SECOND_MAPPED = 'guardduty_enabled';
+/**
+ * The evidence-path connection's own secret. Fabricated, and deliberately
+ * shaped so NO pattern in `scrubAwsCredentials` matches it: not `AKIA`/`ASIA`,
+ * not a bare 40-char base64 run (the hyphens break `\b…\b`), not a session
+ * token, not an ARN. The only thing that can redact it is the connection's own
+ * value list — which is what makes a dropped `secretVals` argument visible.
+ */
+const CONN_SECRET = 'sk-live-9876543210zyxwvutsr'; // pragma: allowlist secret — fabricated, never issued
+
+/**
+ * The evidence block runs TWICE, once per benchmark, and that is load-bearing.
+ *
+ * `automationKey` is derived from the connection's own `configJson.benchmark`
+ * and is interpolated into the persisted evidence `content`. Pin the evidence
+ * path to ONE benchmark and that substring is byte-identical at runtime to a
+ * literal `aws-posture.<that benchmark>`, so nothing in the file can tell the
+ * derivation from the constant — a collector that stopped reading the config
+ * when labelling evidence stays green. Note that changing WHICH single value
+ * the fixture uses only MOVES the coincidence: `soc2` -> `CIS` merely makes
+ * `aws-posture.cis` the literal that survives instead.
+ *
+ * Two arms remove it by construction: whichever benchmark a literal names, the
+ * other arm fails. `soc2` is kept as an arm because it is the production
+ * default; `CIS` also re-exercises the lowercasing through to a persisted row.
+ */
+const BENCHMARKS = [
+    { benchmark: 'soc2', key: 'soc2' },
+    { benchmark: 'CIS', key: 'cis' },
+] as const;
 
 interface Conn {
     id: string;
@@ -143,6 +173,22 @@ function providerThrowingAfter(err: unknown, clock: Clock, ms: number) {
     };
 }
 
+/**
+ * `completedAt` is stamped from the wall clock AT COMPLETION — never from the
+ * injected `now`, which is the job's START instant.
+ *
+ * `expect.any(Date)` cannot tell those apart, because `now` is a Date as well,
+ * and both update sites used it: a collector that stamped the start time
+ * passed, reporting an execution that finished before its own benchmark did
+ * and contradicting the `durationMs` written on the same row. `NOW` is a fixed
+ * past fixture date, so a genuine completion instant is strictly greater while
+ * the `now` swap is exactly equal.
+ */
+const COMPLETION_INSTANT = {
+    asymmetricMatch: (v: unknown) => v instanceof Date && v.getTime() > NOW.getTime(),
+    toString: () => 'CompletionInstant(strictly after the injected `now`)',
+};
+
 function checkResult(over: Partial<CheckResult> = {}): CheckResult {
     return { status: 'PASSED', summary: 's', details: {}, ...over };
 }
@@ -188,7 +234,7 @@ describe('runAwsPostureCollection — connection resolution', () => {
                 status: 'ERROR',
                 errorMessage: 'Connection not found',
                 triggeredBy: 'scheduled',
-                completedAt: expect.any(Date),
+                completedAt: COMPLETION_INSTANT,
             },
         });
         expect(res).toStrictEqual({
@@ -216,6 +262,13 @@ describe('runAwsPostureCollection — connection resolution', () => {
         expect(ctx.requestId).toBe(`aws-posture-${TENANT}`);
         expect(ctx.actorType).toBe('JOB');
         expect(ctx.userId).toBe('system');
+        // This call injects `now`; the sibling above omits it and pins a real
+        // wall-clock instant. Only the pair distinguishes `now` from a fresh
+        // `new Date()` on the not-found branch — either test alone accepts both,
+        // because on that branch the two are the same kind of value.
+        expect(db.integrationExecution.create).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ completedAt: NOW }) }),
+        );
     });
 });
 
@@ -302,7 +355,7 @@ describe('runAwsPostureCollection — provider throw', () => {
             where: { id: 'exec-1' },
             // Elapsed, not a constant: the clock moved by exactly ELAPSED_MS
             // while `runCheck` was in flight, so `Date.now() - start` is pinned.
-            data: { status: 'ERROR', errorMessage: expected, durationMs: ELAPSED_MS, completedAt: expect.any(Date) },
+            data: { status: 'ERROR', errorMessage: expected, durationMs: ELAPSED_MS, completedAt: COMPLETION_INSTANT },
         });
         expect(res.errorMessage).toBe(expected);
         expect(res.errorMessage).not.toContain(secret);
@@ -353,7 +406,9 @@ describe('runAwsPostureCollection — provider throw', () => {
     });
 });
 
-describe('runAwsPostureCollection — evidence collection', () => {
+describe.each(BENCHMARKS)(
+    'runAwsPostureCollection — evidence collection [benchmark=$benchmark]',
+    ({ benchmark: BENCHMARK, key: KEY }) => {
     const passing = checkResult({
         status: 'PASSED',
         details: {
@@ -362,8 +417,25 @@ describe('runAwsPostureCollection — evidence collection', () => {
         },
     });
 
+    /**
+     * The evidence-path connection deliberately runs a NON-DEFAULT benchmark AND
+     * really carries a secret. Both are fixture-level, and both close the same
+     * defect shape: a value the collector DERIVES is byte-identical to a
+     * constant already in scope at the same site, so no assertion in the file
+     * can tell the derivation from the constant.
+     *
+     *  - THIS ARM'S benchmark rather than one fixed for the whole block — see
+     *    the `BENCHMARKS` note above for why a single value cannot work here.
+     *  - A real `secretEncrypted`, decrypting to a VALUE-ONLY secret — chosen so
+     *    that NONE of the AKIA / ASIA / 40-char / session-token / ARN patterns in
+     *    `scrubAwsCredentials` match it, and only the connection's own value list
+     *    can redact it. Every evidence-path connection used to have no secret, so
+     *    `secretVals` was `[]` — identical to that parameter's own default — and
+     *    dropping it from the completion-path scrub survived.
+     */
     function connDb() {
-        const db = makeDb({ id: CONN, configJson: { benchmark: 'soc2' }, secretEncrypted: null, isEnabled: true });
+        const db = makeDb({ id: CONN, configJson: { benchmark: BENCHMARK }, secretEncrypted: 'cipher-blob', isEnabled: true });
+        decrypt.mockReturnValue(JSON.stringify({ secretAccessKey: CONN_SECRET }));
         bind(db);
         return db;
     }
@@ -378,6 +450,8 @@ describe('runAwsPostureCollection — evidence collection', () => {
             .mockResolvedValueOnce({ controlId: 'ctl-soc2' })
             .mockResolvedValueOnce({ controlId: 'ctl-nist' });
         const clock = fakeClock();
+        // Restored by the file-wide `jest.restoreAllMocks()` afterEach.
+        const info = jest.spyOn(logger, 'info');
 
         const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider: providerReturningAfter(passing, clock, ELAPSED_MS) });
 
@@ -396,7 +470,7 @@ describe('runAwsPostureCollection — evidence collection', () => {
                 tenantId: TENANT,
                 type: 'TEXT',
                 title: `Automated evidence — AWS ${MAPPED}`,
-                content: `AWS posture check "${MAPPED}" PASSED (aws-posture.soc2) on 2026-03-01. Machine-collected via Powerpipe; execution exec-1.`,
+                content: `AWS posture check "${MAPPED}" PASSED (aws-posture.${KEY}) on 2026-03-01. Machine-collected via Powerpipe; execution exec-1.`,
                 category: `aws-posture:${MAPPED}`,
                 dateCollected: NOW,
                 reviewCycle: 'MONTHLY',
@@ -422,10 +496,22 @@ describe('runAwsPostureCollection — evidence collection', () => {
                 errorMessage: null,
                 // Elapsed, not a constant — see `fakeClock`.
                 durationMs: ELAPSED_MS,
-                completedAt: expect.any(Date),
+                completedAt: COMPLETION_INSTANT,
             },
         });
         expect(clearAuth).toHaveBeenCalledWith(db, CONN, 'aws-posture');
+        // The completion line is the operator's ONLY per-run signal that this
+        // collector ran at all, and every field on it but `component` is derived
+        // from the run. Nothing asserted it before, so the whole line — message,
+        // subsystem label, status and evidence count alike — could be replaced by
+        // constants with the suite green.
+        expect(info).toHaveBeenCalledWith('aws-posture collection complete', {
+            component: 'aws-posture',
+            tenantId: TENANT,
+            executionId: 'exec-1',
+            status: 'PASSED',
+            evidenceCreated: 2,
+        });
     });
 
     it('evidences a control covered under both frameworks exactly once', async () => {
@@ -588,7 +674,7 @@ describe('runAwsPostureCollection — evidence collection', () => {
             where: { id: 'ev-existing' },
             data: {
                 title: `Automated evidence — AWS ${MAPPED}`,
-                content: `AWS posture check "${MAPPED}" PASSED (aws-posture.soc2) on 2026-03-01. Machine-collected via Powerpipe; execution exec-1.`,
+                content: `AWS posture check "${MAPPED}" PASSED (aws-posture.${KEY}) on 2026-03-01. Machine-collected via Powerpipe; execution exec-1.`,
                 dateCollected: NOW,
                 nextReviewDate: THIRTY_DAYS,
                 status: 'APPROVED',
@@ -647,10 +733,16 @@ describe('runAwsPostureCollection — evidence collection', () => {
         const db = connDb();
         db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
         // Long AND credential-bearing: the provider-reported message goes through
-        // its OWN scrub + truncate, separate from the catch path's.
+        // its OWN scrub + truncate, separate from the catch path's. It carries
+        // BOTH kinds of credential on purpose — an `AKIA…` key that the pattern
+        // list alone would catch, and this connection's own value-only secret,
+        // which nothing but `secretVals` can redact. Without the second one the
+        // completion-path scrub is indistinguishable from `scrubAwsCredentials(msg)`
+        // with the argument dropped, because every evidence-path connection used
+        // to carry no secret at all.
         const errored = checkResult({
             status: 'ERROR',
-            errorMessage: `collector error; stderr: token AKIAABCDEFGHIJKLMNOP expired ${'pad '.repeat(200)}`, // pragma: allowlist secret
+            errorMessage: `collector error; key AKIAABCDEFGHIJKLMNOP secret ${CONN_SECRET} expired ${'pad '.repeat(200)}`, // pragma: allowlist secret
             details: { counts: { ok: 1, alarm: 0, skip: 0, error: 0, total: 1 }, controls: [{ id: MAPPED, status: 'ok' }] },
         });
 
@@ -660,7 +752,7 @@ describe('runAwsPostureCollection — evidence collection', () => {
         expect(db.evidence.create).not.toHaveBeenCalled();
         expect(res.evidenceCreated).toBe(0);
         expect(res.status).toBe('ERROR');
-        const persisted = `collector error; stderr: token [REDACTED] expired ${'pad '.repeat(200)}`.slice(0, 500);
+        const persisted = `collector error; key [REDACTED] secret [REDACTED] expired ${'pad '.repeat(200)}`.slice(0, 500);
         expect(persisted).toHaveLength(500);
         expect(db.integrationExecution.update).toHaveBeenCalledWith({
             where: { id: 'exec-1' },
@@ -670,5 +762,12 @@ describe('runAwsPostureCollection — evidence collection', () => {
                 errorMessage: persisted,
             }),
         });
+        // Read back what the collector actually wrote, not the string this test
+        // built: asserting `persisted` does not contain the secret would only be
+        // asserting the test's own arithmetic.
+        const updateArgs = db.integrationExecution.update.mock
+            .calls as unknown as Array<[{ data: { errorMessage: string } }]>;
+        expect(updateArgs[0][0].data.errorMessage).not.toContain(CONN_SECRET);
     });
-});
+    },
+);
