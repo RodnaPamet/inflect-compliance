@@ -855,6 +855,9 @@ function getEntraRoleSync() {
  *                       sync (membership creation stays on the Epic 1 paths).
  *   - `owner_immune`  — the member is an OWNER; sync + gate are skipped so a
  *                       misconfigured mapping can never demote / lock out an owner.
+ *   - `role_protected` — a ceiling-bound caller (SCIM Groups push) hit a
+ *                       membership whose current role it could not itself have
+ *                       assigned (ADMIN today); nothing was written.
  *   - `no_match`      — mappings exist but none matched the user's groups (gate off).
  *   - `no_mappings`   — the tenant has no group mappings configured.
  *
@@ -869,6 +872,7 @@ export function recordEntraRoleSync(attrs: {
         | 'gate_denied'
         | 'no_membership'
         | 'owner_immune'
+        | 'role_protected'
         | 'no_match'
         | 'no_mappings';
 }): void {

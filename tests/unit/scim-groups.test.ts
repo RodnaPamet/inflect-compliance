@@ -21,45 +21,69 @@ jest.mock('@/lib/auth/entra-group-sync', () => ({
 }));
 
 import { scimCreateGroup, scimPatchGroup } from '@/app-layer/usecases/scim-groups';
+import { SCIM_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
+
+/**
+ * Every reconcile from this path must carry the SCIM role ceiling — the pushed
+ * `externalId` is matched against mappings where ADMIN is a legal target, so
+ * dropping this argument is the #2200 escalation. Asserting the FULL call
+ * object (not `objectContaining`) is deliberate: an omitted `assignableRoles`
+ * has to fail here.
+ */
+const reconcileCall = (userId: string, aadGroups: string[]) => ({
+    userId,
+    tenantId: 't1',
+    aadGroups,
+    assignableRoles: SCIM_ASSIGNABLE_ROLES,
+});
 
 const ctx = { tenantId: 't1' };
 beforeEach(() => jest.clearAllMocks());
 
+/**
+ * The `externalSubject` in each fixture is load-bearing, not decoration.
+ * `resolveUserIds` now REFUSES a member value that resolves to no link rather
+ * than silently returning [] — returning [] wrote an empty `memberIds` and
+ * re-reconciled every former member, wiping the group from what looked like a
+ * no-op request. To report WHICH supplied values failed, the resolver selects
+ * `externalSubject` alongside `userId`, so a fixture omitting it now reads as
+ * "nothing resolved".
+ */
 describe('scimCreateGroup', () => {
     it('creates the group + reconciles resolved members', async () => {
-        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u1' }]);
-        mockDb.scimGroup.create.mockResolvedValue({ id: 'g1', externalId: 'oid1', displayName: 'Leads', membersJson: [] });
+        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u1', externalSubject: 'ext-u1' }]);
+        mockDb.scimGroup.create.mockResolvedValue({ id: 'g1', externalId: 'oid1', displayName: 'Leads', memberIds: ['u1'] });
         mockDb.scimGroup.findMany.mockResolvedValue([{ externalId: 'oid1' }]);
 
         await scimCreateGroup(ctx, { externalId: 'oid1', displayName: 'Leads', members: [{ value: 'ext-u1' }] });
 
         expect(mockDb.scimGroup.create).toHaveBeenCalled();
         // the added user is reconciled with their full group set
-        expect(syncMock).toHaveBeenCalledWith({ userId: 'u1', tenantId: 't1', aadGroups: ['oid1'] });
+        expect(syncMock).toHaveBeenCalledWith(reconcileCall('u1', ['oid1']));
     });
 });
 
 describe('scimPatchGroup', () => {
     it('add members → resolves + reconciles each added user', async () => {
         mockDb.scimGroup.findFirst.mockResolvedValue({ id: 'g1', externalId: 'oid1', displayName: 'Leads', memberIds: [] });
-        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u2' }]);
+        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u2', externalSubject: 'ext-u2' }]);
         mockDb.scimGroup.update.mockResolvedValue({});
         mockDb.scimGroup.findMany.mockResolvedValue([{ externalId: 'oid1' }]);
 
         await scimPatchGroup(ctx, 'g1', [{ op: 'add', path: 'members', value: [{ value: 'ext-u2' }] }]);
 
-        expect(syncMock).toHaveBeenCalledWith({ userId: 'u2', tenantId: 't1', aadGroups: ['oid1'] });
+        expect(syncMock).toHaveBeenCalledWith(reconcileCall('u2', ['oid1']));
     });
 
     it('remove members → reconciles the removed user (now in fewer groups)', async () => {
         mockDb.scimGroup.findFirst.mockResolvedValue({ id: 'g1', externalId: 'oid1', displayName: 'Leads', memberIds: ['u3'] });
-        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u3' }]);
+        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u3', externalSubject: 'ext-u3' }]);
         mockDb.scimGroup.update.mockResolvedValue({});
         mockDb.scimGroup.findMany.mockResolvedValue([]); // no longer in any group
 
         await scimPatchGroup(ctx, 'g1', [{ op: 'remove', path: 'members', value: [{ value: 'ext-u3' }] }]);
 
-        expect(syncMock).toHaveBeenCalledWith({ userId: 'u3', tenantId: 't1', aadGroups: [] });
+        expect(syncMock).toHaveBeenCalledWith(reconcileCall('u3', []));
     });
 
     it('displayName replace → syncs the linked mapping name, no membership churn', async () => {

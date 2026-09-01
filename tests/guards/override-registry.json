@@ -1,4 +1,10 @@
 {
+    "mysql2": {
+        "kind": "security",
+        "advisory": "GHSA-3f6p-5ww8-9rcr",
+        "patchedFrom": "3.22.0",
+        "reason": "MySQL2 auth-plugin downgrade to mysql_clear_password leaking plaintext credentials (high), published 2026-09-01, vulnerable < 3.22.0. It turned main red on 6b9d2f835 and every push after it, including branches touching no dependencies. Reached via prisma -> mysql2, and it lands in the PRODUCTION audit for the same reason as the deepmerge-ts entry above: `prisma` (the CLI) is a production dependency here, not only @prisma/client. A version bump does NOT fix it — prisma 7.10.0, the version this repo is already on, still pins mysql2 at exactly 3.15.3, so an override is the only route to a patched release. Not allowlisted in security/audit-allowlist.json because that file's own rule is that an exemption must be genuinely unfixable, and 3.22.0 exists. Almost certainly unreachable in this product: the datasource is PostgreSQL and Prisma loads the mysql2 driver only for a mysql datasource, so the vulnerable auth handshake never executes — recorded as context for whoever reviews this, NOT as the justification, since the fix is one line and costs nothing. Verified with the repo's own gate: `node scripts/audit-gate.mjs` reports PASSED with the two tracked image-size exemptions matched and in date."
+    },
     "deepmerge-ts": {
         "kind": "security",
         "advisory": "GHSA-ggr8-5vv4-36mx",
