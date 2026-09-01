@@ -197,6 +197,38 @@ describe('identity write ladder — the operator surface', () => {
         expect(within(card(/Joiners/i)).getByText(/not built yet/i)).toBeInTheDocument();
     });
 
+    it('disables the joiner widen control, and says why, while the joiner is unbuilt', () => {
+        render(<WriteLadderClient />);
+        const joiner = card(/Joiners/i);
+
+        // The fixture gives the joiner `blockedReason: null` DELIBERATELY. If the
+        // button only ever consulted that field the assertion below would be
+        // satisfied by nothing at all, so this test binds specifically to the
+        // component reading `honoured.implemented` — the flag that was already in
+        // scope, already false, and already unread.
+        expect(payload).toBeDefined();
+        expect(
+            (payload as { directions: Record<string, { blockedReason: string | null }> })
+                .directions.joiner.blockedReason,
+        ).toBeNull();
+
+        expect(joiner.querySelector('button')).not.toBeNull();
+        expect(within(joiner).getByRole('button', { name: /Widen to Dry run/i })).toBeDisabled();
+        // Disabled AND explained. A greyed control with nothing beside it is the
+        // failure mode this page exists to avoid.
+        expect(within(joiner).getByText(/not built yet/i)).toBeInTheDocument();
+    });
+
+    it('leaves the leaver widen control enabled in the same render', () => {
+        // The half that keeps the previous test honest: a component that disabled
+        // every widen button would pass it while breaking the only direction with
+        // a runtime behind it.
+        render(<WriteLadderClient />);
+        expect(
+            within(card(/Leavers/i)).getByRole('button', { name: /Widen to Dry run/i }),
+        ).toBeEnabled();
+    });
+
     it('refuses the page to an admin who is not an owner', () => {
         permissions = { admin: { tenant_lifecycle: false } };
         render(<IdentityWritePolicyPage />);

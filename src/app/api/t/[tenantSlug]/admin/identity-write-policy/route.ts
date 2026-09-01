@@ -25,6 +25,7 @@ import {
     DRY_RUN_MIN_DAYS,
 } from '@/app-layer/usecases/identity-write-policy';
 import { LEAVER_MAX_MODE } from '@/app-layer/usecases/identity-leaver-pass';
+import { DIRECTION_IMPLEMENTED } from '@/lib/identity/write-ladder';
 
 const Body = z.object({
     direction: z.enum(['leaver', 'joiner']),
@@ -50,7 +51,7 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
                         mode: policy[d].mode,
                         dryRunSince: policy[d].dryRunSince,
                         nextMode: next === policy[d].mode ? null : next,
-                        blockedReason: next === policy[d].mode ? null : describeRefusal(policy[d], next, now),
+                        blockedReason: next === policy[d].mode ? null : describeRefusal(d, policy[d], next, now),
                     },
                 ];
             }),
@@ -69,9 +70,16 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         //
         // Returned so a UI can say that plainly rather than leaving the operator
         // to infer it from passes that quietly do nothing.
+        //
+        // `implemented` is READ from `DIRECTION_IMPLEMENTED`, not restated here.
+        // It used to be a literal `false` in this block and the only thing that
+        // consulted it was this JSON, so the write path let a tenant climb the
+        // joiner to AUTOMATIC while this same response called it unbuilt.
+        // `describeRefusal` now reads the same constant, so the reason the UI
+        // prints and the refusal the PUT raises cannot drift apart.
         honoured: {
-            leaver: { maxMode: LEAVER_MAX_MODE, implemented: true },
-            joiner: { maxMode: 'DISABLED' as const, implemented: false },
+            leaver: { maxMode: LEAVER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.leaver },
+            joiner: { maxMode: 'DISABLED' as const, implemented: DIRECTION_IMPLEMENTED.joiner },
         },
     });
 });

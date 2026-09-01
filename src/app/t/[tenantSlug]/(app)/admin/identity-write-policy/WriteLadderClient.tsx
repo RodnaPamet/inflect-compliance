@@ -194,7 +194,20 @@ export function WriteLadderClient() {
                         <div className="flex flex-col gap-tight">
                             <Button
                                 variant="primary"
-                                disabled={Boolean(state.blockedReason) || saving}
+                                // `honoured.implemented` was in scope and unread:
+                                // this button consulted `blockedReason` alone, so
+                                // the joiner's widen control sat ENABLED directly
+                                // beneath the notice saying the subsystem does not
+                                // exist. The server now refuses the same widen and
+                                // returns the reason, but the control must not
+                                // depend on a derived STRING arriving — a direction
+                                // the runtime cannot honour is not widenable
+                                // whatever `blockedReason` happens to hold.
+                                disabled={
+                                    Boolean(state.blockedReason) ||
+                                    !honoured.implemented ||
+                                    saving
+                                }
                                 onClick={() =>
                                     setPending({ direction, mode: state.nextMode as Mode })
                                 }
