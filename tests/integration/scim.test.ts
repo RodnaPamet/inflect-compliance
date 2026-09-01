@@ -682,13 +682,15 @@ describe('SCIM protected-membership status writes', () => {
             id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
         });
 
+        // The STATUS change is still refused — that guard is unchanged. What
+        // this test pins is that `prisma.user.update` did not run BEFORE it.
         await expect(
             scimPutUser(ctx, 'u1', { userName: 'pwned@evil.com', active: false }, BASE_URL),
         ).rejects.toMatchObject({ status: 403 });
         expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
-    test('PUT active=TRUE on an ADMIN is refused too — the status guard never fired there', async () => {
+    test('PUT active=TRUE on an ADMIN succeeds and does NOT rename them — the status guard never fired there', async () => {
         // The sharper half. With `active: true` the status is unchanged, so the
         // status guard was never even reached: the rename returned 200, no 403,
         // no audit. Repeatable against every admin in the tenant.
@@ -697,21 +699,21 @@ describe('SCIM protected-membership status writes', () => {
             id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
         });
 
-        await expect(
-            scimPutUser(ctx, 'u1', { userName: 'pwned@evil.com', active: true }, BASE_URL),
-        ).rejects.toMatchObject({ status: 403 });
+        // No status change, so nothing throws — and that is the point. The
+        // request SUCCEEDS, as the documented contract says a PUT against a
+        // protected membership does, while the rename simply does not happen.
+        // Before the fix this returned 200 having renamed the admin.
+        await scimPutUser(ctx, 'u1', { userName: 'pwned@evil.com', active: true }, BASE_URL);
         expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
-    test('PATCH of a display name on an ADMIN is refused', async () => {
+    test('PATCH of a display name on an ADMIN succeeds and does NOT rename them', async () => {
         const user = { id: 'u1', email: 'admin@acme.com', name: 'Real Name', createdAt: now, updatedAt: now };
         mockPrisma.tenantMembership.findFirst.mockResolvedValue({
             id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
         });
 
-        await expect(
-            scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'displayName', value: 'pwned' }], BASE_URL),
-        ).rejects.toMatchObject({ status: 403 });
+        await scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'displayName', value: 'pwned' }], BASE_URL);
         expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 

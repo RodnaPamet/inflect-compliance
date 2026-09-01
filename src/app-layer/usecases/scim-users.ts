@@ -498,11 +498,20 @@ export async function scimPatchUser(
     // one is NOT narrowed to a real transition — there is no value the write
     // could carry that makes it safe against a protected principal.
     if (Object.keys(userUpdates).length > 0) {
-        assertScimMayWrite(membership, 'patch:profile', userId, ctx.tenantId);
-        await prisma.user.update({
-            where: { id: userId },
-            data: userUpdates,
-        });
+        if (isScimProtectedRole(membership.role)) {
+            logger.warn('SCIM profile write skipped on a protected membership', {
+                component: 'scim',
+                operation: 'patch:profile',
+                userId,
+                tenantId: ctx.tenantId,
+                role: membership.role,
+            });
+        } else {
+            await prisma.user.update({
+                where: { id: userId },
+                data: userUpdates,
+            });
+        }
     }
 
     // Apply membership status update
@@ -569,8 +578,8 @@ export async function scimPutUser(
         || [input.name?.givenName, input.name?.familyName].filter(Boolean).join(' ')
         || input.userName.split('@')[0];
 
-    // The profile write is refused for a protected membership, and it must be
-    // refused BEFORE the write, not after.
+    // The profile write does not happen for a protected membership, and the
+    // decision must be made BEFORE the write, not after.
     //
     // It used to run unconditionally, above the status guard. With
     // `active: false` that meant the ADMIN was renamed and THEN 403'd — and
@@ -585,12 +594,30 @@ export async function scimPutUser(
     // therefore rewrite the display name of somebody who is an ADMIN of
     // tenant B. That is a cross-tenant write, and no IdP sync convenience
     // justifies leaving it open.
-    assertScimMayWrite(membership, 'put:profile', userId, ctx.tenantId);
-
-    await prisma.user.update({
-        where: { id: userId },
-        data: { name: displayName },
-    });
+    //
+    // SKIP rather than 403, because a 403 is a wider change than the security
+    // fix needs. `docs/admin-rbac-scim.md` already documents a PUT against a
+    // protected membership as SUCCEEDING with the role "silently skipped", and
+    // `tests/unit/usecases/scim-users.test.ts` pins that. Refusing the whole
+    // operation would break that contract and fail every routine IdP sync
+    // cycle for every admin — the same objection the status guard's own
+    // comment raises against widening ITS scope. Skipping the one write closes
+    // the hole and leaves the documented behaviour intact.
+    // SKIPPED, not refused — see below for why that distinction is deliberate.
+    if (isScimProtectedRole(membership.role)) {
+        logger.warn('SCIM profile write skipped on a protected membership', {
+            component: 'scim',
+            operation: 'put:profile',
+            userId,
+            tenantId: ctx.tenantId,
+            role: membership.role,
+        });
+    } else {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { name: displayName },
+        });
+    }
 
     const newStatus = input.active === false ? 'DEACTIVATED' : 'ACTIVE';
     if (membership.status !== newStatus) {

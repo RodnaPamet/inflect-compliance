@@ -40,9 +40,18 @@ const reconcileCall = (userId: string, aadGroups: string[]) => ({
 const ctx = { tenantId: 't1' };
 beforeEach(() => jest.clearAllMocks());
 
+/**
+ * The `externalSubject` in each fixture is load-bearing, not decoration.
+ * `resolveUserIds` now REFUSES a member value that resolves to no link rather
+ * than silently returning [] — returning [] wrote an empty `memberIds` and
+ * re-reconciled every former member, wiping the group from what looked like a
+ * no-op request. To report WHICH supplied values failed, the resolver selects
+ * `externalSubject` alongside `userId`, so a fixture omitting it now reads as
+ * "nothing resolved".
+ */
 describe('scimCreateGroup', () => {
     it('creates the group + reconciles resolved members', async () => {
-        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u1' }]);
+        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u1', externalSubject: 'ext-u1' }]);
         mockDb.scimGroup.create.mockResolvedValue({ id: 'g1', externalId: 'oid1', displayName: 'Leads', memberIds: ['u1'] });
         mockDb.scimGroup.findMany.mockResolvedValue([{ externalId: 'oid1' }]);
 
@@ -57,7 +66,7 @@ describe('scimCreateGroup', () => {
 describe('scimPatchGroup', () => {
     it('add members → resolves + reconciles each added user', async () => {
         mockDb.scimGroup.findFirst.mockResolvedValue({ id: 'g1', externalId: 'oid1', displayName: 'Leads', memberIds: [] });
-        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u2' }]);
+        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u2', externalSubject: 'ext-u2' }]);
         mockDb.scimGroup.update.mockResolvedValue({});
         mockDb.scimGroup.findMany.mockResolvedValue([{ externalId: 'oid1' }]);
 
@@ -68,7 +77,7 @@ describe('scimPatchGroup', () => {
 
     it('remove members → reconciles the removed user (now in fewer groups)', async () => {
         mockDb.scimGroup.findFirst.mockResolvedValue({ id: 'g1', externalId: 'oid1', displayName: 'Leads', memberIds: ['u3'] });
-        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u3' }]);
+        mockDb.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u3', externalSubject: 'ext-u3' }]);
         mockDb.scimGroup.update.mockResolvedValue({});
         mockDb.scimGroup.findMany.mockResolvedValue([]); // no longer in any group
 

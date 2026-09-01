@@ -124,7 +124,7 @@ SCIM does not modify a membership whose role it could not itself have assigned
 | `DELETE /Users/:id` | `403` (`scimType: mutability`), nothing written |
 | `PATCH active=false` (a real transition) | `403`, nothing written |
 | `PUT` with a status change | `403`, nothing written |
-| `PUT` or `PATCH` of a profile field (display name) | `403`, nothing written. `User.name` is on the GLOBAL user row, so an unguarded write here would let one tenant's SCIM token rename another tenant's administrator |
+| `PUT` or `PATCH` of a profile field (display name) | Succeeds; the profile write is **silently skipped**, like the role write. `User.name` is on the GLOBAL user row, so performing it would let one tenant's SCIM token rename another tenant's administrator. Skipped rather than `403` so a routine IdP sync cycle does not fail for every admin |
 | `POST /Users` re-creating a deactivated one | Reactivation skipped; the response reports the membership's real status |
 | Any role change (Users or Groups path) | Silently skipped |
 
