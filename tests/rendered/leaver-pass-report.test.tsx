@@ -1,7 +1,10 @@
 /** @jest-environment jsdom */
 
 /**
- * The dry-run leaver pass report — what an operator can tell apart on screen.
+ * The leaver pass report — what an operator can tell apart on screen.
+ * "Dry-run" was dropped from this description deliberately: the clamp moved
+ * to AUTOMATIC in #2187, and describing the surface as dry-run-only is the
+ * assumption that produced the bug these tests now cover.
  *
  * VIEWPORT: 1280 × 800 (desktop). Stated because the report is a
  * master/detail pair of tables that is only laid out side-by-side-in-time on a
@@ -351,6 +354,64 @@ describe('an empty page says WHY it is empty', () => {
         expect(await screen.findByText(M.emptyOverdue)).toBeInTheDocument();
     });
 
+    // ── After the clamp was raised to AUTOMATIC (#2187) ────────────────
+    //
+    // Every case above compares a mode against a clamp it EQUALS, so all of them
+    // stayed green when the page's `mode !== clamp` stopped meaning "above the
+    // clamp". These are the cases that can tell the two apart: the clamp is the
+    // top rung and the tenant is below it, which is where every tenant in the
+    // seven-day observation window actually sits.
+
+    it('a DRY_RUN tenant under an AUTOMATIC clamp is not told to widen', async () => {
+        // The regression as an operator met it: DRY_RUN !== AUTOMATIC is true,
+        // so the page declared a mismatch and its description instructs the
+        // reader to "narrow" the setting to the clamp — i.e. to widen two rungs
+        // to unattended directory writes. Below the clamp is FINE.
+        arrange([], policy('DRY_RUN', 'AUTOMATIC', JUST_NOW()));
+        await renderReport();
+
+        // Positive first: the page picked the arm for a tenant whose passes run.
+        expect(await screen.findByText(M.emptyAwaitingFirstPass)).toBeInTheDocument();
+        // The negative that is the point — paired with the positive above, so it
+        // cannot pass against a page that rendered nothing.
+        expect(screen.queryByText(M.emptyClampMismatch)).toBeNull();
+    });
+
+    it('a DRY_RUN tenant under an AUTOMATIC clamp still raises the DUE-and-silent alarm', async () => {
+        // The dead-worker arm — the one that would have caught a dispatcher
+        // enqueueing nothing for months. Gated on `mode === clamp` it was
+        // unreachable for everybody below the top rung, which after the raise is
+        // everybody, so the page fell silent exactly where it must not.
+        arrange([], policy('DRY_RUN', 'AUTOMATIC', LONG_AGO));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyOverdue)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyClampMismatch)).toBeNull();
+        expect(screen.queryByText(M.emptyAwaitingFirstPass)).toBeNull();
+    });
+
+    it('still names a setting genuinely ABOVE a raised clamp', async () => {
+        // The ordinal comparison must not have gone soft: above is still above.
+        arrange([], policy('AUTOMATIC', 'PROPOSE', LONG_AGO));
+        await renderReport();
+
+        expect(await screen.findByText(M.emptyClampMismatch)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyOverdue)).toBeNull();
+    });
+
+    it('treats a rung this build does not know as unknown, not as "below"', async () => {
+        // An unrecognised mode sorts to -1 and would read as below the clamp, so
+        // the page would pick the fault arm from a comparison it cannot make and
+        // accuse a healthy worker. Unknown degrades to the copy that names no
+        // cause.
+        arrange([], policy('SUPERUSER', 'AUTOMATIC', LONG_AGO));
+        await renderReport();
+
+        expect(await screen.findByText(M.empty)).toBeInTheDocument();
+        expect(screen.queryByText(M.emptyOverdue)).toBeNull();
+        expect(screen.queryByText(M.emptyClampMismatch)).toBeNull();
+    });
+
     it('degrades to the nameless copy when the ladder is unknown', async () => {
         // A sibling endpoint returning nothing must not blank the report or
         // print the literal string "undefined".
@@ -370,6 +431,52 @@ describe('an empty page says WHY it is empty', () => {
         const line = document.getElementById('leaver-pass-mode');
         expect(line).not.toBeNull();
         expect(line!.textContent).toContain(EN_MODE.DRY_RUN);
+    });
+});
+
+describe('the page does not make a safety claim the ladder no longer backs', () => {
+    // The title and intro render UNCONDITIONALLY, so anything categorical in
+    // them is asserted for every tenant in every mode. They said passes "are
+    // clamped at DRY_RUN — nothing was written to any directory", on the one
+    // page an operator uses to audit what offboarding did. That was true only
+    // while LEAVER_MAX_MODE was the second rung; #2187 raised it to AUTOMATIC.
+    const BG = (
+        require('../../messages/bg.json') as {
+            admin: { leaverPasses: Record<string, string> };
+        }
+    ).admin.leaverPasses;
+
+    it.each([
+        ['en', M],
+        ['bg', BG],
+    ])('%s: the unconditional copy names no clamp', (_locale, dict) => {
+        for (const key of ['title', 'intro'] as const) {
+            // Both locales spelled the claim with the literal rung name.
+            expect(dict[key]).not.toMatch(/DRY_RUN/);
+        }
+        // Positive: the copy still exists and still says what the page is for —
+        // an empty string would satisfy every negative above.
+        expect(dict.intro.length).toBeGreaterThan(80);
+        // And the conditional line that DOES state the mode is untouched: it is
+        // where the true answer belongs.
+        expect(dict.currentMode).toMatch(/\{mode\}/);
+    });
+
+    it('states the mode as a fact about this tenant, not as a claim in the intro', async () => {
+        arrange([], {
+            directions: { leaver: { mode: 'PROPOSE', dryRunSince: null } },
+            honoured: { leaver: { maxMode: 'AUTOMATIC' } },
+        });
+        await renderReport();
+
+        const intro = (await screen.findByRole('heading', { name: M.title }))
+            .nextElementSibling as HTMLElement;
+        expect(intro.textContent).toBe(M.intro);
+        expect(intro.textContent).not.toMatch(/DRY_RUN/);
+        // Paired positive: the real mode IS on the page, two paragraphs down.
+        expect(document.getElementById('leaver-pass-mode')!.textContent).toContain(
+            EN_MODE.PROPOSE,
+        );
     });
 });
 

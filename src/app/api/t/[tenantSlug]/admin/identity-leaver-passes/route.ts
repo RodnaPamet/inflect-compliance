@@ -6,7 +6,9 @@ import { jsonResponse } from '@/lib/api-response';
 type LeaverPassParams = { tenantSlug: string };
 
 /**
- * The dry-run leaver passes this tenant has run, most recent first.
+ * The leaver passes this tenant has run, most recent first. NOT dry-run only
+ * — the clamp was raised to AUTOMATIC by #2187, so a pass here may have
+ * written to a real directory.
  *
  * WHY THIS EXISTS. The write ladder mandates a seven-day observation before a
  * tenant may be promoted past DRY_RUN, and its own refusal text says the point

@@ -44,7 +44,7 @@ Then branch on the **first** row that is zero or wrong:
 
 | Finding | Go to |
 | --- | --- |
-| `settingsRows` = 0, or the tenant's leaver mode is not `DRY_RUN` | Step 2 |
+| `settingsRows` = 0, or the tenant's leaver mode is `DISABLED` | Step 2 |
 | `connections` = 0, or more than one enabled for the same provider | Step 3 |
 | `accounts` = 0 | Step 4 |
 | `terminated` = 0 | Step 5 |
@@ -66,9 +66,29 @@ need positive confirmation rather than an absence.
 Fix: set the direction to Dry run at `/t/<slug>/admin/identity-write-policy`
 (owner-gated, linked from Integrations as **Write policy**).
 
-Note a stored mode *above* `DRY_RUN` fails the same way. The clamp is a source
-constant; storing `PROPOSE` or `AUTOMATIC` is permitted and every pass then
-refuses `MODE_ABOVE_CLAMP`.
+**Corrected 2026-09-01 — this section used to say the opposite, and it would
+send you down the wrong branch.** It read: "a stored mode *above* `DRY_RUN`
+fails the same way … every pass then refuses `MODE_ABOVE_CLAMP`." That was true
+when this skill was written and stopped being true at #2187, which raised
+`LEAVER_MAX_MODE` from `DRY_RUN` to `AUTOMATIC`. The pass's gate is now ORDINAL
+(`isAboveClamp`), so no rung the ladder can reach is above the clamp and
+`MODE_ABOVE_CLAMP` is unreachable.
+
+What is true now:
+
+- `DISABLED` is the only mode that stops the pass at gate 1, refusing
+  `MODE_DISABLED`. It is the schema default, so a tenant that never visited the
+  write-policy page is here.
+- `DRY_RUN` runs and records decisions, writing to no directory.
+- `PROPOSE` runs, constructs a LIVE directory writer, and then refuses every
+  candidate `REFUSED_MODE` — because it is not the approval queue and that
+  queue was never built. A tenant here sees passes with no decisions, which
+  looks like a broken chain and is not. See issue #2241.
+- `AUTOMATIC` runs and writes.
+
+So do NOT diagnose a `PROPOSE` or `AUTOMATIC` tenant as clamped. If you are
+here because the passes page is empty, the mode is only the first gate — carry
+on through the connection, account and link steps.
 
 ## Step 3 — connection count, not connection health
 

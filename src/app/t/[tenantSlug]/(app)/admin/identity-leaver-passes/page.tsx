@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * Dry-run leaver passes — the OWNER-only read surface.
+ * Leaver passes — the OWNER-only read surface. Not dry-run only since #2187
+ * raised the clamp; the page reports whatever rung the tenant is on.
  *
  * The admin layout already gates this subtree on `admin.view`, which is not
  * enough here. The endpoint behind the page is gated `admin.tenant_lifecycle`,
