@@ -78,12 +78,22 @@ export type PermissionSet = {
  * exported — for every surface that needs to enumerate the domains.
  *
  * DO NOT re-declare this list anywhere else. It is exported precisely
- * so that no caller has to. Three hand-written copies had drifted by
- * the time #2225 measured them: the custom-role editor's grid, its
- * separate `RESOURCE_KEYS` label list, and the API-key scope map.
- * None of the drift was type-checked, because a literal in a
- * different shape from the type it mirrors is not a mirror to the
- * compiler.
+ * so that no caller has to. Five hand-written copies existed when #2225
+ * measured them and three had drifted: the custom-role editor's grid,
+ * its separate `RESOURCE_KEYS` label list, and the API-key scope map.
+ * None of the drift was type-checked, because a literal in a different
+ * shape from the type it mirrors is not a mirror to the compiler.
+ *
+ * ADDING A DOMAIN? Two surfaces still enumerate by hand, because what
+ * they hold is editorial and cannot be derived — but their COVERAGE is
+ * asserted, so a missing entry fails a test rather than shipping:
+ *   • `SCOPE_ACTION_MAP` (`src/lib/auth/api-key-auth.ts`) — the
+ *     read/write/admin grouping for API-key scopes.
+ *   • `SCOPE_GROUPS` (the admin api-keys page) — the operator-facing
+ *     labels. A domain missing here is a scope the auth layer accepts
+ *     and no operator can grant.
+ * Everything else — the editor grid, its labels, the MCP guardrail's
+ * `KNOWN_RESOURCES` — now derives from this object.
  *
  * Client-safe: this module's only Prisma dependency is an
  * `import type`, which is erased at compile time, so a `'use client'`

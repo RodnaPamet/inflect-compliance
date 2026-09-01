@@ -16,6 +16,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { READ_TOOLS } from '@/lib/mcp/tools/registry';
+import { PERMISSION_SCHEMA } from '@/lib/permissions';
 
 const ROOT = path.resolve(__dirname, '../..');
 const TOOLS_DIR = path.join(ROOT, 'src/lib/mcp/tools');
@@ -41,11 +42,11 @@ const EXPECTED_TOOLS = [
     'list_tasks',
 ];
 
-// Resource scopes the api-key layer understands (SCOPE_ACTION_MAP keys).
-const KNOWN_RESOURCES = new Set([
-    'controls', 'evidence', 'policies', 'tasks', 'risks',
-    'vendors', 'tests', 'frameworks', 'audits', 'reports', 'admin',
-]);
+// Resource scopes the api-key layer understands. DERIVED, not copied: this
+// was a hand-written list that had silently fallen three domains behind
+// SCOPE_ACTION_MAP, and could not report it — the only assertion over it is a
+// containment check, which a stale-but-superset list passes forever.
+const KNOWN_RESOURCES = new Set(Object.keys(PERMISSION_SCHEMA));
 
 describe('MCP read suite — registration', () => {
     it('registers the full tenant-inspection tool set', () => {

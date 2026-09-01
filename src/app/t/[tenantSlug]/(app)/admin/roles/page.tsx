@@ -84,6 +84,22 @@ interface CustomRole {
 
 type Translator = ((key: string) => string) & { has?: (key: string) => boolean };
 
+/**
+ * Action keys render as column headers, so an underscore reaches the user.
+ *
+ * Deriving the grid from `PERMISSION_SCHEMA` is what made this visible: the
+ * hand-written mirror listed only single-word actions, so `capitalize` alone
+ * was enough. The full schema adds `schedule_external`, `tenant_lifecycle`,
+ * `owner_management` and the two `compliance_dsar_*` flags, which rendered as
+ * "Schedule_external" in a localised admin UI.
+ *
+ * Underscores become spaces; `capitalize` then title-cases each word. These
+ * headers are NOT translated — they were not before this change either, and
+ * fixing that means a key per action across every domain, which is its own
+ * piece of work rather than a rider on this one.
+ */
+const humanizeAction = (action: string): string => action.replace(/_/g, ' ');
+
 const buildResourceLabels = (t: Translator): Record<string, string> =>
     Object.fromEntries(
         Object.keys(PERMISSION_SCHEMA).map((k) => {
@@ -144,7 +160,7 @@ function PermissionGrid({
                         <th className="sticky left-0 bg-bg-default/90 z-10 text-left">{t('roles.gridResource')}</th>
                         {allActions.map((action) => (
                             <th key={action} className="text-center capitalize px-2">
-                                {action}
+                                {humanizeAction(action)}
                             </th>
                         ))}
                     </tr>

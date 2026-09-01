@@ -106,6 +106,26 @@ describe('custom-role permission grid — coverage of PERMISSION_SCHEMA', () => 
         expect(DOMAINS.length).toBeGreaterThan(10);
     });
 
+    it('the schema declares every action the runtime actually has — both dimensions', () => {
+        // The domain KEYS are type-locked by `Record<keyof PermissionSet, ...>`,
+        // so tsc catches a missing domain. The ACTION lists are `string[]` and
+        // are checked against nothing: add `admin.break_glass` to PermissionSet
+        // and forget it in PERMISSION_SCHEMA, and tsc passes, this file's other
+        // assertions pass, and the flag silently has no toggle, is rejected by
+        // validatePermissionsJson and is never inspected by permissionsExceeding.
+        //
+        // Comparing against an OWNER's resolved permissions closes that: OWNER
+        // is the only role that holds every flag, so its key set IS the runtime
+        // inventory. This became writable the moment PERMISSION_SCHEMA was
+        // exported, which is the point of exporting it.
+        const owner = getPermissionsForRole('OWNER');
+        for (const domain of DOMAINS) {
+            const declared = [...PERMISSION_SCHEMA[domain]].sort();
+            const actual = Object.keys(owner[domain] as Record<string, boolean>).sort();
+            expect({ domain, declared }).toEqual({ domain, declared: actual });
+        }
+    });
+
     /**
      * Mounting the whole roles page is the expensive part of this file, so
      * the three grid invariants share ONE render — and they are reported as
@@ -151,10 +171,21 @@ describe('custom-role permission grid — coverage of PERMISSION_SCHEMA', () => 
             (label) => !gridText.includes(label),
         );
 
-        expect({ missingToggles, unlabelled, missingLabels }).toEqual({
+        // 4. No column header shows a raw snake_case key. Deriving the grid
+        //    from the full schema introduced five multi-word actions —
+        //    schedule_external, tenant_lifecycle, owner_management and the two
+        //    compliance_dsar_* flags. The deleted mirror held only single-word
+        //    actions, so `capitalize` alone was enough until it went; an
+        //    underscore reached the user the moment the grid became complete.
+        const rawHeaders = Array.from(document.querySelectorAll('th'))
+            .map((th) => th.textContent ?? '')
+            .filter((h) => h.includes('_'));
+
+        expect({ missingToggles, unlabelled, missingLabels, rawHeaders }).toEqual({
             missingToggles: [],
             unlabelled: [],
             missingLabels: [],
+            rawHeaders: [],
         });
     });
 });
