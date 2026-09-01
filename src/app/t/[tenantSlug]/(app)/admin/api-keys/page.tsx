@@ -52,12 +52,22 @@ interface CreatedKeyResponse extends ApiKeyRecord {
 
 // ─── Scope Categories for UI Grouping ───
 
+// Operator-facing half of the API-key scope model, and still a hand-written
+// mirror: the LABELS and the read/write/admin GROUPING are editorial and
+// cannot be derived. The COVERAGE can be, and is — every domain in
+// PERMISSION_SCHEMA must appear in SCOPE_ACTION_MAP, asserted by
+// tests/unit/api-key-management.test.ts. A domain the auth layer accepts
+// but this map omits is a scope no operator can grant through the UI,
+// which is how assets/incidents/personnel were unreachable before #2225.
 const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
     controls:   { label: 'Controls',   scopes: ['controls:read', 'controls:write'] },
     evidence:   { label: 'Evidence',   scopes: ['evidence:read', 'evidence:write'] },
     policies:   { label: 'Policies',   scopes: ['policies:read', 'policies:write', 'policies:admin'] },
     tasks:      { label: 'Tasks',      scopes: ['tasks:read', 'tasks:write'] },
     risks:      { label: 'Risks',      scopes: ['risks:read', 'risks:write'] },
+    assets:     { label: 'Assets',     scopes: ['assets:read', 'assets:write'] },
+    incidents:  { label: 'Incidents',  scopes: ['incidents:read', 'incidents:admin'] },
+    personnel:  { label: 'Personnel',  scopes: ['personnel:read', 'personnel:admin'] },
     vendors:    { label: 'Vendors',    scopes: ['vendors:read', 'vendors:write'] },
     tests:      { label: 'Tests',      scopes: ['tests:read', 'tests:write'] },
     frameworks: { label: 'Frameworks', scopes: ['frameworks:read', 'frameworks:write'] },
