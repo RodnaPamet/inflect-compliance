@@ -27,10 +27,37 @@ const VALID_BASE_ROLES: Role[] = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
 
 // ─── List Custom Roles ───
 
+/**
+ * List every custom role in the tenant, with `permissionsJson`
+ * NORMALISED through `parsePermissionsJson`.
+ *
+ * The normalisation is load-bearing, not cosmetic. `permissionsJson`
+ * is a `Json` column: whatever was valid when the row was written is
+ * what comes back, and `PermissionSet` grows over time. A row stored
+ * before `assets` / `personnel` / `incidents` existed simply has no
+ * key for them.
+ *
+ * The admin roles page consumes this response directly — it counts
+ * granted flags per row (`countGranted`) and seeds the permission-grid
+ * editor from it. Both read `permissions[domain][action]`, and the
+ * `?? false` at the grid's read site guards a missing ACTION, not a
+ * missing DOMAIN: `undefined[action]` is a TypeError, so one stale row
+ * takes the whole page down rather than rendering a blank cell.
+ *
+ * `parsePermissionsJson` merges the stored blob over the row's own
+ * `baseRole` defaults, so every domain is present and an absent one
+ * reads as "whatever the base role grants" — which is exactly what
+ * the runtime authorization path (`computePermissions`) already does
+ * for the same row. Normalising here makes the list endpoint agree
+ * with enforcement instead of exposing the raw column.
+ *
+ * Production has zero custom roles today, so this needs no migration;
+ * it is what makes ADDING a domain to `PermissionSet` a safe change.
+ */
 export async function listCustomRoles(ctx: RequestContext) {
     assertCanManageMembers(ctx);
 
-    return runInTenantContext(ctx, (db) =>
+    const rows = await runInTenantContext(ctx, (db) =>
         db.tenantCustomRole.findMany({
             where: { tenantId: ctx.tenantId },
             include: {
@@ -39,6 +66,11 @@ export async function listCustomRoles(ctx: RequestContext) {
             orderBy: { createdAt: 'asc' },
         })
     );
+
+    return rows.map((row) => ({
+        ...row,
+        permissionsJson: parsePermissionsJson(row.permissionsJson, row.baseRole),
+    }));
 }
 
 // ─── Create Custom Role ───
