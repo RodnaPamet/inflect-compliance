@@ -271,6 +271,41 @@ describe('resolveTreeKey', () => {
         ];
         expect(resolveTreeKey('ArrowRight', 'empty', rows, new Set())).toBeNull();
     });
+
+    // ── ArrowLeft on an EXPLICIT hasChildren flag ──────────────────
+    //
+    // ArrowRight already had a lazy-node case; ArrowLeft did not, so the
+    // left-hand side of its `row.node.hasChildren ?? (children…)` was
+    // never taken. That matters for lazy trees: a node whose children
+    // have not been fetched has `children: undefined`, so the fallback
+    // computes `0 > 0` → false and ArrowLeft would jump to the PARENT
+    // instead of collapsing the node the user is standing on.
+    test('ArrowLeft collapses an expanded lazy node via its hasChildren flag', () => {
+        const rows: FlatRow<TreeViewNode>[] = [
+            { node: { id: 'root', hasChildren: true }, depth: 0, expanded: true, index: 0, parentIds: [] },
+            { node: { id: 'lazy', hasChildren: true }, depth: 1, expanded: true, index: 1, parentIds: ['root'] },
+        ];
+        expect(resolveTreeKey('ArrowLeft', 'lazy', rows, new Set(['root', 'lazy']))).toEqual({
+            type: 'collapse',
+            id: 'lazy',
+        });
+    });
+
+    // `hasChildren: false` is an EXPLICIT false, not an absence — `??`
+    // must not fall through to the children-length check.
+    test('an explicit hasChildren=false wins over a non-empty children array', () => {
+        const rows: FlatRow<TreeViewNode>[] = [
+            {
+                node: { id: 'sealed', hasChildren: false, children: [{ id: 'hidden' }] },
+                depth: 0,
+                expanded: true,
+                index: 0,
+                parentIds: [],
+            },
+        ];
+        expect(resolveTreeKey('ArrowLeft', 'sealed', rows, new Set(['sealed']))).toBeNull();
+        expect(resolveTreeKey('ArrowRight', 'sealed', rows, new Set())).toBeNull();
+    });
 });
 
 // ═════════════════════════════════════════════════════════════════════

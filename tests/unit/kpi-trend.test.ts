@@ -209,6 +209,36 @@ describe('Epic 41 — formatTrendAbsolute', () => {
         expect(formatTrendAbsolute(2_500, 'compact')).toBe('+2.5K');
         expect(formatTrendAbsolute(-1_500_000, 'compact')).toBe('−1.5M');
     });
+
+    // ── The two branches nothing above reaches ─────────────────────
+    //
+    // `sign` is a NESTED ternary: `> 0 ? '+' : < 0 ? '−' : ''`. Every
+    // case above is non-zero, so the innermost alternate (the empty
+    // sign) was never taken — a refactor that emitted '+0' or '−0' for
+    // a zero delta would have shipped green. A zero delta is not
+    // hypothetical: `computeKpiTrend` returns `deltaAbsolute: 0` on its
+    // `flat` shape, and the renderer formats whatever it is handed.
+    it('emits NO sign glyph for a zero delta, in every format', () => {
+        expect(formatTrendAbsolute(0, 'number')).toBe('0');
+        expect(formatTrendAbsolute(0, 'percent')).toBe('0.0pp');
+        expect(formatTrendAbsolute(0, 'compact')).toBe('0');
+    });
+
+    // The compact ladder had its ≥1M and ≥1K rungs covered but never
+    // fell THROUGH both. A sub-thousand compact delta must render
+    // verbatim — not as "0.3K".
+    it('leaves sub-thousand compact deltas un-abbreviated', () => {
+        expect(formatTrendAbsolute(250, 'compact')).toBe('+250');
+        expect(formatTrendAbsolute(-999, 'compact')).toBe('−999');
+    });
+
+    // The 1_000 / 1_000_000 rungs are `>=`, not `>`. Pinned because an
+    // off-by-one to `>` would push exactly-1K through to the bare
+    // branch and render "+1,000" where the UI expects "+1.0K".
+    it('treats the rung thresholds as inclusive', () => {
+        expect(formatTrendAbsolute(1_000, 'compact')).toBe('+1.0K');
+        expect(formatTrendAbsolute(1_000_000, 'compact')).toBe('+1.0M');
+    });
 });
 
 describe('Epic 41 — trendDirectionIcon', () => {
