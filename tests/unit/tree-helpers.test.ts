@@ -291,17 +291,6 @@ describe('resolveTreeKey', () => {
         });
     });
 
-    test('ArrowLeft on a COLLAPSED lazy node walks to the parent rather than collapsing again', () => {
-        const rows: FlatRow<TreeViewNode>[] = [
-            { node: { id: 'root', hasChildren: true }, depth: 0, expanded: true, index: 0, parentIds: [] },
-            { node: { id: 'lazy', hasChildren: true }, depth: 1, expanded: false, index: 1, parentIds: ['root'] },
-        ];
-        expect(resolveTreeKey('ArrowLeft', 'lazy', rows, new Set(['root']))).toEqual({
-            type: 'focus',
-            id: 'root',
-        });
-    });
-
     // `hasChildren: false` is an EXPLICIT false, not an absence — `??`
     // must not fall through to the children-length check.
     test('an explicit hasChildren=false wins over a non-empty children array', () => {

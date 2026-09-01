@@ -26,6 +26,9 @@
  * timezone pinning drifts.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import {
     formatDate,
     formatDateLong,
@@ -45,14 +48,16 @@ function ref(options: Intl.DateTimeFormatOptions): string {
     return new Intl.DateTimeFormat(LOCALE, { ...options, timeZone: TZ }).format(D);
 }
 
-/** The four inputs every helper in this module must funnel to `fallback`. */
-const BAD_INPUTS: Array<string | Date | null | undefined> = [
-    null,
-    undefined,
-    '',
-    'not-a-date',
-];
-
+/**
+ * ONE bad input per helper, deliberately — not a matrix.
+ *
+ * Each helper's own `d ? FMT.format(d) : fallback` is the branch that
+ * needs a per-helper hit, and `null` reaches it. The two arms of the
+ * SHARED `toDate` are `!value` (null / undefined / '' — one arm, three
+ * spellings) and `isNaN` ('not-a-date'), and both are hit once below by
+ * `formatDate`'s caller-supplied-fallback case. An `it.each` over four
+ * inputs x five helpers bought 20 test names for those same branches.
+ */
 describe('formatDate — the happy path (day 2-digit / month short / year numeric)', () => {
     it('formats through DATE_FMT, not one of its neighbours', () => {
         expect(formatDate(D)).toBe(
@@ -64,16 +69,8 @@ describe('formatDate — the happy path (day 2-digit / month short / year numeri
         expect(formatDate('2026-04-16T08:00:00Z')).toBe(formatDate(D));
     });
 
-    it('is pinned to UTC — 23:59Z and 00:01Z on the same UTC day agree', () => {
-        // If `timeZone: 'UTC'` were dropped, a host east or west of UTC
-        // would roll one of these onto the neighbouring calendar day.
-        expect(formatDate('2026-04-16T23:59:00Z')).toBe(
-            formatDate('2026-04-16T00:01:00Z'),
-        );
-    });
-
-    it.each(BAD_INPUTS)('returns the default em-dash fallback for %p', (bad) => {
-        expect(formatDate(bad)).toBe('—');
+    it('returns the default em-dash fallback for an absent value', () => {
+        expect(formatDate(null)).toBe('—');
     });
 
     it('returns a caller-supplied fallback instead of the em-dash', () => {
@@ -99,8 +96,8 @@ describe('formatDateLong — "16 April 2026"', () => {
         expect(formatDateLong(D)).toContain('2026');
     });
 
-    it.each(BAD_INPUTS)('returns the default em-dash fallback for %p', (bad) => {
-        expect(formatDateLong(bad)).toBe('—');
+    it('returns the default em-dash fallback for an absent value', () => {
+        expect(formatDateLong(null)).toBe('—');
     });
 
     it('returns a caller-supplied fallback instead of the em-dash', () => {
@@ -123,8 +120,8 @@ describe('formatMonthYear — "April 2026"', () => {
         expect(formatMonthYear(D)).toContain('2026');
     });
 
-    it.each(BAD_INPUTS)('returns the default em-dash fallback for %p', (bad) => {
-        expect(formatMonthYear(bad)).toBe('—');
+    it('returns the default em-dash fallback for an absent value', () => {
+        expect(formatMonthYear(null)).toBe('—');
     });
 
     it('returns a caller-supplied fallback instead of the em-dash', () => {
@@ -147,8 +144,8 @@ describe('formatMonthShort — "Apr"', () => {
         expect(formatMonthShort(D)).not.toBe(ref({ month: 'long' }));
     });
 
-    it.each(BAD_INPUTS)('returns the default em-dash fallback for %p', (bad) => {
-        expect(formatMonthShort(bad)).toBe('—');
+    it('returns the default em-dash fallback for an absent value', () => {
+        expect(formatMonthShort(null)).toBe('—');
     });
 
     it('returns a caller-supplied fallback instead of the em-dash', () => {
@@ -176,8 +173,8 @@ describe('formatWeekdayShort — "Thu"', () => {
         );
     });
 
-    it.each(BAD_INPUTS)('returns the default em-dash fallback for %p', (bad) => {
-        expect(formatWeekdayShort(bad)).toBe('—');
+    it('returns the default em-dash fallback for an absent value', () => {
+        expect(formatWeekdayShort(null)).toBe('—');
     });
 
     it('returns a caller-supplied fallback instead of the em-dash', () => {
@@ -195,5 +192,74 @@ describe('the five helpers are genuinely five different formatters', () => {
             formatWeekdayShort(D),
         ];
         expect(new Set(outs).size).toBe(5);
+    });
+});
+
+// ─── The UTC pin — the module's entire stated reason for existing ──────
+
+describe('every Intl.DateTimeFormat in format-date.ts is pinned to en-GB + UTC', () => {
+    /**
+     * WHY THIS IS A SOURCE READ AND NOT A BEHAVIOURAL ASSERTION
+     * ─────────────────────────────────────────────────────────
+     * The obvious test — "23:59Z and 00:01Z on the same UTC day format
+     * identically" — is INERT on a UTC host, and GitHub runners are UTC.
+     * Dropping `timeZone: 'UTC'` from `DATE_FMT` fails it under
+     * Europe/Sofia and passes the whole file under `TZ=UTC`, so on CI it
+     * asserts nothing. Setting `process.env.TZ` inside the suite does not
+     * rescue it either: Node caches the default zone, so a
+     * `jest.resetModules()` + dynamic re-import passes against clean AND
+     * mutated source.
+     *
+     * The pin is the reason this module exists (SSR hydration drift when
+     * server and browser disagree on the zone), so it gets a check that
+     * fires on every host: each formatter constant must literally carry
+     * the locale and the timezone.
+     */
+    const SOURCE = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'lib', 'format-date.ts'),
+        'utf8',
+    );
+
+    /** Each `new Intl.DateTimeFormat(...)` call, sliced to its closing `})`. */
+    function formatterBlocks(source: string): string[] {
+        const marker = 'new Intl.DateTimeFormat(';
+        const out: string[] = [];
+        let from = 0;
+        for (;;) {
+            const start = source.indexOf(marker, from);
+            if (start < 0) break;
+            const end = source.indexOf('})', start);
+            expect(end).toBeGreaterThan(start);
+            out.push(source.slice(start, end + 2));
+            from = end + 2;
+        }
+        return out;
+    }
+
+    const blocks = formatterBlocks(SOURCE);
+
+    it('finds every formatter constant in the module (the scan is not silently empty)', () => {
+        // An absence is ambiguous: a scan that matched nothing would let
+        // the per-block assertion below pass vacuously. Pin the count
+        // against an independent count of the same marker, and against a
+        // floor. Lower the floor deliberately if a formatter is removed.
+        expect(blocks.length).toBe(SOURCE.split('new Intl.DateTimeFormat(').length - 1);
+        expect(blocks.length).toBeGreaterThanOrEqual(10);
+    });
+
+    it("every formatter carries timeZone: 'UTC'", () => {
+        const offenders = blocks.filter((b) => !/timeZone:\s*'UTC'/.test(b));
+        expect(offenders).toStrictEqual([]);
+    });
+
+    it('every formatter is constructed with the shared LOCALE constant', () => {
+        const offenders = blocks.filter(
+            (b) => !/^new Intl\.DateTimeFormat\(LOCALE,/.test(b),
+        );
+        expect(offenders).toStrictEqual([]);
+    });
+
+    it("pins LOCALE to 'en-GB'", () => {
+        expect(SOURCE).toMatch(/^const LOCALE = 'en-GB';$/m);
     });
 });

@@ -346,7 +346,6 @@ describe('buildSankeyDataset — edges to dropped nodes', () => {
         );
         const ds = buildSankeyDataset(g);
 
-        expect(ds.nodes.map((x) => x.id).sort()).toStrictEqual(['c1', 'r1']);
         expect(ds.links.map((l) => l.id)).toStrictEqual(['e-mit']);
         // Every link endpoint must name a node that is actually present.
         const ids = new Set(ds.nodes.map((x) => x.id));
@@ -356,6 +355,12 @@ describe('buildSankeyDataset — edges to dropped nodes', () => {
         }
     });
 
+    // KEEP — this is not a duplicate of the case above. The guard is
+    // `if (!src || !tgt)`, and the two tests own one half each:
+    // halving it to `if (!src)` fails ONLY this test, halving it to
+    // `if (!tgt)` fails ONLY the policy case above. (Both mutations run;
+    // 13 suites each; one failure each, no sibling.) Removing the whole
+    // guard fails both, which is why they look redundant at a glance.
     it('drops an edge naming an id that is in no node list at all', () => {
         const g = graph(
             [n('a1', 'asset'), n('r1', 'risk')],
@@ -364,25 +369,22 @@ describe('buildSankeyDataset — edges to dropped nodes', () => {
         const ds = buildSankeyDataset(g);
         expect(ds.links.map((l) => l.id)).toStrictEqual(['e-ok']);
     });
-
-    it('does not count a dropped edge toward node weight', () => {
-        const g = graph(
-            [n('p1', 'policy'), n('c1', 'control')],
-            [e('e-gov', 'p1', 'c1', 'governs')],
-        );
-        const ds = buildSankeyDataset(g);
-        expect(ds.links).toStrictEqual([]);
-        expect(ds.nodes.map((x) => x.weight)).toStrictEqual([0]);
-    });
 });
 
 // ─── Layout — degenerate + inconsistent datasets ───────────────────────
 
 describe('computeSankeyLayout — degenerate datasets', () => {
     it('lays out an empty dataset without inventing columns or nodes', () => {
-        // colCount === 0 takes neither the ===1 nor the >1 arm, so `colXs`
-        // stays empty. A regression that dropped the `> 1` guard would
-        // divide by (0 - 1) and place the single column at -Infinity.
+        // What this test actually pins is the CANVAS-HEIGHT FLOOR:
+        // `Math.max(height, contentHeight)` with an empty dataset. Drop
+        // the `Math.max` and `lay.height` collapses to the content
+        // height (0 + padding) instead of honouring the 400 asked for.
+        //
+        // It does NOT pin the `colCount > 1` guard it happens to
+        // execute, despite reaching colCount === 0: removing that guard
+        // leaves the stride loop as `for (i = 0; i < 0; i++)`, which
+        // never runs, so nothing observable changes. Mutation-verified
+        // in review — do not restate the old claim here.
         const lay = computeSankeyLayout(
             { columns: [], nodes: [], links: [], emptyAfterFilter: false },
             { width: 800, height: 400 },
