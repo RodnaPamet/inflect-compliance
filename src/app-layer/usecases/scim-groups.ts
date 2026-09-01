@@ -26,6 +26,7 @@ import prisma from '@/lib/prisma';
 import type { RequestContext } from '../types';
 import { syncEntraMembershipRole } from '@/lib/auth/entra-group-sync';
 import { SCIM_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
+import { ScimUnresolvableMemberError } from '@/lib/scim/auth';
 
 export interface ScimContext {
     tenantId: string;
@@ -57,6 +58,13 @@ const ctxOf = (c: ScimContext) =>
  * `UserIdentityLink.externalSubject` (the IdP's oid), and deliberately NOT
  * against User ids — resolving those would let a token holder add any user in
  * the tenant to a role-mapped group without an identity link existing.
+ *
+ * CONSEQUENCE, and it is not hypothetical: a read-modify-write round trip does
+ * NOT close. A client that GETs this body and PUTs it back supplies User ids,
+ * which resolve to nothing. `resolveUserIds` therefore REFUSES an unresolvable
+ * member with a 400 rather than returning `[]` — the latter wrote an empty
+ * `memberIds` and re-reconciled every former member, wiping the group and
+ * everyone's derived role from what looked like a no-op request.
  */
 export function scimGroupResource(g: {
     id: string;
@@ -238,12 +246,33 @@ type IdentityLinkDb = {
     userIdentityLink: {
         findMany(args: {
             where: { tenantId: string; externalSubject: { in: string[] } };
-            select: { userId: true };
-        }): Promise<Array<{ userId: string }>>;
+            // `externalSubject` is selected as well as `userId`, and both are
+            // required: the resolver has to report WHICH supplied values found
+            // no link, so it cannot just count rows.
+            select: { userId: true; externalSubject: true };
+        }): Promise<Array<{ userId: string; externalSubject: string }>>;
     };
 };
 
-/** Resolve SCIM member externalIds (AAD oids) → IC User ids via UserIdentityLink. */
+/**
+ * Resolve SCIM member externalIds (IdP subject identifiers) → IC User ids via
+ * `UserIdentityLink`.
+ *
+ * THROWS when a supplied value resolves to nothing, and that is deliberate.
+ *
+ * `GET /Groups/:id` emits members as this SP's own User ids (RFC 7643), while
+ * writes resolve against the IdP's subject — a documented asymmetry that keeps
+ * a token holder from adding an arbitrary tenant user to a role-mapped group
+ * with no identity link. The cost is that a read-modify-write round trip does
+ * not close: a client that GETs a group and PUTs the body back supplies User
+ * ids, which resolve to nothing.
+ *
+ * Returning `[]` there wrote an EMPTY `memberIds` and re-reconciled every
+ * former member — a silent wipe of the group and everyone's derived role, from
+ * a request that looked like a no-op. An explicit 400 is the honest answer: the
+ * round trip genuinely is not supported, so say so rather than destroying data
+ * while returning 200.
+ */
 async function resolveUserIds(
     tenantId: string,
     externalSubjects: string[],
@@ -252,8 +281,13 @@ async function resolveUserIds(
     if (externalSubjects.length === 0) return [];
     const links = await db.userIdentityLink.findMany({
         where: { tenantId, externalSubject: { in: externalSubjects } },
-        select: { userId: true },
+        select: { userId: true, externalSubject: true },
     });
+    const found = new Set(links.map((l) => l.externalSubject));
+    const missing = externalSubjects.filter((v) => !found.has(v));
+    if (missing.length > 0) {
+        throw new ScimUnresolvableMemberError(missing.length, externalSubjects.length);
+    }
     return Array.from(new Set(links.map((l) => l.userId)));
 }
 

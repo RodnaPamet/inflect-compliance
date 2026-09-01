@@ -49,6 +49,27 @@ export class ScimForbiddenError extends ScimAuthError {
 }
 
 /**
+ * A member `value` in a Groups write resolved to no linked identity.
+ *
+ * Subclasses `ScimAuthError` for the same reason `ScimForbiddenError` does:
+ * every SCIM route already renders that type with its carried status, so a
+ * 400 reaches the client correctly without touching a route.
+ */
+export class ScimUnresolvableMemberError extends ScimAuthError {
+    constructor(unresolved: number, supplied: number) {
+        super(
+            `${unresolved} of ${supplied} member values could not be resolved to a linked identity. `
+            + 'Member `value` must be the identity-provider subject identifier, not the id returned '
+            + 'by GET /Groups (this SP emits its own User ids on read, per RFC 7643). '
+            + 'Read-modify-write of the members array is not supported.',
+            400,
+            'invalidValue',
+        );
+        this.name = 'ScimUnresolvableMemberError';
+    }
+}
+
+/**
  * Hash a bearer token with SHA-256 for lookup.
  */
 export function hashToken(token: string): string {

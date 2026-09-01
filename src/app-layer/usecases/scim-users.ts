@@ -492,8 +492,13 @@ export async function scimPatchUser(
         }
     }
 
-    // Apply user profile updates
+    // Apply user profile updates. Guarded for the same reason as the PUT path:
+    // `User.name` is global, so an unguarded write here lets one tenant's SCIM
+    // token rename another tenant's ADMIN. Unlike the status guard below, this
+    // one is NOT narrowed to a real transition — there is no value the write
+    // could carry that makes it safe against a protected principal.
     if (Object.keys(userUpdates).length > 0) {
+        assertScimMayWrite(membership, 'patch:profile', userId, ctx.tenantId);
         await prisma.user.update({
             where: { id: userId },
             data: userUpdates,
@@ -563,6 +568,24 @@ export async function scimPutUser(
         || input.name?.formatted
         || [input.name?.givenName, input.name?.familyName].filter(Boolean).join(' ')
         || input.userName.split('@')[0];
+
+    // The profile write is refused for a protected membership, and it must be
+    // refused BEFORE the write, not after.
+    //
+    // It used to run unconditionally, above the status guard. With
+    // `active: false` that meant the ADMIN was renamed and THEN 403'd — and
+    // because the throw precedes `emitScimAudit`, no audit row was written
+    // either. With `active: true` the status guard is not reached at all, so
+    // the rename returned 200. A token holder could rename every admin in the
+    // tenant, silently and repeatably.
+    //
+    // The reason this outranks the routine-sync argument that (correctly)
+    // keeps the STATUS guard narrow: `User.name` is on the GLOBAL user row,
+    // not on the tenant membership. A SCIM token issued by tenant A can
+    // therefore rewrite the display name of somebody who is an ADMIN of
+    // tenant B. That is a cross-tenant write, and no IdP sync convenience
+    // justifies leaving it open.
+    assertScimMayWrite(membership, 'put:profile', userId, ctx.tenantId);
 
     await prisma.user.update({
         where: { id: userId },

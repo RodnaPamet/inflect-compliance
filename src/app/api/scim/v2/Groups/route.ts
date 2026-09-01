@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
         // this value is what the group→role mapping join keys on.
         if (!isScimGroupExternalId(body.externalId)) {
             return jsonResponse(
-                scimError(400, 'externalId is required and must be a UUID', 'invalidValue'),
+                scimError(400, 'externalId is required and must be an opaque identifier (no spaces; a display name is not an identifier)', 'invalidValue'),
                 { status: 400 },
             );
         }

@@ -74,7 +74,8 @@ jest.mock('@/lib/db-context', () => ({
 import { authenticateScimRequest, hashToken, ScimAuthError } from '@/lib/scim/auth';
 import {
     toScimUser, resolveScimRole,
-    scimCreateUser, scimPatchUser, scimDeleteUser, scimListUsers, scimGetUser,
+    scimCreateUser, scimPatchUser,
+    scimPutUser, scimDeleteUser, scimListUsers, scimGetUser,
 } from '@/app-layer/usecases/scim-users';
 import { scimCreateGroup, scimGroupResource } from '@/app-layer/usecases/scim-groups';
 import { scimError, scimListResponse, scimServiceProviderConfig, SCIM_SCHEMAS } from '@/lib/scim/types';
@@ -475,7 +476,12 @@ function primeGroupsPath(opts: {
     /** The externalIds of every ScimGroup the member ends up in. */
     memberOfGroups: string[];
 }) {
-    mockPrisma.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u1' }]);
+    // `externalSubject` is required in the fixture, not decorative: resolveUserIds
+    // now REFUSES a member value that resolves to nothing, so it must be able to
+    // tell which supplied value each link answers.
+    mockPrisma.userIdentityLink.findMany.mockResolvedValue([
+        { userId: 'u1', externalSubject: 'aad-oid-1' },
+    ]);
     mockPrisma.scimGroup.create.mockResolvedValue({
         id: 'g1', externalId: ADMIN_GROUP, displayName: 'Pushed', memberIds: ['u1'],
     });
@@ -596,8 +602,25 @@ describe('SCIM Groups POST — externalId validation', () => {
         expect(mockPrisma.scimGroup.create).not.toHaveBeenCalled();
     });
 
-    test('a non-UUID externalId is a 400', async () => {
+    test('a display-name-shaped externalId is ACCEPTED — format is not the protection', async () => {
+        // This asserts a limit, deliberately. An earlier revision required a
+        // UUID and rejected 'Engineering'. That rejected every non-Entra IdP
+        // too — Okta group ids look like `00g1a2b3c4D5E6f7g8h9`, and the docs
+        // advertise Okta, Auth0, Google and "any SAML-compliant IdP" — while
+        // buying nothing: a single-token display name is INDISTINGUISHABLE
+        // from an opaque identifier by shape, so the check was false
+        // assurance rather than a control.
+        //
+        // The two things that actually protect this join key are asserted
+        // elsewhere in this file: the `?? displayName` fallback is gone (the
+        // test above), and the role ceiling clamps whatever the group maps to
+        // (the ceiling describe). Neither depends on the format.
         const res = await post({ externalId: 'Engineering', displayName: 'Engineering' });
+        expect(res.status).toBe(201);
+    });
+
+    test('an externalId with whitespace is a 400 — that IS a display name', async () => {
+        const res = await post({ externalId: 'Field Ops', displayName: 'Field Ops' });
         expect(res.status).toBe(400);
         expect(mockPrisma.scimGroup.create).not.toHaveBeenCalled();
     });
@@ -644,6 +667,52 @@ describe('SCIM protected-membership status writes', () => {
             scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'active', value: false }], BASE_URL),
         ).rejects.toMatchObject({ status: 403 });
         expect(mockPrisma.tenantMembership.update).not.toHaveBeenCalled();
+    });
+
+    test('PUT on an ADMIN does not rename them BEFORE refusing — and prisma.user is untouched', async () => {
+        // The write used to run unconditionally, ABOVE the status guard. With
+        // `active: false` the ADMIN was renamed and THEN 403'd, and because the
+        // throw precedes emitScimAudit, no audit row recorded it either.
+        //
+        // `User.name` is on the GLOBAL user row, not the membership, so this was
+        // a cross-tenant write: tenant A's SCIM token rewriting the display name
+        // of an ADMIN of tenant B.
+        const user = { id: 'u1', email: 'admin@acme.com', name: 'Real Name', createdAt: now, updatedAt: now };
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
+        });
+
+        await expect(
+            scimPutUser(ctx, 'u1', { userName: 'pwned@evil.com', active: false }, BASE_URL),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    test('PUT active=TRUE on an ADMIN is refused too — the status guard never fired there', async () => {
+        // The sharper half. With `active: true` the status is unchanged, so the
+        // status guard was never even reached: the rename returned 200, no 403,
+        // no audit. Repeatable against every admin in the tenant.
+        const user = { id: 'u1', email: 'admin@acme.com', name: 'Real Name', createdAt: now, updatedAt: now };
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
+        });
+
+        await expect(
+            scimPutUser(ctx, 'u1', { userName: 'pwned@evil.com', active: true }, BASE_URL),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    test('PATCH of a display name on an ADMIN is refused', async () => {
+        const user = { id: 'u1', email: 'admin@acme.com', name: 'Real Name', createdAt: now, updatedAt: now };
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
+        });
+
+        await expect(
+            scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'displayName', value: 'pwned' }], BASE_URL),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
     test('DELETE on an EDITOR membership still works — the guard is not blanket', async () => {

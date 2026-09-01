@@ -74,10 +74,31 @@ export interface ScimPatchOp {
  * turned a human label into an identifier and let the caller choose the string
  * the role-mapping join keys on.
  */
-const SCIM_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * A group `externalId` must be a real opaque identifier — NOT a UUID
+ * specifically.
+ *
+ * The defect this closes is the `?? displayName` fallback the Groups route
+ * used to carry: a display name is not an identifier, and this value is the
+ * join key for the group→role mapping, so "Engineering" became a mappable
+ * identity that anyone who could name a group could claim.
+ *
+ * Requiring a UUID would have closed that AND broken every IdP that is not
+ * Entra. Okta group ids look like `00g1a2b3c4D5E6f7g8h9`; OneLogin and
+ * JumpCloud differ again, and `docs/admin-rbac-scim.md` advertises Okta,
+ * Auth0, Google and "any SAML-compliant IdP". A hard UUID check would make
+ * `POST /Groups` a 400 for all of them — a product-compatibility decision
+ * smuggled inside a security fix, for security value the role clamp already
+ * provides on its own.
+ *
+ * So: a non-empty, single-token, bounded string. That rejects a display name
+ * (which contains spaces, or is absent) without asserting a format no
+ * standard requires.
+ */
+const SCIM_EXTERNAL_ID = /^[A-Za-z0-9._:@|-]{6,255}$/;
 
 export function isScimGroupExternalId(value: unknown): value is string {
-    return typeof value === 'string' && SCIM_UUID.test(value);
+    return typeof value === 'string' && SCIM_EXTERNAL_ID.test(value);
 }
 
 /**
