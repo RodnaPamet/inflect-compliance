@@ -635,7 +635,14 @@ describe('SCIM Groups POST — externalId validation', () => {
 // switch that ADMIN off.
 
 describe('SCIM protected-membership status writes', () => {
-    beforeEach(() => jest.clearAllMocks());
+    beforeEach(() => {
+        jest.clearAllMocks();
+        // The protected-anywhere probe is a COUNT and `jest.clearAllMocks()`
+        // leaves it returning undefined, which would read as "protected
+        // nowhere" and let a write through. Default it explicitly so no test
+        // silently depends on that, and so the fail direction is stated.
+        mockPrisma.tenantMembership.count.mockResolvedValue(0);
+    });
 
     test('DELETE on an ADMIN membership refuses with a SCIM 403 and writes nothing', async () => {
         mockPrisma.tenantMembership.findFirst.mockResolvedValue({
@@ -669,6 +676,40 @@ describe('SCIM protected-membership status writes', () => {
         expect(mockPrisma.tenantMembership.update).not.toHaveBeenCalled();
     });
 
+    test('a victim who is only READER HERE but OWNER elsewhere is still not renamable', async () => {
+        // The case the first revision of this fix MISSED, and the reason the
+        // predicate is global. `membership` is resolved with
+        // `where: { tenantId: ctx.tenantId, userId }`, so a tenant-local role
+        // check sees READER and lets the write through — while `User.name` is
+        // global, so the rename lands on the OWNER of the other tenant.
+        const user = { id: 'u9', email: 'owner-elsewhere@other.com', name: 'Real Name', createdAt: now, updatedAt: now };
+        mockPrisma.tenantMembership.findFirst
+            // 1st call: the victim's membership in the CALLER's tenant — unprotected.
+            .mockResolvedValueOnce({
+                id: 'm9', tenantId: TENANT_A, userId: 'u9', status: 'ACTIVE', role: 'READER', user,
+            })
+            ;
+        // The global protected-anywhere probe is a COUNT, so it cannot consume
+        // the findFirst queue above.
+        mockPrisma.tenantMembership.count.mockResolvedValue(1);
+
+        await scimPutUser(ctx, 'u9', { userName: 'pwned@evil.com', active: true }, BASE_URL);
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    test('a victim unprotected EVERYWHERE is still renamable — the guard is not blanket', async () => {
+        const user = { id: 'u8', email: 'reader@acme.com', name: 'Real Name', createdAt: now, updatedAt: now };
+        mockPrisma.tenantMembership.findFirst
+            .mockResolvedValueOnce({
+                id: 'm8', tenantId: TENANT_A, userId: 'u8', status: 'ACTIVE', role: 'READER', user,
+            })
+            ;
+        mockPrisma.tenantMembership.count.mockResolvedValue(0); // protected nowhere
+
+        await scimPutUser(ctx, 'u8', { userName: 'newname@acme.com', active: true }, BASE_URL);
+        expect(mockPrisma.user.update).toHaveBeenCalled();
+    });
+
     test('PUT on an ADMIN does not rename them BEFORE refusing — and prisma.user is untouched', async () => {
         // The write used to run unconditionally, ABOVE the status guard. With
         // `active: false` the ADMIN was renamed and THEN 403'd, and because the
@@ -681,6 +722,7 @@ describe('SCIM protected-membership status writes', () => {
         mockPrisma.tenantMembership.findFirst.mockResolvedValue({
             id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
         });
+        mockPrisma.tenantMembership.count.mockResolvedValue(1); // ADMIN here counts as protected
 
         // The STATUS change is still refused — that guard is unchanged. What
         // this test pins is that `prisma.user.update` did not run BEFORE it.
@@ -698,6 +740,7 @@ describe('SCIM protected-membership status writes', () => {
         mockPrisma.tenantMembership.findFirst.mockResolvedValue({
             id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
         });
+        mockPrisma.tenantMembership.count.mockResolvedValue(1); // ADMIN here counts as protected
 
         // No status change, so nothing throws — and that is the point. The
         // request SUCCEEDS, as the documented contract says a PUT against a
@@ -712,6 +755,7 @@ describe('SCIM protected-membership status writes', () => {
         mockPrisma.tenantMembership.findFirst.mockResolvedValue({
             id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
         });
+        mockPrisma.tenantMembership.count.mockResolvedValue(1); // ADMIN here counts as protected
 
         await scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'displayName', value: 'pwned' }], BASE_URL);
         expect(mockPrisma.user.update).not.toHaveBeenCalled();

@@ -71,9 +71,14 @@ Navigate to **SSO & Identity** (`/admin/sso`).
 | `/api/scim/v2/Groups` | GET, POST | List/create groups |
 | `/api/scim/v2/Groups/:id` | GET, PATCH, PUT, DELETE | Group CRUD + membership |
 
-`POST /Groups` requires an `externalId`, and it must be a UUID — it is the Entra
-group object id, and it is what the group → role mappings
-(`TenantEntraGroupMapping.aadGroupId`) are joined on. There is no fall-back to
+`POST /Groups` requires an `externalId` and it must be an opaque identifier —
+no whitespace, 6-255 chars of `[A-Za-z0-9._:@|-]`. It is NOT required to be a
+UUID: Okta group ids look like `00g1a2b3c4D5E6f7g8h9`, and requiring a UUID
+would 400 every non-Entra IdP this page advertises. Format is not the control
+either way — a single-token display name is indistinguishable from an opaque
+id by shape. What protects this value is that it is what the group → role
+mappings (`TenantEntraGroupMapping.aadGroupId`) are joined on, that the role
+ceiling clamps whatever a mapping resolves to, and that there is no fall-back to
 `displayName`.
 
 A Group resource's `members` are projected from the members IC actually
@@ -141,7 +146,16 @@ nothing is *not* refused — a full IdP sync re-pushes it every cycle.
 
 ### Audit Events
 
-All SCIM operations emit structured audit events:
+**Users-path** operations emit structured audit events. **The Groups path emits
+none** — `src/app-layer/usecases/scim-groups.ts` contains zero
+`appendAuditEntry` / `emitScimAudit` calls, so a group create, member add or
+member removal leaves no audit row, even though a member change can alter a
+user's role through the mapping engine. That is a known gap, not a description
+of current behaviour, and it is tracked with the wider point that SCIM
+*refusals* are audit-invisible too (`assertScimMayWrite` emits a `logger.warn`
+where `requirePermission` writes a hash-chained `AUTHZ_DENIED` row).
+
+The Users-path events are:
 - `SCIM_USER_CREATED`
 - `SCIM_USER_UPDATED`
 - `SCIM_USER_DEACTIVATED`

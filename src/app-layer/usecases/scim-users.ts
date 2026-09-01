@@ -498,7 +498,7 @@ export async function scimPatchUser(
     // one is NOT narrowed to a real transition — there is no value the write
     // could carry that makes it safe against a protected principal.
     if (Object.keys(userUpdates).length > 0) {
-        if (isScimProtectedRole(membership.role)) {
+        if (await isUserProtectedInAnyTenant(userId)) {
             logger.warn('SCIM profile write skipped on a protected membership', {
                 component: 'scim',
                 operation: 'patch:profile',
@@ -559,6 +559,54 @@ export async function scimPatchUser(
     return scimGetUser(ctx, userId, baseUrl);
 }
 
+
+/**
+ * Is this user protected ANYWHERE — not just in the caller's tenant?
+ *
+ * The distinction is the whole point, and getting it wrong is a mistake that
+ * LOOKS correct. `scimPutUser`/`scimPatchUser` resolve `membership` with
+ * `findFirst({ where: { tenantId: ctx.tenantId, userId } })`, so
+ * `isScimProtectedRole(membership.role)` asks "is the victim protected in MY
+ * tenant". That is the right question for the STATUS and ROLE writes, because
+ * both fields live on `TenantMembership` and a tenant may legitimately manage
+ * its own.
+ *
+ * It is the wrong question for the profile write, because `User.name` is on
+ * the GLOBAL user row. A user who is READER in tenant A and OWNER in tenant B
+ * is unprotected by the tenant-local check — in tenant A they are a READER —
+ * so tenant A's SCIM token renames tenant B's owner. The predicate must match
+ * the blast radius of the write it guards: global write, global predicate.
+ *
+ * And there is no pre-existing-membership precondition to rely on:
+ * `scimCreateUser` resolves an existing global User by email hash and
+ * provisions a READER membership when none exists, returning the real
+ * `User.id`. So `POST /Users` followed by `PUT /Users/:id` is the entire chain
+ * from a freshly minted token.
+ *
+ * Cost, stated so it is a decision and not an accident: a user who is an admin
+ * in ANY tenant stops having their display name synced by every tenant's IdP.
+ * That is the correct trade — the alternative is letting any tenant rename
+ * them.
+ */
+async function isUserProtectedInAnyTenant(userId: string): Promise<boolean> {
+    // `count`, not `findFirst`, and deliberately. Both usecases already call
+    // `tenantMembership.findFirst` for the caller-tenant membership; adding a
+    // second `findFirst` makes this probe consume the NEXT entry of any
+    // `mockResolvedValueOnce` queue a test has set up for the first, which
+    // silently changes what unrelated tests exercise. A distinct method cannot
+    // collide. It is also the more honest query — the question is "how many
+    // protected memberships does this user hold", and nothing here needs the
+    // row.
+    const protectedElsewhere = await prisma.tenantMembership.count({
+        where: {
+            userId,
+            status: 'ACTIVE',
+            role: { notIn: [...SCIM_ASSIGNABLE_ROLES] },
+        },
+    });
+    return protectedElsewhere > 0;
+}
+
 // ─── Put User (full replace) ─────────────────────────────────────────
 
 export async function scimPutUser(
@@ -595,6 +643,12 @@ export async function scimPutUser(
     // tenant B. That is a cross-tenant write, and no IdP sync convenience
     // justifies leaving it open.
     //
+    // NOTE the predicate is `isUserProtectedInAnyTenant(userId)` and NOT
+    // `isScimProtectedRole(membership.role)`. The first revision of this fix
+    // used the latter, which is tenant-LOCAL and therefore does not close the
+    // cross-tenant case this very comment describes: the victim is a READER in
+    // the caller's tenant and an OWNER elsewhere.
+    //
     // SKIP rather than 403, because a 403 is a wider change than the security
     // fix needs. `docs/admin-rbac-scim.md` already documents a PUT against a
     // protected membership as SUCCEEDING with the role "silently skipped", and
@@ -604,7 +658,10 @@ export async function scimPutUser(
     // comment raises against widening ITS scope. Skipping the one write closes
     // the hole and leaves the documented behaviour intact.
     // SKIPPED, not refused — see below for why that distinction is deliberate.
-    if (isScimProtectedRole(membership.role)) {
+    // The predicate is GLOBAL, not the tenant-local `membership.role`, because
+    // the write it guards is on the global User row. See
+    // `isUserProtectedInAnyTenant`.
+    if (await isUserProtectedInAnyTenant(userId)) {
         logger.warn('SCIM profile write skipped on a protected membership', {
             component: 'scim',
             operation: 'put:profile',
