@@ -20,7 +20,7 @@
  *   - One Jest failure per (file, pattern) hit.
  *   - Each failure carries `file:line`, the pattern name, the offending
  *     excerpt, and the same actionable footer the local scanner emits.
- *   - The repo-baseline `EXPECTED_KNOWN_FIXTURE_HITS` exists so an
+ *   - The repo-baseline `REPO_BASELINE` exists so an
  *     incidental new pattern can ratchet down without lying about
  *     existing test fixtures. Adding to it requires writing the
  *     reason in code, which a reviewer must approve.
@@ -55,12 +55,16 @@ const SKIP_PATHS: readonly string[] = [
     'prisma/migrations/',
     'public/',
 
-    // Self-skip: the scanner, the pattern source, and the tests that
-    // exercise both — all contain secret-shaped strings on purpose.
+    // Self-skip: the scanner, the pattern source, and the unit test that
+    // exercises both — all contain secret-shaped strings on purpose.
+    // An entry must EARN its place. THIS file is deliberately absent:
+    // its planted string went with the describe block above, so it is
+    // scanned like any other file. Re-adding it would be a standing
+    // hole in the gate, in the one file somebody is most likely to
+    // paste a real credential into.
     'scripts/detect-secrets.sh',
     '.secret-patterns',
     'tests/unit/security/detect-secrets.test.ts',
-    'tests/guardrails/no-secrets.test.ts',
 
     // Canonical home for intentional secret-shaped fixtures.
     'tests/fixtures/secrets/',
