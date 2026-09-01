@@ -171,14 +171,6 @@ describe.each(LIFECYCLE_EMITTERS)('%s', (_name, emit, expectedAction) => {
         expect(mockLoggerInfo).toHaveBeenCalledTimes(1);
     });
 
-    it('REFUSES to write an audit row when the membership read THROWS', async () => {
-        mockFindFirst.mockRejectedValue(new Error('database unreachable'));
-
-        // A DB blip must degrade to log-only, never reject into the auth path.
-        await expect(emit({ userId: 'u1', email: EMAIL })).resolves.toBeUndefined();
-        expect(mockAppendAuditEntry).not.toHaveBeenCalled();
-    });
-
     it('treats an explicit tenantId of null as "unknown" and falls back to lookup', async () => {
         mockFindFirst.mockResolvedValue({ tenantId: 't-resolved' });
         await emit({ userId: 'u1', email: EMAIL, tenantId: null });
@@ -197,8 +189,38 @@ describe.each(LIFECYCLE_EMITTERS)('%s', (_name, emit, expectedAction) => {
         );
     });
 
+});
+
+// ─── Shared-helper behaviour — asserted ONCE, not five times ────────
+//
+// The three cases below live in `writeAudit` / `resolvePrimaryTenantId`,
+// which all five emitters call. Running them per-emitter produced five
+// identical failures for one defect and zero extra detection: dropping
+// `?? null` from `writeAudit` failed all five copies, and so did making
+// `resolvePrimaryTenantId` rethrow. They are therefore driven through a
+// single representative emitter.
+//
+// The rows that REMAIN in the table above are the ones a per-emitter
+// mutation proved are NOT shared — including the plaintext-email row,
+// which the review proposed lifting too. Rewiring ONE emitter to pass
+// the wrong address to `writeAudit` fails exactly one test, its own
+// `never puts the plaintext email…` row, so that row detects a
+// per-emitter copy-paste slip that nothing else in the repo sees. It
+// stays in the table.
+
+describe('shared audit-write helper (via recordPasswordChanged)', () => {
+    it('REFUSES to write an audit row when the membership read THROWS', async () => {
+        mockFindFirst.mockRejectedValue(new Error('database unreachable'));
+
+        // A DB blip must degrade to log-only, never reject into the auth path.
+        await expect(
+            recordPasswordChanged({ userId: 'u1', email: EMAIL }),
+        ).resolves.toBeUndefined();
+        expect(mockAppendAuditEntry).not.toHaveBeenCalled();
+    });
+
     it('records requestId as null (not undefined) when the caller has none', async () => {
-        await emit({ userId: 'u1', email: EMAIL, tenantId: 't1' });
+        await recordPasswordChanged({ userId: 'u1', email: EMAIL, tenantId: 't1' });
         // The column is nullable; `undefined` would make Prisma skip the
         // field entirely and silently drop the correlation id.
         expect(auditedEntry().requestId).toBeNull();
@@ -208,14 +230,14 @@ describe.each(LIFECYCLE_EMITTERS)('%s', (_name, emit, expectedAction) => {
         mockAppendAuditEntry.mockRejectedValue(new Error('chain head moved'));
 
         await expect(
-            emit({ userId: 'u1', email: EMAIL, tenantId: 't1' }),
+            recordPasswordChanged({ userId: 'u1', email: EMAIL, tenantId: 't1' }),
         ).resolves.toBeUndefined();
 
         expect(mockLoggerWarn).toHaveBeenCalledWith(
             'auth audit write failed',
             expect.objectContaining({
                 component: 'auth',
-                action: expectedAction,
+                action: AUTH_ACTIONS.PASSWORD_CHANGED,
                 error: 'chain head moved',
             }),
         );

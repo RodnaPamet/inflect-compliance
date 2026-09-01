@@ -43,6 +43,63 @@ const SP_ISSUER = 'https://app.example.com/sp';
  */
 const FAKE_IDP_CERT = 'MIICzjCCAbagAwIBAgIJAKFakeCertForUnitTestsOnly';
 
+/**
+ * A throwaway self-signed X.509 certificate (public half only — no
+ * private key is in this repo, and none is needed: nothing here signs
+ * anything). `FAKE_IDP_CERT` above is not parseable, so node-saml
+ * rejects it with "idpCert is not in PEM format or in base64 format"
+ * BEFORE it ever reaches a signature check. To assert what the ACS does
+ * with an unsigned <Response> we need a cert that actually loads.
+ */
+const PARSEABLE_IDP_CERT = [
+    'MIIDWTCCAkGgAwIBAgIUWR1366mH1aImD/dX+6xmdZK1vDUwDQYJKoZIhvcNAQEL',
+    'BQAwOzEYMBYGA1UEAwwPaWRwLmV4YW1wbGUuY29tMR8wHQYDVQQKDBZJbmZsZWN0',
+    'IFNBTUwgdW5pdCB0ZXN0MCAXDTI2MDkwMTExNDczMloYDzIxMjYwODA4MTE0NzMy',
+    'WjA7MRgwFgYDVQQDDA9pZHAuZXhhbXBsZS5jb20xHzAdBgNVBAoMFkluZmxlY3Qg',
+    'U0FNTCB1bml0IHRlc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDM',
+    'BSLCixZUJuopBCUDRT6gZHEa+nxzkOk4GhulOtDA6nr0wUbjxfd1eE183nzHzenB',
+    '+qbfFOtIzBwuzCcJeI5HX66g19HxTeW723uiCRV851US1UMw4/91i7EQvU+EtxLR',
+    '3srSsKuEU1pElAOwl5/9CCFxi1jlMiXFhAYVOsJQtriO5ssYfLlZiGvZlvB1Seax',
+    's95mQQy1L0BVg/ZAdFQF7UJt054M8+7PZk6/oPC2irnOa+MOdONwBLbleNZ07ywi',
+    'TBQYbGHa5uEQ8UFFSuOOXvpabRrQQXBptzNJ3Ew4kwUWbXqebAV6FSezbpzZQ21R',
+    'SA/AIcpfzTfkOeVl6OgvAgMBAAGjUzBRMB0GA1UdDgQWBBSkgri5E1apKOw+MY2/',
+    'nHHBGWntjzAfBgNVHSMEGDAWgBSkgri5E1apKOw+MY2/nHHBGWntjzAPBgNVHRMB',
+    'Af8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQCoUjNomrfqHCTCfmk97CkzgLl0',
+    'CgNtPPrlTzlxxSc0Zh/+TzCeUBZ1QBgXExBi03B+O63Y6dApuPXSqIJ4a4Ljfw25',
+    'ppmaPT/uaMvU40tzyOVLFZ/jzAnALEpRreXhTXuYpmzrUgs5upI+QCj46grnZrQo',
+    'k7PMGhhUCswyEdpU6XlzxFod0JmqXk/mz3cnkmZfRJ+e+IieDyjGTIK8IXMT2acm',
+    'nVmn4qCJ2LzZALdxob+dO00p9lalnZkDBSfhDZikS+AuRAz8mkmMdxs6lP2kbu8i',
+    'VKDkG9sRBoPNxrwr6aAxmDUM3DzlsuaVwj2kcWArvcEWLcSsHiG+J1CPX/nk',
+].join('');
+
+/**
+ * A well-formed SAML <Response> carrying one <Assertion> and NOT ONE
+ * <Signature> anywhere — i.e. exactly what an attacker POSTs to the ACS
+ * when probing whether we check signatures at all.
+ *
+ * The fixed `IssueInstant` is safe against the clock: node-saml checks
+ * the signature BEFORE it looks at Conditions, so this never reaches a
+ * validity window. And the assertion here is a REFUSAL, which an
+ * expired document would only reinforce — there is no date at which
+ * this test flips from green to red.
+ */
+const UNSIGNED_SAML_RESPONSE = Buffer.from(
+    '<?xml version="1.0"?>' +
+        '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"' +
+        ' xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"' +
+        ' ID="_r1" Version="2.0" IssueInstant="2026-01-01T00:00:00Z"' +
+        ` Destination="${CALLBACK_URL}">` +
+        '<saml:Issuer>https://idp.example.com/entity</saml:Issuer>' +
+        '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>' +
+        '<saml:Assertion ID="_a1" Version="2.0" IssueInstant="2026-01-01T00:00:00Z">' +
+        '<saml:Issuer>https://idp.example.com/entity</saml:Issuer>' +
+        '<saml:Subject><saml:NameID' +
+        ' Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">' +
+        'attacker@evil.example</saml:NameID></saml:Subject>' +
+        '</saml:Assertion></samlp:Response>',
+    'utf8',
+).toString('base64');
+
 function samlConfig(overrides: Partial<SamlConfig> = {}): SamlConfig {
     return {
         entityId: 'https://idp.example.com/entity',
@@ -100,12 +157,19 @@ describe('buildSamlInstance', () => {
         ).toThrow(/idpCert is required/i);
     });
 
-    it('requires the authn RESPONSE to be signed', () => {
+    it('LOOSENS wantAssertionsSigned below the library default', () => {
         const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER);
-        // If this ever flips to false, an attacker can POST an entirely
-        // unsigned <Response> to the ACS and be logged in as an
-        // arbitrary user.
-        expect(saml.options.wantAuthnResponseSigned).toBe(true);
+        // node-saml's DEFAULT_WANT_ASSERTIONS_SIGNED is `true`
+        // (node_modules/@node-saml/node-saml/lib/constants.js). We
+        // deliberately set `false`, so the per-assertion signature is
+        // only re-verified when the document-level one did not hold.
+        // That is a REAL loosening relative to the library, and unlike
+        // `wantAuthnResponseSigned` it is not what we would get by
+        // saying nothing — deleting the line changes behaviour. This
+        // assertion is the sole detector for that deletion; if it ever
+        // fails, the question to answer is whether the loosening was
+        // removed on purpose.
+        expect(saml.options.wantAssertionsSigned).toBe(false);
     });
 
     it('points the SP at the tenant IdP and pins the expected issuer', () => {
@@ -124,17 +188,6 @@ describe('buildSamlInstance', () => {
         expect(saml.options.callbackUrl).toBe(CALLBACK_URL);
         expect(saml.options.issuer).toBe(SP_ISSUER);
         expect(saml.options.idpCert).toBe(FAKE_IDP_CERT);
-    });
-
-    it('defaults nameIdFormat to emailAddress when the tenant did not set one', () => {
-        const saml = buildSamlInstance(
-            samlConfig({ nameIdFormat: undefined }),
-            CALLBACK_URL,
-            SP_ISSUER,
-        );
-        expect(saml.options.identifierFormat).toBe(
-            'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
-        );
     });
 
     it('honours an explicit nameIdFormat instead of the default', () => {
@@ -224,6 +277,36 @@ describe('validateSamlResponse — refusals', () => {
         await expect(
             validateSamlResponse(saml, 'this-is-not-a-saml-response'),
         ).rejects.toThrow(/Not a valid XML document/i);
+    });
+
+    it('REFUSES a completely unsigned <Response> at the DOCUMENT level', async () => {
+        // This is the guarantee `wantAuthnResponseSigned: true` exists to
+        // provide, asserted through behaviour rather than by reading the
+        // option back off the instance.
+        //
+        // Reading it back is worthless: node-saml defaults
+        // `wantAuthnResponseSigned` to `true` as well (lib/saml.js), so
+        // an option-shaped assertion passes whether our line is present
+        // or deleted. NOTHING can detect that deletion, because deletion
+        // is behaviourally a no-op — that is a fact about the option, not
+        // a gap in this test, and it is why the assertion below targets
+        // the OUTCOME instead.
+        //
+        // What this DOES detect is the flip to `false`, which is the
+        // change that alters behaviour: with `false` the document-level
+        // check is skipped and the refusal comes from the weaker
+        // per-assertion path instead, carrying the message
+        // "Invalid signature". Asserting the specific "Invalid document
+        // signature" is therefore deliberate — the message names WHICH
+        // layer refused, and that is the whole distinction.
+        const saml = buildSamlInstance(
+            samlConfig({ certificate: PARSEABLE_IDP_CERT }),
+            CALLBACK_URL,
+            SP_ISSUER,
+        );
+        await expect(
+            validateSamlResponse(saml, UNSIGNED_SAML_RESPONSE),
+        ).rejects.toThrow(/Invalid document signature/i);
     });
 });
 

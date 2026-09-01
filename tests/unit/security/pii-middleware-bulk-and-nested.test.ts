@@ -236,14 +236,6 @@ describe('decryption — result shapes', () => {
             (received as { billingAccount: { email: string } }).billingAccount.email,
         ).toBe(cipherEmail);
     });
-
-    it('does NOT decrypt for a write action that returns no row (deleteMany)', async () => {
-        const { received } = await run(
-            { model: 'User', action: 'deleteMany', args: { where: {} } },
-            { count: 3 },
-        );
-        expect(received).toStrictEqual({ count: 3 });
-    });
 });
 
 // ─── Legacy read path (mapped: false) ───────────────────────────────

@@ -489,21 +489,39 @@ describe('verifyAndTouchSession — expiry bookkeeping', () => {
     });
 
     it('treats an exactly-now expiry as expired (<=, not <)', async () => {
-        const now = new Date();
-        mockUserSession.findUnique.mockResolvedValue({
-            id: 'row-10',
-            revokedAt: null,
-            lastActiveAt: now,
-            expiresAt: now,
-        });
-        mockUserSession.update.mockResolvedValue({});
+        // FAKE TIMERS ARE LOAD-BEARING HERE, not a convenience.
+        //
+        // `verifyAndTouchSession` captures its own `now = Date.now()`
+        // AFTER awaiting the row read. Under the real clock, seeding
+        // `expiresAt = new Date()` in the test body puts the expiry a few
+        // milliseconds in the PAST by the time the comparison runs, so
+        // `expiresAt < now` already holds and the `<=` boundary is never
+        // reached — the test would pass identically against `<`, which is
+        // exactly the mutation its name claims to catch.
+        //
+        // Freezing the clock makes the seeded instant and the captured
+        // `now` the SAME millisecond, which is the only state in which
+        // `<=` and `<` disagree.
+        jest.useFakeTimers();
+        try {
+            const frozen = new Date(Date.now());
+            mockUserSession.findUnique.mockResolvedValue({
+                id: 'row-10',
+                revokedAt: null,
+                lastActiveAt: frozen,
+                expiresAt: frozen,
+            });
+            mockUserSession.update.mockResolvedValue({});
 
-        const out = await verifyAndTouchSession('sess-10');
-        expect(out.revoked).toBe(true);
-        const write = mockUserSession.update.mock.calls[0][0] as {
-            data: { revokedReason: string };
-        };
-        expect(write.data.revokedReason).toBe('policy:expired');
+            const out = await verifyAndTouchSession('sess-10');
+            expect(out.revoked).toBe(true);
+            const write = mockUserSession.update.mock.calls[0][0] as {
+                data: { revokedReason: string };
+            };
+            expect(write.data.revokedReason).toBe('policy:expired');
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
 
