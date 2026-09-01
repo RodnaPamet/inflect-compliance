@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The read surface for the dry-run leaver pass record.
+ * The read surface for the leaver pass record.
  *
  * WHY A PAGE AND NOT JUST THE ENDPOINT. The write ladder mandates seven days of
  * DRY_RUN before a tenant may be promoted, and its own refusal text says the
@@ -53,7 +53,9 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { EmptyState } from '@/components/ui/empty-state';
-import type { IdentityWriteMode } from '@/app-layer/usecases/identity-write-policy';
+// The ORDERING, from the module that owns it — never a copy, and never `!==`.
+// `write-ladder` carries no server imports, so a client component can hold it.
+import { LADDER, isAboveClamp, type IdentityWriteMode } from '@/lib/identity/write-ladder';
 
 /**
  * Why the decision went the way it did, as `DecisionBasis` wrote it.
@@ -232,10 +234,25 @@ export function LeaverPassesClient() {
     const mode = ladder?.directions?.leaver?.mode;
     const clamp = ladder?.honoured?.leaver?.maxMode;
     const dryRunSince = ladder?.directions?.leaver?.dryRunSince;
-    // Mirrors the PASS's own gate, which is an INEQUALITY (`mode !== clamp`),
-    // not an ordering comparison. They agree only while the clamp is the second
-    // rung, and the pass is the one that decides, so match the pass.
-    const clampMismatch = !!mode && !!clamp && mode !== 'DISABLED' && mode !== clamp;
+    // Mirrors the PASS's own gate, which is ORDINAL (`isAboveClamp`) — the same
+    // function the pass calls, not a second encoding of it. It was `mode !== clamp`,
+    // which agrees with the pass only while the clamp is the second rung: once the
+    // clamp moved to AUTOMATIC (#2187) a DRY_RUN tenant — every tenant in the
+    // observation window — was declared mismatched and told to WIDEN two rungs to
+    // unattended directory writes, and the one arm below that reports a fault went
+    // unreachable for everybody under the top rung.
+    //
+    // Both sides must be RUNGS THIS BUILD KNOWS before anything is ordered against
+    // them: `isAboveClamp` sorts an unrecognised value to -1 and so reads it as
+    // "below", which would have the page pick an arm confidently from a comparison
+    // it cannot actually make. An unknown rung is unknown — the degradation arm
+    // says so.
+    const orderable =
+        mode !== undefined &&
+        clamp !== undefined &&
+        LADDER.includes(mode) &&
+        LADDER.includes(clamp);
+    const clampMismatch = orderable && mode !== 'DISABLED' && isAboveClamp(mode, clamp);
     // A tenant that switched on at 05:01 has not missed anything yet. Without
     // this the fault copy fires for up to 23h59m on the one day someone is
     // actually watching.
@@ -464,11 +481,19 @@ export function LeaverPassesClient() {
                                 />
                             );
                         }
-                        if (mode && mode === clamp && overdue) {
+                        if (orderable && overdue) {
                             // The only arm that says something is WRONG. A pass
                             // was due and would have recorded a row even if it
                             // refused, so silence here is not a configuration
                             // fact.
+                            //
+                            // Reached on AT-OR-BELOW the clamp, not on equality:
+                            // the two arms above have already taken DISABLED and
+                            // above-the-clamp, so anything still here is a tenant
+                            // whose passes DO run. Under `mode === clamp` this
+                            // alarm — the one that would have caught a dispatcher
+                            // enqueueing nothing for months (#2175) — was silent
+                            // for every tenant below the clamp.
                             return (
                                 <EmptyState
                                     variant="missing-prereqs"
@@ -479,7 +504,9 @@ export function LeaverPassesClient() {
                                 />
                             );
                         }
-                        if (mode && mode === clamp) {
+                        if (orderable) {
+                            // At or below the clamp and not yet due: the passes
+                            // will run, there just has not been one.
                             return (
                                 <EmptyState
                                     variant="no-records"

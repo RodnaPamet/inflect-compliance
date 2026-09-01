@@ -4996,8 +4996,8 @@
         "leaverPasses": {
             "linkLabel": "Leaver passes",
             "breadcrumb": "Leaver passes",
-            "title": "Dry-run leaver passes",
-            "intro": "Every offboarding pass this tenant has run, most recent first. Passes are clamped at DRY_RUN — nothing was written to any directory. This is the record the seven-day observation window exists to be compared against: read each pass beside what HR and IT actually did before this tenant is promoted past DRY_RUN.",
+            "title": "Leaver passes",
+            "intro": "Every offboarding pass this tenant has run, most recent first. What a pass was allowed to do depends on the write mode it ran under — each pass states its own, and the setting in force now is named below. This is the record the observation window exists to be compared against: read each pass beside what HR and IT actually did before this tenant is widened another rung.",
             "passesHeading": "Passes",
             "colRefusal": "Refusal",
             "colDecisions": "Decisions",
