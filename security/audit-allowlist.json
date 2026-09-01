@@ -19,7 +19,8 @@
       "reachability": "NOT REACHABLE. image-size runs only when pptxgenjs measures an embedded image, i.e. from addImage(). Our sole pptxgenjs consumer is src/app-layer/reports/risk-report-render.ts, which calls addText and addTable only — it never calls addImage, so no image bytes (attacker-supplied or otherwise) reach an image-size parser.",
       "addedOn": "2026-08-08",
       "reviewBy": "2026-11-08",
-      "upgradePlan": "Watch for an image-size release >2.0.2 or a pptxgenjs release that drops the dependency, then delete this entry — the gate will fail if it is stale. If risk-report-render ever gains an addImage() call, this exemption is void and must be re-argued: re-check before adding images to the PPTX export."
+      "upgradePlan": "Watch for an image-size release >2.0.2 or a pptxgenjs release that drops the dependency, then delete this entry — the gate will fail if it is stale. If risk-report-render ever gains an addImage() call, this exemption is void and must be re-argued: re-check before adding images to the PPTX export.",
+      "doNotOverride": "Do NOT add an `overrides` entry forcing image-size 2.x. It is futile AND breaking. Futile because 2.0.2 is itself in the advisory range (see `reason`). Breaking because v2 changed the module's public shape — measured 2026-09-02 on a clean install of image-size@2.0.2: `typeof require('image-size')` is `object`, not `function`, with keys [default, disableTypes, imageSize, types]. v1 exported a callable directly, so any consumer doing `require('image-size')(buf)` gets a TypeError. package.json also moves `main` from dist/index.js to ./dist/index.cjs and gains an `exports` map. Worst of all, the failure would surface only on the first PPTX export that embeds an image — a path nothing exercises today — so the break would ship silently and stay hidden."
     },
     {
       "advisory": "GHSA-5p2g-fcmc-qvqq",
