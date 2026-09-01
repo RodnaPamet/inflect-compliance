@@ -381,3 +381,51 @@ describe('generateSpMetadata', () => {
         expect(generateSpMetadata(saml)).toContain('AuthnRequestsSigned="false"');
     });
 });
+
+describe('validateSamlResponse — degenerate name attributes', () => {
+    it('returns name=null when a name attribute is PRESENT but carries no values', async () => {
+        // A multi-valued SAML attribute with zero values arrives as an
+        // empty array, which is TRUTHY in JS — so the `profile.givenName ||
+        // profile.familyName` guard admits it. Without the `|| null` at the
+        // end of the join, the user record would get a blank display name
+        // instead of an absent one.
+        const saml = stubSamlReturning(profileWith({ givenName: [] }));
+        expect((await validateSamlResponse(saml, 'x')).name).toBeNull();
+    });
+});
+
+// ─── generateSpMetadata — decryption-cert argument ───────────────────
+//
+// `generateSpMetadata` is a two-line passthrough onto node-saml, and the
+// only decision it makes is the `signingCert ?? ''` fallback. Asserting
+// on the produced XML would test node-saml (which publishes a
+// KeyDescriptor only when a private key is configured, and
+// `buildSamlInstance` configures none); asserting on the forwarded
+// arguments tests OUR branch.
+
+describe('generateSpMetadata — certificate forwarding', () => {
+    function stubMetadataSaml(): { saml: SAML; calls: unknown[][] } {
+        const calls: unknown[][] = [];
+        const generateServiceProviderMetadata = (
+            decryptionCert: string | null,
+            signingCert?: string | null,
+        ): string => {
+            calls.push([decryptionCert, signingCert]);
+            return '<EntityDescriptor/>';
+        };
+        return { saml: { generateServiceProviderMetadata } as unknown as SAML, calls };
+    }
+
+    it('passes an EMPTY decryption cert when the tenant configured no signing key', () => {
+        const { saml, calls } = stubMetadataSaml();
+        expect(generateSpMetadata(saml)).toBe('<EntityDescriptor/>');
+        // Empty string, never `undefined` — node-saml distinguishes them.
+        expect(calls).toStrictEqual([['', undefined]]);
+    });
+
+    it('forwards a configured signing cert as BOTH decryption and signing cert', () => {
+        const { saml, calls } = stubMetadataSaml();
+        generateSpMetadata(saml, FAKE_IDP_CERT);
+        expect(calls).toStrictEqual([[FAKE_IDP_CERT, FAKE_IDP_CERT]]);
+    });
+});

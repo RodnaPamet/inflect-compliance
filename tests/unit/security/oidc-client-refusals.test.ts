@@ -21,6 +21,7 @@ import {
     exchangeCodeForTokens,
     extractIdTokenClaims,
     _clearDiscoveryCache,
+    validateIdTokenNonce,
     type OidcDiscoveryDocument,
 } from '@/lib/security/oidc-client';
 import type { OidcConfig } from '@/app-layer/schemas/sso-config.schemas';
@@ -373,5 +374,39 @@ describe('extractIdTokenClaims — malformed payloads', () => {
         // An IdP-supplied `is_admin` must never reach the caller as a
         // claim it might trust.
         expect(claims).toStrictEqual({ sub: 'u1' });
+    });
+});
+
+// ─── validateIdTokenNonce — malformed payloads ───────────────────────
+
+describe('validateIdTokenNonce — malformed payloads', () => {
+    function tokenWith(payloadSegment: string): string {
+        const header = Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url');
+        return `${header}.${payloadSegment}.${Buffer.from('sig').toString('base64url')}`;
+    }
+
+    it('REFUSES (false) a token whose payload is not JSON, rather than throwing', () => {
+        // The callback route calls this before anything else; a throw here
+        // would surface as a 500 instead of a clean auth refusal.
+        const token = tokenWith(Buffer.from('}{not json').toString('base64url'));
+        expect(validateIdTokenNonce(token, 'expected')).toBe(false);
+    });
+
+    it('REFUSES a token that carries no nonce claim at all', () => {
+        // Replay protection is the whole point — an absent nonce is not a
+        // match, and must not compare equal to an absent expectation.
+        const token = tokenWith(
+            Buffer.from(JSON.stringify({ sub: 'u1' })).toString('base64url'),
+        );
+        expect(validateIdTokenNonce(token, 'expected')).toBe(false);
+    });
+
+    it('accepts only an exact nonce match', () => {
+        const token = tokenWith(
+            Buffer.from(JSON.stringify({ sub: 'u1', nonce: 'abc' })).toString('base64url'),
+        );
+        expect(validateIdTokenNonce(token, 'abc')).toBe(true);
+        expect(validateIdTokenNonce(token, 'abc ')).toBe(false);
+        expect(validateIdTokenNonce(token, 'ABC')).toBe(false);
     });
 });
