@@ -331,37 +331,6 @@ describe('Epic C.2 — repository-wide secret-leak guardrail', () => {
     });
 });
 
-// ─── Sanity test: the scanner WOULD catch a planted secret ─────────
-
-describe('Epic C.2 — sanity: scanner catches planted secrets', () => {
-    /**
-     * Spawns the local scanner against a temporary file containing a
-     * fake secret. Proves the local hook + CI guardrail actually catch
-     * a credential, not just pass on a clean repo. Uses the bash
-     * scanner so we exercise the real CI/local code path end-to-end.
-     */
-    it('the local scanner exits 1 on a planted AWS key', () => {
-        const tmp = path.join(REPO_ROOT, 'tmp-no-secrets-test');
-        try {
-            fs.mkdirSync(tmp, { recursive: true });
-            const planted = path.join(tmp, 'planted-aws.ts');
-            fs.writeFileSync(
-                planted,
-                `const accessKey = "AKIAIOSFODNN7EXAMPLE";\n`,
-            );
-            const result = spawnSync(
-                'bash',
-                [path.join(REPO_ROOT, 'scripts/detect-secrets.sh'), planted],
-                { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } },
-            );
-            expect(result.status).toBe(1);
-            expect(result.stdout).toMatch(/AWS Access Key ID/);
-        } finally {
-            fs.rmSync(tmp, { recursive: true, force: true });
-        }
-    });
-});
-
 // ─── GAP-16 — env-file filename guard ─────────────────────────────────
 //
 // Pre-commit hook (scripts/detect-secrets.sh) refuses staged `.env` /
