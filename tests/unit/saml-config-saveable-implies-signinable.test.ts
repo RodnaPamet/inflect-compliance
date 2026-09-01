@@ -13,9 +13,10 @@
  * property rather than a shape: for EVERY candidate config, "the save
  * boundary accepts it" must imply "the sign-in boundary can use it".
  *
- * `UpsertSsoConfigInput.parse(body)` is the literal call the save routes
- * make (`src/app/api/sso/route.ts`, `src/app/api/t/[tenantSlug]/sso/route.ts`),
- * so parsing it here exercises the real save-time gate.
+ * `UpsertSsoConfigInput.parse(body)` is the literal call the save route
+ * makes (`src/app/api/t/[tenantSlug]/sso/route.ts`), so parsing it here
+ * exercises the real save-time gate. The flat `/api/sso` twin that used to
+ * make the same call was deleted in #2196.
  */
 import {
     SamlConfigSchema,
