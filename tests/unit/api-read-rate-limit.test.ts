@@ -61,20 +61,56 @@ describe('isApiReadRateLimited (match logic)', () => {
         expect(isApiReadRateLimited('GET', '/')).toBe(false);
     });
 
-    it('excludes /api/health (and the modern livez/readyz aliases)', () => {
+    /**
+     * NAME THE MECHANISM THAT ACTUALLY ANSWERS.
+     *
+     * The probe paths come out `false`, and monitoring is protected — but
+     * NOT by `EXCLUDED_PATHS`. `isApiReadRateLimited` returns at the
+     * `/api/t/` prefix gate first, and no string can both start with
+     * `/api/t/` and equal-or-prefix `/api/health`, so the exclusion loop
+     * below it is unreachable: it cannot return `false` for any input that
+     * reaches it. These assertions are therefore true and worth keeping —
+     * an operator cares that the probe is not throttled, not which line
+     * says so — but they measure the prefix gate. Titling them "excludes
+     * via EXCLUDED_PATHS" would name a failure class they cannot see: strip
+     * the array entirely and every one of them still passes.
+     *
+     * The pair at the end pins that reading, so a future PR that widens the
+     * matcher to `/api/` (making the exclusion list live) fails HERE rather
+     * than silently changing which mechanism is under test.
+     */
+    it('does not throttle the health probes — via the /api/t/ prefix gate', () => {
         expect(isApiReadRateLimited('GET', '/api/health')).toBe(false);
         expect(isApiReadRateLimited('GET', '/api/livez')).toBe(false);
         expect(isApiReadRateLimited('GET', '/api/readyz')).toBe(false);
-        // Defensive: no false-positive on /api/healthcheck (similar prefix).
-        // healthcheck doesn't start with /api/t/, so it's already excluded
-        // by the primary gate, but if a future PR widens the matcher this
-        // assertion catches an accidental over-exclusion of /api/health*.
+        // No false-positive on the similar-prefix neighbour either.
         expect(isApiReadRateLimited('GET', '/api/healthcheck')).toBe(false);
     });
 
-    it('excludes /api/docs', () => {
+    it('does not throttle /api/docs — same gate', () => {
         expect(isApiReadRateLimited('GET', '/api/docs')).toBe(false);
         expect(isApiReadRateLimited('GET', '/api/docs/openapi.json')).toBe(false);
+    });
+
+    it('EXCLUDED_PATHS is currently unreachable, and this test says so out loud', () => {
+        // Every excluded path is disjoint from the prefix the matcher
+        // requires, so the loop guarding them can never be the reason for a
+        // `false`. Asserted as a property of the two path sets rather than
+        // as a claim about the module's internals, so it stays true through
+        // a rename and goes RED the moment the two sets overlap — which is
+        // exactly when the exclusion list starts mattering and the tests
+        // above stop measuring the gate.
+        const REQUIRED_PREFIX = '/api/t/';
+        const EXCLUDED = ['/api/health', '/api/livez', '/api/readyz', '/api/docs'];
+        for (const p of EXCLUDED) {
+            const couldOverlap =
+                p.startsWith(REQUIRED_PREFIX) || REQUIRED_PREFIX.startsWith(p);
+            expect({ path: p, couldOverlap }).toEqual({ path: p, couldOverlap: false });
+        }
+        // …and the gate itself is what rejects them. Positive control: a
+        // path that DOES clear the prefix gate is throttled, so the `false`
+        // results above are a decision, not a dead matcher.
+        expect(isApiReadRateLimited('GET', '/api/t/acme/controls')).toBe(true);
     });
 });
 

@@ -34,9 +34,43 @@ import * as path from 'path';
 
 import type { NextRequest } from 'next/server';
 
+import {
+    braceBlockAfter,
+    codeOf,
+    declarationOf,
+    functionBodyOf,
+} from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
+/**
+ * Every source read here is CODE — comments blanked, string literals kept.
+ *
+ * Not a per-assertion decision. Nearly every claim below is a positive
+ * `toMatch` for an identifier or a path literal, and a positive match over
+ * raw text is satisfied by ANY occurrence, a comment included. The three
+ * files this reads are heavily commented and their comments name exactly the
+ * things asserted: `apiReadRateLimit.ts` has a docblock listing
+ * "health probes, /api/docs", and `src/middleware.ts` has one saying the
+ * block "Sits AFTER the tenant-access gate … excluded by
+ * `isApiReadRateLimited`". Delete `'/api/docs'` from EXCLUDED_PATHS and
+ * leave a note behind — the obvious shape of that diff — and a raw-text
+ * grep stays green while monitoring is throttled. String literals are kept
+ * because the exclusion-list assertions ARE about literals. See #2238.
+ */
 function readRepoFile(rel: string): string {
+    return codeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8'));
+}
+
+/**
+ * The one deliberate exception. `docs/rate-limiting.md` is prose by
+ * construction — the assertion there is that an operator can find the three
+ * tiers described, so prose is the thing being checked, not a stand-in for
+ * it. Reading it through `codeOf` would also be wrong mechanically: the
+ * masker lexes TypeScript, and a markdown file's stray backticks and `//`
+ * in URLs are not literals or comments.
+ */
+function readDoc(rel: string): string {
     return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
 }
 
@@ -50,14 +84,18 @@ describe('GAP-17 ratchet — preset', () => {
         expect(src).toMatch(/export const API_READ_LIMIT/);
         // Window must be 60_000ms — anything longer (e.g. an hour
         // window with the same maxAttempts) silently weakens the gate.
-        const block = src.match(
-            /export const API_READ_LIMIT[\s\S]+?\};/,
-        );
-        if (!block) {
-            throw new Error('Cannot locate API_READ_LIMIT export block.');
-        }
-        expect(block[0]).toMatch(/maxAttempts:\s*\d+/);
-        expect(block[0]).toMatch(/windowMs:\s*60\s*\*\s*1000|windowMs:\s*60000/);
+        //
+        // Bounded to the declaration's own top-level `;`. This was
+        // `src.match(/export const API_READ_LIMIT[\s\S]+?\};/)` — a lazy
+        // span to the first `};` ANYWHERE after the anchor, which is the
+        // right answer only while the declaration happens to be the nearest
+        // object literal. Wrap the preset in anything (a `satisfies`, a
+        // helper call, a surrounding map of presets) and the span ends
+        // early or late, silently, on a text that the assertions below can
+        // still find their numbers in — from a NEIGHBOURING preset.
+        const block = declarationOf(src, 'API_READ_LIMIT');
+        expect(block).toMatch(/maxAttempts:\s*\d+/);
+        expect(block).toMatch(/windowMs:\s*60\s*\*\s*1000|windowMs:\s*60000/);
     });
 
     it('the security/rate-limit-middleware barrel re-exports API_READ_LIMIT', () => {
@@ -93,8 +131,14 @@ describe('GAP-17 ratchet — edge-runtime enforcement module', () => {
         // break the single-source-of-truth contract — a future
         // tweak to the preset would silently miss the enforcement
         // path. The import keeps the numbers in lock-step.
+        // `[^}]*` rather than `[\s\S]*` on both sides: the greedy version
+        // could span from one import's `{` to a LATER import's `}`, so
+        // `import { X } from 'a'` … `import { API_READ_LIMIT } from 'b'` …
+        // `import { Y } from '@/lib/security/rate-limit'` satisfied it with
+        // the constant coming from the wrong module. A brace-free run
+        // cannot leave the import statement it started in.
         expect(src).toMatch(
-            /import\s*\{[\s\S]*API_READ_LIMIT[\s\S]*\}\s*from\s*['"]@\/lib\/security\/rate-limit['"]/,
+            /import\s*\{[^}]*\bAPI_READ_LIMIT\b[^}]*\}\s*from\s*['"]@\/lib\/security\/rate-limit['"]/,
         );
     });
 
@@ -105,10 +149,33 @@ describe('GAP-17 ratchet — edge-runtime enforcement module', () => {
         // a denial-of-monitoring vector (an attacker hammering the
         // API could starve out health probes, breaking deploys + ops
         // visibility).
-        expect(src).toMatch(/['"]\/api\/health['"]/);
-        expect(src).toMatch(/['"]\/api\/livez['"]/);
-        expect(src).toMatch(/['"]\/api\/readyz['"]/);
-        expect(src).toMatch(/['"]\/api\/docs['"]/);
+        //
+        // Bounded to the array that the matcher actually iterates, not
+        // grepped over the module. A whole-file match is satisfied by the
+        // path appearing in a log message, a comment, or a second list that
+        // nothing reads — and the module's own docblock names these paths.
+        const excluded = declarationOf(src, 'EXCLUDED_PATHS');
+        expect(excluded).toMatch(/['"]\/api\/health['"]/);
+        expect(excluded).toMatch(/['"]\/api\/livez['"]/);
+        expect(excluded).toMatch(/['"]\/api\/readyz['"]/);
+        expect(excluded).toMatch(/['"]\/api\/docs['"]/);
+        // …and the matcher reads THAT array. Without this the block above
+        // certifies a list, not an exclusion.
+        //
+        // Read this claim narrowly. `EXCLUDED_PATHS` is currently
+        // UNREACHABLE: `isApiReadRateLimited` returns at the `/api/t/`
+        // prefix gate first, and no string can both start with `/api/t/`
+        // and equal-or-prefix `/api/health`, so the loop below it can never
+        // be the reason for a `false`. The probes ARE protected — by the
+        // gate, asserted in the next test — and the list is the declared
+        // intent plus the thing that starts mattering the moment somebody
+        // widens the matcher to `/api/`. So this asserts the list exists
+        // and is wired, and deliberately does not claim it is what excludes
+        // anything today. See tests/unit/api-read-rate-limit.test.ts, which
+        // pins the disjointness as a property of the two path sets.
+        expect(functionBodyOf(src, 'isApiReadRateLimited')).toMatch(
+            /\bEXCLUDED_PATHS\b/,
+        );
     });
 
     it('the matcher is GET-only and requires the /api/t/ prefix (not overbroad)', () => {
@@ -118,14 +185,15 @@ describe('GAP-17 ratchet — edge-runtime enforcement module', () => {
         // API_MUTATION_LIMIT). A refactor that widens the prefix
         // (e.g. `/api/`) would throttle admin / org / auth routes
         // unintentionally — those have their own policies.
-        const block = src.match(
-            /export function isApiReadRateLimited[\s\S]+?\n\}/,
-        );
-        if (!block) {
-            throw new Error('Cannot locate isApiReadRateLimited body.');
-        }
-        expect(block[0]).toMatch(/method\s*!==\s*['"]GET['"]/);
-        expect(block[0]).toMatch(/['"]\/api\/t\/['"]/);
+        // Bounded to the function's own braces. This was
+        // `src.match(/export function isApiReadRateLimited[\s\S]+?\n\}/)`
+        // — a lazy span ending at the first `}` that happens to sit in
+        // column zero, which is a property of the FORMATTER, not of the
+        // function. Reformat, or nest the guard clauses one level deeper,
+        // and the span ends somewhere else entirely.
+        const block = functionBodyOf(src, 'isApiReadRateLimited');
+        expect(block).toMatch(/method\s*!==\s*['"]GET['"]/);
+        expect(block).toMatch(/['"]\/api\/t\/['"]/);
     });
 });
 
@@ -151,11 +219,21 @@ describe('GAP-17 ratchet — middleware wire-up', () => {
         // every request — including mutations and non-tenant routes.
         // The cheap predicate is the gate.
         expect(src).toMatch(/isApiReadRateLimited\s*\(/);
-        // The check call must be inside the predicate's `if (...)`
-        // body — not invoked in parallel.
-        expect(src).toMatch(
-            /if\s*\(\s*isApiReadRateLimited[\s\S]+?checkApiReadRateLimit/,
+        // The check call must be inside the predicate's `if (...)` BODY —
+        // not merely somewhere after it. This was
+        // `/if\s*\(\s*isApiReadRateLimited[\s\S]+?checkApiReadRateLimit/`,
+        // a lazy span that asserted only that the two identifiers appear in
+        // that order in the file. Move the limiter call OUT of the `if` and
+        // leave the (now empty) `if` behind — the shape of a refactor that
+        // makes every request pay the limiter, including mutations and
+        // non-tenant routes — and the span re-forms across the gap. Bound
+        // to the block's own braces so it binds.
+        const gap17Block = braceBlockAfter(
+            src,
+            'if\\s*\\(\\s*isApiReadRateLimited\\s*\\(',
         );
+        expect(gap17Block).toMatch(/checkApiReadRateLimit\s*\(/);
+        expect(gap17Block).toMatch(/extractTenantSlug\s*\(/);
     });
 
     it('the GAP-17 block sits AFTER the tenant-access gate (cheaper short-circuits run first)', () => {
@@ -309,7 +387,7 @@ describe('GAP-17 — the read limiter FAILS OPEN on an Upstash outage', () => {
 
 describe('GAP-17 ratchet — operator-facing docs', () => {
     it('docs/rate-limiting.md exists and documents all three tiers', () => {
-        const src = readRepoFile('docs/rate-limiting.md');
+        const src = readDoc('docs/rate-limiting.md');
         // Regression: deleting the operator doc, or letting it drift
         // out of sync with the actual presets, leaves new contributors
         // and new SREs without a map of which routes are throttled

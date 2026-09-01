@@ -30,7 +30,20 @@ import {
 } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
-const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
+
+/**
+ * EVERY read in this file is code-only. Not a per-assertion decision — a
+ * file-level one, because the assertions here are almost all whole-file
+ * `toMatch`es for a named identifier, and a positive `toMatch` over raw text
+ * is satisfied by ANY occurrence including one in a comment. That is not
+ * theoretical for these three hooks: each carries a long docblock per
+ * interface and per option, so `/pollMs\?:\s*number/`, `/liveStatus &&/`,
+ * `/function entityStatusTone/` and the rest are each one plausible "keep the
+ * note, drop the code" refactor away from passing against prose. `codeOf`
+ * blanks comments and keeps string literals, which is what the JSX
+ * `data-testid="…"` and status-label assertions below need. See #2238.
+ */
+const read = (p: string) => codeOf(readFileSync(path.join(ROOT, p), "utf-8"));
 
 describe("PR-D polish — live entity status sync", () => {
     const hookFiles = [
@@ -53,10 +66,11 @@ describe("PR-D polish — live entity status sync", () => {
             // right only because no second occurrence existed. Delete the
             // field from the option type and give one to any later type and
             // it stays green with the invariant gone: the same defect class
-            // as the interval assertion below. codeOf() reads the body as
-            // CODE, so a docblock promising the field cannot satisfy it
-            // either. See #2238.
-            const body = codeOf(interfaceBodyOf(src, "Tenant\\w+Option"));
+            // as the interval assertion below. The extractor returns CODE
+            // (comments blanked), so the docblock this option type actually
+            // carries — which does mention the status field in prose —
+            // cannot satisfy it either. See #2238.
+            const body = interfaceBodyOf(src, "Tenant\\w+Option");
             expect(body).toMatch(/status:\s*string \| null/);
         });
 
@@ -97,6 +111,15 @@ describe("PR-D polish — live entity status sync", () => {
             // — flipping the interval ALONE also turned the old suite red,
             // but only by tripping a different regex, which attributes the
             // failure to the wrong thing. See #2238.
+            //
+            // The block is CODE, not raw text — `read()` above strips
+            // comments before anything here sees the file. That half is a
+            // second, separate defect the bounding alone did not close: with
+            // the read bounded but still raw, a stale
+            //   // Poll revalidation — equivalent to runFetch(true)
+            // left inside the callback beside `void runFetch(false)`
+            // satisfied the positive assertion, 20/20 green with the
+            // behaviour inverted.
             const interval = callExpressionOf(src, "setInterval");
             expect(interval).toMatch(/runFetch\(true\)/);
             expect(interval).not.toMatch(/runFetch\(false\)/);
@@ -104,7 +127,9 @@ describe("PR-D polish — live entity status sync", () => {
             // The cold load is the other side of the same flag: it passes
             // `false` so the FIRST failure does surface to the consumer.
             // Asserted on the source with the interval REMOVED, so this
-            // half cannot be satisfied by the interval's own call.
+            // half cannot be satisfied by the interval's own call. `src` is
+            // already the code-only view and `interval` was sliced out of
+            // it, so the subtraction lines up.
             const outsideTheInterval = src.replace(interval, "");
             expect(outsideTheInterval).toMatch(/void runFetch\(false\);/);
         });
