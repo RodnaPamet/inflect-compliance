@@ -52,13 +52,17 @@ SKIP_PATHS=(
     'test-results/' '.git/' '.husky/_/'
     'package-lock.json' 'yarn.lock' 'pnpm-lock.yaml'
     'prisma/migrations/' 'public/'
-    # The scanner itself, the pattern source it reads, and the tests
-    # that exercise both — all contain secret-shaped strings on
-    # purpose, so exempt them from self-scan.
+    # The scanner itself, the pattern source it reads, and the unit test
+    # that exercises both — all contain secret-shaped strings on
+    # purpose, so exempt them from self-scan. Each entry here must
+    # EARN its place: if a listed file stops containing secret-shaped
+    # content, delete the entry rather than leaving a standing hole in
+    # the gate. `tests/guardrails/no-secrets.test.ts` was removed on
+    # exactly those grounds — its only planted string is gone, so it is
+    # now scanned like any other file.
     'scripts/detect-secrets.sh'
     '.secret-patterns'
     'tests/unit/security/detect-secrets.test.ts'
-    'tests/guardrails/no-secrets.test.ts'
     # `tests/fixtures/secrets/` is the canonical home for intentional
     # secret-shaped strings used by tests. Anything dropped here is
     # by definition not a real credential.

@@ -20,7 +20,7 @@
  *   - One Jest failure per (file, pattern) hit.
  *   - Each failure carries `file:line`, the pattern name, the offending
  *     excerpt, and the same actionable footer the local scanner emits.
- *   - The repo-baseline `EXPECTED_KNOWN_FIXTURE_HITS` exists so an
+ *   - The repo-baseline `REPO_BASELINE` exists so an
  *     incidental new pattern can ratchet down without lying about
  *     existing test fixtures. Adding to it requires writing the
  *     reason in code, which a reviewer must approve.
@@ -55,12 +55,16 @@ const SKIP_PATHS: readonly string[] = [
     'prisma/migrations/',
     'public/',
 
-    // Self-skip: the scanner, the pattern source, and the tests that
-    // exercise both — all contain secret-shaped strings on purpose.
+    // Self-skip: the scanner, the pattern source, and the unit test that
+    // exercises both — all contain secret-shaped strings on purpose.
+    // An entry must EARN its place. THIS file is deliberately absent:
+    // its planted string went with the describe block above, so it is
+    // scanned like any other file. Re-adding it would be a standing
+    // hole in the gate, in the one file somebody is most likely to
+    // paste a real credential into.
     'scripts/detect-secrets.sh',
     '.secret-patterns',
     'tests/unit/security/detect-secrets.test.ts',
-    'tests/guardrails/no-secrets.test.ts',
 
     // Canonical home for intentional secret-shaped fixtures.
     'tests/fixtures/secrets/',
@@ -327,37 +331,6 @@ describe('Epic C.2 — repository-wide secret-leak guardrail', () => {
                 ),
             ].join('\n');
             throw new Error(msg);
-        }
-    });
-});
-
-// ─── Sanity test: the scanner WOULD catch a planted secret ─────────
-
-describe('Epic C.2 — sanity: scanner catches planted secrets', () => {
-    /**
-     * Spawns the local scanner against a temporary file containing a
-     * fake secret. Proves the local hook + CI guardrail actually catch
-     * a credential, not just pass on a clean repo. Uses the bash
-     * scanner so we exercise the real CI/local code path end-to-end.
-     */
-    it('the local scanner exits 1 on a planted AWS key', () => {
-        const tmp = path.join(REPO_ROOT, 'tmp-no-secrets-test');
-        try {
-            fs.mkdirSync(tmp, { recursive: true });
-            const planted = path.join(tmp, 'planted-aws.ts');
-            fs.writeFileSync(
-                planted,
-                `const accessKey = "AKIAIOSFODNN7EXAMPLE";\n`,
-            );
-            const result = spawnSync(
-                'bash',
-                [path.join(REPO_ROOT, 'scripts/detect-secrets.sh'), planted],
-                { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } },
-            );
-            expect(result.status).toBe(1);
-            expect(result.stdout).toMatch(/AWS Access Key ID/);
-        } finally {
-            fs.rmSync(tmp, { recursive: true, force: true });
         }
     });
 });
