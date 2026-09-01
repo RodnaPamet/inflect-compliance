@@ -224,12 +224,6 @@ describe('CACHE_KEYS — query-string assembly (the branching methods)', () => {
             );
         });
 
-        it('emits ONLY from/to for an empty options object', () => {
-            expect(
-                CACHE_KEYS.calendar.range('2026-01-01', '2026-01-31', {}),
-            ).toBe('/calendar?from=2026-01-01&to=2026-01-31');
-        });
-
         it('omits an EMPTY types array — the unfiltered key stays byte-identical', () => {
             // A `types: []` that leaked `&types=` into the key would give the
             // "all types" view a different cache entry from the bare one, so

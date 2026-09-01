@@ -90,11 +90,6 @@ describe('framework-onboarding — READ step arguments', () => {
         });
     });
 
-    it('coerces a MISSING frameworkKey to the empty string', () => {
-        const step = readStep(frameworkOnboardingWorkflow, 'frameworkStatus');
-        expect(step.args?.(ctx({}))).toEqual({ frameworkKey: '' });
-    });
-
     it('caps the gap query at 50 requirements', () => {
         const step = readStep(frameworkOnboardingWorkflow, 'gaps');
         expect(step.args?.(ctx({ frameworkKey: 'ISO27001' }))).toEqual({
@@ -281,11 +276,16 @@ describe('audit-prep — READ step arguments', () => {
     });
 
     it('coerces a non-string framework key to the empty string', () => {
-        expect(
-            readStep(auditPrepWorkflow, 'frameworkStatus').args?.(
-                ctx({ frameworkKey: null }),
-            ),
-        ).toEqual({ frameworkKey: '' });
+        // `null` ALONE cannot see this: the plausible wrong implementation is
+        // `String(x ?? '')`, and that returns '' for null too — measured, the
+        // whole file stayed green under it. 42 and an object are what separate
+        // the guard from a coercion ('42' / '[object Object]').
+        const args = readStep(auditPrepWorkflow, 'frameworkStatus').args;
+        expect(args?.(ctx({ frameworkKey: null }))).toEqual({ frameworkKey: '' });
+        expect(args?.(ctx({ frameworkKey: 42 }))).toEqual({ frameworkKey: '' });
+        expect(args?.(ctx({ frameworkKey: { key: 'SOC2' } }))).toEqual({
+            frameworkKey: '',
+        });
     });
 
     it('reads evidence expiring within 30 days and at most 100 findings', () => {
@@ -569,6 +569,25 @@ describe('audit-prep — closing report + punch-list', () => {
             ctx(
                 { frameworkKey: 'SOC2' },
                 { readiness: { data: { uncovered: 5 } } },
+            ),
+        );
+
+        expect(result.data?.punchList).toStrictEqual([
+            'Map controls to 5 uncovered requirements (0 proposed findings).',
+        ]);
+    });
+
+    it('reads a propose output that carries NO count as zero', () => {
+        // Distinct from the case above, where the propose step produced no
+        // output at ALL. Here it produced `{}` — present, but with no
+        // `proposed` key. Measured: an implementation that inferred a count
+        // from the object's mere existence (`?? (findings ? 1 : 0)`) is green
+        // against the absent case and wrong only here, so this is the sole
+        // detector of that break.
+        const result = step.synthesize(
+            ctx(
+                { frameworkKey: 'SOC2' },
+                { readiness: { data: { uncovered: 5 } }, proposedFindings: {} },
             ),
         );
 

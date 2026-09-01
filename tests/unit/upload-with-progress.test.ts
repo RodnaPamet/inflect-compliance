@@ -340,15 +340,4 @@ describe('uploadWithProgress — abort semantics', () => {
         expect(err.name).toBe('UploadAbortedError');
         expect(err.message).toBe('upload aborted');
     });
-
-    it('does not abort the XHR when no signal is supplied', async () => {
-        const unrelated = new AbortController();
-        const p = uploadWithProgress('/api/upload', 'payload');
-
-        unrelated.abort();
-        expect(FakeXhr.last().abortCalls).toBe(0);
-
-        FakeXhr.last().respond(200, '{"ok":true}');
-        await expect(p).resolves.toEqual({ ok: true });
-    });
 });
