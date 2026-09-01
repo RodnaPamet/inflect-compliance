@@ -20,6 +20,23 @@
  *     30-day retention referenced in the doc.
  *   - .github/workflows/restore-test.yml schedules monthly via cron,
  *     uses OIDC, gated by the production GitHub Environment.
+ *   - .github/workflows/restore-test.yml carries a notifier job that
+ *     turns a failed drill into something a human is subscribed to.
+ *     That last group exists because the drill failed on every
+ *     scheduled attempt from 2026-05-01 onward and nobody noticed: a
+ *     red scheduled run is not a notification. It locks the four
+ *     properties that make the notifier actually fire and actually
+ *     reach someone — (1) it depends on EVERY job a schedule can
+ *     start, so it cannot be skipped into silence; (2) its condition
+ *     is `failure() || cancelled()`, because a cancelled job's result
+ *     is 'cancelled' and `failure()` alone would miss a
+ *     timeout-cancelled restore; (3) it declares job-level
+ *     `issues: write`, which REPLACES rather than merges with the
+ *     workflow-level permissions block; (4) it creates an issue or
+ *     COMMENTS on the open one, never a bare `issues.update` — editing
+ *     an issue body sends no notification of any kind — and its dedupe
+ *     lookup passes `per_page: 100` on a narrow label rather than
+ *     relying on the 30-item default page.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -289,5 +306,141 @@ describe('OI-3 — restore-test.yml workflow scheduling', () => {
         expect(src).toMatch(/GITHUB_STEP_SUMMARY/);
         expect(src).toMatch(/restore-test/);
         expect(src).toMatch(/orphaned/);
+    });
+});
+
+
+describe('OI-3 — a failed restore drill NOTIFIES someone', () => {
+    const WORKFLOW = '.github/workflows/restore-test.yml';
+
+    interface Job {
+        needs?: string[];
+        if?: string;
+        permissions?: Record<string, string>;
+        steps?: { uses?: string; if?: string; with?: { script?: string } }[];
+    }
+
+    const jobs = (): Record<string, Job> =>
+        (yaml.load(read(WORKFLOW)) as { jobs: Record<string, Job> }).jobs;
+
+    const notifier = (): Job => {
+        const j = jobs()['notify-on-failure'];
+        // Asserted rather than optional-chained: if the job is deleted,
+        // every check below would otherwise pass vacuously on undefined.
+        expect(j).toBeDefined();
+        return j as Job;
+    };
+
+    const scriptStep = () => {
+        const step = (notifier().steps ?? []).find((s) => s.uses?.startsWith('actions/github-script'));
+        expect(step).toBeDefined();
+        return step!;
+    };
+
+    /**
+     * The script with whole-line `//` comments removed.
+     *
+     * Load-bearing, and the reason is the defect this whole group exists to
+     * catch. `with.script` is raw text, so a comment SAYING `per_page: 100`
+     * satisfies a regex looking for `per_page: 100` — the assertion passes
+     * while the call it describes has neither the argument nor the pagination.
+     * Stripping a line whose first non-space characters are `//` leaves
+     * `https://` and any `//` inside a string untouched, which is all the
+     * precision this needs.
+     */
+    const script = (): string =>
+        scriptStep()
+            .with!.script!.split('\n')
+            .filter((line) => !/^\s*\/\//.test(line))
+            .join('\n');
+
+    /** The argument object of the dedupe lookup, so an assertion cannot match prose elsewhere. */
+    const lookupArgs = (): string => {
+        const s = script();
+        const at = s.indexOf('listForRepo(');
+        expect(at).toBeGreaterThan(-1);
+        const close = s.indexOf('})', at);
+        expect(close).toBeGreaterThan(at);
+        return s.slice(at, close);
+    };
+
+    it('a notifier job exists and depends on EVERY job a schedule can start', () => {
+        // Derived, not hardcoded: a third restore job added later must be
+        // added to `needs` too, or it can fail into silence.
+        const startable = Object.keys(jobs()).filter((id) => id !== 'notify-on-failure');
+        expect(startable.length).toBeGreaterThan(0);
+        expect([...(notifier().needs ?? [])].sort()).toEqual([...startable].sort());
+    });
+
+    it('fires on cancellation as well as failure', () => {
+        // A cancelled job's result is 'cancelled', NOT 'failure', so
+        // `failure()` alone goes silent on a timeout-cancelled restore —
+        // the 90-minute timeout makes that a realistic outcome here.
+        const cond = notifier().if ?? '';
+        expect(cond).toMatch(/failure\(\)/);
+        expect(cond).toMatch(/cancelled\(\)/);
+        // It must NOT be narrowed to a trigger a schedule cannot satisfy.
+        // Gating the restore jobs to workflow_dispatch and hanging this off
+        // them means that on the monthly cron the needed jobs never run,
+        // failure() is false, and the notifier is unreachable on the only
+        // trigger that fires by itself.
+        expect(cond).not.toMatch(/workflow_dispatch/);
+    });
+
+    it('declares issues: write at JOB level (job permissions REPLACE the workflow block)', () => {
+        // The workflow-level block grants contents+id-token and NOT issues,
+        // and a job-level block overrides it wholesale rather than merging.
+        expect(notifier().permissions?.issues).toBe('write');
+    });
+
+    it('notifies every time — creates an issue, or COMMENTS on the open one', () => {
+        const s = script();
+        expect(s).toMatch(/issues\.create\(/);
+        expect(s).toMatch(/issues\.createComment\(/);
+        // `issues.update` on an existing issue produces NO notification —
+        // not email, not web, not mobile. A monthly job that only edits a
+        // body is silent from the second month onward while the run
+        // reports success.
+        expect(s).not.toMatch(/issues\.update\(/);
+    });
+
+    it('the dedupe lookup cannot silently miss (per_page + a narrow label)', () => {
+        // Asserted against the sliced `listForRepo({...})` ARGUMENTS, not the
+        // whole script: matching anywhere would let a `const LABEL = ...`
+        // declaration and a comment mentioning per_page satisfy this while the
+        // call itself is bare. Both were demonstrated to pass a whole-script
+        // version of this test with the arguments stripped out.
+        const args = lookupArgs();
+        // listForRepo defaults to 30 items of page one; the tracking issue
+        // scrolling off it makes the lookup find nothing and open a
+        // duplicate every month until people mute the notifications.
+        expect(args).toMatch(/per_page:\s*100/);
+
+        // A narrow label, not the generic 'automated' bucket other scheduled
+        // jobs also write into. The argument is an identifier, so resolve it
+        // to its literal rather than asserting the identifier's NAME — a check
+        // for `labels: LABEL` would pass after someone repointed LABEL at
+        // 'automated', which is the whole failure being guarded against.
+        const bound = args.match(/labels:\s*([A-Za-z_$][\w$]*|\[?\s*'[^']+'\s*\]?)/);
+        expect(bound).not.toBeNull();
+        let label = bound![1];
+        if (/^[A-Za-z_$]/.test(label)) {
+            const decl = script().match(new RegExp(`const\\s+${label}\\s*=\\s*'([^']+)'`));
+            expect(decl).not.toBeNull();
+            label = decl![1];
+        } else {
+            label = label.replace(/[[\]'\s]/g, '');
+        }
+        expect(label).toBe('restore-drill');
+    });
+
+    it('the notifier STEP is unconditional — a job-level `if` is not the only way to make it inert', () => {
+        // The job condition is asserted above, but a single `if:` on the
+        // github-script step makes the job run, do nothing, and report
+        // SUCCESS — indistinguishable from a healthy month. That is the same
+        // never-fires shape the job-level assertion exists to prevent, one
+        // level down, and the previous attempt at this change shipped exactly
+        // that shape at job level.
+        expect(scriptStep().if).toBeUndefined();
     });
 });

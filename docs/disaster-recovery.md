@@ -3,7 +3,19 @@
 This is the **minimum-viable** DR posture: a daily cross-region copy of
 the latest automated RDS snapshot, plus a human-driven runbook to
 restore from it. It is the bottom rung of the DR ladder — a real
-snapshot in a real second region that we restore at least quarterly.
+snapshot in a real second region, with an automated restore drill
+scheduled monthly, and quarterly for the cross-region copy.
+
+> **⚠ The automated restore drill is failing, and has validated
+> nothing.** Every scheduled run of
+> `.github/workflows/restore-test.yml` since 2026-05-01 has failed
+> within about five seconds, at the "Configure AWS credentials
+> (OIDC)" step, with `Input required and not supplied: aws-region`
+> — `vars.AWS_REGION` is unset, so the drill has never restored a
+> snapshot. Treat the restore half of this posture as untested. A
+> second mismatch compounds it: the drill targets AWS RDS, while
+> production runs a `postgres:16-alpine` container on a GCP VM.
+> Both are tracked in issue #2226.
 
 > **Honest scope.** This is NOT warm-standby, NOT a cross-region
 > read-replica, NOT active-active. It buys "if our primary region goes
@@ -167,9 +179,14 @@ These block raising the customer SLA above "RTO 4h"; decide explicitly:
   (low latency, both US data residency); `ap-east-1` for APAC customer
   coverage; a GDPR-aware EU region for EU tenants (data must not leave
   the EU). This is a data-residency decision, not just a latency one.
-- **Who can perform the restore?** The monthly restore-test uses a
-  CI-only OIDC role; the DR runbook needs a **human with break-glass
-  access** (time-boxed, audited). Define + provision that role.
+- **Who can perform the restore?** The monthly restore-test is
+  *configured* to assume a CI-only OIDC role, but it has never
+  *completed* that step — every run reaches it and fails inside it, on
+  the missing `aws-region` input (see the warning at the top of this
+  document) — so no restore has been performed by CI under any
+  identity. The DR runbook
+  separately needs a **human with break-glass access** (time-boxed,
+  audited). Define + provision that role.
 - **What is the contracted RTO with enterprise customers?** If the SLA
   is "4h RTO", this PR meets it. If it's "1h RTO", this is not
   sufficient — the next rung (cross-region read-replica) must land.

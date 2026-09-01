@@ -99,6 +99,11 @@
         "reason": "Quarterly cross-region DR restore; same constraint as the monthly restore and slower still.",
         "coveredBy": "Same as restore-test.yml:restore-test — accepted as a scheduled production drill."
     },
+    "restore-test.yml:notify-on-failure": {
+        "kind": "never",
+        "reason": "The failure notifier for the monthly/quarterly restore drill. It lives in a schedule-only workflow, so like the two restore jobs it depends on, no pull_request can reach it; it fires on failure() || cancelled() of those jobs and opens or comments on the restore-drill tracking issue.",
+        "coveredBy": "tests/guards/oi-3-backup-restore.test.ts runs on every PR and asserts this job exists, needs every schedule-startable job, keeps the failure()-OR-cancelled() condition, holds job-level issues: write, and notifies via issues.create/createComment rather than a silent issues.update."
+    },
     "terraform.yml:plan": {
         "kind": "conditional",
         "reason": "Runs only for non-fork pull requests (`github.event.pull_request.head.repo.fork == false`), so a fork PR touching infra gets no plan output.",
