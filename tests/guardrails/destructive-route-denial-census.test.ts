@@ -159,17 +159,6 @@ const UNGATED_DESTRUCTIVE_ROUTES: readonly UngatedRoute[] = [
             'most needs a refused attempt for.',
     },
     {
-        route: 'sso/route.ts',
-        disposition: 'todo',
-        reason:
-            'requirePermission cannot gate it: its handler type requires a ' +
-            'tenantSlug route param and resolves via getTenantCtx, and this path ' +
-            'has no slug — it uses getLegacyCtx, which resolves the tenant from ' +
-            'the session. Also an uncalled duplicate of the gated ' +
-            '/api/t/:slug/sso the UI reaches, so the fix is deprecation rather ' +
-            'than gating. #2196.',
-    },
-    {
         route: 't/[tenantSlug]/business-continuity/[id]/dependencies/[depId]/route.ts',
         disposition: 'todo',
         reason:
@@ -292,8 +281,15 @@ describe('destructive routes whose denials are invisible', () => {
         // must fall, and the exempt entries deliberately do not count toward it.
         // Gating a route, or reclassifying one to 'exempt' with an argument,
         // lowers this in the same diff.
+        //
+        // Tightened 4 -> 3 when `/api/sso` was deleted (#2196). Deliberate: an
+        // upper bound left above the list's own length is slack a later diff can
+        // spend without a reviewer seeing a number change, which is the thing a
+        // ratchet exists to prevent. It does NOT block #2197 — the three
+        // remaining entries are all its, and closing them REMOVES lines, which
+        // moves this bound down again rather than into it.
         const todo = UNGATED_DESTRUCTIVE_ROUTES.filter((e) => e.disposition === 'todo');
-        expect(todo.length).toBeLessThanOrEqual(4);
+        expect(todo.length).toBeLessThanOrEqual(3);
     });
 
     it('no declared entry is stale', () => {

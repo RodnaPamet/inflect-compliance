@@ -220,7 +220,7 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
         const ALLOWED_LEGACY_ROUTES = new Set([
             'assets', 'audit-log', 'audits', 'clauses', 'controls',
             'dashboard', 'evidence', 'files', 'findings', 'mapping',
-            'notifications', 'policies', 'reports', 'risks', 'sso', 'tasks',
+            'notifications', 'policies', 'reports', 'risks', 'tasks',
         ]);
 
         if (fs.existsSync(apiDir)) {
