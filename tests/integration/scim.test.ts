@@ -9,6 +9,7 @@
  * - Idempotency (repeated create returns same user)
  * - Audit events emitted for all mutations
  * - Tenant isolation
+ * - Groups-path role ceiling + protected-membership refusals (#2200)
  */
 import { createHash } from 'crypto';
 
@@ -32,6 +33,17 @@ const mockPrisma = {
         create: jest.fn(),
         update: jest.fn(),
     },
+    // ── Groups path (EI-3) ──
+    scimGroup: {
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        deleteMany: jest.fn(),
+    },
+    tenantEntraGroupMapping: { findMany: jest.fn(), updateMany: jest.fn() },
+    tenantIdentityProvider: { findFirst: jest.fn() },
+    userIdentityLink: { findMany: jest.fn() },
     $transaction: jest.fn(),
 };
 
@@ -44,6 +56,18 @@ jest.mock('@/lib/observability/logger', () => ({
 jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
 }));
+// `entra-group-sync` writes through the barrel, not the writer module.
+jest.mock('@/lib/audit', () => ({
+    appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
+}));
+// `ScimGroup` is FORCE-RLS'd, so the usecase runs every query inside a tenant
+// context. Hand it the same mock client the rest of the file uses.
+jest.mock('@/lib/db-context', () => ({
+    runInTenantContext: (
+        _ctx: unknown,
+        fn: (db: typeof mockPrisma) => unknown,
+    ) => fn(mockPrisma),
+}));
 
 // ─── Import after mock ──────────────────────────────────────────────
 
@@ -52,7 +76,9 @@ import {
     toScimUser, resolveScimRole,
     scimCreateUser, scimPatchUser, scimDeleteUser, scimListUsers, scimGetUser,
 } from '@/app-layer/usecases/scim-users';
+import { scimCreateGroup, scimGroupResource } from '@/app-layer/usecases/scim-groups';
 import { scimError, scimListResponse, scimServiceProviderConfig, SCIM_SCHEMAS } from '@/lib/scim/types';
+import { POST as GroupsPost } from '@/app/api/scim/v2/Groups/route';
 import { NextRequest } from 'next/server';
 
 const TENANT_A = 'tenant-a-id';
@@ -370,7 +396,9 @@ describe('SCIM User Lifecycle', () => {
 
     test('delete soft-deactivates + audit', async () => {
         mockPrisma.tenantMembership.findFirst.mockResolvedValue({
-            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE',
+            // `role` is load-bearing since #2200 — the protected-membership
+            // guard reads it, and an absent role fails CLOSED.
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'READER',
             user: { email: 'a@acme.com' },
         });
         mockPrisma.tenantMembership.update.mockResolvedValue({});
@@ -417,6 +445,217 @@ describe('SCIM Tenant Isolation', () => {
         await scimListUsers(ctx, BASE_URL);
         expect(mockPrisma.tenantMembership.findMany).toHaveBeenCalledWith(
             expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT_A }) })
+        );
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// GROUPS PATH — ROLE CEILING (#2200)
+// ═════════════════════════════════════════════════════════════════════
+//
+// The Users-path equivalents live above ("patch roles with 'admin' is
+// blocked"). Those were the only ones that existed, and that is precisely why
+// the Groups path could promote to ADMIN for as long as it did: the ceiling
+// used to live inside `scim-users.ts`, read by `resolveScimRole` alone, while
+// the Groups path resolved roles through `TenantEntraGroupMapping` — where
+// ADMIN *is* a legal mapping target for the sign-in path.
+//
+// These exercise the REAL `syncEntraMembershipRole` (only Prisma is mocked), so
+// they cover the seam between the two modules rather than the clamp's own API.
+
+// A ScimGroup's externalId is matched against `TenantEntraGroupMapping.aadGroupId`,
+// which the admin API constrains to a UUID — so an attacker's pushed value has
+// to be one too.
+const ADMIN_GROUP = '11111111-1111-4111-8111-111111111111';
+const EDITOR_GROUP = '22222222-2222-4222-8222-222222222222';
+
+function primeGroupsPath(opts: {
+    mappings: Array<{ aadGroupId: string; role: string; priority: number }>;
+    membership: { id: string; role: string } | null;
+    /** The externalIds of every ScimGroup the member ends up in. */
+    memberOfGroups: string[];
+}) {
+    mockPrisma.userIdentityLink.findMany.mockResolvedValue([{ userId: 'u1' }]);
+    mockPrisma.scimGroup.create.mockResolvedValue({
+        id: 'g1', externalId: ADMIN_GROUP, displayName: 'Pushed', memberIds: ['u1'],
+    });
+    mockPrisma.scimGroup.findMany.mockResolvedValue(
+        opts.memberOfGroups.map((externalId) => ({ externalId })),
+    );
+    mockPrisma.tenantEntraGroupMapping.findMany.mockResolvedValue(opts.mappings);
+    mockPrisma.tenantMembership.findFirst.mockResolvedValue(opts.membership);
+    mockPrisma.tenantIdentityProvider.findFirst.mockResolvedValue(null);
+    mockPrisma.tenantMembership.update.mockResolvedValue({});
+}
+
+const roleWrites = (): string[] =>
+    mockPrisma.tenantMembership.update.mock.calls
+        .map((c: unknown[]) => (c[0] as { data?: { role?: string } }).data?.role)
+        .filter((r: string | undefined): r is string => r !== undefined);
+
+describe('SCIM Groups path — role ceiling', () => {
+    beforeEach(() => jest.clearAllMocks());
+
+    test('pushing a group mapped to ADMIN does NOT promote the member', async () => {
+        primeGroupsPath({
+            mappings: [{ aadGroupId: ADMIN_GROUP, role: 'ADMIN', priority: 10 }],
+            membership: { id: 'm1', role: 'READER' },
+            memberOfGroups: [ADMIN_GROUP],
+        });
+
+        await scimCreateGroup(
+            { tenantId: TENANT_A },
+            { externalId: ADMIN_GROUP, displayName: 'Pushed', members: [{ value: 'aad-oid-1' }] },
+        );
+
+        expect(roleWrites()).not.toContain('ADMIN');
+    });
+
+    test('the ceiling CLAMPS — a lower matched mapping still wins, it is not a no-op', async () => {
+        // Same user is in both groups. ADMIN has the higher priority, so it
+        // would win outright. Dropping it must promote EDITOR to the winner —
+        // refusing the winner at the call site would instead write nothing and
+        // silently discard the legitimate EDITOR mapping.
+        primeGroupsPath({
+            mappings: [
+                { aadGroupId: ADMIN_GROUP, role: 'ADMIN', priority: 10 },
+                { aadGroupId: EDITOR_GROUP, role: 'EDITOR', priority: 1 },
+            ],
+            membership: { id: 'm1', role: 'READER' },
+            memberOfGroups: [ADMIN_GROUP, EDITOR_GROUP],
+        });
+
+        await scimCreateGroup(
+            { tenantId: TENANT_A },
+            { externalId: ADMIN_GROUP, displayName: 'Pushed', members: [{ value: 'aad-oid-1' }] },
+        );
+
+        expect(roleWrites()).toEqual(['EDITOR']);
+    });
+
+    test('an existing ADMIN membership is not demoted by a group push either', async () => {
+        primeGroupsPath({
+            mappings: [{ aadGroupId: ADMIN_GROUP, role: 'READER', priority: 10 }],
+            membership: { id: 'm1', role: 'ADMIN' },
+            memberOfGroups: [ADMIN_GROUP],
+        });
+
+        await scimCreateGroup(
+            { tenantId: TENANT_A },
+            { externalId: ADMIN_GROUP, displayName: 'Pushed', members: [{ value: 'aad-oid-1' }] },
+        );
+
+        expect(mockPrisma.tenantMembership.update).not.toHaveBeenCalled();
+    });
+});
+
+describe('SCIM Groups resource projection', () => {
+    test('members come from resolved memberIds, never from pushed membersJson', () => {
+        const resource = scimGroupResource({
+            id: 'g1',
+            externalId: ADMIN_GROUP,
+            displayName: 'Engineering',
+            memberIds: ['user-1', 'user-2'],
+        });
+
+        expect(resource.members).toEqual([
+            { value: 'user-1', type: 'User' },
+            { value: 'user-2', type: 'User' },
+        ]);
+    });
+});
+
+describe('SCIM Groups POST — externalId validation', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockPrisma.tenantScimToken.findUnique.mockResolvedValue({
+            id: 'tok1', tenantId: TENANT_A, label: 'Okta', tokenHash: TOKEN_HASH,
+            revokedAt: null, tenant: { id: TENANT_A, slug: 'acme' },
+        });
+        // Primed so an UNVALIDATED externalId would reach a clean 201 — the
+        // refusal has to come from the route, not from a mock blowing up.
+        mockPrisma.userIdentityLink.findMany.mockResolvedValue([]);
+        mockPrisma.scimGroup.create.mockResolvedValue({
+            id: 'g1', externalId: 'Engineering', displayName: 'Engineering', memberIds: [],
+        });
+    });
+
+    const post = (body: unknown) =>
+        GroupsPost(new NextRequest('http://localhost:3000/api/scim/v2/Groups', {
+            method: 'POST',
+            headers: new Headers({
+                authorization: `Bearer ${RAW_TOKEN}`,
+                'content-type': 'application/json',
+            }),
+            body: JSON.stringify(body),
+        }));
+
+    test('a missing externalId is a 400, NOT a fall-back to displayName', async () => {
+        const res = await post({ displayName: 'Engineering' });
+        expect(res.status).toBe(400);
+        expect(mockPrisma.scimGroup.create).not.toHaveBeenCalled();
+    });
+
+    test('a non-UUID externalId is a 400', async () => {
+        const res = await post({ externalId: 'Engineering', displayName: 'Engineering' });
+        expect(res.status).toBe(400);
+        expect(mockPrisma.scimGroup.create).not.toHaveBeenCalled();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// USERS PATH — PROTECTED MEMBERSHIP STATUS WRITES (#2200)
+// ═════════════════════════════════════════════════════════════════════
+//
+// The role writes already skipped ADMIN. The status writes three lines below
+// two of them did not, so SCIM could not change an ADMIN's role but could
+// switch that ADMIN off.
+
+describe('SCIM protected-membership status writes', () => {
+    beforeEach(() => jest.clearAllMocks());
+
+    test('DELETE on an ADMIN membership refuses with a SCIM 403 and writes nothing', async () => {
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN',
+            user: { email: 'admin@acme.com' },
+        });
+
+        await expect(scimDeleteUser(ctx, 'u1')).rejects.toMatchObject({ status: 403 });
+        expect(mockPrisma.tenantMembership.update).not.toHaveBeenCalled();
+    });
+
+    test('DELETE on an OWNER membership refuses too', async () => {
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'OWNER',
+            user: { email: 'owner@acme.com' },
+        });
+
+        await expect(scimDeleteUser(ctx, 'u1')).rejects.toMatchObject({ status: 403 });
+        expect(mockPrisma.tenantMembership.update).not.toHaveBeenCalled();
+    });
+
+    test('PATCH active=false on an ADMIN refuses and writes nothing', async () => {
+        const user = { id: 'u1', email: 'admin@acme.com', name: 'A', createdAt: now, updatedAt: now };
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'ADMIN', user,
+        });
+
+        await expect(
+            scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'active', value: false }], BASE_URL),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(mockPrisma.tenantMembership.update).not.toHaveBeenCalled();
+    });
+
+    test('DELETE on an EDITOR membership still works — the guard is not blanket', async () => {
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'EDITOR',
+            user: { email: 'editor@acme.com' },
+        });
+        mockPrisma.tenantMembership.update.mockResolvedValue({});
+
+        expect(await scimDeleteUser(ctx, 'u1')).toBe(true);
+        expect(mockPrisma.tenantMembership.update).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ status: 'DEACTIVATED' }) }),
         );
     });
 });

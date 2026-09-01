@@ -68,6 +68,17 @@ Navigate to **SSO & Identity** (`/admin/sso`).
 | `/api/scim/v2/ServiceProviderConfig` | GET | SCIM capabilities (public) |
 | `/api/scim/v2/Users` | GET, POST | List/create users |
 | `/api/scim/v2/Users/:id` | GET, PATCH, PUT, DELETE | User CRUD |
+| `/api/scim/v2/Groups` | GET, POST | List/create groups |
+| `/api/scim/v2/Groups/:id` | GET, PATCH, PUT, DELETE | Group CRUD + membership |
+
+`POST /Groups` requires an `externalId`, and it must be a UUID — it is the Entra
+group object id, and it is what the group → role mappings
+(`TenantEntraGroupMapping.aadGroupId`) are joined on. There is no fall-back to
+`displayName`.
+
+A Group resource's `members` are projected from the members IC actually
+resolved (via `UserIdentityLink`), reported as this service provider's own User
+ids. Pushed member values that matched no identity link do not appear.
 
 ### Setup
 1. Navigate to **SCIM Provisioning** (`/admin/scim`)
@@ -90,14 +101,42 @@ Navigate to **SSO & Identity** (`/admin/sso`).
 | `editor` | EDITOR | ✅ Allowed |
 | `auditor` | AUDITOR | ✅ Allowed |
 | `admin` | — | ⛔ Blocked |
+| `owner` | — | ⛔ Blocked |
 
-**ADMIN role cannot be assigned via SCIM.** It must be set manually by an existing admin.
+**ADMIN and OWNER cannot be assigned via SCIM.** They must be set by an existing
+admin in the product.
+
+The allow-list above is `SCIM_ASSIGNABLE_ROLES` in `src/lib/scim/roles.ts`, and
+it is the ONLY copy. It also bounds the **Groups** path, which resolves roles
+through the Entra group → role mappings (`/admin/entra`), where ADMIN *is* a
+legal mapping target for the sign-in path. A pushed SCIM group whose
+`externalId` matches an ADMIN mapping therefore assigns nothing; if the same
+user also matches an EDITOR mapping, EDITOR is applied — the ceiling clamps the
+resolution rather than voiding it.
+
+### Protected memberships
+
+SCIM does not modify a membership whose role it could not itself have assigned
+— ADMIN and OWNER. That covers the status writes as well as the role writes:
+
+| SCIM operation against an ADMIN/OWNER membership | Result |
+|---|---|
+| `DELETE /Users/:id` | `403` (`scimType: mutability`), nothing written |
+| `PATCH active=false` (a real transition) | `403`, nothing written |
+| `PUT` with a status change | `403`, nothing written |
+| `POST /Users` re-creating a deactivated one | Reactivation skipped; the response reports the membership's real status |
+| Any role change (Users or Groups path) | Silently skipped |
+
+Deactivating an administrator is a privileged act, so it belongs to a session in
+`/admin/members`, not to a bearer token. A `PATCH active=true` that changes
+nothing is *not* refused — a full IdP sync re-pushes it every cycle.
 
 ### Deactivation Behavior
 - SCIM `DELETE` or `PATCH active=false` → membership `DEACTIVATED`
 - User loses tenant access immediately
 - Historical records preserved (audit trail, task ownership, evidence)
-- Re-provisioning the same user reactivates their membership
+- Re-provisioning the same user reactivates their membership — unless it is a
+  protected membership (see above)
 
 ### Audit Events
 

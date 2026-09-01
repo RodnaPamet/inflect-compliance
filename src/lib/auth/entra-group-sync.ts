@@ -57,11 +57,22 @@ export interface EntraSyncDb {
  * exactly one `auth.entra.role_sync` metric.
  */
 export async function syncEntraMembershipRole(
-    input: { userId: string; tenantId: string; aadGroups: readonly string[] },
+    input: {
+        userId: string;
+        tenantId: string;
+        aadGroups: readonly string[];
+        /**
+         * Ceiling on what this caller may resolve to AND on which memberships
+         * it may touch. Supplied by the SCIM Groups push path
+         * (`SCIM_ASSIGNABLE_ROLES`), omitted by the sign-in path where an
+         * admin-configured ADMIN mapping is a deliberate feature.
+         */
+        assignableRoles?: readonly Role[];
+    },
     deps: { db?: EntraSyncDb } = {},
 ): Promise<EntraRoleSyncResult> {
     const db = (deps.db ?? prisma) as EntraSyncDb;
-    const { userId, tenantId, aadGroups } = input;
+    const { userId, tenantId, aadGroups, assignableRoles } = input;
 
     const mappings = await db.tenantEntraGroupMapping.findMany({
         where: { tenantId },
@@ -83,7 +94,29 @@ export async function syncEntraMembershipRole(
         return { effectiveRole: 'OWNER', changed: false, gateDenied: false };
     }
 
-    const { role: mappedRole, matchedGroupIds } = resolveRoleFromGroups(aadGroups, mappings);
+    // A ceiling-bound caller may not touch a membership whose CURRENT role it
+    // could not itself have assigned. Without this, a SCIM token holder could
+    // not promote an ADMIN but could still demote one — the mirror of the
+    // `membership.role !== 'ADMIN'` guard the SCIM Users path already carries.
+    if (membership && assignableRoles && !assignableRoles.includes(membership.role)) {
+        recordEntraRoleSync({ outcome: 'role_protected' });
+        return { effectiveRole: membership.role, changed: false, gateDenied: false };
+    }
+
+    const { role: mappedRole, matchedGroupIds, clampedGroupIds } = resolveRoleFromGroups(
+        aadGroups,
+        mappings,
+        { assignableRoles },
+    );
+
+    if (clampedGroupIds.length > 0) {
+        edgeLogger.warn('Entra role mapping clamped to caller ceiling', {
+            component: 'entra',
+            tenantId,
+            reason: 'role_above_ceiling',
+            clampedGroupIds,
+        });
+    }
 
     // Gate: enforceGroupGate on + no mapped group matched → deny access.
     const provider = await db.tenantIdentityProvider.findFirst({

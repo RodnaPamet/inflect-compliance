@@ -85,6 +85,56 @@ describe('syncEntraMembershipRole', () => {
         expect(mockMetric).toHaveBeenCalledWith({ outcome: 'owner_immune' });
     });
 
+    // ── Ceiling-bound callers (SCIM Groups push) — #2200 ──
+
+    const CEILING = ['READER', 'EDITOR', 'AUDITOR'] as const;
+
+    it('OWNER immunity still fires first for a ceiling-bound caller', async () => {
+        const { db, update } = mockDb({
+            mappings: [{ aadGroupId: 'g-1', role: 'READER', priority: 0 }],
+            membership: { id: 'm1', role: 'OWNER' },
+            config: { ...validConfig, enforceGroupGate: true },
+        });
+        const r = await syncEntraMembershipRole({ ...base, assignableRoles: CEILING }, { db });
+        expect(r).toEqual({ effectiveRole: 'OWNER', changed: false, gateDenied: false });
+        expect(update).not.toHaveBeenCalled();
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'owner_immune' });
+    });
+
+    it('refuses to touch an ADMIN membership when a ceiling is supplied', async () => {
+        const { db, update } = mockDb({
+            mappings: [{ aadGroupId: 'g-1', role: 'READER', priority: 0 }],
+            membership: { id: 'm1', role: 'ADMIN' },
+        });
+        const r = await syncEntraMembershipRole({ ...base, assignableRoles: CEILING }, { db });
+        expect(r).toEqual({ effectiveRole: 'ADMIN', changed: false, gateDenied: false });
+        expect(update).not.toHaveBeenCalled();
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'role_protected' });
+    });
+
+    it('still syncs an ADMIN membership on the UNCEILINGED sign-in path', async () => {
+        const { db, update } = mockDb({
+            mappings: [{ aadGroupId: 'g-1', role: 'READER', priority: 0 }],
+            membership: { id: 'm1', role: 'ADMIN' },
+        });
+        const r = await syncEntraMembershipRole(base, { db });
+        expect(r.changed).toBe(true);
+        expect(update).toHaveBeenCalledWith(
+            expect.objectContaining({ data: { role: 'READER' } }),
+        );
+    });
+
+    it('a ceiling-bound caller cannot promote a READER to ADMIN', async () => {
+        const { db, update } = mockDb({
+            mappings: [{ aadGroupId: 'g-1', role: 'ADMIN', priority: 0 }],
+            membership: { id: 'm1', role: 'READER' },
+        });
+        const r = await syncEntraMembershipRole({ ...base, assignableRoles: CEILING }, { db });
+        expect(r.effectiveRole).toBeNull();
+        expect(update).not.toHaveBeenCalled();
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'no_match' });
+    });
+
     it('denies via the gate when enforceGroupGate is on and no group matches', async () => {
         const { db, update } = mockDb({
             mappings: [{ aadGroupId: 'other', role: 'EDITOR', priority: 0 }],

@@ -8,7 +8,7 @@
  */
 import { NextRequest } from 'next/server';
 import { authenticateScimRequest, ScimAuthError } from '@/lib/scim/auth';
-import { scimError, scimListResponse } from '@/lib/scim/types';
+import { scimError, scimListResponse, isScimGroupExternalId } from '@/lib/scim/types';
 import {
     scimListGroups,
     scimCreateGroup,
@@ -43,8 +43,16 @@ export async function POST(req: NextRequest) {
         if (!body.displayName) {
             return jsonResponse(scimError(400, 'displayName is required', 'invalidValue'), { status: 400 });
         }
+        // No `?? displayName` fallback: a display name is not an identifier, and
+        // this value is what the group→role mapping join keys on.
+        if (!isScimGroupExternalId(body.externalId)) {
+            return jsonResponse(
+                scimError(400, 'externalId is required and must be a UUID', 'invalidValue'),
+                { status: 400 },
+            );
+        }
         const group = await scimCreateGroup(ctx, {
-            externalId: body.externalId ?? body.displayName,
+            externalId: body.externalId,
             displayName: body.displayName,
             members: body.members,
         });

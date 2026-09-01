@@ -63,6 +63,24 @@ export interface ScimPatchOp {
 }
 
 /**
+ * A SCIM Group's `externalId` must be a UUID.
+ *
+ * SCIM leaves `externalId` opaque, but ours is not opaque to us: it is matched
+ * against `TenantEntraGroupMapping.aadGroupId`, which the admin API already
+ * constrains to `z.string().uuid()` because it is an Entra group object id.
+ * Accepting anything else means accepting a value that can only ever fail to
+ * match — while still being persisted, indexed and echoed back. The Groups POST
+ * route used to fall back to `displayName` when `externalId` was absent, which
+ * turned a human label into an identifier and let the caller choose the string
+ * the role-mapping join keys on.
+ */
+const SCIM_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isScimGroupExternalId(value: unknown): value is string {
+    return typeof value === 'string' && SCIM_UUID.test(value);
+}
+
+/**
  * Build a SCIM error response object.
  */
 export function scimError(status: number, detail: string, scimType?: string): ScimError {

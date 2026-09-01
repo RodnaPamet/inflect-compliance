@@ -34,6 +34,21 @@ export class ScimAuthError extends Error {
 }
 
 /**
+ * An authenticated SCIM caller asking for something the SCIM surface is not
+ * allowed to do at all — a 403, not a 401.
+ *
+ * Subclasses `ScimAuthError` on purpose: every SCIM route already catches that
+ * type and renders it as a SCIM-shaped error body with the carried status, so
+ * refusals reach the client correctly without touching a single route.
+ */
+export class ScimForbiddenError extends ScimAuthError {
+    constructor(message: string, scimType = 'mutability') {
+        super(message, 403, scimType);
+        this.name = 'ScimForbiddenError';
+    }
+}
+
+/**
  * Hash a bearer token with SHA-256 for lookup.
  */
 export function hashToken(token: string): string {
