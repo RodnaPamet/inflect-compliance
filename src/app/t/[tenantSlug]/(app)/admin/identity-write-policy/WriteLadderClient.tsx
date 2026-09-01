@@ -29,7 +29,7 @@
  * 3. **Say when the rung is above what the runtime will honour.** The ladder is
  *    a statement of intent stored on the tenant; the leaver pass enforces its own
  *    clamp and refuses anything above it, and the joiner has no implementation at
- *    all. Both are perfectly settable here and both would then do nothing. A
+ *    all. The leaver is settable here; the joiner is not, since 2026-09-01 and both would then do nothing. A
  *    control that accepts a value the system ignores, silently, is worse than one
  *    that refuses.
  *
@@ -216,9 +216,27 @@ export function WriteLadderClient() {
                                     mode: t(`writeLadder.mode.${state.nextMode}`),
                                 })}
                             </Button>
-                            {state.blockedReason && (
-                                // The reason, beside the control it disables. This
-                                // is the line the whole page exists for.
+                            {honoured.implemented && state.blockedReason && (
+                                // The reason, beside the control it disables.
+                                //
+                                // Guarded on `implemented` so the unimplemented
+                                // case shows exactly ONE message. Two reasons.
+                                // The `InlineNotice` above already states it, in
+                                // the operator's language, permanently — this
+                                // card renders that notice on every page load
+                                // for a direction with no runtime. And
+                                // `describeRefusal` returns English prose
+                                // interpolating the raw wire token ("The joiner
+                                // direction has…"), so echoing it here would put
+                                // a permanent untranslated paragraph under a
+                                // translated notice saying the same thing in
+                                // different words — the two-messages-one-card
+                                // shape this page exists to prevent.
+                                //
+                                // Every OTHER refusal — dwell, one-rung — IS
+                                // situational and transient, and carries dates
+                                // and rung names the client does not have, so
+                                // the server's sentence is the right one there.
                                 <span className="max-w-md text-sm text-content-muted">
                                     {state.blockedReason}
                                 </span>

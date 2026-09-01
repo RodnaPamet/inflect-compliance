@@ -60,8 +60,16 @@ export type IdentityDirection = 'leaver' | 'joiner';
  * joiner job, no directory writer with a create verb, and no consumer of the
  * value other than the policy usecase that stores and reports it.
  *
- * When the joiner ships, flip this to `true` in ONE place and both the refusal
- * and the operator-facing `honoured` block move together.
+ * When the joiner ships, flipping this to `true` moves the refusal in
+ * `describeRefusal` and the `honoured.<dir>.implemented` flag together — but
+ * NOT `honoured.joiner.maxMode`, which is a hardcoded `'DISABLED' as const` in
+ * `identity-write-policy/route.ts`. Flip the flag alone and the gate stops
+ * refusing while the route still reports a DISABLED ceiling, so `isAboveClamp`
+ * is true for every rung above off and the client shows the aboveClamp banner
+ * while nothing clamps anything — back to settable-and-inert with a differently
+ * worded notice. Give the joiner a real `JOINER_MAX_MODE` beside
+ * `LEAVER_MAX_MODE` at that point; it is deliberately not created now, because
+ * a clamp constant with no pass reading it is a fourth thing to keep in sync.
  */
 export const DIRECTION_IMPLEMENTED: Readonly<Record<IdentityDirection, boolean>> = {
     leaver: true,

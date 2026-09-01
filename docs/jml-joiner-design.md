@@ -25,25 +25,46 @@ no usecase, no writer, no refusal vocabulary.
 
 That is six files, not four — the schema columns and the i18n string are also part of the surface.
 
-### The rung is already settable, and `implemented: false` is discarded
+### FIXED — the rung was settable and `implemented: false` was discarded
 
-**The premise that the joiner "cannot be set to DRY_RUN today" is false, and the reason it is
-false is itself a defect worth fixing in Phase 1.**
+> **Closed 2026-09-01.** Everything in this subsection described the state
+> BEFORE the gate landed, and it is kept because Phase 1 needs to know the gate
+> exists and where it lives — not deleted, because a reader who finds only
+> silence here will re-derive it. **Do not implement a second gate.**
+>
+> What changed: `describeRefusal` now refuses any widen of a direction whose
+> `DIRECTION_IMPLEMENTED` flag is false, placed BELOW the narrowing check so a
+> tenant parked above `DISABLED` can still come down; and the widen button
+> consults `honoured.implemented` rather than depending on a derived string
+> arriving. Server and client both, because a client-only fix leaves the PUT
+> open to curl.
+>
+> Two things this does NOT do, and Phase 1 still owns them: it is
+> **forward-only** — no migration resets stored non-`DISABLED` joiner rows, and
+> a tenant already at the top rung sees "This is the widest rung" with no
+> prompt to narrow (production currently has `identityJoinerMode = DISABLED`
+> for the single settings row, so that population is empty today, but check
+> again rather than trusting this sentence). And flipping
+> `DIRECTION_IMPLEMENTED.joiner` to `true` does not move
+> `honoured.joiner.maxMode`, still a hardcoded `'DISABLED'` in the route — see
+> the note at the end of this file.
 
-- `setIdentityWriteMode` has no joiner-specific gate. It calls `describeRefusal` and writes
+**The premise that the joiner "cannot be set to DRY_RUN today" was false, and the reason it was
+false was itself a defect — now fixed.**
+
+- `setIdentityWriteMode` HAD no joiner-specific gate. It calls `describeRefusal` and writes
   `FIELDS[direction]` (`identity-write-policy.ts:144-147`, `:148-160`).
 - `describeRefusal` returns `null` for `DISABLED → DRY_RUN`: same-mode at `:89`, narrowing at
-  `:99`, multi-rung at `:102`, dwell at `:110`. Nothing else refuses
+  `:99`, multi-rung at `:102`, dwell at `:110`. Nothing else refused
   (`identity-write-policy.ts:86-121`).
-- The UI's widen button is `disabled={Boolean(state.blockedReason) || saving}`
+- The UI's widen button WAS `disabled={Boolean(state.blockedReason) || saving}`
   (`WriteLadderClient.tsx:192`). It never reads `honoured.implemented`, and never reads
   `aboveClamp` either (`:139`).
 
-So the route computes `honoured.joiner.implemented: false` correctly at `route.ts:74` and the only
-consumer renders a banner beside a live button. **A tenant can climb the joiner ladder to
-`AUTOMATIC` today, one rung a week, and nothing reads the value.** That is this subsystem's
-signature failure — a value computed correctly then discarded downstream — sitting in the joiner's
-own four files.
+So the route computed `honoured.joiner.implemented: false` correctly and the only consumer rendered
+a banner beside a live button. **A tenant could climb the joiner ladder to `AUTOMATIC`, one rung a
+week, and nothing read the value.** That was this subsystem's signature failure — a value computed
+correctly then discarded downstream — sitting in the joiner's own four files. Both ends now read it.
 
 Two consequences for Phase 1:
 
@@ -179,7 +200,7 @@ difference is exactly what lets the route and the pass drift.
 
 **Also in Phase 1, because the rung is meaningless without them:**
 
-- Fix the discarded `honoured.implemented` — the widen button must consult it
+- ~~Fix the discarded `honoured.implemented` — the widen button must consult it~~ **DONE 2026-09-01**, server and client both
   (`WriteLadderClient.tsx:192`).
 - Triage pre-existing stored joiner ladder state (see Current state).
 - Add `identity-joiner-dispatch` **and** `identity-leaver-dispatch` to the dispatcher guard

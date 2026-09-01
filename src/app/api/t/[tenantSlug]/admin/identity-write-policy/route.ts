@@ -61,9 +61,13 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         // this policy will accept — and the difference is invisible without it.
         //
         // The ladder is a statement of intent stored on the tenant; the PASS
-        // enforces its own clamp. Setting leaver to PROPOSE succeeds here and
-        // then every pass refuses MODE_ABOVE_CLAMP, so an operator who widened
-        // in good faith sees nothing happen and no reason why. The joiner has no
+        // enforces its own clamp. This paragraph used to say that setting
+        // leaver to PROPOSE succeeds here and then every pass refuses
+        // MODE_ABOVE_CLAMP — true until #2187 raised the clamp to AUTOMATIC,
+        // after which PROPOSE is BELOW the clamp and its passes run. They still
+        // decide nothing, for an unrelated reason: PROPOSE means a human
+        // approves each disable and that queue was never built, so the pass
+        // refuses every candidate REFUSED_MODE (issue #2241). The joiner has no
         // implementation at all — no createAccount on either provider — so any
         // rung above DISABLED is currently a statement about a subsystem that
         // does not exist.

@@ -14,8 +14,10 @@
  *      confirmed. Narrowing is the emergency stop — a dialog in front of it is a
  *      reason to hesitate at the moment nobody should.
  *   3. A rung above what the runtime honours says so. The leaver pass clamps
- *      itself and the joiner has no implementation, so both are settable and
- *      inert; silence there is worse than a refusal.
+ *      itself and the joiner has no implementation. Neither is settable-and-
+ *      inert any more: #2187 raised the leaver clamp to AUTOMATIC, and the
+ *      joiner is refused at both ends since 2026-09-01. Silence there would
+ *      still be worse than a refusal, which is why both now refuse.
  *
  * Plus the failure path, which the primitive's contract makes easy to get wrong:
  * `Modal.Confirm` closes on resolve, so a swallowed refusal would close the
@@ -186,8 +188,11 @@ describe('identity write ladder — the operator surface', () => {
     it('warns when the rung is above what the runtime will act on', () => {
         setPayload(state('PROPOSE'));
         render(<WriteLadderClient />);
-        // The leaver pass clamps itself at DRY_RUN, so PROPOSE is settable and
-        // inert. A control that accepts a value the system ignores is the bug.
+        // Written when the leaver pass clamped itself at DRY_RUN, which made
+        // PROPOSE settable-and-inert. #2187 raised that clamp to AUTOMATIC, so
+        // PROPOSE now runs — and refuses every candidate for a different reason
+        // (no approval queue; issue #2241). The principle the case exists for is
+        // unchanged: a control that accepts a value the system ignores is the bug.
         expect(within(card(/Leavers/i)).getByText(/above what the product will act on/i))
             .toBeInTheDocument();
     });
