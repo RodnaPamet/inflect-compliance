@@ -35,7 +35,7 @@
  *   • Per-channel filtering — the count is unread-total only.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Bell, CheckCheck } from 'lucide-react';
@@ -127,16 +127,54 @@ export function NotificationsBell() {
     const [items, setItems] = useState<NotificationRow[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Distinct from `error`: this one is terminal and gets its own copy with a
+    // way out, because "reload the page" is the only thing that helps.
+    const [sessionExpired, setSessionExpired] = useState(false);
 
     const close = useCallback(() => setOpen(false), []);
 
+    /**
+     * Set once the endpoint has answered 401/403, and never cleared.
+     *
+     * A ref rather than state on purpose: the poll callback below closes over
+     * it, and a state update would not be visible to the already-scheduled
+     * interval — which is the exact shape of the bug this guards against.
+     */
+    const authFailedRef = useRef(false);
+
     const fetchList = useCallback(async () => {
+        // Belt and braces with the interval teardown: `open` and
+        // `visibilitychange` also call this, and both must stay quiet once the
+        // session is gone.
+        if (authFailedRef.current) return;
+
         setLoading(true);
         setError(null);
         try {
             const res = await fetch('/api/notifications', {
                 credentials: 'same-origin',
             });
+
+            // AN EXPIRED SESSION IS TERMINAL, NOT A TRANSIENT FAILURE.
+            //
+            // This used to fall into the `!res.ok` throw below, which set the
+            // error banner and left the 60s interval running — so a tab left
+            // open past its JWT expiry re-requested `/api/notifications`,
+            // failed 401, and logged a console error every 60 seconds for as
+            // long as the tab stayed visible. Nothing ever told the user their
+            // session had gone, and nothing ever stopped.
+            //
+            // Retrying cannot help: the 401 comes from `middleware.ts`, where
+            // `getToken()` returned null for a missing, malformed or expired
+            // cookie. None of those resolve by asking again — only signing in
+            // does.
+            if (res.status === 401 || res.status === 403) {
+                authFailedRef.current = true;
+                setSessionExpired(true);
+                setItems(null);
+                return;
+            }
+
             if (!res.ok) {
                 throw new Error(`Failed to load notifications (${res.status})`);
             }
@@ -169,8 +207,10 @@ export function NotificationsBell() {
     useEffect(() => {
         fetchList();
 
-        let sseHealthy = false;
         let es: EventSource | null = null;
+        // Assigned below, once the interval exists. Declared here so the SSE
+        // handlers — created before it — can close over the binding.
+        let onSseHealthChange: ((healthy: boolean) => void) | null = null;
         // typeof check — SSR + jsdom unit tests both lack EventSource.
         // Feature flag: NEXT_PUBLIC_NOTIFICATIONS_SSE=1 opts the
         // client into the SSE channel. Defaults OFF so the bell keeps
@@ -186,9 +226,7 @@ export function NotificationsBell() {
                 es = new EventSource('/api/notifications/stream', {
                     withCredentials: true,
                 });
-                es.onopen = () => {
-                    sseHealthy = true;
-                };
+                es.onopen = () => onSseHealthChange?.(true);
                 es.onmessage = (msg) => {
                     try {
                         const event = JSON.parse(msg.data) as NotificationRow;
@@ -205,29 +243,108 @@ export function NotificationsBell() {
                         void fetchList();
                     }
                 };
-                es.onerror = () => {
-                    sseHealthy = false;
-                };
+                es.onerror = () => onSseHealthChange?.(false);
             } catch {
-                sseHealthy = false;
+                // Construction itself threw (a blocked scheme, a proxy that
+                // refuses text/event-stream at connect time). There is no
+                // stream and no health signal, so the poll simply stays at the
+                // 60s cadence armed below — nothing to re-arm.
             }
         }
 
-        const pollIntervalMs = sseHealthy
-            ? NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS
-            : NOTIFICATIONS_POLL_INTERVAL_MS;
+        // The cadence is re-armed when the stream's health CHANGES, rather than
+        // read once here.
+        //
+        // Reading it once was a dead branch: the health flag is false at this
+        // point in the effect ALWAYS, because `es.onopen` cannot have fired on
+        // a socket opened microseconds earlier in the same synchronous block.
+        // So `NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS` was unreachable and the
+        // poll stayed at 60s even with SSE healthy — the opposite of what the
+        // comment on that constant promises. Currently masked because
+        // NEXT_PUBLIC_NOTIFICATIONS_SSE defaults off, so the only way to meet
+        // it is to flip the flag and wonder why traffic did not drop 5x.
+        //
+        // There is no separate `sseHealthy` variable: the handlers call
+        // `arm()` with the cadence they want and `arm()` owns the current
+        // one. A flag read by nobody is how the dead branch above happened.
+        let intervalId = 0;
+        // The cadence currently armed. Zero is not a cadence any caller asks
+        // for, so the first arm() below always installs a timer.
+        let armedMs = 0;
         const poll = () => {
+            // Stop the timer from inside itself. The auth failure can land on
+            // any tick, and there is no outer signal to react to.
+            if (authFailedRef.current) {
+                window.clearInterval(intervalId);
+                return;
+            }
             if (typeof document !== 'undefined' && document.hidden) return;
             void fetchList();
         };
-        const intervalId = window.setInterval(poll, pollIntervalMs);
+        /**
+         * Install the poll at `ms` — or leave the running timer alone when it
+         * is already at that cadence.
+         *
+         * The no-op is the load-bearing half, because both health handlers can
+         * fire far more often than they change anything, and clearing and
+         * reinstalling an interval discards its elapsed countdown. Repeat that
+         * faster than the period and the timer never fires at all.
+         *
+         * WHAT THIS CLOSES — the two flat cases, which are the endpoints:
+         *   • a stream that repeatedly fails to CONNECT. When the failure is
+         *     network-level the browser retries on its own (~3s by default;
+         *     `/api/notifications/stream` sends no `retry:` field to widen
+         *     it), so `onerror` arrives about twenty times a minute, each one
+         *     asking for 60s again. Without the no-op the 60s poll would never
+         *     elapse — the fallback dead in a case it exists to cover.
+         *   • a stream that connects and STAYS healthy, where a proxy
+         *     recycling the connection re-fires `onopen` and would likewise
+         *     restart the 5-minute countdown forever.
+         *
+         * WHAT IT DOES NOT CLOSE, stated because the flag-flip will meet it:
+         * a stream that ALTERNATES open→error→open. Each transition is a
+         * genuine cadence change, so it still clears and reinstalls, and if
+         * the drop period sits between the reconnect backoff and 300s the poll
+         * can be starved indefinitely. Fixing that needs the remaining delay
+         * carried across a cadence change, not an equality check. It is pinned
+         * as known behaviour by a test rather than left to be rediscovered.
+         *
+         * Note the asymmetry in the first bullet: only a network-level failure
+         * retries. A non-200, or a proxy stripping `text/event-stream`, fails
+         * the connection permanently with a SINGLE `error` and no retry — and
+         * those are the two scenarios the comment above names as the reason
+         * the fallback exists at all. So the twenty-a-minute case and the
+         * motivating case are not the same case.
+         */
+        const arm = (ms: number) => {
+            // Terminal auth failure outranks every cadence: `poll` clears the
+            // interval from inside itself when it lands, and an SSE health
+            // change arriving afterwards must not install a fresh one.
+            if (authFailedRef.current) return;
+            if (ms === armedMs) return;
+            armedMs = ms;
+            window.clearInterval(intervalId);
+            intervalId = window.setInterval(poll, ms);
+        };
+        arm(NOTIFICATIONS_POLL_INTERVAL_MS);
+        // Re-arm at the slower cadence once SSE actually reports healthy, and
+        // back to 60s if it drops.
+        onSseHealthChange = (healthy: boolean) =>
+            arm(
+                healthy
+                    ? NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS
+                    : NOTIFICATIONS_POLL_INTERVAL_MS,
+            );
+
         const onVisibility = () => {
+            if (authFailedRef.current) return;
             if (!document.hidden) void fetchList();
         };
         document.addEventListener('visibilitychange', onVisibility);
         return () => {
             window.clearInterval(intervalId);
             document.removeEventListener('visibilitychange', onVisibility);
+            onSseHealthChange = null;
             if (es) es.close();
         };
     }, [fetchList]);
@@ -320,7 +437,21 @@ export function NotificationsBell() {
                         className="max-h-[400px] overflow-y-auto"
                         data-testid="notifications-list"
                     >
-                        {loading && items === null ? (
+                        {/* Terminal, so it precedes every other branch: once
+                            the session is gone there is nothing to load and
+                            nothing to retry, and the only useful thing the
+                            panel can do is say so and offer the way back. */}
+                        {sessionExpired ? (
+                            <div className="px-2.5 py-6 text-center text-xs text-content-muted">
+                                <p>{t('sessionExpired')}</p>
+                                <Link
+                                    href="/login"
+                                    className="mt-1 inline-block font-medium text-content-emphasis underline underline-offset-2"
+                                >
+                                    {t('sessionExpiredAction')}
+                                </Link>
+                            </div>
+                        ) : loading && items === null ? (
                             <div className="px-2.5 py-6 text-center text-xs text-content-muted animate-pulse">
                                 {t('loading')}
                             </div>

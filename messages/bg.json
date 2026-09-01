@@ -8181,7 +8181,9 @@
             "allClear": "Всичко е чисто",
             "caughtUp": "В крак сте. Новите известия ще се появяват тук.",
             "unreadAria": "{count} непрочетени известия",
-            "now": "сега"
+            "now": "сега",
+            "sessionExpired": "Сесията ви изтече.",
+            "sessionExpiredAction": "Влезте отново"
         },
         "env": {
             "staging": "Staging",
