@@ -22,6 +22,7 @@
 
 import {
     act,
+    cleanup,
     render,
     screen,
     waitFor,
@@ -31,6 +32,61 @@ import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
 import { NotificationsBell } from '@/components/layout/notifications-bell';
+
+// ─── env mock (SSE feature flag) ────────────────────────────────────
+//
+// The SSE block in the bell is gated on
+// `env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1'`, read through the validated
+// `@/env` module — raw `process.env` access is banned by the no-fallbacks
+// ratchet, so the flag cannot be flipped by assigning to `process.env` from a
+// test either: `env` is built once, at module load, from the process
+// environment as it stood then.
+//
+// Only the one key is overridden. Returning an object literal of chosen keys
+// would answer `undefined` for every other variable anything in the render
+// tree happens to read, and the next variable added to `src/env.ts` would
+// silently become undefined here.
+const mockEnvOverrides: Record<string, unknown> = {};
+
+jest.mock('@/env', () => {
+    const actual = jest.requireActual('@/env') as {
+        env: Record<string, unknown>;
+    };
+    return {
+        ...actual,
+        env: new Proxy(actual.env, {
+            get: (target, prop) =>
+                typeof prop === 'string' && prop in mockEnvOverrides
+                    ? mockEnvOverrides[prop]
+                    : Reflect.get(target, prop),
+        }),
+    };
+});
+
+// ─── EventSource stub ──────────────────────────────────────────────
+//
+// jsdom implements no EventSource at all, which is why the bell's whole SSE
+// block — and with it the cadence re-arming — was unreachable from this
+// suite. The stub is deliberately inert: it opens nothing, and the test fires
+// `onopen` / `onerror` by hand to model what a browser does.
+class FakeEventSource {
+    static instances: FakeEventSource[] = [];
+
+    onopen: (() => void) | null = null;
+    onmessage: ((ev: { data: string }) => void) | null = null;
+    onerror: (() => void) | null = null;
+    closed = false;
+    readonly url: string;
+
+    constructor(url: string) {
+        this.url = url;
+        FakeEventSource.instances.push(this);
+    }
+
+    close(): void {
+        this.closed = true;
+    }
+}
 
 // ─── fetch mock ────────────────────────────────────────────────────
 
@@ -376,5 +432,172 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         // The audit's R11 personality vocabulary: "All clear", not a
         // generic "No notifications".
         expect(await screen.findByText('All clear')).toBeInTheDocument();
+    });
+});
+
+// ─── SSE health → poll cadence ─────────────────────────────────────
+
+describe('<NotificationsBell> — SSE health governs the fallback poll', () => {
+    /**
+     * The bell throttles its REST poll from 60s to 5 minutes while the SSE
+     * stream is healthy, and back to 60s when it is not. Both transitions run
+     * through one `arm(ms)` helper, and the property that matters is that
+     * `arm` is IDEMPOTENT — a request for the cadence already running must
+     * leave the running countdown alone.
+     *
+     * It matters because neither handler fires once per state change.
+     * `EventSource.onerror` fires on every reconnect ATTEMPT (the browser's
+     * default backoff is ~3s, and `/api/notifications/stream` sends no
+     * `retry:` field to widen it), so a stream that cannot connect asks for
+     * the 60s cadence roughly twenty times a minute. A non-idempotent `arm`
+     * restarts the interval on each of those, the 60s deadline is never
+     * reached, and the fallback poll is silently dead in precisely the
+     * situation it exists to cover — the inverse of its documented purpose.
+     * The healthy mirror is as real: a proxy recycling a live connection
+     * re-fires `onopen`.
+     *
+     * Timers are faked; a wall-clock version of this would have to wait five
+     * real minutes, which means in practice it would be deleted.
+     */
+    beforeEach(() => {
+        jest.useFakeTimers();
+        FakeEventSource.instances = [];
+        (globalThis as unknown as { EventSource?: unknown }).EventSource =
+            FakeEventSource;
+        mockEnvOverrides.NEXT_PUBLIC_NOTIFICATIONS_SSE = '1';
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => [],
+        });
+    });
+
+    afterEach(() => {
+        delete mockEnvOverrides.NEXT_PUBLIC_NOTIFICATIONS_SSE;
+        delete (globalThis as unknown as { EventSource?: unknown }).EventSource;
+        // Unmount BEFORE draining the timers: a poll fired at teardown would
+        // set state on a still-mounted component outside `act`.
+        cleanup();
+        jest.runOnlyPendingTimers();
+        jest.useRealTimers();
+    });
+
+    /**
+     * `fetchList` takes three microtask turns to finish: `fetch()`, then
+     * `res.json()`, then the `setItems` / `setLoading` tail. Draining only one
+     * leaves that tail landing outside the `act` window, which React 19
+     * reports as a console error — and which this repo has seen escalate from
+     * a warning into a failure under worker memory pressure.
+     */
+    async function settle(): Promise<void> {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+    }
+
+    /**
+     * The stream the component opened. Asserting it exists is not decoration:
+     * if the env mock or the global stub stopped taking, the SSE block would
+     * be skipped entirely and every assertion below would pass for the wrong
+     * reason — the poll would simply sit at its default 60s cadence.
+     */
+    async function mountAndGetStream(): Promise<FakeEventSource> {
+        render(<NotificationsBell />);
+        await act(async () => {
+            await settle();
+        });
+        // The mount-time seed fetch, and nothing else yet.
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        expect(FakeEventSource.instances).toHaveLength(1);
+        const es = FakeEventSource.instances[0];
+        expect(es.url).toBe('/api/notifications/stream');
+        return es;
+    }
+
+    it('a flapping stream does not starve the 60s fallback poll', async () => {
+        const es = await mountAndGetStream();
+
+        // Twenty failed reconnects at the browser's ~3s default backoff —
+        // sixty seconds of wall clock, one whole poll period.
+        for (let i = 0; i < 20; i += 1) {
+            await act(async () => {
+                jest.advanceTimersByTime(3_000);
+                es.onerror?.();
+                await settle();
+            });
+        }
+
+        // The poll must have fired. Before the fix each onerror cleared and
+        // reinstalled the 60s interval, pushing the deadline out by 3s every
+        // 3s, and this stayed at 1 forever.
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it('a healthy stream drops to the 5-minute cadence and stays there', async () => {
+        const es = await mountAndGetStream();
+
+        await act(async () => {
+            es.onopen?.();
+            await settle();
+        });
+
+        // Four minutes, with a proxy re-announcing the same healthy
+        // connection once a minute. The 60s cadence is gone, so nothing
+        // fetches...
+        for (let i = 0; i < 4; i += 1) {
+            await act(async () => {
+                jest.advanceTimersByTime(60_000);
+                es.onopen?.();
+                await settle();
+            });
+        }
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        // ...and the fifth minute still arrives. Repeated `onopen` must not
+        // push the 5-minute deadline forward forever.
+        await act(async () => {
+            jest.advanceTimersByTime(60_000);
+            await settle();
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops back to the 60s cadence when a healthy stream errors', async () => {
+        // The negative that stops the idempotence from over-reaching: a
+        // GENUINE change of cadence must still re-arm. An `arm` that only
+        // ever refused to restart would pass both tests above while freezing
+        // the bell at five minutes through a total SSE outage.
+        const es = await mountAndGetStream();
+
+        await act(async () => {
+            es.onopen?.();
+            await settle();
+        });
+        // One minute at the throttled cadence: no poll.
+        await act(async () => {
+            jest.advanceTimersByTime(60_000);
+            await settle();
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            es.onerror?.();
+            await settle();
+        });
+        await act(async () => {
+            jest.advanceTimersByTime(60_000);
+            await settle();
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('closes the stream on unmount', async () => {
+        const es = await mountAndGetStream();
+        expect(es.closed).toBe(false);
+
+        cleanup();
+
+        expect(es.closed).toBe(true);
     });
 });

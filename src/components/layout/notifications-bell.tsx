@@ -207,7 +207,6 @@ export function NotificationsBell() {
     useEffect(() => {
         fetchList();
 
-        let sseHealthy = false;
         let es: EventSource | null = null;
         // Assigned below, once the interval exists. Declared here so the SSE
         // handlers — created before it — can close over the binding.
@@ -227,10 +226,7 @@ export function NotificationsBell() {
                 es = new EventSource('/api/notifications/stream', {
                     withCredentials: true,
                 });
-                es.onopen = () => {
-                    sseHealthy = true;
-                    onSseHealthChange?.(true);
-                };
+                es.onopen = () => onSseHealthChange?.(true);
                 es.onmessage = (msg) => {
                     try {
                         const event = JSON.parse(msg.data) as NotificationRow;
@@ -247,19 +243,19 @@ export function NotificationsBell() {
                         void fetchList();
                     }
                 };
-                es.onerror = () => {
-                    sseHealthy = false;
-                    onSseHealthChange?.(false);
-                };
+                es.onerror = () => onSseHealthChange?.(false);
             } catch {
-                sseHealthy = false;
+                // Construction itself threw (a blocked scheme, a proxy that
+                // refuses text/event-stream at connect time). There is no
+                // stream and no health signal, so the poll simply stays at the
+                // 60s cadence armed below — nothing to re-arm.
             }
         }
 
-        // The cadence is re-derived whenever `sseHealthy` changes, rather than
+        // The cadence is re-armed when the stream's health CHANGES, rather than
         // read once here.
         //
-        // Reading it once was a dead branch: `sseHealthy` is false at this
+        // Reading it once was a dead branch: the health flag is false at this
         // point in the effect ALWAYS, because `es.onopen` cannot have fired on
         // a socket opened microseconds earlier in the same synchronous block.
         // So `NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS` was unreachable and the
@@ -267,7 +263,14 @@ export function NotificationsBell() {
         // comment on that constant promises. Currently masked because
         // NEXT_PUBLIC_NOTIFICATIONS_SSE defaults off, so the only way to meet
         // it is to flip the flag and wonder why traffic did not drop 5x.
+        //
+        // There is no separate `sseHealthy` variable: the handlers call
+        // `arm()` with the cadence they want and `arm()` owns the current
+        // one. A flag read by nobody is how the dead branch above happened.
         let intervalId = 0;
+        // The cadence currently armed. Zero is not a cadence any caller asks
+        // for, so the first arm() below always installs a timer.
+        let armedMs = 0;
         const poll = () => {
             // Stop the timer from inside itself. The auth failure can land on
             // any tick, and there is no outer signal to react to.
@@ -278,7 +281,33 @@ export function NotificationsBell() {
             if (typeof document !== 'undefined' && document.hidden) return;
             void fetchList();
         };
+        /**
+         * Install the poll at `ms` — or leave the running timer alone when it
+         * is already at that cadence.
+         *
+         * The no-op is the load-bearing half, because both health handlers
+         * fire far more often than they change anything. `es.onerror` fires on
+         * every EventSource reconnect ATTEMPT, not once per outage: the
+         * browser's default backoff is ~3s and `/api/notifications/stream`
+         * sends no `retry:` field to widen it, so a stream that cannot connect
+         * asks for 60s again about twenty times a minute. Clearing and
+         * restarting the interval on each of those discards the elapsed
+         * countdown, so a 60s poll restarted every 3s NEVER elapses — the
+         * fallback would be dead in exactly the case it exists to cover. The
+         * mirror case is as real: a proxy recycling a healthy connection
+         * re-fires `onopen`, and the 5-minute poll would never elapse either.
+         *
+         * A genuine change of cadence does still restart the countdown; that
+         * is a stream alternating open→error→open, which is rarer than the
+         * flat cases above and asks for a different interval each time.
+         */
         const arm = (ms: number) => {
+            // Terminal auth failure outranks every cadence: `poll` clears the
+            // interval from inside itself when it lands, and an SSE health
+            // change arriving afterwards must not install a fresh one.
+            if (authFailedRef.current) return;
+            if (ms === armedMs) return;
+            armedMs = ms;
             window.clearInterval(intervalId);
             intervalId = window.setInterval(poll, ms);
         };
