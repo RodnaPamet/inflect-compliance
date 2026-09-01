@@ -186,7 +186,11 @@ describe('dispatchMcp — initialize protocol-version negotiation', () => {
         };
         expect(result.protocolVersion).toBe(LATEST_PROTOCOL_VERSION);
         expect(result.capabilities).toStrictEqual({ tools: {}, resources: {} });
-        expect(result.serverInfo).toBe(SERVER_INFO);
+        // Value equality, NOT `toBe`: the wire shape is what the client sees,
+        // so returning a copy (`{ ...SERVER_INFO }`) must stay green. A
+        // reference-identity assertion here reddens on that no-op refactor
+        // while catching nothing a value comparison misses.
+        expect(result.serverInfo).toStrictEqual(SERVER_INFO);
         // The instructions declare the read-only posture to the agent —
         // dropping that sentence is a semantic regression, not cosmetics.
         expect(result.instructions).toContain('never mutates data directly');

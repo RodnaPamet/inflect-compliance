@@ -232,6 +232,13 @@ describe('handleErrorResponse — error-envelope fallbacks', () => {
         });
     });
 
+    // NOTE — this pins the OUTCOME for a null body, not the `body?.error`
+    // optional chain. Those two implementations are behaviourally
+    // indistinguishable from outside: with the chain, `if` is false and the
+    // function falls through to the throw; without it, `null.error` throws a
+    // TypeError that the very same `catch` swallows, reaching the same throw
+    // with the same defaults. Verified by mutation — dropping the `?.` leaves
+    // this whole file green. Do not read this test as protecting that guard.
     it('uses status-derived defaults when the JSON body is literally null', async () => {
         mockFetch.mockResolvedValueOnce({
             ok: false,
