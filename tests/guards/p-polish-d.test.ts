@@ -23,6 +23,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { callExpressionOf } from "../helpers/source-blocks";
+
 const ROOT = path.resolve(__dirname, "../..");
 const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
 
@@ -64,14 +66,34 @@ describe("PR-D polish — live entity status sync", () => {
             expect(src).toMatch(/const pollMs = options\?\.pollMs \?\? 0/);
         });
 
-        it.each(hookFiles)("%s — interval fires runFetch(true) on pollMs cadence", (file) => {
+        it.each(hookFiles)("%s — the poll interval passes the REVALIDATION flag", (file) => {
             const src = read(file);
-            // The setInterval branch must call runFetch with the
-            // revalidation flag set so transient errors don't blank
-            // the cached options.
-            expect(src).toMatch(/setInterval\(/);
-            expect(src).toMatch(/runFetch\(true\)/);
-            expect(src).toMatch(/runFetch\(false\)/);
+            // The setInterval callback must call runFetch with the
+            // revalidation flag set, so a transient error returns early
+            // and leaves the cached options — rather than blanking the
+            // canvas's status chips on a single 500.
+            //
+            // BOUND to the call, not grepped over the file. This assertion
+            // used to be three unanchored regexes — `/setInterval\(/`,
+            // `/runFetch\(true\)/`, `/runFetch\(false\)/` — and none of
+            // them bound a call to its call site. Flipping the interval to
+            // `runFetch(false)` AND leaving a stray `runFetch(true)`
+            // anywhere else in the file satisfied all three: 20/20 green
+            // with every poll taking the initial-fetch branch. Note the
+            // second half of that mutation is what makes it the real proof
+            // — flipping the interval ALONE also turned the old suite red,
+            // but only by tripping a different regex, which attributes the
+            // failure to the wrong thing. See #2238.
+            const interval = callExpressionOf(src, "setInterval");
+            expect(interval).toMatch(/runFetch\(true\)/);
+            expect(interval).not.toMatch(/runFetch\(false\)/);
+
+            // The cold load is the other side of the same flag: it passes
+            // `false` so the FIRST failure does surface to the consumer.
+            // Asserted on the source with the interval REMOVED, so this
+            // half cannot be satisfied by the interval's own call.
+            const outsideTheInterval = src.replace(interval, "");
+            expect(outsideTheInterval).toMatch(/void runFetch\(false\);/);
         });
 
         it.each(hookFiles)("%s — exports a find* helper for one-id lookup", (file) => {

@@ -18,12 +18,21 @@
  * asserts the structural shape of each surface — failing CI before
  * the change lands. Mirrors the GAP-13 + GAP-03 ratchet pattern.
  *
- * Functional behaviour is covered by:
+ * ONE claim here is not structural and cannot be: the fail-open posture
+ * is a property of a RETURN VALUE, and the two regexes that used to
+ * assert it were both satisfiable with the behaviour inverted (see the
+ * block at the bottom of this file for the measurement). It is asserted
+ * behaviourally instead, against a stubbed Upstash client that throws.
+ *
+ * Further functional behaviour is covered by:
  *   - `tests/unit/api-read-rate-limit.test.ts` (matcher + 429 + isolation)
+ *   - `tests/unit/api-read-rate-limit-upstash.test.ts` (verdict mapping)
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+
+import type { NextRequest } from 'next/server';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -118,17 +127,6 @@ describe('GAP-17 ratchet — edge-runtime enforcement module', () => {
         expect(block[0]).toMatch(/method\s*!==\s*['"]GET['"]/);
         expect(block[0]).toMatch(/['"]\/api\/t\/['"]/);
     });
-
-    it('checkApiReadRateLimit fails open on Upstash exceptions (no API blackout)', () => {
-        const src = readRepoFile(ENFORCEMENT);
-        // Regression: a refactor that converts the Upstash try/catch
-        // into a fail-CLOSED would turn a Redis hiccup into a full
-        // API outage. The fail-open posture matches authRateLimit.ts
-        // and is the explicit GAP-17 design choice.
-        expect(src).toMatch(/failing open/i);
-        // The catch must return `{ ok: true }` not throw or close.
-        expect(src).toMatch(/catch[\s\S]*?\{[\s\S]*?return\s*\{\s*ok:\s*true/);
-    });
 });
 
 describe('GAP-17 ratchet — middleware wire-up', () => {
@@ -180,6 +178,132 @@ describe('GAP-17 ratchet — middleware wire-up', () => {
         expect(gap17PredicateIdx).toBeGreaterThan(0);
         expect(readRateIdx).toBeGreaterThan(0);
         expect(readRateIdx).toBeGreaterThan(tenantGateIdx);
+    });
+});
+
+// ─── Fail-open: asserted behaviourally, because a regex could not ──
+//
+// This block replaces two source regexes that could not fail (#2238):
+//
+//     expect(src).toMatch(/failing open/i);
+//     expect(src).toMatch(/catch[\s\S]*?\{[\s\S]*?return\s*\{\s*ok:\s*true/);
+//
+// Both were vacuous, for two independent reasons. The first matched the
+// LOG STRING, which survives any change to the return value. The second
+// was a lazy `[\s\S]*?` span that began at the FIRST `catch` in the file
+// — an unrelated Upstash-INIT block ~120 lines earlier — and ran to any
+// later `return { ok: true }`, of which the happy path has one; it never
+// bound the return to the catch it named. Flipping the catch to
+// `{ ok: false, response: <503> }` — a Redis hiccup becoming a site-wide
+// blackout on every /api/t/** read, the precise regression the test's own
+// comment named — left this suite at 11/11 green.
+//
+// It is asserted here rather than only in tests/unit/api-read-rate-limit-
+// upstash.test.ts because THIS is the file that claims the invariant. A
+// claim that cannot fail is worse than no claim: it reads as coverage.
+
+describe('GAP-17 — the read limiter FAILS OPEN on an Upstash outage', () => {
+    const mockLogError = jest.fn<void, [string, Record<string, unknown>?]>();
+    const mockLimit = jest.fn<Promise<never>, [string]>();
+
+    /** Only `.headers.get()` is touched by the module under test. */
+    function fakeReq(): NextRequest {
+        return {
+            headers: { get: (): string | null => null },
+        } as unknown as NextRequest;
+    }
+
+    const SAVED = { ...process.env };
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockLimit.mockRejectedValue(new Error('ECONNRESET'));
+        // Set every gate EXPLICITLY rather than leaning on a default in
+        // tests/mocks/env.ts — that mock reads process.env first, so an
+        // assertion resting on its fallback silently depends on the var
+        // being unset elsewhere.
+        process.env.RATE_LIMIT_MODE = 'upstash';
+        process.env.RATE_LIMIT_ENABLED = '1';
+        process.env.AUTH_TEST_MODE = '0';
+        process.env.NEXT_TEST_MODE = '0';
+    });
+
+    afterEach(() => {
+        jest.dontMock('@upstash/redis');
+        jest.dontMock('@upstash/ratelimit');
+        jest.dontMock('@/lib/observability/edge-logger');
+        process.env = { ...SAVED };
+    });
+
+    /**
+     * Install an Upstash double whose `limit()` REJECTS, then load a fresh
+     * copy of the module so its `_initialized` / `_limiter` state is clean.
+     */
+    async function loadWithUpstashThrowing(): Promise<
+        typeof import('@/lib/rate-limit/apiReadRateLimit')
+    > {
+        jest.resetModules();
+        jest.doMock('@upstash/redis', () => ({
+            Redis: { fromEnv: (): { marker: string } => ({ marker: 'redis' }) },
+        }));
+        jest.doMock('@upstash/ratelimit', () => ({
+            Ratelimit: Object.assign(
+                function Ratelimit(this: unknown) {
+                    return { limit: mockLimit };
+                },
+                { slidingWindow: (n: number, w: string) => ({ n, w }) },
+            ),
+        }));
+        jest.doMock('@/lib/observability/edge-logger', () => ({
+            edgeLogger: {
+                debug: jest.fn(),
+                info: jest.fn(),
+                warn: jest.fn(),
+                error: mockLogError,
+            },
+        }));
+        return import('@/lib/rate-limit/apiReadRateLimit');
+    }
+
+    it('ALLOWS the request — { ok: true } and no response to return', async () => {
+        const mod = await loadWithUpstashThrowing();
+
+        const result = await mod.checkApiReadRateLimit(fakeReq(), 'user-1', 'acme');
+
+        // POSITIVE CONTROL, and it is load-bearing: `isBypassed()` also
+        // returns `{ ok: true }`, so a bypass gate left on would make the
+        // two assertions below pass without the catch ever running. Proving
+        // Upstash was reached is what separates "failed open" from "never
+        // enforced".
+        expect(mockLimit).toHaveBeenCalledTimes(1);
+
+        expect(result.ok).toBe(true);
+        expect(result.response).toBeUndefined();
+    });
+
+    it('logs the degradation so an operator can see the limiter stopped enforcing', async () => {
+        const mod = await loadWithUpstashThrowing();
+
+        await mod.checkApiReadRateLimit(fakeReq(), 'user-1', 'acme');
+
+        // The wording is asserted against a log the OUTAGE PATH actually
+        // emitted, not against the file's source text.
+        expect(mockLogError).toHaveBeenCalledWith(
+            expect.stringMatching(/failing open/i),
+            expect.objectContaining({ component: 'rate-limit', err: 'Error: ECONNRESET' }),
+        );
+    });
+
+    it('keeps failing open for every request while the outage lasts', async () => {
+        const mod = await loadWithUpstashThrowing();
+
+        for (let i = 0; i < 5; i++) {
+            const result = await mod.checkApiReadRateLimit(fakeReq(), 'user-1', 'acme');
+            expect(result.ok).toBe(true);
+        }
+        // Not one request converted into a 429/503 along the way.
+        expect(mockLimit).toHaveBeenCalledTimes(5);
+        expect(mockLogError).toHaveBeenCalledTimes(5);
     });
 });
 

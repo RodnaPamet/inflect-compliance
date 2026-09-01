@@ -130,3 +130,73 @@ export function functionBodyOf(src: string, name: string): string {
     }
     throw new Error(`unterminated function body: ${name}`);
 }
+
+/**
+ * Return the whole `<callee>(…)` call expression, from the callee name to
+ * the parenthesis that closes its argument list at nesting depth zero.
+ *
+ * Third sibling of `declarationOf()` and `functionBodyOf()` above, and it
+ * exists for the call sites neither of those can reach. A callback passed
+ * to a call — `setInterval(() => { … }, pollMs)` — belongs to no `const`
+ * and to no named `function`, so a guard asserting something about the
+ * callback BODY had no way to bound its read and fell back to grepping the
+ * whole file.
+ *
+ * That is not a cosmetic difference. Three unanchored regexes over one file
+ * cannot bind a call to its call site: `/runFetch\(true\)/` is satisfied by
+ * ANY occurrence anywhere, so an interval flipped to `runFetch(false)` with
+ * a stray `runFetch(true)` left elsewhere passed every check while the
+ * behaviour was inverted (measured at 20/20 green — see #2238). Bounding
+ * the read to the call's own parentheses is what makes the assertion bind.
+ *
+ * Quoted text and comments are skipped so a parenthesis inside either
+ * cannot terminate the scan early. The search is for the callee followed by
+ * `(`, so a bare mention in a type position (`ReturnType<typeof
+ * setInterval>`) is not mistaken for the call.
+ *
+ * Throws (rather than returning '') when the call is missing or unbalanced
+ * — a guard whose target was renamed away must fail loudly, not assert
+ * against an empty string.
+ */
+export function callExpressionOf(src: string, callee: string): string {
+    const start = src.search(new RegExp(`\\b${callee}\\s*\\(`));
+    if (start < 0) throw new Error(`call expression not found: ${callee}(`);
+
+    let depth = 0;
+    let seenOpen = false;
+    let quote: string | null = null;
+
+    for (let i = start; i < src.length; i++) {
+        const ch = src[i];
+        const next = src[i + 1];
+
+        if (quote) {
+            if (ch === '\\') i++;
+            else if (ch === quote) quote = null;
+            continue;
+        }
+        if (ch === '/' && next === '/') {
+            i = src.indexOf('\n', i);
+            if (i < 0) break;
+            continue;
+        }
+        if (ch === '/' && next === '*') {
+            const end = src.indexOf('*/', i + 2);
+            if (end < 0) break;
+            i = end + 1;
+            continue;
+        }
+        if (ch === "'" || ch === '"' || ch === '`') {
+            quote = ch;
+            continue;
+        }
+        if (ch === '(') {
+            depth++;
+            seenOpen = true;
+        } else if (ch === ')') {
+            depth--;
+            if (seenOpen && depth === 0) return src.slice(start, i + 1);
+        }
+    }
+    throw new Error(`unterminated call expression: ${callee}(`);
+}

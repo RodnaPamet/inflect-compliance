@@ -543,15 +543,17 @@ describe("find* helpers", () => {
 // `use-tenant-controls-polling.test.ts` already locks the poll
 // contract for useTenantControls and its header reasons that "the
 // structural ratchet pins parity, so one behavioural file is
-// enough". The ratchet (`tests/guards/p-polish-d.test.ts:67-74`)
-// greps each hook file for `setInterval(`, `runFetch(true)` and
-// `runFetch(false)` INDEPENDENTLY; the regexes are unanchored, so
-// nothing binds the `true` to the interval's callback — a
-// risks/assets interval calling `runFetch(false)`, with a stray
-// `runFetch(true)` anywhere else in the file, would satisfy every
-// structural check and still blank the canvas's status chips on the
-// first transient 500. These two cases close that specifically, and
-// are deliberately NOT run for controls (that would be duplication).
+// enough". That ratchet used to grep each hook file for
+// `setInterval(`, `runFetch(true)` and `runFetch(false)`
+// INDEPENDENTLY — unanchored, so nothing bound the `true` to the
+// interval's callback, and an interval calling `runFetch(false)`
+// with a stray `runFetch(true)` anywhere else in the file satisfied
+// every structural check while still blanking the canvas's status
+// chips on the first transient 500. It now bounds its read to the
+// `setInterval(...)` call itself (#2238), so the parity claim is
+// real. These two cases remain the BEHAVIOURAL half — a bounded
+// source match still cannot see a poll that never fires — and are
+// deliberately NOT run for controls (that would be duplication).
 
 const POLLING_CASES: HookCase[] = CASES.filter(
     (c) => c.name !== "useTenantControls",
