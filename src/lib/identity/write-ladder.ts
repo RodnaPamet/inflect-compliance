@@ -43,3 +43,35 @@ export const LADDER: readonly IdentityWriteMode[] = [
 export function isAboveClamp(mode: IdentityWriteMode, clamp: IdentityWriteMode): boolean {
     return LADDER.indexOf(mode) > LADDER.indexOf(clamp);
 }
+
+/** The two directions the ladder is configured for, independently. */
+export type IdentityDirection = 'leaver' | 'joiner';
+
+/**
+ * Which directions have a RUNTIME behind them — not which are settable.
+ *
+ * This is the single source for the answer. It was previously spelled once, as a
+ * literal `implemented: false` inside the admin route's `honoured` block, purely
+ * so the UI could print a warning; the write path never asked. So the ladder
+ * accepted a joiner climb to AUTOMATIC in three PUTs and seven days while the
+ * warning underneath it said the subsystem does not exist.
+ *
+ * `joiner` is false because nothing reads `identityJoinerMode`: there is no
+ * joiner job, no directory writer with a create verb, and no consumer of the
+ * value other than the policy usecase that stores and reports it.
+ *
+ * When the joiner ships, flipping this to `true` moves the refusal in
+ * `describeRefusal` and the `honoured.<dir>.implemented` flag together — but
+ * NOT `honoured.joiner.maxMode`, which is a hardcoded `'DISABLED' as const` in
+ * `identity-write-policy/route.ts`. Flip the flag alone and the gate stops
+ * refusing while the route still reports a DISABLED ceiling, so `isAboveClamp`
+ * is true for every rung above off and the client shows the aboveClamp banner
+ * while nothing clamps anything — back to settable-and-inert with a differently
+ * worded notice. Give the joiner a real `JOINER_MAX_MODE` beside
+ * `LEAVER_MAX_MODE` at that point; it is deliberately not created now, because
+ * a clamp constant with no pass reading it is a fourth thing to keep in sync.
+ */
+export const DIRECTION_IMPLEMENTED: Readonly<Record<IdentityDirection, boolean>> = {
+    leaver: true,
+    joiner: false,
+};

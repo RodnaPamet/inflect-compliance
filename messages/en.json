@@ -5158,7 +5158,7 @@
             "confirmTitle": "Widen to {mode}?",
             "dryRunSince": "In dry run since {date}. A direction must sit here {days} days before it can widen.",
             "aboveClamp": "This rung is above what the product will act on today. Passes run at {mode} and refuse anything wider, so widening further changes the policy but not the behaviour.",
-            "notImplemented": "Joiner provisioning is not built yet — no directory provider can create an account. Any rung above Off is recorded but does nothing.",
+            "notImplemented": "Joiner provisioning is not built yet — no directory provider can create an account. The ladder is therefore locked at Off for this direction, and cannot be widened until the joiner runtime ships.",
             "direction": {
                 "leaver": "Leavers",
                 "joiner": "Joiners"

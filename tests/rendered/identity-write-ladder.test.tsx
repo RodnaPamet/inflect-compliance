@@ -14,8 +14,10 @@
  *      confirmed. Narrowing is the emergency stop — a dialog in front of it is a
  *      reason to hesitate at the moment nobody should.
  *   3. A rung above what the runtime honours says so. The leaver pass clamps
- *      itself and the joiner has no implementation, so both are settable and
- *      inert; silence there is worse than a refusal.
+ *      itself and the joiner has no implementation. Neither is settable-and-
+ *      inert any more: #2187 raised the leaver clamp to AUTOMATIC, and the
+ *      joiner is refused at both ends since 2026-09-01. Silence there would
+ *      still be worse than a refusal, which is why both now refuse.
  *
  * Plus the failure path, which the primitive's contract makes easy to get wrong:
  * `Modal.Confirm` closes on resolve, so a swallowed refusal would close the
@@ -186,8 +188,11 @@ describe('identity write ladder — the operator surface', () => {
     it('warns when the rung is above what the runtime will act on', () => {
         setPayload(state('PROPOSE'));
         render(<WriteLadderClient />);
-        // The leaver pass clamps itself at DRY_RUN, so PROPOSE is settable and
-        // inert. A control that accepts a value the system ignores is the bug.
+        // Written when the leaver pass clamped itself at DRY_RUN, which made
+        // PROPOSE settable-and-inert. #2187 raised that clamp to AUTOMATIC, so
+        // PROPOSE now runs — and refuses every candidate for a different reason
+        // (no approval queue; issue #2241). The principle the case exists for is
+        // unchanged: a control that accepts a value the system ignores is the bug.
         expect(within(card(/Leavers/i)).getByText(/above what the product will act on/i))
             .toBeInTheDocument();
     });
@@ -195,6 +200,38 @@ describe('identity write ladder — the operator surface', () => {
     it('says the joiner direction is not built, rather than pretending it works', () => {
         render(<WriteLadderClient />);
         expect(within(card(/Joiners/i)).getByText(/not built yet/i)).toBeInTheDocument();
+    });
+
+    it('disables the joiner widen control, and says why, while the joiner is unbuilt', () => {
+        render(<WriteLadderClient />);
+        const joiner = card(/Joiners/i);
+
+        // The fixture gives the joiner `blockedReason: null` DELIBERATELY. If the
+        // button only ever consulted that field the assertion below would be
+        // satisfied by nothing at all, so this test binds specifically to the
+        // component reading `honoured.implemented` — the flag that was already in
+        // scope, already false, and already unread.
+        expect(payload).toBeDefined();
+        expect(
+            (payload as { directions: Record<string, { blockedReason: string | null }> })
+                .directions.joiner.blockedReason,
+        ).toBeNull();
+
+        expect(joiner.querySelector('button')).not.toBeNull();
+        expect(within(joiner).getByRole('button', { name: /Widen to Dry run/i })).toBeDisabled();
+        // Disabled AND explained. A greyed control with nothing beside it is the
+        // failure mode this page exists to avoid.
+        expect(within(joiner).getByText(/not built yet/i)).toBeInTheDocument();
+    });
+
+    it('leaves the leaver widen control enabled in the same render', () => {
+        // The half that keeps the previous test honest: a component that disabled
+        // every widen button would pass it while breaking the only direction with
+        // a runtime behind it.
+        render(<WriteLadderClient />);
+        expect(
+            within(card(/Leavers/i)).getByRole('button', { name: /Widen to Dry run/i }),
+        ).toBeEnabled();
     });
 
     it('refuses the page to an admin who is not an owner', () => {

@@ -909,8 +909,10 @@ address. For Entra that address is `u.mail || u.userPrincipalName`.
 **The write-mode ladder** (`DISABLED → DRY_RUN → PROPOSE → AUTOMATIC`) is stored
 per direction on `TenantSecuritySettings.identity{Leaver,Joiner}Mode`, defaulting
 to `DISABLED`. `setIdentityWriteMode` in `usecases/identity-write-policy.ts`
-refuses multi-rung widening and refuses to leave `DRY_RUN` before
-`DRY_RUN_MIN_DAYS` (7). **Narrowing is always allowed**, and any move out of
+refuses multi-rung widening, refuses to leave `DRY_RUN` before
+`DRY_RUN_MIN_DAYS` (7), and refuses ANY widen of a direction whose
+`DIRECTION_IMPLEMENTED` flag is false — which is the joiner, since
+2026-09-01., and any move out of
 `DRY_RUN` — including narrowing — nulls `dryRunSince` and restarts the clock.
 
 `LEAVER_MAX_MODE` is a **source constant, not config**, enforced at gate 1 of

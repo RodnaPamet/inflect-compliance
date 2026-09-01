@@ -25,6 +25,7 @@ import {
     DRY_RUN_MIN_DAYS,
 } from '@/app-layer/usecases/identity-write-policy';
 import { LEAVER_MAX_MODE } from '@/app-layer/usecases/identity-leaver-pass';
+import { DIRECTION_IMPLEMENTED } from '@/lib/identity/write-ladder';
 
 const Body = z.object({
     direction: z.enum(['leaver', 'joiner']),
@@ -50,7 +51,7 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
                         mode: policy[d].mode,
                         dryRunSince: policy[d].dryRunSince,
                         nextMode: next === policy[d].mode ? null : next,
-                        blockedReason: next === policy[d].mode ? null : describeRefusal(policy[d], next, now),
+                        blockedReason: next === policy[d].mode ? null : describeRefusal(d, policy[d], next, now),
                     },
                 ];
             }),
@@ -60,18 +61,29 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         // this policy will accept — and the difference is invisible without it.
         //
         // The ladder is a statement of intent stored on the tenant; the PASS
-        // enforces its own clamp. Setting leaver to PROPOSE succeeds here and
-        // then every pass refuses MODE_ABOVE_CLAMP, so an operator who widened
-        // in good faith sees nothing happen and no reason why. The joiner has no
+        // enforces its own clamp. This paragraph used to say that setting
+        // leaver to PROPOSE succeeds here and then every pass refuses
+        // MODE_ABOVE_CLAMP — true until #2187 raised the clamp to AUTOMATIC,
+        // after which PROPOSE is BELOW the clamp and its passes run. They still
+        // decide nothing, for an unrelated reason: PROPOSE means a human
+        // approves each disable and that queue was never built, so the pass
+        // refuses every candidate REFUSED_MODE (issue #2241). The joiner has no
         // implementation at all — no createAccount on either provider — so any
         // rung above DISABLED is currently a statement about a subsystem that
         // does not exist.
         //
         // Returned so a UI can say that plainly rather than leaving the operator
         // to infer it from passes that quietly do nothing.
+        //
+        // `implemented` is READ from `DIRECTION_IMPLEMENTED`, not restated here.
+        // It used to be a literal `false` in this block and the only thing that
+        // consulted it was this JSON, so the write path let a tenant climb the
+        // joiner to AUTOMATIC while this same response called it unbuilt.
+        // `describeRefusal` now reads the same constant, so the reason the UI
+        // prints and the refusal the PUT raises cannot drift apart.
         honoured: {
-            leaver: { maxMode: LEAVER_MAX_MODE, implemented: true },
-            joiner: { maxMode: 'DISABLED' as const, implemented: false },
+            leaver: { maxMode: LEAVER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.leaver },
+            joiner: { maxMode: 'DISABLED' as const, implemented: DIRECTION_IMPLEMENTED.joiner },
         },
     });
 });

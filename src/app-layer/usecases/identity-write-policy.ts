@@ -25,13 +25,17 @@ import { badRequest, forbidden } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability/logger';
 
-import { LADDER, type IdentityWriteMode } from '@/lib/identity/write-ladder';
+import {
+    LADDER,
+    DIRECTION_IMPLEMENTED,
+    type IdentityWriteMode,
+    type IdentityDirection,
+} from '@/lib/identity/write-ladder';
 
 // Re-exported so the dozen existing importers keep their import path. The
 // definition moved to a server-free module because the admin client needs the
 // same ladder and cannot import a usecase.
-export type { IdentityWriteMode };
-export type IdentityDirection = 'leaver' | 'joiner';
+export type { IdentityWriteMode, IdentityDirection };
 
 /** Widening order. Index is authority: higher means the product may do more. */
 
@@ -92,6 +96,7 @@ export async function getIdentityWritePolicy(
  * explain the refusal before the operator submits it rather than after.
  */
 export function describeRefusal(
+    direction: IdentityDirection,
     current: DirectionState,
     next: IdentityWriteMode,
     now: Date,
@@ -105,6 +110,27 @@ export function describeRefusal(
     // turning this off is reacting to something; a ladder that slowed them down
     // on the way out would be actively harmful.
     if (to < from) return null;
+
+    // A DIRECTION WITH NO RUNTIME BEHIND IT CANNOT BE WIDENED AT ALL.
+    //
+    // `DIRECTION_IMPLEMENTED` is the same answer the route reports to the UI as
+    // `honoured.<direction>.implemented`; it used to be a literal in that block
+    // and nothing on the write path consulted it, so the ladder happily climbed
+    // a direction the warning underneath it called nonexistent.
+    //
+    // The harm is state accumulation, not a live write: nothing acts on
+    // `identityJoinerMode` today, so a tenant that reached AUTOMATIC would simply
+    // BE at AUTOMATIC on the day a joiner runtime, or a future JOINER_MAX_MODE
+    // clamp, first looked — with the ladder's whole point already spent. The
+    // seven days bought nothing, because the dwell below fires only when LEAVING
+    // DRY_RUN, so once past that rung there is no further delay at all.
+    //
+    // Placed BELOW the narrowing check on purpose. A tenant already sitting above
+    // DISABLED — set before this gate existed, or after the joiner ships and is
+    // later withdrawn — must still be able to come back down.
+    if (!DIRECTION_IMPLEMENTED[direction]) {
+        return `The ${direction} direction has no implementation behind it — no job or directory writer reads this setting — so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
+    }
 
     // Widening by more than one rung skips the step whose entire purpose is to
     // catch the mistake the next rung would then make for real.
@@ -147,7 +173,7 @@ export async function setIdentityWriteMode(
     const policy = await getIdentityWritePolicy(ctx);
     const current = policy[direction];
 
-    const refusal = describeRefusal(current, next, now);
+    const refusal = describeRefusal(direction, current, next, now);
     if (refusal) throw forbidden(refusal);
 
     const f = FIELDS[direction];
