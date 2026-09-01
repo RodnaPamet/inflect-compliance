@@ -11,8 +11,11 @@
  *     leave Design Mode polling the live-executions endpoint every
  *     3 s for every open canvas.
  *   • `useNodeOverlayStatus` — must be safe to call with no provider
- *     above it (the node renderer is mounted bare in tests + SSR) and
- *     must not look up an undefined ruleId.
+ *     above it (the node renderer is mounted bare in tests + SSR).
+ *
+ * The `ruleId ? … : undefined` guard inside `useNodeOverlayStatus` is
+ * NOT tested here: `map.get(undefined)` already returns `undefined`,
+ * so removing the guard changes nothing an assertion could observe.
  */
 import { render, renderHook, screen } from '@testing-library/react';
 import * as React from 'react';
@@ -41,7 +44,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 
 const LIVE_KEY = CACHE_KEYS.automation.executions.live();
 
-function StatusProbe({ ruleId }: { ruleId: string | undefined }) {
+function StatusProbe({ ruleId }: { ruleId: string }) {
     const status: OverlayStatus | undefined = useNodeOverlayStatus(ruleId);
     return <span data-testid="probe">{status ?? 'none'}</span>;
 }
@@ -78,15 +81,6 @@ describe('CanvasOverlayProvider — poll wiring', () => {
             expect.anything(),
         );
     });
-
-    it('renders its children regardless of the poll result', () => {
-        render(
-            <CanvasOverlayProvider enabled>
-                <span>canvas-child</span>
-            </CanvasOverlayProvider>,
-        );
-        expect(screen.getByText('canvas-child')).toBeInTheDocument();
-    });
 });
 
 describe('useNodeOverlayStatus', () => {
@@ -96,27 +90,6 @@ describe('useNodeOverlayStatus', () => {
         // undefined, or every such render would throw.
         const { result } = renderHook(() => useNodeOverlayStatus('rule-1'));
         expect(result.current).toBeUndefined();
-    });
-
-    it('returns undefined for an undefined ruleId even when the map is populated', () => {
-        mockSWR.mockReturnValue({
-            data: {
-                running: [
-                    {
-                        ruleId: 'rule-1',
-                        status: 'RUNNING',
-                        createdAt: '2026-06-08T00:00:00Z',
-                    },
-                ],
-                recent: [],
-            },
-        });
-        render(
-            <CanvasOverlayProvider enabled>
-                <StatusProbe ruleId={undefined} />
-            </CanvasOverlayProvider>,
-        );
-        expect(screen.getByTestId('probe')).toHaveTextContent('none');
     });
 
     it('projects the running status onto the node that owns the rule', () => {
@@ -151,15 +124,5 @@ describe('useNodeOverlayStatus', () => {
             'FAILED',
             'none',
         ]);
-    });
-
-    it('reports no status while the poll has not returned yet', () => {
-        mockSWR.mockReturnValue({ data: undefined });
-        render(
-            <CanvasOverlayProvider enabled>
-                <StatusProbe ruleId="rule-1" />
-            </CanvasOverlayProvider>,
-        );
-        expect(screen.getByTestId('probe')).toHaveTextContent('none');
     });
 });

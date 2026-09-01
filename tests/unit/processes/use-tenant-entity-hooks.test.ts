@@ -472,9 +472,16 @@ describe("label formatters", () => {
 });
 
 describe("find* helpers", () => {
+    // Every fixture list carries an option whose id is the EMPTY
+    // STRING. Without it the `id === ""` assertions below could not
+    // fail: the scan would find no match, `?? null` would return null,
+    // and `if (!id) return null` would be indistinguishable from
+    // `if (id === null || id === undefined) return null`. With the
+    // fixture present, only the falsy guard yields null.
     const controlOptions: TenantControlOption[] = [
         { id: "c1", ref: null, title: "One", status: "DONE" },
         { id: "c2", ref: "R", title: "Two", status: null },
+        { id: "", ref: null, title: "Unsaved draft", status: null },
     ];
     const controlState = {
         options: controlOptions,
@@ -485,7 +492,7 @@ describe("find* helpers", () => {
     it("findTenantControl returns null for a falsy id WITHOUT scanning", () => {
         expect(findTenantControl(controlState, null)).toBeNull();
         // Empty string is falsy too — it must take the same early
-        // exit rather than matching an option with an empty id.
+        // exit rather than matching the empty-id option in the list.
         expect(findTenantControl(controlState, "")).toBeNull();
     });
 
@@ -501,6 +508,7 @@ describe("find* helpers", () => {
     it("findTenantRisk mirrors the contract", () => {
         const riskOptions: TenantRiskOption[] = [
             { id: "r1", title: "One", status: "OPEN" },
+            { id: "", title: "Unsaved draft", status: null },
         ];
         const state = {
             options: riskOptions,
@@ -516,6 +524,7 @@ describe("find* helpers", () => {
     it("findTenantAsset mirrors the contract", () => {
         const assetOptions: TenantAssetOption[] = [
             { id: "a1", key: "K", name: "One", status: null },
+            { id: "", key: null, name: "Unsaved draft", status: null },
         ];
         const state = {
             options: assetOptions,
@@ -534,13 +543,15 @@ describe("find* helpers", () => {
 // `use-tenant-controls-polling.test.ts` already locks the poll
 // contract for useTenantControls and its header reasons that "the
 // structural ratchet pins parity, so one behavioural file is
-// enough". The ratchet (`tests/guards/p-polish-d.test.ts`) only
-// greps each hook file for `setInterval(`, so it cannot see WHICH
-// argument the interval passes to `runFetch` — a risks/assets
-// interval calling `runFetch(false)` would satisfy every structural
-// check and still blank the canvas's status chips on the first
-// transient 500. These two cases close that specifically, and are
-// deliberately NOT run for controls (that would be duplication).
+// enough". The ratchet (`tests/guards/p-polish-d.test.ts:67-74`)
+// greps each hook file for `setInterval(`, `runFetch(true)` and
+// `runFetch(false)` INDEPENDENTLY; the regexes are unanchored, so
+// nothing binds the `true` to the interval's callback — a
+// risks/assets interval calling `runFetch(false)`, with a stray
+// `runFetch(true)` anywhere else in the file, would satisfy every
+// structural check and still blank the canvas's status chips on the
+// first transient 500. These two cases close that specifically, and
+// are deliberately NOT run for controls (that would be duplication).
 
 const POLLING_CASES: HookCase[] = CASES.filter(
     (c) => c.name !== "useTenantControls",

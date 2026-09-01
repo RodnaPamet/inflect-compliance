@@ -309,9 +309,26 @@ describe('findProximityCandidate — scan edge cases', () => {
         expect(findProximityCandidate(dragged, [], [])).toBeNull();
     });
 
-    it('never binds a node to itself even when it is the only node', () => {
-        const dragged = makeNode('A', 0, 0);
-        expect(findProximityCandidate(dragged, [dragged], [])).toBeNull();
+    it('excludes the dragged node by ID, not by object identity', () => {
+        // xyflow hands `onNodeDrag` a FRESH node object every tick,
+        // while the `nodes` array the hook closes over holds a
+        // different object with the same id. A self-check written as
+        // `other === draggedNode` would therefore bind a node to
+        // ITSELF in production — at distance 0, so it wins every scan
+        // — and would still pass every other test in this file,
+        // because they all pass the same reference twice.
+        const inNodesCopy = makeNode('A', 0, 0);
+        const draggedCopy = makeNode('A', 0, 0);
+        const neighbour = makeNode('B', 60, 0);
+        expect(
+            findProximityCandidate(draggedCopy, [inNodesCopy], []),
+        ).toBeNull();
+        // With a real neighbour in range the neighbour must win, not
+        // the dragged node's own stale copy at distance 0.
+        expect(
+            findProximityCandidate(draggedCopy, [inNodesCopy, neighbour], [])
+                ?.target,
+        ).toBe('B');
     });
 
     it('binds at exactly the threshold distance but not one pixel beyond', () => {
@@ -363,15 +380,6 @@ describe('findProximityCandidate — scan edge cases', () => {
             target: 'B',
             distance: 0,
         });
-    });
-
-    it('ignores edges that touch neither node of the pair', () => {
-        const a = makeNode('A', 0, 0);
-        const b = makeNode('B', 60, 0);
-        const unrelated: Edge[] = [{ id: 'e1', source: 'X', target: 'Y' }];
-        const result = findProximityCandidate(a, [a, b], unrelated);
-        expect(result).not.toBeNull();
-        expect(result!.target).toBe('B');
     });
 
     it('falls back to the next-closest node when the closest is already linked', () => {

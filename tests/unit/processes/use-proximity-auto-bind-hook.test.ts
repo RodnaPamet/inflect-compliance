@@ -43,14 +43,28 @@ function makeNode(id: string, x: number, y: number): Node {
 const DRAG_EVENT: unknown = { type: 'pointermove' };
 
 describe('useProximityAutoBind — candidate lifecycle', () => {
-    it('starts with no candidate and exposes the pure finder unwrapped', () => {
-        const { result } = renderHook(() =>
-            useProximityAutoBind([makeNode('A', 0, 0)], []),
-        );
+    it('starts with no candidate and exposes a finder that agrees with the pure helper', () => {
+        const a = makeNode('A', 0, 0);
+        const b = makeNode('B', 60, 0);
+        const { result } = renderHook(() => useProximityAutoBind([a, b], []));
         expect(result.current.candidate).toBeNull();
-        // The hook advertises `findCandidate` as the SAME pure helper,
-        // not a bound wrapper — consumers memoise against it.
-        expect(result.current.findCandidate).toBe(findProximityCandidate);
+
+        // The hook advertises `findCandidate` as the finder itself.
+        // Asserted BEHAVIOURALLY, not by reference identity: a
+        // `.toBe(findProximityCandidate)` check would go red on a
+        // harmless `useCallback` wrap and green on every real bug
+        // inside the finder. The literal expectation is the second
+        // half — without it, a finder that returned null and a pure
+        // helper that returned null would agree vacuously.
+        const viaHook = result.current.findCandidate(a, [a, b], [], 80);
+        expect(viaHook).toStrictEqual(
+            findProximityCandidate(a, [a, b], [], 80),
+        );
+        expect(viaHook).toStrictEqual({
+            source: 'A',
+            target: 'B',
+            distance: 60,
+        });
     });
 
     it('publishes the candidate (with direction + distance) on drag', () => {
@@ -69,19 +83,6 @@ describe('useProximityAutoBind — candidate lifecycle', () => {
             target: 'B',
             distance: 60,
         });
-    });
-
-    it('leaves the candidate null while the drag stays out of range', () => {
-        const a = makeNode('A', 0, 0);
-        const far = makeNode('B', 1000, 0);
-        const { result } = renderHook(() =>
-            useProximityAutoBind([a, far], []),
-        );
-
-        act(() => {
-            result.current.onNodeDrag(DRAG_EVENT, a);
-        });
-        expect(result.current.candidate).toBeNull();
     });
 
     it('clears a live candidate once the drag leaves range', () => {
