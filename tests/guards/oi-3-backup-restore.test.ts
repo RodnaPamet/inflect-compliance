@@ -20,6 +20,23 @@
  *     30-day retention referenced in the doc.
  *   - .github/workflows/restore-test.yml schedules monthly via cron,
  *     uses OIDC, gated by the production GitHub Environment.
+ *   - .github/workflows/restore-test.yml carries a notifier job that
+ *     turns a failed drill into something a human is subscribed to.
+ *     That last group exists because the drill failed on every
+ *     scheduled attempt from 2026-05-01 onward and nobody noticed: a
+ *     red scheduled run is not a notification. It locks the four
+ *     properties that make the notifier actually fire and actually
+ *     reach someone — (1) it depends on EVERY job a schedule can
+ *     start, so it cannot be skipped into silence; (2) its condition
+ *     is `failure() || cancelled()`, because a cancelled job's result
+ *     is 'cancelled' and `failure()` alone would miss a
+ *     timeout-cancelled restore; (3) it declares job-level
+ *     `issues: write`, which REPLACES rather than merges with the
+ *     workflow-level permissions block; (4) it creates an issue or
+ *     COMMENTS on the open one, never a bare `issues.update` — editing
+ *     an issue body sends no notification of any kind — and its dedupe
+ *     lookup passes `per_page: 100` on a narrow label rather than
+ *     relying on the 30-item default page.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -289,5 +306,87 @@ describe('OI-3 — restore-test.yml workflow scheduling', () => {
         expect(src).toMatch(/GITHUB_STEP_SUMMARY/);
         expect(src).toMatch(/restore-test/);
         expect(src).toMatch(/orphaned/);
+    });
+});
+
+
+describe('OI-3 — a failed restore drill NOTIFIES someone', () => {
+    const WORKFLOW = '.github/workflows/restore-test.yml';
+
+    interface Job {
+        needs?: string[];
+        if?: string;
+        permissions?: Record<string, string>;
+        steps?: { uses?: string; with?: { script?: string } }[];
+    }
+
+    const jobs = (): Record<string, Job> =>
+        (yaml.load(read(WORKFLOW)) as { jobs: Record<string, Job> }).jobs;
+
+    const notifier = (): Job => {
+        const j = jobs()['notify-on-failure'];
+        // Asserted rather than optional-chained: if the job is deleted,
+        // every check below would otherwise pass vacuously on undefined.
+        expect(j).toBeDefined();
+        return j as Job;
+    };
+
+    const script = (): string => {
+        const step = (notifier().steps ?? []).find((s) => s.uses?.startsWith('actions/github-script'));
+        expect(step).toBeDefined();
+        return step!.with!.script!;
+    };
+
+    it('a notifier job exists and depends on EVERY job a schedule can start', () => {
+        // Derived, not hardcoded: a third restore job added later must be
+        // added to `needs` too, or it can fail into silence.
+        const startable = Object.keys(jobs()).filter((id) => id !== 'notify-on-failure');
+        expect(startable.length).toBeGreaterThan(0);
+        expect([...(notifier().needs ?? [])].sort()).toEqual([...startable].sort());
+    });
+
+    it('fires on cancellation as well as failure', () => {
+        // A cancelled job's result is 'cancelled', NOT 'failure', so
+        // `failure()` alone goes silent on a timeout-cancelled restore —
+        // the 90-minute timeout makes that a realistic outcome here.
+        const cond = notifier().if ?? '';
+        expect(cond).toMatch(/failure\(\)/);
+        expect(cond).toMatch(/cancelled\(\)/);
+        // It must NOT be narrowed to a trigger a schedule cannot satisfy.
+        // Gating the restore jobs to workflow_dispatch and hanging this off
+        // them means that on the monthly cron the needed jobs never run,
+        // failure() is false, and the notifier is unreachable on the only
+        // trigger that fires by itself.
+        expect(cond).not.toMatch(/workflow_dispatch/);
+    });
+
+    it('declares issues: write at JOB level (job permissions REPLACE the workflow block)', () => {
+        // The workflow-level block grants contents+id-token and NOT issues,
+        // and a job-level block overrides it wholesale rather than merging.
+        expect(notifier().permissions?.issues).toBe('write');
+    });
+
+    it('notifies every time — creates an issue, or COMMENTS on the open one', () => {
+        const s = script();
+        expect(s).toMatch(/issues\.create\(/);
+        expect(s).toMatch(/issues\.createComment\(/);
+        // `issues.update` on an existing issue produces NO notification —
+        // not email, not web, not mobile. A monthly job that only edits a
+        // body is silent from the second month onward while the run
+        // reports success.
+        expect(s).not.toMatch(/issues\.update\(/);
+    });
+
+    it('the dedupe lookup cannot silently miss (per_page + a narrow label)', () => {
+        const s = script();
+        // listForRepo defaults to 30 items of page one; the tracking issue
+        // scrolling off it makes the lookup find nothing and open a
+        // duplicate every month until people mute the notifications.
+        expect(s).toMatch(/per_page:\s*100/);
+        expect(s).toMatch(/labels:/);
+        // A narrow label, not the generic 'automated' bucket that other
+        // scheduled jobs also write into.
+        expect(s).toMatch(/restore-drill/);
+        expect(s).not.toMatch(/labels:\s*'automated'/);
     });
 });
