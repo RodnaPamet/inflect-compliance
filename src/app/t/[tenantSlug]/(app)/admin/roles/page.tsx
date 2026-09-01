@@ -31,7 +31,7 @@ import { useTranslations } from 'next-intl';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
+import { getPermissionsForRole, PERMISSION_SCHEMA, type PermissionSet } from '@/lib/permissions';
 import {
     Shield, Pencil, Trash2, Check,
     ChevronDown, ChevronUp, Users,
@@ -64,27 +64,38 @@ interface CustomRole {
     _count: { memberships: number };
 }
 
-// ─── Permission Schema (must match src/lib/permissions.ts PERMISSION_SCHEMA) ───
+// ─── Resource labels ───
+//
+// The domain list and its actions come from `PERMISSION_SCHEMA` in
+// `@/lib/permissions` — the single source of truth. This file used to
+// carry two hand-written copies of it (a full action map, and a
+// SHORTER `RESOURCE_KEYS` list right beside it that drove the labels),
+// and they disagreed with the type and with each other: #2225 measured
+// `assets` / `personnel` / `incidents` missing from `RESOURCE_KEYS`,
+// `reports.schedule_external` missing, and four `admin` actions
+// missing — including `tenant_lifecycle` and `owner_management`, the
+// two flags that separate OWNER from ADMIN, which therefore rendered
+// no toggle at all.
+//
+// The label lookup falls back to the raw domain key when the catalog
+// has no string for it, so a domain added to `PERMISSION_SCHEMA`
+// before its translation lands renders `assets` rather than an empty
+// cell. That is a legible placeholder, not a silent hole.
 
-const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
-    controls: ['view', 'create', 'edit'],
-    evidence: ['view', 'upload', 'edit', 'download'],
-    policies: ['view', 'create', 'edit', 'approve'],
-    tasks: ['view', 'create', 'edit', 'assign'],
-    risks: ['view', 'create', 'edit'],
-    assets: ['view', 'create', 'edit'],
-    vendors: ['view', 'create', 'edit'],
-    personnel: ['view', 'manage'],
-    tests: ['view', 'create', 'execute'],
-    incidents: ['view', 'manage'],
-    frameworks: ['view', 'install'],
-    audits: ['view', 'manage', 'freeze', 'share'],
-    reports: ['view', 'export'],
-    admin: ['view', 'manage', 'members', 'sso', 'scim'],
-};
+type Translator = ((key: string) => string) & { has?: (key: string) => boolean };
 
-const RESOURCE_KEYS = ['controls','evidence','policies','tasks','risks','vendors','tests','frameworks','audits','reports','admin'] as const;
-const buildResourceLabels = (t: (k: string) => string): Record<string, string> => Object.fromEntries(RESOURCE_KEYS.map(k => [k, t(`resourceLabels.${k}`)]));
+const buildResourceLabels = (t: Translator): Record<string, string> =>
+    Object.fromEntries(
+        Object.keys(PERMISSION_SCHEMA).map((k) => {
+            const key = `resourceLabels.${k}`;
+            if (typeof t.has === 'function' && !t.has(key)) return [k, k];
+            const label = t(key);
+            // A `t` without `.has` (or one configured to echo the key)
+            // returns the key path for a missing message — treat that as
+            // missing too rather than painting a dotted path into a cell.
+            return [k, label && !label.includes('resourceLabels.') ? label : k];
+        }),
+    );
 
 const BASE_ROLES: Role[] = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
 const ROLE_COLORS: Record<string, StatusBadgeVariant> = {

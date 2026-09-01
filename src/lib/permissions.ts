@@ -69,10 +69,27 @@ export type PermissionSet = {
 };
 
 /**
- * Canonical list of all permission domain keys.
- * Used for validation to ensure the JSON shape exactly matches PermissionSet.
+ * Canonical list of all permission domain keys and their actions.
+ *
+ * This is the SINGLE SOURCE OF TRUTH for the shape of `PermissionSet`.
+ * Used for validation (`validatePermissionsJson`), for merging stored
+ * blobs over role defaults (`parsePermissionsJson`), for the
+ * escalation guard (`permissionsExceeding`), and — since it is
+ * exported — for every surface that needs to enumerate the domains.
+ *
+ * DO NOT re-declare this list anywhere else. It is exported precisely
+ * so that no caller has to. Three hand-written copies had drifted by
+ * the time #2225 measured them: the custom-role editor's grid, its
+ * separate `RESOURCE_KEYS` label list, and the API-key scope map.
+ * None of the drift was type-checked, because a literal in a
+ * different shape from the type it mirrors is not a mirror to the
+ * compiler.
+ *
+ * Client-safe: this module's only Prisma dependency is an
+ * `import type`, which is erased at compile time, so a `'use client'`
+ * component can import this constant.
  */
-const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
+export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     controls: ['view', 'create', 'edit'],
     evidence: ['view', 'upload', 'edit', 'download'],
     policies: ['view', 'create', 'edit', 'approve'],
