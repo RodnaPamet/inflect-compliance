@@ -51,6 +51,9 @@ const THIRTY_DAYS = new Date('2026-03-31T12:00:00.000Z');
 
 /** A mapped control that crosswalks to BOTH SOC 2 and NIST CSF 2.0. */
 const MAPPED = 'iam_root_user_mfa_enabled';
+/** A DIFFERENT mapped control, also dual-framework — needed to tell a dedupe
+ *  set scoped per benchmark control from one scoped across the whole run. */
+const SECOND_MAPPED = 'guardduty_enabled';
 
 interface Conn {
     id: string;
@@ -103,6 +106,43 @@ function providerThrowing(err: unknown) {
     };
 }
 
+/**
+ * `durationMs` is `Date.now() - start`, so pinning it needs the wall clock
+ * under test control: a literal asserted against the real clock is a fuse that
+ * goes green at merge and red on a slow CI box, and `expect.any(Number)` is
+ * satisfied by the constant `0`. `fakeClock()` freezes `Date.now`, and the two
+ * `*After` provider stubs advance it by exactly `ms` while the check runs — so
+ * the persisted duration is that number and nothing else.
+ */
+const ELAPSED_MS = 250;
+function fakeClock() {
+    let t = Date.parse('2026-03-01T12:00:00.000Z');
+    jest.spyOn(Date, 'now').mockImplementation(() => t);
+    return {
+        advance(ms: number) {
+            t += ms;
+        },
+    };
+}
+type Clock = ReturnType<typeof fakeClock>;
+
+function providerReturningAfter(result: CheckResult, clock: Clock, ms: number) {
+    return {
+        runCheck: jest.fn(async () => {
+            clock.advance(ms);
+            return result;
+        }),
+    };
+}
+function providerThrowingAfter(err: unknown, clock: Clock, ms: number) {
+    return {
+        runCheck: jest.fn(async () => {
+            clock.advance(ms);
+            throw err;
+        }),
+    };
+}
+
 function checkResult(over: Partial<CheckResult> = {}): CheckResult {
     return { status: 'PASSED', summary: 's', details: {}, ...over };
 }
@@ -112,6 +152,12 @@ beforeEach(() => {
     decrypt.mockReturnValue('{}');
     markAuth.mockResolvedValue(false);
     clearAuth.mockResolvedValue(undefined);
+});
+
+// Only ever restores `jest.spyOn` mocks (the `Date.now` clock above); the
+// module factories from `jest.mock` are untouched by this.
+afterEach(() => {
+    jest.restoreAllMocks();
 });
 
 describe('runAwsPostureCollection — connection resolution', () => {
@@ -125,9 +171,14 @@ describe('runAwsPostureCollection — connection resolution', () => {
         // No `provider` and no `now` — exercises both injection defaults.
         const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN });
 
+        // The `where` is pinned exactly — tenant + provider scoping is the
+        // invariant. The `select` is pinned by CONTAINMENT: these three fields
+        // are the ones the collector actually reads. `isEnabled` is selected too
+        // (aws-posture.ts:69) and never read, so an exact object here would go
+        // red on a behaviour-preserving cleanup that deletes the dead field.
         expect(db.integrationConnection.findFirst).toHaveBeenCalledWith({
             where: { id: CONN, tenantId: TENANT, provider: 'aws-posture' },
-            select: { id: true, configJson: true, secretEncrypted: true, isEnabled: true },
+            select: expect.objectContaining({ id: true, configJson: true, secretEncrypted: true }),
         });
         expect(db.integrationExecution.create).toHaveBeenCalledWith({
             data: {
@@ -240,7 +291,8 @@ describe('runAwsPostureCollection — provider throw', () => {
         bind(db);
         decrypt.mockReturnValue(JSON.stringify({ secretAccessKey: secret, externalId: 'ext-12345678' }));
         const err = new Error(`boom ${secret} ${'pad '.repeat(200)}`);
-        const provider = providerThrowing(err);
+        const clock = fakeClock();
+        const provider = providerThrowingAfter(err, clock, ELAPSED_MS);
 
         const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider });
 
@@ -248,7 +300,9 @@ describe('runAwsPostureCollection — provider throw', () => {
         expect(expected).toHaveLength(500);
         expect(db.integrationExecution.update).toHaveBeenCalledWith({
             where: { id: 'exec-1' },
-            data: { status: 'ERROR', errorMessage: expected, durationMs: expect.any(Number), completedAt: expect.any(Date) },
+            // Elapsed, not a constant: the clock moved by exactly ELAPSED_MS
+            // while `runCheck` was in flight, so `Date.now() - start` is pinned.
+            data: { status: 'ERROR', errorMessage: expected, durationMs: ELAPSED_MS, completedAt: expect.any(Date) },
         });
         expect(res.errorMessage).toBe(expected);
         expect(res.errorMessage).not.toContain(secret);
@@ -323,8 +377,9 @@ describe('runAwsPostureCollection — evidence collection', () => {
         db.controlRequirementLink.findFirst
             .mockResolvedValueOnce({ controlId: 'ctl-soc2' })
             .mockResolvedValueOnce({ controlId: 'ctl-nist' });
+        const clock = fakeClock();
 
-        const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider: providerReturning(passing) });
+        const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider: providerReturningAfter(passing, clock, ELAPSED_MS) });
 
         expect(db.controlRequirementLink.findFirst).toHaveBeenNthCalledWith(1, {
             where: { tenantId: TENANT, requirement: { framework: { key: 'SOC2' }, code: { in: ['CC6.1'] } } },
@@ -365,7 +420,8 @@ describe('runAwsPostureCollection — evidence collection', () => {
                 resultJson: passing.details,
                 evidenceId: 'ev-1',
                 errorMessage: null,
-                durationMs: expect.any(Number),
+                // Elapsed, not a constant — see `fakeClock`.
+                durationMs: ELAPSED_MS,
                 completedAt: expect.any(Date),
             },
         });
@@ -383,6 +439,42 @@ describe('runAwsPostureCollection — evidence collection', () => {
         expect(db.controlRequirementLink.findFirst).toHaveBeenCalledTimes(2);
         expect(res.evidenceCreated).toBe(1);
         expect(db.evidence.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('evidences two DIFFERENT passing checks that share one covering control', async () => {
+        // Regression class: `seenControlIds` is constructed INSIDE the loop over
+        // benchmark controls, so it dedupes the frameworks one check crosswalks
+        // to — not the checks themselves. Hoisting it out of that loop keeps
+        // every other test here green (they all run a single passing check) and
+        // silently drops the second check's evidence: `evidenceCreated`
+        // under-reports with a well-formed PASSED result to show for it. This is
+        // a SCOPE, not a branch, so 100% branch coverage cannot see it.
+        const db = connDb();
+        db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
+        const twoPassing = checkResult({
+            status: 'PASSED',
+            details: {
+                counts: { ok: 2, alarm: 0, skip: 0, error: 0, total: 2 },
+                controls: [
+                    { id: MAPPED, status: 'ok' },
+                    { id: SECOND_MAPPED, status: 'ok' },
+                ],
+            },
+        });
+
+        const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider: providerReturning(twoPassing) });
+
+        // One row per CHECK (distinct category), deduped within each check.
+        expect(res.evidenceCreated).toBe(2);
+        expect(db.evidence.create).toHaveBeenCalledTimes(2);
+        expect(db.evidence.create).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ data: expect.objectContaining({ category: `aws-posture:${MAPPED}` }) }),
+        );
+        expect(db.evidence.create).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ data: expect.objectContaining({ category: `aws-posture:${SECOND_MAPPED}` }) }),
+        );
     });
 
     it('never evidences an alarming, skipped, or unmapped control', async () => {
@@ -417,6 +509,14 @@ describe('runAwsPostureCollection — evidence collection', () => {
             where: { id: 'exec-1' },
             data: expect.objectContaining({ status: 'FAILED', evidenceId: null }),
         });
+        // Regression class: a FAILED compliance verdict is a SUCCESSFUL
+        // collection — the credential demonstrably worked, so a stale REVOKED
+        // banner must clear. Clamping the clear to `status === 'PASSED'` (the
+        // obvious over-correction for the ERROR-path defect reported alongside
+        // this file) would strand the banner on a healthy connection for as long
+        // as the benchmark keeps reporting gaps. Only the PASSED path was pinned
+        // before, so that clamp landed green.
+        expect(clearAuth).toHaveBeenCalledWith(db, CONN, 'aws-posture');
     });
 
     it('keeps evidencing the controls that FOLLOW a failing one', async () => {

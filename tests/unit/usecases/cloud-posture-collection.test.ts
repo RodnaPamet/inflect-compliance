@@ -104,6 +104,43 @@ function checkResult(over: Partial<CheckResult> = {}): CheckResult {
     return { status: 'PASSED', summary: 's', details: {}, ...over };
 }
 
+/**
+ * `durationMs` is `Date.now() - start`, so pinning it needs the wall clock
+ * under test control: a literal asserted against the real clock is a fuse that
+ * goes green at merge and red on a slow CI box, and `expect.any(Number)` is
+ * satisfied by the constant `0`. `fakeClock()` freezes `Date.now`, and the two
+ * `*After` provider stubs advance it by exactly `ms` while the check runs — so
+ * the persisted duration is that number and nothing else.
+ */
+const ELAPSED_MS = 250;
+function fakeClock() {
+    let t = Date.parse('2026-03-01T12:00:00.000Z');
+    jest.spyOn(Date, 'now').mockImplementation(() => t);
+    return {
+        advance(ms: number) {
+            t += ms;
+        },
+    };
+}
+type Clock = ReturnType<typeof fakeClock>;
+
+function providerReturningAfter(result: CheckResult, clock: Clock, ms: number) {
+    return {
+        runCheck: jest.fn(async () => {
+            clock.advance(ms);
+            return result;
+        }),
+    };
+}
+function providerThrowingAfter(err: unknown, clock: Clock, ms: number) {
+    return {
+        runCheck: jest.fn(async () => {
+            clock.advance(ms);
+            throw err;
+        }),
+    };
+}
+
 /** Every call needs the same four injected inputs; only the deltas vary. */
 function run(over: Partial<Parameters<typeof runCloudPostureCollection>[0]> = {}) {
     return runCloudPostureCollection({
@@ -122,6 +159,12 @@ beforeEach(() => {
     decrypt.mockReturnValue('{}');
     markAuth.mockResolvedValue(false);
     clearAuth.mockResolvedValue(undefined);
+});
+
+// Only ever restores `jest.spyOn` mocks (the `Date.now` clock above); the
+// module factories from `jest.mock` are untouched by this.
+afterEach(() => {
+    jest.restoreAllMocks();
 });
 
 describe('runCloudPostureCollection — connection resolution', () => {
@@ -159,9 +202,15 @@ describe('runCloudPostureCollection — connection resolution', () => {
         expect(clearAuth).not.toHaveBeenCalled();
     });
 
-    it('builds the JOB context from the caller tenant and the cloud label', async () => {
-        // Regression class: the RLS binding + the greppable job identity that is
-        // the only way to tell an Azure pass from a GCP pass in the logs.
+    it('derives the JOB context AND the connection lookup from the caller tenant and the cloud label', async () => {
+        // Regression class: the RLS binding, the greppable job identity that is
+        // the only way to tell an Azure pass from a GCP pass in the logs, and
+        // the provider scoping on the connection lookup. This is the ONLY test
+        // in the file that runs with a cloud other than `azure-posture`, so it
+        // is the only place where a hard-coded `'azure-posture'` in that `where`
+        // is distinguishable from `input.cloud` — the sibling test above asserts
+        // the same `where` but cannot tell a parameter from the constant it
+        // happens to equal.
         const db = makeDb(null);
         bind(db);
 
@@ -170,8 +219,19 @@ describe('runCloudPostureCollection — connection resolution', () => {
 
         const ctx = runInTenant.mock.calls[0][0] as RequestContext;
         expect(ctx.tenantId).toBe(TENANT);
-        expect(ctx.requestId).toBe(`gcp-posture-posture-${TENANT}`);
+        // Derived from BOTH the cloud label and the tenant. Asserted without
+        // pinning the exact spelling: `makeSystemCtx` composes `${cloud}-posture`
+        // over a cloud that already ends in `-posture`, so the literal value is
+        // `gcp-posture-posture-…`. Pinning that would make this test — whose own
+        // title claims to protect the job identity — the thing that blocks the
+        // one-line fix for it.
+        expect(ctx.requestId).toMatch(/^gcp-posture/);
+        expect(ctx.requestId).toContain(TENANT);
         expect(ctx.actorType).toBe('JOB');
+        expect(db.integrationConnection.findFirst).toHaveBeenCalledWith({
+            where: { id: CONN, tenantId: TENANT, provider: 'gcp-posture' },
+            select: { id: true, configJson: true, secretEncrypted: true },
+        });
         expect(db.integrationExecution.create).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ completedAt: expect.any(Date) }) }),
         );
@@ -246,13 +306,16 @@ describe('runCloudPostureCollection — provider throw', () => {
         bind(db);
         const err = new IntegrationRateLimitedError(`https://management.azure.com/${'x'.repeat(700)}`, 30_000);
         expect(err.message.length).toBeGreaterThan(500);
+        const clock = fakeClock();
 
-        const res = await run({ provider: providerThrowing(err) });
+        const res = await run({ provider: providerThrowingAfter(err, clock, ELAPSED_MS) });
 
         expect(markAuth).toHaveBeenCalledWith(db, CONN, err, NOW, CLOUD);
         expect(db.integrationExecution.update).toHaveBeenCalledWith({
             where: { id: 'exec-9' },
-            data: { status: 'ERROR', errorMessage: err.message.slice(0, 500), durationMs: expect.any(Number), completedAt: expect.any(Date) },
+            // Elapsed, not a constant: the clock moved by exactly ELAPSED_MS
+            // while `runCheck` was in flight, so `Date.now() - start` is pinned.
+            data: { status: 'ERROR', errorMessage: err.message.slice(0, 500), durationMs: ELAPSED_MS, completedAt: expect.any(Date) },
         });
         expect(res).toStrictEqual({
             executionId: 'exec-9',
@@ -304,8 +367,9 @@ describe('runCloudPostureCollection — evidence collection', () => {
         // the same control. A hard-coded prefix cross-labels them silently.
         const db = connDb();
         db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
+        const clock = fakeClock();
 
-        const res = await run({ provider: providerReturning(passing) });
+        const res = await run({ provider: providerReturningAfter(passing, clock, ELAPSED_MS) });
 
         expect(res.evidenceCreated).toBe(1);
         expect(db.evidence.create).toHaveBeenCalledWith({
@@ -334,7 +398,8 @@ describe('runCloudPostureCollection — evidence collection', () => {
                 resultJson: passing.details,
                 evidenceId: 'ev-1',
                 errorMessage: null,
-                durationMs: expect.any(Number),
+                // Elapsed, not a constant — see `fakeClock`.
+                durationMs: ELAPSED_MS,
                 completedAt: expect.any(Date),
             },
         });
@@ -398,6 +463,42 @@ describe('runCloudPostureCollection — evidence collection', () => {
         );
     });
 
+    it('evidences two DIFFERENT passing checks that share one covering control', async () => {
+        // Regression class: `seenControlIds` is constructed INSIDE the loop over
+        // benchmark controls, so it dedupes the frameworks one check crosswalks
+        // to — not the checks themselves. Hoisting it out of that loop keeps
+        // every other test here green (they all run a single passing check) and
+        // silently drops the second check's evidence: `evidenceCreated`
+        // under-reports with a well-formed PASSED result to show for it. This is
+        // a SCOPE, not a branch, so 100% branch coverage cannot see it.
+        const db = connDb();
+        db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
+        const twoPassing = checkResult({
+            status: 'PASSED',
+            details: {
+                counts: { ok: 2, alarm: 0, skip: 0, error: 0, total: 2 },
+                controls: [
+                    { id: DUAL, status: 'ok' },
+                    { id: SOC2_ONLY, status: 'ok' },
+                ],
+            },
+        });
+
+        const res = await run({ provider: providerReturning(twoPassing) });
+
+        // One row per CHECK (distinct category), deduped within each check.
+        expect(res.evidenceCreated).toBe(2);
+        expect(db.evidence.create).toHaveBeenCalledTimes(2);
+        expect(db.evidence.create).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ data: expect.objectContaining({ category: `${CLOUD}:${DUAL}` }) }),
+        );
+        expect(db.evidence.create).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ data: expect.objectContaining({ category: `${CLOUD}:${SOC2_ONLY}` }) }),
+        );
+    });
+
     it('never evidences an alarming, skipped, or unmapped control', async () => {
         const db = connDb();
         db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-soc2' });
@@ -424,6 +525,14 @@ describe('runCloudPostureCollection — evidence collection', () => {
             evidenceCreated: 0,
             errorMessage: undefined,
         });
+        // Regression class: a FAILED compliance verdict is a SUCCESSFUL
+        // collection — the credential demonstrably worked, so a stale REVOKED
+        // banner must clear. Clamping the clear to `status === 'PASSED'` (the
+        // obvious over-correction for the ERROR-path defect reported alongside
+        // this file) would strand the banner on a healthy connection for as long
+        // as the benchmark keeps reporting gaps. Only the PASSED path was pinned
+        // before, so that clamp landed green.
+        expect(clearAuth).toHaveBeenCalledWith(db, CONN, CLOUD);
     });
 
     it('skips a framework with no covering control, whether the link or its controlId is null', async () => {
