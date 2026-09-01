@@ -1,7 +1,10 @@
 /** @jest-environment jsdom */
 
 /**
- * The dry-run leaver pass report — what an operator can tell apart on screen.
+ * The leaver pass report — what an operator can tell apart on screen.
+ * "Dry-run" was dropped from this description deliberately: the clamp moved
+ * to AUTOMATIC in #2187, and describing the surface as dry-run-only is the
+ * assumption that produced the bug these tests now cover.
  *
  * VIEWPORT: 1280 × 800 (desktop). Stated because the report is a
  * master/detail pair of tables that is only laid out side-by-side-in-time on a

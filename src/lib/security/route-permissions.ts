@@ -261,8 +261,8 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         path: new RegExp(`^${T}\\/admin\\/identity-leaver-passes(\\/.*)?$`),
         permission: 'admin.tenant_lifecycle',
         note:
-            'Reads the per-candidate record of what a dry-run leaver pass ' +
-            'WOULD have disabled. Same OWNER-only key as the write policy ' +
+            'Reads the per-candidate record of what a leaver pass did, or ' +
+            'would have done in dry run. Same OWNER-only key as the write policy ' +
             'those passes run under, because naming which of a customer\'s ' +
             'people the product would disable is authority of the same class ' +
             'as granting the disable. A SIBLING path rather than nested under ' +

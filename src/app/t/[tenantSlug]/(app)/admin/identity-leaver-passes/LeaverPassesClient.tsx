@@ -239,8 +239,25 @@ export function LeaverPassesClient() {
     // which agrees with the pass only while the clamp is the second rung: once the
     // clamp moved to AUTOMATIC (#2187) a DRY_RUN tenant — every tenant in the
     // observation window — was declared mismatched and told to WIDEN two rungs to
-    // unattended directory writes, and the one arm below that reports a fault went
-    // unreachable for everybody under the top rung.
+    // unattended directory writes.
+    //
+    // The fault arm is a SEPARATE and narrower story than the sentence above
+    // originally claimed, and the correction matters because it is still
+    // partly true. `overdue` derives from `dryRunSince`, and
+    // `setIdentityWriteMode` nulls that on EVERY move out of DRY_RUN
+    // (`identity-write-policy.ts`, `const since = next === 'DRY_RUN' ? now : null`).
+    // So the arm is reachable only at DRY_RUN — not "for everybody under the
+    // top rung", and not at the top rung either, where `dryRunSince` is
+    // equally null. Fixing the comparison restores it for the observation
+    // window, which is where the live tenant sits and where #2175 would have
+    // been caught. It does NOT restore it for PROPOSE or AUTOMATIC — the rungs
+    // that actually hold disable authority — because those have no stored
+    // start point to be overdue against.
+    //
+    // The real fix is to derive due-ness from the newest pass's `executedAt`
+    // rather than from `dryRunSince`, which needs a signal this component does
+    // not have in the empty case. Left deliberately: a comment that overstates
+    // the repair is the same defect class as the one being repaired.
     //
     // Both sides must be RUNGS THIS BUILD KNOWS before anything is ordered against
     // them: `isAboveClamp` sorts an unrecognised value to -1 and so reads it as
