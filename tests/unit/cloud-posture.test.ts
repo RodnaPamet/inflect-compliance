@@ -14,8 +14,6 @@ import { AzurePostureProvider } from '@/app-layer/integrations/providers/azure-p
 import { GcpPostureProvider } from '@/app-layer/integrations/providers/gcp-posture-provider';
 import { AZURE_POSTURE_CONTROL_MAP, allMappedRequirementCodes as azureCodes } from '@/data/integrations/azure-posture-control-map';
 import { GCP_POSTURE_CONTROL_MAP, allMappedRequirementCodes as gcpCodes } from '@/data/integrations/gcp-posture-control-map';
-// Exercise the collector usecase for the coverage ratchet.
-import { runCloudPostureCollection } from '@/app-layer/usecases/cloud-posture';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -127,13 +125,5 @@ describe('control-map validity', () => {
         expect(Object.keys(GCP_POSTURE_CONTROL_MAP).length).toBeGreaterThan(5);
         expect(read('src/data/integrations/azure-posture-control-map.ts')).not.toMatch(/@prisma\/client/);
         expect(read('src/data/integrations/gcp-posture-control-map.ts')).not.toMatch(/@prisma\/client/);
-    });
-});
-
-describe('cloud-posture collector', () => {
-    it('exports a callable collection usecase', () => {
-        // Keeps the usecase import live for the coverage ratchet; behavioural
-        // DB coverage runs in integration (real tenant db) on CI.
-        expect(typeof runCloudPostureCollection).toBe('function');
     });
 });
