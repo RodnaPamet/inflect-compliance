@@ -34,7 +34,12 @@
  * SAFETY INVARIANTS
  * ═══════════════════════════════════════════════════════════════════════
  *
- * 1. SCIM NEVER creates or promotes to ADMIN
+ * 1. SCIM NEVER creates or promotes to ADMIN. The ceiling is
+ *    `SCIM_ASSIGNABLE_ROLES` in `@/lib/scim/roles` — ONE list, also read by the
+ *    SCIM Groups push path, which used to resolve roles through the Entra
+ *    group→role mappings where ADMIN is a legal target (#2200).
+ * 1b. SCIM never MUTATES an ADMIN or OWNER membership either — not its role and
+ *    (since #2200) not its status. Deactivating an admin is a privileged act.
  * 2. Deactivation is reversible (status=DEACTIVATED, not hard-delete)
  * 3. All operations are tenant-scoped via ScimContext.tenantId
  * 4. Historical records (audit, evidence, tasks) remain intact after deprovisioning
@@ -44,24 +49,30 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
-import type { ScimContext } from '@/lib/scim/auth';
+import { ScimForbiddenError, type ScimContext } from '@/lib/scim/auth';
+import {
+    SCIM_ASSIGNABLE_ROLES,
+    SCIM_DEFAULT_ROLE,
+    isScimProtectedRole,
+    type ScimAssignableRole,
+} from '@/lib/scim/roles';
 import { SCIM_SCHEMAS, type ScimUser } from '@/lib/scim/types';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 
 // ─── Constants ───────────────────────────────────────────────────────
 
-const SCIM_DEFAULT_ROLE = 'READER' as const;
-
 /**
- * Explicit allow-list for SCIM role mapping.
- * ADMIN is intentionally excluded — SCIM can never grant ADMIN.
+ * Allow-list for SCIM role mapping, keyed by the lowercased value an IdP sends.
+ *
+ * DERIVED from `SCIM_ASSIGNABLE_ROLES` rather than spelled out again: the
+ * ceiling is now shared with the SCIM Groups push path, and two hand-written
+ * copies of "which roles may SCIM assign" is exactly how ADMIN became reachable
+ * from one path and not the other (#2200). "admin" and "owner" are absent
+ * because they are absent from the ceiling — there is one place to change.
  */
-const SCIM_ROLE_MAP: Record<string, 'READER' | 'EDITOR' | 'AUDITOR'> = {
-    reader: 'READER',
-    editor: 'EDITOR',
-    auditor: 'AUDITOR',
-    // "admin" deliberately not mapped — blocked by design
-};
+const SCIM_ROLE_MAP: Record<string, ScimAssignableRole> = Object.fromEntries(
+    SCIM_ASSIGNABLE_ROLES.map((role) => [role.toLowerCase(), role]),
+);
 
 // ─── Audit Helper ────────────────────────────────────────────────────
 
@@ -98,6 +109,38 @@ async function emitScimAudit(
     }
 }
 
+// ─── Membership Protection ───────────────────────────────────────────
+
+/**
+ * Refuse any SCIM write against a membership whose role SCIM could not itself
+ * have assigned (ADMIN / OWNER today).
+ *
+ * The role writes below already skipped ADMIN. The STATUS writes did not — so a
+ * token holder could not change an ADMIN's role but could switch that ADMIN
+ * off, which is the more useful half of the two if you are trying to take a
+ * tenant's administrators away from it (#2200).
+ *
+ * This throws rather than skipping silently, unlike the role writes: a DELETE
+ * that answers 204 while having written nothing tells the IdP the user was
+ * deprovisioned when they were not. `ScimForbiddenError` extends
+ * `ScimAuthError`, so every SCIM route's existing catch renders it as a
+ * SCIM-shaped 403 with no route change.
+ */
+function assertScimMayWrite(
+    membership: { role: string },
+    operation: string,
+    userId: string,
+    tenantId: string,
+): void {
+    if (!isScimProtectedRole(membership.role)) return;
+    logger.warn('SCIM write refused against a protected membership', {
+        component: 'scim', operation, userId, tenantId, role: membership.role,
+    });
+    throw new ScimForbiddenError(
+        `SCIM cannot modify a ${membership.role} membership; change it in the admin UI`,
+    );
+}
+
 // ─── Role Resolution ─────────────────────────────────────────────────
 
 /**
@@ -108,7 +151,7 @@ async function emitScimAudit(
  */
 export function resolveScimRole(
     scimRoleValue?: string
-): { role: 'READER' | 'EDITOR' | 'AUDITOR'; blocked: boolean; requestedRole?: string } {
+): { role: ScimAssignableRole; blocked: boolean; requestedRole?: string } {
     if (!scimRoleValue) return { role: SCIM_DEFAULT_ROLE, blocked: false };
 
     const normalized = scimRoleValue.toLowerCase().trim();
@@ -267,8 +310,23 @@ export async function scimCreateUser(
 
         if (existingMembership) {
             // ── Idempotent: already exists ──
-            if (existingMembership.status === 'DEACTIVATED' || existingMembership.status === 'REMOVED') {
-                // Reactivate
+            const needsReactivation =
+                existingMembership.status === 'DEACTIVATED' || existingMembership.status === 'REMOVED';
+            // The fourth status write. A protected membership is NOT reactivated
+            // by a SCIM push: a tenant admin switched that admin off deliberately,
+            // and the IdP's directory is not the authority on whether an ADMIN is
+            // on. Skipped rather than 403'd — POST /Users is the idempotent create
+            // verb, and the response below reports the membership's REAL status,
+            // so the IdP is told what actually happened.
+            const mayReactivate = needsReactivation && !isScimProtectedRole(existingMembership.role);
+            if (needsReactivation && !mayReactivate) {
+                logger.warn('SCIM reactivation refused against a protected membership', {
+                    component: 'scim', userId: existingUser.id, tenantId: ctx.tenantId,
+                    role: existingMembership.role,
+                });
+            }
+
+            if (mayReactivate) {
                 await prisma.tenantMembership.update({
                     where: { id: existingMembership.id },
                     data: { status: 'ACTIVE', deactivatedAt: null },
@@ -281,9 +339,13 @@ export async function scimCreateUser(
 
                 logger.info('SCIM reactivated existing user', { component: 'scim', userId: existingUser.id });
             }
-            // Already active — return as-is (idempotent)
+
             return {
-                user: toScimUser(existingUser, { status: 'ACTIVE' }, baseUrl),
+                user: toScimUser(
+                    existingUser,
+                    { status: mayReactivate ? 'ACTIVE' : existingMembership.status },
+                    baseUrl,
+                ),
                 created: false,
             };
         }
@@ -365,8 +427,8 @@ export async function scimPatchUser(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userUpdates: Record<string, any> = {};
-    let statusUpdate: string | undefined;
-    let roleUpdate: string | undefined;
+    let statusUpdate: 'ACTIVE' | 'DEACTIVATED' | undefined;
+    let roleUpdate: ScimAssignableRole | undefined;
     const changes: string[] = [];
 
     for (const op of operations) {
@@ -430,30 +492,51 @@ export async function scimPatchUser(
         }
     }
 
-    // Apply user profile updates
+    // Apply user profile updates. Guarded for the same reason as the PUT path:
+    // `User.name` is global, so an unguarded write here lets one tenant's SCIM
+    // token rename another tenant's ADMIN. Unlike the status guard below, this
+    // one is NOT narrowed to a real transition — there is no value the write
+    // could carry that makes it safe against a protected principal.
     if (Object.keys(userUpdates).length > 0) {
-        await prisma.user.update({
-            where: { id: userId },
-            data: userUpdates,
-        });
+        if (await isUserProtectedInAnyTenant(userId)) {
+            logger.warn('SCIM profile write skipped on a protected membership', {
+                component: 'scim',
+                operation: 'patch:profile',
+                userId,
+                tenantId: ctx.tenantId,
+                role: membership.role,
+            });
+        } else {
+            await prisma.user.update({
+                where: { id: userId },
+                data: userUpdates,
+            });
+        }
     }
 
     // Apply membership status update
     if (statusUpdate) {
+        // Only a REAL transition is refused. A full IdP sync re-pushes
+        // `active: true` for every user every cycle; 403-ing that on an ADMIN
+        // whose status is already ACTIVE would break routine provisioning
+        // without protecting anything.
+        if (statusUpdate !== membership.status) {
+            assertScimMayWrite(membership, 'patch:active', userId, ctx.tenantId);
+        }
         await prisma.tenantMembership.update({
             where: { id: membership.id },
             data: {
-                status: statusUpdate as 'ACTIVE' | 'DEACTIVATED',
+                status: statusUpdate,
                 ...(statusUpdate === 'DEACTIVATED' ? { deactivatedAt: new Date() } : { deactivatedAt: null }),
             },
         });
     }
 
-    // Apply safe role update (only if not ADMIN)
-    if (roleUpdate && membership.role !== 'ADMIN') {
+    // Apply safe role update (never against a protected membership)
+    if (roleUpdate && !isScimProtectedRole(membership.role)) {
         await prisma.tenantMembership.update({
             where: { id: membership.id },
-            data: { role: roleUpdate as 'READER' | 'EDITOR' | 'AUDITOR' },
+            data: { role: roleUpdate },
         });
     }
 
@@ -476,6 +559,54 @@ export async function scimPatchUser(
     return scimGetUser(ctx, userId, baseUrl);
 }
 
+
+/**
+ * Is this user protected ANYWHERE — not just in the caller's tenant?
+ *
+ * The distinction is the whole point, and getting it wrong is a mistake that
+ * LOOKS correct. `scimPutUser`/`scimPatchUser` resolve `membership` with
+ * `findFirst({ where: { tenantId: ctx.tenantId, userId } })`, so
+ * `isScimProtectedRole(membership.role)` asks "is the victim protected in MY
+ * tenant". That is the right question for the STATUS and ROLE writes, because
+ * both fields live on `TenantMembership` and a tenant may legitimately manage
+ * its own.
+ *
+ * It is the wrong question for the profile write, because `User.name` is on
+ * the GLOBAL user row. A user who is READER in tenant A and OWNER in tenant B
+ * is unprotected by the tenant-local check — in tenant A they are a READER —
+ * so tenant A's SCIM token renames tenant B's owner. The predicate must match
+ * the blast radius of the write it guards: global write, global predicate.
+ *
+ * And there is no pre-existing-membership precondition to rely on:
+ * `scimCreateUser` resolves an existing global User by email hash and
+ * provisions a READER membership when none exists, returning the real
+ * `User.id`. So `POST /Users` followed by `PUT /Users/:id` is the entire chain
+ * from a freshly minted token.
+ *
+ * Cost, stated so it is a decision and not an accident: a user who is an admin
+ * in ANY tenant stops having their display name synced by every tenant's IdP.
+ * That is the correct trade — the alternative is letting any tenant rename
+ * them.
+ */
+async function isUserProtectedInAnyTenant(userId: string): Promise<boolean> {
+    // `count`, not `findFirst`, and deliberately. Both usecases already call
+    // `tenantMembership.findFirst` for the caller-tenant membership; adding a
+    // second `findFirst` makes this probe consume the NEXT entry of any
+    // `mockResolvedValueOnce` queue a test has set up for the first, which
+    // silently changes what unrelated tests exercise. A distinct method cannot
+    // collide. It is also the more honest query — the question is "how many
+    // protected memberships does this user hold", and nothing here needs the
+    // row.
+    const protectedElsewhere = await prisma.tenantMembership.count({
+        where: {
+            userId,
+            status: 'ACTIVE',
+            role: { notIn: [...SCIM_ASSIGNABLE_ROLES] },
+        },
+    });
+    return protectedElsewhere > 0;
+}
+
 // ─── Put User (full replace) ─────────────────────────────────────────
 
 export async function scimPutUser(
@@ -495,24 +626,70 @@ export async function scimPutUser(
         || [input.name?.givenName, input.name?.familyName].filter(Boolean).join(' ')
         || input.userName.split('@')[0];
 
-    await prisma.user.update({
-        where: { id: userId },
-        data: { name: displayName },
-    });
+    // The profile write does not happen for a protected membership, and the
+    // decision must be made BEFORE the write, not after.
+    //
+    // It used to run unconditionally, above the status guard. With
+    // `active: false` that meant the ADMIN was renamed and THEN 403'd — and
+    // because the throw precedes `emitScimAudit`, no audit row was written
+    // either. With `active: true` the status guard is not reached at all, so
+    // the rename returned 200. A token holder could rename every admin in the
+    // tenant, silently and repeatably.
+    //
+    // The reason this outranks the routine-sync argument that (correctly)
+    // keeps the STATUS guard narrow: `User.name` is on the GLOBAL user row,
+    // not on the tenant membership. A SCIM token issued by tenant A can
+    // therefore rewrite the display name of somebody who is an ADMIN of
+    // tenant B. That is a cross-tenant write, and no IdP sync convenience
+    // justifies leaving it open.
+    //
+    // NOTE the predicate is `isUserProtectedInAnyTenant(userId)` and NOT
+    // `isScimProtectedRole(membership.role)`. The first revision of this fix
+    // used the latter, which is tenant-LOCAL and therefore does not close the
+    // cross-tenant case this very comment describes: the victim is a READER in
+    // the caller's tenant and an OWNER elsewhere.
+    //
+    // SKIP rather than 403, because a 403 is a wider change than the security
+    // fix needs. `docs/admin-rbac-scim.md` already documents a PUT against a
+    // protected membership as SUCCEEDING with the role "silently skipped", and
+    // `tests/unit/usecases/scim-users.test.ts` pins that. Refusing the whole
+    // operation would break that contract and fail every routine IdP sync
+    // cycle for every admin — the same objection the status guard's own
+    // comment raises against widening ITS scope. Skipping the one write closes
+    // the hole and leaves the documented behaviour intact.
+    // SKIPPED, not refused — see below for why that distinction is deliberate.
+    // The predicate is GLOBAL, not the tenant-local `membership.role`, because
+    // the write it guards is on the global User row. See
+    // `isUserProtectedInAnyTenant`.
+    if (await isUserProtectedInAnyTenant(userId)) {
+        logger.warn('SCIM profile write skipped on a protected membership', {
+            component: 'scim',
+            operation: 'put:profile',
+            userId,
+            tenantId: ctx.tenantId,
+            role: membership.role,
+        });
+    } else {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { name: displayName },
+        });
+    }
 
     const newStatus = input.active === false ? 'DEACTIVATED' : 'ACTIVE';
     if (membership.status !== newStatus) {
+        assertScimMayWrite(membership, 'put:active', userId, ctx.tenantId);
         await prisma.tenantMembership.update({
             where: { id: membership.id },
             data: {
-                status: newStatus as 'ACTIVE' | 'DEACTIVATED',
+                status: newStatus,
                 ...(newStatus === 'DEACTIVATED' ? { deactivatedAt: new Date() } : { deactivatedAt: null }),
             },
         });
     }
 
     // Safe role mapping for PUT
-    if (input.roles?.[0]?.value && membership.role !== 'ADMIN') {
+    if (input.roles?.[0]?.value && !isScimProtectedRole(membership.role)) {
         const { role, blocked } = resolveScimRole(input.roles[0].value);
         if (!blocked) {
             await prisma.tenantMembership.update({
@@ -540,6 +717,8 @@ export async function scimDeleteUser(ctx: ScimContext, userId: string): Promise<
     });
 
     if (!membership) return false;
+
+    assertScimMayWrite(membership, 'delete', userId, ctx.tenantId);
 
     await prisma.tenantMembership.update({
         where: { id: membership.id },

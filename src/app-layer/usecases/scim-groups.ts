@@ -14,11 +14,19 @@
  *
  * (Re-implemented on the current `TenantEntraGroupMapping` model + the shared
  * `syncEntraMembershipRole` engine; the original EI-3 branch predated both.)
+ *
+ * **Role ceiling.** `externalId` here is a value a SCIM bearer token pushed, and
+ * it is matched against the tenant's admin-curated group→role mappings — where
+ * ADMIN *is* a legal target for the sign-in path. Every reconcile therefore
+ * passes `SCIM_ASSIGNABLE_ROLES` so this path can resolve to no more than the
+ * SCIM Users path could (#2200). Do not drop that argument.
  */
 import { runInTenantContext } from '@/lib/db-context';
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '../types';
 import { syncEntraMembershipRole } from '@/lib/auth/entra-group-sync';
+import { SCIM_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
+import { ScimUnresolvableMemberError } from '@/lib/scim/auth';
 
 export interface ScimContext {
     tenantId: string;
@@ -32,18 +40,44 @@ interface ScimMember {
 const ctxOf = (c: ScimContext) =>
     ({ tenantId: c.tenantId, userId: null } as unknown as RequestContext);
 
+/**
+ * Project a `ScimGroup` row to a SCIM Group resource.
+ *
+ * Members come from `memberIds` — the RESOLVED, server-owned representation —
+ * never from `membersJson`. Two reasons, and either alone would be enough:
+ *
+ *   1. `membersJson` is whatever a token holder POSTed. Echoing it back to any
+ *      reader of `GET /Groups` reflects unvalidated attacker JSON verbatim.
+ *   2. It is not even maintained: `scimPatchGroup` updates `memberIds` and
+ *      leaves `membersJson` at its create-time value, so after any PATCH it is
+ *      simply wrong. `reconcileUsers` has always read `memberIds`.
+ *
+ * The member `value` is therefore this SP's own User id (what
+ * `GET /Users/:id` is keyed by), which is what RFC 7643 asks for. Note the
+ * asymmetry with writes: inbound member values are matched against
+ * `UserIdentityLink.externalSubject` (the IdP's oid), and deliberately NOT
+ * against User ids — resolving those would let a token holder add any user in
+ * the tenant to a role-mapped group without an identity link existing.
+ *
+ * CONSEQUENCE, and it is not hypothetical: a read-modify-write round trip does
+ * NOT close. A client that GETs this body and PUTs it back supplies User ids,
+ * which resolve to nothing. `resolveUserIds` therefore REFUSES an unresolvable
+ * member with a 400 rather than returning `[]` — the latter wrote an empty
+ * `memberIds` and re-reconciled every former member, wiping the group and
+ * everyone's derived role from what looked like a no-op request.
+ */
 export function scimGroupResource(g: {
     id: string;
     externalId: string;
     displayName: string;
-    membersJson: unknown;
+    memberIds: string[];
 }) {
     return {
         schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
         id: g.id,
         externalId: g.externalId,
         displayName: g.displayName,
-        members: Array.isArray(g.membersJson) ? g.membersJson : [],
+        members: g.memberIds.map((value) => ({ value, type: 'User' })),
         meta: { resourceType: 'Group' },
     };
 }
@@ -64,8 +98,8 @@ export async function scimCreateGroup(
     ctx: ScimContext,
     input: { externalId: string; displayName: string; members?: ScimMember[] },
 ) {
-    const memberExternalIds = (input.members ?? []).map((m) => m.value);
-    const userIds = await resolveUserIds(ctx.tenantId, memberExternalIds);
+    const members = normalizeMembers(input.members);
+    const userIds = await resolveUserIds(ctx.tenantId, members.map((m) => m.value));
 
     const group = await runInTenantContext(ctxOf(ctx), (db) =>
         db.scimGroup.create({
@@ -74,7 +108,7 @@ export async function scimCreateGroup(
                 externalId: input.externalId,
                 displayName: input.displayName,
                 memberIds: userIds,
-                membersJson: (input.members ?? []) as never,
+                membersJson: members as never,
             },
         }),
     );
@@ -88,8 +122,8 @@ export async function scimReplaceGroup(
     id: string,
     input: { displayName?: string; members?: ScimMember[] },
 ) {
-    const memberExternalIds = (input.members ?? []).map((m) => m.value);
-    const userIds = await resolveUserIds(ctx.tenantId, memberExternalIds);
+    const members = normalizeMembers(input.members);
+    const userIds = await resolveUserIds(ctx.tenantId, members.map((m) => m.value));
 
     const { affected } = await runInTenantContext(ctxOf(ctx), async (db) => {
         const existing = await db.scimGroup.findFirst({ where: { id, tenantId: ctx.tenantId } });
@@ -99,7 +133,7 @@ export async function scimReplaceGroup(
             data: {
                 ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
                 ...(input.members !== undefined
-                    ? { memberIds: userIds, membersJson: input.members as never }
+                    ? { memberIds: userIds, membersJson: members as never }
                     : {}),
             },
         });
@@ -176,11 +210,35 @@ export async function scimDeleteGroup(ctx: ScimContext, id: string) {
 
 // ─── helpers ───────────────────────────────────────────────────────────
 
+/** A PatchOp `value` may be a single member object or an array of them. */
 function membersOf(value: unknown): ScimMember[] {
-    if (Array.isArray(value)) return value as ScimMember[];
+    if (Array.isArray(value)) return normalizeMembers(value);
     if (value && typeof value === 'object' && 'value' in (value as object))
-        return [value as ScimMember];
+        return normalizeMembers([value]);
     return [];
+}
+
+/** Hard cap on members accepted in one push — a bound, not a business rule. */
+const MAX_MEMBERS_PER_PUSH = 1000;
+
+/**
+ * Coerce a pushed `members` array to the only shape this module understands:
+ * `{ value: string, display?: string }`. Anything else is dropped rather than
+ * carried into `membersJson` or into a Prisma `{ in: [...] }` filter — the
+ * values are unauthenticated-by-role input on a public middleware path.
+ */
+function normalizeMembers(input: unknown): ScimMember[] {
+    if (!Array.isArray(input)) return [];
+    const out: ScimMember[] = [];
+    for (const raw of input.slice(0, MAX_MEMBERS_PER_PUSH)) {
+        if (!raw || typeof raw !== 'object') continue;
+        const { value, display } = raw as { value?: unknown; display?: unknown };
+        if (typeof value !== 'string') continue;
+        const trimmed = value.trim();
+        if (!trimmed) continue;
+        out.push(typeof display === 'string' ? { value: trimmed, display } : { value: trimmed });
+    }
+    return out;
 }
 
 /** Minimal structural db — satisfied by both the global client and a PrismaTx. */
@@ -188,12 +246,33 @@ type IdentityLinkDb = {
     userIdentityLink: {
         findMany(args: {
             where: { tenantId: string; externalSubject: { in: string[] } };
-            select: { userId: true };
-        }): Promise<Array<{ userId: string }>>;
+            // `externalSubject` is selected as well as `userId`, and both are
+            // required: the resolver has to report WHICH supplied values found
+            // no link, so it cannot just count rows.
+            select: { userId: true; externalSubject: true };
+        }): Promise<Array<{ userId: string; externalSubject: string }>>;
     };
 };
 
-/** Resolve SCIM member externalIds (AAD oids) → IC User ids via UserIdentityLink. */
+/**
+ * Resolve SCIM member externalIds (IdP subject identifiers) → IC User ids via
+ * `UserIdentityLink`.
+ *
+ * THROWS when a supplied value resolves to nothing, and that is deliberate.
+ *
+ * `GET /Groups/:id` emits members as this SP's own User ids (RFC 7643), while
+ * writes resolve against the IdP's subject — a documented asymmetry that keeps
+ * a token holder from adding an arbitrary tenant user to a role-mapped group
+ * with no identity link. The cost is that a read-modify-write round trip does
+ * not close: a client that GETs a group and PUTs the body back supplies User
+ * ids, which resolve to nothing.
+ *
+ * Returning `[]` there wrote an EMPTY `memberIds` and re-reconciled every
+ * former member — a silent wipe of the group and everyone's derived role, from
+ * a request that looked like a no-op. An explicit 400 is the honest answer: the
+ * round trip genuinely is not supported, so say so rather than destroying data
+ * while returning 200.
+ */
 async function resolveUserIds(
     tenantId: string,
     externalSubjects: string[],
@@ -202,8 +281,13 @@ async function resolveUserIds(
     if (externalSubjects.length === 0) return [];
     const links = await db.userIdentityLink.findMany({
         where: { tenantId, externalSubject: { in: externalSubjects } },
-        select: { userId: true },
+        select: { userId: true, externalSubject: true },
     });
+    const found = new Set(links.map((l) => l.externalSubject));
+    const missing = externalSubjects.filter((v) => !found.has(v));
+    if (missing.length > 0) {
+        throw new ScimUnresolvableMemberError(missing.length, externalSubjects.length);
+    }
     return Array.from(new Set(links.map((l) => l.userId)));
 }
 
@@ -226,6 +310,14 @@ async function reconcileUsers(tenantId: string, userIds: string[]): Promise<void
                 }),
         );
         const aadGroups = groups.map((g) => g.externalId);
-        await syncEntraMembershipRole({ userId, tenantId, aadGroups });
+        await syncEntraMembershipRole({
+            userId,
+            tenantId,
+            aadGroups,
+            // The ceiling. Without it a token holder who can guess (or read
+            // from the admin UI) an ADMIN-mapped group id promotes themselves
+            // by pushing a group with that externalId. See `@/lib/scim/roles`.
+            assignableRoles: SCIM_ASSIGNABLE_ROLES,
+        });
     }
 }

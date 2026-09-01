@@ -63,6 +63,45 @@ export interface ScimPatchOp {
 }
 
 /**
+ * A SCIM Group's `externalId` must be a UUID.
+ *
+ * SCIM leaves `externalId` opaque, but ours is not opaque to us: it is matched
+ * against `TenantEntraGroupMapping.aadGroupId`, which the admin API already
+ * constrains to `z.string().uuid()` because it is an Entra group object id.
+ * Accepting anything else means accepting a value that can only ever fail to
+ * match — while still being persisted, indexed and echoed back. The Groups POST
+ * route used to fall back to `displayName` when `externalId` was absent, which
+ * turned a human label into an identifier and let the caller choose the string
+ * the role-mapping join keys on.
+ */
+/**
+ * A group `externalId` must be a real opaque identifier — NOT a UUID
+ * specifically.
+ *
+ * The defect this closes is the `?? displayName` fallback the Groups route
+ * used to carry: a display name is not an identifier, and this value is the
+ * join key for the group→role mapping, so "Engineering" became a mappable
+ * identity that anyone who could name a group could claim.
+ *
+ * Requiring a UUID would have closed that AND broken every IdP that is not
+ * Entra. Okta group ids look like `00g1a2b3c4D5E6f7g8h9`; OneLogin and
+ * JumpCloud differ again, and `docs/admin-rbac-scim.md` advertises Okta,
+ * Auth0, Google and "any SAML-compliant IdP". A hard UUID check would make
+ * `POST /Groups` a 400 for all of them — a product-compatibility decision
+ * smuggled inside a security fix, for security value the role clamp already
+ * provides on its own.
+ *
+ * So: a non-empty, single-token, bounded string. That rejects a display name
+ * (which contains spaces, or is absent) without asserting a format no
+ * standard requires.
+ */
+const SCIM_EXTERNAL_ID = /^[A-Za-z0-9._:@|-]{6,255}$/;
+
+export function isScimGroupExternalId(value: unknown): value is string {
+    return typeof value === 'string' && SCIM_EXTERNAL_ID.test(value);
+}
+
+/**
  * Build a SCIM error response object.
  */
 export function scimError(status: number, detail: string, scimType?: string): ScimError {
