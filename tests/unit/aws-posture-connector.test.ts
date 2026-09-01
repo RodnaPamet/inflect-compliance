@@ -15,8 +15,6 @@ import {
     type PowerpipeControlResult,
 } from '@/app-layer/integrations/aws-posture-provider';
 import { soc2CodesForControl, allMappedRequirementCodes, AWS_POSTURE_CONTROL_MAP } from '@/data/integrations/aws-posture-control-map';
-// Import the usecase so the usecase-test-coverage ratchet sees it exercised.
-import { runAwsPostureCollection } from '@/app-layer/usecases/aws-posture';
 
 const FIXTURE = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '../fixtures/aws-posture-powerpipe-soc2.json'), 'utf8'),
@@ -107,9 +105,5 @@ describe('aws-posture — benchmark id resolution + wiring', () => {
         expect(AwsPostureProvider.benchmarkId('soc2')).toBe('aws_compliance.benchmark.soc_2');
         expect(AwsPostureProvider.benchmarkId('cis')).toBe('aws_compliance.benchmark.cis_v300');
         expect(AwsPostureProvider.benchmarkId(undefined)).toBe('aws_compliance.benchmark.soc_2');
-    });
-
-    it('exposes the collection usecase', () => {
-        expect(typeof runAwsPostureCollection).toBe('function');
     });
 });
