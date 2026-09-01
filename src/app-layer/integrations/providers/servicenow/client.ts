@@ -163,6 +163,13 @@ export class ServiceNowClient extends BaseIntegrationClient<ServiceNowConnection
 
     async getRemoteObject(remoteId: string): Promise<RemoteObject<ServiceNowRow> | null> {
         const table = String(this.config.table ?? '');
+        // The same refusal every other verb makes, and here it is the one that
+        // matters most. With no table the URL is `/api/now/table//<sys_id>`,
+        // which the instance answers 404 — and the 404 arm below is the
+        // "record was deleted" contract. A misconfigured connection would
+        // therefore report every record as attrition, which is a plausible,
+        // silent, WRONG answer rather than a visible failure.
+        if (!table) throw new Error('ServiceNow connection has no table configured');
         try {
             const body = await this.getJson<{ result?: ServiceNowRow }>(
                 this.url(`/api/now/table/${encodeURIComponent(table)}/${encodeURIComponent(remoteId)}`, {

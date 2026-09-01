@@ -118,6 +118,39 @@ describe('importSharePointItems', () => {
         expect(upsertArg.create.remoteEntityId).toBe('d1:a');
     });
 
+    it('forwards the destination folder the user picked', async () => {
+        // `folder` is declared on SpImportInput, accepted by the route schema
+        // and persisted by importOne as `folder: target.folder ?? null` — but
+        // importSharePointItems built its `target` from controlId + category
+        // only, so the folder chosen in the upload modal silently became null.
+        // Nothing errored, which is why the happy-path coverage never saw it.
+        mockGetClient.mockResolvedValue(fakeClient());
+        const r = await importSharePointItems(ctx, {
+            connectionId: 'c1',
+            items: [{ driveId: 'd1', itemId: 'a' }],
+            controlId: 'ctrl1',
+            category: 'policies',
+            folder: 'SOC2/2026/Access reviews',
+        });
+        expect(r.imported).toBe(1);
+        expect(mockUpload.mock.calls[0][2]).toMatchObject({
+            controlId: 'ctrl1',
+            category: 'policies',
+            folder: 'SOC2/2026/Access reviews',
+        });
+    });
+
+    it('leaves the folder null when the caller picked none', async () => {
+        // The absent case must stay null rather than becoming `undefined` —
+        // importOne's `?? null` is what the Evidence row stores.
+        mockGetClient.mockResolvedValue(fakeClient());
+        await importSharePointItems(ctx, {
+            connectionId: 'c1',
+            items: [{ driveId: 'd1', itemId: 'a' }],
+        });
+        expect(mockUpload.mock.calls[0][2]).toMatchObject({ folder: null });
+    });
+
     it('isolates per-item failures', async () => {
         const client = fakeClient();
         client.downloadItemContent.mockRejectedValueOnce(new Error('graph 500'));

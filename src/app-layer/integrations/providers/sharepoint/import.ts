@@ -230,6 +230,11 @@ export async function importSharePointItems(
                 await importOne(ctx, client, input.connectionId, sel, {
                     controlId: input.controlId,
                     category: input.category,
+                    // `folder` is declared on SpImportInput, accepted by the
+                    // route schema and persisted by importOne — this hop was
+                    // the only one that dropped it, so the destination the
+                    // user picked in the modal silently became `null`.
+                    folder: input.folder,
                 }),
             );
         } catch (err) {

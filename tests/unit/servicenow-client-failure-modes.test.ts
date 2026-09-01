@@ -74,6 +74,7 @@ describe('a connection with no table configured never reaches the network', () =
         ['findByCorrelationId', (c: ServiceNowClient) => c.findByCorrelationId('inflect:abc')],
         ['createRemoteObject', (c: ServiceNowClient) => c.createRemoteObject({ x: 1 }, 'inflect:abc')],
         ['updateRemoteObject', (c: ServiceNowClient) => c.updateRemoteObject('sid-1', { x: 1 })],
+        ['getRemoteObject', (c: ServiceNowClient) => c.getRemoteObject('sid-1')],
     ])('%s throws "no table configured" and sends nothing', async (_name, call) => {
         const fetchImpl = noFetch();
         await expect(call(client({ table: undefined }, fetchImpl))).rejects.toThrow(
@@ -139,6 +140,20 @@ describe('getRemoteObject distinguishes "not there" from "not readable"', () => 
     it('maps a present result to a RemoteObject', async () => {
         const c = client({}, fetchStub([{ result: row() }]));
         await expect(c.getRemoteObject('sid-1')).resolves.toMatchObject({ remoteId: 'sid-1' });
+    });
+
+    it('refuses a table-less connection instead of reporting the record deleted', async () => {
+        // The two answers mean opposite things to a sync: `null` is normal
+        // attrition (the record was deleted upstream), a throw is a broken
+        // integration. Without a table the URL is `/api/now/table//<sys_id>`,
+        // which answers 404 — and the 404 arm below returns `null`. So a
+        // misconfigured connection reported EVERY record as deleted, and the
+        // operator was told their ServiceNow records had vanished.
+        const fetchImpl = noFetch();
+        await expect(client({ table: undefined }, fetchImpl).getRemoteObject('sid-1')).rejects.toThrow(
+            /no table configured/i,
+        );
+        expect(fetchImpl).not.toHaveBeenCalled();
     });
 
     it('propagates a non-404 HTTP failure rather than reading it as deleted', async () => {

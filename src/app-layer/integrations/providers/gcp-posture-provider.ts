@@ -10,7 +10,7 @@
  * `GOOGLE_APPLICATION_CREDENTIALS`), used, then unlinked. The key is never
  * placed on argv and is scrubbed from any captured output.
  */
-import { writeFile, unlink, mkdtemp } from 'node:fs/promises';
+import { writeFile, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
@@ -102,7 +102,16 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
             const { summaryObj: _s, ...result } = await runPowerpipeBenchmark({ benchmarkId, env, secretValues, patterns: GCP_CREDENTIAL_PATTERNS, exec: this.exec });
             return result;
         } finally {
+            // Unlink FIRST, then remove the directory. The two are not
+            // interchangeable: if `rm` fails (EPERM, stale NFS) the key must
+            // already be gone, so the secret's removal never depends on the
+            // directory's. `rm` on its own would make it.
             if (credPath) await unlink(credPath).catch(() => {});
+            // The directory itself outlived every run before this line: only
+            // the file was removed, so a scheduled check leaked one empty
+            // `gcp-posture-*` inode per execution for the life of the
+            // container. `force` so an already-unlinked tree is not an error.
+            if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
         }
     }
 

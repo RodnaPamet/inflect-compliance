@@ -861,31 +861,92 @@ describe('GitHubProvider.verifyWebhookSignature — which bytes get verified', (
 describe('GitHubProvider.handleWebhook — trigger matrix', () => {
     const provider = new GitHubProvider();
 
-    function wh(eventType: string, action?: string): WebhookPayload {
+    /**
+     * A delivery as the webhook processor builds it: event name in the header.
+     *
+     * Annotated rather than `as`-cast on purpose. Naming a specific header key
+     * narrows the literal's type enough that neither direction is assignable to
+     * `WebhookPayload` any more — its `headers` is `Record<string, string>`,
+     * which does not guarantee `'x-github-event'` — so the cast this file used
+     * to rely on stops compiling. An annotation checks the object properly and
+     * would have caught the missing required `receivedAt` immediately.
+     */
+    function wh(eventName: string, action?: string): WebhookPayload {
         return {
-            provider: 'github', eventType, headers: {},
+            provider: 'github',
+            // What the processor actually sets: `body.action ?? body.event_type`.
+            // For a real GitHub delivery that is the ACTION, never the event
+            // name — the event name only ever arrives in the header.
+            eventType: action,
+            receivedAt: new Date(),
+            headers: { 'x-github-event': eventName },
             body: action ? { action } : {},
-        } as WebhookPayload;
+        };
     }
 
-    test('branch_protection_rule with no action still triggers', async () => {
-        const result = await provider.handleWebhook(ctx, wh('branch_protection_rule'), {});
-        expect(result).toEqual({ status: 'processed', triggeredKeys: ['github.branch_protection'] });
-    });
-
-    // NOTE — these three lock in CURRENT behaviour, which is over-broad: the
-    // guard is `eventType === 'branch_protection_rule' || action === 'edited'
-    // || action === 'created' || action === 'deleted'`, so ANY GitHub event
-    // whose body carries one of those actions (issues, pull_request, release,
-    // label, …) fires a branch-protection check. Reported separately; if that
-    // is tightened, these expectations change with it.
     test.each(['created', 'edited', 'deleted'])(
-        "a '%s' action on an unrelated event type also triggers the check (over-broad match)",
+        "a branch_protection_rule '%s' delivery triggers the check",
         async (action) => {
-            const result = await provider.handleWebhook(ctx, wh('repository', action), {});
+            const result = await provider.handleWebhook(ctx, wh('branch_protection_rule', action), {});
             expect(result).toEqual({ status: 'processed', triggeredKeys: ['github.branch_protection'] });
         },
     );
+
+    // The defect these replace: the guard was `||` throughout, so the event
+    // type was not required and ANY delivery whose body carried one of those
+    // actions — issues, pull_request, release, label, milestone — raised a
+    // branch-protection signal. On a compliance product an edited issue was
+    // recorded as a branch-protection change.
+    test.each(['created', 'edited', 'deleted'])(
+        "a '%s' action on an unrelated event type does NOT trigger the check",
+        async (action) => {
+            const result = await provider.handleWebhook(ctx, wh('repository', action), {});
+            expect(result).toEqual({ status: 'ignored' });
+            expect(result.triggeredKeys).toBeUndefined();
+        },
+    );
+
+    test('an issues.edited delivery does not raise a branch-protection signal', async () => {
+        const result = await provider.handleWebhook(ctx, wh('issues', 'edited'), {});
+        expect(result).toEqual({ status: 'ignored' });
+    });
+
+    test('the event name is read from the header, not from eventType', async () => {
+        // The processor derives `eventType` from the BODY, so it can never
+        // hold 'branch_protection_rule' for a real delivery. Requiring the
+        // event type without reading the header would make this branch
+        // unreachable in production — a silent feature kill.
+        const delivery: WebhookPayload = {
+            provider: 'github',
+            eventType: 'edited',
+            receivedAt: new Date(),
+            headers: { 'x-github-event': 'branch_protection_rule' },
+            body: { action: 'edited' },
+        };
+        const result = await provider.handleWebhook(ctx, delivery, {});
+        expect(result).toEqual({ status: 'processed', triggeredKeys: ['github.branch_protection'] });
+    });
+
+    test('a header-less caller still matches on eventType', async () => {
+        // Non-HTTP callers (replays, tests, a future queue drain) may carry no
+        // headers at all; the eventType fallback keeps them working.
+        const headerless: WebhookPayload = {
+            provider: 'github',
+            eventType: 'branch_protection_rule',
+            receivedAt: new Date(),
+            headers: {},
+            body: { action: 'created' },
+        };
+        const result = await provider.handleWebhook(ctx, headerless, {});
+        expect(result).toEqual({ status: 'processed', triggeredKeys: ['github.branch_protection'] });
+    });
+
+    test('a branch_protection_rule delivery with no action is ignored', async () => {
+        // GitHub always sends created/edited/deleted for this event, so a
+        // delivery without one is not a branch-protection change.
+        const result = await provider.handleWebhook(ctx, wh('branch_protection_rule'), {});
+        expect(result).toEqual({ status: 'ignored' });
+    });
 
     test('an unrelated event with an unrelated action is ignored', async () => {
         const result = await provider.handleWebhook(ctx, wh('push', 'opened'), {});

@@ -398,8 +398,22 @@ export class GitHubProvider implements ScheduledCheckProvider, WebhookEventProvi
         const body = payload.body as Record<string, unknown>;
         const action = body.action as string | undefined;
 
-        // Only trigger on branch protection rule changes
-        if (payload.eventType === 'branch_protection_rule' || action === 'edited' || action === 'created' || action === 'deleted') {
+        // GitHub names the event in a HEADER; the body carries only `action`.
+        // `payload.eventType` is derived in webhook-processor.ts from
+        // `body.action ?? body.event_type`, so for a real branch_protection_rule
+        // delivery it holds 'created' | 'edited' | 'deleted' — never
+        // 'branch_protection_rule'. Requiring the event type WITHOUT reading the
+        // header would make this branch unreachable in production.
+        const eventName = payload.headers['x-github-event'] || payload.eventType || '';
+
+        // Only trigger on branch protection rule changes.
+        //
+        // This was `||` throughout, so the event type was not required and ANY
+        // GitHub delivery whose body carried one of these actions — issues,
+        // pull_request, label, milestone, release — was recorded as a
+        // branch-protection change. On a compliance product that is a false
+        // control signal, not just noise.
+        if (eventName === 'branch_protection_rule' && (action === 'edited' || action === 'created' || action === 'deleted')) {
             logger.info('GitHub webhook: branch protection change detected', {
                 component: 'integrations',
                 action,
