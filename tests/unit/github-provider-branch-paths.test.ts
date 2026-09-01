@@ -861,7 +861,16 @@ describe('GitHubProvider.verifyWebhookSignature — which bytes get verified', (
 describe('GitHubProvider.handleWebhook — trigger matrix', () => {
     const provider = new GitHubProvider();
 
-    /** A delivery as the webhook processor builds it: event name in the header. */
+    /**
+     * A delivery as the webhook processor builds it: event name in the header.
+     *
+     * Annotated rather than `as`-cast on purpose. Naming a specific header key
+     * narrows the literal's type enough that neither direction is assignable to
+     * `WebhookPayload` any more — its `headers` is `Record<string, string>`,
+     * which does not guarantee `'x-github-event'` — so the cast this file used
+     * to rely on stops compiling. An annotation checks the object properly and
+     * would have caught the missing required `receivedAt` immediately.
+     */
     function wh(eventName: string, action?: string): WebhookPayload {
         return {
             provider: 'github',
@@ -869,9 +878,10 @@ describe('GitHubProvider.handleWebhook — trigger matrix', () => {
             // For a real GitHub delivery that is the ACTION, never the event
             // name — the event name only ever arrives in the header.
             eventType: action,
+            receivedAt: new Date(),
             headers: { 'x-github-event': eventName },
             body: action ? { action } : {},
-        } as WebhookPayload;
+        };
     }
 
     test.each(['created', 'edited', 'deleted'])(
@@ -906,24 +916,28 @@ describe('GitHubProvider.handleWebhook — trigger matrix', () => {
         // hold 'branch_protection_rule' for a real delivery. Requiring the
         // event type without reading the header would make this branch
         // unreachable in production — a silent feature kill.
-        const result = await provider.handleWebhook(ctx, {
+        const delivery: WebhookPayload = {
             provider: 'github',
             eventType: 'edited',
+            receivedAt: new Date(),
             headers: { 'x-github-event': 'branch_protection_rule' },
             body: { action: 'edited' },
-        } as WebhookPayload, {});
+        };
+        const result = await provider.handleWebhook(ctx, delivery, {});
         expect(result).toEqual({ status: 'processed', triggeredKeys: ['github.branch_protection'] });
     });
 
     test('a header-less caller still matches on eventType', async () => {
         // Non-HTTP callers (replays, tests, a future queue drain) may carry no
         // headers at all; the eventType fallback keeps them working.
-        const result = await provider.handleWebhook(ctx, {
+        const headerless: WebhookPayload = {
             provider: 'github',
             eventType: 'branch_protection_rule',
+            receivedAt: new Date(),
             headers: {},
             body: { action: 'created' },
-        } as WebhookPayload, {});
+        };
+        const result = await provider.handleWebhook(ctx, headerless, {});
         expect(result).toEqual({ status: 'processed', triggeredKeys: ['github.branch_protection'] });
     });
 
