@@ -8181,7 +8181,9 @@
             "allClear": "All clear",
             "caughtUp": "You're caught up. New notifications will land here.",
             "unreadAria": "{count} unread notifications",
-            "now": "now"
+            "now": "now",
+            "sessionExpired": "Your session has expired.",
+            "sessionExpiredAction": "Sign in again"
         },
         "env": {
             "staging": "Staging",

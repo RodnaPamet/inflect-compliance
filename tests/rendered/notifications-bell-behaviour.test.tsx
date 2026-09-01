@@ -104,6 +104,106 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         expect(badge.textContent).toBe('2');
     });
 
+    describe('an expired session stops the poll', () => {
+        /**
+         * The production symptom this covers: a tab left open past its JWT
+         * expiry logged
+         *
+         *     GET https://app.inflect.bg/api/notifications 401 (Unauthorized)
+         *
+         * to the browser console every 60 seconds, indefinitely. The 401 is
+         * correct — `middleware.ts` returns it when `getToken()` finds no
+         * valid cookie — and it is invisible server-side, because the
+         * middleware short-circuits before the route's request logging. So
+         * the client was the only place this could be seen OR fixed.
+         *
+         * Timers are faked so the interval can be advanced deterministically;
+         * a wall-clock test would have to wait 60 real seconds to catch a
+         * regression, which means in practice it would be deleted.
+         */
+        beforeEach(() => {
+            jest.useFakeTimers();
+        });
+
+        afterEach(() => {
+            jest.runOnlyPendingTimers();
+            jest.useRealTimers();
+        });
+
+        const unauthorized = () => ({
+            ok: false,
+            status: 401,
+            json: async () => ({ error: 'Unauthorized' }),
+        });
+
+        it('does not poll again after a 401', async () => {
+            fetchMock.mockResolvedValue(unauthorized());
+            render(<NotificationsBell />);
+
+            await act(async () => {
+                await Promise.resolve();
+            });
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+
+            // Five full poll periods. Before the fix this was five more
+            // requests and five more console errors.
+            await act(async () => {
+                jest.advanceTimersByTime(5 * 60_000);
+                await Promise.resolve();
+            });
+
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps polling after a NON-auth failure, which is transient', async () => {
+            // The negative that stops the fix from over-reaching. A 500 or a
+            // dropped connection is worth retrying; killing the poll on every
+            // !res.ok would turn one blip into a permanently dead bell, which
+            // is a worse bug than the one being fixed and would look identical
+            // in the test above.
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 500,
+                json: async () => ({}),
+            });
+            render(<NotificationsBell />);
+
+            await act(async () => {
+                await Promise.resolve();
+            });
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+
+            await act(async () => {
+                jest.advanceTimersByTime(60_000);
+                await Promise.resolve();
+            });
+
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        it('tells the user their session went, rather than failing silently', async () => {
+            fetchMock.mockResolvedValue(unauthorized());
+            render(<NotificationsBell />);
+
+            await act(async () => {
+                await Promise.resolve();
+            });
+
+            const bell = screen.getByTestId('top-chrome-notifications-bell');
+            await act(async () => {
+                bell.click();
+                await Promise.resolve();
+            });
+
+            // Copy comes from the message catalogue, so assert on the rendered
+            // text rather than the key — a missing key renders the key itself
+            // and would pass a key-based assertion.
+            expect(screen.getByText('Your session has expired.')).toBeTruthy();
+            const link = screen.getByText('Sign in again');
+            expect(link.getAttribute('href')).toBe('/login');
+        });
+    });
+
     it('does not render an unread badge when everything is read', async () => {
         fetchMock.mockResolvedValue({
             ok: true,
