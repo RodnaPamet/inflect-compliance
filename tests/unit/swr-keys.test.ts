@@ -207,6 +207,143 @@ describe('CACHE_KEYS — convention sanity', () => {
     });
 });
 
+/**
+ * The registry is almost entirely branch-free string interpolation — except
+ * for the two methods that assemble a QUERY STRING conditionally. Those are
+ * the only places where a key can silently stop matching the URL the page
+ * actually fetches, which is the exact near-miss the registry exists to
+ * prevent (a `mutate()` on a key nothing reads is a no-op with no error).
+ * The structural walk above calls every method with a single placeholder
+ * argument, so it never reaches the option-bearing arms.
+ */
+describe('CACHE_KEYS — query-string assembly (the branching methods)', () => {
+    describe('calendar.range', () => {
+        it('emits ONLY from/to when no options are supplied', () => {
+            expect(CACHE_KEYS.calendar.range('2026-01-01', '2026-01-31')).toBe(
+                '/calendar?from=2026-01-01&to=2026-01-31',
+            );
+        });
+
+        it('omits an EMPTY types array — the unfiltered key stays byte-identical', () => {
+            // A `types: []` that leaked `&types=` into the key would give the
+            // "all types" view a different cache entry from the bare one, so
+            // the two would never dedupe.
+            expect(
+                CACHE_KEYS.calendar.range('2026-01-01', '2026-01-31', {
+                    types: [],
+                    categories: [],
+                }),
+            ).toBe(CACHE_KEYS.calendar.range('2026-01-01', '2026-01-31'));
+        });
+
+        it('appends types, SORTED, so member order does not fork the cache', () => {
+            const ab = CACHE_KEYS.calendar.range('2026-01-01', '2026-01-31', {
+                types: ['task', 'audit'],
+            });
+            const ba = CACHE_KEYS.calendar.range('2026-01-01', '2026-01-31', {
+                types: ['audit', 'task'],
+            });
+
+            expect(ab).toBe('/calendar?from=2026-01-01&to=2026-01-31&types=audit%2Ctask');
+            expect(ba).toBe(ab);
+        });
+
+        it('appends categories independently of types', () => {
+            expect(
+                CACHE_KEYS.calendar.range('2026-01-01', '2026-01-31', {
+                    categories: ['compliance'],
+                }),
+            ).toBe(
+                '/calendar?from=2026-01-01&to=2026-01-31&categories=compliance',
+            );
+        });
+
+        it('appends both, types before categories', () => {
+            expect(
+                CACHE_KEYS.calendar.range('2026-01-01', '2026-01-31', {
+                    types: ['evidence'],
+                    categories: ['b', 'a'],
+                }),
+            ).toBe(
+                '/calendar?from=2026-01-01&to=2026-01-31&types=evidence&categories=a%2Cb',
+            );
+        });
+
+        it('percent-encodes the from/to bounds', () => {
+            expect(
+                CACHE_KEYS.calendar.range(
+                    '2026-01-01T00:00:00+01:00',
+                    '2026-01-31T23:59:59+01:00',
+                ),
+            ).toBe(
+                '/calendar?from=2026-01-01T00%3A00%3A00%2B01%3A00&to=2026-01-31T23%3A59%3A59%2B01%3A00',
+            );
+        });
+    });
+
+    describe('audits.nis2GapRemediations', () => {
+        it('defaults to the lifecycle page HIGH floor', () => {
+            // The default is part of the cache identity: the page fetches
+            // `?minCriticality=HIGH`, so a bare-path default would make every
+            // mutation target an entry nothing renders.
+            expect(CACHE_KEYS.audits.nis2GapRemediations()).toBe(
+                '/audits/nis2-gap/remediations?minCriticality=HIGH',
+            );
+        });
+
+        it('carries an explicit floor', () => {
+            expect(CACHE_KEYS.audits.nis2GapRemediations('MEDIUM')).toBe(
+                '/audits/nis2-gap/remediations?minCriticality=MEDIUM',
+            );
+        });
+    });
+
+    // `dashboard.trends` is the third defaulted method; its default + explicit
+    // arms are already pinned in the "dashboard home/executive/trends" case
+    // above, so nothing is repeated here.
+});
+
+/**
+ * The convention walk in the first `describe` block iterates
+ * `Object.entries(CACHE_KEYS)` exactly TWO levels deep and skips any entry
+ * whose value is not a function. `automation.rules` and
+ * `automation.executions` are objects at that second level, so every method
+ * beneath them is invisible to the walk AND to every pinned case above —
+ * they are the only registry methods no test calls at all.
+ *
+ * That matters more than the depth accident suggests: the automation rule
+ * pages read and mutate on these strings, and a near-miss key there does not
+ * throw — the read 404s and the optimistic update lands on a cache entry
+ * nothing renders. Pinned here so a renamed route has to change this file.
+ */
+describe('CACHE_KEYS — the third-level automation keys the walk cannot see', () => {
+    it('automation.rules exposes list / detail / executions under /automation/rules', () => {
+        expect(CACHE_KEYS.automation.rules.list()).toBe('/automation/rules');
+        expect(CACHE_KEYS.automation.rules.detail('ar1')).toBe(
+            '/automation/rules/ar1',
+        );
+        expect(CACHE_KEYS.automation.rules.executions('ar1')).toBe(
+            '/automation/rules/ar1/executions',
+        );
+    });
+
+    it('automation.executions.live is the live feed, NOT a rule-scoped path', () => {
+        expect(CACHE_KEYS.automation.executions.live()).toBe(
+            '/automation/executions/live',
+        );
+    });
+
+    it('the second-level automation keys stay where they are', () => {
+        expect(CACHE_KEYS.automation.templates()).toBe('/automation/templates');
+        expect(CACHE_KEYS.automation.analytics()).toBe('/automation/analytics');
+        // Deliberately NOT under /automation — the suggestions endpoint is an
+        // AI route, and the registry follows the API path, not the screen.
+        expect(CACHE_KEYS.automation.suggestions()).toBe(
+            '/ai/automation-suggestions',
+        );
+    });
+});
+
 describe('CACHE_KEYS — composability with the hook layer', () => {
     /**
      * The registry is useful only if the strings it produces drop
