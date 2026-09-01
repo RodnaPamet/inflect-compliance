@@ -329,3 +329,142 @@ describe('computeSankeyLayout — links', () => {
         expect(lay.links[0].sourceKind).toBe('asset');
     });
 });
+
+// ─── Builder — edges whose endpoints did not survive projection ────────
+
+describe('buildSankeyDataset — edges to dropped nodes', () => {
+    it('drops a governs edge whose policy endpoint has no Sankey column', () => {
+        // `policy` is deliberately absent from COLUMN_LAYOUT, so a
+        // policy→control `governs` edge has a placed target and an
+        // UNPLACED source. Without the endpoint guard this would push a
+        // link naming an id that is not in `nodes`, and the layout pass
+        // would then emit a path from `undefined.x` — NaN coordinates,
+        // an invisible-but-present <path>.
+        const g = graph(
+            [n('p1', 'policy'), n('c1', 'control'), n('r1', 'risk')],
+            [e('e-gov', 'p1', 'c1', 'governs'), e('e-mit', 'c1', 'r1', 'mitigates')],
+        );
+        const ds = buildSankeyDataset(g);
+
+        expect(ds.nodes.map((x) => x.id).sort()).toStrictEqual(['c1', 'r1']);
+        expect(ds.links.map((l) => l.id)).toStrictEqual(['e-mit']);
+        // Every link endpoint must name a node that is actually present.
+        const ids = new Set(ds.nodes.map((x) => x.id));
+        for (const l of ds.links) {
+            expect(ids.has(l.source)).toBe(true);
+            expect(ids.has(l.target)).toBe(true);
+        }
+    });
+
+    it('drops an edge naming an id that is in no node list at all', () => {
+        const g = graph(
+            [n('a1', 'asset'), n('r1', 'risk')],
+            [e('e-ok', 'a1', 'r1', 'exposes'), e('e-dangling', 'a1', 'ghost', 'exposes')],
+        );
+        const ds = buildSankeyDataset(g);
+        expect(ds.links.map((l) => l.id)).toStrictEqual(['e-ok']);
+    });
+
+    it('does not count a dropped edge toward node weight', () => {
+        const g = graph(
+            [n('p1', 'policy'), n('c1', 'control')],
+            [e('e-gov', 'p1', 'c1', 'governs')],
+        );
+        const ds = buildSankeyDataset(g);
+        expect(ds.links).toStrictEqual([]);
+        expect(ds.nodes.map((x) => x.weight)).toStrictEqual([0]);
+    });
+});
+
+// ─── Layout — degenerate + inconsistent datasets ───────────────────────
+
+describe('computeSankeyLayout — degenerate datasets', () => {
+    it('lays out an empty dataset without inventing columns or nodes', () => {
+        // colCount === 0 takes neither the ===1 nor the >1 arm, so `colXs`
+        // stays empty. A regression that dropped the `> 1` guard would
+        // divide by (0 - 1) and place the single column at -Infinity.
+        const lay = computeSankeyLayout(
+            { columns: [], nodes: [], links: [], emptyAfterFilter: false },
+            { width: 800, height: 400 },
+        );
+        expect(lay.columns).toStrictEqual([]);
+        expect(lay.nodes).toStrictEqual([]);
+        expect(lay.links).toStrictEqual([]);
+        expect(lay.width).toBe(800);
+        expect(lay.height).toBe(400);
+    });
+
+    it('skips a node whose column is not declared in dataset.columns', () => {
+        // The two halves of a SankeyDataset can disagree — a future
+        // builder that filters `columns` but forgets `nodes` would send
+        // one through. `colXs[undefined]` is `undefined`, so laying it out
+        // anyway yields x: undefined on a rendered <rect>.
+        const lay = computeSankeyLayout(
+            {
+                columns: [{ index: 0, kind: 'asset', label: 'Assets', count: 1 }],
+                nodes: [
+                    {
+                        id: 'a1',
+                        label: 'a1',
+                        columnIndex: 0,
+                        kind: 'asset',
+                        weight: 1,
+                        href: null,
+                    },
+                    {
+                        id: 'x1',
+                        label: 'x1',
+                        columnIndex: 7, // no such column
+                        kind: 'risk',
+                        weight: 1,
+                        href: null,
+                    },
+                ],
+                links: [],
+                emptyAfterFilter: false,
+            },
+            { width: 800, height: 400 },
+        );
+        expect(lay.nodes.map((x) => x.id)).toStrictEqual(['a1']);
+        expect(Number.isFinite(lay.nodes[0].x)).toBe(true);
+    });
+
+    it('skips a link whose endpoint was never laid out', () => {
+        const lay = computeSankeyLayout(
+            {
+                columns: [
+                    { index: 0, kind: 'asset', label: 'Assets', count: 1 },
+                    { index: 1, kind: 'risk', label: 'Risks', count: 1 },
+                ],
+                nodes: [
+                    {
+                        id: 'a1',
+                        label: 'a1',
+                        columnIndex: 0,
+                        kind: 'asset',
+                        weight: 1,
+                        href: null,
+                    },
+                    {
+                        id: 'r1',
+                        label: 'r1',
+                        columnIndex: 1,
+                        kind: 'risk',
+                        weight: 1,
+                        href: null,
+                    },
+                ],
+                links: [
+                    { id: 'l-ok', source: 'a1', target: 'r1', value: 1, relation: 'exposes' },
+                    { id: 'l-src', source: 'ghost', target: 'r1', value: 1, relation: 'exposes' },
+                    { id: 'l-tgt', source: 'a1', target: 'ghost', value: 1, relation: 'exposes' },
+                ],
+                emptyAfterFilter: false,
+            },
+            { width: 800, height: 400 },
+        );
+        expect(lay.links.map((l) => l.id)).toStrictEqual(['l-ok']);
+        // And the surviving path carries no NaN coordinates.
+        expect(lay.links[0].pathD).not.toMatch(/NaN|undefined/);
+    });
+});
