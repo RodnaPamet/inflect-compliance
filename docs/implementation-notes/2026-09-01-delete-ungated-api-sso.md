@@ -47,10 +47,28 @@ maintain, document and re-audit, in exchange for compatibility with a caller
 that does not exist. Deletion is the smaller surface and the honest statement of
 what shipped.
 
-The API-key caller #2196 raised is served — `getTenantCtx` accepts API keys too,
-so a key-holder reaches the same usecases at `/api/t/:slug/sso`, gated, with
-denials audited. What changes for such a caller is the URL, and no caller of the
-old one has ever been observed.
+The API-key caller #2196 raised **could never have reached either route**, and
+that is a stronger argument than the one this paragraph first made.
+
+`getTenantCtx` does accept API keys (`src/app-layer/context.ts:40-43`), but the
+handler is downstream of the edge. `/api/t/:slug/sso` is in none of
+`PUBLIC_PATH_PREFIXES`, `PUBLIC_API_REGEXES` or `MACHINE_CALLER_PREFIXES`, so
+`src/middleware.ts:200-210` runs first. `getToken` does read
+`Authorization: Bearer`, but then JWE-decodes it; an `iflk_…` key throws in
+`_decode`, `getToken` returns null, and the request is `unauthorizedJson()`'d.
+`tryApiKeyAuth` never executes. That is the same class as the S9 finding —
+SCIM, MCP and webhooks 401'd before their own auth ran — and it is tracked
+separately as #2224.
+
+The consequence for THIS change is that the deleted route sat behind the same
+edge gate, so it was equally unreachable to a cookieless key-holder. The only
+credential that could ever have reached `POST /api/sso` is a NextAuth session
+cookie, and the only browser UI that could carry one calls the gated twin. So
+the "an external consumer might depend on this published endpoint" risk is
+provably zero rather than merely unobserved.
+
+Confirmed against production as well as by reading: **zero requests to
+`/api/sso` in 30 days** of caddy and app logs on the deployment VM.
 
 ## Files
 
