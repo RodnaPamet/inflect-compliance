@@ -12,8 +12,17 @@
  *   - the `*` fan-out arms, taken whenever the model is absent from the
  *     manifest but the payload/row still carries a manifest field NAME;
  *   - `connectOrCreate.create`, the one nested-write shape with no test;
- *   - the traversal guards that stop a walk early (scalar payload, array
- *     `data`, a manifest key holding an object).
+ *   - the traversal guards that stop a walk early on the WRITE side (null
+ *     payload, array `data`, a manifest key holding an object). The read
+ *     side's null guard is already held by `encryption-middleware.test.ts`
+ *     and is not duplicated here.
+ *
+ *     The scalar arm of those guards (`typeof payload !== 'object'`) is
+ *     deliberately left uncovered on both sides: with it removed, a string
+ *     or number payload still walks to completion without throwing or
+ *     mutating anything, so no assertion can distinguish its presence from
+ *     its absence. Executing it for the branch count alone would be
+ *     decoration.
  *
  * Every one of those is a silent failure: the operation succeeds, the row is
  * written, and the value is simply the wrong side of the encryption boundary.
@@ -292,13 +301,23 @@ describe('walkWriteArgument — connectOrCreate', () => {
 });
 
 describe('walkWriteArgument — payloads that are not walkable', () => {
-    it('returns without touching a scalar payload', () => {
-        // Reached through nested fan-out, where a relation value can be a
-        // string. The guard is the reason this does not throw.
-        expect(() => walkWriteArgument('a bare string', 'Risk', null)).not.toThrow();
-        expect(() => walkWriteArgument(42, 'Risk', null)).not.toThrow();
+    it('returns without throwing on a null or undefined payload', () => {
+        // Reached through nested fan-out: `{ risk: { create: null } }` hands
+        // the recursion a null. Without the `payload === null` guard the very
+        // next step indexes it (`data[key]`) and throws a TypeError out of a
+        // Prisma write.
+        //
+        // The sibling arm — `typeof payload !== 'object'` for a bare string or
+        // number — is deliberately NOT asserted here, and this suite makes no
+        // claim about it. It is unobservable from outside: with the guard
+        // removed, a string payload has every manifest key read as `undefined`
+        // and `Object.values('str')` yields characters that the nested-write
+        // descent skips, so removing it changes nothing a test can see.
         expect(() => walkWriteArgument(null, 'Risk', null)).not.toThrow();
         expect(() => walkWriteArgument(undefined, 'Risk', null)).not.toThrow();
+        expect(() =>
+            walkWriteArgument({ risk: { create: null } }, 'Task', null),
+        ).not.toThrow();
     });
 
     it('walks every element of an array payload, not just the first', () => {
@@ -357,11 +376,6 @@ describe('walkReadResult — the manifest-key descent guard', () => {
         const row: Record<string, unknown> = { treatmentNotes: encryptField('legacy call shape') };
         walkReadResult(row, 'Risk', null);
         expect(row.treatmentNotes).toBe('legacy call shape');
-    });
-
-    it('ignores a scalar result entirely', () => {
-        expect(() => walkReadResult('scalar', 'Risk', NO_DEKS)).not.toThrow();
-        expect(() => walkReadResult(12, 'Risk', NO_DEKS)).not.toThrow();
     });
 });
 

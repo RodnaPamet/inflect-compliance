@@ -162,12 +162,20 @@ describe('beforeSend — breadcrumb url redaction', () => {
         );
     });
 
-    it('skips a breadcrumb with no data, and one whose url is not a string', () => {
-        const out = beforeSend()({
-            breadcrumbs: [{}, { data: {} }, { data: { url: 42 } }],
-        });
+    it('skips a breadcrumb that carries no data object at all', () => {
+        // Navigation breadcrumbs arrive with no `data`. Without the optional
+        // chain in `crumb.data?.url` this throws a TypeError from inside
+        // `beforeSend`, and Sentry drops the whole event — the crash report is
+        // lost precisely when something is already going wrong.
+        //
+        // The `typeof crumb.data.url === 'string'` half of that guard is NOT
+        // asserted here and this suite makes no claim about it: `redactUrl`
+        // has its own try/catch, and a non-string reaches `url.startsWith`,
+        // throws inside it and is returned unchanged — so deleting the typeof
+        // check is invisible to any assertion on the output.
+        const out = beforeSend()({ breadcrumbs: [{}, { data: {} }] });
 
-        expect(out?.breadcrumbs?.[2].data?.url).toBe(42);
+        expect(out?.breadcrumbs).toStrictEqual([{}, { data: {} }]);
     });
 });
 
@@ -316,11 +324,12 @@ describe('shutdownSentry — draining an initialised client', () => {
         closeBehaviour.mode = 'hang';
         initSentry();
 
-        const started = Date.now();
+        // The detector is that this `await` resolves at all: `Sentry.close`
+        // never settles, so without the Promise.race the test hangs to the jest
+        // timeout. A wall-clock `toBeLessThan` assertion here would add nothing
+        // — it cannot run in the failing case.
         await shutdownSentry(20);
-        const elapsed = Date.now() - started;
 
         expect(closeCalls).toStrictEqual([20]);
-        expect(elapsed).toBeLessThan(3_000);
     });
 });

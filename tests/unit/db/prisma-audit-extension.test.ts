@@ -272,9 +272,11 @@ describe('audit extension — how each operation names the row it touched', () =
     });
 
     it('records a batch count of 0 when the driver returns no count', async () => {
-        // `?? 0` rather than `|| 0`: a genuine zero-row result and a missing
-        // count must both land as 0 rather than as `undefined`, which would
-        // serialise the recordIds column as `{}`.
+        // What bites here is the coercion itself, not the choice of operator:
+        // `?? 0` and `|| 0` are indistinguishable on this input (both yield 0
+        // for `undefined` and for 0). Drop the coercion entirely and the entry
+        // becomes `{ count: undefined }`, which serialises the recordIds column
+        // as `{}` — an audit row that no longer says a bulk delete happened.
         await op('deleteMany')({
             model: 'Risk',
             operation: 'deleteMany',

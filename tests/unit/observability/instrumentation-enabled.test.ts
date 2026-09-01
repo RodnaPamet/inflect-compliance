@@ -95,6 +95,7 @@ jest.mock('@opentelemetry/sdk-trace-node', () => ({
 
 jest.mock('@opentelemetry/exporter-trace-otlp-http', () => ({
     OTLPTraceExporter: class OTLPTraceExporter {
+        readonly signal = 'traces';
         constructor(cfg: { url?: string }) {
             traceExporterArgs.push(cfg);
         }
@@ -120,6 +121,7 @@ jest.mock('@opentelemetry/sdk-metrics', () => ({
 
 jest.mock('@opentelemetry/exporter-metrics-otlp-http', () => ({
     OTLPMetricExporter: class OTLPMetricExporter {
+        readonly signal = 'metrics';
         constructor(cfg: { url?: string }) {
             metricExporterArgs.push(cfg);
         }
@@ -307,7 +309,11 @@ describe('initTelemetry — enabled bootstrap', () => {
 
         expect(metricReaderArgs).toHaveLength(1);
         expect(metricReaderArgs[0].exportIntervalMillis).toBe(30_000);
-        expect(metricReaderArgs[0].exporter).toBeDefined();
+        // Identity, not mere presence: handing the metric reader the TRACE
+        // exporter ships every metric to /v1/traces, and a `toBeDefined()`
+        // here cannot see it.
+        expect((metricReaderArgs[0].exporter as { signal?: string }).signal).toBe('metrics');
+        expect((spanProcessorArgs[0] as { signal?: string }).signal).toBe('traces');
         expect(spanProcessorArgs).toHaveLength(1);
     });
 
@@ -400,13 +406,12 @@ describe('shutdownTelemetry — draining a real bootstrap', () => {
         shutdownBehaviour.trace = 'hang';
         await initTelemetry();
 
-        const started = Date.now();
+        // The detector is that this `await` resolves at all: the trace
+        // provider's shutdown never settles, so without the Promise.race the
+        // test hangs to the jest timeout. A wall-clock `toBeLessThan` assertion
+        // here would add nothing — it cannot run in the failing case.
         await shutdownTelemetry(60);
-        const elapsed = Date.now() - started;
 
         expect(traceProviders[0].shutdown).toHaveBeenCalledTimes(1);
-        // It returned because of the timer, not because the drain finished
-        // (it never does).
-        expect(elapsed).toBeLessThan(3_000);
     });
 });

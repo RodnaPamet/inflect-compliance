@@ -26,16 +26,24 @@ const records: Emission[] = [];
 type ObserveResult = { observe: (value: number, attrs?: Record<string, unknown>) => void };
 type GaugeCallback = (result: ObserveResult) => void | Promise<void>;
 const gaugeCallbacks = new Map<string, GaugeCallback>();
+/**
+ * One entry per instrument CONSTRUCTION. `adds`/`records` are keyed by
+ * instrument name, so a module that rebuilt its counter on every call would be
+ * indistinguishable there — this is the only place that difference is visible.
+ * Deliberately NOT cleared per test: the lazy getters cache at module scope,
+ * so the invariant is one construction for the whole file.
+ */
+const instrumentCreations: string[] = [];
 
 jest.mock('@opentelemetry/api', () => ({
     metrics: {
         getMeter: () => ({
-            createCounter: (name: string) => ({
+            createCounter: (name: string) => (instrumentCreations.push(name), {
                 add: (value: number, attrs?: Record<string, unknown>) => {
                     adds.push({ instrument: name, value, attrs });
                 },
             }),
-            createHistogram: (name: string) => ({
+            createHistogram: (name: string) => (instrumentCreations.push(name), {
                 record: (value: number, attrs?: Record<string, unknown>) => {
                     records.push({ instrument: name, value, attrs });
                 },
@@ -724,6 +732,11 @@ describe('aggregation cache counters', () => {
             { aggregation: 'a' },
             { aggregation: 'b' },
         ]);
+        // The load-bearing half: two `add` calls, ONE construction. Without
+        // this the assertion above passes with the lazy guard deleted.
+        expect(
+            instrumentCreations.filter((n) => n === 'cache.aggregation.hit'),
+        ).toHaveLength(1);
     });
 });
 
