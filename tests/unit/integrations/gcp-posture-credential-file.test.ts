@@ -14,6 +14,8 @@
  *   • the key travels to the child as a PATH in env, never as argv content;
  *   • the file is unlinked afterwards on EVERY exit, including when the
  *     collector fails — a leftover key survives the process;
+ *   • the mkdtemp DIRECTORY is removed too, on every exit — unlinking only
+ *     the file leaks one empty inode per scheduled run;
  *   • an unlink failure must not turn a completed check into a thrown error.
  *
  * Both `node:fs/promises` and `node:child_process` are mocked so no real file
@@ -22,10 +24,12 @@
 const mkdtempMock = jest.fn();
 const writeFileMock = jest.fn();
 const unlinkMock = jest.fn();
+const rmMock = jest.fn();
 jest.mock('node:fs/promises', () => ({
     mkdtemp: (...a: unknown[]) => mkdtempMock(...a),
     writeFile: (...a: unknown[]) => writeFileMock(...a),
     unlink: (...a: unknown[]) => unlinkMock(...a),
+    rm: (...a: unknown[]) => rmMock(...a),
 }));
 
 const execFileMock = jest.fn();
@@ -78,6 +82,7 @@ beforeEach(() => {
     mkdtempMock.mockResolvedValue(TMP_DIR);
     writeFileMock.mockResolvedValue(undefined);
     unlinkMock.mockResolvedValue(undefined);
+    rmMock.mockResolvedValue(undefined);
 });
 
 describe('GcpPostureProvider.runCheck — service-account key file', () => {
@@ -167,6 +172,57 @@ describe('GcpPostureProvider.runCheck — service-account key file', () => {
         ).resolves.toMatchObject({ status: 'PASSED' });
     });
 
+    it('removes the mkdtemp DIRECTORY, not just the key file', async () => {
+        // Only the file was ever unlinked, so every scheduled run left one
+        // empty `gcp-posture-*` directory behind for the life of the
+        // container — an unbounded inode leak on a cron path.
+        cliResult({ stdout: OK_JSON });
+
+        await new GcpPostureProvider().runCheck(
+            checkInput({ benchmark: 'soc2', serviceAccountJson: SA_KEY }),
+        );
+
+        expect(rmMock).toHaveBeenCalledWith(TMP_DIR, { recursive: true, force: true });
+    });
+
+    it('removes the directory even when the collector exits non-zero', async () => {
+        cliResult({ err: Object.assign(new Error('exited'), { code: 1 }), stderr: 'denied' });
+
+        const res = await new GcpPostureProvider().runCheck(
+            checkInput({ benchmark: 'soc2', serviceAccountJson: SA_KEY }),
+        );
+
+        expect(res.status).toBe('ERROR');
+        expect(rmMock).toHaveBeenCalledWith(TMP_DIR, { recursive: true, force: true });
+    });
+
+    it('unlinks the key BEFORE removing the directory', async () => {
+        // Order is the security property: if `rm` fails the secret must
+        // already be gone, so the key's removal never depends on the
+        // directory's. An `rm`-only cleanup would invert that.
+        cliResult({ stdout: OK_JSON });
+        const order: string[] = [];
+        unlinkMock.mockImplementation(async () => { order.push('unlink'); });
+        rmMock.mockImplementation(async () => { order.push('rm'); });
+
+        await new GcpPostureProvider().runCheck(
+            checkInput({ benchmark: 'soc2', serviceAccountJson: SA_KEY }),
+        );
+
+        expect(order).toEqual(['unlink', 'rm']);
+    });
+
+    it('does not fail the check when the directory removal rejects', async () => {
+        cliResult({ stdout: OK_JSON });
+        rmMock.mockRejectedValue(Object.assign(new Error('ENOTEMPTY'), { code: 'ENOTEMPTY' }));
+
+        await expect(
+            new GcpPostureProvider().runCheck(
+                checkInput({ benchmark: 'soc2', serviceAccountJson: SA_KEY }),
+            ),
+        ).resolves.toMatchObject({ status: 'PASSED' });
+    });
+
     it('scrubs the service-account key out of the surfaced stderr', async () => {
         cliResult({
             err: Object.assign(new Error('exited'), { code: 1 }),
@@ -195,6 +251,7 @@ describe('GcpPostureProvider.runCheck — service-account key file', () => {
         expect(mkdtempMock).not.toHaveBeenCalled();
         expect(writeFileMock).not.toHaveBeenCalled();
         expect(unlinkMock).not.toHaveBeenCalled();
+        expect(rmMock).not.toHaveBeenCalled();
         expect(execFileMock.mock.calls[0][2].env).not.toHaveProperty(
             'GOOGLE_APPLICATION_CREDENTIALS',
         );

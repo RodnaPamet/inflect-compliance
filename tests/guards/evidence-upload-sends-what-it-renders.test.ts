@@ -71,6 +71,23 @@ describe('the SharePoint import sends the fields the modal renders', () => {
         expect(imp).toMatch(/folder:\s*target\.folder/);
     });
 
+    it('importSharePointItems BUILDS that target from the input', () => {
+        // The hop the checks above skip, and the one that was actually
+        // broken. `importOne` read `target.folder` correctly all along —
+        // `importSharePointItems` built `target` from controlId + category
+        // only, so `target.folder` was always undefined and the evidence row
+        // stored null. Every other layer here was green while the user's
+        // chosen folder was discarded, which is the whole reason this file
+        // asserts the seam end to end rather than at one layer.
+        const imp = codeOnly(read(IMPORTER));
+        const at = imp.indexOf('await importOne(');
+        expect(at).toBeGreaterThan(-1);
+        const call = imp.slice(at, imp.indexOf('),', at));
+        expect(call).toMatch(/controlId:\s*input\.controlId/);
+        expect(call).toMatch(/category:\s*input\.category/);
+        expect(call).toMatch(/folder:\s*input\.folder/);
+    });
+
     it('retention is applied over the ids the import returns', () => {
         // Not part of the import contract — a second write per row, as on
         // the dropzone path.
