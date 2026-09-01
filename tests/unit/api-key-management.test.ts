@@ -11,7 +11,7 @@
  * 7. Full-access scope grants everything
  * 8. Resource wildcard scopes work
  */
-import { getPermissionsForRole } from '@/lib/permissions';
+import { getPermissionsForRole, PERMISSION_SCHEMA } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 import type { Role } from '@prisma/client';
 
@@ -306,5 +306,95 @@ describe('API Key Management — Revoke', () => {
         };
 
         await expect(revokeApiKey(makeCtx(), 'missing')).rejects.toThrow(/not found/i);
+    });
+});
+
+
+// ─── Scope coverage of PERMISSION_SCHEMA (#2225) ───
+
+describe('API Key Scopes — every permission domain has a scope decision', () => {
+    /**
+     * `SCOPE_ACTION_MAP` cannot be DERIVED from `PERMISSION_SCHEMA` —
+     * grouping a domain's actions into read / write / admin is an
+     * editorial judgement, not bookkeeping. So this asserts COVERAGE
+     * instead: both sides are read from their own source, and neither
+     * list is restated here.
+     *
+     * `assets`, `personnel` and `incidents` were absent until #2225,
+     * which left them reachable only by a `*` key — i.e. the only way
+     * to give a key access to the asset register was to give it
+     * everything. A future domain added to `PermissionSet` without a
+     * scope decision fails this test rather than silently repeating
+     * that.
+     */
+
+    /** Scopes are `resource:action`; the resource half is what we check. */
+    const scopeResources = new Set(
+        VALID_SCOPES.filter((s) => s !== '*').map((s) => s.split(':')[0]),
+    );
+
+    it('reads a non-trivial schema (guards the derivation itself)', () => {
+        expect(Object.keys(PERMISSION_SCHEMA).length).toBeGreaterThan(10);
+        expect(scopeResources.size).toBeGreaterThan(10);
+    });
+
+    it('every PermissionSet domain is reachable by a scoped key', () => {
+        const unreachable = Object.keys(PERMISSION_SCHEMA).filter(
+            (domain) => !scopeResources.has(domain),
+        );
+        expect(unreachable).toEqual([]);
+    });
+
+    it('the three domains #2225 measured as missing are now scopable', () => {
+        for (const domain of ['assets', 'personnel', 'incidents']) {
+            expect(VALID_SCOPES).toContain(`${domain}:read`);
+            expect(VALID_SCOPES).toContain(`${domain}:*`);
+        }
+    });
+
+    it('a scoped key for a new domain resolves only that domain', () => {
+        const perms = scopesToPermissions(['assets:read']);
+
+        expect(perms.assets).toEqual({ view: true, create: false, edit: false });
+        // Nothing else leaks on.
+        expect(perms.controls.view).toBe(false);
+        expect(perms.personnel.view).toBe(false);
+        expect(perms.incidents.view).toBe(false);
+    });
+
+    it('the privileged manage flags need an explicit admin-group scope', () => {
+        expect(scopesToPermissions(['personnel:read']).personnel).toEqual({
+            view: true, manage: false,
+        });
+        expect(scopesToPermissions(['personnel:admin']).personnel.manage).toBe(true);
+        expect(scopesToPermissions(['incidents:admin']).incidents.manage).toBe(true);
+    });
+
+    it('adding domains did not change what an existing scope resolves to', () => {
+        // The regression a reviewer will reasonably worry about. The
+        // skeleton in `scopesToPermissions` comes from
+        // `getPermissionsForRole('READER')`, not from SCOPE_ACTION_MAP,
+        // so widening the map cannot subtract from an issued key.
+        const perms = scopesToPermissions(['controls:read', 'evidence:read']);
+        expect(perms.controls).toEqual({ view: true, create: false, edit: false });
+        expect(perms.evidence).toEqual({
+            view: true, upload: false, edit: false, download: true,
+        });
+    });
+
+    it('no scope maps to an action the schema does not declare', () => {
+        // Catches a typo in the map (e.g. `['veiw']`), which would
+        // otherwise be a silently inert scope.
+        const bogus: string[] = [];
+        for (const domain of Object.keys(PERMISSION_SCHEMA)) {
+            const resolved = scopesToPermissions([`${domain}:*`]) as unknown as
+                Record<string, Record<string, boolean>>;
+            for (const action of Object.keys(resolved[domain])) {
+                if (!PERMISSION_SCHEMA[domain as keyof typeof PERMISSION_SCHEMA].includes(action)) {
+                    bogus.push(`${domain}.${action}`);
+                }
+            }
+        }
+        expect(bogus).toEqual([]);
     });
 });

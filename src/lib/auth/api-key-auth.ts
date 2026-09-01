@@ -59,6 +59,39 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  *
  * This keeps the scope vocabulary small and M2M-friendly while mapping
  * to the full PermissionSet internally.
+ *
+ * ─── Domain coverage is a DECISION, not bookkeeping (#2225) ─────────
+ *
+ * Every domain in `PERMISSION_SCHEMA` must appear here. The grouping
+ * of actions into read / write / admin is editorial and cannot be
+ * derived, so it is not — but the COVERAGE is asserted, by
+ * `tests/unit/api-key-management.test.ts`: adding a domain to
+ * `PermissionSet` without deciding its scope shape fails that test.
+ *
+ * `assets` / `personnel` / `incidents` were absent until #2225, which
+ * meant the only way to give an API key access to those domains was
+ * `*` — a full-ADMIN grant. Adding them is purely additive: nothing
+ * that was a valid scope stops being one, and `scopesToPermissions`
+ * builds its skeleton from `getPermissionsForRole('READER')` rather
+ * than from this map, so an existing key's resolved permissions are
+ * byte-identical unless it names one of the new scopes.
+ *
+ * `personnel.manage` and `incidents.manage` sit under `admin`, not
+ * `write`, because `PermissionSet` documents both as privileged
+ * OWNER/ADMIN actions rather than ordinary editor writes (filing a
+ * regulatory notification is not "editing an incident"). That mirrors
+ * `policies.approve`. `audits` groups its `manage`/`freeze`/`share`
+ * under `write` and is deliberately left alone — regrouping it would
+ * silently change what an already-issued `audits:write` key resolves
+ * to, which is a behaviour break, not a tidy-up.
+ *
+ * Some ACTIONS are deliberately unreachable by any scope:
+ * `admin.tenant_lifecycle`, `admin.owner_management`,
+ * `admin.compliance_dsar_*` and `reports.schedule_external`. Deleting
+ * the tenant, rotating the DEK, managing OWNERs, moving DSARs, and
+ * aiming a standing report feed off-tenant are not things a bearer
+ * token should be able to do; a `*` key still reaches them, and that
+ * is the one grant an operator has to make consciously.
  */
 const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     controls:   { read: ['view'], write: ['create', 'edit'] },
@@ -66,8 +99,11 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     policies:   { read: ['view'], write: ['create', 'edit'], admin: ['approve'] },
     tasks:      { read: ['view'], write: ['create', 'edit', 'assign'] },
     risks:      { read: ['view'], write: ['create', 'edit'] },
+    assets:     { read: ['view'], write: ['create', 'edit'] },
     vendors:    { read: ['view'], write: ['create', 'edit'] },
     tests:      { read: ['view'], write: ['create', 'execute'] },
+    incidents:  { read: ['view'], admin: ['manage'] },
+    personnel:  { read: ['view'], admin: ['manage'] },
     frameworks: { read: ['view'], write: ['install'] },
     audits:     { read: ['view'], write: ['manage', 'freeze', 'share'] },
     reports:    { read: ['view'], write: ['export'] },

@@ -201,3 +201,218 @@ describe('checkApiReadRateLimit (memory mode)', () => {
         }
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// Branch coverage for the client-IP derivation, the window rollover and
+// the third bypass gate (issue #2214 — `./src/lib/` branch floor).
+//
+// `getClientIp` is not exported, so every assertion below is BEHAVIOURAL:
+// two requests that resolve to the SAME bucket IP must share one budget,
+// and two that resolve differently must not. Burning one and observing
+// the other is the only way to see which header the derivation used.
+// ─────────────────────────────────────────────────────────────────────
+
+/** Burn a bucket to exactly its limit; every one of those must be allowed. */
+async function burn(req: NextRequest, userId: string | null, slug: string | null): Promise<void> {
+    for (let i = 0; i < API_READ_LIMIT.maxAttempts; i++) {
+        const r = await checkApiReadRateLimit(req, userId, slug);
+        expect(r.ok).toBe(true);
+    }
+}
+
+describe('checkApiReadRateLimit — client-IP derivation drives the bucket', () => {
+    beforeEach(() => {
+        _clearApiReadRateLimitMemory();
+        process.env.RATE_LIMIT_MODE = 'memory';
+        delete process.env.RATE_LIMIT_ENABLED;
+        delete process.env.AUTH_TEST_MODE;
+        delete process.env.NEXT_TEST_MODE;
+    });
+
+    it('uses the FIRST x-forwarded-for entry, trimmed', async () => {
+        // Padded, with a downstream proxy hop appended.
+        await burn(fakeReq({ 'x-forwarded-for': '  198.51.100.7 , 10.0.0.1' }), 'u', 'acme');
+
+        // Same client, canonical form — must land in the SAME bucket.
+        const same = await checkApiReadRateLimit(
+            fakeReq({ 'x-forwarded-for': '198.51.100.7' }), 'u', 'acme',
+        );
+        expect(same.ok).toBe(false);
+
+        // A different client is unaffected — proves we did not collapse
+        // every XFF value into one bucket.
+        const other = await checkApiReadRateLimit(
+            fakeReq({ 'x-forwarded-for': '198.51.100.8' }), 'u', 'acme',
+        );
+        expect(other.ok).toBe(true);
+
+        // And the SECOND hop is not what we keyed on.
+        const hop = await checkApiReadRateLimit(
+            fakeReq({ 'x-forwarded-for': '10.0.0.1' }), 'u', 'acme',
+        );
+        expect(hop.ok).toBe(true);
+    });
+
+    it('falls back to x-real-ip when x-forwarded-for is absent', async () => {
+        await burn(fakeReq({ 'x-forwarded-for': '198.51.100.7' }), 'u', 'acme');
+
+        const viaRealIp = await checkApiReadRateLimit(
+            fakeReq({ 'x-real-ip': '198.51.100.7' }), 'u', 'acme',
+        );
+        expect(viaRealIp.ok).toBe(false);
+    });
+
+    it('falls back to x-real-ip when the first x-forwarded-for entry is EMPTY', async () => {
+        // A malformed header (leading comma) must not key the bucket on ''.
+        await burn(
+            fakeReq({ 'x-forwarded-for': ' , 10.0.0.1', 'x-real-ip': '198.51.100.20' }),
+            'u',
+            'acme',
+        );
+
+        const viaRealIp = await checkApiReadRateLimit(
+            fakeReq({ 'x-real-ip': '198.51.100.20' }), 'u', 'acme',
+        );
+        expect(viaRealIp.ok).toBe(false);
+
+        // The 10.0.0.1 hop in the malformed header was NOT used.
+        const hop = await checkApiReadRateLimit(
+            fakeReq({ 'x-forwarded-for': '10.0.0.1' }), 'u', 'acme',
+        );
+        expect(hop.ok).toBe(true);
+    });
+
+    it('defaults to 127.0.0.1 when neither forwarding header is present', async () => {
+        await burn(fakeReq(), 'u', 'acme');
+
+        const loopback = await checkApiReadRateLimit(
+            fakeReq({ 'x-forwarded-for': '127.0.0.1' }), 'u', 'acme',
+        );
+        expect(loopback.ok).toBe(false);
+    });
+
+    it('treats a whitespace-only x-real-ip as absent', async () => {
+        await burn(fakeReq({ 'x-real-ip': '   ' }), 'u', 'acme');
+
+        // Both resolved to the 127.0.0.1 default, so they share a budget.
+        const noHeaders = await checkApiReadRateLimit(fakeReq(), 'u', 'acme');
+        expect(noHeaders.ok).toBe(false);
+    });
+
+    it('gives a null tenantSlug its own bucket, independent of named tenants', async () => {
+        const req = fakeReq({ 'x-forwarded-for': '198.51.100.30' });
+        await burn(req, 'u', null);
+
+        expect((await checkApiReadRateLimit(req, 'u', null)).ok).toBe(false);
+        expect((await checkApiReadRateLimit(req, 'u', 'acme')).ok).toBe(true);
+    });
+});
+
+describe('checkApiReadRateLimit — window rollover (mocked clock)', () => {
+    // The clock is driven from a fixed BASE and only ever advanced by
+    // deltas relative to it. Nothing here reads or asserts wall-clock
+    // time, so the suite cannot rot overnight.
+    const BASE = 1_700_000_000_000;
+    let now = BASE;
+
+    beforeEach(() => {
+        _clearApiReadRateLimitMemory();
+        process.env.RATE_LIMIT_MODE = 'memory';
+        delete process.env.RATE_LIMIT_ENABLED;
+        delete process.env.AUTH_TEST_MODE;
+        delete process.env.NEXT_TEST_MODE;
+        now = BASE;
+        jest.spyOn(Date, 'now').mockImplementation(() => now);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    it('reports a deterministic Retry-After and Reset derived from the frozen clock', async () => {
+        const req = fakeReq({ 'x-forwarded-for': '198.51.100.40' });
+        await burn(req, 'u', 'acme');
+
+        const blocked = await checkApiReadRateLimit(req, 'u', 'acme');
+        expect(blocked.ok).toBe(false);
+
+        const res = blocked.response!;
+        const windowSeconds = API_READ_LIMIT.windowMs / 1000;
+        expect(res.headers.get('Retry-After')).toBe(String(windowSeconds));
+        expect(res.headers.get('X-RateLimit-Reset')).toBe(String(BASE + API_READ_LIMIT.windowMs));
+        expect(res.headers.get('X-RateLimit-Limit')).toBe(String(API_READ_LIMIT.maxAttempts));
+        expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
+
+        const body = await res.json();
+        expect(body.error.retryAfterSeconds).toBe(windowSeconds);
+        expect(body.error.message).toBe(
+            `Too many read requests. Retry after ${windowSeconds} seconds.`,
+        );
+    });
+
+    it('is STILL blocked at exactly resetAt — expiry is strictly greater-than', async () => {
+        const req = fakeReq({ 'x-forwarded-for': '198.51.100.41' });
+        await burn(req, 'u', 'acme');
+
+        // now === resetAt: `now > record.resetAt` is false, so the same
+        // window is still in force. A `>=` here would leak a free request.
+        now = BASE + API_READ_LIMIT.windowMs;
+        expect((await checkApiReadRateLimit(req, 'u', 'acme')).ok).toBe(false);
+    });
+
+    it('resets the COUNTER (not just the timestamp) once the window elapses', async () => {
+        const req = fakeReq({ 'x-forwarded-for': '198.51.100.42' });
+        await burn(req, 'u', 'acme');
+        expect((await checkApiReadRateLimit(req, 'u', 'acme')).ok).toBe(false);
+
+        now = BASE + API_READ_LIMIT.windowMs + 1;
+
+        // A full fresh budget must be available — bumping only `resetAt`
+        // while leaving `count` at the cap would allow exactly one.
+        for (let i = 0; i < API_READ_LIMIT.maxAttempts; i++) {
+            expect((await checkApiReadRateLimit(req, 'u', 'acme')).ok).toBe(true);
+        }
+        const overAgain = await checkApiReadRateLimit(req, 'u', 'acme');
+        expect(overAgain.ok).toBe(false);
+        // The new window is anchored on the FIRST request of that window.
+        expect(overAgain.response!.headers.get('X-RateLimit-Reset')).toBe(
+            String(now + API_READ_LIMIT.windowMs),
+        );
+    });
+});
+
+describe('checkApiReadRateLimit — NEXT_TEST_MODE bypass', () => {
+    beforeEach(() => {
+        _clearApiReadRateLimitMemory();
+        process.env.RATE_LIMIT_MODE = 'memory';
+        delete process.env.RATE_LIMIT_ENABLED;
+        delete process.env.AUTH_TEST_MODE;
+        delete process.env.NEXT_TEST_MODE;
+    });
+
+    afterEach(() => {
+        delete process.env.NEXT_TEST_MODE;
+    });
+
+    it('NEXT_TEST_MODE=1 returns before any counting happens', async () => {
+        process.env.NEXT_TEST_MODE = '1';
+        const req = fakeReq({ 'x-forwarded-for': '198.51.100.50' });
+        for (let i = 0; i < API_READ_LIMIT.maxAttempts * 2; i++) {
+            expect((await checkApiReadRateLimit(req, 'u', 'acme')).ok).toBe(true);
+        }
+
+        // Turning the bypass off must reveal an UNTOUCHED budget — proving
+        // the gate returned before `checkMemory` incremented anything,
+        // rather than merely discarding the verdict.
+        delete process.env.NEXT_TEST_MODE;
+        await burn(req, 'u', 'acme');
+        expect((await checkApiReadRateLimit(req, 'u', 'acme')).ok).toBe(false);
+    });
+
+    it('a NEXT_TEST_MODE value other than "1" does NOT bypass', async () => {
+        process.env.NEXT_TEST_MODE = 'true';
+        const req = fakeReq({ 'x-forwarded-for': '198.51.100.51' });
+        await burn(req, 'u', 'acme');
+        expect((await checkApiReadRateLimit(req, 'u', 'acme')).ok).toBe(false);
+    });
+});

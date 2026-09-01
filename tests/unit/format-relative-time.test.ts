@@ -61,4 +61,33 @@ describe('formatRelativeTime', () => {
         const out = formatRelativeTime(past, NOW);
         expect(out).toMatch(/2 hours ago/);
     });
+    // ── includeSeconds: the explicit-false branch ──────────────────
+    //
+    // `includeSeconds` defaults to true (`options.includeSeconds ?? true`).
+    // Nothing exercised the caller-supplied side of that `??`, so a
+    // refactor that ignored the option — or inverted the default — would
+    // not have failed a test. A 25-second delta is the cheapest input
+    // that separates the two: date-fns reports "half a minute" only when
+    // seconds are included, and "less than a minute" when they are not.
+    it('reports sub-minute deltas in seconds granularity when includeSeconds is left default', () => {
+        const just = new Date(NOW.getTime() - 25_000);
+        expect(formatRelativeTime(just, NOW)).toBe('half a minute ago');
+    });
+
+    it('collapses the same delta to minute granularity when includeSeconds=false', () => {
+        const just = new Date(NOW.getTime() - 25_000);
+        expect(formatRelativeTime(just, NOW, { includeSeconds: false })).toBe(
+            'less than a minute ago',
+        );
+    });
+
+    it('composes includeSeconds=false with addSuffix=false', () => {
+        const just = new Date(NOW.getTime() - 25_000);
+        expect(
+            formatRelativeTime(just, NOW, {
+                includeSeconds: false,
+                addSuffix: false,
+            }),
+        ).toBe('less than a minute');
+    });
 });

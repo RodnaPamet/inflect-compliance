@@ -60,23 +60,20 @@ corrupted `permissionsJson` never produces a `null` or empty permission set.
 
 ### PermissionSet Shape
 
-```typescript
-type PermissionSet = {
-    controls:   { view, create, edit }
-    evidence:   { view, upload, edit, download }
-    policies:   { view, create, edit, approve }
-    tasks:      { view, create, edit, assign }
-    risks:      { view, create, edit }
-    vendors:    { view, create, edit }
-    tests:      { view, create, execute }
-    frameworks: { view, install }
-    audits:     { view, manage, freeze, share }
-    reports:    { view, export }
-    admin:      { view, manage, members, sso, scim }
-}
-```
+`PermissionSet` and its companion `PERMISSION_SCHEMA` live in
+[`src/lib/permissions.ts`](../src/lib/permissions.ts), which is the single
+source of truth for the domain list and each domain's actions. **Read the
+type there — this document deliberately does not restate it.**
 
-All fields are `boolean`. Validated on write by `validatePermissionsJson()`.
+An enumeration copied into prose merges cleanly and drifts silently: the copy
+that used to sit here was four domains and five actions behind the type by the
+time #2225 measured it, and nothing in CI could have noticed, because a
+markdown table is not type-checked. `PERMISSION_SCHEMA` is exported precisely
+so that callers — the custom-role editor's permission grid, the API-key scope
+map, and any future surface — enumerate it rather than re-declaring it.
+
+All fields are `boolean`. Validated on write by `validatePermissionsJson()`,
+merged over the base role's defaults on read by `parsePermissionsJson()`.
 
 ### Backward Compatibility
 

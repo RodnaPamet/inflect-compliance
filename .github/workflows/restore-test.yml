@@ -1,6 +1,34 @@
 # ───────────────────────────────────────────────────────────────
 #  Restore Test — monthly automated RDS restore validation
 #
+#  ⚠ CURRENT STATUS (verified 2026-09-01): THIS DRILL IS BROKEN, AND
+#  HAS NEVER SUCCEEDED. Every scheduled attempt since at least
+#  2026-05-01 has failed — 2026-05-01, 06-01, 07-01 (both crons),
+#  08-01, 09-01 — each within ~5 seconds, at the "Configure AWS
+#  credentials (OIDC)" step, with:
+#
+#      ##[error]Input required and not supplied: aws-region
+#
+#  `vars.AWS_REGION` / `vars.DR_AWS_REGION` are not set on this
+#  repository, so the step that assumes the OIDC role fails on its own
+#  inputs — it RUNS, and dies inside itself — and nothing downstream
+#  executes: restore-test.sh is never invoked, no
+#  snapshot is restored, and NO BACKUP HAS BEEN VALIDATED BY THIS
+#  WORKFLOW. Verify:
+#
+#      gh run list --workflow=restore-test.yml --limit 8 \
+#        --json conclusion,event,createdAt
+#
+#  ⚠ ESTATE MISMATCH — AN OWNER DECISION, tracked in issue #2226.
+#  This workflow, infra/scripts/restore-test.sh and infra/terraform
+#  all target AWS RDS. Production today is a single GCP VM running a
+#  `postgres:16-alpine` container under Docker Compose (see the
+#  "Production VM" section of CLAUDE.md, and deploy/docker-compose.prod.yml).
+#  So even with AWS_REGION set there is no RDS instance for this drill
+#  to restore, and a green run here would not evidence that the GCP
+#  database is recoverable. Which estate is authoritative is NOT
+#  decided here; the AWS path is deliberately left intact.
+#
 #  Epic OI-3 source-of-truth: monthly automated restore test that
 #  restores the latest backup to a temporary instance, runs smoke
 #  tests, and tears it down.
@@ -19,8 +47,12 @@
 #        RESTORE_VPC_SECURITY_GROUP_IDS — comma-separated SG IDs
 #                                          allowing ingress from the
 #                                          self-hosted runner's IP
-#  REQUIRED VARS:
-#        AWS_REGION                   — e.g. us-east-1
+#  REQUIRED VARS (repo- or environment-level `vars`, NOT secrets):
+#        AWS_REGION                   — e.g. us-east-1. UNSET TODAY —
+#                                       this absence is what fails every
+#                                       scheduled run (see status above).
+#        DR_AWS_REGION                — DR region for the quarterly job.
+#                                       Also unset today.
 #
 #  Network prerequisite: this workflow MUST run on a self-hosted
 #  runner inside the production VPC (or with a Session Manager port
@@ -29,9 +61,22 @@
 #  for the test instance. If you don't have a self-hosted runner,
 #  trigger restore-test.sh manually from an in-VPC bastion EC2.
 #
-#  On failure: fires a Slack/PagerDuty alert via the alerting
-#  pipeline (the script's exit code propagates; the workflow run's
-#  failure is the canonical signal).
+#  ON FAILURE, the whole alerting path is the `notify-on-failure` job
+#  at the bottom of this file: it opens a tracking issue, or comments
+#  on the open one, and the run goes red. Nothing else fires.
+#
+#  Until 2026-09-01 this header claimed a failure "fires a
+#  Slack/PagerDuty alert via the alerting pipeline (the script's exit
+#  code propagates)". That was false twice over:
+#    1. There is no script exit code to propagate — the run dies at
+#       the credentials step, before restore-test.sh is reached.
+#    2. `infra/alerts/` is an IN-CLUSTER Alertmanager config driven by
+#       Prometheus alerting rules. It carries no restore/backup rule
+#       at all (`grep -iE 'restore|backup' infra/alerts/rules.yml`
+#       matches nothing), and there is no path of any kind from a
+#       GitHub Actions run conclusion into Alertmanager.
+#  A red run that notifies nobody is how this went unnoticed for five
+#  months; that is what the notifier job below exists to end.
 # ───────────────────────────────────────────────────────────────
 name: Restore Test
 
@@ -198,3 +243,132 @@ jobs:
               echo "a failure as a DR-readiness incident. See docs/disaster-recovery.md."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── The alerting path. This job IS the notification. ──────────────
+  #
+  # A red scheduled run notifies nobody in practice: this drill failed
+  # six times across five months and nothing surfaced it. So failure
+  # has to produce an artefact people are subscribed to — an issue, or
+  # a comment on one.
+  #
+  # THREE THINGS HERE ARE LOAD-BEARING, each from a way this was got
+  # wrong before:
+  #
+  #  1. `needs` covers EVERY job a schedule can start, and the
+  #     condition is `failure() || cancelled()`. A cancelled job's
+  #     result is 'cancelled', not 'failure', so `failure()` alone
+  #     misses a timeout-cancelled 90-minute restore — the case where
+  #     silence is most expensive. Gating this job to
+  #     workflow_dispatch would be worse still: on a schedule run the
+  #     needed jobs would not run, failure() would be false, and the
+  #     notifier would be unreachable on the only trigger that fires
+  #     by itself.
+  #
+  #  2. It creates an issue when none is open and COMMENTS when one
+  #     is. Editing an existing issue's body with `issues.update`
+  #     sends no notification of any kind — not email, not web, not
+  #     mobile — so an `update` would be silent from month two
+  #     onwards while the run still reported success.
+  #
+  #  3. The dedupe lookup passes `per_page: 100` and filters on the
+  #     narrow `restore-drill` label. `issues.listForRepo` defaults to
+  #     30 items of page one; on a busy repo the tracking issue falls
+  #     off that page, the lookup finds nothing, and this opens a
+  #     duplicate every month until people mute it.
+  notify-on-failure:
+    name: "Notify — restore drill failed"
+    needs: [restore-test, restore-test-dr]
+    # Skipped jobs do not make failure() true, so the quarterly DR job
+    # being skipped on an ordinary monthly run is not itself an alert.
+    if: failure() || cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Job-level `permissions` REPLACES the workflow-level block rather
+    # than merging with it, so everything this job needs is stated
+    # here. It deliberately does NOT carry id-token: it assumes no
+    # cloud role and touches no AWS.
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Open or comment on the restore-drill tracking issue
+        uses: actions/github-script@v9
+        env:
+          SOURCE_RESULT: ${{ needs.restore-test.result }}
+          DR_RESULT: ${{ needs.restore-test-dr.result }}
+          TRIGGER: ${{ github.event_name }}
+          CRON: ${{ github.event.schedule }}
+        with:
+          script: |
+            const title = 'Restore drill failed — backups are not being validated';
+            const LABEL = 'restore-drill';
+            const runUrl =
+              `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+              `/actions/runs/${context.runId}`;
+            const { SOURCE_RESULT, DR_RESULT, TRIGGER, CRON } = process.env;
+
+            const body = [
+              '**The restore drill did not complete.** No backup was validated by',
+              'this run.',
+              '',
+              '| | |',
+              '|---|---|',
+              `| Run | ${runUrl} |`,
+              `| Trigger | \`${TRIGGER}\`${CRON ? ` (cron \`${CRON}\`)` : ''} |`,
+              `| Restore Test (production) | \`${SOURCE_RESULT}\` |`,
+              `| Restore Test (DR cross-region) | \`${DR_RESULT}\` |`,
+              '',
+              'A result of `skipped` is normal for the job whose cron did not fire.',
+              'A `cancelled` result usually means the 90-minute timeout was hit',
+              'mid-restore — treat it as a failure, not as noise.',
+              '',
+              '### Where to look first',
+              '',
+              'Every scheduled run since 2026-05-01 has died within ~5 seconds at the',
+              '"Configure AWS credentials (OIDC)" step with `Input required and not',
+              'supplied: aws-region`, because `vars.AWS_REGION` is not set. If that is',
+              'still the failure, this drill has never restored anything — and the',
+              'estate mismatch in issue #2226 (this workflow targets AWS RDS;',
+              'production is a GCP VM running postgres:16-alpine) needs deciding',
+              'before setting that variable would mean anything.',
+              '',
+              'See the header of `.github/workflows/restore-test.yml` and',
+              '`docs/disaster-recovery.md`.',
+              '',
+              '_Posted automatically by the Restore Test workflow._',
+            ].join('\n');
+
+            // per_page: 100 — the default is 30, page one only, and a
+            // tracking issue that scrolls off that page makes this
+            // lookup silently miss and open a duplicate every month.
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: LABEL,
+              per_page: 100,
+            });
+            const existing = open.find((i) => i.title === title);
+
+            if (existing) {
+              // A COMMENT, never issues.update — editing a body
+              // notifies nobody, which is the exact failure mode this
+              // job exists to avoid.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+              core.notice(`Commented on restore-drill issue #${existing.number}`);
+            } else {
+              const { data: created } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: [LABEL],
+              });
+              core.notice(`Opened restore-drill issue #${created.number}`);
+            }

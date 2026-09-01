@@ -20,7 +20,7 @@
  * 8. Deleting clears customRoleId on members
  */
 import { RequestContext } from '@/app-layer/types';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { getPermissionsForRole, PERMISSION_SCHEMA } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
 
 // ─── Mock db-context ───
@@ -538,5 +538,128 @@ describe('Custom Roles — privilege escalation', () => {
         await expect(
             assignCustomRole(makeCtx('ADMIN'), 'm-1', null),
         ).resolves.toBeDefined();
+    });
+});
+
+
+// ─── List normalisation (#2225) ───
+
+describe('listCustomRoles — permissionsJson normalisation', () => {
+    /**
+     * `permissionsJson` is a `Json` column. A row written before a
+     * domain existed simply has no key for it, and `PermissionSet`
+     * grows over time — `assets`, `personnel`, `incidents` and
+     * `reports.schedule_external` all arrived after the model shipped.
+     *
+     * The list endpoint used to return the column RAW. The admin roles
+     * page counts granted flags per row and seeds its editor from that
+     * same object, both via `permissions[domain][action]` — so a row
+     * missing a domain is `undefined[action]`, a TypeError, not a blank
+     * cell. Normalising through `parsePermissionsJson` (which the
+     * runtime authorization path already applies to the same row)
+     * makes the response complete.
+     */
+    function seedRoleRow(permissionsJson: unknown, baseRole: Role = 'READER') {
+        mockTx.tenantCustomRole = {
+            findMany: jest.fn(async () => [
+                {
+                    id: 'cr-1',
+                    tenantId: 'tenant-1',
+                    name: 'Legacy Role',
+                    description: null,
+                    baseRole,
+                    permissionsJson,
+                    isActive: true,
+                    createdAt: new Date(0),
+                    updatedAt: new Date(0),
+                    _count: { memberships: 2 },
+                },
+            ]),
+        };
+    }
+
+    /** A stored blob predating three of today's domains. */
+    function legacyBlob(): Record<string, unknown> {
+        const full = getPermissionsForRole('EDITOR') as unknown as Record<string, unknown>;
+        const partial: Record<string, unknown> = { ...full };
+        delete partial.assets;
+        delete partial.personnel;
+        delete partial.incidents;
+        return partial;
+    }
+
+    it('returns every PERMISSION_SCHEMA domain even when the stored JSON omits some', async () => {
+        seedRoleRow(legacyBlob(), 'EDITOR');
+
+        const roles = await listCustomRoles(makeCtx('ADMIN'));
+
+        expect(roles).toHaveLength(1);
+        const perms = roles[0].permissionsJson as unknown as Record<string, unknown>;
+
+        const missing = Object.keys(PERMISSION_SCHEMA).filter(
+            (domain) => perms[domain] === undefined || perms[domain] === null,
+        );
+        expect(missing).toEqual([]);
+    });
+
+    it('fills an absent domain from the row baseRole rather than inventing false', async () => {
+        seedRoleRow(legacyBlob(), 'EDITOR');
+
+        const roles = await listCustomRoles(makeCtx('ADMIN'));
+        const perms = roles[0].permissionsJson;
+
+        // EDITOR grants assets view/create/edit; personnel + incidents view only.
+        expect(perms.assets).toEqual(getPermissionsForRole('EDITOR').assets);
+        expect(perms.personnel).toEqual(getPermissionsForRole('EDITOR').personnel);
+        expect(perms.incidents).toEqual(getPermissionsForRole('EDITOR').incidents);
+    });
+
+    it('does not lose the explicit grants the stored JSON DID carry', async () => {
+        const blob = legacyBlob();
+        // A deliberate deviation from the base role — this must survive.
+        blob.policies = { view: true, create: false, edit: false, approve: true };
+        seedRoleRow(blob, 'EDITOR');
+
+        const roles = await listCustomRoles(makeCtx('ADMIN'));
+
+        expect(roles[0].permissionsJson.policies).toEqual({
+            view: true, create: false, edit: false, approve: true,
+        });
+    });
+
+    it('every returned domain carries every action the schema declares', async () => {
+        // A blob missing an ACTION rather than a whole domain — the case
+        // the grid's `?? false` already tolerated, asserted here so the
+        // normalisation does not regress it.
+        const blob = legacyBlob();
+        blob.reports = { view: true, export: true }; // no schedule_external
+        seedRoleRow(blob, 'EDITOR');
+
+        const roles = await listCustomRoles(makeCtx('ADMIN'));
+        const perms = roles[0].permissionsJson as unknown as Record<string, Record<string, unknown>>;
+
+        const missing: string[] = [];
+        for (const [domain, actions] of Object.entries(PERMISSION_SCHEMA)) {
+            for (const action of actions) {
+                if (typeof perms[domain]?.[action] !== 'boolean') {
+                    missing.push(`${domain}.${action}`);
+                }
+            }
+        }
+        expect(missing).toEqual([]);
+    });
+
+    it('preserves the non-permission fields the page needs', async () => {
+        seedRoleRow(legacyBlob(), 'EDITOR');
+
+        const roles = await listCustomRoles(makeCtx('ADMIN'));
+
+        expect(roles[0]).toMatchObject({
+            id: 'cr-1',
+            name: 'Legacy Role',
+            baseRole: 'EDITOR',
+            isActive: true,
+            _count: { memberships: 2 },
+        });
     });
 });
