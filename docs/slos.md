@@ -332,8 +332,10 @@ Tighter (e.g. 5 minutes) requires synchronous cross-region replication — meani
 
 ### Measurement / Verification
 
-- **`infra/scripts/restore-test.sh`** (Epic OI-3 part 4) runs **monthly** against the latest automated snapshot and verifies the snapshot is no older than 14 days (psql check 4: `AuditLog has rows from within 14d of snapshot`).
-- A failed restore-test fails the GitHub Actions monthly workflow; production rotation kicks in via PagerDuty if the workflow has been failing for more than 14 days running.
+> **⚠ NOT TRUE TODAY — see [#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).** The two bullets below describe the design, not the current state. `restore-test.sh` **has never run**: every scheduled attempt since 2026-05-01 dies at `Configure AWS credentials (OIDC)` on a missing `vars.AWS_REGION`, before the script is invoked. **No backup has ever been restore-validated.** And the PagerDuty escalation does not exist in either direction — `infra/alerts/` is an in-cluster Alertmanager config with no restore or backup rule, and there is no path from a GitHub Actions run conclusion into it. The workflow has now been failing for ~120 days and nobody was paged. A failure does now open or comment on a `restore-drill` GitHub issue; that is the whole of the alerting.
+
+- **`infra/scripts/restore-test.sh`** (Epic OI-3 part 4) is *designed* to run **monthly** against the latest automated snapshot and verify the snapshot is no older than 14 days (psql check 4: `AuditLog has rows from within 14d of snapshot`).
+- A failed restore-test fails the GitHub Actions monthly workflow, which opens or comments on a `restore-drill` tracking issue. There is no PagerDuty path.
 - The 1-hour objective is implicit: PITR's continuous transaction log shipping means the recoverable point is always within the latest log ship cycle, which AWS guarantees at <5 minutes typical (well inside the 1-hour SLA).
 
 ### Risk
@@ -369,7 +371,7 @@ Aligns with our compliance customers' standard SLAs (most enterprise SaaS contra
 
 - **Detection**: covered by the alert pipeline (Epic OI-3 part 3). Critical alerts page within ~10 seconds of trigger via PagerDuty.
 - **Decision tree + runbook**: `docs/incident-response.md` walks operators through each scenario above.
-- **Restore mechanism validation**: the monthly `restore-test.sh` exercises the RDS-restore path (60-120 min RTO scenario) end-to-end.
+- **Restore mechanism validation**: the monthly `restore-test.sh` is designed to exercise the RDS-restore path (60-120 min RTO scenario) end-to-end. **It has never succeeded — see the warning under Measurement / Verification above, and #2226.**
 - The 4-hour SLA is the SUM of detection + triage + recovery time; the budget allocation per stage is documented in `docs/incident-response.md` § "Severity definitions".
 
 ### Risk

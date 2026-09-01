@@ -10,8 +10,9 @@
 #      ##[error]Input required and not supplied: aws-region
 #
 #  `vars.AWS_REGION` / `vars.DR_AWS_REGION` are not set on this
-#  repository, so the step that assumes the OIDC role never runs and
-#  nothing downstream executes: restore-test.sh is never invoked, no
+#  repository, so the step that assumes the OIDC role fails on its own
+#  inputs — it RUNS, and dies inside itself — and nothing downstream
+#  executes: restore-test.sh is never invoked, no
 #  snapshot is restored, and NO BACKUP HAS BEEN VALIDATED BY THIS
 #  WORKFLOW. Verify:
 #

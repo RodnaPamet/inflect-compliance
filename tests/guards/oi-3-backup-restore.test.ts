@@ -317,7 +317,7 @@ describe('OI-3 — a failed restore drill NOTIFIES someone', () => {
         needs?: string[];
         if?: string;
         permissions?: Record<string, string>;
-        steps?: { uses?: string; with?: { script?: string } }[];
+        steps?: { uses?: string; if?: string; with?: { script?: string } }[];
     }
 
     const jobs = (): Record<string, Job> =>
@@ -331,10 +331,37 @@ describe('OI-3 — a failed restore drill NOTIFIES someone', () => {
         return j as Job;
     };
 
-    const script = (): string => {
+    const scriptStep = () => {
         const step = (notifier().steps ?? []).find((s) => s.uses?.startsWith('actions/github-script'));
         expect(step).toBeDefined();
-        return step!.with!.script!;
+        return step!;
+    };
+
+    /**
+     * The script with whole-line `//` comments removed.
+     *
+     * Load-bearing, and the reason is the defect this whole group exists to
+     * catch. `with.script` is raw text, so a comment SAYING `per_page: 100`
+     * satisfies a regex looking for `per_page: 100` — the assertion passes
+     * while the call it describes has neither the argument nor the pagination.
+     * Stripping a line whose first non-space characters are `//` leaves
+     * `https://` and any `//` inside a string untouched, which is all the
+     * precision this needs.
+     */
+    const script = (): string =>
+        scriptStep()
+            .with!.script!.split('\n')
+            .filter((line) => !/^\s*\/\//.test(line))
+            .join('\n');
+
+    /** The argument object of the dedupe lookup, so an assertion cannot match prose elsewhere. */
+    const lookupArgs = (): string => {
+        const s = script();
+        const at = s.indexOf('listForRepo(');
+        expect(at).toBeGreaterThan(-1);
+        const close = s.indexOf('})', at);
+        expect(close).toBeGreaterThan(at);
+        return s.slice(at, close);
     };
 
     it('a notifier job exists and depends on EVERY job a schedule can start', () => {
@@ -378,15 +405,42 @@ describe('OI-3 — a failed restore drill NOTIFIES someone', () => {
     });
 
     it('the dedupe lookup cannot silently miss (per_page + a narrow label)', () => {
-        const s = script();
+        // Asserted against the sliced `listForRepo({...})` ARGUMENTS, not the
+        // whole script: matching anywhere would let a `const LABEL = ...`
+        // declaration and a comment mentioning per_page satisfy this while the
+        // call itself is bare. Both were demonstrated to pass a whole-script
+        // version of this test with the arguments stripped out.
+        const args = lookupArgs();
         // listForRepo defaults to 30 items of page one; the tracking issue
         // scrolling off it makes the lookup find nothing and open a
         // duplicate every month until people mute the notifications.
-        expect(s).toMatch(/per_page:\s*100/);
-        expect(s).toMatch(/labels:/);
-        // A narrow label, not the generic 'automated' bucket that other
-        // scheduled jobs also write into.
-        expect(s).toMatch(/restore-drill/);
-        expect(s).not.toMatch(/labels:\s*'automated'/);
+        expect(args).toMatch(/per_page:\s*100/);
+
+        // A narrow label, not the generic 'automated' bucket other scheduled
+        // jobs also write into. The argument is an identifier, so resolve it
+        // to its literal rather than asserting the identifier's NAME — a check
+        // for `labels: LABEL` would pass after someone repointed LABEL at
+        // 'automated', which is the whole failure being guarded against.
+        const bound = args.match(/labels:\s*([A-Za-z_$][\w$]*|\[?\s*'[^']+'\s*\]?)/);
+        expect(bound).not.toBeNull();
+        let label = bound![1];
+        if (/^[A-Za-z_$]/.test(label)) {
+            const decl = script().match(new RegExp(`const\\s+${label}\\s*=\\s*'([^']+)'`));
+            expect(decl).not.toBeNull();
+            label = decl![1];
+        } else {
+            label = label.replace(/[[\]'\s]/g, '');
+        }
+        expect(label).toBe('restore-drill');
+    });
+
+    it('the notifier STEP is unconditional — a job-level `if` is not the only way to make it inert', () => {
+        // The job condition is asserted above, but a single `if:` on the
+        // github-script step makes the job run, do nothing, and report
+        // SUCCESS — indistinguishable from a healthy month. That is the same
+        // never-fires shape the job-level assertion exists to prevent, one
+        // level down, and the previous attempt at this change shipped exactly
+        // that shape at job level.
+        expect(scriptStep().if).toBeUndefined();
     });
 });

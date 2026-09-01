@@ -180,9 +180,11 @@ These block raising the customer SLA above "RTO 4h"; decide explicitly:
   coverage; a GDPR-aware EU region for EU tenants (data must not leave
   the EU). This is a data-residency decision, not just a latency one.
 - **Who can perform the restore?** The monthly restore-test is
-  *configured* to assume a CI-only OIDC role, but it has never reached
-  that step (see the warning at the top of this document), so no
-  restore has been performed by CI under any identity. The DR runbook
+  *configured* to assume a CI-only OIDC role, but it has never
+  *completed* that step — every run reaches it and fails inside it, on
+  the missing `aws-region` input (see the warning at the top of this
+  document) — so no restore has been performed by CI under any
+  identity. The DR runbook
   separately needs a **human with break-glass access** (time-boxed,
   audited). Define + provision that role.
 - **What is the contracted RTO with enterprise customers?** If the SLA
