@@ -285,21 +285,36 @@ export function NotificationsBell() {
          * Install the poll at `ms` — or leave the running timer alone when it
          * is already at that cadence.
          *
-         * The no-op is the load-bearing half, because both health handlers
-         * fire far more often than they change anything. `es.onerror` fires on
-         * every EventSource reconnect ATTEMPT, not once per outage: the
-         * browser's default backoff is ~3s and `/api/notifications/stream`
-         * sends no `retry:` field to widen it, so a stream that cannot connect
-         * asks for 60s again about twenty times a minute. Clearing and
-         * restarting the interval on each of those discards the elapsed
-         * countdown, so a 60s poll restarted every 3s NEVER elapses — the
-         * fallback would be dead in exactly the case it exists to cover. The
-         * mirror case is as real: a proxy recycling a healthy connection
-         * re-fires `onopen`, and the 5-minute poll would never elapse either.
+         * The no-op is the load-bearing half, because both health handlers can
+         * fire far more often than they change anything, and clearing and
+         * reinstalling an interval discards its elapsed countdown. Repeat that
+         * faster than the period and the timer never fires at all.
          *
-         * A genuine change of cadence does still restart the countdown; that
-         * is a stream alternating open→error→open, which is rarer than the
-         * flat cases above and asks for a different interval each time.
+         * WHAT THIS CLOSES — the two flat cases, which are the endpoints:
+         *   • a stream that repeatedly fails to CONNECT. When the failure is
+         *     network-level the browser retries on its own (~3s by default;
+         *     `/api/notifications/stream` sends no `retry:` field to widen
+         *     it), so `onerror` arrives about twenty times a minute, each one
+         *     asking for 60s again. Without the no-op the 60s poll would never
+         *     elapse — the fallback dead in a case it exists to cover.
+         *   • a stream that connects and STAYS healthy, where a proxy
+         *     recycling the connection re-fires `onopen` and would likewise
+         *     restart the 5-minute countdown forever.
+         *
+         * WHAT IT DOES NOT CLOSE, stated because the flag-flip will meet it:
+         * a stream that ALTERNATES open→error→open. Each transition is a
+         * genuine cadence change, so it still clears and reinstalls, and if
+         * the drop period sits between the reconnect backoff and 300s the poll
+         * can be starved indefinitely. Fixing that needs the remaining delay
+         * carried across a cadence change, not an equality check. It is pinned
+         * as known behaviour by a test rather than left to be rediscovered.
+         *
+         * Note the asymmetry in the first bullet: only a network-level failure
+         * retries. A non-200, or a proxy stripping `text/event-stream`, fails
+         * the connection permanently with a SINGLE `error` and no retry — and
+         * those are the two scenarios the comment above names as the reason
+         * the fallback exists at all. So the twenty-a-minute case and the
+         * motivating case are not the same case.
          */
         const arm = (ms: number) => {
             // Terminal auth failure outranks every cadence: `poll` clears the

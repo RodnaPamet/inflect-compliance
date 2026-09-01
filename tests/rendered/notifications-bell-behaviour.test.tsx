@@ -543,6 +543,10 @@ describe('<NotificationsBell> — SSE health governs the fallback poll', () => {
         });
 
         // Four minutes, with a proxy re-announcing the same healthy
+        // NOTE: a browser fires `error` before each re-`open`, so this bare
+        // repeat is a SIMPLIFICATION that isolates arm()'s idempotence. The
+        // realistic alternating sequence is pinned separately below, and it
+        // behaves differently.
         // connection once a minute. The 60s cadence is gone, so nothing
         // fetches...
         for (let i = 0; i < 4; i += 1) {
@@ -590,6 +594,50 @@ describe('<NotificationsBell> — SSE health governs the fallback poll', () => {
             await settle();
         });
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    /**
+     * KNOWN RESIDUAL, pinned deliberately rather than left to be met at the
+     * flag-flip. `arm`'s equality check makes a REPEATED request for the
+     * running cadence free, which is what closes the two flat cases above.
+     * It does nothing for a stream that ALTERNATES, because there every
+     * transition is a genuine change of cadence and so does clear and
+     * reinstall the interval.
+     *
+     * This test asserts the CURRENT behaviour, not the desired one: a stream
+     * dropping and recovering every 30s starves a 60s poll indefinitely. If
+     * somebody carries the remaining delay across a cadence change — the real
+     * fix — this test SHOULD go red, and its replacement is
+     * `toBeGreaterThan(1)`. That is the point of pinning it: the next person
+     * to touch `arm` learns the limitation from a failing assertion instead of
+     * from production.
+     *
+     * It is latent today. `NEXT_PUBLIC_NOTIFICATIONS_SSE` is inlined at build
+     * time and is set in no Dockerfile ARG and no CI build-arg, so `sseEnabled`
+     * is compile-time false in the shipped image and none of this block runs.
+     */
+    it('KNOWN GAP: an alternating stream still starves the poll', async () => {
+        const es = await mountAndGetStream();
+
+        // Ten open→error pairs at 30s each — five minutes of wall clock, five
+        // whole 60s poll periods. Each transition is a real cadence change
+        // (300s → 60s → 300s …), so each one reinstalls the interval and
+        // discards the countdown that was part-way through.
+        for (let i = 0; i < 10; i += 1) {
+            await act(async () => {
+                jest.advanceTimersByTime(30_000);
+                es.onopen?.();
+                await settle();
+            });
+            await act(async () => {
+                jest.advanceTimersByTime(30_000);
+                es.onerror?.();
+                await settle();
+            });
+        }
+
+        // Still only the mount-time seed fetch. Five minutes, no poll.
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('closes the stream on unmount', async () => {
