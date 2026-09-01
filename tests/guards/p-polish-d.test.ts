@@ -23,7 +23,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { callExpressionOf } from "../helpers/source-blocks";
+import {
+    callExpressionOf,
+    codeOf,
+    interfaceBodyOf,
+} from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
@@ -38,13 +42,22 @@ describe("PR-D polish — live entity status sync", () => {
     describe("1. Option types carry status", () => {
         it.each(hookFiles)("%s — option type has a `status: string | null` field", (file) => {
             const src = read(file);
-            // Each option type declaration must include the status
-            // field. The interface name varies per file
-            // (TenantControlOption / TenantRiskOption / TenantAssetOption)
-            // — match the common shape.
-            expect(src).toMatch(
-                /export interface Tenant\w+Option\s*\{[\s\S]*?status:\s*string \| null/,
-            );
+            // Each option type must carry the status field. The interface
+            // name varies per file (TenantControlOption / TenantRiskOption /
+            // TenantAssetOption) — hence the pattern rather than a literal.
+            //
+            // BOUND to that interface's own braces. This used to be
+            //   /export interface Tenant\w+Option\s*\{[\s\S]*?status:\s*string \| null/
+            // — a LAZY span from the opening brace to the first
+            // `status: string | null` ANYWHERE later in the file, so it was
+            // right only because no second occurrence existed. Delete the
+            // field from the option type and give one to any later type and
+            // it stays green with the invariant gone: the same defect class
+            // as the interval assertion below. codeOf() reads the body as
+            // CODE, so a docblock promising the field cannot satisfy it
+            // either. See #2238.
+            const body = codeOf(interfaceBodyOf(src, "Tenant\\w+Option"));
+            expect(body).toMatch(/status:\s*string \| null/);
         });
 
         it.each(hookFiles)("%s — fetch normaliser extracts status from the API row", (file) => {
