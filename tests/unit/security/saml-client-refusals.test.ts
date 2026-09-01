@@ -103,7 +103,8 @@ describe('buildSamlInstance', () => {
     it('requires the authn RESPONSE to be signed', () => {
         const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER);
         // If this ever flips to false, an attacker can POST an entirely
-        // unsigned <Response> to the ACS and be logged in as anyone.
+        // unsigned <Response> to the ACS and be logged in as an
+        // arbitrary user.
         expect(saml.options.wantAuthnResponseSigned).toBe(true);
     });
 

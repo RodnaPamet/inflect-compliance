@@ -246,6 +246,53 @@ describe('decryption — result shapes', () => {
     });
 });
 
+// ─── Legacy read path (mapped: false) ───────────────────────────────
+
+describe('decryption — legacy dual-write models', () => {
+    it('decrypts the encrypted sibling column INTO the plaintext field', async () => {
+        // On a legacy model the caller reads `contact.email`, which is
+        // the stale dual-write plaintext until this branch overwrites it
+        // with the authoritative decrypted value.
+        const { received } = await run(
+            { model: 'VendorContact', action: 'findFirst', args: {} },
+            {
+                id: 'vc1',
+                email: 'stale@vendor.com',
+                emailEncrypted: encryptField('current@vendor.com'),
+                name: 'Stale Name',
+                nameEncrypted: encryptField('Current Name'),
+            },
+        );
+        const row = received as { email: string; name: string };
+        expect(row.email).toBe('current@vendor.com');
+        expect(row.name).toBe('Current Name');
+    });
+
+    it('KEEPS the plaintext column on an undecryptable legacy ciphertext', async () => {
+        // Looks like a v1 envelope (passes isEncryptedValue) but the body
+        // is too short for a valid IV+tag, so decryptField throws.
+        // Unlike the mapped path, nulling here would DISCARD a perfectly
+        // good plaintext value that is still stored in its own column.
+        const { received } = await run(
+            { model: 'VendorContact', action: 'findFirst', args: {} },
+            {
+                id: 'vc1',
+                email: 'fallback@vendor.com',
+                emailEncrypted: 'v1:bm90LXJlYWwK',
+            },
+        );
+        expect((received as { email: unknown }).email).toBe('fallback@vendor.com');
+    });
+
+    it('leaves the plaintext alone when the encrypted column is absent', async () => {
+        const { received } = await run(
+            { model: 'VendorContact', action: 'findFirst', args: {} },
+            { id: 'vc1', email: 'only-plain@vendor.com' },
+        );
+        expect((received as { email: unknown }).email).toBe('only-plain@vendor.com');
+    });
+});
+
 // ─── Compound WHERE clauses ─────────────────────────────────────────
 
 describe('WHERE rewriting — compound clauses', () => {

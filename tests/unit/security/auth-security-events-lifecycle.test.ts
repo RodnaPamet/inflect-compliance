@@ -291,17 +291,16 @@ describe('recordLoginFailure — userId is withheld for unknown_email', () => {
 
 // ─── hashEmailForLog ────────────────────────────────────────────────
 
+// Case/whitespace normalisation is NOT retested here: it is already
+// asserted by 'hashEmailForLog is deterministic and case/whitespace-
+// insensitive' in tests/unit/security-events.test.ts. A duplicate of it
+// here fired on the same mutation and detected nothing the sibling
+// missed, so it was removed rather than kept as decoration.
 describe('hashEmailForLog', () => {
     it('is a 16-hex-char truncated SHA-256, not the address itself', () => {
         const h = hashEmailForLog(EMAIL);
         expect(h).toMatch(/^[0-9a-f]{16}$/);
         expect(h).not.toContain('alice');
-    });
-
-    it('normalises case and surrounding whitespace to one stable value', () => {
-        expect(hashEmailForLog('  ALICE@example.com ')).toBe(
-            hashEmailForLog('alice@example.com'),
-        );
     });
 
     it('distinguishes different addresses', () => {
@@ -310,7 +309,14 @@ describe('hashEmailForLog', () => {
         );
     });
 
-    it('tolerates an empty identifier rather than throwing in the auth path', () => {
-        expect(hashEmailForLog('')).toMatch(/^[0-9a-f]{16}$/);
+    it('tolerates a NULLISH identifier rather than throwing in the auth path', () => {
+        // The `email ?? ''` guard exists because the auth path calls this
+        // on failure branches where no address was ever parsed. Passing
+        // `''` would NOT exercise it (empty string is not nullish), so the
+        // cast is deliberate: it reproduces the untyped runtime value the
+        // guard is actually defending against.
+        const missing = undefined as unknown as string;
+        expect(() => hashEmailForLog(missing)).not.toThrow();
+        expect(hashEmailForLog(missing)).toBe(hashEmailForLog(''));
     });
 });

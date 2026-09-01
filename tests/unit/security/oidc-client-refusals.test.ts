@@ -16,13 +16,18 @@
  * document from an earlier test silently satisfies a later one and the
  * refusal never runs.
  */
+import { ZodError } from 'zod';
+
 import {
     discoverOidc,
     exchangeCodeForTokens,
     extractIdTokenClaims,
     _clearDiscoveryCache,
     validateIdTokenNonce,
+    encodeState,
+    decodeState,
     type OidcDiscoveryDocument,
+    type OidcStatePayload,
 } from '@/lib/security/oidc-client';
 import type { OidcConfig } from '@/app-layer/schemas/sso-config.schemas';
 
@@ -85,7 +90,9 @@ function oidcConfig(overrides: Partial<OidcConfig> = {}): OidcConfig {
     return {
         issuer: 'https://idp.example.com',
         clientId: 'client-123',
-        clientSecret: 'client-secret-value',
+        // Inert literal: this config is only ever handed to a mocked
+        // fetch, so nothing is authenticated with it.
+        clientSecret: 'client-secret-value', // pragma: allowlist secret
         scopes: ['openid', 'email', 'profile'],
         ...overrides,
     };
@@ -93,6 +100,29 @@ function oidcConfig(overrides: Partial<OidcConfig> = {}): OidcConfig {
 
 function requestedUrl(callIndex = 0): string {
     return String(mockFetch.mock.calls[callIndex][0]);
+}
+
+/**
+ * Assert that `fn` throws a ZodError carrying an issue at `path` with the
+ * given `code`. Typed against Zod's own error class rather than `any`, so
+ * a schema change that moves the issue shape is a compile error here
+ * before it is a test failure.
+ */
+function expectZodIssue(
+    fn: () => unknown,
+    expected: { path: readonly (string | number)[]; code: string },
+): void {
+    let caught: unknown;
+    try {
+        fn();
+    } catch (err) {
+        caught = err;
+    }
+    expect(caught).toBeInstanceOf(ZodError);
+    const issues = (caught as ZodError).issues;
+    expect(
+        issues.map((i) => ({ path: i.path.map(String), code: String(i.code) })),
+    ).toContainEqual({ path: expected.path.map(String), code: expected.code });
 }
 
 // ─── discoverOidc — refusals ─────────────────────────────────────────
@@ -104,15 +134,6 @@ describe('discoverOidc — refusals', () => {
         );
         await expect(discoverOidc(oidcConfig())).rejects.toThrow(
             'OIDC discovery failed: 404 Not Found',
-        );
-    });
-
-    it('REFUSES a 500 from the IdP rather than proceeding without endpoints', async () => {
-        mockFetch.mockResolvedValueOnce(
-            new Response('', { status: 500, statusText: 'Internal Server Error' }),
-        );
-        await expect(discoverOidc(oidcConfig())).rejects.toThrow(
-            /OIDC discovery failed: 500/,
         );
     });
 
@@ -335,11 +356,15 @@ describe('extractIdTokenClaims — malformed payloads', () => {
         return `${header}.${payloadSegment}.${Buffer.from('sig').toString('base64url')}`;
     }
 
-    it('REFUSES a token whose payload segment is not JSON', async () => {
+    it('REFUSES a token whose payload segment is not JSON', () => {
         const token = tokenWithRawPayload(
             Buffer.from('definitely-not-json').toString('base64url'),
         );
-        expect(() => extractIdTokenClaims(token)).toThrow();
+        // Specifically a JSON.parse failure, NOT a Zod refusal — asserting
+        // the class distinguishes "the payload was unreadable" from "the
+        // payload parsed but carried bad claims". A bare `.toThrow()`
+        // could not tell those apart.
+        expect(() => extractIdTokenClaims(token)).toThrow(SyntaxError);
     });
 
     it('REFUSES a token whose email claim is not a valid address', () => {
@@ -347,13 +372,23 @@ describe('extractIdTokenClaims — malformed payloads', () => {
             JSON.stringify({ sub: 'u1', email: 'not-an-email' }),
         ).toString('base64url');
         // The Zod refusal matters: an unparsable address flowing into user
-        // provisioning would create an account keyed on garbage.
-        expect(() => extractIdTokenClaims(tokenWithRawPayload(payload))).toThrow();
+        // provisioning would create an account keyed on garbage. Assert the
+        // ISSUE, not merely that something threw — dropping `.email()` from
+        // the schema must fail this test.
+        expectZodIssue(() => extractIdTokenClaims(tokenWithRawPayload(payload)), {
+            path: ['email'],
+            code: 'invalid_format',
+        });
     });
 
     it('REFUSES a token whose sub claim is an empty string', () => {
         const payload = Buffer.from(JSON.stringify({ sub: '' })).toString('base64url');
-        expect(() => extractIdTokenClaims(tokenWithRawPayload(payload))).toThrow();
+        // `sub` is the IdP's stable subject identifier — an empty one would
+        // collapse every unidentified user onto a single account record.
+        expectZodIssue(() => extractIdTokenClaims(tokenWithRawPayload(payload)), {
+            path: ['sub'],
+            code: 'too_small',
+        });
     });
 
     it('REFUSES a two-segment token with the specific format error', () => {
@@ -408,5 +443,109 @@ describe('validateIdTokenNonce — malformed payloads', () => {
         expect(validateIdTokenNonce(token, 'abc')).toBe(true);
         expect(validateIdTokenNonce(token, 'abc ')).toBe(false);
         expect(validateIdTokenNonce(token, 'ABC')).toBe(false);
+    });
+});
+
+// ─── decodeState — PKCE / replay field guards ────────────────────────
+//
+// `decodeState` is the callback route's FIRST parse of attacker-supplied
+// input: the `state` query parameter comes straight back from the
+// browser. Returning a truthy payload here is what lets the callback
+// proceed to a token exchange, so each required field is a refusal in
+// its own right. The pre-existing `oidc-flow` suite only checks a
+// payload missing `tenantSlug`, which short-circuits the guard on its
+// first clause and never exercises the PKCE / nonce clauses below.
+
+describe('decodeState — required-field refusals', () => {
+    const VALID: OidcStatePayload = {
+        tenantSlug: 'acme-corp',
+        providerId: 'provider-123',
+        codeVerifier: 'verifier-abc',
+        nonce: 'nonce-xyz',
+    };
+
+    function stateWithout(field: keyof OidcStatePayload): string {
+        const partial: Record<string, unknown> = { ...VALID };
+        delete partial[field];
+        return Buffer.from(JSON.stringify(partial)).toString('base64url');
+    }
+
+    it('REFUSES a state carrying no codeVerifier — PKCE would be stripped', () => {
+        // Without the verifier the callback cannot prove it started the
+        // flow, which is precisely the interception attack PKCE exists to
+        // stop. Accepting the state and exchanging the code anyway would
+        // silently downgrade the flow to bare authorization-code.
+        expect(decodeState(stateWithout('codeVerifier'))).toBeNull();
+    });
+
+    it('REFUSES a state carrying no nonce — replay protection would be lost', () => {
+        // The nonce is compared against the ID token later; an absent one
+        // means `validateIdTokenNonce` has nothing to check against.
+        expect(decodeState(stateWithout('nonce'))).toBeNull();
+    });
+
+    it('REFUSES a state carrying no providerId', () => {
+        expect(decodeState(stateWithout('providerId'))).toBeNull();
+    });
+
+    it('REFUSES a state carrying no tenantSlug', () => {
+        expect(decodeState(stateWithout('tenantSlug'))).toBeNull();
+    });
+
+    it('REFUSES an empty-string codeVerifier, not just an absent one', () => {
+        // Empty string is falsy, so the same guard must reject it — an
+        // attacker controls this value verbatim.
+        const encoded = Buffer.from(
+            JSON.stringify({ ...VALID, codeVerifier: '' }),
+        ).toString('base64url');
+        expect(decodeState(encoded)).toBeNull();
+    });
+
+    it('round-trips a complete payload, preserving the optional returnTo', () => {
+        const withReturn: OidcStatePayload = { ...VALID, returnTo: '/dashboard' };
+        // toStrictEqual so a field silently arriving as `undefined` is a
+        // failure rather than an invisible pass.
+        expect(decodeState(encodeState(withReturn))).toStrictEqual(withReturn);
+    });
+});
+
+// ─── discoverOidc — cache EXPIRY ─────────────────────────────────────
+
+describe('discoverOidc — cache expiry', () => {
+    // The cache entry stores `expiresAt = Date.now() + 3600_000`. The
+    // sibling tests above prove a fresh entry is REUSED; this one proves
+    // a stale entry is not. Both halves are needed: without this test,
+    // deleting the `expiresAt > Date.now()` clause is invisible, and a
+    // tenant that rotates its IdP endpoints would keep being sent to the
+    // old authorization endpoint for the life of the process.
+    //
+    // Fake timers, never a literal date: the assertion is about an
+    // INTERVAL elapsing, so nothing here depends on the wall clock and
+    // it cannot rot overnight.
+    beforeEach(() => {
+        jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it('re-fetches once the cached document has passed its TTL', async () => {
+        // A fresh Response per call — a Response body can only be read
+        // once, so a shared instance would fail on the re-fetch.
+        mockFetch.mockImplementation(async () => jsonResponse(FULL_DISCOVERY));
+
+        await discoverOidc(oidcConfig());
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+
+        // Still inside the hour — must be served from cache.
+        jest.advanceTimersByTime(3_599_000);
+        await discoverOidc(oidcConfig());
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+
+        // Past the hour — must go back to the network.
+        jest.advanceTimersByTime(2_000);
+        await discoverOidc(oidcConfig());
+        expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 });

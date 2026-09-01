@@ -116,20 +116,11 @@ describe('getSession', () => {
         expect((await getSession())?.role).toBe('READER');
     });
 
-    it('defaults an absent tenantId to the empty string, never to a tenant id', async () => {
-        // Empty string is deliberately NOT a valid tenant: it matches no
-        // row, so a tenant-scoped query returns nothing rather than
-        // leaking another tenant's data.
-        mockAuth.mockResolvedValue({ user: { id: 'usr_1', role: 'ADMIN' } });
-        expect((await getSession())?.tenantId).toBe('');
-    });
-
-    it('defaults an absent email to the empty string', async () => {
-        mockAuth.mockResolvedValue({ user: { id: 'usr_1', role: 'ADMIN' } });
-        expect((await getSession())?.email).toBe('');
-    });
-
     it('applies every default at once for a bare user record', async () => {
+        // The empty-string tenantId is deliberately NOT a valid tenant: it
+        // matches no row, so a tenant-scoped query returns nothing rather
+        // than leaking another tenant's data. toStrictEqual (not toEqual)
+        // so an `undefined` slipping into any field is still a failure.
         mockAuth.mockResolvedValue({ user: { id: 'usr_1' } });
         expect(await getSession()).toStrictEqual({
             userId: 'usr_1',
