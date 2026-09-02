@@ -23,6 +23,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -87,9 +88,14 @@ function transitiveGraph(entry: string): Set<string> {
 describe('Trust Center — model + publish defaults', () => {
     const schema = readPrismaSchema();
     it('defines TrustCenter with enabled defaulting to false (off by default)', () => {
-        expect(schema).toMatch(/model TrustCenter \{/);
-        expect(schema).toMatch(/enabled\s+Boolean\s+@default\(false\)/);
-        expect(schema).toMatch(/slug\s+String\s+@unique/);
+        // Bound to the model. `slug String @unique` is declared by 3 models
+        // (Tenant, Organization, TrustCenter), so the off-by-default claim
+        // this test exists to make was checkable only for `enabled`.
+        // `braceBlockAfter` throws when the model is gone, replacing the
+        // `/model TrustCenter \{/` existence check.
+        const trustCenter = braceBlockAfter(schema, 'model TrustCenter\\s*\\{');
+        expect(trustCenter).toMatch(/enabled\s+Boolean\s+@default\(false\)/);
+        expect(trustCenter).toMatch(/slug\s+String\s+@unique/);
     });
 });
 

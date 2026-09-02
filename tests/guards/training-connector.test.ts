@@ -6,6 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -35,7 +36,14 @@ describe('training / background — registration + wiring', () => {
         for (const m of ['TrainingCourse', 'TrainingAssignment', 'BackgroundCheck']) {
             expect(schema).toMatch(new RegExp(`model ${m} \\{`));
         }
-        expect(schema).toMatch(/@@unique\(\[tenantId, name\]\)/); // TrainingCourse
+        // The trailing comment already said which model this is about;
+        // now the assertion does too. `@@unique([tenantId, name])` is
+        // declared by 6 models (Asset, TenantCustomRole,
+        // TenantIdentityProvider, AutomationRule, TrainingCourse, Vendor),
+        // so against the whole schema it held whether or not TrainingCourse
+        // carried it.
+        expect(braceBlockAfter(schema, 'model TrainingCourse\\s*\\{'))
+            .toMatch(/@@unique\(\[tenantId, name\]\)/);
         const mig = read('prisma/migrations/20260707130000_training_background/migration.sql');
         expect(mig).toMatch(/FORCE ROW LEVEL SECURITY/);
         expect(mig).toMatch(/ARRAY\['TrainingCourse','TrainingAssignment','BackgroundCheck'\]/);
