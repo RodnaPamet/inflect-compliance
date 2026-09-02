@@ -40,6 +40,7 @@ import {
     type RemoteListResult,
 } from '@/app-layer/integrations/base-client';
 import { GitHubBranchProtectionMapper } from '@/app-layer/integrations/providers/github/mapper';
+import { getPermissionsForRole } from '@/lib/permissions';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Realistic GitHub Branch Protection Fixtures
@@ -143,22 +144,12 @@ const mockCtx: RequestContext = {
     requestId: 'req-test',
     role: 'ADMIN',
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
-    appPermissions: {
-        controls: { view: true, create: true, edit: true },
-        evidence: { view: true, upload: true, edit: true, download: true },
-        policies: { view: true, create: true, edit: true, approve: true },
-        tasks: { view: true, create: true, edit: true, assign: true },
-        risks: { view: true, create: true, edit: true },
-        assets: { view: true, create: true, edit: true },
-        vendors: { view: true, create: true, edit: true },
-        personnel: { view: true, manage: true },
-        tests: { view: true, create: true, execute: true },
-        incidents: { view: true, manage: true },
-        frameworks: { view: true, install: true },
-        audits: { view: true, manage: true, freeze: true, share: true },
-        reports: { view: true, export: true, schedule_external: true },
-        admin: { view: true, manage: true, members: true, sso: true, scim: true, tenant_lifecycle: true, owner_management: true, compliance_dsar_view: true, compliance_dsar_manage: true },
-    },
+    // Derived, not spelled out. This was a hand-written copy of the whole
+    // PermissionSet — every-flag-true, which is `getPermissionsForRole('OWNER')`
+    // byte for byte — and it broke the build every time the permission model
+    // gained a domain, in three files at once, for a fixture that only needs
+    // "an actor allowed to do everything".
+    appPermissions: getPermissionsForRole('OWNER'),
 };
 
 class InMemoryMappingStore implements SyncMappingStore {

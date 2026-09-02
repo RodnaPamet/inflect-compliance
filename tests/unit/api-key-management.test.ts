@@ -11,6 +11,8 @@
  * 7. Full-access scope grants everything
  * 8. Resource wildcard scopes work
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { getPermissionsForRole, PERMISSION_SCHEMA } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 import type { Role } from '@prisma/client';
@@ -395,6 +397,56 @@ describe('API Key Scopes — every permission domain has a scope decision', () =
                 }
             }
         }
+        expect(bogus).toEqual([]);
+    });
+});
+
+// ─── The operator-facing half of the same mirror (#2197) ───
+
+describe('API Key Scopes — every domain the auth layer accepts is offerable', () => {
+    /**
+     * `SCOPE_GROUPS` in the admin api-keys page is the SECOND hand-written
+     * mirror the `PERMISSION_SCHEMA` docstring names, and that docstring
+     * claimed the coverage of BOTH was asserted "so a missing entry fails a
+     * test rather than shipping". Only `SCOPE_ACTION_MAP` had such a test. So a
+     * domain could be scopable by the auth layer and invisible in the only UI
+     * that grants scopes — the #2225 defect, one layer along.
+     *
+     * Read from SOURCE rather than imported: the page is a `'use client'`
+     * module and `SCOPE_GROUPS` is not exported. That makes this a text scan,
+     * with the weakness text scans have — it would not notice the constant
+     * being renamed. So the parse asserts it found something first, and the
+     * failure mode is a red test rather than a vacuous pass.
+     */
+    const PAGE = path.join(
+        __dirname,
+        '../../src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx',
+    );
+    const pageSrc = fs.readFileSync(PAGE, 'utf8');
+    const block = pageSrc.slice(
+        pageSrc.indexOf('const SCOPE_GROUPS'),
+        pageSrc.indexOf('const EXPIRY_OPTIONS'),
+    );
+    const declared = [...block.matchAll(/^ {4}(\w+):\s*\{/gm)].map((m) => m[1]);
+    const offered = [...block.matchAll(/'([a-z_]+:[a-z*]+)'/g)].map((m) => m[1]);
+
+    it('the parse found the map (guards the scan itself)', () => {
+        expect(block.length).toBeGreaterThan(200);
+        expect(declared.length).toBeGreaterThan(10);
+        expect(offered.length).toBeGreaterThan(10);
+    });
+
+    it('every PermissionSet domain has an operator-facing group', () => {
+        const missing = Object.keys(PERMISSION_SCHEMA).filter(
+            (domain) => !declared.includes(domain),
+        );
+        expect(missing).toEqual([]);
+    });
+
+    it('every scope the UI offers is one validateScopes accepts', () => {
+        // The mirror's other failure direction: a checkbox writing a scope the
+        // API then rejects, so key creation 400s with no clue why.
+        const bogus = offered.filter((s) => !VALID_SCOPES.includes(s));
         expect(bogus).toEqual([]);
     });
 });

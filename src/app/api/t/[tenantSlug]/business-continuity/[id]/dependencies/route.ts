@@ -1,9 +1,8 @@
-import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getTenantCtx } from '@/app-layer/context';
 import { addBiaDependency } from '@/app-layer/usecases/business-impact-analysis';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
 const AddDependencySchema = z.object({
@@ -11,14 +10,19 @@ const AddDependencySchema = z.object({
     dependsOnId: z.string().min(1),
 });
 
-/** POST — attach a dependency (process/asset/vendor/risk) to this BIA. */
+type Params = { tenantSlug: string; id: string };
+
+/**
+ * POST — attach a dependency (process/asset/vendor/risk) to this BIA.
+ *
+ * Gated on `continuity.edit` with its DELETE sibling (#2197). The register is
+ * gated whole rather than half: leaving the attach on the bare usecase assert
+ * while the detach audits would make the trail describe one direction of the
+ * same edge.
+ */
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        AddDependencySchema,
-        async (req: NextRequest, { params: p }: { params: Promise<{ tenantSlug: string; id: string }> }, body) => {
-            const params = await p;
-            const ctx = await getTenantCtx(params, req);
-            return jsonResponse(await addBiaDependency(ctx, params.id, body), { status: 201 });
-        },
-    ),
+    requirePermission<Params>('continuity.edit', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, AddDependencySchema);
+        return jsonResponse(await addBiaDependency(ctx, params.id, body), { status: 201 });
+    }),
 );

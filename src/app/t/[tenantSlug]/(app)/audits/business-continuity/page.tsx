@@ -23,7 +23,14 @@ export default async function BusinessContinuityPage({
         <BusinessContinuityClient
             initialRows={rows}
             tenantSlug={resolved.tenantSlug}
-            canWrite={ctx.permissions.canWrite}
+            // BOTH, not just the role tier. #2197 gave the BIA writes a
+            // `continuity.edit` gate, so a custom role can now be built with
+            // that flag off while `canWrite` stays true — and this button
+            // would still render, then 403 on submit. Controls and Tasks
+            // already read `appPermissions` for the same reason; these pages
+            // did not, and the configuration that reaches it did not exist
+            // before that gate.
+            canWrite={ctx.permissions.canWrite && ctx.appPermissions.continuity.edit}
         />
     );
 }
