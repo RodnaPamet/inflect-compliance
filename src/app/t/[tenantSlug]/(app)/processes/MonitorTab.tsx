@@ -9,12 +9,12 @@
  * genuinely hung past its timeout (with a cancel affordance), and the
  * manual trigger panel. The Dynamic-Workflow-Tracker equivalent.
  */
-import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { formatDateTime } from '@/lib/format-date';
 import { ManualTriggerPanel } from '@/components/processes/ManualTriggerPanel';
@@ -50,19 +50,27 @@ export function MonitorTab() {
     );
     const toast = useToast();
     const apiUrl = useTenantApiUrl();
-    const key = apiUrl(CACHE_KEYS.automation.executions.live());
-    const { data, mutate } = useSWR<{ stuck: ExecRow[]; recent: ExecRow[] }>(
-        key,
-        // `.then(r => r.json())` alone swallows the status: a 403 or 500 body
-        // parses into an object with no `stuck`/`recent`, and the panel renders
-        // as merely empty. Throwing lets SWR expose `error`.
-        async (url: string) => {
-            const r = await fetch(url);
-            if (!r.ok) throw new Error(`live feed ${r.status}`);
-            return r.json();
-        },
-        { refreshInterval: 5000, revalidateOnFocus: true },
-    );
+    // #2222 — `useTenantSWR`, not a bare `useSWR` with a hand-rolled fetcher.
+    // Three things come with the swap, and the third is why it happened:
+    //   • `errorRetryCount: 2`. SWR's own default is UNBOUNDED (`defaultConfig`
+    //     never sets the key, and `onErrorRetry` returns early only when it is
+    //     defined), so this feed used to retry forever with backoff — one
+    //     request every 10-21 minutes for the life of the tab, plus a fresh
+    //     burst on every window focus.
+    //   • `apiGet` as the fetcher, which throws a typed `ApiClientError`
+    //     carrying `.status` instead of an `Error` whose only record of the
+    //     status is inside its message string.
+    //   • that `.status` is what the app-wide 401 seam reads. A hand-rolled
+    //     fetcher over raw `fetch` is invisible to it, so an expired session
+    //     rendered this operator console as an empty "recent activity" feed —
+    //     which is the exact misreport the old fetcher's comment existed to
+    //     prevent, arrived at by a different route.
+    // `error` is now READ (below). The previous code destructured only
+    // `{ data, mutate }`, so nothing consumed what the throw produced.
+    const { data, error, mutate } = useTenantSWR<{
+        stuck: ExecRow[];
+        recent: ExecRow[];
+    }>(CACHE_KEYS.automation.executions.live(), { refreshInterval: 5000 });
 
     async function cancel(id: string) {
         const res = await fetch(apiUrl(`/automation/executions/${id}`), {
@@ -88,7 +96,18 @@ export function MonitorTab() {
                     <p className="mb-default text-[11px] uppercase tracking-wide text-content-subtle">
                         {t('monitor.recentActivity')}
                     </p>
-                    {recent.length === 0 ? (
+                    {error && !data ? (
+                        // #2222 — an unreachable feed is not an empty feed. On a
+                        // compliance console "no recent executions" reads as a
+                        // fact about the tenant's automation, so a failure that
+                        // renders as emptiness is a misreport, not a blank.
+                        <p
+                            className="text-sm text-content-muted"
+                            data-testid="monitor-feed-unavailable"
+                        >
+                            {t('monitor.feedUnavailable')}
+                        </p>
+                    ) : recent.length === 0 ? (
                         <p className="text-sm text-content-muted">{t('monitor.recentEmpty')}</p>
                     ) : (
                         <ul className="space-y-tight" data-testid="recent-feed">

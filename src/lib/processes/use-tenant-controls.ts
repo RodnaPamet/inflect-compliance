@@ -25,6 +25,11 @@
  */
 import { useEffect, useState } from "react";
 
+import {
+    isSessionExpired,
+    noteUnauthorized,
+} from "@/lib/auth/session-expiry";
+
 export interface TenantControlOption {
     id: string;
     ref: string | null;
@@ -66,8 +71,15 @@ const CACHE = new Map<string, TenantControlOption[]>();
 async function fetchTenantControls(
     tenantSlug: string,
 ): Promise<TenantControlOption[]> {
-    const res = await fetch(`/api/t/${tenantSlug}/controls`);
+    const url = `/api/t/${tenantSlug}/controls`;
+    const res = await fetch(url);
     if (!res.ok) {
+        // #2222 — record a 401 in the app-wide store BEFORE throwing.
+        // The catch below cannot tell 401 from 503 once the status is
+        // wrapped in an Error message, and the two need opposite
+        // treatment: a 503 must preserve the last-good options, a 401
+        // never recovers. `noteUnauthorized` owns the 401-only rule.
+        noteUnauthorized(res.status, url);
         throw new Error(`Could not load controls (${res.status})`);
     }
     const body = (await res.json()) as unknown;
@@ -134,6 +146,12 @@ export function useTenantControls(
             setState({ options: [], loading: true, error: null });
         }
         const runFetch = async (isRevalidation: boolean) => {
+            // #2222 — PULL the terminal flag; nothing pushes it here.
+            // This callback was scheduled by the interval below and
+            // closes over the bindings it had then, so a React state
+            // update could never reach it — which is why the flag is a
+            // module-scoped store and is read at the top of each tick.
+            if (isSessionExpired()) return;
             try {
                 const opts = await fetchTenantControls(tenantSlug);
                 CACHE.set(tenantSlug, opts);
@@ -150,6 +168,15 @@ export function useTenantControls(
                 // state — a transient blip shouldn't blank the
                 // canvas's status badges. Only the initial fetch
                 // surfaces the error to the consumer.
+                //
+                // #2222 — this predicate is CORRECT for a 503 and was
+                // the whole bug for a 401: one branch serving two
+                // failure classes that need opposite treatment. It
+                // stays as it is, and the 401 half is handled where the
+                // status is still readable — `noteUnauthorized` in the
+                // fetcher above, plus the `isSessionExpired()` pull at
+                // the top of this function and in the interval, which
+                // is what stops the poll re-firing forever.
                 if (isRevalidation) return;
                 setState({
                     options: [],
@@ -170,6 +197,17 @@ export function useTenantControls(
         let timer: ReturnType<typeof setInterval> | null = null;
         if (pollMs > 0) {
             timer = setInterval(() => {
+                // #2222 — stop the timer from INSIDE itself. The auth
+                // failure can land on any tick and there is no outer
+                // signal to react to; without this the poll re-fires
+                // forever against an endpoint that can only 401 (~38
+                // of these run on a canvas with 20 edges + 15 linked
+                // nodes). The user is told once, by the app-wide
+                // notice in `providers.tsx`.
+                if (isSessionExpired()) {
+                    if (timer !== null) clearInterval(timer);
+                    return;
+                }
                 void runFetch(true);
             }, pollMs);
         }

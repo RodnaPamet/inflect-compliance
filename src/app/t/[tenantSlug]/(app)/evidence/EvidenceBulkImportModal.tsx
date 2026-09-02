@@ -50,6 +50,10 @@ import {
     uploadWithProgress,
     UploadHttpError,
 } from '@/lib/upload/upload-with-progress';
+import {
+    isSessionExpired,
+    noteUnauthorized,
+} from '@/lib/auth/session-expiry';
 
 const POLL_INTERVAL_MS = 2000;
 // EP-4 — after this many consecutive poll failures (throw / non-ok) the
@@ -141,22 +145,37 @@ export function EvidenceBulkImportModal({
         // silently stopping (non-ok) or retrying forever (throw). A
         // successful poll resets the counter.
         let consecutiveFailures = 0;
+        // #2222 — the pending retry, so the cleanup can cancel it. `cancelled`
+        // alone stops the RESULT being used but not the request being made, so
+        // closing the dialog mid-interval still fired one more poll.
+        let retryTimer: ReturnType<typeof setTimeout> | null = null;
         const onPollFailure = () => {
             if (cancelled) return;
+            // #2222 — the session, not the job. The bound below works; the
+            // message did not. After five 401s (ten seconds) this told the
+            // operator their import "may still be running" and offered two
+            // remedies that also 401. Nothing failed but the cookie, so say
+            // so — and stop immediately rather than spending the budget.
+            if (isSessionExpired()) {
+                setError(tx('bulkImport.pollFailedSession'));
+                return;
+            }
             consecutiveFailures += 1;
             if (consecutiveFailures >= MAX_POLL_FAILURES) {
                 // eslint-disable-next-line react-hooks/set-state-in-effect
                 setError(tx('bulkImport.pollFailed'));
                 return; // stop polling — the operator can retry
             }
-            setTimeout(tick, POLL_INTERVAL_MS);
+            retryTimer = setTimeout(tick, POLL_INTERVAL_MS);
         };
         const tick = async () => {
             try {
-                const res = await fetch(
-                    apiUrl(`/evidence/imports/${jobId}`),
-                );
+                const url = apiUrl(`/evidence/imports/${jobId}`);
+                const res = await fetch(url);
                 if (!res.ok) {
+                    // #2222 — mark the app-wide store while the status is
+                    // still readable; `onPollFailure` only sees a counter.
+                    noteUnauthorized(res.status, url);
                     onPollFailure();
                     return;
                 }
@@ -181,7 +200,7 @@ export function EvidenceBulkImportModal({
                     );
                     return; // stop polling
                 }
-                setTimeout(tick, POLL_INTERVAL_MS);
+                retryTimer = setTimeout(tick, POLL_INTERVAL_MS);
             } catch {
                 // Network blip — retry up to MAX_POLL_FAILURES, then surface.
                 onPollFailure();
@@ -190,6 +209,7 @@ export function EvidenceBulkImportModal({
         tick();
         return () => {
             cancelled = true;
+            if (retryTimer !== null) clearTimeout(retryTimer);
         };
     }, [jobId, apiUrl, swrMutate, tx]);
 

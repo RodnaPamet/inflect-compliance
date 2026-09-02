@@ -6,7 +6,10 @@
 import '@/lib/zod-jitless';
 import { useEffect } from 'react';
 import { Toaster } from 'sonner';
+import { SWRConfig } from 'swr';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
+import { SessionExpiredNotice } from '@/components/layout/session-expired-notice';
+import { isSessionExpired, noteUnauthorized } from '@/lib/auth/session-expiry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
     CommandPalette,
@@ -45,6 +48,39 @@ function FormTelemetrySink() {
     return null;
 }
 
+/**
+ * #2222 — the SWR half of the app-wide 401 seam.
+ *
+ * Two writers exist, and they cover DISJOINT halves of the problem, which is
+ * why neither is sufficient alone. 173 client files call raw `fetch` and 9
+ * import `@/lib/api-client`, so:
+ *
+ *   • a 401 branch in `api-client.ts` reaches the ~150 `useTenantSWR` /
+ *     `apiGet` callers — all of which are already bounded — and none of the
+ *     hand-rolled pollers that are actually broken;
+ *   • this `onError` reaches every `useSWR` in the tree whatever its fetcher,
+ *     including one that throws its own error type.
+ *
+ * `isPaused` is the READ half, and it is the reason this sits at the root: it
+ * is checked at the top of SWR's `revalidate` and again before `onError`, so
+ * once the flag is set every SWR hook in the app — poll, focus revalidation,
+ * reconnect, error retry — stops issuing requests. The timers keep re-arming
+ * (SWR's polling `execute()` calls `next()` regardless), but they issue no
+ * network calls, which is the behaviour we want: quiet, and recoverable by a
+ * reload after re-auth.
+ *
+ * Deliberately NOT `onErrorRetry`: that hook is skipped entirely when
+ * `shouldRetryOnError` is false, so a config that disables retries would also
+ * silently disable the seam.
+ */
+const SWR_SESSION_SEAM = {
+    onError: (err: unknown, key: string) => {
+        const status = (err as { status?: unknown } | null)?.status;
+        noteUnauthorized(typeof status === 'number' ? status : undefined, key);
+    },
+    isPaused: isSessionExpired,
+};
+
 export function Providers({ children }: { children: React.ReactNode }) {
     // No <SessionProvider>. The tenant layout resolves the session
     // server-side via `auth()`, nothing calls `useSession`, and
@@ -61,36 +97,45 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // palette itself is rendered once at the shell so it's reachable
     // from any route, layered above page content via its own portal.
     return (
-        <KeyboardShortcutProvider>
-            <CommandPaletteProvider>
-                <ThemeProvider>
-                    <TooltipProvider>
-                        <FormTelemetrySink />
-                        {children}
-                        <CommandPalette />
-                        {/*
-                         * Epic 57 — `?` pops a live listing of every
-                         * registered shortcut. Mounted once at the shell so
-                         * the registry is the single source of truth and
-                         * shortcuts registered deeper in the tree appear
-                         * automatically.
-                         */}
-                        <ShortcutHelpOverlay />
-                        {/*
-                         * Global toast host. CopyButton / CopyText and the
-                         * optimistic-update hook emit into this Toaster;
-                         * without it, every `toast()` call is a silent no-op.
-                         */}
-                        <Toaster
-                            theme="dark"
-                            position="top-right"
-                            richColors
-                            closeButton
-                            duration={3000}
-                        />
-                    </TooltipProvider>
-                </ThemeProvider>
-            </CommandPaletteProvider>
-        </KeyboardShortcutProvider>
+        <SWRConfig value={SWR_SESSION_SEAM}>
+            <KeyboardShortcutProvider>
+                <CommandPaletteProvider>
+                    <ThemeProvider>
+                        <TooltipProvider>
+                            <FormTelemetrySink />
+                            {/*
+                             * #2222 — ONE notice for a lapsed session, mounted once
+                             * at the shell. Every poller writes into the same
+                             * module-scoped store; a per-hook notice would render
+                             * ~38 identical banners on a process canvas.
+                             */}
+                            <SessionExpiredNotice />
+                            {children}
+                            <CommandPalette />
+                            {/*
+                             * Epic 57 — `?` pops a live listing of every
+                             * registered shortcut. Mounted once at the shell so
+                             * the registry is the single source of truth and
+                             * shortcuts registered deeper in the tree appear
+                             * automatically.
+                             */}
+                            <ShortcutHelpOverlay />
+                            {/*
+                             * Global toast host. CopyButton / CopyText and the
+                             * optimistic-update hook emit into this Toaster;
+                             * without it, every `toast()` call is a silent no-op.
+                             */}
+                            <Toaster
+                                theme="dark"
+                                position="top-right"
+                                richColors
+                                closeButton
+                                duration={3000}
+                            />
+                        </TooltipProvider>
+                    </ThemeProvider>
+                </CommandPaletteProvider>
+            </KeyboardShortcutProvider>
+        </SWRConfig>
     );
 }
