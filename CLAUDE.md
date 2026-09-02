@@ -918,7 +918,7 @@ Reconcile is gated on the sync returning `PASSED` — a `PARTIAL` (resumable) or
 `ConnectedIdentityAccount.email`, and only when exactly one employee holds that
 address. For Entra that address is `u.mail || u.userPrincipalName`.
 
-**The write-mode ladder** (`DISABLED → DRY_RUN → PROPOSE → AUTOMATIC`) is stored
+**The write-mode ladder** (`DISABLED → DRY_RUN → AUTOMATIC`) is stored
 per direction on `TenantSecuritySettings.identity{Leaver,Joiner}Mode`, defaulting
 to `DISABLED`. `setIdentityWriteMode` in `usecases/identity-write-policy.ts`
 refuses multi-rung widening, refuses to leave `DRY_RUN` before
@@ -926,6 +926,37 @@ refuses multi-rung widening, refuses to leave `DRY_RUN` before
 `DIRECTION_IMPLEMENTED` flag is false — which is the joiner, since
 2026-09-01., and any move out of
 `DRY_RUN` — including narrowing — nulls `dryRunSince` and restarts the clock.
+
+**There was a fourth rung, `PROPOSE`, and deleting it CLOSED a hole rather than
+opening one** (2026-09-02, #2241). It sat between `DRY_RUN` and `AUTOMATIC` and
+meant "a human approves each disable" — a queue that was never built, so
+`identity-disable-account` refused every candidate at that rung: the rung above
+yielded strictly less than the rung below. The harm was in the composition. The
+seven-day dwell fires on `current.mode === 'DRY_RUN'` only, so it gated
+`DRY_RUN → PROPOSE` and nothing gated `PROPOSE → AUTOMATIC`; combined with the
+widen-one-rung rule, the compulsory rung was also the only ungated one. The real
+price of unattended directory writes was seven days and two PUTs that could
+follow each other by a second. With the rung gone, `DRY_RUN → AUTOMATIC` is one
+move and the dwell that already existed now stands in front of it. **No new gate
+was added — the detour around the old one was removed.**
+
+Two consequences worth knowing before touching this:
+
+- **The DB enum still carries `PROPOSE`, on purpose, and no migration was
+  written.** Postgres cannot drop an enum value without recreating the type, and
+  an `ALTER TYPE` mid-rolling-deploy makes still-running old containers fail with
+  SQLSTATE 42704 — the same lesson the `@@map("WorkItem*")` pins record. So the
+  value outlives the rung.
+- **A stored `PROPOSE` is therefore an UNKNOWN mode, and unknown fails
+  PERMISSIVE.** `isAboveClamp` sorts it to -1, i.e. *not* above the clamp, i.e.
+  cleared to run, and it is not the literal `'DRY_RUN'` the writer factory used
+  to look for either. `coerceStoredMode` in `write-ladder.ts` translates it (to
+  `DRY_RUN`; anything else unrecognised, and absence, to `DISABLED`) and is
+  applied at the READ boundary in `getIdentityWritePolicy` — before any
+  comparison, clamp check or dwell arithmetic anywhere. Two backstops sit behind
+  it, both written as allowlists: the writer factory builds a live writer only at
+  `AUTOMATIC`, and the disable usecase writes only at `AUTOMATIC`. If you add a
+  rung, it inherits nothing by falling through.
 
 `LEAVER_MAX_MODE` is a **source constant, not config**, enforced at gate 1 of
 `runIdentityLeaverPass`. It was `DRY_RUN` until 2026-08-30 and is now
@@ -938,8 +969,12 @@ which is correct only while the clamp sits at the second rung — at `AUTOMATIC`
 tenant at `DRY_RUN` is not equal but is BELOW, and the inequality would have
 refused it `MODE_ABOVE_CLAMP`, a refusal that records no row. The ladder order
 now lives in one place, `src/lib/identity/write-ladder.ts`, used by the pass, the
-policy usecase and the admin client; it carries no server imports so a client
-component can hold it.
+policy usecase, the admin route's GET and the admin client; it carries no server
+imports so a client component can hold it. (The route's `GET` held a fifth
+verbatim copy until #2241 — the module's own docstring named the copies it
+replaced and missed that one, which is how a route can go on offering a rung the
+ladder no longer has. Its `PUT` body schema is now `z.enum(LADDER)`, so a PUT
+naming a retired rung is a 400 rather than a silently coerced write.)
 
 The admin route reports the clamp to the UI in a `honoured` block. Lowering the
 clamp again must be a diff somebody reviews.

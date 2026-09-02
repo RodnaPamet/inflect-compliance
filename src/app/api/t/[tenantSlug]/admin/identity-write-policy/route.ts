@@ -25,11 +25,27 @@ import {
     DRY_RUN_MIN_DAYS,
 } from '@/app-layer/usecases/identity-write-policy';
 import { LEAVER_MAX_MODE } from '@/app-layer/usecases/identity-leaver-pass';
-import { DIRECTION_IMPLEMENTED } from '@/lib/identity/write-ladder';
+import { DIRECTION_IMPLEMENTED, LADDER } from '@/lib/identity/write-ladder';
 
+/**
+ * `LADDER`, not a hand-written list of the same strings.
+ *
+ * WHAT THIS BODY ACCEPTS AND WHY IT REJECTS THE RETIRED RUNG. `PROPOSE` was
+ * removed from the ladder in #2241 and is NOT accepted here: a PUT naming it is
+ * a 400 whose zod error names the three modes that exist. The alternative —
+ * accept it and coerce to DRY_RUN, the way a stored value is coerced on read —
+ * was rejected. Coercing a READ translates a value nobody can change now;
+ * coercing a WRITE would store a different rung than the caller asked for and
+ * would silently restart the seven-day dry-run clock as a side effect, which is
+ * a decision no caller made. A 400 that names the valid modes tells an old
+ * client exactly what happened.
+ *
+ * No UI sends it: `WriteLadderClient` only ever PUTs `nextMode` (computed from
+ * `LADDER` below) or the rung immediately below the current one.
+ */
 const Body = z.object({
     direction: z.enum(['leaver', 'joiner']),
-    mode: z.enum(['DISABLED', 'DRY_RUN', 'PROPOSE', 'AUTOMATIC']),
+    mode: z.enum(LADDER),
 });
 
 const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx, requestCtx) => {
@@ -43,8 +59,12 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
     return jsonResponse({
         directions: Object.fromEntries(
             (['leaver', 'joiner'] as const).map((d) => {
-                const ladder = ['DISABLED', 'DRY_RUN', 'PROPOSE', 'AUTOMATIC'] as const;
-                const next = ladder[Math.min(ladder.indexOf(policy[d].mode) + 1, ladder.length - 1)];
+                // `LADDER`, not a fourth copy of it. This literal was exactly the
+                // duplication the shared module was created to end — the module's
+                // own docstring named the two copies it replaced and missed this
+                // one, which is how a route can go on offering a rung the ladder
+                // no longer has.
+                const next = LADDER[Math.min(LADDER.indexOf(policy[d].mode) + 1, LADDER.length - 1)];
                 return [
                     d,
                     {
@@ -61,16 +81,12 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         // this policy will accept — and the difference is invisible without it.
         //
         // The ladder is a statement of intent stored on the tenant; the PASS
-        // enforces its own clamp. This paragraph used to say that setting
-        // leaver to PROPOSE succeeds here and then every pass refuses
-        // MODE_ABOVE_CLAMP — true until #2187 raised the clamp to AUTOMATIC,
-        // after which PROPOSE is BELOW the clamp and its passes run. They still
-        // decide nothing, for an unrelated reason: PROPOSE means a human
-        // approves each disable and that queue was never built, so the pass
-        // refuses every candidate REFUSED_MODE (issue #2241). The joiner has no
-        // implementation at all — no createAccount on either provider — so any
-        // rung above DISABLED is currently a statement about a subsystem that
-        // does not exist.
+        // enforces its own clamp. For the LEAVER the two now agree: #2187 raised
+        // the clamp to AUTOMATIC and #2241 deleted the rung that ran but decided
+        // nothing, so every rung this route will accept is one the pass acts on.
+        // The joiner has no implementation at all — no createAccount on either
+        // provider — so any rung above DISABLED is a statement about a subsystem
+        // that does not exist.
         //
         // Returned so a UI can say that plainly rather than leaving the operator
         // to infer it from passes that quietly do nothing.

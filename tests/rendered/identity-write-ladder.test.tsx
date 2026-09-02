@@ -63,7 +63,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     usePermissions: () => permissions,
 }));
 
-type Mode = 'DISABLED' | 'DRY_RUN' | 'PROPOSE' | 'AUTOMATIC';
+type Mode = 'DISABLED' | 'DRY_RUN' | 'AUTOMATIC';
 
 let payload: Record<string, unknown> | undefined;
 const swrMutate = jest.fn(async () => undefined);
@@ -75,7 +75,7 @@ import { WriteLadderClient } from '@/app/t/[tenantSlug]/(app)/admin/identity-wri
 import IdentityWritePolicyPage from '@/app/t/[tenantSlug]/(app)/admin/identity-write-policy/page';
 
 function state(mode: Mode, over: Record<string, unknown> = {}) {
-    const ladder: Mode[] = ['DISABLED', 'DRY_RUN', 'PROPOSE', 'AUTOMATIC'];
+    const ladder: Mode[] = ['DISABLED', 'DRY_RUN', 'AUTOMATIC'];
     const i = ladder.indexOf(mode);
     return { mode, dryRunSince: null, nextMode: ladder[i + 1] ?? null, blockedReason: null, ...over };
 }
@@ -132,7 +132,7 @@ describe('identity write ladder — the operator surface', () => {
         );
         render(<WriteLadderClient />);
 
-        const widen = screen.getByRole('button', { name: /Widen to Propose/i });
+        const widen = screen.getByRole('button', { name: /Widen to Automatic/i });
         expect(widen).toBeDisabled();
         // The reason is the whole point: a greyed button that explains nothing
         // sends the operator hunting for a bug that is not there.
@@ -156,7 +156,7 @@ describe('identity write ladder — the operator surface', () => {
     });
 
     it('narrows on one click, with no dialog in front of the emergency stop', async () => {
-        setPayload(state('PROPOSE'));
+        setPayload(state('AUTOMATIC'));
         const bodies = mockFetch();
         render(<WriteLadderClient />);
 
@@ -186,13 +186,16 @@ describe('identity write ladder — the operator surface', () => {
     });
 
     it('warns when the rung is above what the runtime will act on', () => {
-        setPayload(state('PROPOSE'));
+        // The fixture's `honoured.leaver.maxMode` is DRY_RUN, so AUTOMATIC is
+        // above it. That is not today's production clamp — #2187 raised the real
+        // one to AUTOMATIC — and the case is kept deliberately: the banner is
+        // about the RELATION between two values the server sends, not about a
+        // particular rung, and the pass is free to clamp itself again. Written
+        // when the retired PROPOSE rung made that state easy to reach; it now
+        // needs the top rung, which is the only rung that can be above a lowered
+        // ceiling on a three-rung ladder.
+        setPayload(state('AUTOMATIC'));
         render(<WriteLadderClient />);
-        // Written when the leaver pass clamped itself at DRY_RUN, which made
-        // PROPOSE settable-and-inert. #2187 raised that clamp to AUTOMATIC, so
-        // PROPOSE now runs — and refuses every candidate for a different reason
-        // (no approval queue; issue #2241). The principle the case exists for is
-        // unchanged: a control that accepts a value the system ignores is the bug.
         expect(within(card(/Leavers/i)).getByText(/above what the product will act on/i))
             .toBeInTheDocument();
     });

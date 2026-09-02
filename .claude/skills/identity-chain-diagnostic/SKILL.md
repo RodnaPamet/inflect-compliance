@@ -80,15 +80,21 @@ What is true now:
   `MODE_DISABLED`. It is the schema default, so a tenant that never visited the
   write-policy page is here.
 - `DRY_RUN` runs and records decisions, writing to no directory.
-- `PROPOSE` runs, constructs a LIVE directory writer, and then refuses every
-  candidate `REFUSED_MODE` — because it is not the approval queue and that
-  queue was never built. A tenant here sees passes with no decisions, which
-  looks like a broken chain and is not. See issue #2241.
 - `AUTOMATIC` runs and writes.
 
-So do NOT diagnose a `PROPOSE` or `AUTOMATIC` tenant as clamped. If you are
-here because the passes page is empty, the mode is only the first gate — carry
-on through the connection, account and link steps.
+There is no fourth rung. `PROPOSE` was deleted from the ladder on 2026-09-02
+(#2241): it ran, built a LIVE directory writer, and then refused every candidate
+`REFUSED_MODE`, because it was not the approval queue and that queue was never
+built — so a tenant there saw passes with no decisions, which looks like a broken
+chain and was not. **If you find a settings row still holding `PROPOSE`, that is
+not a diagnosis: it is read as `DRY_RUN` by `coerceStoredMode` before anything
+sees it, so the tenant behaves exactly like a dry run.** It cannot widen from
+there — the coerced state has no `dryRunSince` — until someone re-selects
+`DRY_RUN` and waits out `DRY_RUN_MIN_DAYS`.
+
+So do NOT diagnose an `AUTOMATIC` tenant as clamped. If you are here because the
+passes page is empty, the mode is only the first gate — carry on through the
+connection, account and link steps.
 
 ## Step 3 — connection count, not connection health
 

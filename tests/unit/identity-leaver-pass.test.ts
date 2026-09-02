@@ -2,8 +2,8 @@
  * The leaver pass — every gate in front of the batch, and the clamp.
  *
  * The two assertions that carry the weight:
- *   - a tenant configured at PROPOSE or AUTOMATIC gets NOTHING, because it
- *     reached that rung by elapsed days and no pass has ever run;
+ *   - a tenant configured at AUTOMATIC gets NOTHING, because it reached that
+ *     rung by elapsed days and no pass has ever run;
  *   - an empty candidate set with terminated workers present is reported as its
  *     own refusal, not as a quiet success — a leaver pass that disables nobody
  *     and says "done" is the failure this whole subsystem is most prone to.
@@ -386,11 +386,13 @@ describe('the ladder gate', () => {
         expect(resolveWriter).not.toHaveBeenCalled();
     });
 
-    it.each(['DRY_RUN', 'PROPOSE', 'AUTOMATIC'])('does NOT clamp a tenant at %s', async (mode) => {
-        // These three USED to be two clamped rungs and one allowed one. The
-        // clamp is now the top rung, so every real ladder position runs — which
-        // is the point of raising it, and the thing most worth pinning: the
-        // gate must not refuse a tenant that is BELOW the ceiling.
+    it.each(LADDER.filter((m) => m !== 'DISABLED'))('does NOT clamp a tenant at %s', async (mode) => {
+        // Driven from LADDER rather than a literal list, so retiring or adding a
+        // rung cannot leave this asserting about a ladder that no longer exists.
+        // These USED to be two clamped rungs and one allowed one. The clamp is
+        // now the top rung, so every real ladder position runs — which is the
+        // point of raising it, and the thing most worth pinning: the gate must
+        // not refuse a tenant that is BELOW the ceiling.
         //
         // The rung a tenant occupies is still governed by the ladder itself —
         // DRY_RUN_MIN_DAYS, no two-step widen, DISABLED by default. The clamp is

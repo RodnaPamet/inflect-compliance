@@ -250,9 +250,9 @@ export function LeaverPassesClient() {
     // top rung", and not at the top rung either, where `dryRunSince` is
     // equally null. Fixing the comparison restores it for the observation
     // window, which is where the live tenant sits and where #2175 would have
-    // been caught. It does NOT restore it for PROPOSE or AUTOMATIC — the rungs
-    // that actually hold disable authority — because those have no stored
-    // start point to be overdue against.
+    // been caught. It does NOT restore it for AUTOMATIC — the rung that actually
+    // holds disable authority — because that has no stored start point to be
+    // overdue against.
     //
     // The real fix is to derive due-ness from the newest pass's `executedAt`
     // rather than from `dryRunSince`, which needs a signal this component does
@@ -465,9 +465,9 @@ export function LeaverPassesClient() {
                     // responses and looked identical.
                     //
                     // Compared against `clamp`, never a hardcoded 'DRY_RUN':
-                    // after a clamp raise a PROPOSE tenant whose passes DO run
-                    // would match no arm and fall back to the very sentence this
-                    // exists to replace.
+                    // after a clamp raise, a tenant above the old ceiling whose
+                    // passes DO run would match no arm and fall back to the very
+                    // sentence this exists to replace.
                     (() => {
                         const ladderLink = {
                             label: t('writeLadder.linkLabel'),

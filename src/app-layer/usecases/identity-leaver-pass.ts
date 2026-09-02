@@ -16,10 +16,15 @@
  *
  * Wiring a feature and moving a tenant to unattended writes are still two
  * decisions; what separates them is now the LADDER alone, not the clamp. A
- * tenant reaches PROPOSE or AUTOMATIC by elapsed time in DRY_RUN
- * (`DRY_RUN_MIN_DAYS`), one rung at a time, and starts at DISABLED. What the
- * clamp used to add — a blanket refusal above the second rung — is gone
- * deliberately, on the owner's instruction.
+ * tenant reaches AUTOMATIC by elapsed time in DRY_RUN (`DRY_RUN_MIN_DAYS`), one
+ * rung at a time, and starts at DISABLED. What the clamp used to add — a blanket
+ * refusal above the second rung — is gone deliberately, on the owner's
+ * instruction.
+ *
+ * That single widen is now the whole of the climb, and it is gated. The PROPOSE
+ * rung that used to sit between the two was removed in #2241: it refused every
+ * candidate, and it was the only transition the dwell did not cover, so it was
+ * the way AROUND the seven days rather than a step through them.
  *
  * So the rails below are now the whole of the protection, not a second layer
  * behind a ceiling: the blast-radius breaker, the account-protection flag, the
@@ -97,7 +102,7 @@ import { recordLeaverPassOutcome } from '@/lib/observability/integration-metrics
  *   open until 2026-09-05; this change does not move it and cannot.
  *
  *   What it DOES do is remove the ceiling that was making a widen inert. Before
- *   this, a tenant that climbed to PROPOSE or AUTOMATIC was refused by gate 1
+ *   this, a tenant that climbed above DRY_RUN was refused by gate 1
  *   with no execution row — configured and silent. After it, a tenant that
  *   completes its dry-run window and widens will actually write to the
  *   directory.
