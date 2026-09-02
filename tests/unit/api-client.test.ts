@@ -11,6 +11,10 @@
  * Tests error handling, happy paths, and dev-mode Zod validation.
  */
 import { apiGet, apiPost, apiPatch, apiDelete, ApiClientError } from '@/lib/api-client';
+import {
+    isSessionExpired,
+    __resetSessionExpiryForTests,
+} from '@/lib/auth/session-expiry';
 
 // ── Mock fetch ──
 
@@ -444,4 +448,82 @@ describe('init overrides', () => {
             body: JSON.stringify({ a: 1 }),
         });
     });
+});
+
+describe('#2222 — the 401 seam in handleErrorResponse', () => {
+    beforeEach(() => {
+        __resetSessionExpiryForTests();
+    });
+
+    afterEach(() => {
+        __resetSessionExpiryForTests();
+    });
+
+    it('marks the session expired on a 401 and still throws the typed error', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 401,
+            url: 'https://app.example.com/api/t/acme/controls',
+            json: async () => ({ error: 'Unauthorized' }),
+        });
+
+        await expect(
+            apiGet('https://app.example.com/api/t/acme/controls'),
+        ).rejects.toBeInstanceOf(ApiClientError);
+        expect(isSessionExpired()).toBe(true);
+    });
+
+    it('covers the NON-SWR verbs too — apiPost is not reachable from SWR onError', async () => {
+        // This is the half `SWRConfig`'s `onError` cannot see: `apiGet` is the
+        // `useTenantSWR` fetcher, but `apiPost`/`apiPut`/`apiPatch`/`apiDelete`
+        // are called directly. Both writers exist because they cover disjoint
+        // halves of the call graph.
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 401,
+            url: 'https://app.example.com/api/t/acme/risks',
+            json: async () => ({ error: 'Unauthorized' }),
+        });
+
+        await expect(
+            apiPost('https://app.example.com/api/t/acme/risks', { a: 1 }),
+        ).rejects.toBeInstanceOf(ApiClientError);
+        expect(isSessionExpired()).toBe(true);
+    });
+
+    it('does NOT mark on a 403 — a permission denial is not a session verdict', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 403,
+            url: 'https://app.example.com/api/t/acme/admin/scim',
+            json: async () => ({
+                error: { code: 'FORBIDDEN', message: 'Permission denied' },
+            }),
+        });
+
+        await expect(
+            apiGet('https://app.example.com/api/t/acme/admin/scim'),
+        ).rejects.toBeInstanceOf(ApiClientError);
+        // An EDITOR hitting an admin endpoint is correctly signed in. Signing
+        // them out would also render a hash-chained AUTHZ_DENIED as an auth
+        // failure.
+        expect(isSessionExpired()).toBe(false);
+    });
+
+    it.each([404, 429, 500, 503])(
+        'does NOT mark on %i — a blip must not kill every poller',
+        async (status) => {
+            mockFetch.mockResolvedValueOnce({
+                ok: false,
+                status,
+                url: 'https://app.example.com/api/t/acme/controls',
+                json: async () => ({}),
+            });
+
+            await expect(
+                apiGet('https://app.example.com/api/t/acme/controls'),
+            ).rejects.toBeInstanceOf(ApiClientError);
+            expect(isSessionExpired()).toBe(false);
+        },
+    );
 });
