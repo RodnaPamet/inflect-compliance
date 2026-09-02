@@ -228,13 +228,38 @@ describe('AwsPostureProvider.runCheck — fail-closed contracts (H2)', () => {
     });
 
     it('ERRORs on a non-zero exit rather than parsing empty stdout as a pass', async () => {
-        cliResult({ err: exitCode(1), stdout: '', stderr: 'ExpiredToken' });
+        // The sample stderr must NOT be a credential-rejection code. A non-zero
+        // exit now has two outcomes, not one: an unambiguous authentication
+        // code THROWS so the collector can mark the connection revoked
+        // (see posture-credential-classification.ts), and everything else stays
+        // the ordinary ERROR this test is about. `ExpiredToken` used to sit
+        // here as an arbitrary string and would now take the other branch.
+        cliResult({ err: exitCode(1), stdout: '', stderr: 'exit status 1: benchmark run aborted' });
 
         const res = await provider().runCheck(input() as never);
 
         expect(res.status).toBe('ERROR');
         expect(res.summary).toBe('Powerpipe collector exited non-zero.');
-        expect(res.errorMessage).toContain('ExpiredToken');
+        expect(res.errorMessage).toContain('benchmark run aborted');
+    });
+
+    it('raises a CREDENTIAL verdict through the real runner, scrub and all', async () => {
+        // Regression class: `runCli` scrubs stderr before anything reads it, so
+        // the classifier only ever sees the redacted copy. A scrub pattern that
+        // ate the marker would switch credential detection off in production
+        // while every injected-exec test stayed green — the classifier would be
+        // right and unreachable, which is the exact shape of the defect this
+        // change fixes. This is the only path that runs the real scrub.
+        cliResult({
+            err: exitCode(255),
+            stdout: '',
+            stderr: 'api error ExpiredToken: The security token included in the request is expired (key AKIA_TEST_KEY)',
+        });
+
+        await expect(provider().runCheck(input() as never)).rejects.toMatchObject({
+            name: 'IntegrationAuthError',
+            reason: 'ExpiredToken',
+        });
     });
 
     it('scrubs credentials out of the propagated stderr', async () => {

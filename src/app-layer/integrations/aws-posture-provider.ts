@@ -26,6 +26,7 @@ import type {
     CheckResult,
     EvidencePayload,
 } from './types';
+import { throwIfPostureCredentialFailure } from './posture-credential-classification';
 
 // ─── Pure helpers (unit-tested directly) ─────────────────────────────
 
@@ -187,12 +188,34 @@ function secretValues(s: AwsPostureSecrets): string[] {
     return [s.accessKeyId, s.secretAccessKey, s.sessionToken, s.externalId].filter((v): v is string => !!v);
 }
 
+/** One CLI invocation's outcome. `missing` means the binary was not on PATH. */
+export interface AwsCliResult {
+    ok: boolean;
+    stdout: string;
+    stderr: string;
+    code: number | null;
+    missing: boolean;
+}
+
+/**
+ * Test seam — inject a runner instead of shelling out, exactly as the Azure and
+ * GCP posture providers already do. Without it there is no way to exercise
+ * `runCheck`'s credential classification, and an untestable branch on the path
+ * that raises a customer-visible banner is not one to ship.
+ */
+export type AwsCliRunner = (
+    file: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    secrets: AwsPostureSecrets,
+) => Promise<AwsCliResult>;
+
 function runCli(
     file: string,
     args: string[],
     env: NodeJS.ProcessEnv,
     secrets: AwsPostureSecrets,
-): Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null; missing: boolean }> {
+): Promise<AwsCliResult> {
     const redact = secretValues(secrets);
     return new Promise((resolve) => {
         execFile(file, args, { env, maxBuffer: 64 * 1024 * 1024, timeout: 15 * 60_000 }, (err, stdout, stderr) => {
@@ -235,6 +258,12 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         ],
     };
 
+    /** Test seam — the CLI runner, injectable (mirrors Azure/GCP). */
+    private readonly exec: AwsCliRunner;
+    constructor(deps: { exec?: AwsCliRunner } = {}) {
+        this.exec = deps.exec ?? runCli;
+    }
+
     /** Map the configJson `benchmark` shorthand to the Powerpipe benchmark id. */
     static benchmarkId(shorthand: string | undefined): string {
         switch ((shorthand ?? 'soc2').toLowerCase()) {
@@ -255,7 +284,7 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         const env = buildCredentialEnv(s, config as AwsPostureConfig);
         // Cheap read-only identity check. `aws` CLI absence is not a hard fail at
         // config time — surface a soft warning so the connection can still save.
-        const res = await runCli('aws', ['sts', 'get-caller-identity', '--output', 'json'], env, s);
+        const res = await this.exec('aws', ['sts', 'get-caller-identity', '--output', 'json'], env, s);
         if (res.missing) {
             return { valid: false, error: 'AWS CLI not available on the collector host — install aws-cli + powerpipe (see docs/aws-posture-connector.md).' };
         }
@@ -274,13 +303,24 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         };
         const benchmark = AwsPostureProvider.benchmarkId(cfg.benchmark ?? input.parsed.checkType);
         const env = buildCredentialEnv(secrets, cfg);
-        const res = await runCli('powerpipe', ['benchmark', 'run', benchmark, '--output', 'json'], env, secrets);
+        const res = await this.exec('powerpipe', ['benchmark', 'run', benchmark, '--output', 'json'], env, secrets);
         if (res.missing) {
             return { status: 'ERROR', summary: 'Powerpipe CLI not installed on the collector host.', details: { benchmark }, durationMs: Date.now() - start, errorMessage: 'powerpipe not installed — see docs/aws-posture-connector.md' };
         }
         // H2 — fail CLOSED on a non-zero collector exit (revoked credential /
         // network error) rather than parsing empty stdout into a false PASS.
         if (!res.ok) {
+            // "revoked credential / network error" names two outcomes that were
+            // reported as one. The collector's `catch` marks the connection
+            // credential-revoked, and returning here meant it never ran — so a
+            // revoked key looked exactly like a blip and the banner was
+            // unreachable. Classify the (already-scrubbed) stderr FIRST: an
+            // unambiguous authentication code throws, and everything else —
+            // network, permissions, a broken host — stays an ordinary ERROR.
+            // Deliberately the full stderr, not the 300-char excerpt below: the
+            // excerpt is what the ledger shows a human, and truncating the
+            // evidence before classifying it would drop verdicts at random.
+            throwIfPostureCredentialFailure(res.stderr, benchmark);
             return { status: 'ERROR', summary: 'Powerpipe collector exited non-zero.', details: { benchmark }, durationMs: Date.now() - start, errorMessage: `collector error; stderr: ${res.stderr.slice(0, 300)}` };
         }
         let controls: PowerpipeControlResult[] = [];

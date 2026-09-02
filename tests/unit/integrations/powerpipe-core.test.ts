@@ -285,12 +285,42 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
     it('treats a non-ENOENT failure as a collector error, NOT a missing CLI', async () => {
         // The two refusals carry different operator remedies; conflating them
         // sends someone to install a CLI that is already there.
-        cliResult({ err: exitCode(1), stderr: 'ExpiredToken' });
+        //
+        // The sample stderr must NOT be a credential-rejection code. A non-zero
+        // exit now has two outcomes: an unambiguous authentication code THROWS
+        // so the collector can mark the connection revoked (see
+        // posture-credential-classification.ts), everything else stays the
+        // ordinary ERROR this test is about. `ExpiredToken` used to sit here as
+        // an arbitrary string and would now take the other branch.
+        cliResult({ err: exitCode(1), stderr: 'exit status 1: benchmark run aborted' });
 
         const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
 
         expect(res.summary).toBe('Powerpipe collector exited non-zero.');
-        expect(res.errorMessage).toContain('ExpiredToken');
+        expect(res.errorMessage).toContain('benchmark run aborted');
+    });
+
+    it('raises a CREDENTIAL verdict through the real runner, scrub and all', async () => {
+        // Regression class: `runCli` scrubs stderr — the connection's own secret
+        // values plus the per-cloud patterns — before anything reads it, so the
+        // classifier only ever sees the redacted copy. A pattern that ate the
+        // marker would switch credential detection off in production while every
+        // injected-exec test stayed green: the classifier right and unreachable,
+        // which is the exact shape of the defect this change fixes. The Azure
+        // GUID pattern runs here precisely because it is the greediest one.
+        cliResult({
+            err: exitCode(1),
+            stderr: `AADSTS7000222: The provided client secret keys for app 11111111-2222-3333-4444-555555555555 are expired. ${SECRET}`,
+        });
+
+        await expect(
+            runPowerpipeBenchmark({
+                benchmarkId: 'b',
+                env: emptyEnv(),
+                secretValues: [SECRET],
+                patterns: [/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi],
+            }),
+        ).rejects.toMatchObject({ name: 'IntegrationAuthError', reason: 'AADSTS7000222' });
     });
 
     it('treats an error carrying no `code` as a collector error too', async () => {

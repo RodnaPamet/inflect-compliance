@@ -23,6 +23,7 @@ import {
     type BenchmarkSummary,
 } from '../aws-posture-provider';
 import type { CheckResult } from '../types';
+import { throwIfPostureCredentialFailure } from '../posture-credential-classification';
 
 /** One entry in a cloud → IC framework control crosswalk (per-cloud data). */
 export interface CloudPostureControlMapEntry {
@@ -116,6 +117,18 @@ export async function runPowerpipeBenchmark(input: RunBenchmarkInput): Promise<C
     // (non-zero exit, empty stdout) parsed to zero controls and the ladder
     // below yielded PASSED — marking the tenant compliant off a broken run.
     if (!res.ok) {
+        // …and a revoked credential is ALSO how a non-zero exit presents, which
+        // is the half that reached nothing. The collector's `catch` is what
+        // marks the connection credential-revoked, and returning ERROR here
+        // meant that catch never ran — so an expired Azure client secret or a
+        // deleted GCP service-account key looked identical to a network blip
+        // and the banner could never be raised. Classify the (already-scrubbed)
+        // stderr FIRST: an unambiguous authentication code throws, everything
+        // else stays an ordinary collector ERROR. Deliberately the FULL stderr,
+        // not the 300-char excerpt below — the excerpt is what the ledger shows
+        // a human, and classifying a truncated copy would drop verdicts at
+        // random depending on how chatty the CLI was first.
+        throwIfPostureCredentialFailure(res.stderr, input.benchmarkId);
         return { status: 'ERROR', summary: 'Powerpipe collector exited non-zero.', details: { benchmark: input.benchmarkId }, durationMs: nowMs() - start, errorMessage: `collector error; stderr: ${res.stderr.slice(0, 300)}`, summaryObj: null };
     }
     let controls;

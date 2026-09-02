@@ -73,6 +73,32 @@ customer-managed read-only policy below (example account id is a placeholder):
 
 The connector never mutates AWS resources — every action above is read-only.
 
+### When the credential itself is rejected
+
+A revoked access key, an expired session token or an expired Azure/GCP
+credential makes Powerpipe exit non-zero, which is also what a network failure
+or a broken mod does. The collector tells them apart from the CLI's stderr and
+treats only the first as a credential problem: it marks the connection
+(`IntegrationConnection.authFailedAt` / `authFailureReason`, the "credential
+revoked" banner in the admin UI), records the `ERROR` execution as usual, and
+suppresses the queue's immediate retry — re-running a dead credential three
+times inside 35 seconds only delays every other tenant in the fan-out.
+
+The recognised set is deliberately narrow: it holds only provider error codes
+that mean the request was never AUTHENTICATED (`ExpiredToken`,
+`InvalidClientTokenId`, `UnrecognizedClientException`, `InvalidAccessKeyId`,
+`SignatureDoesNotMatch`, `AuthFailure`, and the Azure/GCP equivalents). It
+carries no AUTHORIZATION codes — a read-only role missing one `Describe*`
+answers `AccessDenied` while the credential is perfectly good, and raising the
+banner for that would send an operator to rotate a working key. The full list,
+and what is excluded and why, is
+`src/app-layer/integrations/posture-credential-classification.ts`.
+
+The banner is cleared by the next run that actually completes (`PASSED` or
+`FAILED` — a benchmark reporting real gaps still proves the credential works).
+An `ERROR` run does not clear it: the collector never observed the account, so
+it has nothing to retract the banner on.
+
 ## Configuration
 
 `configJson` on the `aws-posture` connection:

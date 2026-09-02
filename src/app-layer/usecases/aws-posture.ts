@@ -173,7 +173,20 @@ export async function runAwsPostureCollection(input: {
         // Reached only when the collection itself ran. A FAILED compliance
         // verdict is a successful collection reporting a real gap, so the
         // credential is demonstrably good either way — clear any stale banner.
-        await clearAuthFailure(db, conn.id, 'aws-posture');
+        //
+        // ERROR is the case that must NOT clear, and that distinction is the
+        // whole point of the line. PASSED and FAILED are each proof the
+        // credential worked; an ERROR means the collector never observed the
+        // account, so clearing on it retracts a revoked-credential banner on no
+        // evidence at all. A provider that exits non-zero with an
+        // expired-token stderr now throws and never reaches here — but one that
+        // fails another way (zero controls parsed, unreadable JSON) does reach
+        // here, and a still-revoked connection was being declared healthy.
+        // Deliberately NOT `status === 'PASSED'`: that clamp would strand the
+        // banner on a healthy connection whose benchmark keeps reporting gaps.
+        if (checkResult.status !== 'ERROR') {
+            await clearAuthFailure(db, conn.id, 'aws-posture');
+        }
 
         logger.info('aws-posture collection complete', { component: 'aws-posture', tenantId: ctx.tenantId, executionId: execution.id, status: checkResult.status, evidenceCreated });
         return { executionId: execution.id, status: checkResult.status, counts, evidenceCreated, errorMessage: checkResult.errorMessage };
