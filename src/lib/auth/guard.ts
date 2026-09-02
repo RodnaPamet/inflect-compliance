@@ -148,6 +148,83 @@ export function isPublicPath(pathname: string): boolean {
 }
 
 /**
+ * The `iflk_` API-key prefix, duplicated for the Edge runtime.
+ *
+ * The canonical definition is `API_KEY_PREFIX` in
+ * `src/lib/auth/api-key-auth.ts`, which cannot be imported here: that
+ * module pulls in Prisma and `node:crypto`, and this file is bundled into
+ * the Edge middleware. The duplication is checked, not trusted —
+ * `tests/unit/edge-api-key-request.test.ts` imports both and fails if they
+ * diverge, and it also pins `matchTenantApiKeyRequest` to accept exactly the
+ * header shapes `extractBearerToken` + `isApiKeyToken` accept. A rename on
+ * either side therefore turns CI red rather than silently re-closing the
+ * partner surface.
+ */
+export const EDGE_API_KEY_PREFIX = 'iflk_';
+
+/**
+ * FNV-1a (32-bit) over the presented API key, hex-encoded.
+ *
+ * Used ONLY to derive a per-key rate-limit bucket. Deliberately NOT a
+ * truncation of the key the way the device-agent block truncates its device
+ * token: `checkApiReadRateLimit` logs its `tenantSlug` argument at WARN level
+ * on every 429 (`apiReadRateLimit.ts` — "API read rate limit exceeded"), so a
+ * truncated key would write live key material into structured logs exactly
+ * when a caller is being abusive. A 32-bit digest of a 192-bit-entropy secret
+ * is not invertible, and a bucket collision between two keys costs at most a
+ * shared 120/min budget.
+ */
+function fnv1a32(input: string): string {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+        h ^= input.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+}
+
+/**
+ * Recognise a tenant-API request that carries an `iflk_` API key instead of a
+ * session cookie, and return the rate-limit scope to meter it under.
+ * Returns null for anything else.
+ *
+ * #2224 — `getToken()` reads `Authorization: Bearer`, tries to JWE-decode
+ * whatever it finds, and returns null on an `iflk_` key. The edge then 401s a
+ * key-only caller before `tryApiKeyAuth` (wired into BOTH `getTenantCtx` and
+ * `getLegacyCtx`) ever runs, so the partner flow documented in
+ * `docs/api-consumer-guide.md` could not work on any of the 305 tenant routes.
+ *
+ * This is deliberately a RECOGNITION, not a verification. Nothing here decides
+ * whether the key is real, unexpired, unrevoked or scoped — Prisma is not
+ * reachable from the Edge runtime, and the handler is and remains the sole
+ * authority (`verifyApiKey` → `tryApiKeyAuth`, which THROWS 401 on an invalid
+ * key rather than falling back to the cookie). The edge only decides "this is
+ * not a browser session, let the handler judge it".
+ *
+ * Narrow by construction, because the fall-through skips the JWT-derived edge
+ * gates (admin role, MFA, tenant-access):
+ *   - `/api/t/**` only — the surface the credential is documented for.
+ *   - `Bearer <token>` parsed exactly as `extractBearerToken` parses it.
+ *   - `iflk_` prefix required.
+ * The tenant-access gate this bypasses is replaced in the handler:
+ * `getTenantCtx` rejects a key whose tenant is not the slug in the URL.
+ */
+export function matchTenantApiKeyRequest(
+    pathname: string,
+    authorization: string | null | undefined,
+): string | null {
+    if (!pathname.startsWith('/api/t/')) return null;
+    if (!authorization) return null;
+    // Mirror of `extractBearerToken`: exactly two space-separated parts, the
+    // first case-insensitively "bearer".
+    const parts = authorization.split(' ');
+    if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') return null;
+    const token = parts[1];
+    if (!token.startsWith(EDGE_API_KEY_PREFIX)) return null;
+    return `apikey:${fnv1a32(token)}`;
+}
+
+/**
  * Check if a pathname is an API route.
  */
 export function isApiRoute(pathname: string): boolean {

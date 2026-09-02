@@ -14,6 +14,7 @@ import {
     isTenantPath,
     isOrgPath,
     isMfaAllowedPath,
+    matchTenantApiKeyRequest,
     buildLoginRedirect,
     unauthorizedJson,
     forbiddenJson,
@@ -189,6 +190,52 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         // silent authority: removing the allowlist entry would then close
         // the POST and leave the GET open, which is the inverse of what
         // anyone editing that list would intend.
+    }
+
+    // ── 0f. Tenant API called with an `iflk_` API key — rate-limit
+    // (per-IP + per-key), THEN allow. Same shape as 0c: a caller that
+    // authenticates with a Bearer credential and no session cookie, whose
+    // credential is verified in-handler.
+    //
+    // #2224 — this surface was 401 for its entire life. `getToken()` reads
+    // `Authorization: Bearer`, JWE-decodes whatever it finds, and returns
+    // null on an `iflk_` key; section 2 below then 401s any `/api/*` with a
+    // null token. `tryApiKeyAuth` is wired into BOTH context builders
+    // (`getTenantCtx`, 305 routes; `getLegacyCtx`, 19) and never ran for a
+    // cookieless caller — so the canonical partner flow in
+    // `docs/api-consumer-guide.md` returned 401 before any handler executed.
+    //
+    // Why this cannot be a `MACHINE_CALLER_PREFIXES` entry: that list matches
+    // a PATH, and the surface here is the whole tenant API. The credential,
+    // not the path, is what says "not a browser session" — so the match is on
+    // the header, and it is deliberately narrow (`/api/t/**` + a `Bearer
+    // iflk_` header; see `matchTenantApiKeyRequest`).
+    //
+    // What the fall-through costs, and where it is paid back: returning
+    // `next()` here skips the JWT-derived gates below (admin role, MFA,
+    // tenant-access), all of which read a session token this caller does not
+    // have. The one that was doing real work for a cookie+key request is the
+    // tenant-access gate, and it is replaced in the handler — `getTenantCtx`
+    // rejects a key whose tenant is not the slug in the URL, which is also
+    // what `docs/api-consumer-guide.md` has always claimed happens.
+    //
+    // The handler stays the sole authority on whether the key is real:
+    // `tryApiKeyAuth` THROWS 401 on an invalid key rather than falling back
+    // to the cookie, so presenting `Bearer iflk_garbage` buys nothing.
+    //
+    // Rate limit keyed per-key (hashed — see `matchTenantApiKeyRequest`) so
+    // many partner keys behind one NAT get independent buckets, exactly as
+    // 0c gives each device its own.
+    const apiKeyScope = matchTenantApiKeyRequest(
+        pathname,
+        req.headers.get('authorization'),
+    );
+    if (apiKeyScope) {
+        const rl = await checkApiReadRateLimit(req, null, apiKeyScope);
+        if (!rl.ok && rl.response) {
+            return rl.response;
+        }
+        return NextResponse.next();
     }
 
     // ── 1. Allow public paths (login, auth callbacks, static, etc.) ──
