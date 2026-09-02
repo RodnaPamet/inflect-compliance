@@ -1,21 +1,24 @@
-import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getTenantCtx } from '@/app-layer/context';
 import { linkBiaToControl } from '@/app-layer/usecases/business-impact-analysis';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
 const LinkSchema = z.object({ controlId: z.string().min(1) });
 
-/** POST — attach this BIA to a control as evidence (kind BIA). */
+type Params = { tenantSlug: string; id: string };
+
+/**
+ * POST — attach this BIA to a control as evidence (kind BIA).
+ *
+ * Gated on `continuity.edit` (#2197). This is the edge that makes a control
+ * read as satisfying NIS2 Art.21(2)(c) in the coverage view, so an attempt to
+ * create one that was refused is worth having on the record.
+ */
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        LinkSchema,
-        async (req: NextRequest, { params: p }: { params: Promise<{ tenantSlug: string; id: string }> }, body) => {
-            const params = await p;
-            const ctx = await getTenantCtx(params, req);
-            return jsonResponse(await linkBiaToControl(ctx, params.id, body.controlId), { status: 201 });
-        },
-    ),
+    requirePermission<Params>('continuity.edit', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, LinkSchema);
+        return jsonResponse(await linkBiaToControl(ctx, params.id, body.controlId), { status: 201 });
+    }),
 );

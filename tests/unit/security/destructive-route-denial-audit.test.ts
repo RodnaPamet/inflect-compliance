@@ -149,14 +149,44 @@ jest.mock('@/app-layer/usecases/loss-event', () => ({
 }));
 
 const mockDeleteProcessMap = jest.fn();
+// ── Tranche 5 (#2197): business continuity + process-map writes ──
+//
+// `requireActual` is spread rather than listing exports one by one: these
+// route files import `CreateBiaSchema` / `UpdateBiaSchema` as VALUES and run
+// them, so a hand-listed factory would hand the route `undefined.parse`. It
+// also means the next export added to the usecase is not silently `undefined`
+// here.
+const mockCreateBia = jest.fn();
+const mockUpdateBia = jest.fn();
+const mockDeleteBia = jest.fn();
+const mockAddBiaDependency = jest.fn();
+const mockRemoveBiaDependency = jest.fn();
+const mockLinkBiaToControl = jest.fn();
+jest.mock('@/app-layer/usecases/business-impact-analysis', () => ({
+    ...jest.requireActual('@/app-layer/usecases/business-impact-analysis'),
+    createBia: (...a: unknown[]) => mockCreateBia(...a),
+    updateBia: (...a: unknown[]) => mockUpdateBia(...a),
+    deleteBia: (...a: unknown[]) => mockDeleteBia(...a),
+    addBiaDependency: (...a: unknown[]) => mockAddBiaDependency(...a),
+    removeBiaDependency: (...a: unknown[]) => mockRemoveBiaDependency(...a),
+    linkBiaToControl: (...a: unknown[]) => mockLinkBiaToControl(...a),
+}));
+
+const mockCreateProcessMap = jest.fn();
+const mockSaveProcessMap = jest.fn();
+const mockSetProcessMapStatus = jest.fn();
+const mockRestoreProcessMapSnapshot = jest.fn();
 jest.mock('@/app-layer/usecases/process-map', () => ({
-    // The processes/[id] route file also exports GET / PUT / PATCH, which
-    // import these four. They are not under test — the module factory has to
-    // supply them or the import of the route file throws.
+    // The processes route files also export GET, which imports these. They are
+    // not under test — the module factory has to supply them or the import of
+    // the route file throws.
     getProcessMap: jest.fn(),
-    saveProcessMap: jest.fn(),
+    listProcessMaps: jest.fn(),
     setProcessMapCanvasMode: jest.fn(),
-    setProcessMapStatus: jest.fn(),
+    createProcessMap: (...a: unknown[]) => mockCreateProcessMap(...a),
+    saveProcessMap: (...a: unknown[]) => mockSaveProcessMap(...a),
+    setProcessMapStatus: (...a: unknown[]) => mockSetProcessMapStatus(...a),
+    restoreProcessMapSnapshot: (...a: unknown[]) => mockRestoreProcessMapSnapshot(...a),
     deleteProcessMap: (...a: unknown[]) => mockDeleteProcessMap(...a),
 }));
 
@@ -257,6 +287,20 @@ import { DELETE as assetRiskUnmap } from '@/app/api/t/[tenantSlug]/assets/[id]/r
 import { DELETE as riskEvidenceDetach } from '@/app/api/t/[tenantSlug]/risks/[id]/evidence/attached/[evidenceId]/route';
 import { PUT as correlationSet, DELETE as correlationRemove } from '@/app/api/t/[tenantSlug]/risks/correlations/route';
 import { POST as hierarchyLinkAdd, DELETE as hierarchyLinkRemove } from '@/app/api/t/[tenantSlug]/risks/hierarchy/[nodeId]/links/route';
+import { POST as biaCreate } from '@/app/api/t/[tenantSlug]/business-continuity/route';
+import {
+    PUT as biaUpdate,
+    DELETE as biaDelete,
+} from '@/app/api/t/[tenantSlug]/business-continuity/[id]/route';
+import { POST as biaDependencyAdd } from '@/app/api/t/[tenantSlug]/business-continuity/[id]/dependencies/route';
+import { DELETE as biaDependencyRemove } from '@/app/api/t/[tenantSlug]/business-continuity/[id]/dependencies/[depId]/route';
+import { POST as biaLinkControl } from '@/app/api/t/[tenantSlug]/business-continuity/[id]/link-control/route';
+import { POST as processMapCreate } from '@/app/api/t/[tenantSlug]/processes/route';
+import {
+    PUT as processMapSave,
+    PATCH as processMapPatch,
+} from '@/app/api/t/[tenantSlug]/processes/[id]/route';
+import { POST as processSnapshotRestore } from '@/app/api/t/[tenantSlug]/processes/[id]/snapshots/[version]/restore/route';
 import { assertCanManageAuditors } from '@/app-layer/policies/audit-readiness.policies';
 
 // ─── Fixtures ──────────────────────────────────────────────────────
@@ -899,16 +943,171 @@ const ROUTES: ReadonlyArray<{
         allowedRole: 'EDITOR',
         deniedRole: 'READER',
     },
+
+    // ── Tranche 5 (#2197): business continuity + process-map writes ──
+    //
+    // These are the routes the third tranche wrote down as unreachable: they
+    // gate on the coarse `assertCanWrite` and no `PermissionSet` domain
+    // matched that population, so #2197 added `continuity` and `processes`.
+    //
+    // EDITOR-allowed / READER-refused throughout, and that pair is the whole
+    // point: `continuity.edit` and `processes.edit` are defined TRUE for
+    // exactly OWNER / ADMIN / EDITOR, which is what `permissions.canWrite`
+    // already admitted. So the EDITOR row proves the population that actually
+    // uses these routes is untouched, and the READER row proves the caller who
+    // was being refused invisibly is now on the record. Running these at the
+    // table's ADMIN/EDITOR default would have asserted a denial that the
+    // usecase never made, i.e. an access change rather than a recording one.
+    {
+        name: 'POST /business-continuity',
+        handler: asHandler(biaCreate),
+        path: '/api/t/acme/business-continuity',
+        params: { tenantSlug: 'acme' },
+        body: { name: 'Payroll', criticality: 'HIGH' },
+        key: 'continuity.edit',
+        usecase: mockCreateBia,
+        forwards: [{ name: 'Payroll', criticality: 'HIGH' }],
+        result: { id: 'bia-1', name: 'Payroll' },
+        successStatus: 201,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'PUT /business-continuity/[id]',
+        handler: asHandler(biaUpdate),
+        path: '/api/t/acme/business-continuity/bia-1',
+        params: { tenantSlug: 'acme', id: 'bia-1' },
+        method: 'PUT',
+        body: { name: 'Payroll (revised)' },
+        key: 'continuity.edit',
+        usecase: mockUpdateBia,
+        forwards: ['bia-1', { name: 'Payroll (revised)' }],
+        result: { id: 'bia-1', name: 'Payroll (revised)' },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /business-continuity/[id]',
+        handler: asHandler(biaDelete),
+        path: '/api/t/acme/business-continuity/bia-1',
+        params: { tenantSlug: 'acme', id: 'bia-1' },
+        method: 'DELETE',
+        key: 'continuity.edit',
+        usecase: mockDeleteBia,
+        forwards: ['bia-1'],
+        result: { deleted: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /business-continuity/[id]/dependencies',
+        handler: asHandler(biaDependencyAdd),
+        path: '/api/t/acme/business-continuity/bia-1/dependencies',
+        params: { tenantSlug: 'acme', id: 'bia-1' },
+        body: { dependsOnType: 'VENDOR', dependsOnId: 'v-1' },
+        key: 'continuity.edit',
+        usecase: mockAddBiaDependency,
+        forwards: ['bia-1', { dependsOnType: 'VENDOR', dependsOnId: 'v-1' }],
+        result: { id: 'dep-1' },
+        successStatus: 201,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'DELETE /business-continuity/[id]/dependencies/[depId]',
+        handler: asHandler(biaDependencyRemove),
+        path: '/api/t/acme/business-continuity/bia-1/dependencies/dep-1',
+        params: { tenantSlug: 'acme', id: 'bia-1', depId: 'dep-1' },
+        method: 'DELETE',
+        key: 'continuity.edit',
+        usecase: mockRemoveBiaDependency,
+        forwards: ['bia-1', 'dep-1'],
+        result: { removed: true },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /business-continuity/[id]/link-control',
+        handler: asHandler(biaLinkControl),
+        path: '/api/t/acme/business-continuity/bia-1/link-control',
+        params: { tenantSlug: 'acme', id: 'bia-1' },
+        body: { controlId: 'ctl-1' },
+        key: 'continuity.edit',
+        usecase: mockLinkBiaToControl,
+        forwards: ['bia-1', 'ctl-1'],
+        result: { linked: true },
+        successStatus: 201,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /processes',
+        handler: asHandler(processMapCreate),
+        path: '/api/t/acme/processes',
+        params: { tenantSlug: 'acme' },
+        body: { name: 'Order to cash' },
+        key: 'processes.edit',
+        usecase: mockCreateProcessMap,
+        forwards: [{ name: 'Order to cash' }],
+        result: { id: 'pm-1', name: 'Order to cash' },
+        successStatus: 201,
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'PUT /processes/[id]',
+        handler: asHandler(processMapSave),
+        path: '/api/t/acme/processes/pm-1',
+        params: { tenantSlug: 'acme', id: 'pm-1' },
+        method: 'PUT',
+        body: { nodes: [], edges: [] },
+        key: 'processes.edit',
+        usecase: mockSaveProcessMap,
+        forwards: ['pm-1', { nodes: [], edges: [] }],
+        result: { id: 'pm-1', version: 4 },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        // The PATCH beside it, so the module does not go back to the mixed
+        // shape where a gated verb certifies an ungated sibling.
+        name: 'PATCH /processes/[id]',
+        handler: asHandler(processMapPatch),
+        path: '/api/t/acme/processes/pm-1',
+        params: { tenantSlug: 'acme', id: 'pm-1' },
+        method: 'PATCH',
+        body: { status: 'ACTIVE' },
+        key: 'processes.edit',
+        usecase: mockSetProcessMapStatus,
+        forwards: ['pm-1', 'ACTIVE'],
+        result: { id: 'pm-1', status: 'ACTIVE' },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
+    {
+        name: 'POST /processes/[id]/snapshots/[version]/restore',
+        handler: asHandler(processSnapshotRestore),
+        path: '/api/t/acme/processes/pm-1/snapshots/2/restore',
+        params: { tenantSlug: 'acme', id: 'pm-1', version: '2' },
+        body: { expectedVersion: 3 },
+        key: 'processes.edit',
+        usecase: mockRestoreProcessMapSnapshot,
+        forwards: ['pm-1', 2, 3],
+        result: { id: 'pm-1', version: 4 },
+        allowedRole: 'EDITOR',
+        deniedRole: 'READER',
+    },
 ];
 
 /**
  * A table-driven suite hides its own deletions: remove a row and the three
  * tests it generated simply stop existing, and the run is still green. The
  * count is therefore asserted, and it only goes up — 11 after the first
- * tranche, 17 after the second, 23 after group A, 30 after tranche 4.
+ * tranche, 17 after the second, 23 after group A, 30 after tranche 4, 40 after
+ * tranche 5 (#2197).
  */
 it('the migrated population does not silently shrink', () => {
-    expect(ROUTES.length).toBeGreaterThanOrEqual(30);
+    expect(ROUTES.length).toBeGreaterThanOrEqual(40);
     // Every row must name a distinct HANDLER, so a copy-paste that leaves two
     // rows pointing at the same one reads as coverage it is not. The key is
     // (method, path) rather than path alone: `/audits/auditors/access` carries

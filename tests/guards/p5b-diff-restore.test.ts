@@ -90,7 +90,12 @@ describe("Epic P5-PR-B — visual diff + restore wiring", () => {
                 "src/app/api/t/[tenantSlug]/processes/[id]/snapshots/[version]/restore/route.ts",
             );
             expect(src).toMatch(/export const POST = withApiErrorHandling/);
-            expect(src).toMatch(/withValidatedBody/);
+            // `parseJsonBody`, not `withValidatedBody`: the route gained a
+            // `requirePermission('processes.edit', …)` gate (#2197), and that
+            // wrapper already uses the third argument slot `withValidatedBody`
+            // passes the body in. The invariant here is "the body is parsed
+            // against the schema", not which helper does it.
+            expect(src).toMatch(/parseJsonBody/);
             expect(src).toMatch(/expectedVersion/);
             expect(src).toMatch(/restoreProcessMapSnapshot/);
         });
