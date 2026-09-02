@@ -15,7 +15,12 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { codeOf, declarationOf } from '../helpers/source-blocks';
+import {
+    braceBlockAfter,
+    codeOf,
+    declarationOf,
+    functionBodyOf,
+} from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -31,8 +36,19 @@ const ROOT = path.resolve(__dirname, '../..');
  * depends on the next author remembering. It also un-breaks the anchored
  * slices further down — `src.indexOf('const fetchVendor')` used to be
  * satisfied by a comment naming the function, which is the same defect one
- * step earlier. `codeOf` preserves offsets, so every `indexOf` / `slice`
- * pair below still lines up with the file.
+ * step earlier. `codeOf` preserves offsets, so every `indexOf` below still
+ * lines up with the file.
+ *
+ * WHAT PRESERVING OFFSETS DOES NOT BUY: a fixed-LENGTH window. `codeOf`
+ * BLANKS a comment (a space per byte) where a delete-based stripper REMOVED
+ * it, so a `slice(i, i + 1400)` now spans less CODE than the same call did
+ * before — the comment's characters are still in the budget. Presence and
+ * absence read the same under either masker; DISTANCE does not, and on a
+ * `not.toMatch` the shortened window is a HOLE, because declining to match is
+ * the green. That is why nothing below measures a distance any more: every
+ * extraction here is bounded by the construct's own braces or its
+ * declaration. See the long note in `tests/guardrails/
+ * task-status-machine-wiring.test.ts`, where this bit first.
  *
  * String literals are KEPT (see the source-blocks header): most of what this
  * file asserts — `data-testid="…"`, i18n keys, `value: 'assign'` — IS a
@@ -40,6 +56,27 @@ const ROOT = path.resolve(__dirname, '../..');
  * sharpening them.
  */
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+
+/**
+ * The `{ … }` block that opens after `needle`, bounded by its own braces.
+ *
+ * `needle` is a plain SUBSTRING, not a regex, and that is the reason this
+ * exists rather than a bare `braceBlockAfter`: that helper's anchor search
+ * runs over a view with string literals masked as well as comments, so an
+ * anchor that IS a literal — `id="submit-link-btn"`, `'access_denied'` —
+ * cannot be found there. Locate the site on the literals-kept text, then
+ * hand `braceBlockAfter` the brace itself to bound.
+ *
+ * Throws rather than returning '' when the anchor or the block is missing:
+ * an assertion against an empty string passes every `not.toMatch` in it.
+ */
+const blockAfterText = (src: string, needle: string): string => {
+    const at = src.indexOf(needle);
+    if (at < 0) throw new Error(`anchor not found: ${needle}`);
+    const brace = src.indexOf('{', at + needle.length);
+    if (brace < 0) throw new Error(`no block opens after: ${needle}`);
+    return braceBlockAfter(src.slice(brace), '\\{');
+};
 
 const DETAIL = 'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx';
 const LIST = 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx';
@@ -49,10 +86,10 @@ describe('1 — a thrown fetch cannot strand the page in loading', () => {
     const src = read(DETAIL);
 
     it('fetchVendor clears loading in a finally block', () => {
-        const fn = src.slice(
-            src.indexOf('const fetchVendor'),
-            src.indexOf('const fetchDocs'),
-        );
+        // Bounded by the declaration's own `;`, not by "everything up to the
+        // next handler's name" — a slice between two names is backwards, and
+        // therefore silently empty, the moment the two are reordered.
+        const fn = declarationOf(src, 'fetchVendor');
         expect(fn).toMatch(/try \{/);
         expect(fn).toMatch(/\} finally \{[\s\S]*?setLoading\(false\)/);
     });
@@ -93,8 +130,11 @@ describe('3 — a rejected write does not look like a success', () => {
     it('the add-link mutation checks the response before closing the form', () => {
         // Was: await fetch(...); setShowLinkForm(false); … — a 400 or 403
         // cleared the form exactly like a success.
-        const idx = src.indexOf('submit-link-btn');
-        const block = src.slice(idx, idx + 1400);
+        //
+        // Bounded to the handler's own braces. It was `slice(idx, idx + 1400)`
+        // — a budget the six-line comment inside the handler now eats into,
+        // since `read` blanks comments where the old reader deleted them.
+        const block = blockAfterText(src, 'id="submit-link-btn"');
         expect(block).toMatch(/const res = await fetch\(/);
         expect(block).toMatch(/if \(!res\.ok\)/);
     });
@@ -144,9 +184,11 @@ describe('5 — destructive vendor actions are undoable', () => {
     it.each(['removeLink', 'removeSubprocessor', 'removeDoc'])(
         '%s goes through the undo toast',
         (fnName) => {
-            const idx = src.indexOf(`const ${fnName} = (`);
-            expect(idx).toBeGreaterThan(-1);
-            const fn = src.slice(idx, idx + 1200);
+            // `declarationOf`, not `slice(idx, idx + 1200)`: the three
+            // handlers are `const … = (…) => { … };` arrows, and a character
+            // budget stops covering the tail of one the moment a comment is
+            // added inside it.
+            const fn = declarationOf(src, fnName);
             expect(fn).toMatch(/triggerUndoToast\(\{/);
             // Optimistic remove + restore on undo AND on failure.
             expect(fn).toMatch(/undoAction:/);
@@ -175,10 +217,9 @@ describe('6 — "sent" is not claimed when nothing was emailed', () => {
     });
 
     it('applies to resend too — it can also collapse in the outbox dedupe', () => {
-        const fn = src.slice(
-            src.indexOf('const handleResend'),
-            src.indexOf('const handleResend') + 1800,
-        );
+        // Bounded by the declaration's own `;`, not by 1800 characters from
+        // its name.
+        const fn = declarationOf(src, 'handleResend');
         expect(fn).toMatch(/notificationQueued === false/);
     });
 });
@@ -221,7 +262,9 @@ describe('8 — invite lifecycle reaches the surface', () => {
 
     it('the list query selects the invite lifecycle columns', () => {
         const src = read(REVIEW);
-        const fn = src.slice(src.indexOf('export async function listVendorAssessments'));
+        // Bounded to the function. The unbounded form ran to EOF, so the two
+        // selects below were satisfiable by any later query in the file.
+        const fn = functionBodyOf(src, 'listVendorAssessments');
         expect(fn).toMatch(/externalAccessTokenExpiresAt: true/);
         expect(fn).toMatch(/revokedAt: true/);
     });
@@ -245,10 +288,7 @@ describe('8 — invite lifecycle reaches the surface', () => {
         // which is exactly what useHydratedNow exists to prevent.
         const src = read(DETAIL);
         expect(src).toMatch(/useHydratedNow\(\)/);
-        const fn = src.slice(
-            src.indexOf('function inviteState'),
-            src.indexOf('function VendorAssessmentsTable'),
-        );
+        const fn = functionBodyOf(src, 'inviteState');
         expect(fn).toMatch(/now: Date \| null/);
         // Guard the null case explicitly — without it the badge would paint
         // during SSR and mismatch on hydrate.
@@ -296,19 +336,36 @@ describe('9 — the respondent page distinguishes its failure modes', () => {
         // try/finally with no catch un-spun the button and did nothing else,
         // after the respondent had typed the entire form.
         const src = read(RESPONDENT);
-        const fn = src.slice(src.indexOf('async function handleSubmit'));
-        expect(fn.slice(0, 3000)).toMatch(/\} catch \{/);
-        expect(fn.slice(0, 3000)).toMatch(/submitNetworkFailed/);
+        const fn = functionBodyOf(src, 'handleSubmit');
+        expect(fn).toMatch(/\} catch \{/);
+        expect(fn).toMatch(/submitNetworkFailed/);
     });
 
     it('a mid-form token death does NOT discard the answers', () => {
         // There is no draft-save, so switching to the error phase here
         // destroys everything typed, with no export and no way back.
+        //
+        // THE SECOND SITE OF THE `codeOf` PROXIMITY DEFECT, and the one that
+        // mattered: this was `accessDenied.slice(0, 900)` with a NEGATIVE
+        // assertion in it. The branch opens with a six-line comment
+        // explaining why the phase must not change; a delete-based stripper
+        // removed those ~370 characters and the 900-char window reached past
+        // the branch's own `return`, while blanking leaves them in the budget
+        // and the window now stops mid-ternary. Measured: re-add
+        // `setPhase('error')` at the END of the branch and the windowed form
+        // is 31/31 GREEN where `main`'s delete-based form fails.
+        //
+        // Bounded to the branch's braces instead, so no comment inside it can
+        // push the regression out of range — and so the assertion says what
+        // it means, which is "not in THIS branch", not "not within 900
+        // characters".
         const src = read(RESPONDENT);
-        const fn = src.slice(src.indexOf('async function handleSubmit'));
-        const accessDenied = fn.slice(fn.indexOf("body.error === 'access_denied'"));
-        expect(accessDenied.slice(0, 900)).not.toMatch(/setPhase\('error'\)/);
-        expect(accessDenied.slice(0, 900)).toMatch(/setSubmitErrors/);
+        const branch = blockAfterText(
+            functionBodyOf(src, 'handleSubmit'),
+            "body.error === 'access_denied'",
+        );
+        expect(branch).not.toMatch(/setPhase\('error'\)/);
+        expect(branch).toMatch(/setSubmitErrors/);
     });
 
     it('warns before a navigation would discard a part-filled form', () => {
