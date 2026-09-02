@@ -264,12 +264,46 @@ export function isOrgPath(pathname: string): boolean {
 }
 
 /**
- * Check if a path should remain accessible when MFA is pending.
- * These routes are allowed so users can complete MFA enrollment/challenge.
+ * Paths that stay reachable while `mfaPending` is true.
+ *
+ * This is an ALLOWLIST, and since #2223 it is the ONLY thing that softens
+ * MFA enforcement. The middleware used to gate MFA on
+ * `isTenantPath(pathname) && !isMfaAllowedPath(pathname)`, which enforced by
+ * URL SHAPE while authorization is enforced per route — so a session that had
+ * presented a password and not a second factor was refused on `/api/t/**` and
+ * admitted on all 93 flat API routes, 19 of which build a full tenant context
+ * through `getLegacyCtx` (`/api/audit-log`, `/api/evidence`, `/api/findings`,
+ * …), plus `/api/org/**` and `/api/admin`. The check is now "every
+ * authenticated request except these".
+ *
+ * Public and machine-caller paths are NOT listed here and do not need to be:
+ * `isPublicPath` returns them at step 1 of the middleware, before the JWT is
+ * ever read, so `/api/auth/`, the health probes, `/api/scim`, `/api/mcp`, the
+ * webhooks and the CSP-report beacon never reach the MFA branch at all. A
+ * server-to-server caller also carries no `mfaPending` claim, so the check
+ * would be a no-op for it even if it did.
+ *
+ * What IS here is the enrolment + challenge surface, because a user cannot
+ * clear `mfaPending` without it:
+ *
+ *   - `/t/<slug>/auth/mfa`        — the challenge page.
+ *   - `/t/<slug>/security/mfa`    — the ENROLMENT page. Under a REQUIRED
+ *     policy an unenrolled user is `mfaPending` from first sign-in, and the
+ *     challenge page's own "Set up MFA" button points here; without this
+ *     entry that click bounced straight back to the challenge, so a
+ *     REQUIRED-policy tenant could not onboard anyone. The docstring above
+ *     claimed enrolment worked long before it did.
+ *   - `/api/t/<slug>/security/mfa/**` — the APIs both of those pages call.
+ *   - `/api/auth/` — sign-out, session, csrf. Redundant with `isPublicPath`
+ *     and kept because this predicate is also read on its own.
+ *
+ * Adding an entry here creates a surface a half-authenticated session can
+ * reach. Add only what is needed to COMPLETE the challenge.
  */
 export function isMfaAllowedPath(pathname: string): boolean {
-    // MFA challenge page and enrollment API routes
+    // MFA challenge page, enrolment page, and their API routes
     if (/^\/t\/[^/]+\/auth\/mfa/.test(pathname)) return true;
+    if (/^\/t\/[^/]+\/security\/mfa(?:\/|$)/.test(pathname)) return true;
     if (/^\/api\/t\/[^/]+\/security\/mfa/.test(pathname)) return true;
     // Auth callbacks (sign-out, etc.)
     if (pathname.startsWith('/api/auth/')) return true;

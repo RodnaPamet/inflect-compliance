@@ -14,6 +14,7 @@ import {
     isTenantPath,
     isOrgPath,
     isMfaAllowedPath,
+    extractTenantSlugFromPath,
     matchTenantApiKeyRequest,
     buildLoginRedirect,
     unauthorizedJson,
@@ -295,25 +296,63 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
     }
 
     // ── 4. MFA enforcement ──
-    if (isTenantPath(pathname) && !isMfaAllowedPath(pathname)) {
-        const mfaPending = token.mfaPending === true;
-
-        if (mfaPending) {
-            // Extract tenant slug from path: /t/:slug/... or /api/t/:slug/...
-            const segments = pathname.split('/');
-            const tIndex = segments.indexOf('t');
-            const tenantSlug = tIndex >= 0 ? segments[tIndex + 1] : null;
-
-            if (isApiRoute(pathname)) {
-                return forbiddenJson('MFA verification required');
-            }
-
-            if (tenantSlug) {
-                const mfaUrl = new URL(`/t/${tenantSlug}/auth/mfa`, req.nextUrl.origin);
-                mfaUrl.searchParams.set('next', pathname);
-                return NextResponse.redirect(mfaUrl);
-            }
+    // EVERY authenticated request, minus an explicit allowlist. Execution
+    // reaches this line only past the `!token` return above, so "authenticated"
+    // is already established.
+    //
+    // #2223 — this used to read `isTenantPath(pathname) && !isMfaAllowedPath(…)`,
+    // which enforced MFA by URL SHAPE while authorization is enforced per
+    // route. The two disagreed on 93 paths: an `mfaPending` session was refused
+    // on `/api/t/**` and admitted on every flat API route, including the 19
+    // that build a full tenant context through `getLegacyCtx`
+    // (`GET /api/audit-log` — the hash-chained trail; `GET /api/evidence` —
+    // the encrypted-at-rest business content Epic B exists to protect;
+    // `/api/findings`, `/api/audits`, `/api/dashboard`), plus `/api/org/**`
+    // and `/api/admin`. Inverting the condition is the fix: the predicate,
+    // not its call sites, was the wrong question.
+    //
+    // Public + machine-caller paths do not regress, and not because they are
+    // listed: `isPublicPath` returned them at step 1, before `getToken` ran.
+    // `/api/auth/`, `/api/health`, `/api/livez`, `/api/readyz`,
+    // `/api/csp-report`, `/api/scim`, `/api/mcp` and the webhooks never arrive
+    // here. `/api/docs` is NOT public, so it is now MFA-gated — correct, and
+    // moot in production where it 404s regardless.
+    //
+    // `/api/org/**` is gated the same as tenant routes. That is a decision,
+    // not an inference: nothing in the code answers whether an ORG_ADMIN
+    // mid-challenge may read org data, so the conservative reading applies —
+    // `mfaPending` is a property of the PRINCIPAL (it is set on the token from
+    // the active tenant's `mfaPolicy`, not derived from the path), and an org
+    // route exposes a portfolio spanning every tenant under the org, which is
+    // a superset of the one tenant whose policy demanded the second factor.
+    // Admitting it would mean the broader surface is the unguarded one.
+    if (!isMfaAllowedPath(pathname) && token.mfaPending === true) {
+        if (isApiRoute(pathname)) {
+            return forbiddenJson('MFA verification required');
         }
+
+        // The challenge lives at a tenant URL, so a page redirect needs a
+        // slug. Prefer the one in the URL; fall back to the token's primary
+        // membership, which is what non-tenant pages (`/`, `/org/<slug>/…`,
+        // `/admin`) now need. The fallback is always populated when it is
+        // needed: `mfaPending` is only ever set when `token.tenantId` is
+        // non-null (`src/auth.ts` — the MFA block is inside `if
+        // (activeTenantId)`), and `tenantId`/`tenantSlug` are assigned
+        // together from the primary membership.
+        const tenantSlug =
+            extractTenantSlugFromPath(pathname) ?? token.tenantSlug ?? null;
+
+        if (tenantSlug) {
+            const mfaUrl = new URL(`/t/${tenantSlug}/auth/mfa`, req.nextUrl.origin);
+            mfaUrl.searchParams.set('next', pathname);
+            return NextResponse.redirect(mfaUrl);
+        }
+
+        // No slug anywhere — a state the paragraph above says is unreachable.
+        // Send them somewhere terminal and public rather than falling through,
+        // because falling through is how a page path used to skip this gate
+        // entirely.
+        return NextResponse.redirect(new URL('/no-tenant', req.nextUrl.origin));
     }
 
     // ── 5. Tenant-access gate ──
