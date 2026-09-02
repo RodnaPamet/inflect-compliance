@@ -96,6 +96,31 @@ updates:
       - dependency-name: "conventional-changelog-conventionalcommits"
         versions: [">=10.4.0"]
 
+      # `@tanstack/react-table` is held below 10.0.0 because v9 is a platform
+      # migration, not a bump — tracked in #2263.
+      #
+      # v9 removed `useReactTable`, `getCoreRowModel` and `getExpandedRowModel`
+      # outright and changed `ColumnDef<TData, TValue>` to
+      # `ColumnDef<TFeatures, TData, TValue>` — features FIRST. So every
+      # existing `ColumnDef<Row>` binds Row to TFeatures, leaves TData unbound,
+      # and `row.original` degrades to `unknown`. That single shift produces
+      # 220 typecheck errors across 17 files, 11 of which are
+      # `src/components/ui/table/` — the DataTable platform every list page in
+      # the product renders through.
+      #
+      # Dependabot has proposed it twice (#2199, #2259). Each attempt is a red
+      # Typecheck, four red Test shards and a red Coverage run, and none of
+      # that is new information. There is no advisory against this package at
+      # any version, so holding on v8 costs nothing while #2263 is scheduled.
+      #
+      # Scoped to the major so 8.x patches still come through — v8's last
+      # release was 8.21.3 in April 2025, so that is unlikely, but a
+      # late security patch must not be blocked by this entry.
+      #
+      # Delete this together with #2263. It is a schedule, not a verdict.
+      - dependency-name: "@tanstack/react-table"
+        versions: [">=9.0.0"]
+
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
     directory: /
