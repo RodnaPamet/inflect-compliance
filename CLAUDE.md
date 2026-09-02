@@ -1204,6 +1204,55 @@ Three codebase-hygiene invariants are held by structural guardrails
 `tests/guards/codebase-hygiene-integrity.test.ts` is the meta-ratchet
 over these four guardrails.
 
+### Assertion-reach ratchets (#2246)
+
+Two downward ratchets over the TEST suite itself, both standing on
+`tests/helpers/assertion-reach.ts` — an AST walk (`ts.createSourceFile`,
+syntax only) over every `.ts`/`.tsx` file **git** lists under `tests/`. They
+police one sentence: *an assertion whose reach is not the thing it names.*
+
+- **`tests/guardrails/assertion-span-reach-ratchet.test.ts` — Class C.**
+  Counts `expect(x).toMatch(/…/)` regexes carrying an any-char span
+  (`[\s\S]*`, `[\s\S]*?`, `[^]*`) BETWEEN two pieces of pattern. Such a
+  span re-forms across a **sibling** block, so deleting the thing under test
+  leaves the assertion satisfied by a neighbour — proved twice, both times
+  leaving the suite fully green. Baselines: **182** unbounded interior spans,
+  **383** interior spans of any boundedness (the second cap exists so
+  rewriting `*?` as `{0,200}` cannot buy the first number down), **59**
+  un-analysable `toMatch` arguments.
+
+- **`tests/guardrails/assertion-needle-uniqueness-ratchet.test.ts` — Class D.**
+  For every `toMatch`/`toContain` against a **whole-file read**, counts how
+  many places in that file satisfy the needle. More than one and the named
+  thing can be deleted while a survivor keeps the guard green — proved three
+  times, one of them a `.toContain`, which is why both matchers are in scope.
+  Baselines: **1575** ambiguous needles, **276** of them with five or more
+  satisfying positions, **1392** un-analysable reads.
+
+Three things about these that are easy to get wrong:
+
+- **The denominator is part of the result.** Each ratchet caps its own
+  SKIPPED count and floors its analysed share, because a detector that
+  silently drops what it cannot parse reports full coverage of the subset it
+  understands — the same defect one level up. Concretely: hiding a span
+  behind `new RegExp(someVariable)` does not evade Class C, it turns the
+  skip ceiling red instead.
+- **`DRIFT_ALLOWANCE` is 0 in both**, unlike the older count ratchets. These
+  numbers never move incidentally, so any allowance would be pure headroom
+  for the next regression. Removing one of these means lowering the baseline
+  by one in the same diff.
+- **Class D can fire on a diff that touches no test.**
+  `.toContain('model VendorEvidenceBundle')` was unambiguous until somebody
+  added `VendorEvidenceBundleItem` to the same schema file. Being told is the
+  point.
+
+The fix for a hit is never to add an exemption — there is no allowlist. Bind
+the read to the construct (`declarationOf` / `functionBodyOf` /
+`interfaceBodyOf` / `braceBlockAfter` / `callExpressionOf` / `codeOf` from
+`tests/helpers/source-blocks.ts`) or narrow the needle until only the named
+thing satisfies it. See
+`docs/implementation-notes/2026-09-02-assertion-reach-ratchets.md`.
+
 ### Epic-ratchet lifecycle
 
 Guard naming — **epic ratchets are retired when their epic ships**
