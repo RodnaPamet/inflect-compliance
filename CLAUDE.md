@@ -752,6 +752,18 @@ check, so a multi-tenant user passes for any tenant they hold. Mismatch → `/no
 for `/invite/<token>`, `/api/invites/**`, and `/no-tenant` itself.
 Logic lives in `src/lib/auth/guard.ts::checkTenantAccess`.
 
+One more carve-out, and it is a credential rather than a path (#2224): a
+request to `/api/t/**` carrying `Authorization: Bearer iflk_…` falls
+through at the edge before this gate — it has no cookie for the gate to
+read, and `getToken()` returns null for an API key, which is what 401'd
+the entire documented partner flow for its whole life. The bypassed check
+moves into the handler: `getTenantCtx` refuses a key whose tenant is not
+the slug in the URL. `matchTenantApiKeyRequest` in `guard.ts` is the
+recogniser, and it is deliberately narrow — `/api/t/**` plus an `iflk_`
+Bearer, nothing else, because the fall-through also skips the admin-role
+and MFA gates. The edge never decides whether a key is REAL; the handler
+does (`tryApiKeyAuth` throws 401 rather than falling back to the cookie).
+
 **Last-OWNER protection — two layers.** Usecase layer
 (`updateTenantMemberRole`, `deactivateTenantMember`, `removeTenantMember`)
 counts ACTIVE OWNERs and throws `forbidden('Cannot demote/deactivate the last

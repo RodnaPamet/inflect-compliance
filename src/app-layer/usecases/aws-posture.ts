@@ -173,7 +173,26 @@ export async function runAwsPostureCollection(input: {
         // Reached only when the collection itself ran. A FAILED compliance
         // verdict is a successful collection reporting a real gap, so the
         // credential is demonstrably good either way — clear any stale banner.
-        await clearAuthFailure(db, conn.id, 'aws-posture');
+        //
+        // ERROR is the case that must NOT clear, and that distinction is the
+        // whole point of the line. PASSED and FAILED are each proof the
+        // credential worked; an ERROR means the collector never observed the
+        // account, so clearing on it retracts a revoked-credential banner on no
+        // evidence at all, and a still-revoked connection is declared healthy.
+        //
+        // Note this is currently the ONLY half of the story that is fixed.
+        // `markAuthFailure` remains unreachable for these two collectors — the
+        // providers RETURN `{status:'ERROR'}` on a non-zero exit rather than
+        // throwing, so the catch that would raise the banner is never entered.
+        // See the parked analysis: raising it correctly needs a trigger that
+        // is not "non-zero exit", because powerpipe exits 1 on any ALARMING
+        // control, i.e. on most healthy runs.
+        //
+        // Deliberately NOT `status === 'PASSED'`: that clamp would strand the
+        // banner on a healthy connection whose benchmark keeps reporting gaps.
+        if (checkResult.status !== 'ERROR') {
+            await clearAuthFailure(db, conn.id, 'aws-posture');
+        }
 
         logger.info('aws-posture collection complete', { component: 'aws-posture', tenantId: ctx.tenantId, executionId: execution.id, status: checkResult.status, evidenceCreated });
         return { executionId: execution.id, status: checkResult.status, counts, evidenceCreated, errorMessage: checkResult.errorMessage };

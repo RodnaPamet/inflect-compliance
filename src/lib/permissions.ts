@@ -19,6 +19,44 @@ export type PermissionSet = {
     incidents: { view: boolean; manage: boolean };
     /** People layer (PR-4). `manage` = connect HRIS + edit the roster (OWNER/ADMIN); `view` for all. */
     personnel: { view: boolean; manage: boolean };
+    /**
+     * Business-continuity register — the Business Impact Analysis, its
+     * dependency edges and its control links (ISO 22301 / NIS2 Art.21(2)(c)).
+     *
+     * ─── ONE ACTION, AND THE ABSENCE OF `view` IS THE DECISION ─────────
+     *
+     * `edit` mirrors `assertCanWrite` exactly: `computePermissions` sets
+     * `canWrite` at role level >= 3, which is OWNER / ADMIN / EDITOR, and the
+     * branches below grant `edit` to precisely those three. So the caller set
+     * is unchanged for every built-in role, and for every stored custom role
+     * too — `parsePermissionsJson` merges over the row's own `baseRole`
+     * defaults, and a blob written before this domain existed simply inherits
+     * them.
+     *
+     * There is deliberately NO `view`. Every peer domain has one, so this is
+     * the first without, and the reason is that nothing would read it: the BIA
+     * reads gate on `assertCanRead`, which is `true` for all five roles, and
+     * shipping a checkbox in the custom-role editor that grants and revokes
+     * nothing is the exact drift #2225 fixed — a permission the model claims
+     * and no code consults. Making reads enforce a new `continuity.view` is a
+     * separate, larger behaviour change (it would newly 403 every non-`*` API
+     * key that reads the register), and belongs to whoever needs to delegate
+     * read visibility, not to a diff about unrecorded refusals.
+     */
+    continuity: { edit: boolean };
+    /**
+     * Process maps — the canvas graph, its snapshots and its restore verb.
+     *
+     * `edit` mirrors `assertCanWrite`, same reasoning and same population as
+     * `continuity.edit` above; and there is no `view` for the same reason.
+     *
+     * DELETING a process map stays on `admin.manage`, NOT this flag:
+     * `deleteProcessMap` asserts `assertCanAdmin` because ProcessMap is in
+     * neither `SOFT_DELETE_MODELS` nor the `SoftDeletableModel` union, so a
+     * mistaken delete has no restore path for any role. Mirroring the assert
+     * means the delete keeps the higher bar.
+     */
+    processes: { edit: boolean };
     frameworks: { view: boolean; install: boolean };
     audits: { view: boolean; manage: boolean; freeze: boolean; share: boolean };
     reports: {
@@ -92,6 +130,10 @@ export type PermissionSet = {
  *   • `SCOPE_GROUPS` (the admin api-keys page) — the operator-facing
  *     labels. A domain missing here is a scope the auth layer accepts
  *     and no operator can grant.
+ * Both assertions live in `tests/unit/api-key-management.test.ts`. Only
+ * the first of them existed until #2197 followed this instruction and
+ * found the second mirror unguarded — the sentence above was true of one
+ * surface and stated of two.
  * Everything else — the editor grid, its labels, the MCP guardrail's
  * `KNOWN_RESOURCES` — now derives from this object.
  *
@@ -110,6 +152,8 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     tests: ['view', 'create', 'execute'],
     incidents: ['view', 'manage'],
     personnel: ['view', 'manage'],
+    continuity: ['edit'],
+    processes: ['edit'],
     frameworks: ['view', 'install'],
     audits: ['view', 'manage', 'freeze', 'share'],
     reports: ['view', 'export', 'schedule_external'],
@@ -145,6 +189,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: true },
                 personnel: { view: true, manage: true },
+                continuity: { edit: true },
+                processes: { edit: true },
                 frameworks: { view: true, install: true },
                 audits: { view: true, manage: true, freeze: true, share: true },
                 reports: { view: true, export: true, schedule_external: true },
@@ -166,6 +212,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: true },
                 personnel: { view: true, manage: true },
+                continuity: { edit: true },
+                processes: { edit: true },
                 frameworks: { view: true, install: true },
                 audits: { view: true, manage: true, freeze: true, share: true },
                 reports: { view: true, export: true, schedule_external: true },
@@ -191,6 +239,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
+                continuity: { edit: true },
+                processes: { edit: true },
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
@@ -210,6 +260,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: false, execute: false },
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
+                continuity: { edit: false },
+                processes: { edit: false },
                 frameworks: { view: true, install: false },
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
@@ -229,6 +281,8 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: false, execute: false },
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
+                continuity: { edit: false },
+                processes: { edit: false },
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false, schedule_external: false },

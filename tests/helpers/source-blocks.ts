@@ -71,6 +71,27 @@
  * extractor's result is a substring of `codeOf(src)`, NOT of `src` — a
  * caller that needs to subtract one block from the whole file must do it
  * against `codeOf(src)`.
+ *
+ * THE ANCHOR IS THE FIRST MATCH, AND THAT IS A BOUND ON WHAT THESE PROVE.
+ * Every extractor here locates its target with a single `.search(...)`, so a
+ * file holding TWO constructs that match the anchor binds to the EARLIER one
+ * and the guard then asserts about the wrong construct. Ordinarily that is
+ * loud — an unrelated second construct in front of the intended one does not
+ * satisfy the guard's positive assertion, so the guard goes red. It is silent
+ * only when the decoy ITSELF carries the token being asserted, which needs a
+ * diff that adds the whole second construct AND writes the passing token into
+ * it. Both halves are measured in `tests/unit/source-blocks-helpers.test.ts`
+ * against the real `tests/guards/p-polish-d.test.ts`.
+ *
+ * Where the target is brace-bounded, the answer is a NARROWER anchor:
+ * `braceBlockAfter(src, 'function second')` instead of relying on there being
+ * only one match. For a CALL expression there is no such route today —
+ * `callExpressionOf` takes a bare callee identifier with no pattern to narrow
+ * with, and `braceBlockAfter` cannot substitute, because its paren guard
+ * ignores any `{` at paren depth > 0 and so never sees a callback brace
+ * inside the call's own parentheses (it throws `unterminated`, measured). A
+ * guard needing the second call of a callee must keep one such call per file
+ * or grow this helper a narrowing anchor. See #2238.
  */
 
 type SpanKind = 'comment' | 'literal';

@@ -202,6 +202,30 @@ describe('API Key — Verification', () => {
         }
     });
 
+    it('rejects a key whose TENANT has been soft-deleted', async () => {
+        // This path deliberately skips `resolveTenantContext`, which is where
+        // `deletedAt` is otherwise enforced and which its own docstring calls
+        // "the single authoritative gate". For a key caller it is not one, so
+        // the check has to be repeated in verifyApiKey.
+        //
+        // `deleteTenantUnderOrg` soft-deletes a tenant and does NOT revoke its
+        // TenantApiKey rows, so without this an offboarded customer's
+        // integration key keeps reading and writing every tenant route — while
+        // that usecase's docstring says the tenant becomes "inaccessible
+        // immediately, everywhere".
+        const { plaintext, record } = makeMockApiKey({
+            tenant: { ...MOCK_TENANT, deletedAt: new Date('2026-01-01') },
+        });
+        mockPrisma.tenantApiKey.findUnique.mockResolvedValue(record);
+
+        const result = await verifyApiKey(plaintext);
+
+        expect(result.valid).toBe(false);
+        if (!result.valid) {
+            expect(result.reason).toBe('tenant_deleted');
+        }
+    });
+
     it('rejects unknown key (not found)', async () => {
         mockPrisma.tenantApiKey.findUnique.mockResolvedValue(null);
 

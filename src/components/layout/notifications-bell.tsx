@@ -43,6 +43,7 @@ import { Bell, CheckCheck } from 'lucide-react';
 import { Popover } from '@/components/ui/popover';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDateCompact } from '@/lib/format-date';
+import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { env } from '@/env';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
@@ -172,6 +173,21 @@ export function NotificationsBell() {
                 authFailedRef.current = true;
                 setSessionExpired(true);
                 setItems(null);
+                // #2222 — tell the rest of the app, not just this component.
+                // The bell is one of many pollers and it is usually the FIRST
+                // to notice (60s cadence against a 5-minute calendar badge and
+                // a 30s canvas poll that swallows its own failures), so the
+                // store it marks here is what stops the others.
+                //
+                // 401 ONLY through the shared predicate, even though BOTH arms
+                // are terminal here. `/api/notifications` is a flat route with
+                // no `requirePermission`, so its only reachable 403 is a
+                // DEACTIVATED/REMOVED membership — terminal for the bell. That
+                // reasoning is a property of THIS route's shape and does not
+                // transfer to the tenant-scoped pollers the store also drives,
+                // where a 403 is routinely a permission denial from a
+                // correctly signed-in user.
+                noteUnauthorized(res.status, '/api/notifications');
                 return;
             }
 

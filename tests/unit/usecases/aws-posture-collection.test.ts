@@ -1263,6 +1263,17 @@ describe.each(ARMS)(
             for (const [field, value] of SECRET_ENTRIES) {
                 expect({ field, msg: updateArgs[0][0].data.errorMessage }).toEqual({ field, msg: expect.not.stringContaining(value) });
             }
+
+            // Regression class: `clearAuthFailure` used to run here too, on
+            // EVERY completion. An ERROR means the collector never observed the
+            // account, so clearing on it RETRACTS a revoked-credential banner on
+            // no evidence at all — the credential is still dead and now nothing
+            // says so. #2245 deliberately left this unpinned, because pinning
+            // the call would have cemented the reachability defect reported
+            // alongside it; #2251 made the behaviour correct, so it is pinned.
+            // The FAILED case above pins the other half — clearing must still
+            // happen for a real compliance gap.
+            expect(clearAuth).not.toHaveBeenCalled();
         });
     });
     },

@@ -104,6 +104,13 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     tests:      { read: ['view'], write: ['create', 'execute'] },
     incidents:  { read: ['view'], admin: ['manage'] },
     personnel:  { read: ['view'], admin: ['manage'] },
+    // No `read` group on these two: `PermissionSet` gives them a single
+    // `edit` action and no `view`, so there is no flag a read scope could
+    // set. `continuity:write` / `processes:write` are the only meaningful
+    // grants, and `<domain>:read` is deliberately not a valid scope rather
+    // than a valid scope that resolves to nothing.
+    continuity: { write: ['edit'] },
+    processes:  { write: ['edit'] },
     frameworks: { read: ['view'], write: ['install'] },
     audits:     { read: ['view'], write: ['manage', 'freeze', 'share'] },
     reports:    { read: ['view'], write: ['export'] },
@@ -278,7 +285,7 @@ export interface ApiKeyAuthResult {
 
 export interface ApiKeyAuthError {
     valid: false;
-    reason: 'not_found' | 'expired' | 'revoked' | 'invalid_format';
+    reason: 'not_found' | 'expired' | 'revoked' | 'invalid_format' | 'tenant_deleted';
 }
 
 export type ApiKeyVerifyResult = ApiKeyAuthResult | ApiKeyAuthError;
@@ -319,6 +326,22 @@ export async function verifyApiKey(
     // Check expiry
     if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
         return { valid: false, reason: 'expired' };
+    }
+
+    // Check the TENANT is still live.
+    //
+    // This path deliberately skips `resolveTenantContext`, which is where
+    // `deletedAt` is otherwise enforced and which its own docstring calls
+    // "the single authoritative gate". For a key caller it is not, so the
+    // check has to be repeated here.
+    //
+    // `deleteTenantUnderOrg` soft-deletes a tenant and does NOT revoke its
+    // `TenantApiKey` rows, so without this an offboarded customer's
+    // integration key keeps reading and writing all 305 tenant routes
+    // indefinitely — while that usecase's docstring says the tenant becomes
+    // "inaccessible immediately, everywhere".
+    if (apiKey.tenant?.deletedAt) {
+        return { valid: false, reason: 'tenant_deleted' };
     }
 
     // Update lastUsedAt (fire-and-forget — don't block auth)

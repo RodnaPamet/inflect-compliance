@@ -69,11 +69,22 @@ jest.mock('@/lib/cache/list-cache', () => ({
     bumpEntityCacheVersion: jest.fn().mockResolvedValue(undefined),
 }));
 
+// The real detector was running unmocked, which coupled every test in this
+// file to its heuristics and left the `flagged` arm unreachable without
+// crafting an input it happens to trip on. Mocked and defaulted to
+// not-flagged in `beforeEach`, which is what it returned for these inputs
+// anyway — so the existing expectations are unchanged.
+jest.mock('@/app-layer/ai/risk-assessment/input-anomaly', () => ({
+    detectInputAnomalies: jest.fn(() => ({ flagged: false, anomalies: [] })),
+}));
+
 import {
     generateRiskSuggestions,
+    getSession,
     applySession,
     dismissSession,
 } from '@/app-layer/usecases/risk-suggestions';
+import { detectInputAnomalies } from '@/app-layer/ai/risk-assessment/input-anomaly';
 import { runInTenantContext } from '@/lib/db-context';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { getProvider } from '@/app-layer/ai/risk-assessment';
@@ -94,6 +105,7 @@ const mockRecordGeneration = recordGeneration as jest.MockedFunction<typeof reco
 const mockEnforceGate = enforceFeatureGate as jest.MockedFunction<typeof enforceFeatureGate>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
 const mockBumpCache = bumpEntityCacheVersion as jest.MockedFunction<typeof bumpEntityCacheVersion>;
+const mockDetectAnomalies = detectInputAnomalies as jest.MockedFunction<typeof detectInputAnomalies>;
 
 /**
  * `applySession` creates risks through `RiskRepository.create`, which mints
@@ -115,6 +127,7 @@ beforeEach(() => {
     mockCheckRateLimit.mockResolvedValue(undefined);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockSanitiseInput.mockImplementation((x: any) => x);
+    mockDetectAnomalies.mockReturnValue({ flagged: false, anomalies: [] });
 });
 
 describe('generateRiskSuggestions — pre-AI controls', () => {
@@ -485,5 +498,315 @@ describe('dismissSession', () => {
             expect.anything(),
             expect.objectContaining({ action: 'AI_RISK_SUGGESTIONS_DISMISSED' }),
         );
+    });
+});
+
+// ─── getSession ─────────────────────────────────────────────────────
+//
+// This export had ZERO references in this file before now, which is most of
+// why the usecase sat at 37.5% FUNCTION coverage — low function coverage
+// means whole entry points nothing calls, not a few missed conditionals.
+//
+// It is a read of AI-generated suggestions that have not been applied yet,
+// so the tenant scoping is the assertion that matters: `findFirst` is given
+// BOTH the id and `ctx.tenantId`, and an id alone must never be enough.
+
+describe('getSession', () => {
+    const seedSession = (row: unknown) => {
+        const findFirst = jest.fn().mockResolvedValue(row);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ riskSuggestionSession: { findFirst } } as never),
+        );
+        return findFirst;
+    };
+
+    it('returns the session with its items', async () => {
+        seedSession({ id: 's1', status: 'GENERATED', items: [{ id: 'i1' }] });
+        await expect(getSession(makeRequestContext('READER'), 's1')).resolves.toMatchObject({
+            id: 's1',
+            items: [{ id: 'i1' }],
+        });
+    });
+
+    it('scopes the lookup to ctx.tenantId, not the id alone', async () => {
+        const findFirst = seedSession({ id: 's1', items: [] });
+        await getSession(makeRequestContext('READER', { tenantId: 'tenant-Z' }), 's1');
+        expect(findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 's1', tenantId: 'tenant-Z' },
+                include: { items: true },
+            }),
+        );
+    });
+
+    // A session id from another tenant resolves to null through the scoped
+    // `where`, so notFound is the cross-tenant response as well as the
+    // genuinely-absent one. Both must be the same 404 — a distinguishable
+    // error would confirm the id exists somewhere.
+    it('throws notFound when the scoped lookup finds nothing', async () => {
+        seedSession(null);
+        await expect(getSession(makeRequestContext('ADMIN'), 'other-tenants-id'))
+            .rejects.toThrow(/Session not found/);
+    });
+
+    // canRead is true for every built-in role (`ROLE_ORDER[role] >= 1`), so
+    // the refusal is only reachable through a custom role that withholds it.
+    // Overriding the permission is how that configuration is expressed here.
+    it('refuses a context without canRead, before touching the db', async () => {
+        await expect(
+            getSession(
+                makeRequestContext('READER', {
+                    permissions: {
+                        canRead: false, canWrite: false, canAdmin: false,
+                        canAudit: false, canExport: false,
+                    },
+                }),
+                's1',
+            ),
+        ).rejects.toThrow(/Insufficient permissions/);
+        // Load-bearing: the throw alone does not say the read was skipped.
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+});
+
+// ─── AISVS C12.2.3 / C12.2.4 — flagged-input threat event ───────────
+
+describe('generateRiskSuggestions — input-anomaly threat event', () => {
+    const apiInput = { assetIds: [], frameworks: ['ISO27001'] } as never;
+
+    // The provider is rejected on purpose. The anomaly event is emitted
+    // between session creation and the model call, so a failing provider
+    // proves the event does not depend on generation succeeding — which is
+    // the whole point of it being separate from the generation event.
+    const runWithFailingProvider = async () => {
+        mockGetProvider.mockReturnValueOnce({
+            providerName: 'mock-provider',
+            generateSuggestions: jest.fn().mockRejectedValue(new Error('provider_down')),
+        } as never);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                tenant: { findUnique: jest.fn().mockResolvedValue({ industry: 'x', maxRiskScale: 5 }) },
+                asset: { findMany: jest.fn().mockResolvedValue([]) },
+                control: { findMany: jest.fn().mockResolvedValue([]) },
+                tenantSecuritySettings: { findUnique: jest.fn().mockResolvedValue(null) },
+                riskSuggestionSession: {
+                    create: jest.fn().mockResolvedValue({ id: 's1' }),
+                    update: jest.fn().mockResolvedValue({}),
+                },
+            } as never),
+        );
+        await expect(
+            generateRiskSuggestions(makeRequestContext('ADMIN'), apiInput),
+        ).rejects.toThrow(/provider_down/);
+    };
+
+    const anomalyEvents = () =>
+        mockLog.mock.calls.filter((c) => c[2]?.action === 'AI_RISK_INPUT_ANOMALY');
+
+    it('emits AI_RISK_INPUT_ANOMALY when the input screen flags something', async () => {
+        mockDetectAnomalies.mockReturnValue({
+            flagged: true,
+            anomalies: [
+                { field: 'tenantContext', kind: 'zero-width', snippet: 'ab​cd' },
+                { field: 'frameworks[0]', kind: 'base64', snippet: 'aWdub3Jl' },
+            ],
+        } as never);
+
+        await runWithFailingProvider();
+
+        const [event] = anomalyEvents();
+        expect(event).toBeDefined();
+        expect(event[2]).toMatchObject({
+            action: 'AI_RISK_INPUT_ANOMALY',
+            entityType: 'RiskSuggestionSession',
+            entityId: 's1',
+            detailsJson: expect.objectContaining({
+                category: 'custom',
+                event: 'ai_risk_input_anomaly',
+            }),
+            metadata: expect.objectContaining({ anomalyCount: 2 }),
+        });
+        // Kinds are de-duplicated into a set; two distinct kinds stay two.
+        expect(event[2].metadata).toMatchObject({ kinds: ['zero-width', 'base64'] });
+    });
+
+    // Without this, the assertion above is satisfied by a usecase that emits
+    // the threat event unconditionally — which would be worse than not
+    // emitting it, because every generation would look like an attack.
+    it('emits nothing when the input screen flags nothing', async () => {
+        mockDetectAnomalies.mockReturnValue({ flagged: false, anomalies: [] });
+        await runWithFailingProvider();
+        expect(anomalyEvents()).toHaveLength(0);
+        // The ordinary generation event still fires, so this is not just a
+        // silent path.
+        expect(mockLog).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.objectContaining({ action: 'AI_RISK_SUGGESTIONS_GENERATED' }),
+        );
+    });
+});
+
+// ─── applySession — the refusals below the state guard ──────────────
+
+describe('applySession — permission and lookup refusals', () => {
+    it('refuses a READER before opening a transaction', async () => {
+        await expect(
+            applySession(makeRequestContext('READER'), 's1', { acceptedItemIds: [] }),
+        ).rejects.toThrow(/Only editors and admins/);
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    // Same shape as getSession: `findFirst` carries both the id and the
+    // tenant, so another tenant's session id resolves to null and answers
+    // the same 404 as a genuinely absent one.
+    it('throws notFound for a session id outside the tenant', async () => {
+        const findFirst = jest.fn().mockResolvedValue(null);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ riskSuggestionSession: { findFirst } } as never),
+        );
+
+        await expect(
+            applySession(
+                makeRequestContext('EDITOR', { tenantId: 'tenant-Q' }),
+                'other-tenants-id',
+                { acceptedItemIds: ['i1'] },
+            ),
+        ).rejects.toThrow(/not found/i);
+
+        expect(findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 'other-tenants-id', tenantId: 'tenant-Q' },
+            }),
+        );
+    });
+
+    // The gate runs before the permission check, so a feature-gated tenant
+    // gets the gate's error rather than a misleading "permission denied" —
+    // the same ordering the generate path asserts at the top of this file.
+    it('runs enforceFeatureGate before the canWrite check', async () => {
+        mockEnforceGate.mockImplementationOnce(() => {
+            throw new Error('feature_gate');
+        });
+        await expect(
+            applySession(makeRequestContext('READER'), 's1', { acceptedItemIds: [] }),
+        ).rejects.toThrow(/feature_gate/);
+    });
+});
+
+// ─── generateRiskSuggestions — the successful path ──────────────────
+//
+// Nothing exercised a generation that actually SUCCEEDS: every existing test
+// stops at a gate, a rate limit, or a rejected provider. So the item-writing
+// arm — including the asset match that decides whether a suggestion lands
+// attached to an asset or orphaned — had never run.
+
+describe('generateRiskSuggestions — successful generation', () => {
+    const suggestion = (over: Record<string, unknown> = {}) => ({
+        title: 'Unpatched web tier',
+        description: 'Public web servers are behind on patches.',
+        category: 'TECHNICAL',
+        threat: 'Exploitation of a known CVE',
+        vulnerability: 'Missing patches',
+        likelihood: 3,
+        impact: 4,
+        confidence: 0.9,
+        rationale: 'Derived from the asset inventory.',
+        suggestedControls: ['A.8.8'],
+        // Required by the REAL `applyOutputGuard`, which is deliberately not
+        // mocked here — it is the gate that redacts prompt leaks and drops
+        // below-floor confidence before anything is persisted, so a fixture
+        // that bypassed it would be testing a path production never takes.
+        structuredRationale: {
+            whyThisRisk: 'Known CVE with a public exploit.',
+            affectedAssetCharacteristics: ['internet-facing'],
+            suggestedControlThemes: ['patch-management'],
+        },
+        ...over,
+    });
+
+    const runGeneration = async (opts: {
+        assets: Array<{ id: string; name: string }>;
+        suggestions: Array<Record<string, unknown>>;
+    }) => {
+        const itemCreate = jest.fn().mockImplementation((args: { data: unknown }) =>
+            Promise.resolve({ id: 'item-x', ...(args.data as object) }),
+        );
+        const sessionUpdate = jest.fn().mockResolvedValue({ id: 's1', status: 'GENERATED' });
+        mockGetProvider.mockReturnValueOnce({
+            providerName: 'mock-provider',
+            generateSuggestions: jest.fn().mockResolvedValue({
+                provider: 'mock-provider',
+                modelName: 'mock-1',
+                suggestions: opts.suggestions,
+                usage: { promptTokens: 120, completionTokens: 340 },
+            }),
+        } as never);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                tenant: { findUnique: jest.fn().mockResolvedValue({ industry: 'saas', maxRiskScale: 5 }) },
+                // Non-empty so the untrusted-text assembly walks the asset
+                // names as well as the framework list.
+                asset: { findMany: jest.fn().mockResolvedValue(opts.assets) },
+                control: { findMany: jest.fn().mockResolvedValue([{ title: 'Patch management' }]) },
+                tenantSecuritySettings: { findUnique: jest.fn().mockResolvedValue(null) },
+                riskSuggestionSession: {
+                    create: jest.fn().mockResolvedValue({ id: 's1' }),
+                    update: sessionUpdate,
+                },
+                riskSuggestionItem: { create: itemCreate },
+            } as never),
+        );
+        const result = await generateRiskSuggestions(
+            makeRequestContext('ADMIN'),
+            { assetIds: opts.assets.map((a) => a.id), frameworks: ['ISO27001'] } as never,
+        );
+        return { result, itemCreate, sessionUpdate };
+    };
+
+    it('writes one item per suggestion and marks the session GENERATED', async () => {
+        const { itemCreate, sessionUpdate } = await runGeneration({
+            assets: [{ id: 'a1', name: 'Web Server' }],
+            suggestions: [suggestion(), suggestion({ title: 'Weak backups' })],
+        });
+
+        expect(itemCreate).toHaveBeenCalledTimes(2);
+        expect(sessionUpdate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 's1' },
+                data: expect.objectContaining({ status: 'GENERATED', provider: 'mock-provider' }),
+            }),
+        );
+        // Quota is burned only on success — the mirror of the existing
+        // "failed gens do NOT burn quota" test.
+        expect(mockRecordGeneration).toHaveBeenCalled();
+    });
+
+    // The match is `a.name.toLowerCase() === s.relatedAssetName?.toLowerCase()`,
+    // so it is case-insensitive by design. A regression to `===` on the raw
+    // strings would silently orphan every suggestion whose asset name the
+    // model echoed with different casing.
+    it('attaches a suggestion to an asset matched case-insensitively', async () => {
+        const { itemCreate } = await runGeneration({
+            assets: [{ id: 'a1', name: 'Web Server' }],
+            suggestions: [suggestion({ relatedAssetName: 'wEB sERVER' })],
+        });
+        expect(itemCreate.mock.calls[0][0].data).toMatchObject({ assetId: 'a1' });
+    });
+
+    it('leaves assetId null when the name matches nothing', async () => {
+        const { itemCreate } = await runGeneration({
+            assets: [{ id: 'a1', name: 'Web Server' }],
+            suggestions: [suggestion({ relatedAssetName: 'Mail Relay' })],
+        });
+        expect(itemCreate.mock.calls[0][0].data).toMatchObject({ assetId: null });
+    });
+
+    it('leaves assetId null when the model named no asset at all', async () => {
+        const { itemCreate } = await runGeneration({
+            assets: [{ id: 'a1', name: 'Web Server' }],
+            suggestions: [suggestion()],
+        });
+        expect(itemCreate.mock.calls[0][0].data).toMatchObject({ assetId: null });
     });
 });

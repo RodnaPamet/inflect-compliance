@@ -49,6 +49,10 @@ import {
     __resetTenantAssetsCacheForTests,
     type TenantAssetOption,
 } from "@/lib/processes/use-tenant-assets";
+import {
+    isSessionExpired,
+    __resetSessionExpiryForTests,
+} from "@/lib/auth/session-expiry";
 
 // ─── Typed fetch harness ───────────────────────────────────────────
 //
@@ -182,6 +186,11 @@ function resetAllCaches(): void {
 afterEach(() => {
     globalThis.fetch = originalFetch;
     resetAllCaches();
+    // #2222 — the session-expiry flag is module-scoped and deliberately has no
+    // production path back to false. Leaving it set would make every LATER
+    // test in this file green for the wrong reason: the hooks skip the fetch
+    // entirely once it is on.
+    __resetSessionExpiryForTests();
 });
 
 describe.each(CASES)("$name — shared refusal + fallback contract", (c) => {
@@ -609,5 +618,169 @@ describe.each(POLLING_CASES)("$name — background revalidation", (c) => {
         expect(result.current.options).toHaveLength(1);
         expect(result.current.options[0]?.status).toBe("OPEN");
         expect(result.current.error).toBeNull();
+    });
+});
+
+// ─── An expired session is terminal, not a blip (#2222) ────────────
+//
+// The defect this locks is NOT missing error handling. `runFetch`'s
+// `if (isRevalidation) return;` is a deliberate branch with a written
+// rationale, and the rationale is right — for a 503. Blanking a
+// compliance canvas's status chips over one blip would be worse than
+// leaving them. The same line is wrong for a 401, which never
+// recovers: the poll re-fires every `pollMs` forever, silently,
+// against an endpoint that can only refuse it, while the canvas keeps
+// rendering `Control.status` chips from whenever the session was last
+// alive. A stale chip is not distinguishable from a live one.
+//
+// So one predicate served two failure classes needing opposite
+// treatment, which is also why the fix is a shared 401 signal rather
+// than three local patches: only something global can tell them apart.
+//
+// This is why coverage could not find it. The three hooks were taken
+// to ~95% branch coverage — including a failing REVALIDATION with fake
+// timers — without touching `src/`, and the defect survived, because
+// the wrong behaviour IS the branch being taken as designed. Passing
+// is the entire signal coverage emits.
+//
+// Run over all three: they are byte-for-byte siblings here, and a fix
+// applied to one is exactly the regression shape worth catching.
+
+describe.each(CASES)("$name — an expired session stops the poll", (c) => {
+    beforeEach(() => {
+        resetAllCaches();
+        __resetSessionExpiryForTests();
+        jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it("marks the session and issues no further requests after a 401", async () => {
+        let impl: FetchStub = okJson([c.row("a", "OPEN")]);
+        const spy = installFetch((input) => impl(input));
+
+        const { result } = renderHook(() =>
+            c.hook("acme", { pollMs: 30_000 }),
+        );
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(isSessionExpired()).toBe(false);
+
+        // The cookie lapses mid-session. `middleware.ts` answers 401 for a
+        // missing / expired / bad-signature token, and will keep doing so.
+        impl = httpError(401);
+        await act(async () => {
+            jest.advanceTimersByTime(30_000);
+        });
+        expect(spy).toHaveBeenCalledTimes(2);
+        expect(isSessionExpired()).toBe(true);
+
+        // Ten more cadences — five minutes of wall clock. NOT ONE further
+        // request. This is the assertion the bug fails: before the fix the
+        // count here was 12, and would have been unbounded.
+        await act(async () => {
+            jest.advanceTimersByTime(30_000 * 10);
+        });
+        expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps the last-good options and surfaces no per-hook error", async () => {
+        let impl: FetchStub = okJson([c.row("a", "OPEN")]);
+        installFetch((input) => impl(input));
+
+        const { result } = renderHook(() =>
+            c.hook("acme", { pollMs: 30_000 }),
+        );
+        await waitFor(() => expect(result.current.options).toHaveLength(1));
+
+        impl = httpError(401);
+        await act(async () => {
+            jest.advanceTimersByTime(30_000);
+        });
+
+        // Blanking would LOSE information the user can still act on, and the
+        // hook is not the right place to explain what happened: ~38 of these
+        // run on one canvas. The single app-wide notice owns the message.
+        expect(result.current.options).toHaveLength(1);
+        expect(result.current.error).toBeNull();
+    });
+
+    it("does NOT mark the session on a 403 — that is not a session verdict", async () => {
+        let impl: FetchStub = okJson([c.row("a", "OPEN")]);
+        const spy = installFetch((input) => impl(input));
+
+        const { result } = renderHook(() =>
+            c.hook("acme", { pollMs: 30_000 }),
+        );
+        await waitFor(() => expect(result.current.loading).toBe(false));
+
+        // On a TENANT-SCOPED route a 403 has three producers and none of them
+        // is a lapsed session: `no_tenant_access`, `cross_tenant_access_denied`
+        // and a `requirePermission` denial. An EDITOR hitting an endpoint they
+        // lack the flag for is correctly signed in — signing them out would be
+        // a regression, and would render a hash-chained `AUTHZ_DENIED` as an
+        // auth failure.
+        impl = httpError(403);
+        await act(async () => {
+            jest.advanceTimersByTime(30_000);
+        });
+        expect(isSessionExpired()).toBe(false);
+        expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps polling through a 503 — a blip must not stop the canvas", async () => {
+        let impl: FetchStub = okJson([c.row("a", "OPEN")]);
+        const spy = installFetch((input) => impl(input));
+
+        const { result } = renderHook(() =>
+            c.hook("acme", { pollMs: 30_000 }),
+        );
+        await waitFor(() => expect(result.current.loading).toBe(false));
+
+        impl = httpError(503);
+        for (let i = 0; i < 3; i += 1) {
+            await act(async () => {
+                jest.advanceTimersByTime(30_000);
+            });
+        }
+        expect(spy).toHaveBeenCalledTimes(4);
+        expect(isSessionExpired()).toBe(false);
+
+        // ...and recovers on its own when the endpoint comes back.
+        impl = okJson([c.row("a", "CLOSED")]);
+        await act(async () => {
+            jest.advanceTimersByTime(30_000);
+        });
+        await waitFor(() =>
+            expect(result.current.options[0]?.status).toBe("CLOSED"),
+        );
+    });
+
+    it("does not even start a cold fetch once the session is already gone", async () => {
+        // The other pollers on the page are what set the flag; a hook mounting
+        // afterwards (a node dragged onto the canvas, an inspector opened)
+        // must not re-open the traffic.
+        const spy = installFetch(okJson([c.row("a", "OPEN")]));
+        const first = renderHook(() => c.hook("acme", { pollMs: 30_000 }));
+        await waitFor(() => expect(first.result.current.loading).toBe(false));
+
+        installFetch(httpError(401));
+        await act(async () => {
+            jest.advanceTimersByTime(30_000);
+        });
+        expect(isSessionExpired()).toBe(true);
+
+        // A cache-cold slug, so nothing short-circuits except the flag.
+        const later = installFetch(okJson([c.row("b", "OPEN")]));
+        renderHook(() => c.hook("other-tenant", { pollMs: 30_000 }));
+        await act(async () => {
+            jest.advanceTimersByTime(30_000 * 3);
+        });
+        expect(later).not.toHaveBeenCalled();
+        // The negative above also passes if `renderHook` threw before the
+        // effect ran, so pin that the earlier traffic was real.
+        expect(spy).toHaveBeenCalledTimes(1);
     });
 });
