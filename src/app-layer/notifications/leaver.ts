@@ -64,12 +64,18 @@
  *                     actively wrong — they would be told a non-fact ("access
  *                     removed") about a live account.
  *
- *   REFUSED_MODE      Entirely normal for a tenant still climbing the
- *                     DISABLED → DRY_RUN → PROPOSE → AUTOMATIC ladder, which is
- *                     every tenant for at least seven days by policy. Notifying
- *                     here would mean an email per candidate per run for the
- *                     whole evaluation period, and the channel would be dead
+ *   REFUSED_MODE      A configuration state, not an event: the leaver direction
+ *                     is switched off for this tenant. Every tenant starts there
+ *                     and returns there whenever someone narrows the ladder, so
+ *                     notifying would mean an email per candidate per run for as
+ *                     long as the feature is off, and the channel would be dead
  *                     before it ever carried anything real. Silent.
+ *
+ *                     It used to mean the middle of the climb as well: the
+ *                     retired PROPOSE rung produced this outcome for every
+ *                     candidate. That rung is gone (#2241) and DRY_RUN reports
+ *                     its own outcome, so the ladder no longer generates this
+ *                     one on the way up.
  *
  *   DRY_RUN           Nothing happened, by design. The point of DRY_RUN is to
  *                     compare computed intentions against what HR and IT

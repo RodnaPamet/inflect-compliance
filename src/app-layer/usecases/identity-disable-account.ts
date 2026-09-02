@@ -199,7 +199,7 @@ export interface DirectoryWriter {
      * `externalUserId`, and for Active Directory those are drawn from different
      * namespaces: `externalUserId` is `formatObjectGuid(entry.objectGUID)`, a
      * GUID, while the bind is a DN or a userPrincipalName. A GUID never equals a
-     * DN, so the refusal could not fire — in AUTOMATIC and PROPOSE as much as in
+     * DN, so the refusal could not fire — in AUTOMATIC as much as in
      * the dry run. The writer's own `findAccount` dispatches on exactly this
      * distinction (`GUID_PATTERN.test(id)` → search by objectGUID, else treat as
      * a DN); the self-check did not.
@@ -431,15 +431,17 @@ async function decideAndDisable(
     if (policy.mode === 'DISABLED') {
         return { outcome: 'REFUSED_MODE', reason: 'Leaver writes are switched off for this tenant.' };
     }
-    if (policy.mode === 'PROPOSE') {
-        // PROPOSE means a human approves each one. This function performs
-        // writes; it is not the approval queue, so it declines rather than
-        // quietly behaving as if AUTOMATIC.
-        return {
-            outcome: 'REFUSED_MODE',
-            reason: 'Leaver writes are in PROPOSE mode: each disable needs explicit approval, which this path does not perform.',
-        };
-    }
+    // The PROPOSE arm stood here and refused every candidate, because PROPOSE
+    // meant "a human approves each one" and this function is not that queue. The
+    // rung is gone (#2241) — a rung that yields strictly less than the rung below
+    // it, while being the only one the seven-day dwell did not gate, was a
+    // detour around the ladder rather than a step on it.
+    //
+    // A row still holding the old value does not arrive here as PROPOSE:
+    // `getIdentityWritePolicy` translates it to DRY_RUN at the read, so it takes
+    // the dry-run arm below and writes nothing. That translation is the reason
+    // deleting this arm is safe — without it, an unrecognised mode falls past
+    // every check in this file and reaches the write.
 
     // ── 2. The target. Also free, and the one that prevents a write that
     //       would silently un-do itself. DECIDED here, RETURNED after the
@@ -643,6 +645,29 @@ async function decideWithTarget(
             linkId: input.linkId,
         });
         return { outcome: 'DRY_RUN', reason: 'Dry-run mode: the disable was decided but not performed.' };
+    }
+
+    // ── THE WRITE IS REACHED BY ALLOWLIST, NOT BY EXHAUSTION. ──
+    //
+    // Unreachable today: `mode` is typed to the three rungs, DISABLED is refused
+    // at gate 1, DRY_RUN returned just above. It is here because deleting the
+    // PROPOSE arm would otherwise leave "anything that is not DRY_RUN" as the
+    // condition for writing to a customer's directory, and the next rung anybody
+    // adds between DRY_RUN and AUTOMATIC would inherit unattended write authority
+    // by falling through. Saying which rung writes costs four lines and cannot
+    // rot into the wrong default.
+    if (mode !== 'AUTOMATIC') {
+        logger.error('leaver disable reached the write with a mode that does not authorise one', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+            linkId: input.linkId,
+            mode,
+        });
+        return {
+            outcome: 'REFUSED_MODE',
+            reason: `Leaver writes are not authorised at ${mode}: only AUTOMATIC performs a directory write.`,
+        };
     }
 
     // ── 4. Capture BEFORE the write, committed. ──

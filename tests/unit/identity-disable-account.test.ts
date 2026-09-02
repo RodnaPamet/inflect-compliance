@@ -305,16 +305,42 @@ describe('the ladder refuses before any network call', () => {
         expect(w.disabled).toEqual([]);
     });
 
-    it('PROPOSE mode declines rather than behaving as AUTOMATIC', async () => {
-        // PROPOSE means a human approves each one. This function performs
-        // writes; silently treating PROPOSE as AUTOMATIC would be the single
-        // worst misreading of the ladder.
+    it('a row still stored at the retired PROPOSE rung does NOT write', async () => {
+        // ═══ THE #2241 HAZARD, END TO END. ═══
+        //
+        // PROPOSE was a real rung until it was deleted, and the database enum
+        // still carries the value (dropping it needs an `ALTER TYPE`, which
+        // breaks a rolling deploy). So a row can hold it, and the moment the
+        // rung left `LADDER` that value became UNRECOGNISED — which `isAboveClamp`
+        // ranks as "not above the clamp", i.e. cleared to run, and which is not
+        // the literal 'DRY_RUN' the writer factory looks for either. Left
+        // uncoerced, a tenant parked at PROPOSE would have become a tenant
+        // writing to its directory unattended. The failure direction is
+        // permissive, so it is asserted on the OUTCOME, not on a comparison.
+        //
+        // `getIdentityWritePolicy` translates it to DRY_RUN at the read, so the
+        // pass decides everything and writes nothing — which is also what the
+        // tenant was already getting from PROPOSE, minus the report.
         setMode('PROPOSE');
         const w = fakeWriter();
         const r = await disableAccount(ctx, w, input());
-        expect(r.outcome).toBe('REFUSED_MODE');
-        expect(r.reason).toMatch(/approval/i);
+        expect(r.outcome).toBe('DRY_RUN');
         expect(w.disabled).toEqual([]);
+        // The journal is the record of a write having been ATTEMPTED. A dry run
+        // takes no reservation, so a row here would mean the write path ran.
+        expect(db.identityWriteJournal.create).not.toHaveBeenCalled();
+    });
+
+    it('an unrecognised mode does not write either — the same rail, stated generally', async () => {
+        // A value from a newer build, or a hand-edited row. It has no known
+        // predecessor to fall back to, so it coerces to DISABLED and is refused
+        // outright rather than dry-run.
+        setMode('SUPERUSER');
+        const w = fakeWriter();
+        const r = await disableAccount(ctx, w, input());
+        expect(r.outcome).toBe('REFUSED_MODE');
+        expect(w.disabled).toEqual([]);
+        expect(db.identityWriteJournal.create).not.toHaveBeenCalled();
     });
 
     it('an unset policy defaults to refusing', async () => {

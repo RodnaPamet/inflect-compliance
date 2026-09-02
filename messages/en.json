@@ -5173,13 +5173,11 @@
             "mode": {
                 "DISABLED": "Off",
                 "DRY_RUN": "Dry run",
-                "PROPOSE": "Propose",
                 "AUTOMATIC": "Automatic"
             },
             "confirmBody": {
                 "DISABLED": "The product will stop acting on this direction entirely.",
                 "DRY_RUN": "The product will decide what it would do and record it, and write nothing to your directory. This starts the observation period.",
-                "PROPOSE": "The product will raise each action for a person to approve before anything is written to your directory.",
                 "AUTOMATIC": "The product will write to your directory without asking. Nothing stands between a terminated worker in the HR feed and a disabled account, except the safety rails. You can narrow this at any time."
             },
             "linkLabel": "Write policy"
