@@ -1,37 +1,57 @@
 # Disaster Recovery
 
-This is the **minimum-viable** DR posture: a daily cross-region copy of
-the latest automated RDS snapshot, plus a human-driven runbook to
-restore from it. It is the bottom rung of the DR ladder — a real
-snapshot in a real second region, with an automated restore drill
-scheduled monthly, and quarterly for the cross-region copy.
+Production is a **single GCP VM** (`inflect-compliance`, `europe-west1-b`,
+project `hazel-design-419410`) running Docker Compose. The DR posture is
+therefore simple to state: **one daily crash-consistent snapshot of the one
+disk everything lives on**, plus a human-driven restore.
 
-> **⚠ The automated restore drill is failing, and has validated
-> nothing.** Every scheduled run of
-> `.github/workflows/restore-test.yml` since 2026-05-01 has failed
-> within about five seconds, at the "Configure AWS credentials
-> (OIDC)" step, with `Input required and not supplied: aws-region`
-> — `vars.AWS_REGION` is unset, so the drill has never restored a
-> snapshot. Treat the restore half of this posture as untested. A
-> second mismatch compounds it: the drill targets AWS RDS, while
-> production runs a `postgres:16-alpine` container on a GCP VM.
-> Both are tracked in issue #2226.
+> **Honest scope.** This is NOT warm standby, NOT a read replica, NOT
+> active-active, and NOT cross-region in the failover sense. It buys: *if the
+> disk or the zone is lost, we can rebuild in another zone in 2–4 hours, losing
+> at most the last 24 hours of writes.* See
+> [What this does NOT protect against](#what-this-does-not-protect-against).
 
-> **Honest scope.** This is NOT warm-standby, NOT a cross-region
-> read-replica, NOT active-active. It buys "if our primary region goes
-> dark for a day, we can be back up in another region in 2–4 hours,
-> losing at most the last 24h of writes." See
-> [What this does NOT protect against](#what-this-does-not-protect-against)
-> and [The DR ladder](#the-dr-ladder).
-
-## DR posture: cross-region snapshot copy
+## DR posture: daily disk snapshot
 
 | | |
 |---|---|
-| **RPO (data loss)** | **24h.** We rely on RDS automated snapshots, which run once a day. PITR *within* the source region is ~5 min; PITR is useless once the source region is gone — then the recovery point is the last copied snapshot, i.e. up to 24h old. |
-| **RTO (time to restore)** | **~4h.** Cold snapshot → new instance: 30–60 min (size-dependent). App redeploy in DR region: 30–60 min. DNS cutover propagation: ~60 min. Buffer: 30–60 min. Total: **3–4h**. |
-| **Cost** | ~**$20/mo** — cross-region snapshot transfer (~$0.02/GB; a daily 100 GB copy ≈ $2/mo, 1 TB ≈ $20/mo) + DR-region storage for the retention window — plus the **multi-region KMS key** (~$1/mo). |
-| **Mechanism** | EventBridge fires on each automated-snapshot creation → a Lambda copies it to the DR region (re-encrypted with the DR CMK) → a second daily Lambda prunes copies older than the retention window. All in `infra/terraform/modules/database`, count-gated on `dr_region`. |
+| **RPO (data loss)** | **24h.** Policy `inflect-daily-snapshot` takes one snapshot per day at 02:00 UTC. There is no PITR: `archive_mode=off` and `pg_stat_archiver.archived_count` is 0 for the container's lifetime, so there is no WAL chain to roll forward. The recovery point is always the last completed snapshot. |
+| **RTO (time to restore)** | **~2–4h**, and **never performed under incident conditions.** Create a disk from the snapshot, attach it to a VM, restore `/opt/inflect/`, bring the Compose stack up, verify. |
+| **Retention** | `maxRetentionDays: 14`, plus one permanent manual snapshot (`inflect-manual-20260801-192003`) which is user-created and therefore exempt from the reap. |
+| **Geography** | `storageLocations: [eu]` — the EU multi-region. A snapshot survives loss of `europe-west1-b` and of the disk. `onSourceDiskDelete: KEEP_AUTO_SNAPSHOTS`. |
+| **Consistency** | `guestFlush: false` — **crash-consistent, not application-consistent.** The filesystem is not quiesced; Postgres replays WAL on start. Observed to work: see the restore evidence below. |
+| **Coverage** | Database, evidence uploads (`STORAGE_PROVIDER=local`, on a Docker volume) and `/opt/inflect/.env.prod` are all on that one 50 GB disk, so one snapshot covers all three. That is also the single point of failure. |
+| **Cost** | Snapshot storage only. |
+
+### Restore evidence
+
+The drill that exercises this **lives in another repository** —
+`RodnaPamet/agri-saas`, workflow `restore-test.yml`, matrix leg
+`Restore Test (inflect-compliance)`. It restores the newest READY snapshot of
+disk `inflect-compliance` to a temporary disk and validates it.
+
+| Date | Trigger | Result |
+|---|---|---|
+| 2026-08-01 | manual | restored |
+| 2026-08-21 | `workflow_dispatch` | passed |
+| 2026-09-01 | `workflow_dispatch` | passed — Postgres up after 2 s WAL recovery, 258 migrations, 167 `tenant_isolation` policies, `app_user` present |
+
+> **⚠ No SCHEDULED run has ever succeeded.** All three were human-started. The
+> 2026-09-01 scheduled attempt died on `ZONE_RESOURCE_POOL_EXHAUSTED`; a zone
+> fallback has since been added upstream and its first unattended test is
+> 2026-10-01. `.github/workflows/restore-drill-freshness.yml` in this repo now
+> watches that drill and fails if no successful run lands within 45 days.
+
+### What was designed and never built
+
+An AWS cross-region snapshot-copy DR posture was designed for this product —
+EventBridge on snapshot creation, a Lambda copying to a second region under a
+multi-region CMK, a retention Lambda pruning old copies. **It was never
+applied.** Every `terraform apply` run failed (13 attempts, 0 successes, no
+state file, no configured credentials), and the design was `count`-gated off by
+default (`db_dr_region = ""` → zero DR resources) even in intent. There is no
+RDS, no S3 and no cross-region copy in the recovery path. Do not plan against
+it; see [#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).
 
 ### How it's wired
 

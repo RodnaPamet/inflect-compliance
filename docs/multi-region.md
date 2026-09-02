@@ -38,10 +38,12 @@ just redeploys):
 
 ### RPO / RTO targets
 
-These extend `docs/slos.md` SLO 6/7. The committed platform SLO (RPO ≤1h
-/ RTO ≤4h) is the **full-recovery** objective (covers a regional outage
-recoverable only from backup). The tiers below are tighter objectives
-for specific failure modes / tenant tiers:
+These extend `docs/slos.md` SLO 6/7. The committed platform SLO is
+**RPO ≤24h / RTO ≤4h** — the full-recovery objective, met today by a
+daily crash-consistent disk snapshot of the single production VM. (An
+earlier revision stated RPO ≤1h on the strength of RDS PITR; there is no
+RDS and no PITR — see #2226.) The tiers below are **design targets for a
+multi-region architecture that does not exist yet**, not commitments:
 
 | Tier | RPO | RTO | Applies to | Mechanism |
 |------|-----|-----|------------|-----------|

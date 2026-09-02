@@ -22,11 +22,7 @@ auditor can verify the inventory is accurate, not merely asserted.
 
 | Name | Data shared | Purpose | Region | Retention | Operator-optional? |
 |------|-------------|---------|--------|-----------|--------------------|
-| AWS S3 | Encrypted evidence files; per-tenant DEK envelope | Object storage | Per deploy | Customer-controlled | No (load-bearing) |
-| AWS RDS (Postgres) | Encrypted business data; user PII; AuditLog | Primary DB | Per deploy | Customer-controlled | No |
-| AWS ElastiCache (Redis) | Session tokens; rate-limit counters; BullMQ job payloads (trace carrier + tenant id) | Queue / cache | Per deploy | Volatile (TTL) | No |
-| AWS KMS | Encryption envelopes for data-at-rest (RDS/S3/snapshots); DR CMK | Crypto (infra) | Per deploy | Indefinite (per master-KEK rotation) | Partly (BYOK not exposed) |
-| AWS Secrets Manager | Runtime secrets (master KEK, auth secrets, OAuth client secrets) | Secret storage | Per deploy | Until rotated | No |
+| Google Cloud (Compute Engine + Persistent Disk + Snapshots) | Everything the deployment holds: encrypted business data, user PII, the hash-chained `AuditLog`, uploaded evidence files, and the runtime secrets in `/opt/inflect/.env.prod` — all on one persistent disk, and in that disk's daily snapshots | Hosting, database, object storage, queue and backup | `europe-west1` (Belgium); snapshots in the `eu` multi-region | Customer-controlled; snapshots 14 days | No (load-bearing) |
 | Google OAuth | User email, profile photo, name | Auth provider | Global | Standard | Yes (operator may disable) |
 | Microsoft Entra ID | User email, profile photo, name | Auth provider | Global | Standard | Yes |
 | Stripe | Tenant billing contact email; plan; payment method (held by Stripe — we do not store it) | Billing | US | Per Stripe agreement | Yes (self-hosted mode disables) |
@@ -56,45 +52,62 @@ auditor can verify the inventory is accurate, not merely asserted.
 
 ## Per-sub-processor detail
 
-### AWS S3 — object storage
-- **PII shared:** none directly; stores **encrypted** evidence files (envelope-encrypted with the per-tenant DEK, Epic B). Filenames/keys are tenant-scoped.
-- **Legal basis:** performance of contract (GDPR Art. 6(1)(b)) — storing the customer's evidence is the service.
-- **Processing instructions:** store and return objects on request; no independent use.
-- **Transfer:** intra-region (bucket in the customer's chosen AWS region); no cross-border transfer unless the operator picks a non-EU region for EU data.
-- **Vendor pages:** https://aws.amazon.com/compliance/data-privacy/ · https://aws.amazon.com/compliance/gdpr-center/
-- **Codebase:** `src/lib/storage/s3-provider.ts` (`S3Client`, `PutObjectCommand`); env `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (`src/env.ts:139`); `infra/terraform/modules/storage/main.tf`.
+### Google Cloud — hosting, database, storage, backup
 
-### AWS RDS (Postgres) — primary database
-- **PII shared:** user email, name, membership/role; business records; the hash-chained `AuditLog`. Business-content fields are encrypted at rest (Epic B); the column-level data is also protected by RLS.
-- **Legal basis:** performance of contract (Art. 6(1)(b)).
-- **Processing instructions:** persist and query tenant data; no independent use.
-- **Transfer:** intra-region.
-- **Vendor pages:** https://aws.amazon.com/rds/ · https://aws.amazon.com/compliance/gdpr-center/
-- **Codebase:** env `DATABASE_URL`, `DIRECT_DATABASE_URL`, `DATABASE_READ_URL` (`src/env.ts:17`); `infra/terraform/modules/database/main.tf`.
+The production deployment is a **single Compute Engine VM** running Docker
+Compose. Postgres, Redis, the app, the worker and ClamAV are containers on that
+VM; there is no managed database, no object-storage bucket and no managed
+secret store. That is why one entry replaces what earlier revisions of this
+document listed as five separate AWS services.
 
-### AWS ElastiCache (Redis) — queue / cache / rate-limit
-- **PII shared:** session token rows (`ipAddress`, `userAgent`), rate-limit counters keyed by (IP, userId), BullMQ job payloads which carry the trace context + `tenantId`. Volatile (TTL-bounded), never the source of truth.
-- **Legal basis:** legitimate interest (Art. 6(1)(f)) — performance + abuse protection.
-- **Processing instructions:** ephemeral cache/queue; entries expire by TTL.
-- **Transfer:** intra-region.
-- **Vendor pages:** https://aws.amazon.com/elasticache/
-- **Codebase:** env `REDIS_URL` (`src/env.ts:56`); managed-Redis fallback `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (`src/env.ts:128`); `infra/terraform/modules/redis/main.tf`.
+- **PII shared:** all of it. User email, name, membership and role; business
+  records; the hash-chained `AuditLog`; uploaded evidence files
+  (`STORAGE_PROVIDER=local`, on a Docker volume); session rows carrying
+  `ipAddress` and `userAgent`; and the master KEK itself, which lives in
+  `/opt/inflect/.env.prod` on the same disk. Business-content fields are
+  envelope-encrypted with a per-tenant DEK (Epic B) and every tenant table is
+  under RLS, but the disk holds the ciphertext and the wrapping key together.
+- **Legal basis:** performance of contract (GDPR Art. 6(1)(b)) — hosting the
+  service is the service.
+- **Processing instructions:** run the workload and store its data; no
+  independent use. Google Cloud does not read application data.
+- **Transfer:** the VM is in `europe-west1` (Belgium) and snapshots are stored
+  in the `eu` multi-region, so primary data and backups stay in the EEA.
+- **Retention:** governed by the application's own retention rules
+  ([`docs/data-retention.md`](./data-retention.md)). Disk snapshots are kept 14
+  days by policy `inflect-daily-snapshot`, with one permanent manual snapshot
+  outside that window.
+- **Vendor pages:** https://cloud.google.com/security/gdpr · https://cloud.google.com/terms/data-processing-addendum
+- **Codebase:** `deploy/docker-compose.prod.yml`; env `DATABASE_URL`,
+  `DIRECT_DATABASE_URL` (`src/env.ts`), `REDIS_URL`, `FILE_STORAGE_ROOT` and
+  `STORAGE_PROVIDER`. Recovery posture in
+  [`docs/disaster-recovery.md`](./disaster-recovery.md).
 
-### AWS KMS — encryption keys (infrastructure)
-- **PII shared:** none — wraps encryption envelopes for data-at-rest (RDS, S3, RDS snapshots, the cross-region DR CMK). The application's master KEK (`DATA_ENCRYPTION_KEY`) is env-provided and stored in Secrets Manager, not fetched from the KMS API at request time.
-- **Legal basis:** legitimate interest (Art. 6(1)(f)) — securing data at rest.
-- **Processing instructions:** key custody + envelope crypto only.
-- **Transfer:** intra-region (the DR CMK is a multi-region replica — see [`docs/disaster-recovery.md`](./disaster-recovery.md)).
-- **Vendor pages:** https://aws.amazon.com/kms/
-- **Codebase:** `infra/terraform/modules/database/main.tf`, `infra/terraform/modules/storage/main.tf` (encryption at rest); app-layer envelope crypto in [`docs/encryption-data-protection.md`](./encryption-data-protection.md).
+> **An earlier revision of this list named AWS S3, RDS, ElastiCache, KMS and
+> Secrets Manager as non-optional sub-processors.** None of them has ever been
+> provisioned: the Terraform describing them was never applied. Naming the wrong
+> processor is a disclosure defect rather than doc rot — it is the field a
+> customer's DPIA and transfer assessment key on — so it is corrected here
+> rather than annotated. See
+> [#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).
+>
+> The application still *supports* S3-compatible object storage
+> (`src/lib/storage/s3-provider.ts`, selected by `STORAGE_PROVIDER=s3`, with
+> `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID` and
+> `S3_SECRET_ACCESS_KEY`). An operator who enables it adds their chosen
+> provider as a sub-processor and must record it here.
 
-### AWS Secrets Manager — runtime secrets (infrastructure)
-- **PII shared:** none — holds the master KEK, auth secrets, and OAuth client secrets.
-- **Legal basis:** legitimate interest (Art. 6(1)(f)).
-- **Processing instructions:** secret storage + retrieval at deploy/boot.
-- **Transfer:** intra-region.
-- **Vendor pages:** https://aws.amazon.com/secrets-manager/
-- **Codebase:** `infra/terraform/modules/secrets/main.tf`.
+### Optional external services this deployment does not use
+
+Named so the inventory stays a complete triage of `src/env.ts` rather than a
+list of only what happens to be switched on. Each is unset in production today;
+enabling any of them adds a sub-processor and requires an entry above.
+
+| Env | Service it would introduce | Status here |
+|---|---|---|
+| `DATABASE_READ_URL` | A read replica of the primary database — a second managed database instance if pointed off-box | Unset. `prismaRead === prisma`; single-DB mode. |
+| `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Any S3-compatible object-storage provider (AWS S3, Cloudflare R2, MinIO, …) for evidence files | Unset. `STORAGE_PROVIDER=local`; files are on the VM's disk. |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Upstash — managed Redis over REST, used as the rate-limit backend when set | Unset. Rate limiting falls back to the in-process/in-VM Redis. |
 
 ### Google OAuth — authentication
 - **PII shared:** user email, profile photo URL, display name (returned by Google on sign-in).

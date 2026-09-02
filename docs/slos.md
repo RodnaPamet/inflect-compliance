@@ -310,41 +310,87 @@ All methods wrapped with `traceRepository(...)` from `src/lib/observability/repo
 
 ---
 
-## SLO 6: RPO — Recovery Point Objective (Epic OI-3)
+## SLO 6: RPO — Recovery Point Objective
 
 ### Objective
 
-**Maximum 1 hour of data loss** in a worst-case recovery scenario.
+**Maximum 24 hours of data loss** in a worst-case recovery scenario.
 
-### Why 1 hour
+### Why 24 hours
 
-Tighter (e.g. 5 minutes) requires synchronous cross-region replication — meaningful infrastructure cost increase + write-latency penalty. Looser (e.g. 24 hours) is unacceptable for a compliance SaaS where audit logs + evidence reviews are the work product. 1 hour reflects the AWS RDS automated-snapshot frequency floor + transaction-log shipping cadence; achievable within the existing OI-1 module without architectural changes.
+This is what today's architecture delivers, not what a compliance SaaS should
+aim for. Production is one GCP VM whose 50 GB persistent disk is snapshotted
+once a day at 02:00 UTC by the `inflect-daily-snapshot` policy; the recovery
+point is always the most recent completed snapshot.
+
+Tightening it does **not** require cross-region replication. The cheapest rung
+is Postgres WAL archiving (`archive_mode=on`) plus a scheduled logical dump off
+the VM, which would bring the recovery point to minutes. That work is not done:
+`infra/scripts/pg-dump-to-s3.sh` exists in this repo but is not deployed —
+`/opt/inflect/infra` does not exist on the host, neither `pg_dump` nor `aws` is
+installed there, and nothing schedules it.
+
+Earlier revisions of this document claimed **1 hour**, on the strength of "RDS
+continuous transaction log shipping". There is no RDS. See
+[#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).
 
 ### How it's met
 
 | Layer | Mechanism | Recoverable to |
 |---|---|---|
-| RDS Postgres | Continuous transaction log shipping + 5-minute granularity restore | Any second within `backup_retention_days` window (production: 14 days) |
-| RDS automated snapshots | Daily during the `backup_window` (03:00-04:00 UTC) | The snapshot moment, < 24h freshness |
-| Encrypted column data | Same RDS recovery path | Same |
-| File storage (S3) | Versioning enabled on the bucket | Any prior version (until lifecycle expiry) |
-| AWS Secrets Manager | 30-day recovery window on the master KEK; 7-day on rotatable secrets | Up to recovery-window deletion ceiling |
+| Postgres (`postgres:16-alpine` container) | Crash-consistent daily disk snapshot only. `archive_mode=off`; `pg_stat_archiver.archived_count` is 0 for the container's lifetime. No WAL archive, no replica, no replication slot. | The 02:00 UTC snapshot moment, ≤ 24h old |
+| GCP persistent-disk snapshots | Policy `inflect-daily-snapshot`: daily 02:00 UTC, `maxRetentionDays: 14`, `storageLocations: [eu]` (multi-region, so a snapshot survives loss of `europe-west1-b`), `guestFlush: false`, `onSourceDiskDelete: KEEP_AUTO_SNAPSHOTS` | Same snapshot moment |
+| Encrypted column data | Same disk snapshot — the ciphertext is in the same volume | Same |
+| Evidence / uploaded files | Same disk snapshot. `STORAGE_PROVIDER=local`; the files live on a Docker volume on that one disk, not in object storage. | Same |
+| Secrets | `/opt/inflect/.env.prod` on the same disk. There is no managed secret store and therefore no independent recovery window. | Same |
 
-### Measurement / Verification
+**`guestFlush: false` means the snapshot is crash-consistent, not
+application-consistent** — the filesystem is not quiesced, so Postgres replays
+WAL on start. That is normally safe, and it has now been *observed* safe: see
+Verification.
 
-> **⚠ NOT TRUE TODAY — see [#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).** The two bullets below describe the design, not the current state. `restore-test.sh` **has never run**: every scheduled attempt since 2026-05-01 dies at `Configure AWS credentials (OIDC)` on a missing `vars.AWS_REGION`, before the script is invoked. **No backup has ever been restore-validated.** And the PagerDuty escalation does not exist in either direction — `infra/alerts/` is an in-cluster Alertmanager config with no restore or backup rule, and there is no path from a GitHub Actions run conclusion into it. The workflow has now been failing for ~120 days and nobody was paged. A failure does now open or comment on a `restore-drill` GitHub issue; that is the whole of the alerting.
+### Verification
 
-- **`infra/scripts/restore-test.sh`** (Epic OI-3 part 4) is *designed* to run **monthly** against the latest automated snapshot and verify the snapshot is no older than 14 days (psql check 4: `AuditLog has rows from within 14d of snapshot`).
-- A failed restore-test fails the GitHub Actions monthly workflow, which opens or comments on a `restore-drill` tracking issue. There is no PagerDuty path.
-- The 1-hour objective is implicit: PITR's continuous transaction log shipping means the recoverable point is always within the latest log ship cycle, which AWS guarantees at <5 minutes typical (well inside the 1-hour SLA).
+The restore drill for this database **lives in another repository**:
+`RodnaPamet/agri-saas`, workflow `restore-test.yml`, matrix leg
+`Restore Test (inflect-compliance)`. It asserts the `inflect-daily-snapshot`
+schedule is attached to disk `inflect-compliance`, restores the newest READY
+snapshot to a temporary disk, starts Postgres against it and validates.
+
+Observed successful restores of production snapshots:
+
+| Date | Trigger |
+|---|---|
+| 2026-08-01 | manual (operator) |
+| 2026-08-21 | `workflow_dispatch` |
+| 2026-09-01 | `workflow_dispatch` |
+
+The 2026-09-01 run reported: Postgres accepted connections after WAL recovery
+(2 s), 258 `_prisma_migrations` applied, 167 `pg_policies` `tenant_isolation`
+rows, `app_user` present. So crash-consistency is survivable by measurement
+rather than by argument.
+
+> **⚠ No SCHEDULED run of that drill has ever succeeded.** All three restores
+> above were started by a human. The 2026-09-01 scheduled attempt died on
+> `ZONE_RESOURCE_POOL_EXHAUSTED`; agri-saas has since added a zone fallback,
+> whose first unattended test is 2026-10-01. A drill that only passes when
+> somebody presses the button is one forgetful month from validating nothing.
+
+Because that drill is in a different repository, **nothing in this one used to
+know whether it still ran** — its own workflow header notes it may be dropped if
+this repo grows its own. `.github/workflows/restore-drill-freshness.yml` now
+queries it weekly and fails if no successful `Restore Test (inflect-compliance)`
+job has completed within `MAX_AGE_DAYS` (45).
 
 ### Risk
 
-The 1-hour RPO assumes the RDS instance + the regional log archive are both reachable. A regional AWS outage that takes both down is recoverable only from the daily snapshot (RPO degrades to <24h). Cross-region replication is the mitigation; not in scope for OI-3 — the target architecture (Aurora Global warm-standby, RPO ≤5min / RTO ≤30min for the Enterprise tier) is designed in [`docs/multi-region.md`](multi-region.md).
+All production data — database, evidence uploads and secrets — is on a single
+50 GB persistent disk in `europe-west1-b`. Snapshots are stored in the `eu`
+multi-region, so they survive loss of the zone or of the disk; recovery from
+them is manual and has never been performed under incident conditions, only as
+a drill.
 
----
-
-## SLO 7: RTO — Recovery Time Objective (Epic OI-3)
+## SLO 7: RTO — Recovery Time Objective
 
 ### Objective
 
@@ -352,33 +398,45 @@ The 1-hour RPO assumes the RDS instance + the regional log archive are both reac
 
 ### Why 4 hours
 
-Aligns with our compliance customers' standard SLAs (most enterprise SaaS contracts allow 4-hour MTTR for critical incidents). Also matches the realistic floor for a multi-step recovery: detection (alert) + triage (15-30 min) + restore-from-backup (RDS restore is 30-60 min for production-sized data) + smoke testing + DNS / traffic re-routing.
+It aligns with the 4-hour MTTR most enterprise SaaS contracts allow for
+critical incidents, and it is a realistic floor for this topology: detect,
+triage, restore a disk snapshot to a new disk, attach it, bring the Compose
+stack up, smoke test.
 
 ### Recovery scenarios mapped to RTO
 
+Production is a single VM running Docker Compose, deployed by Watchtower pulling
+`ghcr.io/rodnapamet/inflect-compliance:latest`. There is no Kubernetes, no
+multi-AZ failover and no load balancer in front of it, so the scenarios below
+are the real ones.
+
 | Scenario | Mechanism | Estimated RTO |
 |---|---|---|
-| Single pod failure | Kubernetes auto-restart | < 1 minute |
-| Single AZ failure | RDS multi-AZ failover (production only) + ALB cross-AZ routing | 60-180 seconds |
-| Bad deploy | `helm rollback` to prior revision | < 5 minutes |
-| App-image bug requiring patched build | Deploy via `Deploy` workflow + build + smoke | 15-30 minutes |
-| RDS instance corruption (single-region) | `restore-db-instance-from-db-snapshot` to new instance, point app's `DATABASE_HOST` at new endpoint | 60-120 minutes |
-| Master KEK loss (within 30-day recovery window) | `aws secretsmanager restore-secret`, redeploy | 15-30 minutes |
-| Master KEK loss (beyond recovery window) | DR rebuild from a backup-encrypted-with-known-KEK; cross-customer notification likely | hours-to-days; may exceed RTO |
-| Regional AWS outage | Manual restore in alternate region from cross-region snapshot copy | 2-4 hours; cross-region replica deployment would shorten this |
+| Container crash | Compose `restart` policy | seconds |
+| Bad image | Pin the previous GHCR tag and `docker compose up -d` | 5–15 minutes |
+| App bug requiring a patched build | Merge, wait for `ghcr-publish`, let Watchtower pull (60 s poll) | 20–40 minutes |
+| Database corruption | Restore the newest `inflect-daily-snapshot` to a new disk, attach, start Postgres, verify | 60–120 minutes, **untested under incident conditions** |
+| VM loss | Create a new VM from a snapshot-derived disk, restore `/opt/inflect/`, start the stack | 2–4 hours |
+| Zone loss (`europe-west1-b`) | Same, in another zone — snapshots are `eu` multi-region so they remain readable | 2–4 hours |
+| Loss of `DATA_ENCRYPTION_KEY` | **Unrecoverable.** The master KEK lives only in `/opt/inflect/.env.prod` on the production disk; there is no managed secret store and no independent copy. A snapshot that predates the loss is the only route. | hours-to-days; may exceed RTO |
 
-### Measurement / Verification
+### Verification
 
-- **Detection**: covered by the alert pipeline (Epic OI-3 part 3). Critical alerts page within ~10 seconds of trigger via PagerDuty.
-- **Decision tree + runbook**: `docs/incident-response.md` walks operators through each scenario above.
-- **Restore mechanism validation**: the monthly `restore-test.sh` is designed to exercise the RDS-restore path (60-120 min RTO scenario) end-to-end. **It has never succeeded — see the warning under Measurement / Verification above, and #2226.**
-- The 4-hour SLA is the SUM of detection + triage + recovery time; the budget allocation per stage is documented in `docs/incident-response.md` § "Severity definitions".
+- **Detection** is by alerting on the metrics described in this document. There
+  is no PagerDuty integration — earlier revisions claimed one; `infra/alerts/`
+  is an in-cluster Alertmanager config with no cluster to run in.
+- **The restore mechanism is exercised** by the agri-saas drill described under
+  SLO 6 — a snapshot-to-working-Postgres restore, which is the 60–120 minute
+  row above. What it does not exercise is the rest of the scenario: attaching
+  the disk to a production VM, restoring `/opt/inflect/`, and bringing the
+  stack up.
+- **The runbook** is [`docs/incident-response.md`](incident-response.md).
 
 ### Risk
 
-The RTO assumes operator availability at the time of the incident. Out-of-hours incidents extend MTTR by the on-call response time (typically 15 minutes via PagerDuty). The 4-hour SLA accommodates this; tighter targets would require follow-the-sun on-call coverage (out of scope for OI-3).
-
----
+The RTO assumes an operator is available. There is no on-call rotation tooling
+and no paging path, so out-of-hours detection depends on somebody looking. The
+end-to-end VM-rebuild path has never been walked.
 
 ## SLO Summary Table
 
@@ -390,8 +448,8 @@ The RTO assumes operator availability at the time of the incident. Out-of-hours 
 | API Error Rate | < 1% | 30 days | `api_request_count` |
 | Health Check Availability | ≥ 99.95% | 7 days | Synthetic probe of `/api/livez` |
 | Repository Latency (P95) | < 100ms | 7 days | `repo_method_duration` (OI-3 part 2) |
-| RPO (Recovery Point) | ≤ 1 hour | continuous | RDS PITR + monthly `restore-test.sh` |
-| RTO (Recovery Time) | ≤ 4 hours | per incident | `helm rollback` / `restore-db-instance` / runbook |
+| RPO (Recovery Point) | ≤ 24 hours | continuous | Daily GCP disk snapshot; restore drill in `RodnaPamet/agri-saas` |
+| RTO (Recovery Time) | ≤ 4 hours | per incident | Re-pin GHCR tag / restore disk snapshot / runbook |
 
 ---
 
@@ -611,3 +669,4 @@ App (metrics.ts)
 | 2026-04-18 | Initial SLO definitions (Epic 19 Phase 2) |
 | 2026-04-27 | Epic OI-3: split SLO 2 into reads (<500ms) and writes (<1000ms); add SLO 5 (repository P95 from `repo_method_*` metrics); add SLO 6 (RPO 1h, met by RDS PITR + monthly `restore-test.sh`); add SLO 7 (RTO 4h, met by `helm rollback` / `restore-db-instance` paths documented in `docs/incident-response.md`) |
 | 2026-04-28 | Added Load-Test Validation section: k6 scenario → SLO mapping, CI smoke vs full-baseline thresholds, operating procedure (GAP-11 closure). |
+| 2026-09-02 | Rewrote SLO 6 and SLO 7 against measured production (#2226). RPO corrected **1h → 24h**: the 1-hour figure rested on RDS PITR and there is no RDS — production is one GCP VM with a daily crash-consistent disk snapshot, `archive_mode=off`, `pg_stat_archiver.archived_count` 0. RTO scenarios rewritten from Kubernetes/RDS/Secrets-Manager to the actual Compose-on-a-VM topology, including that loss of `DATA_ENCRYPTION_KEY` is unrecoverable. Verification now names the drill that actually runs — `RodnaPamet/agri-saas`, leg `Restore Test (inflect-compliance)` — with the three observed restores, and records that no *scheduled* run of it has ever succeeded. |
