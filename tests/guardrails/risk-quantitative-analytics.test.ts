@@ -24,6 +24,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -36,8 +37,11 @@ describe('B10 — advanced analytics', () => {
         );
 
         it('Risk model declares sleAmount + aroAmount as Float?', () => {
-            expect(compliance).toMatch(/^\s*sleAmount\s+Float\?/m);
-            expect(compliance).toMatch(/^\s*aroAmount\s+Float\?/m);
+            // Both columns are declared by Risk AND RiskSnapshot, so the
+            // whole-schema form held with either absent from Risk itself.
+            const risk = braceBlockAfter(compliance, 'model Risk\\s*\\{');
+            expect(risk).toMatch(/^\s*sleAmount\s+Float\?/m);
+            expect(risk).toMatch(/^\s*aroAmount\s+Float\?/m);
         });
 
         it('migration adds both columns as DOUBLE PRECISION', () => {

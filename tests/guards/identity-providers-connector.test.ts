@@ -7,6 +7,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -43,16 +44,19 @@ describe('identity providers — registration + wiring', () => {
 
     it('ConnectedIdentityAccount carries RLS + tenant indexes', () => {
         const schema = readPrismaSchema();
-        expect(schema).toMatch(/model ConnectedIdentityAccount \{/);
+        // Bound to the model. `@@index([tenantId, status])` is declared by 32
+        // models and `@@index([tenantId, provider])` by 3, so those two said
+        // nothing about this model when matched against the whole schema.
+        const account = braceBlockAfter(schema, 'model ConnectedIdentityAccount\\s*\\{');
         // PHASE 2: the grain is the connection. Two directory connections for one
         // provider are supported — IntegrationConnection is unique on
         // (tenantId, provider, NAME) — so an account is identified by WHICH
         // directory it came from, not merely by which kind. The old key made two
         // forests collide on one row and is what forced the deprovision reconcile
         // to be provider-scoped.
-        expect(schema).toMatch(/@@unique\(\[tenantId, connectionId, externalUserId\]\)/);
-        expect(schema).toMatch(/@@index\(\[tenantId, provider\]\)/);
-        expect(schema).toMatch(/@@index\(\[tenantId, status\]\)/);
+        expect(account).toMatch(/@@unique\(\[tenantId, connectionId, externalUserId\]\)/);
+        expect(account).toMatch(/@@index\(\[tenantId, provider\]\)/);
+        expect(account).toMatch(/@@index\(\[tenantId, status\]\)/);
         // RLS migration present with the standard triple.
         const mig = read('prisma/migrations/20260707100000_connected_identity_account/migration.sql');
         expect(mig).toMatch(/ENABLE ROW LEVEL SECURITY/);

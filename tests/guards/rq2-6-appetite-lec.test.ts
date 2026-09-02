@@ -21,7 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf, declarationOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -134,8 +134,28 @@ describe('RQ2-6 — breach → remediation task contract', () => {
     });
 
     test('schema column + migration stay paired', () => {
-        expect(schema).toMatch(/remediationTaskId\s+String\?/);
-        expect(migration).toMatch(/ADD COLUMN "remediationTaskId" TEXT/);
+        /*
+         * Bound to the model RQ2-6 actually owns.
+         *
+         * `remediationTaskId String?` occurs in THREE models —
+         * `RiskAppetiteBreach` (this one, added by the migration below),
+         * `KriReading` (RQ-6's KRI breach loop) and `AssetVulnerability`.
+         * The whole-schema form this replaces was satisfied by ANY of the
+         * three, so the column this test is named for could be deleted
+         * outright and the two survivors kept it green: measured 7/7 green
+         * with line `remediationTaskId String?` removed from
+         * `RiskAppetiteBreach` and the other two left in place.
+         *
+         * `braceBlockAfter` throws when the model is renamed away, so
+         * "the model still exists" needs no separate assertion.
+         */
+        const breach = braceBlockAfter(schema, 'model RiskAppetiteBreach\\s*\\{');
+        expect(breach).toMatch(/remediationTaskId\s+String\?/);
+        // PAIRED means same table, not just same column name: the migration
+        // has to be the one that adds it to THIS model.
+        expect(migration).toMatch(
+            /ALTER TABLE "RiskAppetiteBreach" ADD COLUMN "remediationTaskId" TEXT/,
+        );
     });
 
     test('the admin breach list wires both states (create + view task)', () => {

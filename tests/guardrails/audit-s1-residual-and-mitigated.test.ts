@@ -10,6 +10,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) =>
@@ -26,7 +27,11 @@ describe('Audit S1 — Risk lifecycle & treatment plans', () => {
         });
 
         it('Risk model carries `residualScore` (nullable Int)', () => {
-            expect(compliance).toMatch(/residualScore\s+Int\?/);
+            // `residualScore Int?` is declared by Risk AND RiskSnapshot, so
+            // the whole-schema form held with the column absent from Risk —
+            // the model this test names.
+            expect(braceBlockAfter(compliance, 'model Risk\\s*\\{'))
+                .toMatch(/residualScore\s+Int\?/);
         });
 
         it('Risk model carries `residualScoreSetAt` (nullable DateTime)', () => {

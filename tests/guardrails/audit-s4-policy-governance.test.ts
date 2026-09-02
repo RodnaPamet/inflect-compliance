@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -75,8 +76,23 @@ describe('Audit S4 — Policy Governance & Versioning', () => {
         const src = readPrismaSchema();
 
         it('model exists with the (policyVersionId, userId) unique', () => {
-            expect(src).toMatch(/model PolicyAcknowledgement/);
-            expect(src).toMatch(/@@unique\(\[policyVersionId,\s*userId\]\)/);
+            /*
+             * Both needles were satisfiable by a DIFFERENT model, so this
+             * test passed with the model it names deleted outright.
+             *
+             * `PolicyAcknowledgementAssignment` (policy.prisma:133) sits
+             * beside `PolicyAcknowledgement` (policy.prisma:112) and carries
+             * its own `@@unique([policyVersionId, userId])`. `/model
+             * PolicyAcknowledgement/` has no right-hand boundary, so it
+             * matches the Assignment model's declaration too — the prefix
+             * form of the same defect.
+             *
+             * The anchor's trailing `\s*\{` supplies that boundary, and
+             * `braceBlockAfter` throws when the model is gone, which is the
+             * "model exists" half of this test's name.
+             */
+            const ack = braceBlockAfter(src, 'model PolicyAcknowledgement\\s*\\{');
+            expect(ack).toMatch(/@@unique\(\[policyVersionId,\s*userId\]\)/);
         });
     });
 });

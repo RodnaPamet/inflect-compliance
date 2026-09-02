@@ -6,6 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -14,8 +15,12 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 describe('RQ-10 reporting & BIA', () => {
     it('BIA fields on Risk + three report models + migration with RLS', () => {
         const schema = readPrismaSchema();
-        expect(schema).toMatch(/rtoHours\s+Int\?/);
-        expect(schema).toMatch(/revenueAtRisk\s+Float\?/);
+        // "BIA fields on Risk" — so bind to Risk. `rtoHours Int?` is also
+        // declared by BusinessImpactAnalysis, so against the whole schema
+        // that assertion held with the column absent from Risk.
+        const risk = braceBlockAfter(schema, 'model Risk\\s*\\{');
+        expect(risk).toMatch(/rtoHours\s+Int\?/);
+        expect(risk).toMatch(/revenueAtRisk\s+Float\?/);
         for (const m of ['model ReportTemplate', 'model ReportRun', 'model ReportSchedule']) expect(schema).toMatch(new RegExp(m));
         const mig = 'prisma/migrations/20260610280000_rq10_reporting/migration.sql';
         expect(exists(mig)).toBe(true);
