@@ -20,6 +20,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -42,12 +43,30 @@ const encryptionManifest = read('src/lib/security/encrypted-fields.ts');
 
 describe('RQ3-6 — schema + RLS + encryption', () => {
     test('LossEvent model carries tenantId, occurredAt, amount, source, soft-delete', () => {
-        expect(schema).toMatch(/^model LossEvent \{/m);
-        expect(schema).toMatch(/tenantId\s+String\b/);
-        expect(schema).toMatch(/occurredAt\s+DateTime\b/);
-        expect(schema).toMatch(/amount\s+Float\b/);
-        expect(schema).toMatch(/source\s+LossEventSource\b/);
-        expect(schema).toMatch(/deletedAt\s+DateTime\?/);
+        /*
+         * Bound to the model the test is named for.
+         *
+         * THREE of the five needles are field declarations that repeat
+         * across the schema — counted over the concatenated schema,
+         * `tenantId String` matches in 165 models, `deletedAt DateTime?`
+         * in 21, `occurredAt DateTime` in 4. Those three said nothing
+         * about LossEvent: measured 7/7 green with all three columns
+         * deleted from the model, INCLUDING `tenantId` on a tenant-scoped
+         * table. (`amount Float` and `source LossEventSource` are unique
+         * to LossEvent today, so they did bind — but only by accident of
+         * naming, and nothing kept it that way.)
+         *
+         * The anchor ends in `\s*\{` so it cannot bind to a longer model
+         * name that merely starts with `LossEvent`, and `braceBlockAfter`
+         * throws when the model is gone — which is what the deleted
+         * `/^model LossEvent \{/m` existence check was for.
+         */
+        const lossEvent = braceBlockAfter(schema, 'model LossEvent\\s*\\{');
+        expect(lossEvent).toMatch(/tenantId\s+String\b/);
+        expect(lossEvent).toMatch(/occurredAt\s+DateTime\b/);
+        expect(lossEvent).toMatch(/amount\s+Float\b/);
+        expect(lossEvent).toMatch(/source\s+LossEventSource\b/);
+        expect(lossEvent).toMatch(/deletedAt\s+DateTime\?/);
         expect(enums).toMatch(/enum LossEventSource \{[\s\S]*USER[\s\S]*FINDING[\s\S]*INCIDENT/);
     });
 

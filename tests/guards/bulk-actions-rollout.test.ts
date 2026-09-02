@@ -12,10 +12,20 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+
+/**
+ * Comments masked at the READER. `functionBodyOf` (used for the four
+ * per-verb gate checks) has always returned a comment-free block; the
+ * whole-file reads beside it did not, so the same file was being asserted
+ * against under two different rules depending on which line you were on —
+ * `updateMany`, `tenantId: ctx.tenantId` and `value: 'status'` could each be
+ * satisfied by a note. Masking here makes the two agree, and covers the
+ * per-entity rows added to ENTITIES later by construction.
+ */
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 interface EntitySpec {
@@ -41,8 +51,24 @@ interface EntitySpec {
     assignPermission: RegExp;
     repoBulkCall: RegExp;
     repoFile: string;
-    schemaStatus: RegExp;
-    schemaAssign: RegExp;
+    /**
+     * Schema NAMES, not regexes — same rule as `statusFn` / `assignFn`
+     * above, and for the same reason. `declarationOf` throws when the
+     * declaration is gone, so "it exists" stops needing its own assertion,
+     * and the batch cap + status enum below can be bounded to the schema
+     * that must carry them instead of to the 1,270-line module.
+     *
+     * The whole-file form this replaces could not tell a capped schema from
+     * an uncapped one. `.min(1).max(100)` occurs 28 times in that file, so
+     * ONE survivor satisfied all four entities' assertions at once —
+     * measured 28/28 green with the cap deleted from
+     * `BulkVendorStatusSchema`. Two of those 28 are not batch caps at all
+     * (`templateKey` / `templateVersionId` are `z.string().min(1).max(100)`,
+     * a STRING-LENGTH bound), so the old assertion was satisfiable with
+     * every bulk cap in the file removed.
+     */
+    schemaStatus: string;
+    schemaAssign: string;
     statusEnum: RegExp;
     clientFile: string;
     /**
@@ -73,8 +99,8 @@ const ENTITIES: EntitySpec[] = [
         assignPermission: /assertCanWrite\(ctx\)/,
         repoBulkCall: /RiskRepository\.bulkUpdate/,
         repoFile: 'src/app-layer/repositories/RiskRepository.ts',
-        schemaStatus: /BulkRiskStatusSchema/,
-        schemaAssign: /BulkRiskAssignSchema/,
+        schemaStatus: 'BulkRiskStatusSchema',
+        schemaAssign: 'BulkRiskAssignSchema',
         statusEnum: /z\.enum\(\[\s*'OPEN'/,
         clientFile: 'src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx',
         deleteFn: 'bulkDeleteRisk',
@@ -91,8 +117,8 @@ const ENTITIES: EntitySpec[] = [
         assignPermission: /assertCanUpdateControl\(ctx\)/,
         repoBulkCall: /ControlRepository\.bulkUpdate/,
         repoFile: 'src/app-layer/repositories/ControlRepository.ts',
-        schemaStatus: /BulkControlStatusSchema/,
-        schemaAssign: /BulkControlAssignSchema/,
+        schemaStatus: 'BulkControlStatusSchema',
+        schemaAssign: 'BulkControlAssignSchema',
         statusEnum: /'NOT_STARTED'/,
         clientFile: 'src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
         deleteFn: 'bulkDeleteControl',
@@ -109,8 +135,8 @@ const ENTITIES: EntitySpec[] = [
         assignPermission: /assertCanManageVendors\(ctx\)/,
         repoBulkCall: /VendorRepository\.bulkUpdate/,
         repoFile: 'src/app-layer/repositories/VendorRepository.ts',
-        schemaStatus: /BulkVendorStatusSchema/,
-        schemaAssign: /BulkVendorAssignSchema/,
+        schemaStatus: 'BulkVendorStatusSchema',
+        schemaAssign: 'BulkVendorAssignSchema',
         statusEnum: /z\.enum\(\['ACTIVE', 'ONBOARDING', 'OFFBOARDING', 'OFFBOARDED'\]\)/,
         clientFile: 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
         deleteFn: 'bulkDeleteVendor',
@@ -127,8 +153,8 @@ const ENTITIES: EntitySpec[] = [
         assignPermission: /assertCanManageTestPlans\(ctx\)/,
         repoBulkCall: /TestPlanRepository\.bulkUpdate/,
         repoFile: 'src/app-layer/repositories/TestPlanRepository.ts',
-        schemaStatus: /BulkTestPlanStatusSchema/,
-        schemaAssign: /BulkTestPlanAssignSchema/,
+        schemaStatus: 'BulkTestPlanStatusSchema',
+        schemaAssign: 'BulkTestPlanAssignSchema',
         statusEnum: /z\.enum\(\['ACTIVE', 'PAUSED', 'ARCHIVED'\]\)/,
         clientFile: 'src/app/t/[tenantSlug]/(app)/tests/page.tsx',
         deleteFn: 'bulkDeleteTestPlan',
@@ -166,11 +192,16 @@ describe.each(ENTITIES)('Bulk action rollout — $name', (e) => {
 
     it('schemas cap the batch + enum the status', () => {
         const sch = read('src/lib/schemas/index.ts');
-        expect(sch).toMatch(e.schemaStatus);
-        expect(sch).toMatch(e.schemaAssign);
-        expect(sch).toMatch(e.statusEnum);
-        // batch cap (100) on every bulk schema
-        expect(sch).toMatch(/\.min\(1\)\.max\(100\)/);
+        // Bounded to THIS entity's own two declarations. See the
+        // `schemaStatus` note on EntitySpec for what the whole-file form
+        // could not see.
+        const statusDecl = declarationOf(sch, e.schemaStatus);
+        const assignDecl = declarationOf(sch, e.schemaAssign);
+        expect(statusDecl).toMatch(e.statusEnum);
+        // Batch cap (100) on BOTH bulk schemas, asserted inside each one —
+        // an uncapped verb can no longer borrow a sibling's cap.
+        expect(statusDecl).toMatch(/\.min\(1\)\.max\(100\)/);
+        expect(assignDecl).toMatch(/\.min\(1\)\.max\(100\)/);
     });
 
     it('the bulk DELETE verb carries an admin gate, inside its own body', () => {

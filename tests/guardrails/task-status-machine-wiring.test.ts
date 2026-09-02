@@ -45,10 +45,28 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { functionBodyOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+/**
+ * Comments masked at the READER, so the whole-file assertions in this file
+ * are about code on the same terms as the bounded ones.
+ *
+ * Masking BLANKS rather than deletes, which is a real semantic difference and
+ * not a detail — see the long note in the STATUS_CHANGED block below before
+ * writing any assertion here that measures a DISTANCE between two tokens.
+ *
+ * The import check below is the sharp case. Its regex spans
+ * `import { … checkTaskTransition … } from '../domain/task-status'`, and an
+ * import line is the single most likely thing in a diff to be COMMENTED OUT
+ * rather than deleted — so the assertion that the gate is still wired in was
+ * satisfiable by the disconnected wire itself. The bounded-body assertions
+ * would fail alongside it today, which makes this a redundancy rather than a
+ * hole; that is an argument for fixing it, not for leaving it, because the
+ * redundancy is what the file's own header promises.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 
 
@@ -105,25 +123,109 @@ describe('task status machine — wiring + audit shape', () => {
     describe('STATUS_CHANGED audit rows carry the real transition', () => {
         const taskSrc = read('src/app-layer/usecases/task.ts');
 
+        /**
+         * Every `detailsJson: { … }` object literal in `src`, each bounded by
+         * its own braces rather than by a character count.
+         *
+         * ─── WHY A BLOCK AND NOT A WINDOW ────────────────────────────────
+         *
+         * The two assertions below used to measure PROXIMITY:
+         * `entityName: 'Task'` within `[\s\S]{0,80}` of `fromStatus: null`,
+         * and `category: 'status_change'` within `[\s\S]{0,200}` of
+         * `toStatus: status`. Both were correct only while the reader
+         * DELETED comments, which is what the local `.replace()` pair that
+         * used to sit here did. `read` MASKS them instead, and masking
+         * BLANKS — it writes a space over each comment byte to keep offsets
+         * aligned — so a comment's characters still occupy the window that
+         * deleting them used to vacate.
+         *
+         * The two maskers are not interchangeable, and this is the whole of
+         * the difference:
+         *
+         *   • a PRESENCE / ABSENCE assertion asks "does this text contain
+         *     X?". Blanking and deleting agree: neither leaves any of the
+         *     comment's characters as matchable text.
+         *   • a PROXIMITY assertion asks "is X within N characters of Y?".
+         *     It measures DISTANCE — and blanking PRESERVES distance where
+         *     deleting REMOVES it.
+         *
+         * So the note that used to stand here — that blanking is "safe for a
+         * `not.toMatch` (it can only decline to match)" — was backwards. On a
+         * NEGATIVE assertion, declining to match IS the green. Measured, not
+         * argued: put the original regression back at the `setTaskStatus`
+         * audit payload behind one 57-character comment,
+         *
+         *     entityName: 'Task',
+         *     // parked as null until the repo returns the prior status
+         *     fromStatus: null,
+         *
+         * and the windowed form was 7/7 GREEN while `main`'s delete-stripper
+         * form failed. One comment ate the 80-character budget and the guard
+         * named for this invariant went blind to the bug it is named for.
+         *
+         * Widening the window would only raise the number a comment has to
+         * beat, so nothing below measures distance at all. The payload
+         * assertions bound the read to the audit object's own braces; the
+         * file-wide negative drops its `entityName` anchor entirely. Both are
+         * strictly stronger than what they replace: the window fired only
+         * when the two tokens were CLOSE and `entityName: 'Task'` was
+         * present, where these fire on a wrong status-change payload wherever
+         * it is written and on a `fromStatus: null` at any distance from
+         * anything.
+         *
+         * `braceBlockAfter` throws rather than returning '' when a literal is
+         * unbalanced, so a shape this cannot parse fails loudly instead of
+         * asserting against an empty string.
+         */
+        const detailsJsonPayloads = (src: string): string[] => {
+            const payloads: string[] = [];
+            let rest = src;
+            while (/detailsJson\s*:\s*\{/.test(rest)) {
+                const payload = braceBlockAfter(rest, 'detailsJson\\s*:\\s*\\{');
+                payloads.push(payload);
+                rest = rest.slice(rest.indexOf(payload) + payload.length);
+            }
+            return payloads;
+        };
+
+        const statusChangePayloads = (src: string) =>
+            detailsJsonPayloads(src).filter((payload) =>
+                /category:\s*['"]status_change['"]/.test(payload),
+            );
+
         // The bug this locks: `detailsJson.fromStatus` was hardcoded
         // `null` and `toStatus` held the action name, so an auditor
         // reading the trail could not tell what a task moved FROM.
         it('task.ts never writes a null fromStatus or an action-name toStatus', () => {
-            const stripped = taskSrc
-                .replace(/\/\/.*$/gm, '')
-                .replace(/\/\*[\s\S]*?\*\//g, '');
-            expect(stripped).not.toMatch(
-                /entityName:\s*['"]Task['"][\s\S]{0,80}fromStatus:\s*null/,
-            );
-            expect(stripped).not.toMatch(/toStatus:\s*['"]TASK_STATUS_CHANGED['"]/);
+            expect(taskSrc).not.toMatch(/fromStatus:\s*null/);
+            expect(taskSrc).not.toMatch(/toStatus:\s*['"]TASK_STATUS_CHANGED['"]/);
         });
 
-        it('setTaskStatus and bulkSetTaskStatus each emit a real fromStatus + toStatus', () => {
+        // Positive companion to the negative above — on its own, that one is
+        // also satisfied by deleting `fromStatus` outright, and an absence is
+        // ambiguous. Bounded to each payload's own braces.
+        it('every status_change audit payload names a real fromStatus + toStatus', () => {
+            const payloads = statusChangePayloads(taskSrc);
+            // `setTaskStatus` + `bulkSetTaskStatus`. More is fine; fewer means
+            // an emitter was dropped or its category was retagged.
+            expect(payloads.length).toBeGreaterThanOrEqual(2);
+            for (const payload of payloads) {
+                expect(payload).toMatch(/\bfromStatus\b/);
+                expect(payload).not.toMatch(/fromStatus:\s*(?:null|undefined)\b/);
+                expect(payload).toMatch(/toStatus:\s*status\b/);
+                // `toStatus` holding a string literal is the original bug in
+                // its general form, not only the one action name.
+                expect(payload).not.toMatch(/toStatus:\s*['"]/);
+            }
+        });
+
+        it('setTaskStatus and bulkSetTaskStatus each emit one status_change payload', () => {
             for (const fn of ['setTaskStatus', 'bulkSetTaskStatus']) {
-                const body = functionBodyOf(taskSrc, fn);
-                expect(body).toMatch(
-                    /category:\s*['"]status_change['"][\s\S]{0,200}fromStatus[\s\S]{0,200}toStatus:\s*status/,
-                );
+                const payloads = statusChangePayloads(functionBodyOf(taskSrc, fn));
+                expect({ fn, count: payloads.length }).toEqual({ fn, count: 1 });
+                expect(payloads[0]).toMatch(/\bfromStatus\b/);
+                expect(payloads[0]).not.toMatch(/fromStatus:\s*(?:null|undefined)\b/);
+                expect(payloads[0]).toMatch(/toStatus:\s*status\b/);
             }
         });
     });

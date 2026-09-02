@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -35,10 +36,16 @@ describe('personnel / HRIS — registration + wiring', () => {
 
     it('Employee carries RLS + tenant indexes + self-FK', () => {
         const schema = readPrismaSchema();
-        expect(schema).toMatch(/model Employee \{/);
-        expect(schema).toMatch(/@@unique\(\[tenantId, workEmail\]\)/);
-        expect(schema).toMatch(/@@index\(\[tenantId, status\]\)/);
-        expect(schema).toMatch(/@@index\(\[tenantId, managerEmployeeId\]\)/);
+        // Bound to Employee. `@@index([tenantId, status])` is declared by 32
+        // models, so against the whole schema that assertion was satisfied by
+        // any of them and said nothing about this one. The anchor's trailing
+        // `\s*\{` stops it binding to a longer name that starts with
+        // `Employee`, and `braceBlockAfter` throws when the model is gone —
+        // which is what the `/model Employee \{/` existence check was for.
+        const employee = braceBlockAfter(schema, 'model Employee\\s*\\{');
+        expect(employee).toMatch(/@@unique\(\[tenantId, workEmail\]\)/);
+        expect(employee).toMatch(/@@index\(\[tenantId, status\]\)/);
+        expect(employee).toMatch(/@@index\(\[tenantId, managerEmployeeId\]\)/);
         const mig = read('prisma/migrations/20260707110000_personnel/migration.sql');
         expect(mig).toMatch(/ENABLE ROW LEVEL SECURITY/);
         expect(mig).toMatch(/FORCE ROW LEVEL SECURITY/);

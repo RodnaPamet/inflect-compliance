@@ -24,75 +24,64 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const EVIDENCE = path.join(ROOT, 'src/app-layer/usecases/evidence.ts');
 
 /**
- * Extract one `export async function <name>(…) { … }` body by BALANCED
- * BRACES.
+ * THE READER IS THE SEAM, and this file is where getting it wrong is worst.
  *
- * Not `declarationOf` from ../helpers/source-blocks — that anchors on
- * `const <name>`, and these are function declarations. And deliberately not a
- * slice between two function NAMES or a byte window: reordering the file
- * yields a backwards slice (silently empty, so every assertion inside it
- * passes while checking nothing), and an unrelated edit upstream slides a
- * fixed window off the target.
+ * Every assertion below is a source match, so every one of them was
+ * satisfiable by a COMMENT while the read was raw. That is not theoretical
+ * here: the ordering assertion is an `indexOf` comparison between two literal
+ * strings, so a note NAMING the scanner above the write inverts it. Measured
+ * on this file, before this change — move the AV scan below `storage.write`
+ * in `replaceEvidenceFile` and leave
+ *
+ *     // Scan moved below the write so the buffer is streamed once:
+ *     // scanUploadOrRefuse(ctx, buffer, ...) now runs on the stored object.
+ *
+ * above it, and the guard was **5/5 GREEN** on exactly the bug its own header
+ * describes ("unscanned bytes were handed out behind an existing evidence
+ * row"). Every other suite in the repo that mentions `scanUploadOrRefuse` was
+ * green on it too — this guard is the sole detector, so its blind spot was
+ * the whole coverage.
+ *
+ * `codeOf` blanks comments (keeping string literals, which several assertions
+ * here are about) before any matching starts, so prose cannot satisfy, and —
+ * because it preserves offsets — cannot reorder either.
  */
-function functionBody(src: string, name: string): string {
-    const start = src.search(
-        new RegExp(`\\bexport\\s+async\\s+function\\s+${name}\\s*\\(`),
-    );
-    if (start < 0) throw new Error(`function not found: ${name}`);
-
-    // Walk the PARAMETER LIST to its closing paren first. Taking the next `{`
-    // after the function name finds the brace of an inline object TYPE in the
-    // params (`metadata: { controlId?: string }`) rather than the body, and
-    // then closes early — yielding a short block in which a later
-    // `scanUploadOrRefuse` is invisible. That is a false NEGATIVE, so it fails
-    // loudly; the mirror-image bug in a `not.toMatch` guard would pass
-    // silently.
-    const paren = src.indexOf('(', start);
-    let parenDepth = 0;
-    let bodyStart = -1;
-    for (let i = paren; i < src.length; i++) {
-        if (src[i] === '(') parenDepth++;
-        else if (src[i] === ')') {
-            parenDepth--;
-            if (parenDepth === 0) {
-                bodyStart = src.indexOf('{', i);
-                break;
-            }
-        }
-    }
-    if (bodyStart < 0) throw new Error(`body not found: ${name}`);
-
-    let depth = 0;
-    for (let i = bodyStart; i < src.length; i++) {
-        if (src[i] === '{') depth++;
-        else if (src[i] === '}') {
-            depth--;
-            if (depth === 0) return src.slice(start, i + 1);
-        }
-    }
-    throw new Error(`unbalanced braces in ${name}`);
-}
+const read = (): string => codeOf(fs.readFileSync(EVIDENCE, 'utf8'));
 
 /**
- * Usecases that take raw bytes from a caller. Adding one means adding it here
- * — the list is the point, not an implementation detail.
+ * `functionBodyOf` from ../helpers/source-blocks, not a local extractor.
+ *
+ * This file used to hand-roll the walk, with a docstring explaining why the
+ * shared helper was not right: `declarationOf` anchors on `const <name>` and
+ * these are `function` declarations. True — and the wrong helper was named.
+ * `functionBodyOf` bounds a `function` declaration by its body braces, walks
+ * the parameter list at paren depth first (so an inline object type in the
+ * params is not mistaken for the body), throws rather than returning '' when
+ * the target is missing, and runs its anchor search and its RESULT over a
+ * comment-masked view. The local copy had the first two properties and
+ * neither of the last two.
  */
+const bodyOf = (src: string, name: string): string => functionBodyOf(src, name);
+
 const BYTE_ACCEPTING_USECASES = ['uploadEvidenceFile', 'replaceEvidenceFile'];
 
 describe('evidence byte-accepting paths are scanned', () => {
-    const src = fs.readFileSync(EVIDENCE, 'utf8');
+    const src = read();
 
     it.each(BYTE_ACCEPTING_USECASES)('%s calls scanUploadOrRefuse', (fn) => {
         // Bounded to the function's own declaration. Scanning the whole file
         // would pass on the OTHER path's call — which is precisely the false
         // green that let this ship: the file always contained the string.
-        const block = functionBody(src, fn);
-        expect(block).toBeTruthy();
+        // `bodyOf` throws when the function is gone, which is louder than the
+        // `toBeTruthy()` that used to stand here — that could only ever have
+        // failed on a '' the old extractor never returned.
+        const block = bodyOf(src, fn);
         expect(block).toMatch(/scanUploadOrRefuse\(/);
     });
 
@@ -100,7 +89,7 @@ describe('evidence byte-accepting paths are scanned', () => {
         // Scanning and then discarding the verdict leaves the row PENDING,
         // which is the same end state as not scanning at all. The call has to
         // carry its result.
-        const block = functionBody(src, fn);
+        const block = bodyOf(src, fn);
         expect(block).toMatch(/markStored\([^)]*\bscan\b/);
     });
 
@@ -108,8 +97,15 @@ describe('evidence byte-accepting paths are scanned', () => {
         // Order matters beyond tidiness: refusing after the write leaves an
         // infected object in the bucket AND in the SHA-256 dedup index, where
         // a later identical upload would reuse its FileRecord.
+        //
+        // This is the assertion the raw read broke. It compares two `indexOf`
+        // results, so it is decided by WHERE the two strings appear — and a
+        // comment naming `scanUploadOrRefuse(` above the write put the scanner
+        // "first" with the real call sitting after `storage.write`. Reading
+        // code rather than text is the whole fix; the comparison itself is an
+        // ORDER, not a character budget, so it needs nothing else.
         for (const fn of BYTE_ACCEPTING_USECASES) {
-            const block = functionBody(src, fn);
+            const block = bodyOf(src, fn);
             const scanAt = block.indexOf('scanUploadOrRefuse(');
             const writeAt = block.indexOf('storage.write(');
             expect(scanAt).toBeGreaterThan(-1);

@@ -21,22 +21,70 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { declarationOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+
+/**
+ * FOUR LANGUAGES, FOUR READERS — and the split is the point.
+ *
+ * Every assertion in this file matches source text, so each one is
+ * satisfiable by a COMMENT in whatever language it is reading. One reader
+ * cannot be right for all of them: `codeOf` lexes TypeScript, and handing it
+ * a `.sql` file produces the worst outcome available — a view that still
+ * carries every `--` comment while READING as masked. So the reader says
+ * which language it is for, and an assertion that needs a different one has
+ * to say so.
+ *
+ * `read` — TS / TSX. Comments blanked, string literals kept (the i18n keys,
+ * `data-testid`s and `z.enum` members this file asserts on ARE literals).
+ * Offsets preserved, so `declarationOf` below still lines up.
+ */
+const read = (rel: string) => codeOf(readRaw(rel));
+
+/**
+ * `readSql` — `.sql`. Its own masker because SQL's line comment is `--`,
+ * which `codeOf` does not know, and because a Prisma migration is mostly
+ * commentary: this very file's migration opens with four `--` lines about
+ * the column it adds. `ADD COLUMN "remediationTaskId" TEXT` moved into one
+ * of them would have kept the guard green with the DDL gone.
+ *
+ * Deliberately a regex pair rather than a lexer: it blanks (never deletes)
+ * so offsets survive, and its one known limit — a literal `--` INSIDE a
+ * quoted SQL string is masked too — can only make an assertion decline to
+ * match, never wrongly match.
+ */
+const maskSqlComments = (sql: string) =>
+    sql
+        .replace(/--[^\n]*/g, (m) => ' '.repeat(m.length))
+        .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+const readSql = (rel: string) => maskSqlComments(readRaw(rel));
+
+/**
+ * `readJson` — raw, and that is not an oversight. JSON has no comment
+ * syntax, so its raw text already IS the code view; there is nothing for a
+ * mask to remove. Routing it through `codeOf` would be a no-op that implies
+ * a hazard which does not exist here. (The value is `JSON.parse`d and
+ * asserted with `toBe`, not regex-matched, so prose could not reach it in
+ * any case.)
+ */
+const readJson = (rel: string) => JSON.parse(readRaw(rel)) as unknown;
 
 const usecase = read('src/app-layer/usecases/risk-appetite.ts');
 const route = read('src/app/api/t/[tenantSlug]/risk-appetite/breaches/[id]/remediation-task/route.ts');
 const chart = read('src/components/ui/charts/loss-exceedance-curve.tsx');
 const mcPanel = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/MonteCarloPanel.tsx');
 // The panel's appetite label moved to next-intl; resolve it against en.
-const enMessages = JSON.parse(read('messages/en.json')) as {
+const enMessages = readJson('messages/en.json') as {
     risks: { monteCarlo: Record<string, string> };
 };
 const adminPage = read('src/app/t/[tenantSlug]/(app)/admin/risk-appetite/page.tsx');
-const schema = readPrismaSchema();
-const migration = read('prisma/migrations/20260611120000_rq2_6_breach_remediation_task/migration.sql');
+// The Prisma schema language comments with `//`, which `codeOf`'s lexer
+// handles — so the shared reader is masked here rather than in
+// `readPrismaSchema`, whose ~30 other callers are not this file's to change.
+const schema = codeOf(readPrismaSchema());
+const migration = readSql('prisma/migrations/20260611120000_rq2_6_breach_remediation_task/migration.sql');
 
 describe('RQ2-6 — appetite thresholds on the LEC', () => {
     test('the chart supports reference lines and stretches the domain to include them', () => {
@@ -86,8 +134,28 @@ describe('RQ2-6 — breach → remediation task contract', () => {
     });
 
     test('schema column + migration stay paired', () => {
-        expect(schema).toMatch(/remediationTaskId\s+String\?/);
-        expect(migration).toMatch(/ADD COLUMN "remediationTaskId" TEXT/);
+        /*
+         * Bound to the model RQ2-6 actually owns.
+         *
+         * `remediationTaskId String?` occurs in THREE models —
+         * `RiskAppetiteBreach` (this one, added by the migration below),
+         * `KriReading` (RQ-6's KRI breach loop) and `AssetVulnerability`.
+         * The whole-schema form this replaces was satisfied by ANY of the
+         * three, so the column this test is named for could be deleted
+         * outright and the two survivors kept it green: measured 7/7 green
+         * with line `remediationTaskId String?` removed from
+         * `RiskAppetiteBreach` and the other two left in place.
+         *
+         * `braceBlockAfter` throws when the model is renamed away, so
+         * "the model still exists" needs no separate assertion.
+         */
+        const breach = braceBlockAfter(schema, 'model RiskAppetiteBreach\\s*\\{');
+        expect(breach).toMatch(/remediationTaskId\s+String\?/);
+        // PAIRED means same table, not just same column name: the migration
+        // has to be the one that adds it to THIS model.
+        expect(migration).toMatch(
+            /ALTER TABLE "RiskAppetiteBreach" ADD COLUMN "remediationTaskId" TEXT/,
+        );
     });
 
     test('the admin breach list wires both states (create + view task)', () => {
