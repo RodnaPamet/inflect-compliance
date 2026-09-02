@@ -114,7 +114,38 @@ const clearAuth = clearAuthFailure as unknown as jest.Mock;
  * Result: 2 survivors, and both are the module constant. Substituting `30` for
  * a name declared `= 30` is the identity — the same program with the constant
  * inlined — so no assertion can distinguish it and none should be written to
- * try. Undetectable DERIVED values: 0.
+ * try.
+ *
+ * That sweep concluded "undetectable DERIVED values: 0", and the conclusion was
+ * WRONG — not because a site was missed, but because the OPERATOR was too
+ * narrow. It substituted a LITERAL for an expression, and a whole family of
+ * rewrites is invisible to it: swapping one derivation for an EQUIVALENT
+ * derivation. `String(x)` for `` `${x}` ``, `now.getTime()` for `+now`,
+ * `a ?? b` for `a || b`, `Date.now()` for `now.getTime()`. Most of those are
+ * true identities and rightly undetectable. Some are not, and eight sites
+ * across this file and its AWS twin took the second kind with the suite green.
+ *
+ * A second sweep therefore ran the derivation operator over both collectors:
+ * 103 distinct swaps, each applied ALONE to the source with both collector
+ * suites re-run against it. 82 are a pass over the two collector bodies — one
+ * swap per site where a value in scope has an equivalent alternative spelling,
+ * 41 per file; the other 21 are the clock and its neighbourhood, measured both
+ * before and after the fixture change. The enumeration was built by hand, so
+ * treat 82 as a floor rather than a proof that the population is closed.
+ *
+ * Scored: 36 killed, 67 survived. 20 of the kills are new — they survived when
+ * this round started. Twelve were the clock (see `fakeClockFor`) and eight were
+ * fixture coincidences the two-arm table could not reach: a falsy-but-present
+ * benchmark, an empty stored ciphertext, the `{ ...config, ...secrets }` spread
+ * order, and an empty provider `errorMessage`, in each file. Each is named at
+ * the assertion that now catches it, and each was re-measured afterwards to
+ * confirm it dies and to confirm WHICH test does the killing — a mutation that
+ * several tests catch is not evidence for any one of them.
+ *
+ * The 67 survivors were triaged one at a time, not counted. They are grouped by
+ * class at the bottom of this comment, with the reason each class was left
+ * unwritten. The residual is not zero, and the last round's claim that it was
+ * is what this one corrects.
  *
  * `completedAt: new Date()` is NOT among them: `completionInstant` demands a
  * value within minutes of the real clock, so a committed date literal goes red
@@ -142,6 +173,7 @@ const ARMS = [
     {
         cloud: 'gcp-posture', benchmark: 'soc2', key: 'soc2',
         tenant: 'tenant-cloud-1', conn: 'conn-gcp-4', exec: 'exec-9', elapsed: 250,
+        wallSkew: 7_000,
         now: new Date('2026-03-01T12:00:00.000Z'),
         /** EVIDENCE_FRESHNESS_DAYS = 30 after this arm's `now`. */
         thirtyDays: new Date('2026-03-31T12:00:00.000Z'),
@@ -164,6 +196,7 @@ const ARMS = [
     {
         cloud: 'azure-posture', benchmark: 'CIS', key: 'cis',
         tenant: 'tenant-cloud-2', conn: 'conn-az-1', exec: 'exec-3', elapsed: 410,
+        wallSkew: 13_500,
         now: new Date('2026-05-09T06:45:00.000Z'),
         thirtyDays: new Date('2026-06-08T06:45:00.000Z'),
         day: '2026-05-09',
@@ -252,6 +285,45 @@ function checkResult(over: Partial<CheckResult> = {}): CheckResult {
  * satisfied by the constant `0`. `fakeClock()` freezes `Date.now`, and the two
  * `*After` provider stubs advance it by exactly `ms` while the check runs — so
  * the persisted duration is that number and nothing else.
+ *
+ * `base` is the instant the WALL CLOCK reads, and it is deliberately NOT the
+ * injected `now`. That distinction is the entire point of the parameter, and it
+ * was missing: this helper was called as `fakeClockFor(NOW)`, which made
+ * `Date.now()` and `now.getTime()` the same number for every test that used it.
+ * The two-arm table above removes coincidences between a value and a LITERAL;
+ * it cannot remove one between two EXPRESSIONS, because both arms move
+ * together. So every reading of the wall clock could be rewritten as a reading
+ * of the injected instant with the file green.
+ *
+ * MEASURED against `fakeClockFor(NOW)` — each applied alone to the source, both
+ * collector suites re-run per mutation (72 tests, all passing):
+ *
+ *   cloud-posture.ts:79   `const start = Date.now()` -> `now.getTime()`    SURVIVED
+ *                                                    -> `+now`             SURVIVED
+ *                                                    -> `now.valueOf()`    SURVIVED
+ *   cloud-posture.ts:91   catch `Date.now() - start` -> `- now.getTime()`  SURVIVED
+ *   cloud-posture.ts:147  done  `Date.now() - start` -> `- now.getTime()`  SURVIVED
+ *   cloud-posture.ts:128  create `dateCollected: now`-> `new Date(start)`  SURVIVED
+ *
+ * and the same six at aws-posture.ts:90 / 102 / 168 / 147. Re-measured with the
+ * skew in place: all twelve KILLED. Two other rewrites of the same shape —
+ * `markAuthFailure(…, now, …)` -> `new Date(start)`, and `nextReviewDate` /
+ * the day string cut from `now` -> `start` — were already dying, because those
+ * sites are also asserted in tests that install NO fake clock and therefore
+ * read a real `start` hours away from the fixture. Only what is asserted
+ * exclusively inside a `fakeClock()` test was exposed.
+ *
+ * `durationMs` is a DIFFERENCE, so the skew does not move it: `ELAPSED_MS` still
+ * holds exactly. `completedAt` does not move either, and the reason is what lets
+ * one asserted object carry both a frozen `durationMs` and a real-clock
+ * `completedAt` (see the throw and completion tests below). `jest.spyOn(Date,
+ * 'now')` replaces ONLY `Date.now`; `new Date()` with no arguments reads the
+ * host clock directly and never consults it. MEASURED under this jest config:
+ * with `Date.now` pinned to 1772366400000 (the 2026-03-01 fixture), `new Date()`
+ * returned 1788360457703 — the true current instant, equal to a `Date.now`
+ * reference captured before the spy. So `completedAt: new Date()` stays pinned
+ * against the real clock by `completionInstant`, whose proximity check stays
+ * meaningful rather than becoming vacuous.
  */
 function fakeClockFor(base: Date) {
     let t = base.getTime();
@@ -316,17 +388,93 @@ afterEach(() => {
     jest.restoreAllMocks();
 });
 
+/**
+ * THE RESIDUAL, stated rather than rounded to zero. These swaps survive both
+ * collector suites, and each is listed with the reason no assertion was written
+ * for it. They were measured, not assumed.
+ *
+ *  · `EVIDENCE_FRESHNESS_DAYS * 86_400_000` -> `2_592_000_000`. Inlining a
+ *    constant declared to that exact literal is the identity — the same program,
+ *    differently spelled.
+ *
+ *  · `conn.id` -> `input.connectionId`, `ctx.tenantId` -> `input.tenantId`,
+ *    `ev.id` -> `existing.id` on the update branch, `controlId` ->
+ *    `link.controlId`. Each pair is equal by construction: the row was fetched
+ *    `where: { id: … }`, the context was built from the input, the updated row
+ *    is the row whose id was passed. Telling them apart needs a fixture in which
+ *    a database returns a row that violates the `where` it was queried with —
+ *    that pins the implementation's choice of NAME, not any behaviour.
+ *
+ *  · Pure spelling: `` `${a}.${b}` `` -> `a + '.' + b`, `String(x)` ->
+ *    `` `${x}` ``, `.slice(0, n)` -> `.substring(0, n)`, `.slice(0, 10)` ->
+ *    `.split('T')[0]` on an ISO string, `x !== 'ERROR'` -> `!(x === 'ERROR')`,
+ *    `+= 1` -> `++`, `a = a ?? b` -> `a ||= b`, `raw: automationKey` -> the
+ *    template `automationKey` was built from. Same value, every input.
+ *
+ *  · `??` -> `||` where the left operand cannot be falsy without being nullish:
+ *    `input.now` (a Date), `firstEvidenceId` (a cuid or null). Identities in
+ *    every reachable state.
+ *
+ *  · `??` -> `||` on `conn.configJson`, `summary.counts` and `summary.controls`.
+ *    NOT identities in the abstract — they differ on `0` / `''` / `false` — but
+ *    each is declared as an object-or-nullish, so producing the difference means
+ *    casting a scalar into a fixture the type forbids, to model a provider or a
+ *    JSON column returning something the collector already mis-casts. Left
+ *    unwritten deliberately; the two in-type falsy cases (`config.benchmark`,
+ *    `checkResult.errorMessage`) are now covered.
+ *
+ *  · `!link?.controlId` -> `link?.controlId == null`. Differs only on `''`. A
+ *    controlId is a cuid foreign key; the empty string is not a row the database
+ *    can hold, so the fixture would model an impossible state.
+ *
+ *  · `.toLowerCase()` -> `.toLocaleLowerCase()`. A real latent difference — `I`
+ *    lowercases to `ı` under tr-TR, which would change the automation key — but
+ *    the locale is a property of the Node process, not of anything this file can
+ *    inject. Separating them needs the suite re-run under a Turkish ICU locale.
+ *    Named here rather than pinned with a fake.
+ *
+ *  · `completedAt: new Date()` -> `new Date(Date.now())` is NOT in this list: it
+ *    is killed, because under a fake clock those two are hours apart and
+ *    `completionInstant` demands the real one.
+ */
+
+/**
+ * The one property of the clock fixture that no behavioural assertion in this
+ * file can check for itself: every one of them is satisfied when the skew is 0,
+ * and 0 is the state the file shipped in. A skew of 0 re-welds `Date.now()` to
+ * `now.getTime()` and silently reopens the six rewrites listed on
+ * `fakeClockFor` — silently, because nothing goes red.
+ *
+ * Unique per arm, not merely non-zero, and that half is measured too. Measured
+ * on the cloud twin: with BOTH of its arms skewed by the same 7 s, and this
+ * assertion deleted so it could not do the catching, the mutation
+ * `durationMs: Date.now() - now.getTime() - 7_000` SURVIVED its suite, 37/37
+ * green. With the arms on different skews the same mutation fails. A shared
+ * skew is just another file-wide constant for a literal to name.
+ */
+it('skews every arm\'s wall clock off its injected `now`, by an amount unique to that arm', () => {
+    expect(ARMS.map((a) => a.wallSkew)).not.toContain(0);
+    expect(new Set(ARMS.map((a) => a.wallSkew)).size).toBe(ARMS.length);
+});
+
 describe.each(ARMS)(
     'runCloudPostureCollection [cloud=$cloud benchmark=$benchmark]',
     ({
         cloud: CLOUD, benchmark: BENCHMARK, key: KEY, tenant: TENANT, conn: CONN,
-        exec: EXEC, elapsed: ELAPSED_MS, now: NOW, thirtyDays: THIRTY_DAYS,
+        exec: EXEC, elapsed: ELAPSED_MS, wallSkew: WALL_SKEW_MS, now: NOW,
+        thirtyDays: THIRTY_DAYS,
         day: DAY, dual: DUAL, soc2Only: SOC2_ONLY, ctl: CTL, ev: EV,
         blob: BLOB, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET,
         throwText: THROW_TEXT, nonErrorText: NON_ERROR_TEXT, erroredText: ERRORED_TEXT,
     }) => {
     const makeDb = (conn: Conn | null) => makeDbFor(conn, EXEC, EV);
-    const fakeClock = () => fakeClockFor(NOW);
+    /**
+     * The instant the collector's WALL clock reads when the run starts. It is
+     * NOT `NOW`, and the offset is what makes `start` observable — see the
+     * `fakeClockFor` note above.
+     */
+    const WALL_START = new Date(NOW.getTime() + WALL_SKEW_MS);
+    const fakeClock = () => fakeClockFor(WALL_START);
     const COMPLETION_INSTANT = completionInstant(NOW);
 
     /** Every call needs the same four injected inputs; only the deltas vary. */
@@ -438,22 +586,51 @@ describe.each(ARMS)(
             expect(res.counts).toBeNull();
         });
 
-        it('coerces a non-string benchmark and lowercases it before building the automation key', async () => {
-            // Regression class: `configJson` is untyped JSON. Without the String()
-            // coercion a numeric benchmark throws OUTSIDE the try block, so the
-            // RUNNING execution row is never completed and the job dies silently.
-            const db = makeDb({ id: CONN, configJson: { benchmark: 2 }, secretEncrypted: null });
+        it('coerces a non-string benchmark, and defaults only on ABSENCE rather than falsiness', async () => {
+            // Two regression classes, and the fixture value carries both.
+            //
+            // `configJson` is untyped JSON: without the String() coercion a numeric
+            // benchmark throws OUTSIDE the try block, so the RUNNING execution row is
+            // never completed and the job dies silently.
+            //
+            // And `config.benchmark ?? 'soc2'` is not `config.benchmark || 'soc2'` —
+            // a difference no truthy fixture can see, which is why this one is `0`
+            // rather than the `2` it used to be. A connection storing `0` has NAMED a
+            // benchmark; the `||` reading would drop it and stamp `${CLOUD}.soc2` on
+            // the execution ledger, a row asserting a benchmark nobody chose. `??`
+            // carries the stored value through to a visibly degenerate key instead.
+            const db = makeDb({ id: CONN, configJson: { benchmark: 0 }, secretEncrypted: null });
             bind(db);
 
             await run();
 
             expect(db.integrationExecution.create).toHaveBeenCalledWith(
-                expect.objectContaining({ data: expect.objectContaining({ automationKey: `${CLOUD}.2` }) }),
+                expect.objectContaining({ data: expect.objectContaining({ automationKey: `${CLOUD}.0` }) }),
+            );
+        });
+
+        it('treats an EMPTY stored ciphertext as no secrets and never hands it to the decryptor', async () => {
+            // Regression class: `conn.secretEncrypted ?` is not
+            // `conn.secretEncrypted != null`, and the difference is only visible on
+            // the empty string. `decryptField` is called OUTSIDE the try block, so a
+            // throw on an empty envelope kills the run in the gap between the RUNNING
+            // row being written and anything completing it — the ledger keeps a row
+            // that never finishes, which is the same silent-death shape as the
+            // coercion case above.
+            const db = makeDb({ id: CONN, configJson: { benchmark: BENCHMARK }, secretEncrypted: '' });
+            bind(db);
+            const provider = providerReturning(checkResult());
+
+            await run({ provider });
+
+            expect(decrypt).not.toHaveBeenCalled();
+            expect(provider.runCheck).toHaveBeenCalledWith(
+                expect.objectContaining({ connectionConfig: { benchmark: BENCHMARK } }),
             );
         });
 
         it('lowercases the benchmark and merges the decrypted secrets into the provider config', async () => {
-            const db = makeDb({ id: CONN, configJson: { benchmark: 'CIS', subscriptionId: 'sub-1' }, secretEncrypted: BLOB });
+            const db = makeDb({ id: CONN, configJson: { benchmark: 'CIS', subscriptionId: 'sub-1', clientId: 'stale-clientid-in-configjson' }, secretEncrypted: BLOB });
             bind(db);
             decrypt.mockReturnValue(JSON.stringify({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET }));
             const provider = providerReturning(checkResult());
@@ -464,6 +641,11 @@ describe.each(ARMS)(
             // one fixture blob file-wide, `decryptField(conn.secretEncrypted)`
             // could not be told from `decryptField('cipher-blob')`.
             expect(decrypt).toHaveBeenCalledWith(BLOB);
+            // `clientId` is present in BOTH halves of `{ ...config, ...secrets }`, and
+            // the decrypted one has to win: reversing that spread is a swap of one
+            // derivation for another that no disjoint fixture can see, and it would
+            // send the provider whatever a user last typed into `configJson` in place
+            // of the credential the tenant actually stored.
             expect(provider.runCheck).toHaveBeenCalledWith(
                 expect.objectContaining({
                     automationKey: `${CLOUD}.cis`,
@@ -574,7 +756,12 @@ describe.each(ARMS)(
             // Restored by the file-wide `jest.restoreAllMocks()` afterEach.
             const info = jest.spyOn(logger, 'info');
 
-            const res = await run({ provider: providerReturningAfter(passing, clock, ELAPSED_MS) });
+            // `errorMessage: ''` on the RESULT, not absent: the collector's
+            // `checkResult.errorMessage ? … : null` is not `!= null ? … : null`, and
+            // only an empty-string observation separates them. A `''` persisted where
+            // `null` belongs makes a clean run look like a run that reported an error
+            // with nothing to say.
+            const res = await run({ provider: providerReturningAfter({ ...passing, errorMessage: '' }, clock, ELAPSED_MS) });
 
             expect(res.evidenceCreated).toBe(1);
             expect(db.evidence.create).toHaveBeenCalledWith({
