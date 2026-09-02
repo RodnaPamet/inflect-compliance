@@ -991,10 +991,17 @@ but BELOW the `NO_CONNECTION` and `AMBIGUOUS_CONNECTION` refusals, so a dry run
 still needs exactly one enabled connection to get a snapshot at all, so a dry run needs neither
 `writesEnabled` nor `User.EnableDisableAccount.All` and opens no socket. It does
 still decrypt the connection secret (for self-account ids) and degrades to
-config-only with a WARN if that fails. Consequence worth knowing: `beginWrite` on
-the write journal sits *below* the dry-run early return, so
-**`IdentityWriteJournal` has no reachable caller today** — do not treat journal
-rows as evidence a pass ran.
+config-only with a WARN if that fails.
+
+`beginWrite` on the write journal sits *below* the mode allowlist, so it is
+reached only at `AUTOMATIC`. This sentence used to read "`IdentityWriteJournal`
+has no reachable caller today", which was true when the clamp was `DRY_RUN` and
+became **false on 2026-08-30 when #2187 raised it to `AUTOMATIC`** — a caller
+appeared and the prose did not move. `IdentityWriteJournal` still has **0 rows**,
+so the practical advice is unchanged (do not treat journal rows as evidence a
+pass ran), but the reason is now "nobody has reached AUTOMATIC yet", not "no
+caller exists". The first `AUTOMATIC` pass is also this journal's first exercise,
+and `checkDisableBlastRadius`'s.
 
 **Refusal order matters when reading an outcome.** `ALREADY_DISABLED` is checked
 before the write-target rail, so an account that last synced as suspended returns
