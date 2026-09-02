@@ -121,6 +121,22 @@ const clearAuth = clearAuthFailure as unknown as jest.Mock;
  * within minutes of being written. (A literal cut from a fresh observation does
  * pass for the first five minutes, which is why every survivor here was
  * re-confirmed serially, hours later, rather than trusted from the sweep.)
+ *
+ * ONE RESIDUE IS DELIBERATE, and it is a different class. `conn.id` can be
+ * swapped for `input.connectionId`, and `ctx.tenantId` for `input.tenantId`,
+ * with this file green. That is not a literal standing in for a derivation —
+ * it is two DERIVATIONS that cannot differ:
+ *   · `ctx.tenantId` IS `input.tenantId` — `buildSystemContext` passes it
+ *     through verbatim (context-system.ts).
+ *   · `conn.id` IS `input.connectionId` — the row was fetched
+ *     `where: { id: input.connectionId, ... }` two statements earlier, so any
+ *     row that comes back has that id.
+ * A fixture that made them differ would model a database returning a row that
+ * violates the `where` it was queried with. Pinning behaviour in an impossible
+ * state pins the implementation's choice of NAME, not any behaviour, and would
+ * go red on a behaviour-preserving rename. The lookup key itself is what has to
+ * stay honest, and the connection-resolution test above pins that `where`
+ * exactly — so a change that made the two genuinely diverge fails there.
  */
 const ARMS = [
     {
