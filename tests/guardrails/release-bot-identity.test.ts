@@ -128,10 +128,48 @@ describe('release bot identity — the premises stay true', () => {
         expect(message as string).toContain('[skip ci]');
     });
 
-    it('the pushed assets still include the Helm chart (the drift that breaks every PR)', () => {
+    // REPLACED 2026-09-02 (#2226). This asserted the pushed assets still
+    // include `infra/helm/inflect/Chart.yaml`, because a release that bumped
+    // package.json without the chart left them out of step and failed every
+    // subsequent PR at the helm-chart structural guard.
+    //
+    // Both sides of that premise are gone: `infra/helm/` described a
+    // Kubernetes deployment that was never provisioned and was removed, and
+    // so was the guard that went red. Keeping the assertion would have
+    // required the release bot to commit a file that no longer exists.
+    //
+    // This guard is named "the premises stay true" and it did its job — the
+    // asset list could not change silently. What replaces it is the invariant
+    // that actually still holds: every asset named must be a file that
+    // exists, which is the general form of the bug the old assertion caught
+    // as a special case.
+    it('every pushed asset is a file that exists', () => {
         const git = RELEASERC_JSON.plugins.find((p) => pluginName(p) === '@semantic-release/git');
+        expect(git).toBeDefined();
         const assets = pluginConfig(git!).assets as string[] | undefined;
         expect(assets).toBeDefined();
-        expect(assets).toContain('infra/helm/inflect/Chart.yaml');
+        expect(assets!.length).toBeGreaterThan(0);
+        for (const asset of assets!) {
+            expect({ asset, exists: fs.existsSync(path.join(ROOT, asset)) })
+                .toEqual({ asset, exists: true });
+        }
+    });
+
+    // The paired half: nothing may run a prepare step against a path the
+    // release does not carry. `@semantic-release/exec` ran
+    // `scripts/sync-chart-version.mjs`, whose own comment says it exits
+    // non-zero when its regex misses — so once the chart was deleted it would
+    // have failed the PREPARE phase of every release, taking the pipeline
+    // dark on the next push to main. CI would not have caught that: the diff
+    // was green.
+    it('no prepare step targets a script that no longer exists', () => {
+        const exec = RELEASERC_JSON.plugins.filter((p) => pluginName(p) === '@semantic-release/exec');
+        for (const e of exec) {
+            const cmd = String(pluginConfig(e).prepareCmd ?? '');
+            const script = /(?:^|\s)(scripts\/[\w./-]+)/.exec(cmd)?.[1];
+            if (!script) continue;
+            expect({ script, exists: fs.existsSync(path.join(ROOT, script)) })
+                .toEqual({ script, exists: true });
+        }
     });
 });
