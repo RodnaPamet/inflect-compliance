@@ -49,14 +49,29 @@
  * the headline number while leaving the assertion just as unbound to the
  * block — see `INTERIOR_SPAN_BASELINE`.
  *
+ * TWO SHAPES ARE EXCLUDED, AND THEY ARE REPORTED, NOT DROPPED
+ * ───────────────────────────────────────────────────────────
+ *   · A subject that is ALREADY a bounded extraction —
+ *     `declarationOf(src, 'fetchVendor')`, `braceBlockAfter(…)`. The span
+ *     cannot leave the extracted construct, because the sibling block it
+ *     would re-form across is not in the string. Such a site has this
+ *     ratchet's own recommended fix applied; counting it is how a ratchet
+ *     earns a reputation for noise and gets suppressed.
+ *   · A NEGATED assertion. On `expect(x).not.toMatch(/A[\s\S]*B/)` a wider
+ *     span forbids MORE, so the assertion gets stronger, not weaker. Class C
+ *     is the class of assertions that cannot fail; an over-strict negation is
+ *     the opposite failure mode and fails loudly when it is wrong.
+ * Both land in their own counters on the report and are asserted below, so
+ * the exclusions are visible and arguable rather than invisible.
+ *
  * WHY THE NUMBERS DIFFER FROM THE ISSUE'S
  * ───────────────────────────────────────
  * #2246 reports 86, from `grep 'toMatch' | grep '\[\\s\\S\]\*'` over
  * `tests/guards` + `tests/guardrails`. That is a line-scoped enumeration, and
  * a line-scoped enumeration is the failure the issue is about: it can only
  * see an assertion whose regex prettier happened to leave on the same line as
- * its matcher. Reproduced exactly on this tree — the grep still says 86 — the
- * AST says 126 over the same two directories, and 182 over all of `tests/`.
+ * its matcher. Reproduced on this tree — the grep says 87 — the AST says 121
+ * over the same two directories, and 177 over all of `tests/`.
  * The population here is the whole `tests/` tree because the defect has
  * nothing to do with which directory a file sits in; one of the sibling
  * class's proved instances lives in `tests/integration`.
@@ -77,6 +92,10 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
  * `expect(x).toMatch(/…/)` assertions carrying an UNBOUNDED interior span —
  * the Class C shape proper.
  *
+ * Two shapes are counted as ANALYSED AND EXCLUDED rather than as findings,
+ * because on them the defect does not apply; see `ClassCReport`'s
+ * `boundedSubjectSites` and `negatedSpanSites`.
+ *
  * History — only edit DOWNWARD, one line per change.
  *   • 182 (2026-09-02): seated when this ratchet landed, measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` (2194 files, 8464
@@ -84,8 +103,18 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
  *     spans across those 182 sites; 3 of the sites are `not.toMatch`. #2265
  *     had already closed the two hand-proved instances, so neither is in this
  *     count.
+ *   • 177 (2026-09-03): two exclusions, both false positives on review, and
+ *     a rebase onto a main that had retired four guards in between.
+ *     −1 `tests/guards/vendor-surface-truthfulness.test.ts:94`, whose subject
+ *     is `declarationOf(src, 'fetchVendor')` — the span cannot leave the
+ *     extracted declaration, so the site already has this ratchet's own
+ *     recommended fix applied and was being reported anyway. −3 `not.toMatch`
+ *     sites: on a negated assertion a wider span forbids MORE, so it is the
+ *     opposite failure mode. Quantifiers over the remaining 177: `*?` 193,
+ *     `*` 64, `+?` 18. By directory: guards 91, unit 48, guardrails 30,
+ *     integration 4, rendered 4.
  */
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 182;
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 177;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -100,8 +129,12 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 182;
  *   • 383 (2026-09-02): seated with the ratchet. 201 of the 383 are already
  *     character-bounded, which is why the cap matters — the bounded form is
  *     the established local habit and is one search-and-replace away.
+ *   • 368 (2026-09-03): the same two exclusions as above — 1 bounded-subject
+ *     site and 13 `not.toMatch` sites (only 3 of the 13 were unbounded, which
+ *     is why this number falls further than the one above). 191 of the 368
+ *     are character-bounded.
  */
-const INTERIOR_SPAN_BASELINE = 383;
+const INTERIOR_SPAN_BASELINE = 368;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.
@@ -113,13 +146,28 @@ const INTERIOR_SPAN_BASELINE = 383;
  * counted, named by reason, and capped: an un-analysable population that
  * GROWS is itself a finding, because it is the cheapest place to hide a span.
  *
- * Today: 59 of 8464 (0.70%). By reason — `identifier-unresolved` 38 (the
+ * NOT counted here: `toMatch('a literal string')`. That is a SUBSTRING
+ * assertion — it cannot carry a span at all, so it is out of Class C's
+ * population rather than an analysis failure, which is what `recoverPattern`
+ * has said in a comment since the day it landed. The first cut summed it in
+ * anyway. It reads 0 today, and that is the only reason nobody noticed the
+ * consequence: writing ONE `expect(x).toMatch('exact literal')` — a
+ * strictly tighter assertion than the regex it replaces, with no span
+ * anywhere in it — produced `current: 60 / ceiling: 59` under a message about
+ * blind spots. A ratchet that goes red on an improvement teaches people to
+ * stop making it. `ClassCReport.outOfScope` carries the count instead, and
+ * the identity test below still refuses a third bucket.
+ *
+ * Today: 59 of 8403 (0.70%). By reason — `identifier-unresolved` 38 (the
  * argument is a variable that does not resolve to a regex literal in the same
  * lexical scope), `expression-argument` 12, `computed-regexp-argument` 9
  * (`new RegExp(someVariable)`).
  *
  * History — only edit DOWNWARD.
  *   • 59 (2026-09-02): seated with the ratchet.
+ *   • 59 (2026-09-03): unchanged by the `string-literal-argument` exclusion,
+ *     which reads 0 today. Recorded because the DEFINITION moved even though
+ *     the number did not.
  */
 const UNANALYSABLE_TOMATCH_BASELINE = 59;
 
@@ -130,6 +178,11 @@ const UNANALYSABLE_TOMATCH_BASELINE = 59;
  * a ceiling on skips can be satisfied by DELETING assertions, whereas a floor
  * on the ratio can only be satisfied by keeping the analyser able to read what
  * the suite writes. Both directions of "the denominator moved" are covered.
+ *
+ * The denominator is `inScopeSites`, not `toMatchSites` — a substring
+ * assertion is not a pattern this analyser failed to read, so counting it
+ * against the floor would make the same mistake the skip ceiling above just
+ * stopped making.
  */
 const MIN_ANALYSED_SHARE = 0.99;
 
@@ -264,14 +317,49 @@ describe('Class C — regex spans that reach out of the block they name', () => 
         }
     });
 
-    it('reports its own denominator: every toMatch site is either analysed or counted as skipped', () => {
+    it('reports its own denominator: every toMatch site is analysed, skipped, or out of scope', () => {
         const r = report();
-        // No third bucket. If these ever disagree, sites are being dropped
-        // somewhere between collection and classification — the exact way a
-        // detector comes to report coverage of a subset it never names.
-        expect(r.analysed + r.skippedTotal).toBe(r.toMatchSites);
+        // No FOURTH bucket. `outOfScope` is named and added here rather than
+        // folded into either of the other two: a substring assertion is
+        // neither a finding nor a failure to read, and the way a detector
+        // comes to report coverage of a subset it never names is exactly by
+        // letting one of these three go uncounted.
+        expect(r.analysed + r.skippedTotal + r.outOfScope).toBe(r.toMatchSites);
+        expect(r.inScopeSites).toBe(r.toMatchSites - r.outOfScope);
         expect(r.filesExamined).toBeGreaterThan(1500);
-        expect(r.analysed / r.toMatchSites).toBeGreaterThanOrEqual(MIN_ANALYSED_SHARE);
+        expect(r.analysed / r.inScopeSites).toBeGreaterThanOrEqual(MIN_ANALYSED_SHARE);
+    });
+
+    it('reports the two exclusions rather than dropping them', () => {
+        const r = report();
+        const key = (s: { site: { file: string; line: number } }) =>
+            `${s.site.file}:${s.site.line}`;
+        const counted = new Set([...r.interiorSpanSites].map(key));
+
+        // Every excluded site really does carry an interior span — otherwise
+        // the exclusion lists would be quietly absorbing ordinary sites.
+        for (const site of [...r.boundedSubjectSites, ...r.negatedSpanSites]) {
+            expect(site.anyInterior).toBe(true);
+            expect(counted.has(key(site))).toBe(false);
+        }
+
+        // The worked example for "this ratchet does not report a site that
+        // has already applied its own advice", asserted BY NAME so a
+        // refactor that stops recognising `declarationOf` shows up here
+        // rather than as a one-off drop in the headline count.
+        //
+        // Membership, not equality: applying the recommended fix to another
+        // site legitimately GROWS this list, and a test that went red on
+        // that would be the very defect the `string-literal-argument` fix
+        // above just removed.
+        expect(r.boundedSubjectSites.map(key)).toContain(
+            'tests/guards/vendor-surface-truthfulness.test.ts:94',
+        );
+        // …and the negated sites, which are excluded for the opposite
+        // reason: a wider span on a `not.toMatch` forbids more, so it is the
+        // over-strict failure mode, not the cannot-fail one.
+        expect(r.negatedSpanSites.every((site) => site.site.negated)).toBe(true);
+        expect(r.negatedSpanSites.length).toBeGreaterThan(0);
     });
 
     it('baselines have not drifted above the live counts (drift sentinel)', () => {
@@ -422,6 +510,110 @@ describe('Class C — regex spans that reach out of the block they name', () => 
             expect(r.unboundedSpanSites).toHaveLength(1);
         });
 
+        it('flags every spelling of "any character", not the three already in the tree', () => {
+            // The first cut knew `[\s\S]`, `[\S\s]` and `[^]` — which is to
+            // say, the spellings this repo had already used. A reviewer
+            // planted the other four; none raised a counter, and because
+            // `analysed` went UP the coverage floor positively ENDORSED them.
+            // A detector whose class list is "what is already in the tree" is
+            // a detector for yesterday.
+            const abs = write(
+                'spellings.test.ts',
+                [
+                    "it('a', () => {",
+                    '    expect(src).toMatch(/model \\{[\\d\\D]*tenantId/);',
+                    '    expect(src).toMatch(/model \\{[\\D\\d]*tenantId/);',
+                    '    expect(src).toMatch(/model \\{[\\w\\W]*tenantId/);',
+                    '    expect(src).toMatch(/model \\{[\\W\\w]*tenantId/);',
+                    '    expect(src).toMatch(/model \\{(?:.|\\n)*tenantId/);',
+                    '    expect(src).toMatch(/model \\{(.|\\n)*tenantId/);',
+                    '});',
+                ].join('\n'),
+            );
+            const r = analyseClassC([abs]);
+            expect(r.analysed).toBe(6);
+            expect(r.unboundedSpanSites).toHaveLength(6);
+        });
+
+        it('flags `.*` when the regex carries the `s` flag, and not otherwise', () => {
+            const abs = write(
+                'dotall.test.ts',
+                [
+                    "it('a', () => {",
+                    '    expect(src).toMatch(/model \\{.*tenantId/s);',
+                    '    expect(src).toMatch(/model \\{.*tenantId/);',
+                    '});',
+                ].join('\n'),
+            );
+            const r = analyseClassC([abs]);
+            // Without `s`, `.` stops at a newline: the pattern is bounded to
+            // one line and is not this class. With `s` it is `[\s\S]*` in
+            // four characters. Same source text, different assertion — which
+            // is why `analyseSpans` needs the flags and not just the body.
+            expect(r.analysed).toBe(2);
+            expect(r.unboundedSpanSites).toHaveLength(1);
+            expect(r.unboundedSpanSites[0].site.line).toBe(2);
+        });
+
+        it('does NOT count a subject that is already a bounded extraction', () => {
+            const abs = write(
+                'bounded-subject.test.ts',
+                [
+                    "it('a', () => {",
+                    "    const fn = declarationOf(src, 'fetchVendor');",
+                    '    expect(fn).toMatch(/\\} finally \\{[\\s\\S]*?setLoading\\(false\\)/);',
+                    "    expect(declarationOf(src, 'other')).toMatch(/a[\\s\\S]*b/);",
+                    '    expect(src).toMatch(/a[\\s\\S]*b/);',
+                    '});',
+                ].join('\n'),
+            );
+            const r = analyseClassC([abs]);
+            // The span cannot leave the extracted declaration — there is no
+            // sibling block in the string for it to re-form across. Both
+            // forms count: the extraction inline, and via a `const`.
+            expect(r.boundedSubjectSites).toHaveLength(2);
+            expect(r.unboundedSpanSites).toHaveLength(1);
+            expect(r.unboundedSpanSites[0].site.line).toBe(5);
+        });
+
+        it('does NOT count a negated assertion, where a wider span is stronger', () => {
+            const abs = write(
+                'negated.test.ts',
+                [
+                    "it('a', () => {",
+                    '    expect(src).not.toMatch(/a[\\s\\S]*b/);',
+                    '    expect(src).toMatch(/a[\\s\\S]*b/);',
+                    '});',
+                ].join('\n'),
+            );
+            const r = analyseClassC([abs]);
+            expect(r.negatedSpanSites).toHaveLength(1);
+            expect(r.unboundedSpanSites).toHaveLength(1);
+            expect(r.unboundedSpanSites[0].site.negated).toBe(false);
+        });
+
+        it('treats `toMatch(<literal>)` as out of scope, and it does NOT raise the skip ceiling', () => {
+            const abs = write(
+                'literal-arg.test.ts',
+                [
+                    "it('a', () => {",
+                    "    expect(src).toMatch('model VendorEvidenceBundle {');",
+                    '});',
+                ].join('\n'),
+            );
+            const r = analyseClassC([abs]);
+            // This is a SUBSTRING assertion — tighter than the regex it
+            // replaces, and incapable of carrying a span. `skippedTotal` is
+            // what `UNANALYSABLE_TOMATCH_BASELINE` caps, so this is the
+            // regression proof for F3: writing a better assertion must not
+            // turn the ratchet red.
+            expect(r.toMatchSites).toBe(1);
+            expect(r.outOfScope).toBe(1);
+            expect(r.skipped['string-literal-argument']).toBe(1);
+            expect(r.skippedTotal).toBe(0);
+            expect(r.analysed + r.skippedTotal + r.outOfScope).toBe(r.toMatchSites);
+        });
+
         it('sees a span written into a `new RegExp` template', () => {
             const abs = write(
                 'template.test.ts',
@@ -462,6 +654,50 @@ describe('Class C — regex spans that reach out of the block they name', () => 
 
         it('finds every span in a pattern, not just the first', () => {
             expect(analyseSpans('a[\\s\\S]*b[\\s\\S]{0,10}c')).toHaveLength(2);
+        });
+
+        it('knows all seven spellings of "any character"', () => {
+            const n = (pattern: string, flags = '') =>
+                analyseSpans(pattern, flags).length;
+            for (const cls of [
+                '[\\s\\S]',
+                '[\\S\\s]',
+                '[\\d\\D]',
+                '[\\D\\d]',
+                '[\\w\\W]',
+                '[\\W\\w]',
+                '[^]',
+            ]) {
+                expect(n(`a${cls}*b`)).toBe(1);
+            }
+            expect(n('a(?:.|\\n)*b')).toBe(1);
+            expect(n('a(.|\\n)*b')).toBe(1);
+            expect(n('a.*b', 's')).toBe(1);
+            // …and does not invent one. `[\d]` is digits, `[abc]` is three
+            // letters, and a `.` without the `s` flag stops at a newline.
+            expect(n('a[\\d]*b')).toBe(0);
+            expect(n('a[abc]*b')).toBe(0);
+            expect(n('a.*b')).toBe(0);
+        });
+
+        it('requires a quantifier before calling `.` or an alternation a span', () => {
+            // A bare `.` matches ONE character and appears in almost every
+            // pattern ever written; counting each one would bury the signal
+            // under ordinary use of the syntax.
+            expect(analyseSpans('a.b', 's')).toHaveLength(0);
+            expect(analyseSpans('a(?:.|\\n)b')).toHaveLength(0);
+            expect(analyseSpans('a.+b', 's')).toHaveLength(1);
+        });
+
+        it('does not read an ESCAPED bracket as the start of a class', () => {
+            // `/\[\s\S]/` matches the literal text `[\s\S]`. The old regex
+            // scan matched from offset 1 and reported a span that is not
+            // there.
+            expect(analyseSpans('a\\[\\s\\S]b')).toHaveLength(0);
+        });
+
+        it('still finds a span nested inside an ordinary group', () => {
+            expect(analyseSpans('a(?:x[\\s\\S]*y)b')).toHaveLength(1);
         });
     });
 });

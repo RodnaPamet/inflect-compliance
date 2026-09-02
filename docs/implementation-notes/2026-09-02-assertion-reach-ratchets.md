@@ -63,11 +63,12 @@ Over 2,195 files git lists under `tests/`:
 
 | | Class C | Class D |
 |---|---|---|
-| sites examined | 8,464 `toMatch` | 11,882 `toMatch`/`toContain` |
-| in the class's scope | 8,464 | 6,132 whole-file reads |
-| analysed | 8,405 (99.3%) | 5,739 (93.6%) |
-| skipped, with a named reason | 59 | 1,392 |
-| **findings** | **182** unbounded interior spans (383 interior of any boundedness) | **1,575** ambiguous needles (276 at ≥5 occurrences) |
+| sites examined | 8,403 `toMatch` | 11,823 `toMatch`/`toContain` |
+| in the class's scope | 8,403 (substring assertions excluded; 0 today) | 6,081 whole-file reads |
+| analysed | 8,344 (99.3%) | 5,690 (93.6%) |
+| skipped, with a named reason | 59 | 1,565 |
+| excluded as not-the-defect | 1 bounded subject + 13 negated | — |
+| **findings** | **177** unbounded interior spans (368 interior of any boundedness) | **1,554** ambiguous needles (271 at ≥5 occurrences) |
 
 ## Files
 
@@ -121,11 +122,18 @@ Over 2,195 files git lists under `tests/`:
   per-test `const schema = read('…')`, written again in the next `it`. A flat
   index sees the name twice, calls it ambiguous and drops both sites — and one
   of the sites it drops is `entra-ei2-group-mapping.test.ts:18`, one of the
-  three instances the issue proved by hand. A detector that cannot see its own
-  worked example is measuring its parser, not the tree. The three proved
-  instances are therefore also asserted BY NAME, so a future refactor of the
-  analyser cannot quietly stop resolving them while the aggregate counts stay
+  instances the issue proved by hand. A detector that cannot see its own
+  worked example is measuring its parser, not the tree. **All five** proved
+  sites are therefore asserted BY NAME, so a future refactor of the analyser
+  cannot quietly stop resolving them while the aggregate counts stay
   plausible.
+
+  Five, and the correction matters more than the number. The first cut named
+  five in prose and asserted three (`audit-s5:21`, `entra-ei2:18`,
+  `vendor-audit:105`), and the write-up then claimed all five were pinned.
+  `audit-s5:22` and `vendor-audit:117` were resting on the aggregate — and an
+  aggregate is exactly what cannot tell you that a particular site stopped
+  resolving, because 1,554 minus one is still a number under the ceiling.
 
 - **A regex needle is counted by running it globally, not by restricting the
   detector to metacharacter-free strings.** `/@@index\(\[tenantId\]\)/` has
@@ -152,3 +160,110 @@ Over 2,195 files git lists under `tests/`:
   note, drop the code" shape the issue is about. The ratchet's answer to a
   deliberate multi-occurrence assertion is that adding one comes with removing
   one; the population only moves down.
+
+## Six fixes from adversarial review, before merge
+
+An adversarial reviewer re-derived both populations independently and planted
+needles the detectors had not been shown. Both matchers bit; six things did
+not. None blocked the branch; all six landed before it merged.
+
+### The detector contained the class it was built to detect
+
+Class D's `not-a-file-read` is excluded from `skippedTotal` — right for the
+ordinary case (most `expect(...).toContain(...)` asserts on a runtime value)
+and therefore **uncapped**. It also swallowed genuine whole-file reads wearing
+a wrapper the analyser did not recognise. Four assertions planted as
+`readPrismaSchema().trim()`, `String(readPrismaSchema())`, `schema.trim()` and
+a template interpolating the schema moved **no ceiling at all**: ambiguous held
+at 1575, `skippedTotal` at 1392, and only the uncapped counter moved,
+4751 → 4755. Green.
+
+The skip reason declared for exactly this case, `'content-transformed'`, was
+**dead code**. It sat in the `SubjectSkipReason` union, was zeroed in the empty
+record, was summed into `skippedTotal`, and was named in the module's own prose
+as one of "the skips that matter" — and `resolveSubject` never returned it.
+Declared, summed, documented, never produced.
+
+Sit with the shape of that. A detector for *assertions whose reach is not the
+thing they name* carried a bucket that could not be reached: a branch that
+cannot fire is the same defect as an assertion that cannot fail, one level up,
+and it survived exactly the way the sites it hunts survive — the prose was
+right, the code did not do it, and the aggregate looked plausible either way.
+Nothing in the suite could tell the difference between "no site is
+content-transformed" and "no site can be". The instrument had the disease.
+
+`resolveSubject` is now a thin wrapper over `resolveSubjectCore`: when the core
+cannot resolve a subject, `derivesFromRead` asks whether the subject
+nonetheless *is* the file, wearing something the analyser cannot follow. If so
+the answer is `content-transformed`, which is capped. 175 live sites moved out
+of the uncapped hole in the process — `codeOnly(readFileSync(…))`,
+`src.toLowerCase()`, `SECTION_SRC.trimStart()`.
+
+The line the probe draws is **wrapper vs extraction**, and it is the load-
+bearing part:
+
+- A wrapper consumes the whole file and returns something derived from all of
+  it — a method call from `CONTENT_PRESERVING_METHODS`, a one-argument call, a
+  template interpolation. Blind spot; capped.
+- An extraction takes the file **and a selector** and returns one construct —
+  `declarationOf(src, 'fetchVendor')`, `src.slice(…)`. Out of scope, and it
+  must stay out of scope: narrowing the read is the fix **both** ratchets print
+  on failure, and a guard that goes red when you take its advice is one people
+  learn to route around.
+
+Worth being exact about what the hole did and did not do. Moving an *existing*
+ambiguous site into the hatch would have dropped `ambiguous` below its baseline
+and turned the drift sentinel red at allowance 0. What the hatch swallowed
+silently was a *new* assertion landing straight in it — which is what all four
+plants were.
+
+### The other five
+
+- **Class C knew three spellings of "any character".** `[\s\S]`, `[\S\s]`,
+  `[^]` — which is to say, the three already in this tree. Planted
+  `[\d\D]*`, `[\w\W]*`, `(?:.|\n)*` and `.*` under the `s` flag raised **no
+  counter at all**, and because `analysed` went up, the coverage floor
+  positively endorsed them. All seven complementary classes now count, plus
+  `(?:.|\n)`-style alternations and a quantified `.` when `flags.includes('s')`
+  — the flags were already on `RecoveredPattern` and were simply not passed.
+  The scan is now a small escape-aware scanner rather than a regex, which also
+  removed a false positive: `/\[\s\S]/`, a pattern matching the literal text
+  `[\s\S]`, used to report a span that is not there.
+
+- **The code contradicted its own comment, and a *cleaner* assertion turned
+  the guard red.** `recoverPattern` has documented `string-literal-argument`
+  since it landed as "out of Class C's population **rather than an analysis
+  failure**", and `analyseClassC` then summed it into the un-analysable total.
+  One `expect(x).toMatch('exact literal substring')` — strictly tighter than
+  the regex it replaces, incapable of carrying a span — produced
+  `current: 60 / ceiling: 59` under a message about blind spots. It reads 0
+  today, which is the only reason nobody had met it. Now reported as
+  `outOfScope`, excluded from `skippedTotal`, with the identity
+  `analysed + skippedTotal + outOfScope === toMatchSites` and the analysed
+  share taken over `inScopeSites`.
+
+- **The failure message never named the site that moved.** Appending a single
+  *comment* mentioning `MAX_STEPS` to `src/lib/agentic/workflow-types.ts`
+  turns Class D red — correct on the merits, and the point of the class. But
+  the message said `delta: +1` and then listed the twenty highest-multiplicity
+  sites, headed by `/OWASP/ ×54`; the culprit, `agentic-engine-coverage.
+  test.ts:56` freshly at 2, was nowhere in it. The sample is now sorted
+  **ascending**: a newly-crossed site is always at exactly the threshold.
+
+- **Two Class C false positives.** `vendor-surface-truthfulness.test.ts:94`
+  has this ratchet's own recommended fix already applied — its subject is
+  `declarationOf(src, 'fetchVendor')`, a span that cannot leave the extracted
+  declaration — and was counted anyway. Counting a site that has already done
+  the right thing is how a ratchet earns a reputation for noise and gets
+  suppressed. And on a **negated** assertion a broad span forbids *more*, so
+  `expect(x).not.toMatch(/A[\s\S]*B/)` is the opposite failure mode: over-
+  strict, and it fails loudly rather than silently. Both shapes are now
+  excluded from the findings and reported in their own buckets, so the
+  exclusion is arguable rather than invisible.
+
+- **All five hand-proved sites are asserted by name.** See the decision above.
+
+Every baseline here was re-measured from the committed analyser, and again
+after rebasing onto a main that had retired four guards in the meantime. With
+`DRIFT_ALLOWANCE = 0` the six constants are exact equalities against the tree,
+so a merge that changes any test file changes them.

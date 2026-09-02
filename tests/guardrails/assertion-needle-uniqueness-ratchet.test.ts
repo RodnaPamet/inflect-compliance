@@ -77,8 +77,12 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
  *     Distribution: 797 sites at exactly 2 occurrences, 502 at 3-4, 208 at
  *     5-9, 68 at 10 or more. By directory: guards 659, guardrails 437, unit
  *     401, integration 68, rendered 10.
+ *   • 1554 (2026-09-03): re-measured after rebasing onto a main that had
+ *     retired four guards and added six test files. Distribution: 786 at
+ *     exactly 2, 497 at 3-4, 204 at 5-9, 67 at 10 or more. By directory:
+ *     guards 640, guardrails 435, unit 401, integration 68, rendered 10.
  */
-const AMBIGUOUS_NEEDLE_BASELINE = 1575;
+const AMBIGUOUS_NEEDLE_BASELINE = 1554;
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;
@@ -94,8 +98,9 @@ const HIGH_MULTIPLICITY = 5;
  *
  * History — only edit DOWNWARD.
  *   • 276 (2026-09-02): seated with the ratchet.
+ *   • 271 (2026-09-03): re-measured after the rebase described above.
  */
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 276;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 271;
 
 /**
  * Sites this detector could NOT analyse, having established they read a file.
@@ -105,12 +110,16 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 276;
  * understand — the same defect one level up. So the skips are counted, named
  * by reason, and capped.
  *
- * Today: 1392. By reason —
+ * Today: 1565. By reason —
  *   · `path-not-constant` 901 — the read's path does not constant-fold,
  *     usually because it comes from a loop variable or a `describe.each` row.
- *   · `needle-not-literal` 226 — the matcher argument is neither a string
+ *   · `needle-not-literal` 225 — the matcher argument is neither a string
  *     literal nor a regex literal.
- *   · `needle-carries-span` 135 — the regex holds an unbounded `[\s\S]*`
+ *   · `content-transformed` 175 — the subject IS a whole-file read, wearing
+ *     a transform the analyser cannot follow: `codeOnly(readFileSync(…))`,
+ *     `src.toLowerCase()`, `SECTION_SRC.trimStart()`. 22 are written inline
+ *     at the assertion, 153 are reached through a `const` binding.
+ *   · `needle-carries-span` 134 — the regex holds an unbounded `[\s\S]*`
  *     span. A greedy span collapses every candidate into one match, so a
  *     count would be meaningless. Those sites are Class C's population, and
  *     `assertion-span-reach-ratchet.test.ts` caps them.
@@ -126,10 +135,41 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 276;
  * `expect(...).toContain(...)` in the suite asserts on a runtime value, which
  * this class says nothing about.
  *
+ * THAT EXCLUSION WAS THE HOLE, AND `content-transformed` IS THE PATCH.
+ * `not-a-file-read` is both excluded from this total and UNCAPPED, which is
+ * right for a runtime value and catastrophic for a whole-file read the
+ * analyser merely failed to recognise: such a site leaves the population
+ * entirely and the only counter that moves is one nothing checks. Measured —
+ * four assertions planted as `readPrismaSchema().trim()`,
+ * `String(readPrismaSchema())`, `schema.trim()` and a template interpolating
+ * the schema moved NO ceiling at all. Green.
+ *
+ * And the bucket built for exactly that case was dead code. `content-
+ * transformed` was in the skip-reason union, was zeroed in the empty record,
+ * was summed into this total, and was named in the prose as one of "the skips
+ * that matter" — and `resolveSubject` never returned it. Declared, summed,
+ * documented, unreachable: an assertion that cannot fail, inside the detector
+ * built to find assertions that cannot fail. Live sites were already sitting
+ * in the hole, among them
+ * `tests/guards/hris-status-rule-single-owner.test.ts:48`, whose subject is
+ * `codeOnly(fs.readFileSync(...))`.
+ *
+ * Worth being precise about what the hole did and did not do, because it
+ * bears on how much of the design was already load-bearing: moving an
+ * EXISTING ambiguous site into the hatch would drop `ambiguous` below its
+ * baseline and turn the drift sentinel red at allowance 0. What the hatch
+ * swallowed silently was a NEW assertion landing straight into it — which is
+ * exactly what the four plants were.
+ *
  * History — only edit DOWNWARD.
  *   • 1392 (2026-09-02): seated with the ratchet.
+ *   • 1565 (2026-09-03): +175 for the `content-transformed` reclassification,
+ *     −2 from the rebase described above. Every one of the 175 is a
+ *     whole-file read that used to leave the population as
+ *     `not-a-file-read`. The number rose because the blind spot was always
+ *     this size; only its accounting changed.
  */
-const UNANALYSABLE_READ_BASELINE = 1392;
+const UNANALYSABLE_READ_BASELINE = 1565;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
@@ -165,10 +205,31 @@ function report(): ClassDReport {
     return cached;
 }
 
-function worst(r: ClassDReport, min: number, limit: number): string {
+/**
+ * A sample of the population, LOWEST multiplicity first.
+ *
+ * Ascending, and that is the whole point of the function. When this ratchet
+ * fires, the site that moved has just crossed the threshold, so it sits at
+ * EXACTLY `min` — 2 for the headline ceiling, 5 for the sharp one. Sorted
+ * descending, the twenty rows are the twenty worst standing offenders, none
+ * of which the diff touched: appending a single COMMENT mentioning
+ * `MAX_STEPS` to `src/lib/agentic/workflow-types.ts` turned this red with
+ * `delta: +1` and a list headed by `/OWASP/ ×54`, while the actual culprit
+ * (`agentic-engine-coverage.test.ts:56`, freshly at 2) appeared nowhere.
+ *
+ * Firing on a diff that touches no test is correct here and is the point of
+ * the class — a source change had just hollowed out an existing guard.
+ * Shipping that finding without a path to the site is not.
+ */
+function sample(r: ClassDReport, min: number, limit: number): string {
     return [...r.ambiguous]
         .filter((a) => a.occurrences >= min)
-        .sort((a, b) => b.occurrences - a.occurrences)
+        .sort(
+            (a, b) =>
+                a.occurrences - b.occurrences ||
+                a.site.file.localeCompare(b.site.file) ||
+                a.site.line - b.site.line,
+        )
         .slice(0, limit)
         .map(
             (a) =>
@@ -218,8 +279,9 @@ describe('Class D — needles that match more than the thing they name', () => {
                     `  a second declaration to a source file is what turned`,
                     `  .toContain('model VendorEvidenceBundle') into a tautology.`,
                     ``,
-                    `Highest-multiplicity sites in the current population:`,
-                    worst(r, 2, 20),
+                    `Sites at the threshold — a newly-crossed one is at exactly 2,`,
+                    `so if this fired on your diff, look here first:`,
+                    sample(r, 2, 20),
                     ``,
                     FIX_ADVICE,
                 ].join('\n'),
@@ -242,8 +304,9 @@ describe('Class D — needles that match more than the thing they name', () => {
                     `occurrences can be a judgement call; five is a text search that`,
                     `happens to be written as an assertion.`,
                     ``,
-                    `Worst sites:`,
-                    worst(r, HIGH_MULTIPLICITY, 20),
+                    `Sites at the threshold — a newly-crossed one is at exactly`,
+                    `${HIGH_MULTIPLICITY}, so if this fired on your diff, look here first:`,
+                    sample(r, HIGH_MULTIPLICITY, 20),
                     ``,
                     FIX_ADVICE,
                 ].join('\n'),
@@ -338,12 +401,17 @@ describe('Class D — needles that match more than the thing they name', () => {
         });
     });
 
-    // ── The three hand-proved instances, by name ──
+    // ── ALL FIVE hand-proved instances, by name ──
     //
     // Not a re-derivation of the population — a check that the detector still
     // sees the sites a human found by hand. If a refactor of the analyser
     // quietly stops resolving `const schema = read(…)` inside an `it` block,
-    // the counts above stay plausible and only this test says so.
+    // the counts above stay plausible and only this test says so. That makes
+    // these the detector's only positive control, which is why all five are
+    // here: the header prose above named five, three were asserted, and a
+    // summary of this work claimed all five were. Two of them —
+    // `audit-s5:22` and `vendor-audit:117` — were resting on the aggregate
+    // alone, which is the thing the aggregate cannot tell you.
     describe('the instances #2246 proved by hand', () => {
         const at = (file: string, line: number) =>
             report().ambiguous.find(
@@ -354,6 +422,10 @@ describe('Class D — needles that match more than the thing they name', () => {
             expect(at('audit-s5-readiness-scoring.test.ts', 21)?.occurrences).toBe(3);
         });
 
+        it('audit-s5-readiness-scoring.test.ts:22 — auditCycleId is in two', () => {
+            expect(at('audit-s5-readiness-scoring.test.ts', 22)?.occurrences).toBe(2);
+        });
+
         it('entra-ei2-group-mapping.test.ts:18 — @@index([tenantId]) is satisfied by fifteen models', () => {
             expect(at('entra-ei2-group-mapping.test.ts', 18)?.occurrences).toBe(15);
         });
@@ -362,6 +434,10 @@ describe('Class D — needles that match more than the thing they name', () => {
             const hit = at('vendor-audit.test.ts', 105);
             expect(hit?.site.matcher).toBe('toContain');
             expect(hit?.occurrences).toBe(2);
+        });
+
+        it('vendor-audit.test.ts:117 — frozenAt is in two models of the same schema', () => {
+            expect(at('vendor-audit.test.ts', 117)?.occurrences).toBe(2);
         });
     });
 
@@ -501,6 +577,48 @@ describe('Class D — needles that match more than the thing they name', () => {
             expect(r.subjectSkips['not-a-file-read']).toBe(1);
             // Out of scope is not the same as analysed-and-clean: it must not
             // count toward the ratcheted skip total either.
+            expect(r.skippedTotal).toBe(0);
+        });
+
+        it('a whole-file read wearing a no-op transform is CAPPED, not out of scope', () => {
+            const abs = write('wrapped.test.ts', [
+                "const read = (p: string) => fs.readFileSync(p, 'utf8');",
+                "it('a', () => {",
+                "    const schema = read('" + data + "');",
+                "    expect(read('" + data + "').trim()).toContain('model Bundle');",
+                "    expect(String(read('" + data + "'))).toContain('model Bundle');",
+                "    expect(schema.trim()).toContain('model Bundle');",
+                '    expect(`${schema}`).toContain(\'model Bundle\');',
+                "    expect(codeOnly(read('" + data + "'))).toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // Every one of these is the whole file. Before the fix all five
+            // resolved to `not-a-file-read` — excluded from `skippedTotal`,
+            // and therefore uncapped: five new ambiguous assertions could
+            // land green. Four of the five are the reviewer's own plants.
+            expect(r.sites).toBe(5);
+            expect(r.subjectSkips['content-transformed']).toBe(5);
+            expect(r.subjectSkips['not-a-file-read']).toBe(0);
+            expect(r.skippedTotal).toBe(5);
+        });
+
+        it('a NARROWED read stays out of scope — narrowing is the fix, not a blind spot', () => {
+            const abs = write('narrowed.test.ts', [
+                "const read = (p: string) => fs.readFileSync(p, 'utf8');",
+                "it('a', () => {",
+                "    const schema = read('" + data + "');",
+                "    expect(declarationOf(schema, 'Bundle')).toContain('frozenAt');",
+                "    expect(schema.slice(0, 40)).toContain('frozenAt');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // If these counted, "narrow the read to the construct the test
+            // names" — advice this very file prints on failure — would push
+            // the skip ceiling red. A guard that goes red when you take its
+            // advice is a guard people learn to route around.
+            expect(r.subjectSkips['content-transformed']).toBe(0);
+            expect(r.subjectSkips['not-a-file-read']).toBe(2);
             expect(r.skippedTotal).toBe(0);
         });
     });

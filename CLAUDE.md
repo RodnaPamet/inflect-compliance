@@ -1213,21 +1213,38 @@ police one sentence: *an assertion whose reach is not the thing it names.*
 
 - **`tests/guardrails/assertion-span-reach-ratchet.test.ts` — Class C.**
   Counts `expect(x).toMatch(/…/)` regexes carrying an any-char span
-  (`[\s\S]*`, `[\s\S]*?`, `[^]*`) BETWEEN two pieces of pattern. Such a
-  span re-forms across a **sibling** block, so deleting the thing under test
-  leaves the assertion satisfied by a neighbour — proved twice, both times
-  leaving the suite fully green. Baselines: **182** unbounded interior spans,
-  **383** interior spans of any boundedness (the second cap exists so
-  rewriting `*?` as `{0,200}` cannot buy the first number down), **59**
-  un-analysable `toMatch` arguments.
+  BETWEEN two pieces of pattern. Such a span re-forms across a **sibling**
+  block, so deleting the thing under test leaves the assertion satisfied by a
+  neighbour — proved twice, both times leaving the suite fully green.
+  Baselines: **177** unbounded interior spans, **368** interior spans of any
+  boundedness (the second cap exists so rewriting `*?` as `{0,200}` cannot buy
+  the first number down), **59** un-analysable `toMatch` arguments.
+
+  All seven spellings of "any character" count — `[\s\S]` / `[\S\s]` /
+  `[\d\D]` / `[\D\d]` / `[\w\W]` / `[\W\w]` / `[^]`, plus `(?:.|\n)` and a
+  quantified `.` under the `s` flag. Two shapes are deliberately NOT counted
+  and are reported in their own buckets: a subject that is already a bounded
+  extraction (`declarationOf(src, 'fetchVendor')` — the span cannot leave the
+  extracted construct, and that site has the recommended fix applied), and a
+  `not.toMatch`, where a wider span forbids MORE and so makes the assertion
+  stronger. `toMatch('a literal')` is out of scope rather than un-analysable —
+  it cannot carry a span, so writing one must not move the skip ceiling.
 
 - **`tests/guardrails/assertion-needle-uniqueness-ratchet.test.ts` — Class D.**
   For every `toMatch`/`toContain` against a **whole-file read**, counts how
   many places in that file satisfy the needle. More than one and the named
   thing can be deleted while a survivor keeps the guard green — proved three
   times, one of them a `.toContain`, which is why both matchers are in scope.
-  Baselines: **1575** ambiguous needles, **276** of them with five or more
-  satisfying positions, **1392** un-analysable reads.
+  Baselines: **1554** ambiguous needles, **271** of them with five or more
+  satisfying positions, **1565** un-analysable reads.
+
+  A whole-file read wearing a transform the analyser cannot follow
+  (`codeOnly(readFileSync(…))`, `src.toLowerCase()`, `` `${schema}` ``) is
+  `content-transformed` — a CAPPED skip. It used to be `not-a-file-read`,
+  which is uncapped, so four such assertions could be added and every ceiling
+  held. A NARROWED read (`declarationOf(src, name)`, `src.slice(…)`) stays out
+  of scope, because narrowing is the fix and a guard that reddens when you
+  take its advice is one people route around.
 
 Three things about these that are easy to get wrong:
 
@@ -1244,7 +1261,10 @@ Three things about these that are easy to get wrong:
 - **Class D can fire on a diff that touches no test.**
   `.toContain('model VendorEvidenceBundle')` was unambiguous until somebody
   added `VendorEvidenceBundleItem` to the same schema file. Being told is the
-  point.
+  point — which is why its failure message samples the population
+  **ascending**: a site that has just crossed the threshold sits at exactly 2,
+  and a descending sample lists twenty standing offenders the diff never
+  touched.
 
 The fix for a hit is never to add an exemption — there is no allowlist. Bind
 the read to the construct (`declarationOf` / `functionBodyOf` /

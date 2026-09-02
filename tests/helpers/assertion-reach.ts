@@ -407,13 +407,175 @@ export function recoverPattern(site: ExpectSite): PatternResult {
 // ───────────────────────── Class C — span analysis ──────────────────────
 
 /**
- * An "any character" class. All three spellings appear in this repo's
- * guards; `[^]` is the same construct without the double negation.
+ * String operations that consume the WHOLE receiver and return something
+ * derived from all of it.
+ *
+ * The list is short and closed on purpose. `.slice`, `.split`, `.substring`,
+ * `.match`, `.find` and object member access are all deliberately ABSENT:
+ * they narrow, and narrowing the read is the fix BOTH these ratchets
+ * recommend. Counting a narrowed read as a blind spot would mean "bind the
+ * assertion to the block it names, as advised" turns the skip ceiling red —
+ * the failure mode where a guard teaches people to route around it.
  */
-const ANY_CHAR_CLASS = /\[\\s\\S\]|\[\\S\\s\]|\[\^\]/g;
+const CONTENT_PRESERVING_METHODS: ReadonlySet<string> = new Set([
+    'trim',
+    'trimStart',
+    'trimEnd',
+    'toString',
+    'valueOf',
+    'normalize',
+    'toLowerCase',
+    'toUpperCase',
+    'replace',
+    'replaceAll',
+    'concat',
+    'padStart',
+    'padEnd',
+]);
+
+/**
+ * Character-class bodies that match ANY character.
+ *
+ * SEVEN SPELLINGS, NOT THREE, and the reason is an evasion the first cut
+ * left open. The original set was `[\s\S]` / `[\S\s]` / `[^]` — the three
+ * that happen to appear in this repo today. A reviewer planted `[\d\D]*`,
+ * `[\w\W]*`, `(?:.|\n)*` and `.*` under the `s` flag: all four are the same
+ * construct, none raised a counter, and because `analysed` went UP the
+ * coverage floor positively endorsed them. A detector for "assertions that
+ * cannot fail" whose own class list is the set of spellings already in the
+ * tree is a detector for yesterday.
+ *
+ * The union of a class with its own complement is total whatever the base
+ * class is, so all six complementary pairs are here. `[^]` is the same
+ * construct without the double negation.
+ */
+const ANY_CHAR_CLASS_BODIES: ReadonlySet<string> = new Set([
+    '\\s\\S',
+    '\\S\\s',
+    '\\d\\D',
+    '\\D\\d',
+    '\\w\\W',
+    '\\W\\w',
+    '^',
+]);
+
+/**
+ * Branches that, alternated with `.`, cover every character.
+ *
+ * `.` is "any character except a line terminator", so `(?:.|\n)` is the
+ * hand-rolled `[\s\S]` — the spelling people reach for when they have
+ * forgotten the `s` flag exists.
+ */
+const NEWLINE_BRANCHES: ReadonlySet<string> = new Set([
+    '\\n',
+    '\\r',
+    '\\s',
+    '\\r\\n',
+    '\\r?\\n',
+    '[\\r\\n]',
+    '[\\n\\r]',
+    '[\\s\\S]',
+]);
 
 /** Quantifiers with no upper bound. Everything else is a bounded span. */
 const UNBOUNDED_QUANTIFIER = /^(?:\*\?|\+\?|\*|\+|\{\d+,\}\??)$/;
+
+/** Any quantifier, bounded or not, as written after a class or group. */
+const QUANTIFIER = /^(?:\*\?|\+\?|\*|\+|\?|\{\d+(?:,\d*)?\}\??)/;
+
+/**
+ * Offset of the `]` closing the character class that opens at `start`.
+ *
+ * JS has no POSIX "a leading `]` is literal" rule — `[]]` is an empty class
+ * followed by a literal `]` — so only a leading `^` is skipped, which is what
+ * makes `[^]` (the empty NEGATED class, i.e. any character) come out with the
+ * body `^`.
+ */
+function classEnd(pattern: string, start: number): number {
+    let i = start + 1;
+    if (pattern[i] === '^') i++;
+    while (i < pattern.length) {
+        const ch = pattern[i];
+        if (ch === '\\') {
+            i += 2;
+            continue;
+        }
+        if (ch === ']') return i;
+        i++;
+    }
+    return -1;
+}
+
+/** Offset of the `)` closing the group that opens at `start`. */
+function groupEnd(pattern: string, start: number): number {
+    let depth = 0;
+    let i = start;
+    while (i < pattern.length) {
+        const ch = pattern[i];
+        if (ch === '\\') {
+            i += 2;
+            continue;
+        }
+        if (ch === '[') {
+            const e = classEnd(pattern, i);
+            if (e === -1) return -1;
+            i = e + 1;
+            continue;
+        }
+        if (ch === '(') {
+            depth++;
+            i++;
+            continue;
+        }
+        if (ch === ')') {
+            depth--;
+            if (depth === 0) return i;
+            i++;
+            continue;
+        }
+        i++;
+    }
+    return -1;
+}
+
+/** Split on `|` at the group's own nesting level. */
+function topLevelBranches(inner: string): string[] {
+    const out: string[] = [];
+    let depth = 0;
+    let start = 0;
+    let i = 0;
+    while (i < inner.length) {
+        const ch = inner[i];
+        if (ch === '\\') {
+            i += 2;
+            continue;
+        }
+        if (ch === '[') {
+            const e = classEnd(inner, i);
+            if (e === -1) return [inner];
+            i = e + 1;
+            continue;
+        }
+        if (ch === '(') depth++;
+        else if (ch === ')') depth--;
+        else if (ch === '|' && depth === 0) {
+            out.push(inner.slice(start, i));
+            start = i + 1;
+        }
+        i++;
+    }
+    out.push(inner.slice(start));
+    return out;
+}
+
+/** Is `(<inner>)` an alternation covering every character — `(?:.|\n)`? */
+function isAnyCharGroup(inner: string): boolean {
+    const body = inner.startsWith('?:') ? inner.slice(2) : inner;
+    const branches = topLevelBranches(body).map((b) => b.trim());
+    if (branches.length < 2) return false;
+    if (!branches.includes('.')) return false;
+    return branches.some((b) => NEWLINE_BRANCHES.has(b));
+}
 
 export interface Span {
     /** Offset of the character class within the pattern. */
@@ -438,28 +600,93 @@ export interface Span {
  * any later right-hand match, in any two blocks, satisfy it. `^` and `$` are
  * stripped before the emptiness test, so an anchored pattern still reads as
  * interior.
+ *
+ * `flags` is not optional in spirit — pass the recovered pattern's flags, or
+ * a `.*` under `s` reads as ordinary pattern text and the site is counted as
+ * ANALYSED AND CLEAN, which is worse than not looking at all.
  */
-export function analyseSpans(pattern: string): Span[] {
+export function analyseSpans(pattern: string, flags = ''): Span[] {
     const spans: Span[] = [];
-    const re = new RegExp(ANY_CHAR_CLASS.source, 'g');
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(pattern)) !== null) {
-        const afterClass = m.index + m[0].length;
-        const quantMatch = pattern
-            .slice(afterClass)
-            .match(/^(?:\*\?|\+\?|\*|\+|\?|\{\d+(?:,\d*)?\}\??)/);
+    // Under `s` (dotAll) a bare `.` IS the any-char class, so `.*` between two
+    // pieces of pattern is Class C written in four characters.
+    const dotIsAnyChar = flags.includes('s');
+    let i = 0;
+
+    while (i < pattern.length) {
+        const ch = pattern[i];
+
+        // An escaped character is never the start of a construct. This also
+        // fixes a false positive the old regex scan had: in `/\[\s\S]/` — a
+        // pattern matching the literal text `[\s\S]` — the regex matched from
+        // offset 1 and reported a span that is not there.
+        if (ch === '\\') {
+            i += 2;
+            continue;
+        }
+
+        let start = -1;
+        let afterConstruct = -1;
+        // `[\s\S]` with no quantifier stays a (bounded, one-character) span,
+        // as it has been since this analyser landed. `.` and `(?:.|\n)` do
+        // NOT: an unquantified `.` matches exactly one character and occurs in
+        // almost every pattern ever written, so counting each one as a span
+        // would bury the signal under the ordinary use of the syntax.
+        let quantifierRequired = false;
+
+        if (ch === '[') {
+            const e = classEnd(pattern, i);
+            if (e === -1) {
+                i++;
+                continue;
+            }
+            if (!ANY_CHAR_CLASS_BODIES.has(pattern.slice(i + 1, e))) {
+                i = e + 1;
+                continue;
+            }
+            start = i;
+            afterConstruct = e + 1;
+        } else if (ch === '(') {
+            const e = groupEnd(pattern, i);
+            if (e === -1) {
+                i++;
+                continue;
+            }
+            if (!isAnyCharGroup(pattern.slice(i + 1, e))) {
+                // Descend: a span can live INSIDE an ordinary group.
+                i++;
+                continue;
+            }
+            start = i;
+            afterConstruct = e + 1;
+            quantifierRequired = true;
+        } else if (ch === '.' && dotIsAnyChar) {
+            start = i;
+            afterConstruct = i + 1;
+            quantifierRequired = true;
+        } else {
+            i++;
+            continue;
+        }
+
+        const quantMatch = pattern.slice(afterConstruct).match(QUANTIFIER);
         const quantifier = quantMatch === null ? '' : quantMatch[0];
-        const end = afterClass + quantifier.length;
-        const before = pattern.slice(0, m.index).replace(/[\^]/g, '').trim();
+        if (quantifierRequired && quantifier === '') {
+            i = afterConstruct;
+            continue;
+        }
+        const end = afterConstruct + quantifier.length;
+        const before = pattern.slice(0, start).replace(/[\^]/g, '').trim();
         const after = pattern.slice(end).replace(/\$/g, '').trim();
         spans.push({
-            start: m.index,
+            start,
             end,
             quantifier,
             unbounded: UNBOUNDED_QUANTIFIER.test(quantifier),
             interior: before.length > 0 && after.length > 0,
         });
+        i = end;
     }
+
     return spans;
 }
 
@@ -478,15 +705,57 @@ export interface ClassCReport {
     readonly filesExamined: number;
     /** Every `expect(x).toMatch(…)` site seen. */
     readonly toMatchSites: number;
+    /**
+     * `toMatch('a literal')` — a SUBSTRING assertion, which cannot carry a
+     * span at all. Reported, and deliberately NOT summed into `skippedTotal`;
+     * see the field below.
+     */
+    readonly outOfScope: number;
+    /** `toMatchSites - outOfScope` — the population Class C is about. */
+    readonly inScopeSites: number;
     /** …of which the pattern was recovered. */
     readonly analysed: number;
     /** …of which it was not, by reason. */
     readonly skipped: Readonly<Record<PatternSkipReason, number>>;
+    /**
+     * Skips that are ANALYSIS FAILURES — `outOfScope` excluded.
+     *
+     * `recoverPattern` has documented `string-literal-argument` since it
+     * landed as "out of Class C's population RATHER THAN an analysis
+     * failure", and then this total counted it as one. It reads 0 today,
+     * which is the only reason nobody noticed that a single
+     * `expect(x).toMatch('exact literal')` — a strictly BETTER assertion than
+     * the regex it replaces, with no span in it anywhere — turned the ratchet
+     * red under a message about blind spots.
+     */
     readonly skippedTotal: number;
     /** Analysed sites carrying an interior span of any kind. */
     readonly interiorSpanSites: readonly ClassCSite[];
     /** The subset whose interior span is unbounded — the class proper. */
     readonly unboundedSpanSites: readonly ClassCSite[];
+    /**
+     * Interior-span sites EXCLUDED because the subject is already a bounded
+     * extraction — `declarationOf(src, 'fetchVendor')` and friends.
+     *
+     * A span inside an extracted declaration cannot leave that declaration,
+     * so the Class C defect does not apply: there is no sibling block for it
+     * to re-form across. These sites have the fix this ratchet recommends
+     * already applied, and counting one is how a ratchet earns a reputation
+     * for noise and gets suppressed. Reported rather than silently dropped.
+     */
+    readonly boundedSubjectSites: readonly ClassCSite[];
+    /**
+     * Interior-span sites EXCLUDED because the assertion is negated.
+     *
+     * On `expect(x).not.toMatch(/A[\s\S]*B/)` a broader span makes the
+     * assertion STRICTLY STRONGER — it forbids more. Class C is the class of
+     * assertions that cannot fail; a negated broad span is the opposite
+     * failure mode (over-strict, and it fails loudly), so reporting it under
+     * "delete the thing under test and a neighbour satisfies it" would be
+     * simply wrong about the site. Reported separately so the exclusion is
+     * visible and can be argued with.
+     */
+    readonly negatedSpanSites: readonly ClassCSite[];
 }
 
 const EMPTY_SKIPS: Record<PatternSkipReason, number> = {
@@ -497,11 +766,59 @@ const EMPTY_SKIPS: Record<PatternSkipReason, number> = {
     'expression-argument': 0,
 };
 
+/**
+ * Extractors that BIND a read to one construct, from
+ * `tests/helpers/source-blocks.ts`. A span inside what one of these returns
+ * cannot reach a sibling block, because the sibling is not in the string.
+ */
+const BOUNDED_EXTRACTORS: ReadonlySet<string> = new Set([
+    'declarationOf',
+    'functionBodyOf',
+    'interfaceBodyOf',
+    'braceBlockAfter',
+    'callExpressionOf',
+]);
+
+/** Is this subject already bound to one construct? */
+function isBoundedExtraction(expr: ts.Expression, depth = 0): boolean {
+    if (depth > 6) return false;
+    if (ts.isParenthesizedExpression(expr)) {
+        return isBoundedExtraction(expr.expression, depth + 1);
+    }
+    if (ts.isAsExpression(expr) || ts.isNonNullExpression(expr)) {
+        return isBoundedExtraction(expr.expression, depth + 1);
+    }
+    if (ts.isIdentifier(expr)) {
+        const init = resolveBinding(expr.text, expr);
+        return init != null && isBoundedExtraction(init, depth + 1);
+    }
+    if (ts.isCallExpression(expr)) {
+        const callee = expr.expression;
+        if (ts.isIdentifier(callee)) {
+            if (BOUNDED_EXTRACTORS.has(callee.text)) return true;
+            // `codeOf(declarationOf(src, 'x'))` — a wrapper around a bounded
+            // extraction is still bounded.
+            return expr.arguments.length === 1
+                ? isBoundedExtraction(expr.arguments[0], depth + 1)
+                : false;
+        }
+        if (
+            ts.isPropertyAccessExpression(callee) &&
+            CONTENT_PRESERVING_METHODS.has(callee.name.text)
+        ) {
+            return isBoundedExtraction(callee.expression, depth + 1);
+        }
+    }
+    return false;
+}
+
 /** Run the Class C analysis over a set of absolute test-file paths. */
 export function analyseClassC(absFiles: readonly string[]): ClassCReport {
     const skipped: Record<PatternSkipReason, number> = { ...EMPTY_SKIPS };
     const interior: ClassCSite[] = [];
     const unbounded: ClassCSite[] = [];
+    const boundedSubject: ClassCSite[] = [];
+    const negated: ClassCSite[] = [];
     let toMatchSites = 0;
     let analysed = 0;
 
@@ -516,7 +833,10 @@ export function analyseClassC(absFiles: readonly string[]): ClassCReport {
                 continue;
             }
             analysed++;
-            const spans = analyseSpans(recovered.value.pattern);
+            const spans = analyseSpans(
+                recovered.value.pattern,
+                recovered.value.flags,
+            );
             const anyInterior = spans.some((s) => s.interior);
             if (!anyInterior) continue;
             const unboundedInterior = spans.some((s) => s.interior && s.unbounded);
@@ -527,20 +847,39 @@ export function analyseClassC(absFiles: readonly string[]): ClassCReport {
                 unboundedInterior,
                 anyInterior,
             };
+            // Two exclusions, both reported rather than dropped. Bound is
+            // checked first: a `not.toMatch` on an extracted declaration is
+            // excluded for the stronger of the two reasons.
+            if (isBoundedExtraction(site.subject)) {
+                boundedSubject.push(entry);
+                continue;
+            }
+            if (site.negated) {
+                negated.push(entry);
+                continue;
+            }
             interior.push(entry);
             if (unboundedInterior) unbounded.push(entry);
         }
     }
 
-    const skippedTotal = Object.values(skipped).reduce((a, b) => a + b, 0);
+    // `string-literal-argument` is out of scope, not an analysis failure —
+    // see `ClassCReport.skippedTotal`.
+    const outOfScope = skipped['string-literal-argument'];
+    const skippedTotal =
+        Object.values(skipped).reduce((a, b) => a + b, 0) - outOfScope;
     return {
         filesExamined: absFiles.length,
         toMatchSites,
+        outOfScope,
+        inScopeSites: toMatchSites - outOfScope,
         analysed,
         skipped,
         skippedTotal,
         interiorSpanSites: interior,
         unboundedSpanSites: unbounded,
+        boundedSubjectSites: boundedSubject,
+        negatedSpanSites: negated,
     };
 }
 
@@ -763,7 +1102,8 @@ function scopeOf(sf: ts.SourceFile): FileScope {
 }
 
 /**
- * Resolve `expect(<subject>)`'s subject to the text of a whole file.
+ * Resolve `expect(<subject>)`'s subject to the text of a whole file, WITHOUT
+ * the derived-read probe. `resolveSubject` is the entry point; see there.
  *
  * Understood shapes, all of them the idioms actually used in this repo:
  *   · `readPrismaSchema()` — the concatenated schema folder
@@ -772,13 +1112,8 @@ function scopeOf(sf: ts.SourceFile): FileScope {
  *   · `read('x')` where `read` is a local arrow wrapping `readFileSync`
  *   · `codeOf(<any of the above>)` — comments blanked, offsets preserved,
  *     which is what the assertion actually runs against
- *
- * A subject that is not a file read at all is skipped as `not-a-file-read`
- * and is NOT a coverage failure — most `expect(...).toContain(...)` in the
- * suite asserts on a runtime value. The skips that matter are
- * `path-not-constant` (a computed path) and `content-transformed`.
  */
-export function resolveSubject(
+function resolveSubjectCore(
     subject: ts.Expression,
     sf: ts.SourceFile,
     depth = 0,
@@ -787,14 +1122,14 @@ export function resolveSubject(
     const scope = scopeOf(sf);
 
     if (ts.isParenthesizedExpression(subject)) {
-        return resolveSubject(subject.expression, sf, depth + 1);
+        return resolveSubjectCore(subject.expression, sf, depth + 1);
     }
 
     if (ts.isIdentifier(subject)) {
         const init = resolveBinding(subject.text, subject);
         if (init === undefined) return { kind: 'skipped', reason: 'not-a-file-read' };
         if (init === null) return { kind: 'skipped', reason: 'binding-not-resolvable' };
-        return resolveSubject(init, sf, depth + 1);
+        return resolveSubjectCore(init, sf, depth + 1);
     }
 
     if (ts.isCallExpression(subject)) {
@@ -815,7 +1150,7 @@ export function resolveSubject(
             if (subject.arguments.length === 0) {
                 return { kind: 'skipped', reason: 'not-a-file-read' };
             }
-            const inner = resolveSubject(subject.arguments[0], sf, depth + 1);
+            const inner = resolveSubjectCore(subject.arguments[0], sf, depth + 1);
             if (inner.kind !== 'content') return inner;
             return { kind: 'content', label: inner.label, text: maskComments(inner.text) };
         }
@@ -858,12 +1193,115 @@ export function resolveSubject(
     }
 
     // `read('x').replace(...)` and friends change the text, so an occurrence
-    // count taken from disk would be answering about different content.
+    // count taken from disk would be answering about different content. The
+    // core says "not a read"; `resolveSubject` re-reads that answer and
+    // decides between `not-a-file-read` and `content-transformed`.
     if (ts.isPropertyAccessExpression(subject) || ts.isElementAccessExpression(subject)) {
         return { kind: 'skipped', reason: 'not-a-file-read' };
     }
 
     return { kind: 'skipped', reason: 'not-a-file-read' };
+}
+
+
+/**
+ * Is this expression a WRAPPER around a whole-file read — the whole file
+ * still, passed through something the analyser cannot follow?
+ *
+ * Three forms, and each one is an evasion that was demonstrated green:
+ *   · `<content>.trim()` / `.toLowerCase()` — a content-preserving method.
+ *   · `f(<content>)` with exactly ONE argument — `String(schema)`,
+ *     `codeOnly(readFileSync(…))`. One argument and no selector is the shape
+ *     of a wrapper; a second argument is the shape of an EXTRACTION
+ *     (`declarationOf(src, 'fetchVendor')`), which is the fix, not a blind
+ *     spot.
+ *   · `` `${<content>}` `` — a template that interpolates the file.
+ *
+ * Bounded on purpose: anything not listed stays `not-a-file-read`. The
+ * residual is named rather than papered over — `src.slice(0)` is a narrowing
+ * form that happens to narrow to everything, and would still read as a
+ * narrowed read. What that residual can and cannot do is set out on
+ * `resolveSubject` below.
+ */
+function derivesFromRead(expr: ts.Expression, sf: ts.SourceFile, depth: number): boolean {
+    if (depth > 6) return false;
+    const step = (e: ts.Expression): boolean =>
+        resolveSubjectCore(e, sf, 0).kind === 'content' ||
+        derivesFromRead(e, sf, depth + 1);
+
+    if (ts.isParenthesizedExpression(expr)) return step(expr.expression);
+    if (ts.isAsExpression(expr) || ts.isNonNullExpression(expr)) {
+        return step(expr.expression);
+    }
+    if (ts.isIdentifier(expr)) {
+        const init = resolveBinding(expr.text, expr);
+        return init != null && step(init);
+    }
+    if (ts.isCallExpression(expr)) {
+        if (ts.isPropertyAccessExpression(expr.expression)) {
+            return (
+                CONTENT_PRESERVING_METHODS.has(expr.expression.name.text) &&
+                step(expr.expression.expression)
+            );
+        }
+        return expr.arguments.length === 1 && step(expr.arguments[0]);
+    }
+    if (ts.isTemplateExpression(expr)) {
+        return expr.templateSpans.some((span) => step(span.expression));
+    }
+    return false;
+}
+
+/**
+ * Resolve `expect(<subject>)`'s subject to the text of a whole file.
+ *
+ * ── WHY THIS WRAPPER EXISTS, AND IT IS THE DETECTOR'S OWN DEFECT ────────
+ *
+ * `not-a-file-read` is the ordinary case — most `expect(...).toContain(...)`
+ * in this suite asserts on a runtime value — so it is reported but NOT summed
+ * into the ratcheted skip total. That exclusion is right for a runtime value
+ * and catastrophic for a whole-file read the analyser merely failed to
+ * recognise: such a site leaves Class D's population entirely, and the only
+ * counter that moves is an UNCAPPED one. Measured: four assertions planted as
+ * `readPrismaSchema().trim()`, `String(readPrismaSchema())`, `schema.trim()`
+ * and `` `${schema}` `` moved no ceiling at all. Green.
+ *
+ * `'content-transformed'` — the skip reason declared for exactly this case —
+ * was in the union, was zeroed in the empty record, was summed into
+ * `skippedTotal`, and was named in the prose above as one of "the skips that
+ * matter". `resolveSubjectCore` never returned it. Declared, summed,
+ * documented, unreachable: an assertion that cannot fail, inside the detector
+ * built to find assertions that cannot fail. Three live sites were already
+ * sitting in that hole, among them
+ * `tests/guards/hris-status-rule-single-owner.test.ts:48`, whose subject is
+ * `codeOnly(fs.readFileSync(...))` — unmistakably a whole-file read, wearing
+ * a wrapper the analyser did not know.
+ *
+ * So: when the core cannot resolve a subject, ask whether the subject
+ * nonetheless DERIVES from a read. If it does, the honest answer is
+ * `content-transformed` — "this is file content, and the text it was compared
+ * against is not the text on disk" — which is a capped skip, i.e. a blind
+ * spot that has to shrink or be argued for. Only a subject with no read
+ * anywhere under it stays `not-a-file-read`.
+ *
+ * The direction of the residual error moved too, which is the point of the
+ * change. Before: an unrecognised read was silently out of scope. After: a
+ * derived runtime value (`const names = parse(src)`) can be classified as
+ * transformed content. The first hides a regression; the second costs a
+ * ceiling entry. Only one of those is safe to be wrong about.
+ */
+export function resolveSubject(
+    subject: ts.Expression,
+    sf: ts.SourceFile,
+    depth = 0,
+): SubjectResult {
+    const core = resolveSubjectCore(subject, sf, depth);
+    if (core.kind === 'skipped' && core.reason === 'not-a-file-read') {
+        if (derivesFromRead(subject, sf, 0)) {
+            return { kind: 'skipped', reason: 'content-transformed' };
+        }
+    }
+    return core;
 }
 
 function contentAt(p: string): SubjectResult {
@@ -940,7 +1378,7 @@ export function recoverNeedle(site: ExpectSite): NeedleResult {
     if (site.matcher === 'toMatch' && arg.kind === ts.SyntaxKind.RegularExpressionLiteral) {
         const { pattern, flags } = splitRegexLiteral(arg.getText(site.sourceFile));
         if (pattern.length === 0) return { kind: 'skipped', reason: 'needle-empty' };
-        if (analyseSpans(pattern).some((s) => s.unbounded)) {
+        if (analyseSpans(pattern, flags).some((s) => s.unbounded)) {
             return { kind: 'skipped', reason: 'needle-carries-span' };
         }
         let re: RegExp;
