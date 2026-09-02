@@ -1,0 +1,170 @@
+# ───────────────────────────────────────────────────────────────
+#  Restore Drill Freshness
+#
+#  The restore drill for THIS database does not live in this repo. It is
+#  `RodnaPamet/agri-saas`, workflow `restore-test.yml`, matrix leg
+#  "Restore Test (inflect-compliance)" — it restores the newest snapshot of
+#  disk `inflect-compliance` and validates the result.
+#
+#  That arrangement is fine until somebody tidies it up. agri-saas's own
+#  workflow header says "if that repo grows its own drill, drop this entry",
+#  and nothing here would notice: no test, no doc and no workflow in this
+#  repository referenced it. This job is the reference.
+#
+#  WHY THIS IS A WORKFLOW AND NOT A JEST GUARD. Recency is not a property of
+#  the source tree. `tests/guards/restore-drill-freshness.test.ts` asserts
+#  this file exists and is wired — that is a claim about SHAPE, and a guard
+#  can make it. Whether a restore actually SUCCEEDED is a claim about
+#  CONDUCT, it needs the network, and only this can make it.
+#
+#  The distinction is not academic here. `tests/guards/oi-3-backup-restore.test.ts`
+#  held 38 green assertions about the old drill's cron, OIDC and concurrency
+#  while that drill failed six consecutive scheduled runs across five months.
+#  Structure passed the whole time.
+# ───────────────────────────────────────────────────────────────
+name: Restore Drill Freshness
+
+on:
+  schedule:
+    # Weekly. The drill it watches is monthly, so a weekly check reports a
+    # lapse within days rather than waiting a month to notice a missed month.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: restore-drill-freshness
+  cancel-in-progress: true
+
+env:
+  DRILL_REPO: RodnaPamet/agri-saas
+  DRILL_WORKFLOW: restore-test.yml
+  # The matrix leg, not the workflow. That workflow is `fail-fast: false` over
+  # `agrent` and `inflect-compliance`, so its RUN-level conclusion is `failure`
+  # when either leg fails and tells you nothing about ours. Descending to jobs
+  # is mandatory, not tidiness.
+  DRILL_LEG: Restore Test (inflect-compliance)
+  # One missed monthly drill passes silently; two consecutive go red. 30 would
+  # be red on day 31 of every healthy month and would be muted within two
+  # quarters. Also note 45 days exceeds the 14-day snapshot retention, so by
+  # then every snapshot the last successful run validated has aged out.
+  MAX_AGE_DAYS: '45'
+
+jobs:
+  freshness:
+    name: "Restore drill freshness (cross-repo)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Find the newest successful restore of this database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # `die` rather than fall through. An API error and "no successful run"
+          # are different facts that look identical to a script that continues
+          # on error — and reporting the first as the second is precisely the
+          # absence-is-ambiguous failure this job exists to close.
+          die() { echo "::error title=Restore drill freshness UNKNOWN::$*"; exit 1; }
+
+          runs_json=$(gh api \
+            "repos/${DRILL_REPO}/actions/workflows/${DRILL_WORKFLOW}/runs?status=completed&per_page=50" \
+            2>/dev/null) || die "cannot read ${DRILL_REPO} workflow runs. This is NOT evidence the drill is stale — it means this check could not observe it. Fix the access, then re-run."
+
+          ids=$(echo "$runs_json" | jq -r '.workflow_runs[].id')
+          [ -n "$ids" ] || die "${DRILL_WORKFLOW} in ${DRILL_REPO} reported zero completed runs. Either the workflow was renamed or the repo is unreadable; both are UNKNOWN, not stale."
+
+          latest=""
+          for id in $ids; do
+            jobs_json=$(gh api "repos/${DRILL_REPO}/actions/runs/${id}/jobs?per_page=100" 2>/dev/null) \
+              || die "cannot read jobs for run ${id}. UNKNOWN, not stale."
+            hit=$(echo "$jobs_json" | jq -r --arg leg "$DRILL_LEG" \
+              '[.jobs[] | select(.name == $leg and .conclusion == "success") | .completed_at] | max // empty')
+            if [ -n "$hit" ]; then latest="$hit"; break; fi
+          done
+
+          if [ -z "$latest" ]; then
+            echo "::error title=Restore drill has never passed::No successful \"${DRILL_LEG}\" job in the last 50 completed runs of ${DRILL_WORKFLOW}. The workflow runs; this leg has not passed."
+            exit 1
+          fi
+
+          age_days=$(( ( $(date -u +%s) - $(date -u -d "$latest" +%s) ) / 86400 ))
+          echo "Newest successful \"${DRILL_LEG}\": ${latest} (${age_days} days ago)"
+          {
+            echo "## Restore drill freshness"
+            echo ""
+            echo "- Watching: \`${DRILL_REPO}\` → \`${DRILL_WORKFLOW}\` → \`${DRILL_LEG}\`"
+            echo "- Newest success: **${latest}** (${age_days} days ago)"
+            echo "- Threshold: ${MAX_AGE_DAYS} days"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Non-fatal, and deliberately so: a human-started drill is still a
+          # validated restore. But a drill that ONLY passes when somebody
+          # presses the button is one forgetful month from validating nothing,
+          # which is the state this repo spent five months in.
+          sched=$(echo "$runs_json" | jq -r '[.workflow_runs[] | select(.event == "schedule" and .conclusion == "success")] | length')
+          if [ "$sched" -eq 0 ]; then
+            echo "::warning title=No scheduled restore has ever succeeded::Every successful drill was started by hand (workflow_dispatch). The unattended path is unproven."
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "> ⚠ No **scheduled** run has ever succeeded — every success was \`workflow_dispatch\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$age_days" -gt "${MAX_AGE_DAYS}" ]; then
+            echo "::error title=Restore drill is stale::Last successful restore was ${age_days} days ago, over the ${MAX_AGE_DAYS}-day threshold."
+            exit 1
+          fi
+
+  notify-on-failure:
+    name: "Notify: restore drill freshness"
+    needs: [freshness]
+    # `cancelled()` counts. A cancelled run observed nothing, which is the same
+    # epistemic position as a failed one and must not read as healthy.
+    if: ${{ failure() || cancelled() }}
+    runs-on: ubuntu-latest
+    # Declared at JOB level. Job permissions REPLACE the workflow block rather
+    # than merging with it, so `contents: read` above does not carry down.
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const title = 'Restore drill freshness check is failing';
+            const body = [
+              `The weekly freshness check for the cross-repo restore drill did not pass.`,
+              ``,
+              `- Watching: \`${process.env.DRILL_REPO}\` → \`${process.env.DRILL_WORKFLOW}\` → \`${process.env.DRILL_LEG}\``,
+              `- Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              ``,
+              `Read the run before assuming the backups are stale. This check fails for two`,
+              `different reasons and they need opposite responses:`,
+              ``,
+              `- **stale** — the drill genuinely has not passed inside the threshold. Act on the backups.`,
+              `- **UNKNOWN** — the check could not observe the drill (repo renamed, token scope, workflow moved).`,
+              `  That is a broken observer, not a broken backup, and fixing the backups would be the wrong move.`,
+            ].join('\n');
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'restore-drill',
+            });
+            const existing = open.find((i) => i.title === title);
+            if (existing) {
+              // Comment rather than open a second issue: twelve weekly
+              // failures should be one thread with twelve comments, not twelve
+              // issues nobody reads.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['restore-drill'],
+              });
+            }
+        env:
+          DRILL_REPO: ${{ env.DRILL_REPO }}
+          DRILL_WORKFLOW: ${{ env.DRILL_WORKFLOW }}
+          DRILL_LEG: ${{ env.DRILL_LEG }}

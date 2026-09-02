@@ -82,9 +82,10 @@ Where processing involves a cross-border transfer of personal data out of
 the EEA/UK, the transfer relies on an approved mechanism — Standard
 Contractual Clauses (SCCs), a UK IDTA/Addendum, an adequacy decision, or
 Binding Corporate Rules — as recorded per sub-processor in Annex C /
-[`docs/sub-processors.md`](./sub-processors.md). Operators deploying for
-EU data subjects choose EU regions for the AWS data tier to keep the
-primary data resident in-region.
+[`docs/sub-processors.md`](./sub-processors.md). The production deployment
+runs in Google Cloud region `europe-west1` (Belgium), with disk snapshots
+stored in the `eu` multi-region, so primary data and its backups are
+resident in the EEA.
 
 ## 9. Audit rights
 
@@ -132,14 +133,17 @@ decisions tied to the master Agreement.
 ## 14. Annex B — Technical and organisational measures
 
 - **Encryption:** AES-GCM envelope encryption of business-content fields
-  with a per-tenant DEK wrapped by a master KEK; TLS in transit; AWS
-  encryption at rest for RDS/S3/snapshots.
+  with a per-tenant DEK wrapped by a master KEK; TLS in transit; Google
+  Cloud encryption at rest for the persistent disk and its snapshots.
   ([`docs/encryption-data-protection.md`](./encryption-data-protection.md))
 - **Access control:** RBAC + per-tenant row-level security; API
   permission middleware with hash-chained `AUTHZ_DENIED` audit entries.
 - **Auditability:** immutable hash-chained audit log with optional
   per-tenant streaming to the Customer's SIEM.
-- **Resilience:** automated backups + cross-region snapshot DR
+- **Resilience:** one automated crash-consistent snapshot per day of the
+  persistent disk holding the database and uploaded files, retained 14
+  days and stored in the EU multi-region. Recovery point up to 24 hours;
+  there is no point-in-time recovery and no cross-region failover.
   ([`docs/disaster-recovery.md`](./disaster-recovery.md)).
 - **Account security:** breach-password screening (k-anonymity), brute-force
   lockout, session hardening + revocation, optional MFA.
@@ -152,7 +156,7 @@ live list governs, and changes follow §7 + the change policy.
 
 | Name | Purpose | Operator-optional? |
 |------|---------|--------------------|
-| AWS S3 / RDS / ElastiCache / KMS / Secrets Manager | Storage, DB, cache, crypto, secrets | No (AWS reference architecture) |
+| Google Cloud (Compute Engine, Persistent Disk, Snapshots) | Hosting, storage, database and backup for the production deployment | No |
 | Google OAuth / Microsoft Entra ID | Authentication | Yes |
 | Stripe | Billing (SaaS mode) | Yes |
 | SMTP relay (operator-chosen) | Email delivery | No |

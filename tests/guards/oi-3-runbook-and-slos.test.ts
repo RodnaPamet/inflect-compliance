@@ -54,34 +54,42 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
         expect(src).toMatch(/http_method=~"POST\|PUT\|PATCH\|DELETE"/);
     });
 
-    it('declares RPO 1 hour (OI-3 spec)', () => {
+    // ── RETIRED 2026-09-02 (#2226): four assertions that pinned PROSE ──
+    //
+    // They required `docs/slos.md` to CONTAIN specific sentences:
+    //
+    //     /Maximum\s+1\s+hour\s+of\s+data\s+loss/     <- the RPO number
+    //     /restore-test\.sh/                          <- the verification tool
+    //     /helm rollback/  /restore-db-instance/      <- the recovery commands
+    //
+    // Every one of those facts was false. Production is a GCP VM with a daily
+    // crash-consistent disk snapshot: real RPO is 24h, `archive_mode=off`,
+    // `pg_stat_archiver.archived_count` is 0, `restore-test.sh` targeted an AWS
+    // estate that was never applied, and there is no Kubernetes to `helm
+    // rollback`. So a GREEN run of this guard was evidence that the SLO doc
+    // still claimed a 1-hour RPO on RDS — the guard was holding the fiction in
+    // place, and correcting the doc was what turned it red.
+    //
+    // Two of them were worse than merely wrong. `restore-test.sh`, `helm
+    // rollback` and `restore-db-instance` all still appear in the doc's
+    // CHANGELOG TABLE, in a dated 2026-04-27 row recording what that epic did.
+    // So those two assertions kept passing after the live text was corrected,
+    // satisfied by a line describing April. A grep cannot tell a present-tense
+    // commitment from a historical note.
+    //
+    // Not replaced with corrected greps: that would recreate the same trap one
+    // rewrite later. Per CLAUDE.md, "Never gate CI on prose — a check that
+    // greps a markdown file verifies MENTION, not accuracy." Doc truth is
+    // `tests/guardrails/docs-accuracy.test.ts` and human review; conduct is
+    // `.github/workflows/restore-drill-freshness.yml`, which asks another
+    // repository whether a restore actually succeeded.
+    //
+    // The two section-existence checks below are kept: they assert the doc has
+    // an RPO and an RTO section at all, which is structure rather than content.
+    it('still declares an RPO and an RTO section', () => {
         const src = read(SLO_DOC);
         expect(src).toMatch(/SLO 6:\s*RPO/i);
-        expect(src).toMatch(/Maximum\s+1\s+hour\s+of\s+data\s+loss/i);
-    });
-
-    it('declares RTO 4 hours (OI-3 spec)', () => {
-        const src = read(SLO_DOC);
         expect(src).toMatch(/SLO 7:\s*RTO/i);
-        expect(src).toMatch(/Service\s+restored\s+within\s+4\s+hours/i);
-    });
-
-    it('RPO is verified by the monthly restore-test.sh', () => {
-        const src = read(SLO_DOC);
-        // The restore-test script (OI-3 part 4) is the canonical
-        // verification mechanism; a SLO doc that doesn't cite it
-        // would mean the SLO is a number on paper, not a measured
-        // commitment.
-        expect(src).toMatch(/restore-test\.sh/);
-    });
-
-    it('RTO scenarios reference the actual recovery commands', () => {
-        const src = read(SLO_DOC);
-        // helm rollback, restore-db-instance — both must appear by
-        // exact-name, since they're the canonical commands an
-        // operator runs.
-        expect(src).toMatch(/helm rollback/);
-        expect(src).toMatch(/restore-db-instance/);
     });
 
     it('declares the repository SLO that uses OI-3 part 2 metrics', () => {

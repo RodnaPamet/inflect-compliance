@@ -1,8 +1,18 @@
 # Infrastructure (Epic OI-1)
 
-The inflect-compliance platform is provisioned via Terraform on AWS.
-This document is the operator's manual — architecture, modules,
-environments, secrets, costs, and the day-1 + day-2 runbooks.
+> **⚠ This document describes infrastructure that was never provisioned.**
+> The Terraform under `infra/terraform/` has never been applied — every
+> `terraform apply` run failed on absent credentials (13 attempts, 0
+> successes, no state file). **Production is a single GCP VM** running
+> Docker Compose, deployed by Watchtower pulling from GHCR; see the
+> "Production VM" section of `CLAUDE.md` and
+> [`docs/disaster-recovery.md`](./disaster-recovery.md). Read what follows
+> as a design that was written and not built. Tracked in
+> [#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).
+
+This document was written as the operator's manual for an AWS Terraform
+estate — architecture, modules, environments, secrets, costs, and the
+day-1 + day-2 runbooks.
 
 > **Companion docs**
 > - `infra/terraform/README.md` — Terraform layout + commands
