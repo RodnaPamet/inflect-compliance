@@ -36,6 +36,7 @@ import { decryptField } from '@/lib/security/encryption';
 import { markAuthFailure, clearAuthFailure } from '@/app-layer/integrations/connection-health';
 import { IntegrationAuthError } from '@/app-layer/integrations/http-resilience';
 import { runAwsPostureCollection } from '@/app-layer/usecases/aws-posture';
+import { AwsPostureProvider } from '@/app-layer/integrations/aws-posture-provider';
 import { logger } from '@/lib/observability/logger';
 import type { CheckResult } from '@/app-layer/integrations/types';
 
@@ -46,15 +47,6 @@ const runInTenant = runInTenantContext as unknown as jest.Mock;
 const decrypt = decryptField as unknown as jest.Mock;
 const markAuth = markAuthFailure as unknown as jest.Mock;
 const clearAuth = clearAuthFailure as unknown as jest.Mock;
-
-/**
- * The evidence-path connection's own secret. Fabricated, and deliberately
- * shaped so NO pattern in `scrubAwsCredentials` matches it: not `AKIA`/`ASIA`,
- * not a bare 40-char base64 run (the hyphens break `\b…\b`), not a session
- * token, not an ARN. The only thing that can redact it is the connection's own
- * value list — which is what makes a dropped `secretVals` argument visible.
- */
-const CONN_SECRET = 'sk-live-9876543210zyxwvutsr'; // pragma: allowlist secret — fabricated, never issued
 
 /**
  * The WHOLE file runs TWICE, once per ARM, and that is load-bearing. An arm is
@@ -91,13 +83,48 @@ const CONN_SECRET = 'sk-live-9876543210zyxwvutsr'; // pragma: allowlist secret �
  * other arm fails. `soc2` is kept as an arm because it is the production
  * default; `CIS` also re-exercises the lowercasing through to a persisted row.
  *
- * Measured, at the time this table was widened: an AST walk over
- * `aws-posture.ts` finds 105 expressions that produce a value in a persisted
- * field, a log or a returned result. Pinning each in turn to the constant it
- * equals leaves 2 undetectable — both `completedAt: new Date()`, which no
- * source constant can satisfy (the matcher demands the real clock) and which
- * only a value re-read from the same process could. The five remaining
- * `AWS_POSTURE_PROVIDER` hits are the module constant itself, not a derivation.
+ * MEASURED — and stated carefully, because the first version of this paragraph
+ * was wrong in a way a reader could not have caught.
+ *
+ * The population is every expression sitting in a VALUE POSITION in
+ * `aws-posture.ts`: anything a hard-coded literal could be written in place of.
+ * The AST walk that produces it originally recorded a site and then STOPPED, on
+ * the reasoning that a recorded site is one substitutable value. That is wrong
+ * whenever the site is COMPOSITE: `[a, b, c].filter(...)` is one substitutable
+ * value AND `a`, `b`, `c` are three more nested inside it. The walk reported
+ * 105 sites against 142 real ones — 27% of the population never scored — and
+ * the unscored quarter is where the worst of it lived: ALL FOUR fields of
+ * `secretVals` (aws-posture.ts:84) were in it, because the whole
+ * `[...].filter(...)` was recorded as a single site and never opened.
+ *
+ * That mattered. `secretVals` is the only thing that can redact a value which
+ * no pattern in `scrubAwsCredentials` matches, and a raw STS session token (no
+ * word boundary at 40 chars) and an `externalId` match none of them. Three of
+ * the four fields could each be replaced by `undefined` with the whole file
+ * green, putting the credential verbatim into `IntegrationExecution.errorMessage`
+ * — a column the admin UI renders. The fixture only ever carried
+ * `secretAccessKey`, so the other three were observed as nothing at all. The
+ * per-arm `secrets` map above is the fix, and it is a fixture fix on purpose:
+ * a field added there is carried into the leaky message and into the assertion
+ * automatically, so the NEXT field is covered without anybody remembering to
+ * write a fifth assertion.
+ *
+ * Corrected walk: 142 sites. 135 are derived values; 7 are references to a
+ * module constant declared in the file (`AWS_POSTURE_PROVIDER = 'aws-posture'`
+ * at aws-posture.ts:31, five sites; `EVIDENCE_FRESHNESS_DAYS = 30` at :32, two).
+ * Each site was pinned in turn to a constant it is OBSERVED to equal — every
+ * distinct observed value, not just the first — and the whole file re-run.
+ *
+ * Result: 7 survivors, and all 7 are those module constants. Substituting
+ * `'aws-posture'` for a name declared `= 'aws-posture'` is the identity, so no
+ * assertion can distinguish it and none should be written to try. Undetectable
+ * DERIVED values: 0.
+ *
+ * `completedAt: new Date()` is NOT among them: `completionInstant` demands a
+ * value within minutes of the real clock, so a committed date literal goes red
+ * within minutes of being written. (A literal cut from a fresh observation does
+ * pass for the first five minutes, which is why every survivor here was
+ * re-confirmed serially, hours later, rather than trusted from the sweep.)
  */
 const ARMS = [
     {
@@ -112,6 +139,32 @@ const ARMS = [
         trailingId: 'inspector_enabled',
         trailingCodes: ['CC3.1', 'CC7.1'],
         ctl: 'ctl', ev: 'ev',
+        blob: 'cipher-aws-4f21',
+        /**
+         * EVERY field the collector puts into `secretVals`, each a DISTINCT
+         * value-only secret: none of the AKIA / ASIA / 40-char / session-token /
+         * ARN patterns in `scrubAwsCredentials` matches any of them (lowercase
+         * prefixes, and hyphens breaking every `\b…\b` run below 40 chars), so
+         * the connection's own value list is the ONLY thing that can redact them.
+         * That is what makes a field DROPPED from `secretVals` visible.
+         */
+        secrets: {
+            accessKeyId: 'akid-a1-4f21-zyxwvutsr', // pragma: allowlist secret — fabricated, never issued
+            secretAccessKey: 'skey-a1-4f21-zyxwvutsr', // pragma: allowlist secret
+            sessionToken: 'stok-a1-4f21-zyxwvutsr', // pragma: allowlist secret
+            externalId: 'extid-a1-4f21-zyxwvuts',
+        },
+        throwText: 'sts endpoint unreachable for account a1',
+        nonErrorText: 'socket hang up on account a1',
+        /**
+         * The completion path's lead has to vary per arm too, and the reason is
+         * subtle: the SCRUBBED message is what the assertions compare, and every
+         * secret in it is `[REDACTED]` by then. Varying only the secrets leaves
+         * the scrubbed text byte-identical across arms, so the whole
+         * `scrubAwsCredentials(...).slice(0, 500)` expression stayed pinnable to
+         * that one string. The lead is the part that survives scrubbing.
+         */
+        erroredText: 'collector error for account a1',
     },
     {
         benchmark: 'CIS', key: 'cis',
@@ -124,6 +177,16 @@ const ARMS = [
         trailingId: 'config_enabled_all_regions',
         trailingCodes: ['CC8.1', 'CC7.1'],
         ctl: 'ctr', ev: 'row',
+        blob: 'cipher-aws-8b07',
+        secrets: {
+            accessKeyId: 'akid-b2-8b07-qponmlkji', // pragma: allowlist secret — fabricated, never issued
+            secretAccessKey: 'skey-b2-8b07-qponmlkji', // pragma: allowlist secret
+            sessionToken: 'stok-b2-8b07-qponmlkji', // pragma: allowlist secret
+            externalId: 'extid-b2-8b07-qponmlkji',
+        },
+        throwText: 'sts endpoint unreachable for account b2',
+        nonErrorText: 'socket hang up on account b2',
+        erroredText: 'collector error for account b2',
     },
 ] as const;
 
@@ -260,7 +323,27 @@ describe.each(ARMS)(
         elapsed: ELAPSED_MS, now: NOW, thirtyDays: THIRTY_DAYS, day: DAY,
         mapped: MAPPED, second: SECOND_MAPPED, trailingId: TRAILING,
         trailingCodes: TRAILING_CODES, ctl: CTL, ev: EV,
+        blob: BLOB, secrets: SECRETS, throwText: THROW_TEXT, nonErrorText: NON_ERROR_TEXT,
+        erroredText: ERRORED_TEXT,
     }) => {
+    /**
+     * A provider message carrying EVERY secret this arm's connection holds, and
+     * the exact text the scrub must reduce it to. Both are derived from the same
+     * `SECRETS` map rather than written out, so a field added to the arm is
+     * automatically carried into the message and into the assertion — the point
+     * being that a field the collector forgets to put in `secretVals` then leaks
+     * into a persisted column and fails this file by construction, instead of
+     * waiting for somebody to remember to write a fifth assertion.
+     *
+     * `pad` keeps it past 500 chars so the truncation stays exercised.
+     */
+    const SECRET_ENTRIES = Object.entries(SECRETS) as Array<[string, string]>;
+    const PAD = 'pad '.repeat(200);
+    const leakyMessage = (lead: string) =>
+        `${lead}; ${SECRET_ENTRIES.map(([k, v]) => `${k}=${v}`).join(' ')} expired ${PAD}`;
+    const scrubbedMessage = (lead: string) =>
+        `${lead}; ${SECRET_ENTRIES.map(([k]) => `${k}=[REDACTED]`).join(' ')} expired ${PAD}`;
+
     const makeDb = (conn: Conn | null) => makeDbFor(conn, EXEC, EV);
     const fakeClock = () => fakeClockFor(NOW);
     const COMPLETION_INSTANT = completionInstant(NOW);
@@ -365,30 +448,51 @@ describe.each(ARMS)(
             expect(res.evidenceCreated).toBe(0);
         });
 
+        it('runs the REAL AwsPostureProvider when the caller injects none', async () => {
+            // Regression class: `input.provider ?? new AwsPostureProvider()`. Every
+            // other test in this file injects a provider, and the one that omits it
+            // has no connection, so it returns before the default is ever used —
+            // which left the construction observable by nothing at all. A literal
+            // object written in place of `new AwsPostureProvider()` passed the whole
+            // file, and in production that object has no `runCheck`.
+            //
+            // Spying the PROTOTYPE is what makes this bite: only a genuine instance
+            // of the class reaches it, so any stand-in fails here rather than
+            // shelling out to Powerpipe from a unit test.
+            const db = makeDb({ id: CONN, configJson: { benchmark: BENCHMARK }, secretEncrypted: null, isEnabled: true });
+            bind(db);
+            const runCheck = jest
+                .spyOn(AwsPostureProvider.prototype, 'runCheck')
+                .mockResolvedValue(checkResult());
+
+            const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW });
+
+            expect(runCheck).toHaveBeenCalledWith(
+                expect.objectContaining({ automationKey: `aws-posture.${KEY}` }),
+            );
+            expect(res.status).toBe('PASSED');
+        });
+
         it('lowercases the configured benchmark and merges the decrypted secrets into the provider config', async () => {
             // Regression class: a `CIS`-cased benchmark must not produce the key
             // `aws-posture.CIS`, and the decrypted secrets must actually reach the
             // provider — without them every check silently runs unauthenticated.
-            const db = makeDb({ id: CONN, configJson: { benchmark: 'CIS', region: 'eu-west-1' }, secretEncrypted: 'cipher-blob', isEnabled: true });
+            const db = makeDb({ id: CONN, configJson: { benchmark: 'CIS', region: 'eu-west-1' }, secretEncrypted: BLOB, isEnabled: true });
             bind(db);
-            // Fabricated credential shapes — they must MATCH the AWS patterns in
-            // `scrubAwsCredentials` for the scrub assertions below to mean anything.
-            decrypt.mockReturnValue(JSON.stringify({ accessKeyId: 'AKIAABCDEFGHIJKLMNOP', secretAccessKey: 'sk-live-0123456789abcdefghij' })); // pragma: allowlist secret
+            decrypt.mockReturnValue(JSON.stringify(SECRETS));
             const provider = providerReturning(checkResult());
 
             await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider });
 
-            expect(decrypt).toHaveBeenCalledWith('cipher-blob');
+            // The ciphertext the connection actually stores. With one fixture blob
+            // file-wide, `decryptField(conn.secretEncrypted)` could not be told
+            // from `decryptField('cipher-blob')`.
+            expect(decrypt).toHaveBeenCalledWith(BLOB);
             expect(provider.runCheck).toHaveBeenCalledWith(
                 expect.objectContaining({
                     automationKey: 'aws-posture.cis',
                     parsed: { provider: 'aws-posture', checkType: 'cis', raw: 'aws-posture.cis' },
-                    connectionConfig: {
-                        benchmark: 'CIS',
-                        region: 'eu-west-1',
-                        accessKeyId: 'AKIAABCDEFGHIJKLMNOP', // pragma: allowlist secret
-                        secretAccessKey: 'sk-live-0123456789abcdefghij',
-                    },
+                    connectionConfig: { benchmark: 'CIS', region: 'eu-west-1', ...SECRETS },
                 }),
             );
         });
@@ -398,17 +502,16 @@ describe.each(ARMS)(
         it('scrubs the connection secrets out of the persisted error and truncates it to 500 chars', async () => {
             // Regression class: the raw CLI error is written to a DB column and read
             // back in the admin UI. A dropped scrub leaks the secret access key.
-            const secret = 'sk-live-0123456789abcdefghij'; // pragma: allowlist secret — fabricated, never issued
-            const db = makeDb({ id: CONN, configJson: {}, secretEncrypted: 'cipher', isEnabled: true });
+            const db = makeDb({ id: CONN, configJson: {}, secretEncrypted: BLOB, isEnabled: true });
             bind(db);
-            decrypt.mockReturnValue(JSON.stringify({ secretAccessKey: secret, externalId: 'ext-12345678' }));
-            const err = new Error(`boom ${secret} ${'pad '.repeat(200)}`);
+            decrypt.mockReturnValue(JSON.stringify(SECRETS));
+            const err = new Error(leakyMessage(THROW_TEXT));
             const clock = fakeClock();
             const provider = providerThrowingAfter(err, clock, ELAPSED_MS);
 
             const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider });
 
-            const expected = `boom [REDACTED] ${'pad '.repeat(200)}`.slice(0, 500);
+            const expected = scrubbedMessage(THROW_TEXT).slice(0, 500);
             expect(expected).toHaveLength(500);
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
                 where: { id: EXEC },
@@ -417,7 +520,20 @@ describe.each(ARMS)(
                 data: { status: 'ERROR', errorMessage: expected, durationMs: ELAPSED_MS, completedAt: COMPLETION_INSTANT },
             });
             expect(res.errorMessage).toBe(expected);
-            expect(res.errorMessage).not.toContain(secret);
+            // EVERY field of the connection's secret, read back off what the
+            // collector actually wrote. `secrets.accessKeyId`, `.sessionToken` and
+            // `.externalId` were each replaceable by `undefined` with the whole
+            // file still green: the fixture only ever carried `secretAccessKey`,
+            // so the other three entries of `secretVals` were `undefined`,
+            // filtered out, and observed as nothing. A raw STS session token (no
+            // word boundary at 40 chars) and an `externalId` match NO pattern in
+            // `scrubAwsCredentials`, so dropping either from the array put it
+            // verbatim into a column the admin UI renders.
+            const written = (db.integrationExecution.update.mock.calls as unknown as Array<[{ data: { errorMessage: string } }]>)[0][0].data.errorMessage;
+            for (const [field, value] of SECRET_ENTRIES) {
+                expect({ field, msg: written }).toEqual({ field, msg: expect.not.stringContaining(value) });
+                expect({ field, msg: res.errorMessage }).toEqual({ field, msg: expect.not.stringContaining(value) });
+            }
             // A throw is not a completed collection — the banner stays as it was.
             expect(clearAuth).not.toHaveBeenCalled();
         });
@@ -450,7 +566,7 @@ describe.each(ARMS)(
             // hammers a revoked credential.
             const db = makeDb({ id: CONN, configJson: {}, secretEncrypted: null, isEnabled: true });
             bind(db);
-            const thrown = 'socket hang up';
+            const thrown = NON_ERROR_TEXT;
             const provider = providerThrowing(thrown);
 
             const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider });
@@ -464,14 +580,14 @@ describe.each(ARMS)(
             // the only other assertion on this site, and with one observation the
             // derived `msg` is byte-identical to the constant it takes there.
             expect(db.integrationExecution.update).toHaveBeenCalledWith(
-                expect.objectContaining({ data: expect.objectContaining({ errorMessage: 'socket hang up' }) }),
+                expect.objectContaining({ data: expect.objectContaining({ errorMessage: NON_ERROR_TEXT }) }),
             );
             expect(res).toStrictEqual({
                 executionId: EXEC,
                 status: 'ERROR',
                 counts: null,
                 evidenceCreated: 0,
-                errorMessage: 'socket hang up',
+                errorMessage: NON_ERROR_TEXT,
                 noRetry: false,
             });
         });
@@ -503,8 +619,8 @@ describe.each(ARMS)(
          *    dropping it from the completion-path scrub survived.
          */
         function connDb() {
-            const db = makeDb({ id: CONN, configJson: { benchmark: BENCHMARK }, secretEncrypted: 'cipher-blob', isEnabled: true });
-            decrypt.mockReturnValue(JSON.stringify({ secretAccessKey: CONN_SECRET }));
+            const db = makeDb({ id: CONN, configJson: { benchmark: BENCHMARK }, secretEncrypted: BLOB, isEnabled: true });
+            decrypt.mockReturnValue(JSON.stringify(SECRETS));
             bind(db);
             return db;
         }
@@ -797,8 +913,8 @@ describe.each(ARMS)(
                 .mockResolvedValueOnce({ controlId: `${CTL}-soc2` })
                 .mockResolvedValueOnce({ controlId: `${CTL}-nist` });
             db.evidence.findFirst
-                .mockResolvedValueOnce({ id: 'ev-old-a' })
-                .mockResolvedValueOnce({ id: 'ev-old-b' });
+                .mockResolvedValueOnce({ id: `${EV}-old-a` })
+                .mockResolvedValueOnce({ id: `${EV}-old-b` });
 
             const res = await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW, provider: providerReturning(passing) });
 
@@ -812,7 +928,7 @@ describe.each(ARMS)(
             expect(res.evidenceCreated).toBe(2);
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
                 where: { id: EXEC },
-                data: expect.objectContaining({ evidenceId: 'ev-old-a' }),
+                data: expect.objectContaining({ evidenceId: `${EV}-old-a` }),
             });
         });
 
@@ -845,7 +961,7 @@ describe.each(ARMS)(
             // to carry no secret at all.
             const errored = checkResult({
                 status: 'ERROR',
-                errorMessage: `collector error; key AKIAABCDEFGHIJKLMNOP secret ${CONN_SECRET} expired ${'pad '.repeat(200)}`, // pragma: allowlist secret
+                errorMessage: leakyMessage(ERRORED_TEXT),
                 details: { counts: { ok: 1, alarm: 0, skip: 0, error: 0, total: 1 }, controls: [{ id: MAPPED, status: 'ok' }] },
             });
 
@@ -860,7 +976,7 @@ describe.each(ARMS)(
             // as `undefined`, so one non-undefined observation is what stops the
             // literal from being indistinguishable from the derivation.
             expect(res.errorMessage).toBe(errored.errorMessage);
-            const persisted = `collector error; key [REDACTED] secret [REDACTED] expired ${'pad '.repeat(200)}`.slice(0, 500);
+            const persisted = scrubbedMessage(ERRORED_TEXT).slice(0, 500);
             expect(persisted).toHaveLength(500);
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
                 where: { id: EXEC },
@@ -875,7 +991,9 @@ describe.each(ARMS)(
             // asserting the test's own arithmetic.
             const updateArgs = db.integrationExecution.update.mock
                 .calls as unknown as Array<[{ data: { errorMessage: string } }]>;
-            expect(updateArgs[0][0].data.errorMessage).not.toContain(CONN_SECRET);
+            for (const [field, value] of SECRET_ENTRIES) {
+                expect({ field, msg: updateArgs[0][0].data.errorMessage }).toEqual({ field, msg: expect.not.stringContaining(value) });
+            }
         });
     });
     },

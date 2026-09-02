@@ -90,13 +90,37 @@ const clearAuth = clearAuthFailure as unknown as jest.Mock;
  * hard-coded `${cloud}.cis` then survives in its place. Varying it per arm
  * removes it: whichever benchmark a literal names, the other arm fails.
  *
- * Measured, at the time this table was widened: an AST walk over
- * `cloud-posture.ts` finds 111 expressions that produce a value in a persisted
- * field, a log or a returned result. Pinning each in turn to the constant it
- * equals left 50 of them undetectable. Two disjoint arms plus the second
- * observations noted below take that to 2 — both of them `completedAt: new
- * Date()`, which no source constant can satisfy (the matcher demands the real
- * clock) and which only a value re-read from the same process could.
+ * MEASURED — and stated carefully, because the first version of this paragraph
+ * was wrong in a way a reader could not have caught.
+ *
+ * The population is every expression sitting in a VALUE POSITION in
+ * `cloud-posture.ts`: anything a hard-coded literal could be written in place
+ * of. The AST walk that produces it originally recorded a site and then
+ * STOPPED, on the reasoning that a recorded site is one substitutable value.
+ * That is wrong whenever the site is COMPOSITE: `decryptField(x)` is one
+ * substitutable value AND `x` is another, nested inside it. The walk reported
+ * 111 sites against 141 real ones — 22% of the population never scored, and the
+ * unscored fifth was not uniform. It contained the argument to `decryptField`,
+ * and the catch path's `e.message` and `String(e)`. An enumeration that stops
+ * at the first thing it recognises will always miss what is nested inside it.
+ *
+ * Corrected walk: 141 sites. 139 are derived values; 2 are references to
+ * `EVIDENCE_FRESHNESS_DAYS`, a module constant declared `= 30` at
+ * cloud-posture.ts:23. Each site was pinned in turn to a constant it is
+ * OBSERVED to equal — every distinct observed value, not just the first,
+ * because a site can be indistinguishable at one observation and caught at
+ * another — and the whole file re-run per mutation.
+ *
+ * Result: 2 survivors, and both are the module constant. Substituting `30` for
+ * a name declared `= 30` is the identity — the same program with the constant
+ * inlined — so no assertion can distinguish it and none should be written to
+ * try. Undetectable DERIVED values: 0.
+ *
+ * `completedAt: new Date()` is NOT among them: `completionInstant` demands a
+ * value within minutes of the real clock, so a committed date literal goes red
+ * within minutes of being written. (A literal cut from a fresh observation does
+ * pass for the first five minutes, which is why every survivor here was
+ * re-confirmed serially, hours later, rather than trusted from the sweep.)
  */
 const ARMS = [
     {
@@ -109,6 +133,17 @@ const ARMS = [
         dual: 'storage_account_encryption_enabled',
         soc2Only: 'keyvault_logging_enabled',
         ctl: 'ctl', ev: 'ev',
+        // The connection's stored ciphertext, and what it decrypts to. Single
+        // fixture values here made `conn.secretEncrypted` — the argument to
+        // `decryptField` — byte-identical to the literal `'cipher-blob'`.
+        blob: 'cipher-gcp-4f21',
+        clientId: 'cid-gcp-11', clientSecret: 'csecret-gcp-11',
+        // The provider's own failure text, on the throw path and on the
+        // completion path. Both were file-wide constants, so every expression
+        // that carries a provider message was pinnable to the one string.
+        throwText: 'quota exhausted for project gcp-77',
+        nonErrorText: 'weird failure in the gcp collector',
+        erroredText: 'collector error for project gcp-77; stderr: ',
     },
     {
         cloud: 'azure-posture', benchmark: 'CIS', key: 'cis',
@@ -119,6 +154,11 @@ const ARMS = [
         dual: 'compute_disk_encryption_enabled',
         soc2Only: 'audit_log_retention_enabled',
         ctl: 'ctr', ev: 'row',
+        blob: 'cipher-az-8b07',
+        clientId: 'cid-az-22', clientSecret: 'csecret-az-22',
+        throwText: 'subscription throttled in tenant az-31',
+        nonErrorText: 'weird failure in the azure collector',
+        erroredText: 'collector error in tenant az-31; stderr: ',
     },
 ] as const;
 
@@ -266,6 +306,8 @@ describe.each(ARMS)(
         cloud: CLOUD, benchmark: BENCHMARK, key: KEY, tenant: TENANT, conn: CONN,
         exec: EXEC, elapsed: ELAPSED_MS, now: NOW, thirtyDays: THIRTY_DAYS,
         day: DAY, dual: DUAL, soc2Only: SOC2_ONLY, ctl: CTL, ev: EV,
+        blob: BLOB, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET,
+        throwText: THROW_TEXT, nonErrorText: NON_ERROR_TEXT, erroredText: ERRORED_TEXT,
     }) => {
     const makeDb = (conn: Conn | null) => makeDbFor(conn, EXEC, EV);
     const fakeClock = () => fakeClockFor(NOW);
@@ -395,14 +437,17 @@ describe.each(ARMS)(
         });
 
         it('lowercases the benchmark and merges the decrypted secrets into the provider config', async () => {
-            const db = makeDb({ id: CONN, configJson: { benchmark: 'CIS', subscriptionId: 'sub-1' }, secretEncrypted: 'cipher-blob' });
+            const db = makeDb({ id: CONN, configJson: { benchmark: 'CIS', subscriptionId: 'sub-1' }, secretEncrypted: BLOB });
             bind(db);
-            decrypt.mockReturnValue(JSON.stringify({ clientId: 'cid', clientSecret: 'csecret' }));
+            decrypt.mockReturnValue(JSON.stringify({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET }));
             const provider = providerReturning(checkResult());
 
             await run({ provider });
 
-            expect(decrypt).toHaveBeenCalledWith('cipher-blob');
+            // The ciphertext the connection actually stores, not a constant: with
+            // one fixture blob file-wide, `decryptField(conn.secretEncrypted)`
+            // could not be told from `decryptField('cipher-blob')`.
+            expect(decrypt).toHaveBeenCalledWith(BLOB);
             expect(provider.runCheck).toHaveBeenCalledWith(
                 expect.objectContaining({
                     automationKey: `${CLOUD}.cis`,
@@ -410,7 +455,7 @@ describe.each(ARMS)(
                     // produce: the sibling test pins `checkType` at 'soc2', which
                     // is byte-identical to the literal there.
                     parsed: { provider: CLOUD, checkType: 'cis', raw: `${CLOUD}.cis` },
-                    connectionConfig: { benchmark: 'CIS', subscriptionId: 'sub-1', clientId: 'cid', clientSecret: 'csecret' },
+                    connectionConfig: { benchmark: 'CIS', subscriptionId: 'sub-1', clientId: CLIENT_ID, clientSecret: CLIENT_SECRET },
                 }),
             );
         });
@@ -422,7 +467,9 @@ describe.each(ARMS)(
             // past the absorb budget re-queued immediately hammers the provider.
             const db = makeDb({ id: CONN, configJson: {}, secretEncrypted: null });
             bind(db);
-            const err = new IntegrationRateLimitedError(`https://management.azure.com/${'x'.repeat(700)}`, 30_000);
+            // Arm-varying: `e.message` is read on the catch path and persisted, and
+            // a file-wide URL made that read byte-identical to its own literal.
+            const err = new IntegrationRateLimitedError(`https://${CLOUD}.example/${THROW_TEXT}/${'x'.repeat(700)}`, 30_000);
             expect(err.message.length).toBeGreaterThan(500);
             const clock = fakeClock();
 
@@ -451,7 +498,9 @@ describe.each(ARMS)(
             const db = makeDb({ id: CONN, configJson: {}, secretEncrypted: null });
             bind(db);
 
-            const thrown = { toString: () => 'weird failure' };
+            // Arm-varying for the same reason as the sibling above — this is the
+            // ONLY observation of `String(e)` in the file.
+            const thrown = { toString: () => NON_ERROR_TEXT };
 
             const res = await run({ provider: providerThrowing(thrown) });
 
@@ -465,14 +514,14 @@ describe.each(ARMS)(
             // this site, so with one observation the derived `msg` is
             // byte-identical to the constant it takes there.
             expect(db.integrationExecution.update).toHaveBeenCalledWith(
-                expect.objectContaining({ data: expect.objectContaining({ errorMessage: 'weird failure' }) }),
+                expect.objectContaining({ data: expect.objectContaining({ errorMessage: NON_ERROR_TEXT }) }),
             );
             expect(res).toStrictEqual({
                 executionId: EXEC,
                 status: 'ERROR',
                 counts: null,
                 evidenceCreated: 0,
-                errorMessage: 'weird failure',
+                errorMessage: NON_ERROR_TEXT,
                 noRetry: false,
             });
         });
@@ -769,6 +818,14 @@ describe.each(ARMS)(
                     status: 'APPROVED',
                 },
             });
+            // The refreshed row is what the execution points at. The AWS twin
+            // asserted this and the cloud one did not, which left the update arm's
+            // `firstEvidenceId ?? ev.id` with a single observation elsewhere in the
+            // file — and so indistinguishable from that one constant.
+            expect(db.integrationExecution.update).toHaveBeenCalledWith({
+                where: { id: EXEC },
+                data: expect.objectContaining({ evidenceId: `${EV}-existing` }),
+            });
             expect(db.evidence.create).not.toHaveBeenCalled();
             expect(db.evidenceControlLink.create).not.toHaveBeenCalled();
             expect(db.controlEvidenceLink.create).not.toHaveBeenCalled();
@@ -782,8 +839,8 @@ describe.each(ARMS)(
                 .mockResolvedValueOnce({ controlId: `${CTL}-soc2` })
                 .mockResolvedValueOnce({ controlId: `${CTL}-nist` });
             db.evidence.findFirst
-                .mockResolvedValueOnce({ id: 'ev-old-a' })
-                .mockResolvedValueOnce({ id: 'ev-old-b' });
+                .mockResolvedValueOnce({ id: `${EV}-old-a` })
+                .mockResolvedValueOnce({ id: `${EV}-old-b` });
 
             const res = await run({ provider: providerReturning(passing) });
 
@@ -797,7 +854,7 @@ describe.each(ARMS)(
             expect(res.evidenceCreated).toBe(2);
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
                 where: { id: EXEC },
-                data: expect.objectContaining({ evidenceId: 'ev-old-a' }),
+                data: expect.objectContaining({ evidenceId: `${EV}-old-a` }),
             });
         });
 
@@ -820,7 +877,7 @@ describe.each(ARMS)(
             db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-shared` });
             const errored = checkResult({
                 status: 'ERROR',
-                errorMessage: `collector error; stderr: ${'z'.repeat(600)}`,
+                errorMessage: `${ERRORED_TEXT}${'z'.repeat(600)}`,
                 details: { counts: { ok: 1, alarm: 0, skip: 0, error: 0, total: 1 }, controls: [{ id: DUAL, status: 'ok' }] },
             });
 
@@ -835,7 +892,7 @@ describe.each(ARMS)(
             // as `undefined`, so one non-undefined observation is what stops the
             // literal from being indistinguishable from the derivation.
             expect(res.errorMessage).toBe(errored.errorMessage);
-            const persisted = `collector error; stderr: ${'z'.repeat(600)}`.slice(0, 500);
+            const persisted = `${ERRORED_TEXT}${'z'.repeat(600)}`.slice(0, 500);
             expect(persisted).toHaveLength(500);
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
                 where: { id: EXEC },
