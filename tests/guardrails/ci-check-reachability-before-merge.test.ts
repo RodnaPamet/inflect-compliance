@@ -227,11 +227,24 @@ describe('every CI job is PR-reachable or registered as not', () => {
 
     it('the census is plausibly sized (guards against a vacuous pass)', () => {
         // If the parser silently yields nothing, every assertion below passes
-        // while checking nothing. These floors are deliberately well under the
-        // real counts (14 workflows / 39 jobs as of 2026-08-25) so ordinary
-        // growth or deletion does not trip them, but a collapsed parse does.
-        expect(workflows).toBeGreaterThanOrEqual(10);
-        expect(jobs.length).toBeGreaterThanOrEqual(30);
+        // while checking nothing. These floors sit well under the real counts
+        // so ordinary growth or deletion does not trip them, but a collapsed
+        // parse does.
+        //
+        // LOWERED 2026-09-02, deliberately and once. The counts were 14
+        // workflows / 39 jobs when this was written; removing the unapplied AWS
+        // estate deleted `deploy.yml` (6 jobs), `terraform.yml` (3) and
+        // `helm-validate.yml`, and #2270 had already removed `restore-test.yml`
+        // (3) — leaving 11 workflows / 26 jobs. The old `>= 30` floor would
+        // have gone red on a correct deletion, which is the failure mode a
+        // floor is supposed to avoid.
+        //
+        // Re-baselined at roughly two thirds of the real counts rather than at
+        // the counts themselves: a floor set AT the current number turns every
+        // future deletion into a floor edit, and the point of these three is to
+        // catch a parser that yields nothing, not to pin an inventory.
+        expect(workflows).toBeGreaterThanOrEqual(8);
+        expect(jobs.length).toBeGreaterThanOrEqual(18);
         expect(jobs.filter((j) => j.reach === 'yes').length).toBeGreaterThanOrEqual(8);
     });
 

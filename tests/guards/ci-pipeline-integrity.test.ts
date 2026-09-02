@@ -8,9 +8,9 @@
  *      (`deterministic-install`).
  *   2. E2E test isolation — fixture-scoped tenants, no cross-test
  *      `let` cascade (`e2e-isolation`).
- *   3. Staging smoke gate — production deploy `needs: smoke-staging`
- *      (`deploy-staging-gate`) + the OI-2 helm invariants
- *      (`deploy-workflow`).
+ *   3. (retired 2026-09-02 — the staging smoke gate and OI-2 helm
+ *      invariants guarded a deploy pipeline that never deployed; see the
+ *      note in GUARDRAILS below.)
  *   4. Build / env-validation discipline — the CI build skips
  *      compile-time env validation deliberately; runtime is the
  *      real gate.
@@ -72,16 +72,18 @@ const GUARDRAILS: ReadonlyArray<{
         pillar: 'E2E test isolation',
         anchors: ['cascade', 'isolatedTenant'],
     },
-    {
-        file: 'tests/guards/deploy-staging-gate.test.ts',
-        pillar: 'staging smoke gate',
-        anchors: ['smoke-staging', 'deploy-production'],
-    },
-    {
-        file: 'tests/guards/deploy-workflow.test.ts',
-        pillar: 'release workflow (OI-2 helm invariants)',
-        anchors: ['helm', 'deploy-staging'],
-    },
+    // REMOVED 2026-09-02 (#2226): 'staging smoke gate' and 'release workflow
+    // (OI-2 helm invariants)'. Both guarded `.github/workflows/deploy.yml` —
+    // an EKS/helm pipeline that was `workflow_dispatch`-only, whose
+    // auto-trigger was commented out pending a staging environment that was
+    // never provisioned, and which never ran successfully. It was deleted with
+    // the rest of the unapplied AWS estate.
+    //
+    // Worth stating plainly, because this file is the meta-layer: those two
+    // entries meant this guard asserted the EXISTENCE of guards that asserted
+    // the SHAPE of a deploy pipeline that had never deployed anything. Three
+    // levels of green, none of them touching conduct. The real deploy path is
+    // `ghcr-publish.yml` + Watchtower on the production VM.
     {
         file: 'tests/guardrails/merge-queue-trigger-coverage.test.ts',
         pillar: 'merge-queue trigger coverage + lean gate',
@@ -117,12 +119,17 @@ describe('CI/CD pipeline-integrity — guard the guards', () => {
         });
     });
 
-    it('every registry pillar is distinct and the set is complete (7 guardrails)', () => {
-        // A drive-by deletion of one entry shrinks this count; the
-        // number is the explicit contract for "how many pipeline
-        // guardrails exist".
-        expect(GUARDRAILS).toHaveLength(7);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(7);
+    it('every registry pillar is distinct and the set is complete (5 guardrails)', () => {
+        // A drive-by deletion of one entry shrinks this count; the number is
+        // the explicit contract for "how many pipeline guardrails exist", and
+        // it is meant to make a removal deliberate rather than incidental.
+        //
+        // 7 -> 5 on 2026-09-02 (#2226), deliberately: `deploy-staging-gate`
+        // and `deploy-workflow` both guarded `.github/workflows/deploy.yml`,
+        // deleted with the unapplied AWS estate. This is the count doing its
+        // job — the deletion could not be silent.
+        expect(GUARDRAILS).toHaveLength(5);
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(5);
     });
 });
 

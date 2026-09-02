@@ -39,36 +39,6 @@
     "reason": "Publishes the image to GHCR on push to main; publishing cannot meaningfully happen from a PR.",
     "coveredBy": "ci.yml `Docker Build` builds the same Dockerfile at PR time when the container filter fires, and Build now compiles the worker bundle unconditionally."
   },
-  "deploy.yml:gate": {
-    "kind": "never",
-    "reason": "workflow_dispatch-only deployment job that resolves the target environment and approval gate. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
-    "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
-  },
-  "deploy.yml:build-image": {
-    "kind": "never",
-    "reason": "workflow_dispatch-only deployment job that builds the deployable image. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
-    "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
-  },
-  "deploy.yml:deploy-staging": {
-    "kind": "never",
-    "reason": "workflow_dispatch-only deployment job that deploys to staging. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
-    "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
-  },
-  "deploy.yml:smoke-staging": {
-    "kind": "never",
-    "reason": "workflow_dispatch-only deployment job that smoke-tests staging. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
-    "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
-  },
-  "deploy.yml:deploy-production": {
-    "kind": "never",
-    "reason": "workflow_dispatch-only deployment job that deploys to production. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
-    "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
-  },
-  "deploy.yml:smoke-production": {
-    "kind": "never",
-    "reason": "workflow_dispatch-only deployment job that smoke-tests production. Deployment is inherently post-merge \u2014 there is no artifact to deploy from an unmerged PR.",
-    "coveredBy": "Build, Test, E2E and Docker Build validate the artifact at PR time; the deploy itself is gated by a GitHub Environment approval rather than by CI."
-  },
   "dast.yml:zap-baseline": {
     "kind": "never",
     "reason": "Nightly ZAP baseline scan against a booted stack; it has no pull_request trigger because it needs the full app running and takes far longer than a PR check should.",
@@ -88,31 +58,6 @@
     "kind": "never",
     "reason": "Weekly check comparing pinned dependency overrides against the live npm registry; it needs network access to a moving external source, so its result is a function of time rather than of the diff.",
     "coveredBy": "tests/guards/overrides-effective.test.ts runs on every PR and enforces that each override is registered, effective and non-stale against the LOCKFILE. Only the 'is the upstream fix newer than our floor' half needs the registry."
-  },
-  "terraform.yml:plan": {
-    "kind": "conditional",
-    "reason": "Runs only for non-fork pull requests (`github.event.pull_request.head.repo.fork == false`), so a fork PR touching infra gets no plan output.",
-    "coveredBy": "terraform fmt+validate runs on any PR touching infra/terraform/**; a fork PR still gets syntax and validation, just not a credentialed plan."
-  },
-  "terraform.yml:apply-staging": {
-    "kind": "never",
-    "reason": "Applies infrastructure to staging on push to main or explicit dispatch. Applying from an unmerged PR would let a PR mutate real infrastructure.",
-    "coveredBy": "fmt-validate and plan both run at PR time on infra changes, so the diff is validated and its effect previewed before merge."
-  },
-  "terraform.yml:apply-production": {
-    "kind": "never",
-    "reason": "Applies to production, additionally requiring staging to have applied successfully. Same reasoning as apply-staging, with a higher blast radius.",
-    "coveredBy": "fmt-validate and plan at PR time, plus the staging apply must succeed first \u2014 production apply is never the first execution of a change."
-  },
-  "helm-validate.yml:pull_request.paths": {
-    "kind": "path-scoped",
-    "reason": "Scoped to infra/helm/** and the observability dashboards, so it does not run on unrelated PRs. Content-scoping, not base-branch scoping \u2014 a PR that touches those paths always gets the check.",
-    "coveredBy": "The jobs only validate files under those paths, so a PR that does not touch them has nothing for this workflow to check."
-  },
-  "terraform.yml:pull_request.paths": {
-    "kind": "path-scoped",
-    "reason": "Scoped to infra/terraform/** and the workflow itself, for the same reason as helm-validate.",
-    "coveredBy": "The jobs only act on infra/terraform/**; a PR that does not touch them has nothing to validate."
   },
   "restore-drill-freshness.yml:notify-on-failure": {
     "kind": "never",
