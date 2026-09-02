@@ -15,10 +15,31 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { declarationOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+/**
+ * THE READER IS THE SEAM. Every assertion in this file matches against
+ * source text, so every one of them is satisfiable by a COMMENT unless the
+ * comments are gone before the matching starts — "delete the code, keep the
+ * note explaining it" is a green diff otherwise, and on a file this size
+ * (~30 `expect(src)` sites) it only has to be forgotten once.
+ *
+ * Masking here rather than at each call site is the whole point: an
+ * assertion added below is covered by construction, and the file no longer
+ * depends on the next author remembering. It also un-breaks the anchored
+ * slices further down — `src.indexOf('const fetchVendor')` used to be
+ * satisfied by a comment naming the function, which is the same defect one
+ * step earlier. `codeOf` preserves offsets, so every `indexOf` / `slice`
+ * pair below still lines up with the file.
+ *
+ * String literals are KEPT (see the source-blocks header): most of what this
+ * file asserts — `data-testid="…"`, i18n keys, `value: 'assign'` — IS a
+ * string literal, and masking those would empty the assertions instead of
+ * sharpening them.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const DETAIL = 'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx';
 const LIST = 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx';
@@ -87,12 +108,14 @@ describe('4 — a failed bulk action is audible', () => {
         // 40-vendor bulk delete produced an unhandled rejection and a
         // stopped spinner.
         //
-        // Comments stripped first: the fix documents the old line verbatim
-        // to explain what was wrong, and that note is worth keeping.
-        const code = src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '');
-        expect(code).not.toMatch(/throw new Error\('Bulk action failed'\)/);
+        // The fix documents the old line verbatim to explain what was wrong,
+        // and that note is worth keeping — so this assertion has to be about
+        // code and not prose. It used to say so itself, with a local
+        // two-`replace` stripper, and that was the tell: ONE assertion in
+        // this file knew the hazard and the other ~30 did not. `read` masks
+        // now, for all of them, so the special case is gone rather than
+        // duplicated.
+        expect(src).not.toMatch(/throw new Error\('Bulk action failed'\)/);
     });
 
     it('has a catch and reports through toast', () => {

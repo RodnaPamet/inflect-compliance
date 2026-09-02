@@ -13,10 +13,25 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+
+/**
+ * Comments masked at the READER, so every assertion below is about code.
+ *
+ * This guard is mostly NEGATIVE — `not.toMatch(/value: 'status'/)`,
+ * `not.toMatch(/bulkSetEvidenceStatus/)` — and a negative assertion over raw
+ * text is the worst case of the class: the shape it is meant to forbid is
+ * exactly the shape somebody writes in a comment while removing it
+ * ("no bulk status — status is workflow-gated"). One such note and the
+ * assertion fails on a codebase that is CORRECT, so the pressure is to
+ * loosen the regex rather than to fix the read. The positive half has the
+ * mirror problem: a commented-out `value: 'assign'` vouches for a bar that
+ * no longer offers it. `functionBodyOf` already masks; this makes the
+ * whole-file reads agree with it.
+ */
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('Bulk action rollout — Evidence (assign-only)', () => {

@@ -12,10 +12,20 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+
+/**
+ * Comments masked at the READER. `functionBodyOf` (used for the four
+ * per-verb gate checks) has always returned a comment-free block; the
+ * whole-file reads beside it did not, so the same file was being asserted
+ * against under two different rules depending on which line you were on —
+ * `updateMany`, `tenantId: ctx.tenantId` and `value: 'status'` could each be
+ * satisfied by a note. Masking here makes the two agree, and covers the
+ * per-entity rows added to ENTITIES later by construction.
+ */
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 interface EntitySpec {

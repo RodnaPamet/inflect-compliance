@@ -45,10 +45,24 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+/**
+ * Comments masked at the READER, so the two whole-file assertions in this
+ * file are about code on the same terms as the `functionBodyOf` ones.
+ *
+ * The import check below is the sharp case. Its regex spans
+ * `import { … checkTaskTransition … } from '../domain/task-status'`, and an
+ * import line is the single most likely thing in a diff to be COMMENTED OUT
+ * rather than deleted — so the assertion that the gate is still wired in was
+ * satisfiable by the disconnected wire itself. The bounded-body assertions
+ * would fail alongside it today, which makes this a redundancy rather than a
+ * hole; that is an argument for fixing it, not for leaving it, because the
+ * redundancy is what the file's own header promises.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 
 
@@ -108,14 +122,21 @@ describe('task status machine — wiring + audit shape', () => {
         // The bug this locks: `detailsJson.fromStatus` was hardcoded
         // `null` and `toStatus` held the action name, so an auditor
         // reading the trail could not tell what a task moved FROM.
+        //
+        // The local `.replace()` pair that used to strip comments here is
+        // gone: `read` masks them now, for every assertion in the file
+        // rather than these two. Note the one behavioural difference —
+        // `codeOf` BLANKS a comment where the old pair DELETED it, so
+        // characters a comment occupies still count against the
+        // `[\s\S]{0,80}` window below. That direction is safe for a
+        // `not.toMatch` (it can only decline to match), and it is what keeps
+        // `indexOf`/`slice` offsets aligned with the real file everywhere
+        // else.
         it('task.ts never writes a null fromStatus or an action-name toStatus', () => {
-            const stripped = taskSrc
-                .replace(/\/\/.*$/gm, '')
-                .replace(/\/\*[\s\S]*?\*\//g, '');
-            expect(stripped).not.toMatch(
+            expect(taskSrc).not.toMatch(
                 /entityName:\s*['"]Task['"][\s\S]{0,80}fromStatus:\s*null/,
             );
-            expect(stripped).not.toMatch(/toStatus:\s*['"]TASK_STATUS_CHANGED['"]/);
+            expect(taskSrc).not.toMatch(/toStatus:\s*['"]TASK_STATUS_CHANGED['"]/);
         });
 
         it('setTaskStatus and bulkSetTaskStatus each emit a real fromStatus + toStatus', () => {
