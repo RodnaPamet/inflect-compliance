@@ -35,14 +35,35 @@ import { logger } from '@/lib/observability/logger';
 import type { CloudPostureControlMapEntry } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
 import type { CheckResult } from '@/app-layer/integrations/types';
 
+/** The real `Date.now`, captured before any test spy can replace it. */
+const realNow = Date.now.bind(Date);
+
 const runInTenant = runInTenantContext as unknown as jest.Mock;
 const decrypt = decryptField as unknown as jest.Mock;
 const markAuth = markAuthFailure as unknown as jest.Mock;
 const clearAuth = clearAuthFailure as unknown as jest.Mock;
 
 /**
- * The suite runs TWICE, once per cloud, and that is the load-bearing part of
- * this file.
+ * The suite runs TWICE, once per ARM, and that is the load-bearing part of
+ * this file. An arm is not just a cloud: it is a complete, disjoint set of the
+ * fixture values the collector derives from.
+ *
+ * The rule the table encodes, stated generally: **a fixture value that appears
+ * exactly once cannot be told apart from a constant.** Whatever the collector
+ * derives — the cloud, the benchmark, the tenant and connection ids, the
+ * execution id, the injected `now` and the day string cut from it, the elapsed
+ * duration, the evidence-row and covering-control ids, the crosswalk itself —
+ * is byte-identical at runtime to the literal the fixture chose, so a source
+ * literal written at ANY site that consumes it passes the whole file at 100%
+ * branch coverage. Two arms that disagree on every one of those values removes
+ * the coincidence by construction rather than by predicting sites: whichever
+ * value a literal names, the other arm fails, including at sites added after
+ * this file was written.
+ *
+ * Sites the table cannot reach — a value observed only ONCE in the whole run,
+ * such as the completion log line or the returned provider error — are pinned
+ * instead by a SECOND assertion at a different value; each one says so where
+ * it stands.
  *
  * Every persisted string the collector writes — the connection `where`, both
  * `provider` columns, the `automationKey`, `parsed.provider`, the evidence
@@ -68,23 +89,54 @@ const clearAuth = clearAuthFailure as unknown as jest.Mock;
  * Moving the fixture from `soc2` to `CIS` only MOVES that coincidence — a
  * hard-coded `${cloud}.cis` then survives in its place. Varying it per arm
  * removes it: whichever benchmark a literal names, the other arm fails.
+ *
+ * Measured, at the time this table was widened: an AST walk over
+ * `cloud-posture.ts` finds 111 expressions that produce a value in a persisted
+ * field, a log or a returned result. Pinning each in turn to the constant it
+ * equals left 50 of them undetectable. Two disjoint arms plus the second
+ * observations noted below take that to 2 — both of them `completedAt: new
+ * Date()`, which no source constant can satisfy (the matcher demands the real
+ * clock) and which only a value re-read from the same process could.
  */
 const ARMS = [
-    { cloud: 'gcp-posture', benchmark: 'soc2', key: 'soc2' },
-    { cloud: 'azure-posture', benchmark: 'CIS', key: 'cis' },
+    {
+        cloud: 'gcp-posture', benchmark: 'soc2', key: 'soc2',
+        tenant: 'tenant-cloud-1', conn: 'conn-gcp-4', exec: 'exec-9', elapsed: 250,
+        now: new Date('2026-03-01T12:00:00.000Z'),
+        /** EVIDENCE_FRESHNESS_DAYS = 30 after this arm's `now`. */
+        thirtyDays: new Date('2026-03-31T12:00:00.000Z'),
+        day: '2026-03-01',
+        dual: 'storage_account_encryption_enabled',
+        soc2Only: 'keyvault_logging_enabled',
+        ctl: 'ctl', ev: 'ev',
+    },
+    {
+        cloud: 'azure-posture', benchmark: 'CIS', key: 'cis',
+        tenant: 'tenant-cloud-2', conn: 'conn-az-1', exec: 'exec-3', elapsed: 410,
+        now: new Date('2026-05-09T06:45:00.000Z'),
+        thirtyDays: new Date('2026-06-08T06:45:00.000Z'),
+        day: '2026-05-09',
+        dual: 'compute_disk_encryption_enabled',
+        soc2Only: 'audit_log_retention_enabled',
+        ctl: 'ctr', ev: 'row',
+    },
 ] as const;
-const TENANT = 'tenant-cloud-1';
-const CONN = 'conn-az-1';
-const NOW = new Date('2026-03-01T12:00:00.000Z');
-/** EVIDENCE_FRESHNESS_DAYS = 30 after NOW. */
-const THIRTY_DAYS = new Date('2026-03-31T12:00:00.000Z');
 
-/** Crosswalk injected by the caller — the collector itself is map-agnostic. */
-const DUAL = 'storage_account_encryption_enabled';
-const SOC2_ONLY = 'keyvault_logging_enabled';
-const CONTROL_MAP: Record<string, CloudPostureControlMapEntry> = {
-    [DUAL]: { label: 'Storage encrypted', soc2: ['CC6.1'], nistCsf: ['PR.DS-01'] },
-    [SOC2_ONLY]: { label: 'Key Vault logging', soc2: ['CC7.1'] },
+/**
+ * Crosswalk injected by the caller — the collector itself is map-agnostic.
+ * Both arms' controls carry IDENTICAL requirement codes, so every
+ * framework-resolution assertion below holds unchanged under either arm and
+ * the ONLY thing that varies is the id itself.
+ */
+const CONTROL_MAPS: Record<string, Record<string, CloudPostureControlMapEntry>> = {
+    'gcp-posture': {
+        storage_account_encryption_enabled: { label: 'Storage encrypted', soc2: ['CC6.1'], nistCsf: ['PR.DS-01'] },
+        keyvault_logging_enabled: { label: 'Key Vault logging', soc2: ['CC7.1'] },
+    },
+    'azure-posture': {
+        compute_disk_encryption_enabled: { label: 'Disk encrypted', soc2: ['CC6.1'], nistCsf: ['PR.DS-01'] },
+        audit_log_retention_enabled: { label: 'Audit log retention', soc2: ['CC7.1'] },
+    },
 };
 
 interface Conn {
@@ -93,20 +145,20 @@ interface Conn {
     secretEncrypted: string | null;
 }
 
-function makeDb(conn: Conn | null) {
+function makeDbFor(conn: Conn | null, execId: string, evPrefix: string) {
     let evSeq = 0;
     return {
         integrationConnection: { findFirst: jest.fn(async () => conn) },
         integrationExecution: {
-            create: jest.fn(async () => ({ id: 'exec-9' })),
-            update: jest.fn(async () => ({ id: 'exec-9' })),
+            create: jest.fn(async () => ({ id: execId })),
+            update: jest.fn(async () => ({ id: execId })),
         },
         controlRequirementLink: {
             findFirst: jest.fn(async () => null as { controlId: string | null } | null),
         },
         evidence: {
             findFirst: jest.fn(async () => null as { id: string } | null),
-            create: jest.fn(async () => ({ id: `ev-${++evSeq}` })),
+            create: jest.fn(async () => ({ id: `${evPrefix}-${++evSeq}` })),
             update: jest.fn(async (args: { where: { id: string } }) => ({ id: args.where.id })),
         },
         evidenceControlLink: { create: jest.fn(async () => ({ id: 'ecl-1' })) },
@@ -114,7 +166,7 @@ function makeDb(conn: Conn | null) {
     };
 }
 
-type Db = ReturnType<typeof makeDb>;
+type Db = ReturnType<typeof makeDbFor>;
 
 function bind(db: Db) {
     runInTenant.mockImplementation(
@@ -145,9 +197,8 @@ function checkResult(over: Partial<CheckResult> = {}): CheckResult {
  * `*After` provider stubs advance it by exactly `ms` while the check runs — so
  * the persisted duration is that number and nothing else.
  */
-const ELAPSED_MS = 250;
-function fakeClock() {
-    let t = Date.parse('2026-03-01T12:00:00.000Z');
+function fakeClockFor(base: Date) {
+    let t = base.getTime();
     jest.spyOn(Date, 'now').mockImplementation(() => t);
     return {
         advance(ms: number) {
@@ -155,7 +206,7 @@ function fakeClock() {
         },
     };
 }
-type Clock = ReturnType<typeof fakeClock>;
+type Clock = ReturnType<typeof fakeClockFor>;
 
 function providerReturningAfter(result: CheckResult, clock: Clock, ms: number) {
     return {
@@ -185,10 +236,16 @@ function providerThrowingAfter(err: unknown, clock: Clock, ms: number) {
  * past fixture date, so a genuine completion instant is strictly greater while
  * the `now` swap is exactly equal.
  */
-const COMPLETION_INSTANT = {
-    asymmetricMatch: (v: unknown) => v instanceof Date && v.getTime() > NOW.getTime(),
-    toString: () => 'CompletionInstant(strictly after the injected `now`)',
-};
+function completionInstant(now: Date) {
+    return {
+        // Strictly after the injected `now` AND within minutes of the real
+        // clock: `> now` alone is satisfied by ANY constant date later than the
+        // fixture, which is exactly the substitution this file exists to catch.
+        asymmetricMatch: (v: unknown) =>
+            v instanceof Date && v.getTime() > now.getTime() && Math.abs(v.getTime() - realNow()) < 300_000,
+        toString: () => 'CompletionInstant(the real clock, strictly after the injected `now`)',
+    };
+}
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -205,7 +262,15 @@ afterEach(() => {
 
 describe.each(ARMS)(
     'runCloudPostureCollection [cloud=$cloud benchmark=$benchmark]',
-    ({ cloud: CLOUD, benchmark: BENCHMARK, key: KEY }) => {
+    ({
+        cloud: CLOUD, benchmark: BENCHMARK, key: KEY, tenant: TENANT, conn: CONN,
+        exec: EXEC, elapsed: ELAPSED_MS, now: NOW, thirtyDays: THIRTY_DAYS,
+        day: DAY, dual: DUAL, soc2Only: SOC2_ONLY, ctl: CTL, ev: EV,
+    }) => {
+    const makeDb = (conn: Conn | null) => makeDbFor(conn, EXEC, EV);
+    const fakeClock = () => fakeClockFor(NOW);
+    const COMPLETION_INSTANT = completionInstant(NOW);
+
     /** Every call needs the same four injected inputs; only the deltas vary. */
     function run(over: Partial<Parameters<typeof runCloudPostureCollection>[0]> = {}) {
         return runCloudPostureCollection({
@@ -213,7 +278,7 @@ describe.each(ARMS)(
             tenantId: TENANT,
             connectionId: CONN,
             provider: providerReturning(checkResult()),
-            controlMap: CONTROL_MAP,
+            controlMap: CONTROL_MAPS[CLOUD],
             now: NOW,
             ...over,
         });
@@ -245,7 +310,7 @@ describe.each(ARMS)(
                 },
             });
             expect(res).toStrictEqual({
-                executionId: 'exec-9',
+                executionId: EXEC,
                 status: 'ERROR',
                 counts: null,
                 evidenceCreated: 0,
@@ -341,6 +406,10 @@ describe.each(ARMS)(
             expect(provider.runCheck).toHaveBeenCalledWith(
                 expect.objectContaining({
                     automationKey: `${CLOUD}.cis`,
+                    // `parsed` too, and under a benchmark the default case cannot
+                    // produce: the sibling test pins `checkType` at 'soc2', which
+                    // is byte-identical to the literal there.
+                    parsed: { provider: CLOUD, checkType: 'cis', raw: `${CLOUD}.cis` },
                     connectionConfig: { benchmark: 'CIS', subscriptionId: 'sub-1', clientId: 'cid', clientSecret: 'csecret' },
                 }),
             );
@@ -361,13 +430,13 @@ describe.each(ARMS)(
 
             expect(markAuth).toHaveBeenCalledWith(db, CONN, err, NOW, CLOUD);
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
-                where: { id: 'exec-9' },
+                where: { id: EXEC },
                 // Elapsed, not a constant: the clock moved by exactly ELAPSED_MS
                 // while `runCheck` was in flight, so `Date.now() - start` is pinned.
                 data: { status: 'ERROR', errorMessage: err.message.slice(0, 500), durationMs: ELAPSED_MS, completedAt: COMPLETION_INSTANT },
             });
             expect(res).toStrictEqual({
-                executionId: 'exec-9',
+                executionId: EXEC,
                 status: 'ERROR',
                 counts: null,
                 evidenceCreated: 0,
@@ -382,10 +451,24 @@ describe.each(ARMS)(
             const db = makeDb({ id: CONN, configJson: {}, secretEncrypted: null });
             bind(db);
 
-            const res = await run({ provider: providerThrowing({ toString: () => 'weird failure' }) });
+            const thrown = { toString: () => 'weird failure' };
 
+            const res = await run({ provider: providerThrowing(thrown) });
+
+            // The thrown value itself reaches the credential writer. The sibling
+            // test is the only other assertion on that argument, so with one
+            // observation it is byte-identical to the constant it takes there.
+            expect(markAuth).toHaveBeenCalledWith(db, CONN, thrown, NOW, CLOUD);
+
+            // The persisted message, not just the returned one, and under a
+            // SECOND value: the sibling above is the only other assertion on
+            // this site, so with one observation the derived `msg` is
+            // byte-identical to the constant it takes there.
+            expect(db.integrationExecution.update).toHaveBeenCalledWith(
+                expect.objectContaining({ data: expect.objectContaining({ errorMessage: 'weird failure' }) }),
+            );
             expect(res).toStrictEqual({
-                executionId: 'exec-9',
+                executionId: EXEC,
                 status: 'ERROR',
                 counts: null,
                 evidenceCreated: 0,
@@ -421,7 +504,7 @@ describe.each(ARMS)(
             // are the ONLY thing distinguishing Azure evidence from GCP evidence on
             // the same control. A hard-coded prefix cross-labels them silently.
             const db = connDb();
-            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
+            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-shared` });
             const clock = fakeClock();
             // Restored by the file-wide `jest.restoreAllMocks()` afterEach.
             const info = jest.spyOn(logger, 'info');
@@ -434,7 +517,7 @@ describe.each(ARMS)(
                     tenantId: TENANT,
                     type: 'TEXT',
                     title: `Automated evidence — ${DUAL}`,
-                    content: `${CLOUD} check "${DUAL}" PASSED (${CLOUD}.${KEY}) on 2026-03-01. Machine-collected via Powerpipe; execution exec-9.`,
+                    content: `${CLOUD} check "${DUAL}" PASSED (${CLOUD}.${KEY}) on ${DAY}. Machine-collected via Powerpipe; execution ${EXEC}.`,
                     category: `${CLOUD}:${DUAL}`,
                     dateCollected: NOW,
                     reviewCycle: 'MONTHLY',
@@ -443,17 +526,17 @@ describe.each(ARMS)(
                 },
             });
             expect(db.evidenceControlLink.create).toHaveBeenCalledWith({
-                data: { tenantId: TENANT, evidenceId: 'ev-1', controlId: 'ctl-shared', createdByUserId: null },
+                data: { tenantId: TENANT, evidenceId: `${EV}-1`, controlId: `${CTL}-shared`, createdByUserId: null },
             });
             expect(db.controlEvidenceLink.create).toHaveBeenCalledWith({
-                data: { tenantId: TENANT, controlId: 'ctl-shared', kind: 'INTEGRATION_RESULT', integrationResultId: 'exec-9', note: `${CLOUD}: ${DUAL}` },
+                data: { tenantId: TENANT, controlId: `${CTL}-shared`, kind: 'INTEGRATION_RESULT', integrationResultId: EXEC, note: `${CLOUD}: ${DUAL}` },
             });
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
-                where: { id: 'exec-9' },
+                where: { id: EXEC },
                 data: {
                     status: 'PASSED',
                     resultJson: passing.details,
-                    evidenceId: 'ev-1',
+                    evidenceId: `${EV}-1`,
                     errorMessage: null,
                     // Elapsed, not a constant — see `fakeClock`.
                     durationMs: ELAPSED_MS,
@@ -469,7 +552,7 @@ describe.each(ARMS)(
                 component: 'cloud-posture',
                 cloud: CLOUD,
                 tenantId: TENANT,
-                executionId: 'exec-9',
+                executionId: EXEC,
                 status: 'PASSED',
                 evidenceCreated: 1,
             });
@@ -480,8 +563,8 @@ describe.each(ARMS)(
             // looked up. `firstEvidenceId ?? ev.id` must keep the first, not the last.
             const db = connDb();
             db.controlRequirementLink.findFirst
-                .mockResolvedValueOnce({ controlId: 'ctl-soc2' })
-                .mockResolvedValueOnce({ controlId: 'ctl-nist' });
+                .mockResolvedValueOnce({ controlId: `${CTL}-soc2` })
+                .mockResolvedValueOnce({ controlId: `${CTL}-nist` });
 
             const res = await run({ provider: providerReturning(passing) });
 
@@ -494,9 +577,23 @@ describe.each(ARMS)(
                 select: { controlId: true },
             });
             expect(res.evidenceCreated).toBe(2);
+            // Two DISTINCT covering controls, two DISTINCT evidence rows, each
+            // link pinned per call. Asserting only the first row leaves both
+            // `controlId` and `ev.id` byte-identical to the constants they take
+            // there, so a collector that stamped the FIRST control (or the first
+            // evidence id) on every link stays green.
+            expect(db.evidenceControlLink.create).toHaveBeenNthCalledWith(1, {
+                data: { tenantId: TENANT, evidenceId: `${EV}-1`, controlId: `${CTL}-soc2`, createdByUserId: null },
+            });
+            expect(db.evidenceControlLink.create).toHaveBeenNthCalledWith(2, {
+                data: { tenantId: TENANT, evidenceId: `${EV}-2`, controlId: `${CTL}-nist`, createdByUserId: null },
+            });
+            expect(db.controlEvidenceLink.create).toHaveBeenNthCalledWith(2, {
+                data: { tenantId: TENANT, controlId: `${CTL}-nist`, kind: 'INTEGRATION_RESULT', integrationResultId: EXEC, note: `${CLOUD}: ${DUAL}` },
+            });
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
-                where: { id: 'exec-9' },
-                data: expect.objectContaining({ evidenceId: 'ev-1' }),
+                where: { id: EXEC },
+                data: expect.objectContaining({ evidenceId: `${EV}-1` }),
             });
         });
 
@@ -507,7 +604,7 @@ describe.each(ARMS)(
             // this also pins that a single-framework map entry triggers exactly one
             // requirement lookup rather than a speculative NIST one.
             const db = connDb();
-            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-after' });
+            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-after` });
             const trailing = checkResult({
                 status: 'FAILED',
                 details: {
@@ -541,7 +638,7 @@ describe.each(ARMS)(
             // under-reports with a well-formed PASSED result to show for it. This is
             // a SCOPE, not a branch, so 100% branch coverage cannot see it.
             const db = connDb();
-            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
+            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-shared` });
             const twoPassing = checkResult({
                 status: 'PASSED',
                 details: {
@@ -570,7 +667,7 @@ describe.each(ARMS)(
 
         it('never evidences an alarming, skipped, or unmapped control', async () => {
             const db = connDb();
-            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-soc2' });
+            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-soc2` });
             const mixed = checkResult({
                 status: 'FAILED',
                 details: {
@@ -583,12 +680,15 @@ describe.each(ARMS)(
                 },
             });
 
+            // Restored by the file-wide `jest.restoreAllMocks()` afterEach.
+            const info = jest.spyOn(logger, 'info');
+
             const res = await run({ provider: providerReturning(mixed) });
 
             expect(db.controlRequirementLink.findFirst).not.toHaveBeenCalled();
             expect(db.evidence.create).not.toHaveBeenCalled();
             expect(res).toStrictEqual({
-                executionId: 'exec-9',
+                executionId: EXEC,
                 status: 'FAILED',
                 counts: { ok: 1, alarm: 1, skip: 1, error: 0, total: 3 },
                 evidenceCreated: 0,
@@ -602,6 +702,20 @@ describe.each(ARMS)(
             // as the benchmark keeps reporting gaps. Only the PASSED path was pinned
             // before, so that clamp landed green.
             expect(clearAuth).toHaveBeenCalledWith(db, CONN, CLOUD);
+            // The SECOND observation of the completion line, and the reason this
+            // assertion is here rather than only on the passing test: `status`
+            // and `evidenceCreated` are derived, but with one observation each
+            // was byte-identical to the constant it took there ('PASSED', 1).
+            // Two observations that DISAGREE on both fields leave no constant
+            // that satisfies them.
+            expect(info).toHaveBeenCalledWith('cloud-posture collection complete', {
+                component: 'cloud-posture',
+                cloud: CLOUD,
+                tenantId: TENANT,
+                executionId: EXEC,
+                status: 'FAILED',
+                evidenceCreated: 0,
+            });
         });
 
         it('skips a framework with no covering control, whether the link or its controlId is null', async () => {
@@ -618,7 +732,7 @@ describe.each(ARMS)(
 
         it('evidences a control covered under both frameworks exactly once', async () => {
             const db = connDb();
-            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
+            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-shared` });
 
             const res = await run({ provider: providerReturning(passing) });
 
@@ -629,15 +743,15 @@ describe.each(ARMS)(
 
         it('refreshes the existing rolling row instead of creating a duplicate', async () => {
             const db = connDb();
-            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
-            db.evidence.findFirst.mockResolvedValue({ id: 'ev-existing' });
+            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-shared` });
+            db.evidence.findFirst.mockResolvedValue({ id: `${EV}-existing` });
 
             const res = await run({ provider: providerReturning(passing) });
 
             expect(db.evidence.findFirst).toHaveBeenCalledWith({
                 where: {
                     tenantId: TENANT,
-                    evidenceControlLinks: { some: { controlId: 'ctl-shared' } },
+                    evidenceControlLinks: { some: { controlId: `${CTL}-shared` } },
                     category: `${CLOUD}:${DUAL}`,
                     type: 'TEXT',
                     isArchived: false,
@@ -646,10 +760,10 @@ describe.each(ARMS)(
                 select: { id: true },
             });
             expect(db.evidence.update).toHaveBeenCalledWith({
-                where: { id: 'ev-existing' },
+                where: { id: `${EV}-existing` },
                 data: {
                     title: `Automated evidence — ${DUAL}`,
-                    content: `${CLOUD} check "${DUAL}" PASSED (${CLOUD}.${KEY}) on 2026-03-01. Machine-collected via Powerpipe; execution exec-9.`,
+                    content: `${CLOUD} check "${DUAL}" PASSED (${CLOUD}.${KEY}) on ${DAY}. Machine-collected via Powerpipe; execution ${EXEC}.`,
                     dateCollected: NOW,
                     nextReviewDate: THIRTY_DAYS,
                     status: 'APPROVED',
@@ -665,8 +779,8 @@ describe.each(ARMS)(
             // Regression class: the update arm carries its own `firstEvidenceId ??`.
             const db = connDb();
             db.controlRequirementLink.findFirst
-                .mockResolvedValueOnce({ controlId: 'ctl-soc2' })
-                .mockResolvedValueOnce({ controlId: 'ctl-nist' });
+                .mockResolvedValueOnce({ controlId: `${CTL}-soc2` })
+                .mockResolvedValueOnce({ controlId: `${CTL}-nist` });
             db.evidence.findFirst
                 .mockResolvedValueOnce({ id: 'ev-old-a' })
                 .mockResolvedValueOnce({ id: 'ev-old-b' });
@@ -674,17 +788,22 @@ describe.each(ARMS)(
             const res = await run({ provider: providerReturning(passing) });
 
             expect(db.evidence.update).toHaveBeenCalledTimes(2);
+            // The lookup is scoped to EACH resolved control, not to the first one.
+            expect(db.evidence.findFirst).toHaveBeenNthCalledWith(
+                2,
+                expect.objectContaining({ where: expect.objectContaining({ evidenceControlLinks: { some: { controlId: `${CTL}-nist` } } }) }),
+            );
             expect(db.evidence.create).not.toHaveBeenCalled();
             expect(res.evidenceCreated).toBe(2);
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
-                where: { id: 'exec-9' },
+                where: { id: EXEC },
                 data: expect.objectContaining({ evidenceId: 'ev-old-a' }),
             });
         });
 
         it('completes the run when the control↔execution back-reference is a duplicate', async () => {
             const db = connDb();
-            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
+            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-shared` });
             db.controlEvidenceLink.create.mockRejectedValue(new Error('Unique constraint failed'));
 
             const res = await run({ provider: providerReturning(passing) });
@@ -698,7 +817,7 @@ describe.each(ARMS)(
             // Regression class: an ERROR result means the subscription was never
             // observed. Evidencing its `controls` asserts a pass nobody saw.
             const db = connDb();
-            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: 'ctl-shared' });
+            db.controlRequirementLink.findFirst.mockResolvedValue({ controlId: `${CTL}-shared` });
             const errored = checkResult({
                 status: 'ERROR',
                 errorMessage: `collector error; stderr: ${'z'.repeat(600)}`,
@@ -711,10 +830,15 @@ describe.each(ARMS)(
             expect(db.evidence.create).not.toHaveBeenCalled();
             expect(res.evidenceCreated).toBe(0);
             expect(res.status).toBe('ERROR');
+            // The result carries the provider message UNTRUNCATED — the 500-char
+            // cut is a persistence concern. Every other test observes this field
+            // as `undefined`, so one non-undefined observation is what stops the
+            // literal from being indistinguishable from the derivation.
+            expect(res.errorMessage).toBe(errored.errorMessage);
             const persisted = `collector error; stderr: ${'z'.repeat(600)}`.slice(0, 500);
             expect(persisted).toHaveLength(500);
             expect(db.integrationExecution.update).toHaveBeenCalledWith({
-                where: { id: 'exec-9' },
+                where: { id: EXEC },
                 data: expect.objectContaining({ status: 'ERROR', evidenceId: null, errorMessage: persisted }),
             });
         });
