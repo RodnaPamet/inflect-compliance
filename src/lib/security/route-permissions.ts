@@ -783,6 +783,82 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'all. tests.execute IS the flag assertCanLinkTestEvidence reads, so ' +
             'route gate and usecase gate are the same predicate.',
     },
+
+    // ── Business continuity + process maps, fourth tranche (#2197) ───
+    // The residual the third tranche wrote down and could not take: these
+    // gate on the coarse `assertCanWrite`, and `PermissionSet` had NO domain
+    // whose population matched — so binding them to a neighbouring register's
+    // flag would have changed the caller set for a reason unrelated to the
+    // route. #2197 added the two missing domains instead.
+    //
+    // `continuity.edit` / `processes.edit` are defined TRUE for exactly
+    // OWNER / ADMIN / EDITOR, which is `computePermissions(...).canWrite`
+    // (role level >= 3) — the predicate `assertCanWrite` reads. So for every
+    // built-in role, and for every stored custom role (whose blob predates the
+    // domain and therefore inherits its baseRole default), the caller set is
+    // unchanged and only the layer that RECORDS the refusal moves.
+    //
+    // The one population that does change is API keys: `appPermissions` for a
+    // key comes from its scopes, not its role, so a key without a
+    // `continuity:` / `processes:` scope no longer reaches these writes. That
+    // is why both domains got scopes in the same diff — otherwise `*` would
+    // have been the only grant that still worked.
+    //
+    // READS are deliberately NOT gated. `assertCanRead` is true for all five
+    // roles and neither domain has a `view` flag, so there is no key to gate
+    // them on; the `continuity` docstring in `@/lib/permissions` argues why.
+    {
+        path: new RegExp(`^${T}\\/business-continuity$`),
+        methods: ['POST'],
+        permission: 'continuity.edit',
+        note:
+            'Creating a Business Impact Analysis. Gated with its siblings so ' +
+            'the register is wholly gated rather than half — every write verb ' +
+            'on it reaches the same assertCanWrite. GET is a read and stays.',
+    },
+    {
+        path: new RegExp(`^${T}\\/business-continuity\\/[^/]+$`),
+        methods: ['PUT', 'DELETE'],
+        permission: 'continuity.edit',
+        note:
+            'Deleting a whole Business Impact Analysis, and the PUT that ' +
+            'rewrites one. Both verbs, not DELETE alone, so the module does ' +
+            'not become the mixed shape #2171 reopened seven files to fix.',
+    },
+    {
+        path: new RegExp(`^${T}\\/business-continuity\\/[^/]+\\/dependencies$`),
+        methods: ['POST'],
+        permission: 'continuity.edit',
+        note:
+            'Attaching a process / asset / vendor / risk dependency to a BIA — ' +
+            'the edge the recovery-priority ranking is computed from.',
+    },
+    {
+        path: new RegExp(`^${T}\\/business-continuity\\/[^/]+\\/dependencies\\/[^/]+$`),
+        methods: ['DELETE'],
+        permission: 'continuity.edit',
+        note:
+            'Detaching a BIA dependency — the destructive half of the pair ' +
+            'above, and one of the three routes #2197 exists to close.',
+    },
+    {
+        path: new RegExp(`^${T}\\/business-continuity\\/[^/]+\\/link-control$`),
+        methods: ['POST'],
+        permission: 'continuity.edit',
+        note:
+            'Linking a BIA to a control as continuity evidence — the edge that ' +
+            'makes the control satisfy NIS2 Art.21(2)(c) in the coverage view.',
+    },
+    {
+        path: new RegExp(`^${T}\\/processes\\/[^/]+\\/snapshots\\/[^/]+\\/restore$`),
+        methods: ['POST'],
+        permission: 'processes.edit',
+        note:
+            'Rolling a process map back to an earlier snapshot — destructive ' +
+            'because the CURRENT version is what it overwrites. processes.edit ' +
+            'mirrors the assertCanWrite in restoreProcessMapSnapshot; the map ' +
+            'DELETE stays on admin.manage, mirroring its own assertCanAdmin.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

@@ -4960,6 +4960,8 @@
             "tests": "Tests",
             "incidents": "Incidents",
             "personnel": "Personnel",
+            "continuity": "Business continuity",
+            "processes": "Processes",
             "frameworks": "Frameworks",
             "audits": "Audits",
             "reports": "Reports",

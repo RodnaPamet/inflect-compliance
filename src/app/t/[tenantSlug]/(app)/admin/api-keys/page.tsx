@@ -54,11 +54,13 @@ interface CreatedKeyResponse extends ApiKeyRecord {
 
 // Operator-facing half of the API-key scope model, and still a hand-written
 // mirror: the LABELS and the read/write/admin GROUPING are editorial and
-// cannot be derived. The COVERAGE can be, and is — every domain in
-// PERMISSION_SCHEMA must appear in SCOPE_ACTION_MAP, asserted by
-// tests/unit/api-key-management.test.ts. A domain the auth layer accepts
-// but this map omits is a scope no operator can grant through the UI,
-// which is how assets/incidents/personnel were unreachable before #2225.
+// cannot be derived. The COVERAGE can be, and now is — for BOTH halves.
+// tests/unit/api-key-management.test.ts asserts every PERMISSION_SCHEMA domain
+// appears in SCOPE_ACTION_MAP *and* in this map, and that every scope string
+// listed here is one validateScopes accepts. Until #2197 only the first of
+// those existed, so a domain the auth layer accepted could still be a scope no
+// operator could grant through the UI — which is how assets / incidents /
+// personnel were unreachable before #2225.
 const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
     controls:   { label: 'Controls',   scopes: ['controls:read', 'controls:write'] },
     evidence:   { label: 'Evidence',   scopes: ['evidence:read', 'evidence:write'] },
@@ -68,6 +70,12 @@ const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
     assets:     { label: 'Assets',     scopes: ['assets:read', 'assets:write'] },
     incidents:  { label: 'Incidents',  scopes: ['incidents:read', 'incidents:admin'] },
     personnel:  { label: 'Personnel',  scopes: ['personnel:read', 'personnel:admin'] },
+    // One scope each, and no `:read`: `continuity` / `processes` carry a
+    // single `edit` action in PermissionSet, so SCOPE_ACTION_MAP gives them a
+    // `write` group and nothing else. Listing `continuity:read` here would be
+    // an operator-visible checkbox that validateScopes rejects.
+    continuity: { label: 'Business continuity', scopes: ['continuity:write'] },
+    processes:  { label: 'Processes',  scopes: ['processes:write'] },
     vendors:    { label: 'Vendors',    scopes: ['vendors:read', 'vendors:write'] },
     tests:      { label: 'Tests',      scopes: ['tests:read', 'tests:write'] },
     frameworks: { label: 'Frameworks', scopes: ['frameworks:read', 'frameworks:write'] },

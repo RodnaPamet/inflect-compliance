@@ -23,29 +23,38 @@
  * here in the same diff. Adding a new ungated destructive route fails until
  * somebody either gates it or records why it cannot be gated.
  *
- * RESOLUTION — what this does NOT prove. The scan is per FILE, not per
- * HANDLER: a route module counts as gated when ANY gate appears anywhere in
- * it. So a file exporting a gated POST and an ungated DELETE passes, and this
- * list reads "gated" over it.
+ * RESOLUTION — what this does NOT prove. `handlerBlocks` splits the module on
+ * its `export const <VERB>` boundaries, so within the DESTRUCTIVE population
+ * the unit really is the handler: a gated DELETE beside an ungated destructive
+ * sibling reports the file, it does not certify it.
  *
- * Measured, not assumed: renaming BOTH gates in a two-handler file fails the
- * guard; renaming only one passes it. That bound is worth knowing before
- * reading a shrinking number as "every destructive handler is gated" — it
- * means "every destructive route module has at least one gate".
+ * The KEYS stay file-level, and the residual blind spot is the other
+ * direction — a non-destructive mutating verb (a PUT, a PATCH) in a file whose
+ * destructive verb IS gated is outside the population entirely and this census
+ * says nothing about it. That is the mixed-module shape described below.
  *
- * Closing it would mean parsing each `export const <VERB>` and attributing
- * gates to handlers, which is a real parser rather than a grep.
+ * Measured, not assumed: renaming the gate on any destructive handler fails
+ * the exact-list assertion; renaming it on a non-destructive sibling does not.
  *
- * SEVEN MIXED MODULES EXIST TODAY, so this is not hypothetical. They are a
- * by-product of the #2117 tranches: each gated its DELETE and left a PATCH or
- * PUT on the old path, because those compose through `withValidatedBody` and
- * were deferred. That reason has since evaporated — `parseJsonBody` composes
- * with `requirePermission` and 58 routes already pair them — so the remaining
- * verbs are now migratable and simply have not been migrated yet.
+ * MIXED MODULES WERE THE REASON THAT MATTERED, and they are a by-product of
+ * the #2117 tranches: each gated its DELETE and left a PATCH or PUT on the old
+ * path, because those compose through `withValidatedBody` and were deferred.
+ * That reason evaporated once `parseJsonBody` was shown to compose with
+ * `requirePermission`, and the count has been worked down since. Re-measure it
+ * rather than trusting this sentence: a module is mixed when some handler in
+ * `src/app/api/**\/route.ts` matches `ROUTE_GATE` and some other non-GET
+ * handler in the same file does not.
  *
- * Until they are, read this list as "every destructive route module has at
- * least one gate", never as "every destructive handler is gated". A guard that
- * overstates its own reach is the failure mode this suite exists to prevent.
+ * Two files match that today, and NEITHER is a real gap:
+ *   - `t/[tenantSlug]/assets/[id]/route.ts` writes `export const PATCH = PUT`,
+ *     so the alias inherits the PUT's gate and only the TEXT scan sees a hole;
+ *   - `t/[tenantSlug]/processes/[id]/route.ts` was the last real one and was
+ *     closed by #2197, which gave its PUT and PATCH the `processes.edit` key
+ *     they had no candidate for.
+ *
+ * Read this list as "every destructive route module has at least one gate",
+ * never as "every destructive handler is gated". A guard that overstates its
+ * own reach is the failure mode this suite exists to prevent.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -93,7 +102,7 @@ const stripComments = (s: string): string =>
  * A route with no route-level gate, and WHY it still has none.
  *
  * The list used to be bare strings, which made every entry mean the same
- * thing: "not done yet". After four tranches that reading is wrong and
+ * thing: "not done yet". After five tranches that reading is wrong and
  * actively misleading — what is left is what the `requirePermission`
  * mechanism CANNOT take, and each one is a different reason. A residual
  * nobody can tell apart from a backlog gets re-triaged from scratch every
@@ -104,9 +113,14 @@ const stripComments = (s: string): string =>
  *   'exempt' — a decision. The reason is the whole entry; if it stops being
  *              true, the entry is wrong and should move to 'todo'.
  *
- * An exemption is NOT permission to leave a refusal unrecorded. Two of the
- * three exempt routes below have no refusal to record; the third records it
+ * An exemption is NOT permission to leave a refusal unrecorded. Three of the
+ * four exempt routes below have no refusal to record; the fourth records it
  * somewhere this file cannot see, and says where.
+ *
+ * Since #2197 there are no 'todo' entries left — every line here is a
+ * decision. That is the state the dispositions were introduced to make
+ * legible, not a reason to drop them: the next ungated destructive route has
+ * to arrive as one or the other.
  */
 type UngatedRoute = {
     readonly route: string;
@@ -157,34 +171,6 @@ const UNGATED_DESTRUCTIVE_ROUTES: readonly UngatedRoute[] = [
             'route is exempt from the GATE, not from the audit. Removing another ' +
             'user\'s second factor is the one action on this surface a reviewer ' +
             'most needs a refused attempt for.',
-    },
-    {
-        route: 't/[tenantSlug]/business-continuity/[id]/dependencies/[depId]/route.ts',
-        disposition: 'todo',
-        reason:
-            'Gates on assertCanWrite, which reads permissions.canWrite (role-tier) ' +
-            'while requirePermission reads appPermissions, and PermissionSet has no ' +
-            'continuity domain — so no key carries the matching population. Binding ' +
-            'it to a neighbouring register\'s flag would change the caller set for a ' +
-            'reason unrelated to the route. #2197.',
-    },
-    {
-        route: 't/[tenantSlug]/business-continuity/[id]/route.ts',
-        disposition: 'todo',
-        reason:
-            'Deleting a whole Business Impact Analysis, and the PUT that rewrites ' +
-            'one. Same blocker as its dependencies sibling: assertCanWrite reads ' +
-            'the role-tier permissions bag and PermissionSet has no continuity ' +
-            'domain to gate on. #2197.',
-    },
-    {
-        route: 't/[tenantSlug]/processes/[id]/snapshots/[version]/restore/route.ts',
-        disposition: 'todo',
-        reason:
-            'Rolling a process map back to an earlier snapshot — destructive ' +
-            'because the current version is what it overwrites. Same blocker as ' +
-            'the business-continuity pair: assertCanWrite reads the role-tier bag ' +
-            'and PermissionSet has no processes domain. #2197.',
     },
 ];
 
@@ -282,14 +268,20 @@ describe('destructive routes whose denials are invisible', () => {
         // Gating a route, or reclassifying one to 'exempt' with an argument,
         // lowers this in the same diff.
         //
-        // Tightened 4 -> 3 when `/api/sso` was deleted (#2196). Deliberate: an
-        // upper bound left above the list's own length is slack a later diff can
-        // spend without a reviewer seeing a number change, which is the thing a
-        // ratchet exists to prevent. It does NOT block #2197 — the three
-        // remaining entries are all its, and closing them REMOVES lines, which
-        // moves this bound down again rather than into it.
+        // Tightened 4 -> 3 when `/api/sso` was deleted (#2196), then 3 -> 0 by
+        // #2197, which added the `continuity` and `processes` domains to
+        // `PermissionSet` and gated the two business-continuity routes and the
+        // process-map restore on them. An upper bound left above the list's own
+        // length is slack a later diff can spend without a reviewer seeing a
+        // number change, which is the thing a ratchet exists to prevent.
+        //
+        // ZERO is the honest bound and it is a real one: the three tests above
+        // that iterate the `todo` subset are now vacuous, so THIS is what keeps
+        // an ungated destructive route from arriving quietly. A new one fails
+        // the exact-list assertion first; adding its line here to get green
+        // fails this. Both edits have to be argued.
         const todo = UNGATED_DESTRUCTIVE_ROUTES.filter((e) => e.disposition === 'todo');
-        expect(todo.length).toBeLessThanOrEqual(3);
+        expect(todo.length).toBeLessThanOrEqual(0);
     });
 
     it('no declared entry is stale', () => {

@@ -104,6 +104,13 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     tests:      { read: ['view'], write: ['create', 'execute'] },
     incidents:  { read: ['view'], admin: ['manage'] },
     personnel:  { read: ['view'], admin: ['manage'] },
+    // No `read` group on these two: `PermissionSet` gives them a single
+    // `edit` action and no `view`, so there is no flag a read scope could
+    // set. `continuity:write` / `processes:write` are the only meaningful
+    // grants, and `<domain>:read` is deliberately not a valid scope rather
+    // than a valid scope that resolves to nothing.
+    continuity: { write: ['edit'] },
+    processes:  { write: ['edit'] },
     frameworks: { read: ['view'], write: ['install'] },
     audits:     { read: ['view'], write: ['manage', 'freeze', 'share'] },
     reports:    { read: ['view'], write: ['export'] },

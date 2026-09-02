@@ -278,6 +278,23 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/tests/runs/[runId]/evidence/[linkId]',
         why: 'Hard-deleting a control test run\'s evidence link and its frozen hash — tests.execute, the exact flag assertCanLinkTestEvidence reads.',
     },
+    // ── Business continuity + process maps, fourth tranche (#2197) ──
+    // NOT a leaf root, and taken whole on purpose. The third tranche left
+    // these gating on the coarse `assertCanWrite` because no PermissionSet
+    // domain matched that population; #2197 added `continuity` / `processes`,
+    // so every WRITE verb under this root is now gated on `continuity.edit`.
+    // Taking the directory rather than five leaves means the sixth route added
+    // here fails until somebody triages it — and the one file that is not
+    // gated (the dependency-options READ) is excluded below by name, having
+    // been read rather than pattern-matched away.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/business-continuity',
+        why: 'The BIA register — create / update / delete, dependency attach + detach, and the control link. All five gate on continuity.edit, which mirrors the assertCanWrite behind them. The GETs stay on the usecase assert (there is deliberately no continuity.view) and the read-only dependency-options route is excluded individually.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/processes/[id]/snapshots/[version]/restore',
+        why: 'Rolling a process map back to an earlier snapshot — processes.edit, mirroring the assertCanWrite in restoreProcessMapSnapshot. Narrow leaf root: the snapshots list + by-version siblings are reads, and processes/[id] itself stays unregistered because its GET carries no matching key.',
+    },
 ];
 
 /**
@@ -304,6 +321,12 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
     {
         relPath: 'api/t/[tenantSlug]/automation/rules/[id]/re-trigger/route.ts',
         reason: 'Replays an existing rule using its existing config — assertCanExecuteAutomation (the canWrite tier), deliberately a lower tier than reconfiguring. Not destructive.',
+    },
+    // Pulled in by the whole-directory `business-continuity` root above, which
+    // exists for the five write verbs beneath it. This one is a GET.
+    {
+        relPath: 'api/t/[tenantSlug]/business-continuity/dependency-options/route.ts',
+        reason: 'GET only — `{id, label}` picker options for one dependency type, on assertCanRead. Every role holds canRead and PermissionSet has no continuity.view, so a gate here would either be a check that never fires or a new read restriction this diff did not argue for.',
     },
     // Epic D.3 — self-service security routes that are intentionally
     // NOT admin-gated. Any authenticated tenant member may operate on
