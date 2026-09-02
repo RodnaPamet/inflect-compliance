@@ -345,15 +345,31 @@ describe('9 — the respondent page distinguishes its failure modes', () => {
         // There is no draft-save, so switching to the error phase here
         // destroys everything typed, with no export and no way back.
         //
-        // THE SECOND SITE OF THE `codeOf` PROXIMITY DEFECT, and the one that
-        // mattered: this was `accessDenied.slice(0, 900)` with a NEGATIVE
-        // assertion in it. The branch opens with a six-line comment
-        // explaining why the phase must not change; a delete-based stripper
-        // removed those ~370 characters and the 900-char window reached past
-        // the branch's own `return`, while blanking leaves them in the budget
-        // and the window now stops mid-ternary. Measured: re-add
-        // `setPhase('error')` at the END of the branch and the windowed form
-        // is 31/31 GREEN where `main`'s delete-based form fails.
+        // This was `accessDenied.slice(0, 900)` with a NEGATIVE assertion in
+        // it, and it was blind — but NOT for the reason first written here.
+        // Correcting that, because the wrong reason is the more dangerous
+        // half:
+        //
+        // It was never a site of the `codeOf` proximity defect. `main` reads
+        // this file RAW — there is no delete-based stripper on this path — and
+        // blanking preserves offsets and length, so the masked and unmasked
+        // spans are byte-identical. `codeOf` could not have changed this
+        // assertion's power in either direction. Measured on the named
+        // mutation (`setPhase('error')` at the end of the branch): `main`
+        // 31/31 GREEN, the pre-`codeOf` parent 31/31 GREEN, this form 1
+        // failed. The earlier note claimed `main` fails. It does not, and
+        // provably cannot differ from its parent.
+        //
+        // What was actually wrong: a fixed 900-char window that was simply
+        // too short. From the needle the branch runs 1039 characters, so the
+        // window stopped 139 short — mid-ternary, under EITHER reader — and
+        // had been blind since the file was written.
+        //
+        // The correction matters beyond this site. The first note taught "a
+        // fixed window on a RAW read is safe; only blanking breaks it." This
+        // site disproves that: a raw window was already blind to the very bug
+        // the test is named for. Believing it would leave every raw fixed
+        // window in the tree standing.
         //
         // Bounded to the branch's braces instead, so no comment inside it can
         // push the regression out of range — and so the assertion says what
