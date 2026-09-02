@@ -768,6 +768,17 @@ describe.each(BENCHMARKS)(
         const updateArgs = db.integrationExecution.update.mock
             .calls as unknown as Array<[{ data: { errorMessage: string } }]>;
         expect(updateArgs[0][0].data.errorMessage).not.toContain(CONN_SECRET);
+
+        // Regression class: `clearAuthFailure` used to run here too, on
+        // EVERY completion. An ERROR means the collector never observed the
+        // account, so clearing on it RETRACTS a revoked-credential banner on
+        // no evidence at all — the credential is still dead and now nothing
+        // says so. #2245 deliberately left this unpinned, because pinning
+        // the call would have cemented the reachability defect reported
+        // alongside it; the behaviour is correct now, so it is pinned now.
+        // The FAILED case above pins the other half — clearing must still
+        // happen for a real compliance gap.
+        expect(clearAuth).not.toHaveBeenCalled();
     });
     },
 );
