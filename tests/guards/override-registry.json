@@ -129,5 +129,11 @@
     "@conventional-changelog/template": {
         "kind": "peer-bridge",
         "reason": "Holds the changelog preset on the writer major that @semantic-release/release-notes-generator@14 actually depends on (conventional-changelog-writer@8). template@1.4.0 added createLegacyWriterGuard(): a mainTemplate that is a handlebars segment literal naming a nonexistent helper, so writer@8 renders it and throws 'Missing helper'. Pinning the preset alone does not hold, because 10.3.0 depends on template ^1.3.0 and that caret still resolves to 1.4.0. Drop this the moment @semantic-release/release-notes-generator@15 (the first to use writer@9) leaves beta."
+    },
+    "@xmldom/xmldom": {
+        "kind": "security",
+        "advisory": "GHSA-6gmq-8vp8-gcm6",
+        "patchedFrom": "0.8.15",
+        "reason": "xmldom XML fragment injection via an invalid EntityReference.nodeName during requireWellFormed serialization (moderate), published 2026-09-02. Reached four ways, all deduped onto one copy: @node-saml/node-saml -> @xmldom/xmldom, and via xml-crypto, xml-encryption and mammoth. It is an override rather than an audit-allowlist entry because the advisory IS fixable in place: GitHub lists two vulnerable ranges with two fixes, '>= 0.7.0, <= 0.8.14' patched by 0.8.15 and '>= 0.9.0, <= 0.9.11' patched by 0.9.12. 0.8.15 satisfies every parent's declared ^0.8.x range, so this is a patch bump and not a cross-major override. Note npm audit's `fixAvailable` surfaces 0.9.12 (dist-tags.latest), which reads as a major jump and is what makes this look unfixable at first glance — read first_patched_version per range from the advisory, not the collapsed `range` field. Severity was never urgent here: the vulnerable path requires serializing with requireWellFormed, and serializeToString/XMLSerializer appear in ZERO files across xml-crypto, xml-encryption, @node-saml/node-saml and src/ — SAML parses and verifies signatures, it never serialises back out. Production also has 0 TenantIdentityProvider rows (queried 2026-09-02), so no SAML SSO is configured. Fixed rather than exempted because a released patch exists."
     }
 }
