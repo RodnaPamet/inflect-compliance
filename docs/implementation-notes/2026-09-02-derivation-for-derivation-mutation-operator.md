@@ -52,13 +52,14 @@ frozen while `completedAt` (built from `new Date()`) stays on the real clock, an
 
 | File | Role |
 | --- | --- |
-| `tests/unit/usecases/cloud-posture-collection.test.ts` | `wallSkew` per arm (7 s / 13.5 s); wall clock seeded off `NOW`; 1 new case + 1 fixture-precondition test + 3 strengthened fixtures; the measured header, `fakeClockFor` note and residual list |
-| `tests/unit/usecases/aws-posture-collection.test.ts` | the twin — `wallSkew` 4.25 s / 21.75 s; 2 new cases + 1 fixture-precondition test + 2 strengthened fixtures |
+| `tests/unit/usecases/cloud-posture-collection.test.ts` | `wallSkew` per arm (7 s / 13.5 s); wall clock seeded off `NOW`; 1 new case + 2 clock-fixture guards (the `ARMS`-table precondition, and the clock-USE assertion inside `describe.each`) + 3 strengthened fixtures; the measured header, `fakeClockFor` note and residual list |
+| `tests/unit/usecases/aws-posture-collection.test.ts` | the twin — `wallSkew` 4.25 s / 21.75 s; 2 new cases + the same 2 clock-fixture guards + 2 strengthened fixtures |
 | `src/app-layer/usecases/cloud-posture.ts` | **unchanged** — all mutations restored from file copies |
 | `src/app-layer/usecases/aws-posture.ts` | **unchanged** |
 
 Coverage on both collectors is unchanged at 100 % statements / branches /
-functions / lines. Tests went 72 → 80.
+functions / lines. The two files carry 84 tests: the 80 this note's first
+version described, plus one per arm per file for the clock-USE assertion below.
 
 ## Decisions
 
@@ -68,10 +69,56 @@ functions / lines. Tests went 72 → 80.
   catching), `durationMs: Date.now() - now.getTime() - 7_000` SURVIVED, 37/37
   green. With distinct skews the same mutation fails.
 
-- **A precondition test, because nothing else can see a zero skew.** Every
-  behavioural assertion in both files is satisfied when `wallSkew` is 0 — that is
-  precisely the state they shipped in, and it was silent. One assertion per file
-  now fails if a future edit re-welds the clocks or gives two arms the same skew.
+- **Two clock guards per file, and they cover different halves — the skew's
+  VALUES and the skew's USE.** Every behavioural assertion in both files is
+  satisfied when `wallSkew` is 0, which is precisely the state they shipped in,
+  and it was silent. So a precondition test sits outside the `describe.each` and
+  reads the `ARMS` table: it fails on a skew of 0, and on two arms sharing one
+  skew.
+
+  It reads the table, so it cannot see whether anything *installs* those skews —
+  and the first version of this bullet claimed one assertion covered both, which
+  was false. Measured against the tree that shipped with only that test, with the
+  fixture table and the precondition test untouched:
+
+  | one-token edit | against the ARMS-table test alone | with the clock-USE test |
+  | --- | --- | --- |
+  | `fakeClockFor(WALL_START)` → `fakeClockFor(NOW)` | SURVIVED 80/80 | 2 failed / 84, sole detector |
+  | `new Date(NOW.getTime() + WALL_SKEW_MS)` → `+ 0 * WALL_SKEW_MS` | SURVIVED 80/80 | 2 failed / 84, sole detector |
+  | `WALL_START` → `new Date(NOW.getTime() + 1)` | SURVIVED 80/80 | 2 failed / 84, sole detector |
+
+  The first row is the literal pre-fix state, and with it applied the rewrites
+  this whole fixture exists to close came straight back — measured on both twins,
+  each swap applied alone: `const start = Date.now()` → `now.getTime()`,
+  and `durationMs: Date.now() - start` → `- now.getTime()` at both the catch and
+  the completion site, all SURVIVED 80/80 (`cloud-posture.ts:79/91/147`,
+  `aws-posture.ts:90/102/168`). On the tree with the clock-USE test they are
+  4 failed / 2 failed / 2 failed, unchanged from before this follow-up, so no
+  existing kill was traded for it.
+
+  The USE half is one `it` inside the `describe.each`, installing the clock
+  through the same `fakeClock()` seam every clock test uses — the file's sole
+  `fakeClockFor` call site — and reading the expression the collector reads:
+
+  ```ts
+  fakeClock();
+  expect(Date.now()).not.toBe(NOW.getTime());
+  expect(Date.now() - NOW.getTime()).toBe(WALL_SKEW_MS);
+  ```
+
+  The second line is not a restatement of the first. The third table row is what
+  separates them: a `WALL_START` cut to `NOW + 1` leaves the clocks unequal, so
+  the inequality holds while the skew the `ARMS` table declares has stopped
+  describing any clock a test installs — which would leave the uniqueness
+  assertion guarding a number with no referent.
+
+  The values half is not traded away either: measured on the fixed tree, an arm's
+  skew cut to 0 fails at both guards (2 failed / 84), and two arms sharing one
+  skew fails at the `ARMS`-table test and nowhere else (1 failed / 84).
+
+  The general shape, since it is the third instance on these branches: an
+  assertion that names an invariant and cannot see it violated. The name said
+  *skew*; the assertion looked at a table of numbers, not at the clock.
 
 - **Four fixture closures per file, found by the sweep, not by prediction.** A
   falsy-but-present `benchmark` (`?? ` vs `||`), an empty stored ciphertext

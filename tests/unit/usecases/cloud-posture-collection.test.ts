@@ -439,15 +439,29 @@ afterEach(() => {
  */
 
 /**
- * The one property of the clock fixture that no behavioural assertion in this
- * file can check for itself: every one of them is satisfied when the skew is 0,
- * and 0 is the state the file shipped in. A skew of 0 re-welds `Date.now()` to
- * `now.getTime()` and silently reopens the six rewrites listed on
- * `fakeClockFor` — silently, because nothing goes red.
+ * The ARMS table's declared skews — the VALUES, and nothing about their USE.
+ * This test reads the table, so what it can say is that the skews are non-zero
+ * and distinct. It cannot say whether anything installs them, and that gap is
+ * not theoretical. MEASURED against the tree this assertion shipped on, with
+ * the fixture table and this test untouched:
  *
- * Unique per arm, not merely non-zero, and that half is measured too. Measured
- * on the cloud twin: with BOTH of its arms skewed by the same 7 s, and this
- * assertion deleted so it could not do the catching, the mutation
+ *   `fakeClockFor(WALL_START)` -> `fakeClockFor(NOW)`              SURVIVED 80/80
+ *   `new Date(NOW.getTime() + WALL_SKEW_MS)` -> `+ 0 * WALL_SKEW_MS`  SURVIVED 80/80
+ *
+ * The first is the literal pre-fix state, the one that re-welds `Date.now()` to
+ * `now.getTime()` and reopens the six rewrites listed on `fakeClockFor`. Neither
+ * edit touches a table value, and a table value is all this test looks at, so
+ * this test is exactly the wrong instrument for that case. The USE is pinned by
+ * its sibling inside the `describe.each` below — an earlier revision of this
+ * comment claimed the re-weld was caught here, and it was not.
+ *
+ * What this one does catch, MEASURED on the fixed tree: two arms sharing one
+ * skew fails here and nowhere else (1 failed / 84); an arm's skew cut to 0 fails
+ * here and at the sibling for that arm (2 failed / 84).
+ *
+ * Unique per arm, not merely non-zero, and that half was measured when it
+ * landed: with BOTH cloud arms skewed by the same 7 s, and this assertion
+ * deleted so it could not do the catching, the mutation
  * `durationMs: Date.now() - now.getTime() - 7_000` SURVIVED its suite, 37/37
  * green. With the arms on different skews the same mutation fails. A shared
  * skew is just another file-wide constant for a literal to name.
@@ -476,6 +490,42 @@ describe.each(ARMS)(
     const WALL_START = new Date(NOW.getTime() + WALL_SKEW_MS);
     const fakeClock = () => fakeClockFor(WALL_START);
     const COMPLETION_INSTANT = completionInstant(NOW);
+
+    /**
+     * The clock fixture's USE — the half its sibling above structurally cannot
+     * reach. That one reads the ARMS table; this one installs the clock every
+     * fake-clock test installs, through the same `fakeClock()` seam (the sole
+     * `fakeClockFor` call site in the file), and reads the expression the
+     * collector itself reads. So it goes red on an edit that leaves every
+     * declared value intact.
+     *
+     * MEASURED, each mutation applied alone and both collector suites re-run:
+     *
+     *   `fakeClockFor(WALL_START)` -> `fakeClockFor(NOW)`
+     *        SURVIVED 80/80 before  ->  2 failed / 84 now, this test on both
+     *        arms and no other test
+     *   `new Date(NOW.getTime() + WALL_SKEW_MS)` -> `+ 0 * WALL_SKEW_MS`
+     *        SURVIVED 80/80 before  ->  2 failed / 84 now, same sole detector
+     *
+     * The first is the literal pre-fix state, and with it applied the swaps this
+     * fixture exists to close came back green — `const start = Date.now()` ->
+     * `now.getTime()` and both `Date.now() - start` rewrites, each SURVIVED
+     * 80/80. Re-measured on this tree with those same three swaps re-applied:
+     * 4 failed, 2 failed and 2 failed — so nothing was traded for this
+     * assertion. Both twins give the same six numbers.
+     *
+     * The second expectation is not a restatement of the first. Cut `WALL_START`
+     * to `new Date(NOW.getTime() + 1)` and the clocks still differ, so the
+     * inequality holds while the skew the ARMS table declares has stopped
+     * describing any clock a test installs — leaving the uniqueness half above
+     * guarding a number with no referent. MEASURED: SURVIVED 80/80 before,
+     * 2 failed / 84 now, this test on both arms and no other test.
+     */
+    it("installs a wall clock the collector reads apart from the injected `now`, by this arm's declared skew", () => {
+        fakeClock();
+        expect(Date.now()).not.toBe(NOW.getTime());
+        expect(Date.now() - NOW.getTime()).toBe(WALL_SKEW_MS);
+    });
 
     /** Every call needs the same four injected inputs; only the deltas vary. */
     function run(over: Partial<Parameters<typeof runCloudPostureCollection>[0]> = {}) {
