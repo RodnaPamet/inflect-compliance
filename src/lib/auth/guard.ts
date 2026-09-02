@@ -148,6 +148,83 @@ export function isPublicPath(pathname: string): boolean {
 }
 
 /**
+ * The `iflk_` API-key prefix, duplicated for the Edge runtime.
+ *
+ * The canonical definition is `API_KEY_PREFIX` in
+ * `src/lib/auth/api-key-auth.ts`, which cannot be imported here: that
+ * module pulls in Prisma and `node:crypto`, and this file is bundled into
+ * the Edge middleware. The duplication is checked, not trusted —
+ * `tests/unit/edge-api-key-request.test.ts` imports both and fails if they
+ * diverge, and it also pins `matchTenantApiKeyRequest` to accept exactly the
+ * header shapes `extractBearerToken` + `isApiKeyToken` accept. A rename on
+ * either side therefore turns CI red rather than silently re-closing the
+ * partner surface.
+ */
+export const EDGE_API_KEY_PREFIX = 'iflk_';
+
+/**
+ * FNV-1a (32-bit) over the presented API key, hex-encoded.
+ *
+ * Used ONLY to derive a per-key rate-limit bucket. Deliberately NOT a
+ * truncation of the key the way the device-agent block truncates its device
+ * token: `checkApiReadRateLimit` logs its `tenantSlug` argument at WARN level
+ * on every 429 (`apiReadRateLimit.ts` — "API read rate limit exceeded"), so a
+ * truncated key would write live key material into structured logs exactly
+ * when a caller is being abusive. A 32-bit digest of a 192-bit-entropy secret
+ * is not invertible, and a bucket collision between two keys costs at most a
+ * shared 120/min budget.
+ */
+function fnv1a32(input: string): string {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+        h ^= input.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+}
+
+/**
+ * Recognise a tenant-API request that carries an `iflk_` API key instead of a
+ * session cookie, and return the rate-limit scope to meter it under.
+ * Returns null for anything else.
+ *
+ * #2224 — `getToken()` reads `Authorization: Bearer`, tries to JWE-decode
+ * whatever it finds, and returns null on an `iflk_` key. The edge then 401s a
+ * key-only caller before `tryApiKeyAuth` (wired into BOTH `getTenantCtx` and
+ * `getLegacyCtx`) ever runs, so the partner flow documented in
+ * `docs/api-consumer-guide.md` could not work on any of the 305 tenant routes.
+ *
+ * This is deliberately a RECOGNITION, not a verification. Nothing here decides
+ * whether the key is real, unexpired, unrevoked or scoped — Prisma is not
+ * reachable from the Edge runtime, and the handler is and remains the sole
+ * authority (`verifyApiKey` → `tryApiKeyAuth`, which THROWS 401 on an invalid
+ * key rather than falling back to the cookie). The edge only decides "this is
+ * not a browser session, let the handler judge it".
+ *
+ * Narrow by construction, because the fall-through skips the JWT-derived edge
+ * gates (admin role, MFA, tenant-access):
+ *   - `/api/t/**` only — the surface the credential is documented for.
+ *   - `Bearer <token>` parsed exactly as `extractBearerToken` parses it.
+ *   - `iflk_` prefix required.
+ * The tenant-access gate this bypasses is replaced in the handler:
+ * `getTenantCtx` rejects a key whose tenant is not the slug in the URL.
+ */
+export function matchTenantApiKeyRequest(
+    pathname: string,
+    authorization: string | null | undefined,
+): string | null {
+    if (!pathname.startsWith('/api/t/')) return null;
+    if (!authorization) return null;
+    // Mirror of `extractBearerToken`: exactly two space-separated parts, the
+    // first case-insensitively "bearer".
+    const parts = authorization.split(' ');
+    if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') return null;
+    const token = parts[1];
+    if (!token.startsWith(EDGE_API_KEY_PREFIX)) return null;
+    return `apikey:${fnv1a32(token)}`;
+}
+
+/**
  * Check if a pathname is an API route.
  */
 export function isApiRoute(pathname: string): boolean {
@@ -187,13 +264,61 @@ export function isOrgPath(pathname: string): boolean {
 }
 
 /**
- * Check if a path should remain accessible when MFA is pending.
- * These routes are allowed so users can complete MFA enrollment/challenge.
+ * Paths that stay reachable while `mfaPending` is true.
+ *
+ * This is an ALLOWLIST, and since #2223 it is the ONLY thing that softens
+ * MFA enforcement. The middleware used to gate MFA on
+ * `isTenantPath(pathname) && !isMfaAllowedPath(pathname)`, which enforced by
+ * URL SHAPE while authorization is enforced per route — so a session that had
+ * presented a password and not a second factor was refused on `/api/t/**` and
+ * admitted on all 93 flat API routes, 19 of which build a full tenant context
+ * through `getLegacyCtx` (`/api/audit-log`, `/api/evidence`, `/api/findings`,
+ * …), plus `/api/org/**` and `/api/admin`. The check is now "every
+ * authenticated request except these".
+ *
+ * Public and machine-caller paths are NOT listed here and do not need to be:
+ * `isPublicPath` returns them at step 1 of the middleware, before the JWT is
+ * ever read, so `/api/auth/`, the health probes, `/api/scim`, `/api/mcp`, the
+ * webhooks and the CSP-report beacon never reach the MFA branch at all. A
+ * server-to-server caller also carries no `mfaPending` claim, so the check
+ * would be a no-op for it even if it did.
+ *
+ * What IS here is the enrolment + challenge surface, because a user cannot
+ * clear `mfaPending` without it:
+ *
+ *   - `/t/<slug>/auth/mfa`        — the challenge page.
+ *   - `/t/<slug>/security/mfa`    — the ENROLMENT page. Under a REQUIRED
+ *     policy an unenrolled user is `mfaPending` from first sign-in, and the
+ *     challenge page's own "Set up MFA" button points here; without this
+ *     entry that click bounced straight back to the challenge, so a
+ *     REQUIRED-policy tenant could not onboard anyone. The docstring above
+ *     claimed enrolment worked long before it did.
+ *   - `/api/t/<slug>/security/mfa/**` — the APIs both of those pages call.
+ *   - `/api/auth/` — sign-out, session, csrf. Redundant with `isPublicPath`
+ *     and kept because this predicate is also read on its own.
+ *
+ * Adding an entry here creates a surface a half-authenticated session can
+ * reach. Add only what is needed to COMPLETE the challenge.
  */
 export function isMfaAllowedPath(pathname: string): boolean {
-    // MFA challenge page and enrollment API routes
-    if (/^\/t\/[^/]+\/auth\/mfa/.test(pathname)) return true;
-    if (/^\/api\/t\/[^/]+\/security\/mfa/.test(pathname)) return true;
+    // MFA challenge page, enrolment page, and the APIs those two pages call.
+    //
+    // Every pattern is ANCHORED on a segment boundary. An unanchored
+    // `/security/mfa` prefix also matches `/security/mfa/policy` and
+    // `/security/mfa-policy`, and `PUT` on the policy route is gated on
+    // `admin.manage` and nothing else — `updateTenantMfaPolicy` has an
+    // anti-lockout check for switching TO required and none for switching
+    // AWAY. So an mfaPending ADMIN holding only a password could have sent
+    // `{"mfaPolicy":"DISABLED"}`, signed out and back in fully authenticated,
+    // and turned MFA off for every user in the tenant. The allowlist must
+    // admit only what COMPLETES a challenge, never what redefines whether one
+    // is required.
+    if (/^\/t\/[^/]+\/auth\/mfa(?:\/|$)/.test(pathname)) return true;
+    if (/^\/t\/[^/]+\/security\/mfa(?:\/|$)/.test(pathname)) return true;
+    // Enumerated, not prefixed: `enroll` and `challenge` are the two the
+    // challenge and enrolment pages call. A future sibling under this path is
+    // NOT admitted by default, which is the failure mode above.
+    if (/^\/api\/t\/[^/]+\/security\/mfa\/(?:enroll|challenge)(?:\/|$)/.test(pathname)) return true;
     // Auth callbacks (sign-out, etc.)
     if (pathname.startsWith('/api/auth/')) return true;
     return false;

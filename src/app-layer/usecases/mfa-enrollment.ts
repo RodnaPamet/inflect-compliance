@@ -9,6 +9,7 @@
  * SECURITY: Secrets are encrypted with AES-256-GCM. Never logged in plaintext.
  */
 import { prisma } from '@/lib/prisma';
+import { auth } from '@/auth';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability';
 import type { RequestContext } from '../types';
@@ -179,6 +180,35 @@ export async function removeMfaEnrollment(
     targetUserId?: string,
 ): Promise<{ removed: boolean }> {
     const effectiveUserId = targetUserId || ctx.userId;
+
+    // A session that has not satisfied its MFA challenge may not remove an
+    // enrolment — its own least of all.
+    //
+    // This closes a hole that pre-dates the enrolment page being reachable
+    // while `mfaPending`, and it is the reason that page can be reachable at
+    // all. Under a REQUIRED policy an unenrolled user is `mfaPending` from
+    // first sign-in and must be able to reach `/t/<slug>/security/mfa` to
+    // enrol — but `isMfaAllowedPath` is PATH-scoped, not METHOD-scoped, so
+    // opening the enrolment APIs necessarily opens this DELETE too. The edge
+    // routes by path; the state check has to live here.
+    //
+    // Without it, a password alone defeats the second factor entirely through
+    // the UI: sign in -> mfaPending -> reach the enrolment page -> Remove ->
+    // enrol the attacker's own authenticator -> `lastChallengeAt >= token.iat`
+    // -> `auth.ts` clears `mfaPending`. No crafted requests, no admin rights.
+    //
+    // It holds for the admin branch too, deliberately: an administrator who
+    // has not completed their own challenge should not be removing anybody's
+    // second factor. That is the same principle #2223 applies to every other
+    // privileged surface.
+    const session = await auth();
+    if (session?.user?.mfaPending === true) {
+        await auditMfaRemovalDenied(ctx, effectiveUserId);
+        throw forbidden(
+            'Complete the MFA challenge before changing enrollment. Removing a '
+            + 'second factor requires having proven it.',
+        );
+    }
 
     // Non-admins can only remove their own enrollment
     if (effectiveUserId !== ctx.userId && !ctx.permissions.canAdmin) {

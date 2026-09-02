@@ -26,6 +26,7 @@
  */
 
 import {
+    braceBlockAfter,
     callExpressionOf,
     codeOf,
     declarationOf,
@@ -319,5 +320,97 @@ describe('source-blocks — a missing or unbalanced target fails loudly', () => 
         expect(() =>
             functionBodyOf('/* export function gone() {} */', 'gone'),
         ).toThrow(/function not found/);
+    });
+});
+
+describe('source-blocks — the anchor is the FIRST match, and that is a limit', () => {
+    /**
+     * Recorded rather than argued, because the measurement is the point.
+     *
+     * All five anchors are `maskNonCode(src).search(...)`, so when a file
+     * holds TWO constructs matching the anchor, the extraction binds to the
+     * EARLIER one and the guard asserts about the wrong construct. That is
+     * loud in the ordinary case: an unrelated second construct in front of
+     * the intended one does not satisfy the guard's positive assertion, so
+     * the guard goes red and a contributor has to look. It is silent only
+     * when the decoy ITSELF carries the token being asserted.
+     *
+     * Measured on the real guard, not inferred from reading it. Against
+     * `src/lib/processes/use-tenant-controls.ts` with the real poll inverted
+     * to `runFetch(false)`:
+     *
+     *   • a NEUTRAL second `setInterval` ahead of the poll →
+     *     `tests/guards/p-polish-d.test.ts` 1 failed / 19 passed, on the
+     *     assertion that names the flag. Loud.
+     *   • a second `setInterval` ahead of the poll whose own callback calls
+     *     `runFetch(true)` → 20/20 GREEN with the poll inverted. Silent.
+     *
+     * The silent case needs a diff that adds a whole extra interval AND
+     * writes the passing token into it, which is why this is recorded as a
+     * bound on the helper rather than fixed by making a second match throw:
+     * `declarationOf()` and `braceBlockAfter()` are shared across ~24 call
+     * sites, and a repo-wide ambiguity error is a far larger change than the
+     * residual justifies. A guard that needs uniqueness should pass a
+     * NARROWER anchor — the assignment target, not the bare callee — rather
+     * than rely on there being only one match. See #2238.
+     */
+    const TWO_INTERVALS = [
+        'timerA = setInterval(() => {',
+        '    void runFetch(true);',
+        '}, fast);',
+        'timerB = setInterval(() => {',
+        '    void runFetch(false);',
+        '}, slow);',
+    ].join('\n');
+
+    it('callExpressionOf binds to the first matching call, not the last', () => {
+        const block = callExpressionOf(TWO_INTERVALS, 'setInterval');
+
+        expect(block).toMatch(/runFetch\(true\)/);
+        // The SECOND interval is outside the extraction entirely — the whole
+        // hazard, in one assertion.
+        expect(block).not.toMatch(/runFetch\(false\)/);
+    });
+
+    it('and there is no supported way to reach the SECOND call of a callee', () => {
+        // The obvious escape hatch does not exist, which is why the bound
+        // above is a bound rather than a style note. `callExpressionOf` takes
+        // a bare callee identifier — there is no pattern parameter to narrow
+        // with — and `braceBlockAfter` cannot stand in for it: its paren guard
+        // deliberately ignores any `{` seen at paren depth > 0, so a callback
+        // brace INSIDE `setInterval(...)` is never read as the block's opening
+        // brace and the scan runs to EOF.
+        //
+        // It throws rather than returning a wrong block, so the failure mode
+        // is loud. A guard that genuinely needs the second call must either
+        // keep one such call per file or grow the helper a narrowing anchor.
+        expect(() => braceBlockAfter(TWO_INTERVALS, 'timerB = setInterval')).toThrow(
+            /unterminated/,
+        );
+    });
+
+    it('a narrower anchor DOES work where the block is not inside parens', () => {
+        // The same escape hatch on a brace-bounded construct, so the limit
+        // above reads as specific to call expressions rather than general.
+        const src = [
+            'function first() {',
+            '    return "a";',
+            '}',
+            'function second() {',
+            '    return "b";',
+            '}',
+        ].join('\n');
+
+        const block = braceBlockAfter(src, 'function second');
+
+        expect(block).toMatch(/"b"/);
+        expect(block).not.toMatch(/"a"/);
+    });
+
+    it('declarationOf shares the first-match rule', () => {
+        const src = ['const target = { a: 1 };', 'const target = { b: 2 };'].join('\n');
+
+        expect(declarationOf(src, 'target')).toMatch(/a: 1/);
+        expect(declarationOf(src, 'target')).not.toMatch(/b: 2/);
     });
 });

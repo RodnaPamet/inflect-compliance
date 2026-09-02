@@ -120,6 +120,21 @@ Stricter presets apply to a few sensitive routes (login, API-key
 creation, email dispatch). The `x-rate-limit` extension on each
 documented operation in `openapi.json` names the preset that applies.
 
+### API-key callers: one extra edge meter
+
+A request authenticated with `Authorization: Bearer iflk_…` is metered at
+the edge under the **read** budget (120 / min) on **every** method, not
+just `GET`, and the bucket is keyed per **key** rather than per tenant —
+so two keys in the same tenant, or one key called from two IPs, never
+starve each other. This is the only pre-handler cost bound on a
+credential the edge cannot verify (there is no database at the edge), so
+it applies before the key is known to be real.
+
+Mutations then also pass the 60 / min mutation tier inside the handler,
+which is the tighter of the two — so the effective write budget for a key
+is unchanged at 60 / min, and the effective read budget is 120 / min.
+Both surface as the same 429 contract below.
+
 ### What you observe
 
 Every rate-limited response is **HTTP 429** with this header contract:

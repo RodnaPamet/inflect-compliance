@@ -11,7 +11,7 @@ spray attack does not consume the read budget for legitimate users.
 |------|--------|--------|------------|-----------|
 | **Auth** | tiered (10/30/60 per min) | 10/min for sign-in callbacks; 30/min for session probes; 60/min for `/csrf` and `/providers` | Edge middleware | `(IP, ua-hash)` |
 | **Mutation** | `API_MUTATION_LIMIT` | 60 per minute | Node route handlers via `withApiErrorHandling` | `(IP, userId)` |
-| **Read** | `API_READ_LIMIT` | 120 per minute | Edge middleware | `(IP, userId, tenantSlug)` |
+| **Read** | `API_READ_LIMIT` | 120 per minute | Edge middleware | `(IP, userId, tenantSlug)` for a browser session; **`(IP, key-digest)` plus a shared `(IP)` bucket for an `iflk_` API-key request** — see *API-key callers* below |
 
 All numbers are sized for normal interactive use — a real user filling
 forms or paginating lists is well below every threshold. Scripts and
@@ -39,7 +39,9 @@ wrapper).
 The read tier matches **only**:
 
 - **GET method** — mutations have their own tier. POST/PUT/PATCH/DELETE
-  on the same path go through `API_MUTATION_LIMIT` instead.
+  on the same path go through `API_MUTATION_LIMIT` instead. **This is true
+  of session-authenticated requests only**; an API-key request is metered
+  here on every method — see *API-key callers* below.
 - **Path starts with `/api/t/`** — i.e. tenant-scoped API routes. Auth
   routes (`/api/auth/*`) have their own Upstash limiter; admin / org
   routes are not currently throttled at this layer.
@@ -106,9 +108,43 @@ Two things in that table are easy to get wrong:
   credential is the thing an attacker varies, so keying by it would hand
   every guess a fresh budget.
 
+## API-key callers
+
+An `iflk_` API-key request is metered here too, and by different keys, because
+it reaches the edge without a session cookie.
+
+`getToken` reads `Authorization: Bearer`, JWE-decodes it, throws on an `iflk_`
+value and returns null — so before this was wired the middleware 401'd every
+key request before `tryApiKeyAuth` could run, and the documented partner flow
+in `docs/api-consumer-guide.md` could not work at all. The edge now recognises
+the credential shape and falls through, leaving the handler as the sole
+authority on whether the key is real.
+
+Two buckets are charged, and the second is the load-bearing one:
+
+| Bucket | Key | What it is for |
+| --- | --- | --- |
+| per-key | `apikey:<fnv1a32(token)>` | Fairness. Many partner keys behind one NAT get independent budgets, exactly as each device does on the posture-report path. |
+| per-IP | `apikey-ip` | Containment. **The credential is the thing an attacker varies** — a random `iflk_` per request yields a fresh per-key bucket every time, so that meter alone bounds nothing for an unauthenticated flood. |
+
+The containment bucket matters more since the edge stopped refusing these
+outright: each request now reaches the App Router and costs one
+`tenantApiKey.findUnique` before its 401, where previously it was a free edge
+refusal.
+
+Two differences from the session path, both deliberate:
+
+- **Every method is metered**, not only GET. The method split exists because
+  session mutations have their own tier keyed `(IP, userId)`; a key caller has
+  no `userId` at the edge, so there is nothing to key that tier on.
+- **The scope carries a digest, never the token.** `checkApiReadRateLimit` logs
+  its scope at WARN on a 429, and a truncated key in a log line is a credential
+  in a log line.
+
 ## Bucketing
 
-The read tier keys by **`(IP, userId, tenantSlug)`**. Two consequences:
+The read tier keys by **`(IP, userId, tenantSlug)`** for a browser session.
+Two consequences:
 
 - **Per-tenant isolation**: the same user accessing tenant A and
   tenant B has two independent budgets. A runaway tab in tenant A
