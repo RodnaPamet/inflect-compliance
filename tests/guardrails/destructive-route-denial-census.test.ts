@@ -45,16 +45,24 @@
  * `src/app/api/**\/route.ts` matches `ROUTE_GATE` and some other non-GET
  * handler in the same file does not.
  *
- * Two files match that today, and NEITHER is a real gap:
+ * ONE file matches that today, and it is not a real gap:
  *   - `t/[tenantSlug]/assets/[id]/route.ts` writes `export const PATCH = PUT`,
- *     so the alias inherits the PUT's gate and only the TEXT scan sees a hole;
- *   - `t/[tenantSlug]/processes/[id]/route.ts` was the last real one and was
- *     closed by #2197, which gave its PUT and PATCH the `processes.edit` key
- *     they had no candidate for.
+ *     so the alias inherits the PUT's gate and only the TEXT scan sees a hole.
  *
- * Read this list as "every destructive route module has at least one gate",
- * never as "every destructive handler is gated". A guard that overstates its
- * own reach is the failure mode this suite exists to prevent.
+ * `t/[tenantSlug]/processes/[id]/route.ts` was the other one until #2197 gave
+ * its PUT and PATCH the `processes.edit` key they had no candidate for — which
+ * is exactly why it no longer matches. It is named here because a reader who
+ * follows the instruction above and measures 1 should not have to wonder
+ * whether the docstring is stale or the measurement is wrong.
+ *
+ * Since #2168 the unit within the destructive population really is the
+ * HANDLER: a gated DELETE beside an ungated destructive sibling reports the
+ * file, it does not certify it. The older "every destructive route module has
+ * at least one gate" reading is retired, and stating it now would UNDERSTATE
+ * the guard's reach — which sends the next reader to redo work already done,
+ * the #2189 failure this file's `disposition` comment describes. A guard that
+ * misdescribes its own reach, in either direction, is the failure mode this
+ * suite exists to prevent.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -275,11 +283,15 @@ describe('destructive routes whose denials are invisible', () => {
         // length is slack a later diff can spend without a reviewer seeing a
         // number change, which is the thing a ratchet exists to prevent.
         //
-        // ZERO is the honest bound and it is a real one: the three tests above
-        // that iterate the `todo` subset are now vacuous, so THIS is what keeps
-        // an ungated destructive route from arriving quietly. A new one fails
-        // the exact-list assertion first; adding its line here to get green
-        // fails this. Both edits have to be argued.
+        // ZERO is the honest bound and it is a real one. Of the three tests
+        // above, exactly ONE goes vacuous at zero — `every remaining GAP names
+        // the issue tracking it`, which filters `disposition === 'todo'`. The
+        // other two stay fully live: `every entry says WHY it is still here`
+        // iterates all of UNGATED_DESTRUCTIVE_ROUTES including the four exempt
+        // entries, and `the set of ungated destructive routes is exactly the
+        // declared list` iterates the MEASURED census, which is the assertion
+        // a new ungated route trips first. Adding its line here to get green
+        // then fails this one. Both edits have to be argued.
         const todo = UNGATED_DESTRUCTIVE_ROUTES.filter((e) => e.disposition === 'todo');
         expect(todo.length).toBeLessThanOrEqual(0);
     });

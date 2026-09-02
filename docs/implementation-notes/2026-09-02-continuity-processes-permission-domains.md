@@ -50,7 +50,7 @@ highest-signal denials.
 | `src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx` | `SCOPE_GROUPS` — the operator-facing half of the same mirror. |
 | `messages/en.json`, `messages/bg.json` | `admin.resourceLabels.*` for the custom-role grid. |
 | `src/lib/security/route-permissions.ts` | Six declarative rules, fourth tranche. |
-| `src/app/api/t/[tenantSlug]/business-continuity/**` | Five write handlers moved to `requirePermission('continuity.edit', …)`; both GETs untouched. |
+| `src/app/api/t/[tenantSlug]/business-continuity/**` | Six write handlers across five files moved to `requirePermission('continuity.edit', …)`; both GETs untouched. (Five is the FILE count — `[id]/route.ts` carries both PUT and DELETE.) |
 | `src/app/api/t/[tenantSlug]/processes/**` | Collection POST, `[id]` PUT + PATCH, and the snapshot restore POST moved to `requirePermission('processes.edit', …)`. |
 | `tests/guardrails/api-permission-coverage.test.ts` | Two roots; one exclusion for the read-only `dependency-options` route. |
 | `tests/guardrails/destructive-route-denial-census.test.ts` | Three `todo` entries deleted, ratchet ceiling 3 → 0, two stale prose paragraphs corrected. |

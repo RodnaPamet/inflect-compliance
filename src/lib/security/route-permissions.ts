@@ -784,7 +784,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'route gate and usecase gate are the same predicate.',
     },
 
-    // ── Business continuity + process maps, fourth tranche (#2197) ───
+    // ── Business continuity + process maps, fifth tranche (#2197) ────
     // The residual the third tranche wrote down and could not take: these
     // gate on the coarse `assertCanWrite`, and `PermissionSet` had NO domain
     // whose population matched — so binding them to a neighbouring register's

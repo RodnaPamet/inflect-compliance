@@ -278,7 +278,7 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/tests/runs/[runId]/evidence/[linkId]',
         why: 'Hard-deleting a control test run\'s evidence link and its frozen hash — tests.execute, the exact flag assertCanLinkTestEvidence reads.',
     },
-    // ── Business continuity + process maps, fourth tranche (#2197) ──
+    // ── Business continuity + process maps, fifth tranche (#2197) ───
     // NOT a leaf root, and taken whole on purpose. The third tranche left
     // these gating on the coarse `assertCanWrite` because no PermissionSet
     // domain matched that population; #2197 added `continuity` / `processes`,
@@ -289,7 +289,7 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
     // been read rather than pattern-matched away.
     {
         relPath: 'src/app/api/t/[tenantSlug]/business-continuity',
-        why: 'The BIA register — create / update / delete, dependency attach + detach, and the control link. All five gate on continuity.edit, which mirrors the assertCanWrite behind them. The GETs stay on the usecase assert (there is deliberately no continuity.view) and the read-only dependency-options route is excluded individually.',
+        why: 'The BIA register — create / update / delete, dependency attach + detach, and the control link. All six gate on continuity.edit, which mirrors the assertCanWrite behind them. The GETs stay on the usecase assert (there is deliberately no continuity.view) and the read-only dependency-options route is excluded individually.',
     },
     {
         relPath: 'src/app/api/t/[tenantSlug]/processes/[id]/snapshots/[version]/restore',
