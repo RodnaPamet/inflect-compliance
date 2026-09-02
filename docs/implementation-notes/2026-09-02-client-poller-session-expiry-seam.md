@@ -52,6 +52,22 @@ never sees a `setState`. Pollers PULL; components read via
 none of the four defective sites (all raw `fetch`); an `SWRConfig onError`
 alone fixes one of four.
 
+*Corrected before merge:* that was true of the design and false of the first
+implementation. `onError` reads `.status` off the thrown error, and all three
+raw `useSWR` fetchers in `src/` put the status in the message instead — so it
+could never mark anything `api-client` had not, and the second writer was dead.
+`use-calendar-badge`, the poller named below as the motivating case for *not*
+auto-redirecting, was one of them. The three now throw `ApiClientError`, which
+carries `status` as a property, so the halves really are disjoint.
+
+*Also corrected:* the first implementation used `isPaused: isSessionExpired`.
+SWR checks that flag inside its own `catch` and DISCARDS the error rather than
+assigning it, so the seam went quiet by going blind — 17 components destructure
+`error`, and `MonitorTab`'s new "feed unavailable" branch is guarded on
+`error && !data`. Fetching is now stopped by turning off what would *start* a
+fetch, which also lets SWR's own error-quiescing work (its polling loop guards
+on `!getCache().error`, which `isPaused` was defeating by never writing one).
+
 **401 only, never 403.** For a browser request 401 has exactly one producer —
 `middleware.ts` where `getToken()` returned null. 403 has three and none is a
 session problem; a `requirePermission` denial must not sign anyone out. The

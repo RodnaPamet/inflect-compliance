@@ -4,12 +4,12 @@
 // so the strict CSP doesn't report Zod's `new Function` probe. Keep at
 // the top of the client entry. See src/lib/zod-jitless.ts.
 import '@/lib/zod-jitless';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Toaster } from 'sonner';
 import { SWRConfig } from 'swr';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
 import { SessionExpiredNotice } from '@/components/layout/session-expired-notice';
-import { isSessionExpired, noteUnauthorized } from '@/lib/auth/session-expiry';
+import { isSessionExpired, noteUnauthorized, subscribe } from '@/lib/auth/session-expiry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
     CommandPalette,
@@ -51,37 +51,82 @@ function FormTelemetrySink() {
 /**
  * #2222 — the SWR half of the app-wide 401 seam.
  *
- * Two writers exist, and they cover DISJOINT halves of the problem, which is
- * why neither is sufficient alone. 173 client files call raw `fetch` and 9
- * import `@/lib/api-client`, so:
+ * `isPaused` was the obvious lever here and it is the WRONG one. SWR checks it
+ * twice: at the top of `revalidate`, which is the behaviour we want, and again
+ * inside its own `catch` — where a paused config makes it DISCARD the error
+ * rather than assign `finalState.error`. Measured against real SWR:
  *
- *   • a 401 branch in `api-client.ts` reaches the ~150 `useTenantSWR` /
- *     `apiGet` callers — all of which are already bounded — and none of the
- *     hand-rolled pollers that are actually broken;
- *   • this `onError` reaches every `useSWR` in the tree whatever its fetcher,
- *     including one that throws its own error type.
+ *     without the seam:  error = ERR:401
+ *     with `isPaused`:   expired=true  err=no-error  data=no-data
  *
- * `isPaused` is the READ half, and it is the reason this sits at the root: it
- * is checked at the top of SWR's `revalidate` and again before `onError`, so
- * once the flag is set every SWR hook in the app — poll, focus revalidation,
- * reconnect, error retry — stops issuing requests. The timers keep re-arming
- * (SWR's polling `execute()` calls `next()` regardless), but they issue no
- * network calls, which is the behaviour we want: quiet, and recoverable by a
- * reload after re-auth.
+ * So it bought quiet at the price of blindness: 17 components destructure
+ * `error` and would render nothing at all, and `MonitorTab`'s own
+ * "feed unavailable" branch — added by this same change, and guarded on
+ * `error && !data` — would never fire in the one case it was written for. A
+ * hook mounting AFTER expiry gets no loading state either
+ * (`shouldDoInitialRevalidation` false ⇒ `isLoading` false, `data` undefined,
+ * `error` undefined): indistinguishable from an empty result.
+ *
+ * So the error is allowed to land, and fetching is stopped by turning off the
+ * things that would START a fetch. That also lets SWR's own quiescing work:
+ * its polling loop guards on `!getCache().error`, which an assigned error
+ * satisfies — a mechanism `isPaused` was defeating by never writing one.
+ *
+ * `revalidateOnFocus` is the reason this cannot simply be left alone.
+ * `DEFAULT_SWR_CONFIG` turns it ON, so without a switch every tab focus would
+ * restart the 401 burst that error-quiescing had just stopped.
  *
  * Deliberately NOT `onErrorRetry`: that hook is skipped entirely when
- * `shouldRetryOnError` is false, so a config that disables retries would also
+ * `shouldRetryOnError` is false, so a config disabling retries would also
  * silently disable the seam.
+ *
+ * WHY THERE ARE TWO WRITERS, and why this one was dead until it was fixed.
+ * `api-client.ts` marks inside `handleErrorResponse`, which covers every
+ * `apiGet` / `useTenantSWR` caller. This `onError` is meant to cover the raw
+ * `useSWR` sites that never touch `apiGet` — but it reads `.status` off the
+ * thrown error, and all three such fetchers in `src/` put the status in the
+ * MESSAGE instead (`throw new Error(\`upcoming-count ${res.status}\`)`). So
+ * it could never mark anything `api-client` had not already marked, and the
+ * "two disjoint halves" rationale was false as written.
+ *
+ * `use-calendar-badge` was among them — the 5-minute SidebarNav poller this
+ * seam's own reasoning names as the motivating background writer, unable to
+ * fire the store it motivates. Those three now throw `ApiClientError`, which
+ * carries `status` as a property. A NEW raw `useSWR` fetcher must do the same
+ * or it silently falls outside the seam.
  */
-const SWR_SESSION_SEAM = {
-    onError: (err: unknown, key: string) => {
-        const status = (err as { status?: unknown } | null)?.status;
-        noteUnauthorized(typeof status === 'number' ? status : undefined, key);
-    },
-    isPaused: isSessionExpired,
-};
+export function useSwrSessionSeam() {
+    // Re-render the provider when the flag flips, so the config below is
+    // recomputed. The store is module-scope (an already-scheduled interval
+    // callback closes over its bindings and never sees a `setState`), and
+    // this subscription is the one place that scope has to reach React.
+    const [expired, setExpired] = useState(isSessionExpired);
+    useEffect(() => subscribe(() => setExpired(isSessionExpired())), []);
+
+    return useMemo(
+        () => ({
+            onError: (err: unknown, key: string) => {
+                const status = (err as { status?: unknown } | null)?.status;
+                noteUnauthorized(typeof status === 'number' ? status : undefined, key);
+            },
+            // No `isPaused`. See above.
+            ...(expired
+                ? {
+                      refreshInterval: 0,
+                      revalidateOnFocus: false,
+                      revalidateOnReconnect: false,
+                      revalidateIfStale: false,
+                      shouldRetryOnError: false,
+                  }
+                : {}),
+        }),
+        [expired],
+    );
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
+    const swrSeam = useSwrSessionSeam();
+
     // No <SessionProvider>. The tenant layout resolves the session
     // server-side via `auth()`, nothing calls `useSession`, and
     // `signIn`/`signOut` work without the provider. Mounting it would
@@ -97,7 +142,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // palette itself is rendered once at the shell so it's reachable
     // from any route, layered above page content via its own portal.
     return (
-        <SWRConfig value={SWR_SESSION_SEAM}>
+        <SWRConfig value={swrSeam}>
             <KeyboardShortcutProvider>
                 <CommandPaletteProvider>
                     <ThemeProvider>

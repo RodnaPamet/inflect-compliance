@@ -18,6 +18,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { formatDateTime } from '@/lib/format-date';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { useToast } from '@/components/ui/hooks';
+import { ApiClientError } from '@/lib/api-client';
 import {
     buildExecutionStatusLabels,
     buildTriggerSourceLabels,
@@ -67,7 +68,7 @@ export function ExecutionsPanel({
         // run" are opposite claims and must not look identical.
         async (url: string) => {
             const r = await fetch(url);
-            if (!r.ok) throw new Error(`executions ${r.status}`);
+            if (!r.ok) throw new ApiClientError(`executions ${r.status}`, 'fetch_failed', r.status);
             return r.json();
         },
     );

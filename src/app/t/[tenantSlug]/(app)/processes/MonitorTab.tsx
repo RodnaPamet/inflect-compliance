@@ -70,7 +70,20 @@ export function MonitorTab() {
     const { data, error, mutate } = useTenantSWR<{
         stuck: ExecRow[];
         recent: ExecRow[];
-    }>(CACHE_KEYS.automation.executions.live(), { refreshInterval: 5000 });
+    }>(CACHE_KEYS.automation.executions.live(), {
+        refreshInterval: 5000,
+        // `dedupingInterval` must be BELOW `refreshInterval` or the poll
+        // silently halves. `DEFAULT_SWR_CONFIG` sets it to 5000 for list
+        // pages that mount several hooks on one key; SWR arms
+        // `setTimeout(cleanupState, dedupingInterval)` only after the fetch
+        // resolves, and the polling `execute()` revalidates WITH_DEDUPE — so
+        // the tick at t=5000 finds the entry still present, dedupes, and
+        // issues nothing. Real requests would land at ~0s, 10s, 20s while the
+        // code, the guard grepping for `5000`, and this operator console all
+        // said five seconds. The bare `useSWR` this replaced got 5s because
+        // SWR's own default deduping is 2000.
+        dedupingInterval: 2000,
+    });
 
     async function cancel(id: string) {
         const res = await fetch(apiUrl(`/automation/executions/${id}`), {
