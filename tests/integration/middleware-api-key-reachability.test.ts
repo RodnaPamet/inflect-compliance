@@ -69,12 +69,51 @@ describe('middleware reachability — tenant API with an `iflk_` API key (#2224)
             {} as any,
         );
         const calls = (checkApiReadRateLimit as jest.Mock).mock.calls;
-        expect(calls).toHaveLength(1);
+        // TWO buckets: this per-key one for fairness, plus an IP-only one for
+        // containment (asserted in the next test). Was `toHaveLength(1)` when
+        // only the per-key bucket existed.
+        expect(calls).toHaveLength(2);
         const scope = calls[0][2] as string;
         expect(scope).toMatch(/^apikey:[0-9a-f]{8}$/);
         // Not the key, and not a truncation of it — the scope is logged at WARN
         // by the limiter on a 429.
         expect(scope).not.toContain(KEY.slice(0, 12));
+    });
+
+    it('ALSO meters an IP-only bucket — the per-key one bounds nothing for a flood', async () => {
+        // The per-key bucket exists for fairness: partner keys behind one NAT
+        // get independent budgets. It cannot bound an ATTACKER, because the
+        // credential is the thing an attacker varies — a random `iflk_` per
+        // request yields a fresh bucket every time.
+        //
+        // That matters more since this block started falling through: each such
+        // request now reaches the App Router and burns a
+        // `tenantApiKey.findUnique` before its 401, where previously it was a
+        // free edge refusal. Block 0e sixty lines above writes down exactly
+        // this reasoning ("the credential is the thing an attacker varies —
+        // keying by it would hand every guess a fresh budget"); 0f must not
+        // contradict it.
+        await middleware(req('GET', '/api/t/acme/risks', { authorization: `Bearer ${KEY}` }), {} as never);
+
+        const scopes = (checkApiReadRateLimit as jest.Mock).mock.calls.map((c) => c[2] as string);
+        expect(scopes).toContain('apikey-ip');
+        // And the per-key one is still there — this is an ADDITION, not a swap.
+        expect(scopes.some((sc) => /^apikey:[0-9a-f]{8}$/.test(sc))).toBe(true);
+    });
+
+    it('a flood of DIFFERENT keys still shares one bucket', async () => {
+        // The property the previous test's mechanism buys. Without the IP
+        // bucket every one of these is a fresh budget and the flood is
+        // unbounded.
+        for (let i = 0; i < 5; i += 1) {
+            const varied = `iflk_${String(i).padStart(48, 'a')}`;
+            await middleware(req('GET', '/api/t/acme/risks', { authorization: `Bearer ${varied}` }), {} as never);
+        }
+        const scopes = (checkApiReadRateLimit as jest.Mock).mock.calls.map((c) => c[2] as string);
+        const perKey = new Set(scopes.filter((sc) => /^apikey:/.test(sc)));
+        const perIp = scopes.filter((sc) => sc === 'apikey-ip');
+        expect(perKey.size).toBe(5);   // five distinct budgets — the flood's advantage
+        expect(perIp).toHaveLength(5); // charged to ONE bucket five times — the containment
     });
 
     it('a throttled key gets the limiter 429, not the handler', async () => {

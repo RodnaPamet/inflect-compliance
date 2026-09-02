@@ -38,6 +38,9 @@ jest.mock('@/lib/security/totp-crypto', () => ({
 }));
 
 const mockAppendAuditEntry = jest.fn();
+const mockAuth = jest.fn<Promise<unknown>, []>();
+jest.mock('@/auth', () => ({ auth: () => mockAuth() }));
+
 jest.mock('@/lib/audit', () => ({
     appendAuditEntry: (...a: unknown[]) => mockAppendAuditEntry(...a),
 }));
@@ -204,6 +207,40 @@ describe('verifyMfaEnrollment', () => {
 });
 
 describe('removeMfaEnrollment', () => {
+    beforeEach(() => {
+        // Default: the caller has completed their challenge. Set explicitly
+        // rather than relying on an unstubbed mock returning undefined, which
+        // would read as "not pending" and let the write through — a fail-OPEN
+        // default is exactly what this gate must not have.
+        mockAuth.mockResolvedValue({ user: { id: 'u1', mfaPending: false } });
+    });
+
+    it('REFUSES a caller whose own MFA challenge is still pending', async () => {
+        // The bypass this closes: a password alone defeats the second factor
+        // entirely through the UI. Sign in under a REQUIRED policy -> the
+        // session is mfaPending -> reach the enrolment page (which must be
+        // reachable, or an unenrolled user could never enrol) -> Remove ->
+        // enrol the attacker's own authenticator -> `lastChallengeAt >=
+        // token.iat` -> auth.ts clears mfaPending. No crafted requests.
+        mockAuth.mockResolvedValue({ user: { id: 'u1', mfaPending: true } });
+
+        await expect(removeMfaEnrollment(userCtx)).rejects.toThrow(
+            /Complete the MFA challenge/i,
+        );
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('REFUSES an ADMIN who is themselves mid-challenge, removing someone else', async () => {
+        // Deliberately not exempted. An administrator who has not completed
+        // their own challenge should not be removing anybody's second factor.
+        mockAuth.mockResolvedValue({ user: { id: 'admin', mfaPending: true } });
+
+        await expect(removeMfaEnrollment(adminCtx, 'u2')).rejects.toThrow(
+            /Complete the MFA challenge/i,
+        );
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
     it('lets a user remove their own enrollment without admin rights', async () => {
         await removeMfaEnrollment(userCtx); // targetUserId omitted → self
         expect(mockEnrollDelete).toHaveBeenCalledWith(

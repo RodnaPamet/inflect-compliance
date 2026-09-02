@@ -160,4 +160,32 @@ describe('MFA Enforcement', () => {
     // Behaviour now lives in `tests/integration/middleware-mfa-gate.test.ts`,
     // which drives the real `middleware()` export one assertion per path
     // class. What stays here is the classification predicate itself.
+
+    it('does NOT admit the tenant MFA POLICY route', () => {
+        // The allowlist must admit only what COMPLETES a challenge, never what
+        // redefines whether one is required. `PUT /security/mfa/policy` is
+        // gated on admin.manage and nothing else, and updateTenantMfaPolicy
+        // has an anti-lockout check for switching TO required and none for
+        // switching AWAY — so an mfaPending ADMIN holding only a password
+        // could set {"mfaPolicy":"DISABLED"}, sign out and back in fully
+        // authenticated, and disable MFA for every user in the tenant.
+        expect(isMfaAllowedPath('/api/t/acme/security/mfa/policy')).toBe(false);
+    });
+
+    it('does NOT admit a sibling that merely shares the prefix', () => {
+        // The API pattern was an unanchored prefix, so anything starting
+        // `/security/mfa` matched — including `mfa-policy` and `mfaanything`.
+        expect(isMfaAllowedPath('/api/t/acme/security/mfa-policy')).toBe(false);
+        expect(isMfaAllowedPath('/api/t/acme/security/mfaanything')).toBe(false);
+    });
+
+    it('DOES still admit the two APIs the challenge and enrolment pages call', () => {
+        // The negative assertions above are worthless without this: a pattern
+        // that admits nothing would satisfy them and lock every unenrolled
+        // user out of enrolling.
+        expect(isMfaAllowedPath('/api/t/acme/security/mfa/enroll')).toBe(true);
+        expect(isMfaAllowedPath('/api/t/acme/security/mfa/challenge')).toBe(true);
+        expect(isMfaAllowedPath('/t/acme/security/mfa')).toBe(true);
+        expect(isMfaAllowedPath('/t/acme/auth/mfa')).toBe(true);
+    });
 });

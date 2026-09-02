@@ -301,10 +301,24 @@ export function isOrgPath(pathname: string): boolean {
  * reach. Add only what is needed to COMPLETE the challenge.
  */
 export function isMfaAllowedPath(pathname: string): boolean {
-    // MFA challenge page, enrolment page, and their API routes
-    if (/^\/t\/[^/]+\/auth\/mfa/.test(pathname)) return true;
+    // MFA challenge page, enrolment page, and the APIs those two pages call.
+    //
+    // Every pattern is ANCHORED on a segment boundary. An unanchored
+    // `/security/mfa` prefix also matches `/security/mfa/policy` and
+    // `/security/mfa-policy`, and `PUT` on the policy route is gated on
+    // `admin.manage` and nothing else — `updateTenantMfaPolicy` has an
+    // anti-lockout check for switching TO required and none for switching
+    // AWAY. So an mfaPending ADMIN holding only a password could have sent
+    // `{"mfaPolicy":"DISABLED"}`, signed out and back in fully authenticated,
+    // and turned MFA off for every user in the tenant. The allowlist must
+    // admit only what COMPLETES a challenge, never what redefines whether one
+    // is required.
+    if (/^\/t\/[^/]+\/auth\/mfa(?:\/|$)/.test(pathname)) return true;
     if (/^\/t\/[^/]+\/security\/mfa(?:\/|$)/.test(pathname)) return true;
-    if (/^\/api\/t\/[^/]+\/security\/mfa/.test(pathname)) return true;
+    // Enumerated, not prefixed: `enroll` and `challenge` are the two the
+    // challenge and enrolment pages call. A future sibling under this path is
+    // NOT admitted by default, which is the failure mode above.
+    if (/^\/api\/t\/[^/]+\/security\/mfa\/(?:enroll|challenge)(?:\/|$)/.test(pathname)) return true;
     // Auth callbacks (sign-out, etc.)
     if (pathname.startsWith('/api/auth/')) return true;
     return false;

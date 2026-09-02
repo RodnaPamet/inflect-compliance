@@ -232,9 +232,27 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         req.headers.get('authorization'),
     );
     if (apiKeyScope) {
-        const rl = await checkApiReadRateLimit(req, null, apiKeyScope);
-        if (!rl.ok && rl.response) {
-            return rl.response;
+        // TWO buckets, and the second is the load-bearing one.
+        //
+        // Keying by the key digest gives partner keys behind one NAT
+        // independent budgets, which is the point of 0f. But the credential is
+        // the thing an ATTACKER varies: a random `iflk_` per request yields a
+        // fresh bucket every time, so that meter alone bounds nothing for an
+        // unauthenticated flood — and each such request now reaches the App
+        // Router and burns a `tenantApiKey.findUnique` before its 401, where
+        // pre-#2224 it was a free edge refusal. Block 0e sixty lines above
+        // writes down exactly this reasoning; 0f must not contradict it.
+        //
+        // So the per-key bucket is checked for fairness, and an IP-only bucket
+        // is checked for containment. Order matters only for which 429 is
+        // returned; both must pass.
+        const perKey = await checkApiReadRateLimit(req, null, apiKeyScope);
+        if (!perKey.ok && perKey.response) {
+            return perKey.response;
+        }
+        const perIp = await checkApiReadRateLimit(req, null, 'apikey-ip');
+        if (!perIp.ok && perIp.response) {
+            return perIp.response;
         }
         return NextResponse.next();
     }
