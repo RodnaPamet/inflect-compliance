@@ -10,7 +10,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { braceBlockAfter } from '../helpers/source-blocks';
+import { braceBlockAfter, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) =>
@@ -111,8 +111,30 @@ describe('Audit S1 — Risk lifecycle & treatment plans', () => {
         it('transferTreatmentPlanOwnership audit row carries before/after + reason', () => {
             // The audit log call inside the function must structure
             // the from/to user pair + the rationale.
-            expect(src).toMatch(/before:\s*\{\s*ownerUserId:/);
-            expect(src).toMatch(/after:\s*\{[\s\S]*ownerUserId:[\s\S]*reason:/);
+            //
+            // Bound to the TRANSFER'S OWN payload. The previous form read
+            // the whole file:
+            //
+            //     expect(src).toMatch(/after:\s*\{[\s\S]*ownerUserId:[\s\S]*reason:/)
+            //
+            // `risk-treatment-plan.ts` carries eight `after: {` blocks
+            // (measured: `grep -c 'after: {'` = 8, at lines 212/285/316/
+            // 394/470/612/634/731). The greedy span could open at the
+            // first of them and close on `ownerUserId:` / `reason:`
+            // contributed by any later one, so it never bound the fields
+            // to the block this test names. Measured: deleting
+            // `ownerUserId:` and `reason:` from the transfer's own
+            // `after: {` (src lines 732, 734) left this file 12/12 GREEN.
+            const transfer = functionBodyOf(
+                src,
+                'transferTreatmentPlanOwnership',
+            );
+            expect(braceBlockAfter(transfer, 'before:\\s*\\{')).toMatch(
+                /ownerUserId:/,
+            );
+            const after = braceBlockAfter(transfer, 'after:\\s*\\{');
+            expect(after).toMatch(/ownerUserId:/);
+            expect(after).toMatch(/reason:/);
         });
     });
 

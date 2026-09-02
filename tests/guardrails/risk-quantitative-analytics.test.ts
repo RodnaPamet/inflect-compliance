@@ -24,7 +24,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { braceBlockAfter } from '../helpers/source-blocks';
+import {
+    braceBlockAfter,
+    callExpressionOf,
+    functionBodyOf,
+} from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -91,8 +95,38 @@ describe('B10 — advanced analytics', () => {
             // filter with the unified `resolveALE` resolver, which prefers the
             // stored FAIR ALE and falls back to legacy SLE×ARO. A risk is in the
             // quantified subset iff resolveALE yields a finite value.
-            expect(src).toMatch(/resolveALE\(\{[\s\S]*?sleAmount[\s\S]*?aroAmount/);
-            expect(src).toMatch(/ale\s*!=\s*null\s*&&\s*isFinite\(ale\)/);
+            //
+            // Bound to the RESOLVER CALL ITSELF. The previous form was a
+            // lazy span over the whole file:
+            //
+            //     expect(src).toMatch(
+            //         /resolveALE\(\{[\s\S]*?sleAmount[\s\S]*?aroAmount/,
+            //     )
+            //
+            // A bound is not a binding. `?` limits how FAR the span runs,
+            // not WHERE: it stops at the first `sleAmount` after the call's
+            // `{`, which need not be inside the call. With the fallback
+            // gone, the first `sleAmount` / `aroAmount` are six and seven
+            // lines below (src lines 133-134), in the
+            // `quantified.push({ … })` literal where they are the `?? 0`
+            // DISPLAY defaults, not the resolver input. Measured: reducing
+            // the call to
+            // `resolveALE({ fairAle: r.fairAle })` — deleting the legacy
+            // SLE×ARO fallback this test is named for — left this file
+            // 16/16 GREEN.
+            //
+            // The function bound matters separately: `risk-analytics.ts`
+            // has two `resolveALE(` call sites (src lines 127 and 232), and
+            // the second is in `getRiskCoherence`, which this test does not
+            // name.
+            const usecase = functionBodyOf(
+                src,
+                'getRiskQuantitativeAnalytics',
+            );
+            const call = callExpressionOf(usecase, 'resolveALE');
+            expect(call).toMatch(/sleAmount/);
+            expect(call).toMatch(/aroAmount/);
+            expect(usecase).toMatch(/ale\s*!=\s*null\s*&&\s*isFinite\(ale\)/);
         });
     });
 
