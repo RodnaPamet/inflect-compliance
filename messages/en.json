@@ -2633,6 +2633,7 @@
             "firstError": "First error: {error}",
             "jobFailed": "Job failed",
             "pollFailed": "Lost contact with the import job — its status couldn't be updated. It may still be running; reopen this dialog or check the evidence list.",
+            "pollFailedSession": "Your session expired, so the import status stopped updating. The import itself is unaffected — sign in again to see where it got to.",
             "close": "Close",
             "cancel": "Cancel",
             "importRunning": "Import running…",
@@ -6483,7 +6484,8 @@
             "recentEmpty": "No recent executions.",
             "cancelHint": "Stops the workflow here: the run is recorded as cancelled and nothing chained to it will fire. An action already in flight cannot be recalled.",
             "cancelFailed": "Could not cancel this run.",
-            "cancelDone": "Run cancelled. Chained rules will not fire."
+            "cancelDone": "Run cancelled. Chained rules will not fire.",
+            "feedUnavailable": "Recent activity is unavailable right now."
         },
         "governance": {
             "crumbDashboard": "Dashboard",
@@ -8189,6 +8191,10 @@
             "now": "now",
             "sessionExpired": "Your session has expired.",
             "sessionExpiredAction": "Sign in again"
+        },
+        "sessionExpired": {
+            "body": "Your session has expired. Anything on screen may be out of date.",
+            "action": "Sign in again"
         },
         "env": {
             "staging": "Staging",

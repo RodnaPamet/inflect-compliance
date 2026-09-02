@@ -17,6 +17,8 @@
  */
 import type { ZodSchema } from 'zod';
 
+import { noteUnauthorized } from '@/lib/auth/session-expiry';
+
 // ─── Error Class ───
 
 export class ApiClientError extends Error {
@@ -65,6 +67,20 @@ async function handleErrorResponse(res: Response): Promise<never> {
     } catch {
         // Body is not JSON — use defaults
     }
+
+    // #2222 — the non-SWR half of the app-wide 401 seam.
+    //
+    // `apiGet` is `useTenantSWR`'s fetcher, so a 401 raised here is also seen
+    // by the `SWRConfig` `onError` in `providers.tsx` — but only for callers
+    // that go through SWR. `apiPost`/`apiPut`/`apiPatch`/`apiDelete` do not,
+    // and neither do the nine files that import this module directly. Marking
+    // here covers them; `onError` covers the hooks whose fetcher is not
+    // `apiGet` at all. Neither writer subsumes the other.
+    //
+    // 401 ONLY — `noteUnauthorized` owns the rule and the reasoning. A 403
+    // reaching this line is very often a `requirePermission` denial from a
+    // correctly signed-in user, and signing them out would be a regression.
+    noteUnauthorized(res.status, res.url);
 
     throw new ApiClientError(message, code, res.status, details, requestId);
 }

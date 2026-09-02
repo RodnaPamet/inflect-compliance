@@ -38,6 +38,7 @@
  */
 
 import useSWR from 'swr';
+import { ApiClientError } from '@/lib/api-client';
 
 interface UpcomingCountResponse {
     count: number;
@@ -56,7 +57,7 @@ async function fetchUpcomingCount(url: string): Promise<number> {
     // 500 / network error must NOT read as "nothing needs attention". SWR
     // then keeps the last-good `data` (so a transient refresh failure leaves
     // the prior count on the badge) rather than blanking it to a false zero.
-    if (!res.ok) throw new Error(`upcoming-count ${res.status}`);
+    if (!res.ok) throw new ApiClientError(`upcoming-count ${res.status}`, 'fetch_failed', res.status);
     const data: UpcomingCountResponse = await res.json();
     return data.count;
 }

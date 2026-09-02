@@ -9,7 +9,7 @@ import {
     isApiKeyToken,
     verifyApiKey,
 } from '@/lib/auth/api-key-auth';
-import { badRequest, notFound, unauthorized } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound, unauthorized } from '@/lib/errors/types';
 import prisma from '@/lib/prisma';
 import { getOrgPermissions, getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
 import { logger } from '@/lib/observability/logger';
@@ -40,7 +40,29 @@ export async function getTenantCtx(
     // Try API key auth first if Authorization header is present
     if (req) {
         const apiKeyCtx = await tryApiKeyAuth(req);
-        if (apiKeyCtx) return apiKeyCtx;
+        if (apiKeyCtx) {
+            // The key carries its own tenant; the URL names one too. They
+            // must agree.
+            //
+            // `docs/api-consumer-guide.md` has always said "the {tenantSlug}
+            // in the URL must match the tenant your credential belongs to —
+            // a mismatch is a 403", and until #2224 that claim was vacuous:
+            // a key-only request never passed the edge, so the only requests
+            // that got here carried a session cookie AND a key, and the edge
+            // tenant-access gate refused the mismatch on the cookie's
+            // memberships before the handler ran.
+            //
+            // #2224 makes key-bearing requests skip that edge gate — they
+            // have no cookie for it to read. This is where the check moves
+            // to. Without it, `cookie(tenant A) + key(tenant B)` on
+            // `/api/t/A/...` would silently serve B's rows under an A-shaped
+            // URL, which is the credential-confusion shape of #2196 with
+            // every audit log and metric labelled with the wrong tenant.
+            if (apiKeyCtx.tenantSlug !== params.tenantSlug) {
+                throw forbidden('API key is not valid for this tenant');
+            }
+            return apiKeyCtx;
+        }
     }
 
     const session = await getSessionOrThrow();

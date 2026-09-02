@@ -66,6 +66,16 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason: 'Tooltip is a floating overlay; shadow communicates lift.',
     },
     {
+        file: 'src/components/layout/session-expired-notice.tsx',
+        reason:
+            'The expired-session banner is `fixed inset-x-0 top-0 z-[100]` — it '
+            + 'floats over whatever page the user was on rather than sitting in '
+            + 'the document flow, which is the overlay case this rule carves out. '
+            + 'It also has to read as interrupting: it is the only signal that a '
+            + 'surface has stopped updating, and the elevation axis on Card would '
+            + 'put it in the page rather than over it.',
+    },
+    {
         file: 'src/components/command-palette/command-palette.tsx',
         reason: 'Command palette is a floating modal-like overlay; shadow-2xl communicates the topmost lift.',
     },

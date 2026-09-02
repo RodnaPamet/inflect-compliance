@@ -30,6 +30,7 @@ import type {
 } from '@/app-layer/usecases/compliance-trends';
 import type { TimeSeriesPoint } from '@/components/ui/charts';
 import type { MiniAreaChartVariant } from '@/components/ui/mini-area-chart';
+import { ApiClientError } from '@/lib/api-client';
 
 /** Shared 30-day trends fetch — one cache entry across every KPI page. */
 export function useKpiTrends(tenantSlug: string) {
@@ -40,7 +41,7 @@ export function useKpiTrends(tenantSlug: string) {
         `/api/t/${tenantSlug}/dashboard/trends?days=30`,
         async (url: string): Promise<TrendPayload> => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch KPI trends');
+            if (!res.ok) throw new ApiClientError('Failed to fetch KPI trends', 'fetch_failed', res.status);
             return res.json();
         },
         { dedupingInterval: 5 * 60_000 },

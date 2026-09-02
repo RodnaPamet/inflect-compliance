@@ -4,6 +4,18 @@
 
 Epic 4 implements tenant-level MFA enforcement, TOTP enrollment, session revocation, and brute-force protections. All features are tenant-scoped with server-side enforcement only.
 
+The *policy* is tenant-scoped; the *enforcement* is not. `mfaPending` is set
+from the active tenant's `mfaPolicy` and then rides the session, so the edge
+gate applies it to every authenticated request the user makes — tenant routes,
+the 93 flat API routes, `/api/org/**` and `/api/admin` alike. Until #2223 the
+gate was keyed on the `/t/` URL prefix instead, which left everything outside
+that prefix reachable mid-challenge — including `GET /api/audit-log` and
+`GET /api/evidence`. The allowlist (`isMfaAllowedPath` in
+`src/lib/auth/guard.ts`) is the only thing that softens enforcement, and it
+holds just the challenge page, the enrolment page, their APIs, and
+`/api/auth/`. Public and machine-caller paths need no entry: `isPublicPath`
+returns them before the JWT is read.
+
 ## Architecture
 
 ```
@@ -13,10 +25,10 @@ Login → JWT callback → check tenant MFA policy
  ├─ OPTIONAL + not enrolled → full access
  └─ REQUIRED → mfaPending=true → challenge
 
-Middleware intercepts tenant routes when mfaPending=true
- ├─ Pages → redirect to /t/[slug]/auth/mfa
+Middleware intercepts EVERY authenticated request when mfaPending=true
+ ├─ Pages → redirect to /t/[slug]/auth/mfa   (slug from the URL, else the token)
  ├─ APIs → 403 "MFA verification required"
- └─ MFA/auth routes → allowed (exempt)
+ └─ MFA challenge + enrolment + /api/auth/ → allowed (exempt)
 
 Session revocation uses sessionVersion increment strategy
  └─ JWT callback detects stale token → forces re-auth
