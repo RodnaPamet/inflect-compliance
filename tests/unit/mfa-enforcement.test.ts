@@ -52,6 +52,17 @@ describe('MFA Enforcement', () => {
             expect(isMfaAllowedPath('/t/acme/auth/mfa/verify')).toBe(true);
         });
 
+        it('allows the MFA enrollment page', () => {
+            // #2223 — the challenge page's "Set up MFA" button links here.
+            // While this was gated, a REQUIRED-policy tenant could not
+            // onboard anyone: the click bounced back to the challenge.
+            expect(isMfaAllowedPath('/t/acme/security/mfa')).toBe(true);
+            expect(isMfaAllowedPath('/t/acme/security/mfa/')).toBe(true);
+            // …and only that page, not the rest of the security section.
+            expect(isMfaAllowedPath('/t/acme/security/sessions')).toBe(false);
+            expect(isMfaAllowedPath('/t/acme/security/mfa-policy')).toBe(false);
+        });
+
         it('allows MFA enrollment API routes', () => {
             expect(isMfaAllowedPath('/api/t/acme/security/mfa/enroll/start')).toBe(true);
             expect(isMfaAllowedPath('/api/t/acme/security/mfa/enroll/verify')).toBe(true);
@@ -137,61 +148,44 @@ describe('MFA Enforcement', () => {
     });
 
     // ─── Middleware Enforcement Behavior ─────────────────────────────
+    //
+    // Deliberately NOT tested here. This block used to hold a
+    // `simulateMiddleware` helper that re-implemented the middleware's MFA
+    // branch and then asserted against the copy. #2223 changed the real gate
+    // from `isTenantPath(path) && !isMfaAllowedPath(path)` to
+    // `!isMfaAllowedPath(path)`, and the copy would have gone on passing —
+    // including its `passes non-tenant routes regardless of mfaPending` case,
+    // which was the exact defect and which the copy asserted as CORRECT.
+    //
+    // Behaviour now lives in `tests/integration/middleware-mfa-gate.test.ts`,
+    // which drives the real `middleware()` export one assertion per path
+    // class. What stays here is the classification predicate itself.
 
-    describe('middleware enforcement behavior', () => {
-        function simulateMiddleware(
-            pathname: string,
-            mfaPending: boolean,
-        ): { action: 'pass' | 'redirect' | 'forbidden'; target?: string } {
-            // Simulates the middleware MFA check
-            if (!isTenantPath(pathname) || isMfaAllowedPath(pathname)) {
-                return { action: 'pass' };
-            }
+    it('does NOT admit the tenant MFA POLICY route', () => {
+        // The allowlist must admit only what COMPLETES a challenge, never what
+        // redefines whether one is required. `PUT /security/mfa/policy` is
+        // gated on admin.manage and nothing else, and updateTenantMfaPolicy
+        // has an anti-lockout check for switching TO required and none for
+        // switching AWAY — so an mfaPending ADMIN holding only a password
+        // could set {"mfaPolicy":"DISABLED"}, sign out and back in fully
+        // authenticated, and disable MFA for every user in the tenant.
+        expect(isMfaAllowedPath('/api/t/acme/security/mfa/policy')).toBe(false);
+    });
 
-            if (mfaPending) {
-                if (pathname.startsWith('/api/')) {
-                    return { action: 'forbidden' };
-                }
+    it('does NOT admit a sibling that merely shares the prefix', () => {
+        // The API pattern was an unanchored prefix, so anything starting
+        // `/security/mfa` matched — including `mfa-policy` and `mfaanything`.
+        expect(isMfaAllowedPath('/api/t/acme/security/mfa-policy')).toBe(false);
+        expect(isMfaAllowedPath('/api/t/acme/security/mfaanything')).toBe(false);
+    });
 
-                const segments = pathname.split('/');
-                const tIndex = segments.indexOf('t');
-                const slug = tIndex >= 0 ? segments[tIndex + 1] : null;
-                if (slug) {
-                    return { action: 'redirect', target: `/t/${slug}/auth/mfa` };
-                }
-            }
-
-            return { action: 'pass' };
-        }
-
-        it('passes non-tenant routes regardless of mfaPending', () => {
-            expect(simulateMiddleware('/login', true).action).toBe('pass');
-            expect(simulateMiddleware('/api/auth/session', true).action).toBe('pass');
-        });
-
-        it('passes MFA challenge page when pending', () => {
-            expect(simulateMiddleware('/t/acme/auth/mfa', true).action).toBe('pass');
-        });
-
-        it('passes MFA API routes when pending', () => {
-            expect(simulateMiddleware('/api/t/acme/security/mfa/enroll/start', true).action).toBe('pass');
-        });
-
-        it('redirects tenant pages when pending', () => {
-            const result = simulateMiddleware('/t/acme/dashboard', true);
-            expect(result.action).toBe('redirect');
-            expect(result.target).toBe('/t/acme/auth/mfa');
-        });
-
-        it('returns 403 for tenant API when pending', () => {
-            const result = simulateMiddleware('/api/t/acme/controls', true);
-            expect(result.action).toBe('forbidden');
-        });
-
-        it('passes all routes when mfaPending is false', () => {
-            expect(simulateMiddleware('/t/acme/dashboard', false).action).toBe('pass');
-            expect(simulateMiddleware('/api/t/acme/controls', false).action).toBe('pass');
-            expect(simulateMiddleware('/t/acme/admin', false).action).toBe('pass');
-        });
+    it('DOES still admit the two APIs the challenge and enrolment pages call', () => {
+        // The negative assertions above are worthless without this: a pattern
+        // that admits nothing would satisfy them and lock every unenrolled
+        // user out of enrolling.
+        expect(isMfaAllowedPath('/api/t/acme/security/mfa/enroll')).toBe(true);
+        expect(isMfaAllowedPath('/api/t/acme/security/mfa/challenge')).toBe(true);
+        expect(isMfaAllowedPath('/t/acme/security/mfa')).toBe(true);
+        expect(isMfaAllowedPath('/t/acme/auth/mfa')).toBe(true);
     });
 });
