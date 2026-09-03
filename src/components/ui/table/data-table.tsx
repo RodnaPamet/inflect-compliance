@@ -16,14 +16,17 @@
  * For advanced features (column resizing, pinning, edit-columns), use the
  * lower-level `useTable` + `Table` directly.
  */
-import {
+import type {
   ColumnDef,
-  PaginationState,
+  ColumnVisibilityState,
   Row,
   RowSelectionState,
-  Table as TableType,
-  VisibilityState,
-} from "@tanstack/react-table";
+  TableInstance,
+  TableRowData,
+} from "./types";
+// See the note in `./types`: `PaginationState` is not re-exported from the
+// platform because `./pagination-utils` owns that name on the barrel.
+import type { PaginationState } from "@tanstack/react-table";
 import { Dispatch, HTMLAttributes, MouseEvent, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
 import { type BatchAction, renderBatchActions } from "./selection-toolbar";
 import { Table, useTable } from "./table";
@@ -36,11 +39,15 @@ import { useIsBelowMd } from "./use-is-below-md";
 // ── Public Column Helper ────────────────────────────────────────────
 
 /**
- * Typed column definition for DataTable.
- * Re-exports TanStack ColumnDef for convenience so consumers don't need
- * to import from @tanstack/react-table directly.
+ * `ColumnDef` is no longer re-exported from here.
+ *
+ * It now lives in `./types`, bound to the platform's TanStack v9 feature
+ * set (`ColumnDef<TData, TValue>` → `ColumnDef<DataTableFeatures, TData,
+ * TValue>`), and the barrel re-exports that one. Two `export`s of the same
+ * name through `export *` would be ambiguous and silently drop the symbol,
+ * so this module must not re-export it as well. Consumers import it from
+ * `@/components/ui/table` exactly as before.
  */
-export type { ColumnDef };
 
 /**
  * Helper to create a typed column array with proper inference.
@@ -52,9 +59,9 @@ export type { ColumnDef };
  *     { id: "actions", header: "", cell: ({ row }) => <ActionsMenu row={row} /> },
  *   ]);
  */
-export function createColumns<T>(
-  columns: ColumnDef<T, any>[], // eslint-disable-line @typescript-eslint/no-explicit-any
-): ColumnDef<T, any>[] { // eslint-disable-line @typescript-eslint/no-explicit-any
+export function createColumns<T extends TableRowData>(
+  columns: ColumnDef<T>[],
+): ColumnDef<T>[] {
   return columns;
 }
 
@@ -78,12 +85,21 @@ const ROW_PREFETCH_DWELL_MS = 120;
  */
 const PREFETCH_HANDLER_CACHE_MAX = 2000;
 
-export interface DataTableProps<T> {
+/**
+ * The `virtualize` prop's value. Named rather than inlined so
+ * `decideVirtualization` can take it without indexing
+ * `DataTableProps<…>["virtualize"]` — under TanStack v9 that index would
+ * need a concrete row type to satisfy the `RowData` bound, and the option
+ * does not depend on the row type at all.
+ */
+export type DataTableVirtualize = boolean | { threshold: number } | undefined;
+
+export interface DataTableProps<T extends TableRowData> {
   /** The data array to render. */
   data: T[];
 
   /** TanStack column definitions. Use `createColumns<T>()` for type safety. */
-  columns: ColumnDef<T, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  columns: ColumnDef<T>[];
 
   /** Show a loading overlay. */
   loading?: boolean;
@@ -178,7 +194,7 @@ export interface DataTableProps<T> {
   selectedRows?: RowSelectionState;
 
   /** Custom toolbar rendered when rows are selected. */
-  selectionControls?: (table: TableType<T>) => ReactNode;
+  selectionControls?: (table: TableInstance<T>) => ReactNode;
 
   /**
    * R12-PR1 — opt out of the default-on select column. Pass `false`
@@ -205,10 +221,10 @@ export interface DataTableProps<T> {
   // ── Column visibility ──
 
   /** Column visibility state. */
-  columnVisibility?: VisibilityState;
+  columnVisibility?: ColumnVisibilityState;
 
   /** Callback when column visibility changes. */
-  onColumnVisibilityChange?: (visibility: VisibilityState) => void;
+  onColumnVisibilityChange?: (visibility: ColumnVisibilityState) => void;
 
   // ── Pagination ──
 
@@ -297,7 +313,7 @@ export interface DataTableProps<T> {
    * non-virtualized `<Table>` automatically when those features are
    * requested.
    */
-  virtualize?: boolean | { threshold: number };
+  virtualize?: DataTableVirtualize;
 
   /**
    * Pixel height of each row when virtualization is on. Default 44
@@ -341,7 +357,7 @@ export const VIRTUALIZE_DEFAULT_THRESHOLD = 1000;
 
 // ── DataTable Component ─────────────────────────────────────────────
 
-export function DataTable<T>({
+export function DataTable<T extends TableRowData>({
   data,
   columns,
   loading,
@@ -672,7 +688,7 @@ export function DataTable<T>({
  * exported for direct test coverage of the threshold contract.
  */
 export function decideVirtualization(
-  virtualize: DataTableProps<unknown>["virtualize"],
+  virtualize: DataTableVirtualize,
   rowCount: number,
 ): boolean {
   if (virtualize === false) return false;

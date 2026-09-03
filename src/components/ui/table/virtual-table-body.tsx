@@ -53,11 +53,8 @@
  * `onItemsRendered`'s `visibleStopIndex` instead.
  */
 import * as React from "react";
-import {
-    flexRender,
-    type Row,
-    type Table as TableType,
-} from "@tanstack/react-table";
+import { flexRender } from "@tanstack/react-table";
+import type { Row, TableInstance, TableRowData } from "./types";
 import { FixedSizeList } from "react-window";
 import { AutoSizer } from "react-virtualized-auto-sizer";
 
@@ -78,9 +75,9 @@ export const DEFAULT_VIRTUAL_ROW_HEIGHT = 44;
  */
 export const VIRTUAL_REACH_END_ROW_MARGIN = 10;
 
-export interface VirtualTableProps<T> {
+export interface VirtualTableProps<T extends TableRowData> {
     /** TanStack table instance from `useTable`. */
-    table: TableType<T>;
+    table: TableInstance<T>;
     /**
      * Explicit body height in pixels. When omitted the component
      * fills its parent via AutoSizer — the parent MUST have a
@@ -181,7 +178,7 @@ const bodyCellClassName = (
         "group-data-[selected=true]/row:bg-[var(--brand-subtle)]",
     );
 
-function buildGridTemplate<T>(table: TableType<T>): string {
+function buildGridTemplate<T extends TableRowData>(table: TableInstance<T>): string {
     return table
         .getVisibleLeafColumns()
         .map((col) => {
@@ -200,7 +197,7 @@ function buildGridTemplate<T>(table: TableType<T>): string {
         .join(" ");
 }
 
-interface RowItemData<T> {
+interface RowItemData<T extends TableRowData> {
     rows: ReadonlyArray<Row<T>>;
     gridTemplate: string;
     onRowClick?: (row: Row<T>, e: React.MouseEvent) => void;
@@ -211,7 +208,7 @@ interface RowItemData<T> {
     firstContentColumnId: string | undefined;
 }
 
-function VirtualRow<T>({
+function VirtualRow<T extends TableRowData>({
     index,
     style,
     data,
@@ -329,7 +326,7 @@ function VirtualRow<T>({
     );
 }
 
-export function VirtualTable<T>({
+export function VirtualTable<T extends TableRowData>({
     table,
     height,
     rowHeight = DEFAULT_VIRTUAL_ROW_HEIGHT,
@@ -578,8 +575,8 @@ function HeaderContent({
     );
 }
 
-interface VirtualTableHeaderProps<T> {
-    table: TableType<T>;
+interface VirtualTableHeaderProps<T extends TableRowData> {
+    table: TableInstance<T>;
     gridTemplate: string;
     sortableColumns: string[];
     sortBy?: string;
@@ -591,7 +588,7 @@ interface VirtualTableHeaderProps<T> {
     columnsAfterSelect: ReadonlySet<string>;
 }
 
-function VirtualTableHeader<T>({
+function VirtualTableHeader<T extends TableRowData>({
     table,
     gridTemplate,
     sortableColumns,

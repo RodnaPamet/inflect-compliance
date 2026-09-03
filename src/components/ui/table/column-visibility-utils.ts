@@ -5,7 +5,7 @@
  * hook and direct DataTable integration. They are fully testable without React.
  */
 
-import { VisibilityState } from "@tanstack/react-table";
+import type { ColumnVisibilityState } from "./types";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -51,12 +51,12 @@ export function getVisibilityStorageKey(tableId: string): string {
 // ── Pure Functions ──────────────────────────────────────────────────
 
 /**
- * Create the default VisibilityState from a config.
+ * Create the default ColumnVisibilityState from a config.
  *
  * All columns in `config.all` are included; those in `defaultVisible`
  * (and `fixed`) are set to `true`, all others to `false`.
  */
-export function getDefaultVisibility(config: ColumnVisibilityConfig): VisibilityState {
+export function getDefaultVisibility(config: ColumnVisibilityConfig): ColumnVisibilityState {
   const fixedSet = new Set(config.fixed ?? []);
   const defaultSet = new Set(config.defaultVisible);
 
@@ -76,9 +76,9 @@ export function getDefaultVisibility(config: ColumnVisibilityConfig): Visibility
  * removed without corrupting persisted preferences.
  */
 export function mergeVisibility(
-  saved: VisibilityState | null | undefined,
+  saved: ColumnVisibilityState | null | undefined,
   config: ColumnVisibilityConfig,
-): VisibilityState {
+): ColumnVisibilityState {
   const defaults = getDefaultVisibility(config);
 
   if (!saved) return defaults;
@@ -100,7 +100,7 @@ export function mergeVisibility(
 /**
  * Count visible and hidden columns from a visibility state.
  */
-export function countVisibility(state: VisibilityState): {
+export function countVisibility(state: ColumnVisibilityState): {
   visible: number;
   hidden: number;
   total: number;
@@ -118,7 +118,7 @@ export function countVisibility(state: VisibilityState): {
  * Check if any columns are hidden from their defaults.
  */
 export function hasCustomVisibility(
-  current: VisibilityState,
+  current: ColumnVisibilityState,
   config: ColumnVisibilityConfig,
 ): boolean {
   const defaults = getDefaultVisibility(config);
@@ -128,14 +128,14 @@ export function hasCustomVisibility(
 /**
  * Read persisted visibility from localStorage (SSR-safe).
  */
-export function readPersistedVisibility(tableId: string): VisibilityState | null {
+export function readPersistedVisibility(tableId: string): ColumnVisibilityState | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(getVisibilityStorageKey(tableId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-      return parsed as VisibilityState;
+      return parsed as ColumnVisibilityState;
     }
     return null;
   } catch {
@@ -148,7 +148,7 @@ export function readPersistedVisibility(tableId: string): VisibilityState | null
  */
 export function writePersistedVisibility(
   tableId: string,
-  state: VisibilityState,
+  state: ColumnVisibilityState,
 ): void {
   if (typeof window === "undefined") return;
   try {

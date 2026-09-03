@@ -1,28 +1,34 @@
 /* eslint-disable react-hooks/exhaustive-deps -- Various useEffect/useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers recreated each render) or use selector functions whose change-detection happens elsewhere. Adding the deps would either trigger unnecessary re-runs OR cause infinite render loops; the proper structural fix is to wrap parent-level callbacks in useCallback. Tracked as follow-up. */
-/* eslint-disable @typescript-eslint/no-explicit-any --
- * Tanstack-react-table primitive wrapper. Remaining `any` usages are
- * structural — `getValue<T>()`, generic `T extends any` bounds, and the
- * heterogeneous column param in sort helpers. The `ColumnMeta`
- * fields (disableTruncate / headerTooltip) are now typed via the module
- * augmentation in `./tanstack-table.d.ts` and no longer require casts.
+/*
+ * Tanstack-react-table primitive wrapper.
+ *
+ * This file carries no `any` of its own any more. The one `any` the platform
+ * still needs — the `TValue` default that keeps `getValue()` usable in a cell
+ * renderer — lives in `./types` with its rationale; the v8-era
+ * `T extends any` generic bounds here became `T extends TableRowData`, which
+ * v9 requires. The `ColumnMeta` fields (disableTruncate / headerTooltip) are
+ * typed via the module augmentation in `src/types/tanstack-table.d.ts`.
  */
 import { useTranslations } from "next-intl";
 
 import { cn, deepEqual, isClickOnInteractiveChild } from "./table-utils";
-import {
-  type Cell,
+// v9 renamed the hook `useReactTable` → `useTable`, which collides with THIS
+// module's own `useTable` export (the platform's props-shaping hook, exported
+// below and consumed by `<DataTable>`). Aliasing at the import keeps both
+// names unambiguous and keeps the collision from ever reaching a call site.
+import { flexRender, useTable as useTanstackTable } from "@tanstack/react-table";
+import { dataTableFeatures } from "./features";
+import type {
+  Cell,
   Column,
   ColumnDef,
-  type ExpandedState,
-  flexRender,
-  getCoreRowModel,
-  getExpandedRowModel,
+  ColumnVisibilityState,
+  ExpandedState,
   Row,
   RowSelectionState,
-  Table as TableType,
-  useReactTable,
-  VisibilityState,
-} from "@tanstack/react-table";
+  TableInstance,
+  TableRowData,
+} from "./types";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import {
@@ -125,9 +131,9 @@ const resizingClassName = cn([
   "after:absolute after:right-0 after:top-0 after:h-full after:w-4 after:translate-x-1/2",
 ]);
 
-export function useTable<T extends any>(
+export function useTable<T extends TableRowData>(
   props: UseTableProps<T>,
-): TableProps<T> & { table: TableType<T> } {
+): TableProps<T> & { table: TableInstance<T> } {
   const {
     data,
     rowCount,
@@ -151,7 +157,7 @@ export function useTable<T extends any>(
   // everywhere else — the structural inconsistency the round closes.
   const selectionEnabled = props.selectionEnabled ?? true;
 
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>(
     props.columnVisibility ?? {},
   );
 
@@ -236,7 +242,7 @@ export function useTable<T extends any>(
               // ("<button> cannot be a descendant of <button>"). The
               // inner Checkbox already owns keyboard focus; this
               // wrapper exists only to widen the click target.
-              header: ({ table }: { table: TableType<T> }) => (
+              header: ({ table }: { table: TableInstance<T> }) => (
                 <div
                   // GAP-CI-77: presentation role on the wrapping click
                   // area — the actual focusable+labelled control is the
@@ -267,7 +273,7 @@ export function useTable<T extends any>(
                   />
                 </div>
               ),
-              cell: ({ row, table }: { row: Row<T>; table: TableType<T> }) => {
+              cell: ({ row, table }: { row: Row<T>; table: TableInstance<T> }) => {
                 const onSelectRow = (e: MouseEvent<HTMLDivElement>) => {
                   e.stopPropagation();
                   const currentId = getRowId?.(row.original);
@@ -314,12 +320,18 @@ export function useTable<T extends any>(
                         currentId !== undefined &&
                         (rowSelection?.[currentId] ?? false);
 
-                      return {
-                        ...rowSelection,
-                        ...Object.fromEntries(
-                          validRangeIds.map((id) => [id, !alreadySelected]),
-                        ),
-                      };
+                      // v9 narrowed `RowSelectionState` from
+                      // `Record<string, boolean>` to `Record<string, true>`:
+                      // a row is deselected by REMOVING its key, not by
+                      // writing `false`. Both encodings read the same
+                      // (`getIsSelected` is truthiness), so this is the same
+                      // behaviour with the absent-key spelling v9 requires.
+                      const next: RowSelectionState = { ...rowSelection };
+                      for (const id of validRangeIds) {
+                        if (alreadySelected) delete next[id];
+                        else next[id] = true;
+                      }
+                      return next;
                     });
 
                     lastSelectedRowId.current = currentId ?? null;
@@ -393,11 +405,11 @@ export function useTable<T extends any>(
   // This looks like a trivial allocation to hoist. It is not — it is
   // the single reason `TableBodyRow`'s memo was inert. TanStack
   // memoizes `row.getVisibleCells()` on
-  // `[getLeftVisibleCells(), getCenterVisibleCells(),
-  // getRightVisibleCells()]`, and each of THOSE is memoized on
-  // `table.getState().columnPinning.left` / `.right` compared by
+  // `[getStartVisibleCells(), getCenterVisibleCells(),
+  // getEndVisibleCells()]`, and each of THOSE is memoized on
+  // `table.state.columnPinning.start` / `.end` compared by
   // IDENTITY. Spelling the object inline here handed every row a
-  // brand-new `left: []` on every render, so all three cell memos
+  // brand-new `start: []` on every render, so all three cell memos
   // missed, `getVisibleCells()` returned a new array, and the row's
   // shallow props comparison saw a changed `cells` prop every single
   // time. The row component was memoized and still re-rendered the
@@ -406,18 +418,24 @@ export function useTable<T extends any>(
   // Same rule applies to any nested state slice added below: TanStack
   // compares most `state` sub-objects by identity, so a fresh literal
   // there is a silent memo-killer, not a harmless allocation.
+  //
+  // v9 renamed the two pinned regions from the PHYSICAL `left` / `right` to
+  // the LOGICAL `start` / `end` (which swap under an RTL layout). The
+  // defaults spelled here move with it; the CSS offsets in
+  // `getCommonPinningStyles` still resolve to physical `left` / `right`
+  // because this product renders LTR only.
   const columnPinningState = useMemo(
-    () => ({ left: [], right: [], ...columnPinning }),
+    () => ({ start: [], end: [], ...columnPinning }),
     [columnPinning],
   );
 
-  // TanStack Table's options object isn't designed for the React
-  // Compiler's reactivity model — it expects a fresh object per render
-  // (the library does its own internal stability tracking). The rule's
-  // "incompatible-library" warning is correct: TanStack predates the
-  // Compiler. Working as intended in production.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({
+  const table = useTanstackTable({
+    // v9 composes capabilities explicitly instead of accepting a row-model
+    // factory per capability. `dataTableFeatures` (./features) is the single
+    // declaration of what this platform's tables can do — every method called
+    // on `table`, `row`, `column` and `header` below exists because a feature
+    // there put it on the instance.
+    features: dataTableFeatures,
     data,
     rowCount,
     columns: tableColumns,
@@ -435,8 +453,9 @@ export function useTable<T extends any>(
       enableResizing: enableColumnResizing,
       ...defaultColumn,
     },
-    getCoreRowModel: getCoreRowModel(),
-    getExpandedRowModel: getExpandedRowModel(),
+    // v8's `getCoreRowModel()` has no v9 successor — the core row model is
+    // always built. `getExpandedRowModel()` moved onto the feature set as the
+    // `expandedRowModel` slot (see ./features).
     getRowCanExpand,
     onExpandedChange: setExpanded,
     onPaginationChange,
@@ -465,10 +484,10 @@ export function useTable<T extends any>(
   };
 }
 
-type ResizableTableRowProps<T> = {
+type ResizableTableRowProps<T extends TableRowData> = {
   row: Row<T>;
   rowProps?: HTMLAttributes<HTMLTableRowElement>;
-  table: TableType<T>;
+  table: TableInstance<T>;
   selectionEnabled: boolean;
   // Selection state captured at PARENT render time. The memo
   // comparator below MUST compare this snapshot, not call
@@ -483,7 +502,7 @@ type ResizableTableRowProps<T> = {
 
 // Memoized row component to prevent re-renders during column resizing
 const ResizableTableRow = memo(
-  function ResizableTableRow<T>({
+  function ResizableTableRow<T extends TableRowData>({
     row,
     onRowClick,
     onRowAuxClick,
@@ -656,9 +675,9 @@ const ResizableTableRow = memo(
       prevProps.isSelected === nextProps.isSelected
     );
   },
-) as <T>(props: ResizableTableRowProps<T>) => JSX.Element;
+) as <T extends TableRowData>(props: ResizableTableRowProps<T>) => JSX.Element;
 
-type TableBodyRowProps<T> = {
+type TableBodyRowProps<T extends TableRowData> = {
   row: Row<T>;
   /**
    * The row's visible cells, resolved ONCE by the parent.
@@ -738,7 +757,7 @@ type TableBodyRowProps<T> = {
  * `table.getRowModel()`) inside the body reintroduces exactly the
  * staleness that the comparator can no longer be blamed for.
  */
-const TableBodyRow = memo(function TableBodyRow<T>({
+const TableBodyRow = memo(function TableBodyRow<T extends TableRowData>({
   row,
   cells,
   rowProps,
@@ -911,9 +930,9 @@ const TableBodyRow = memo(function TableBodyRow<T>({
       })}
     </tr>
   );
-}) as <T>(props: TableBodyRowProps<T>) => JSX.Element;
+}) as <T extends TableRowData>(props: TableBodyRowProps<T>) => JSX.Element;
 
-export function Table<T>({
+export function Table<T extends TableRowData>({
   data,
   loading,
   error,
@@ -1666,7 +1685,7 @@ export function Table<T>({
   );
 }
 
-const getCommonPinningClassNames = <TData,>(
+const getCommonPinningClassNames = <TData extends TableRowData,>(
   column: Column<TData>,
   isLastRow: boolean,
 ): string => {
@@ -1679,12 +1698,16 @@ const getCommonPinningClassNames = <TData,>(
   );
 };
 
-const getCommonPinningStyles = <TData,>(column: Column<TData>): CSSProperties => {
+const getCommonPinningStyles = <TData extends TableRowData,>(
+  column: Column<TData>,
+): CSSProperties => {
   const isPinned = column.getIsPinned();
 
   return {
-    left: isPinned === "left" ? `${column.getStart("left")}px` : undefined,
-    right: isPinned === "right" ? `${column.getAfter("right")}px` : undefined,
+    // `start` / `end` are v9's LOGICAL pin regions; the CSS properties are
+    // physical. LTR-only product, so start → left and end → right.
+    left: isPinned === "start" ? `${column.getStart("start")}px` : undefined,
+    right: isPinned === "end" ? `${column.getAfter("end")}px` : undefined,
     // Pinned columns need `position: sticky` for horizontal pinning.
     // Non-pinned cells: omit the inline position so the className
     // wins — `sticky top-0` on thead cells stays effective. Setting
