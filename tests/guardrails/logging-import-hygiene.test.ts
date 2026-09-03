@@ -12,13 +12,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
+import { codeOf } from '../helpers/source-blocks';
 
 const SRC_DIR = path.resolve(__dirname, '../../src');
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function readSrcFile(relativePath: string): string {
-    return fs.readFileSync(path.join(SRC_DIR, relativePath), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(SRC_DIR, relativePath), 'utf-8'));
 }
 
 async function getFiles(pattern: string): Promise<string[]> {

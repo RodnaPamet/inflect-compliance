@@ -23,9 +23,17 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * Source read with COMMENTS MASKED (#2246) — the seam for the .ts assertions
+ * below. Deliberately NOT used for the YAML/JSON reads: `codeOf` blanks `//`
+ * to end-of-line, which in a library YAML eats the `https://…` provenance
+ * URLs the copyright assertions match on.
+ */
+const readCode = (rel: string) => codeOf(read(rel));
 const LIB = 'src/data/libraries';
 
 const ssdf = loadLibrary(
@@ -113,7 +121,7 @@ describe('NIST SSDF seed fixture', () => {
 });
 
 describe('NIST SSDF seed wiring (seed.ts)', () => {
-    const seed = read('prisma/seed.ts');
+    const seed = readCode('prisma/seed.ts');
 
     it('reads the fixture + upserts the framework', () => {
         expect(seed).toContain('nist_ssdf_requirements.json');
@@ -122,8 +130,19 @@ describe('NIST SSDF seed wiring (seed.ts)', () => {
     });
 
     it('persists NIST provider + public-domain notice in framework metadata', () => {
-        expect(seed).toMatch(/provider:\s*'NIST'/);
-        expect(seed).toMatch(/public[\s-]*information/i);
+        // #2246 Class A — this read the WHOLE seed file and matched
+        // /public[\s-]*information/i, which in `prisma/seed.ts` is satisfied
+        // only by the `// PUBLIC DOMAIN (NIST): …` banner comment above the
+        // block. In CODE the same sentence is split across two adjacent
+        // string literals (`'… considered public ' + 'information …'`), which
+        // no character class can cross. Bind to the metadata declaration
+        // itself and name both halves.
+        const meta = declarationOf(seed, 'nistSsdfMeta');
+        expect(meta).toMatch(/provider:\s*'NIST'/);
+        expect(meta).toMatch(/license:\s*'public-domain'/);
+        expect(meta).toMatch(
+            /'Information presented on NIST sites is considered public '\s*\+\s*'information and may be distributed or copied\.'/,
+        );
     });
 
     it('notes the SSDF federal self-attestation context (EO 14028 / OMB M-22-18)', () => {
@@ -183,7 +202,7 @@ describe('NIST SSDF rides the generic framework machinery (no special-casing)', 
             'src/app-layer/usecases/framework/install.ts',
             'src/app-layer/usecases/framework/catalog.ts',
         ]) {
-            const src = read(rel);
+            const src = readCode(rel);
             expect(src).not.toMatch(/NIST-SSDF/);
             expect(src).not.toMatch(/NIST_SSDF/);
         }

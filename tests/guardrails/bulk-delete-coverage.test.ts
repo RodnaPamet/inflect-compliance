@@ -24,9 +24,12 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Every read below is masked for comments, so a commented-out bulk action or
+// a prose mention of `bulkDeleteX` cannot satisfy an assertion about code.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const ENTITIES = [
     { usecase: 'bulkDeleteAsset', schema: 'BulkAssetDeleteSchema', page: 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx' },
@@ -51,7 +54,7 @@ function walk(dir: string, acc: string[] = []): string[] {
 describe('bulk-delete coverage', () => {
     const usecaseSrc = walk(path.join(ROOT, 'src/app-layer/usecases'))
         .filter((f) => f.endsWith('.ts'))
-        .map((f) => fs.readFileSync(f, 'utf8'))
+        .map((f) => codeOf(fs.readFileSync(f, 'utf8')))
         .join('\n');
     const schemas = read('src/lib/schemas/index.ts');
 
@@ -88,7 +91,7 @@ describe('bulk-delete coverage', () => {
         expect(routes.length).toBe(8);
         // each calls a bulkDelete usecase
         for (const r of routes) {
-            expect(fs.readFileSync(r, 'utf8')).toMatch(/bulkDelete[A-Z]/);
+            expect(codeOf(fs.readFileSync(r, 'utf8'))).toMatch(/bulkDelete[A-Z]/);
         }
     });
 

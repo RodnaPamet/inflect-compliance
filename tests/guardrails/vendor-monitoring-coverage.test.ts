@@ -14,9 +14,10 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
 const VENDOR_SCHEMA = read('prisma/schema/vendor.prisma');
 const MIGRATION = read('prisma/migrations/20260701150000_vendor_monitoring/migration.sql');

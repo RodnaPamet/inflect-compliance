@@ -27,9 +27,14 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Code reads are comment-masked at the seam so a COMMENT mentioning a thing
+// cannot satisfy an assertion meant to be about CODE. YAML/JSON reads keep
+// readRaw — codeOf() would mask `//` inside a URL and break JSON.parse.
+const read = (rel: string) => codeOf(readRaw(rel));
 const LIB = 'src/data/libraries';
 
 const aisvs = loadLibrary(
@@ -92,7 +97,7 @@ describe('AISVS library — owasp-aisvs-1.0.yaml', () => {
     });
 
     it('the copyright field carries CC-BY-SA-4.0 + OWASP + source URL + pinned version', () => {
-        const yaml = read(`${LIB}/owasp-aisvs-1.0.yaml`);
+        const yaml = readRaw(`${LIB}/owasp-aisvs-1.0.yaml`);
         const copyrightBlock = yaml.slice(yaml.indexOf('copyright:'));
         expect(copyrightBlock).toMatch(/CC-BY-SA-4\.0/);
         expect(copyrightBlock).toMatch(/OWASP/);
@@ -123,7 +128,7 @@ describe('AISVS library — owasp-aisvs-1.0.yaml', () => {
 
 describe('AISVS seed fixture', () => {
     const fixture = JSON.parse(
-        read('prisma/fixtures/owasp_aisvs_requirements.json'),
+        readRaw('prisma/fixtures/owasp_aisvs_requirements.json'),
     ) as Array<{ key: string; section: string; level: string; sortOrder: number; title: string }>;
 
     it('every fixture entry has the required shape + AISVS-structured key + level', () => {
@@ -238,7 +243,7 @@ describe('AISVS provenance in the framework picker', () => {
         expect(client).toMatch(/provenance\.license/);
         // The canonical-text note moved to next-intl — resolve against en.json.
         expect(client).toMatch(/list\.referenceIndexNote/);
-        expect(JSON.parse(read('messages/en.json')).frameworks.list.referenceIndexNote).toMatch(
+        expect(JSON.parse(readRaw('messages/en.json')).frameworks.list.referenceIndexNote).toMatch(
             /links to canonical requirement text/,
         );
     });

@@ -81,6 +81,15 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
  *     retired four guards and added six test files. Distribution: 786 at
  *     exactly 2, 497 at 3-4, 204 at 5-9, 67 at 10 or more. By directory:
  *     guards 640, guardrails 435, unit 401, integration 68, rendered 10.
+ *   • 1467 (2026-09-03, #2246 Class A): −46. 88 guardrail files now mask
+ *     comments at the read seam with `codeOf`, and the analyser follows the
+ *     mask, so it counts satisfying positions in CODE. A needle whose extra
+ *     matches were all in prose was never ambiguous, so most of the drop is
+ *     accounting catching up with what those assertions always meant. Two of
+ *     the 46 are a real narrowing: the NIST privacy and SSDF seed guards
+ *     stopped reading the whole of `prisma/seed.ts` for `provider: 'NIST'`
+ *     (satisfied by both NIST blocks) and now bind to `declarationOf(seed,
+ *     'nistPrivacyMeta' | 'nistSsdfMeta')`.
  */
 // Re-seated 2026-09-02 (#2226): same cause as the sibling span ratchet — twelve
 // guard suites over never-applied Terraform and an EKS deploy pipeline were
@@ -91,7 +100,7 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // alone; it now names the DataTable value import. table-platform-drift's
 // `createColumns` (5x) / `DataTable` (17x) mentions in GUIDE.md collapsed into
 // one assertion on the canonical import line, which occurs exactly once.
-const AMBIGUOUS_NEEDLE_BASELINE = 1513;
+const AMBIGUOUS_NEEDLE_BASELINE = 1467;
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;
@@ -111,8 +120,12 @@ const HIGH_MULTIPLICITY = 5;
  *   • 269 (2026-09-03, #2263): the two GUIDE.md mention-needles retired — a
  *     guide legitimately repeats the API it documents, so no needle of that
  *     shape can ever be unique there. Replaced by the canonical import line.
+ *   • 252 (2026-09-03, #2246 Class A): −17, same cause as the parent count.
+ *     This end of the distribution moves fastest under comment masking: a
+ *     needle reaching five-plus positions is usually a short identifier that
+ *     a file's own header and section comments repeat.
  */
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 269;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 252;
 
 /**
  * Sites this detector could NOT analyse, having established they read a file.
@@ -122,22 +135,21 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 269;
  * understand — the same defect one level up. So the skips are counted, named
  * by reason, and capped.
  *
- * Today: 1565. By reason —
- *   · `path-not-constant` 901 — the read's path does not constant-fold,
+ * Today: 1447. By reason —
+ *   · `path-not-constant` 913 — the read's path does not constant-fold,
  *     usually because it comes from a loop variable or a `describe.each` row.
- *   · `needle-not-literal` 225 — the matcher argument is neither a string
+ *   · `needle-not-literal` 212 — the matcher argument is neither a string
  *     literal nor a regex literal.
- *   · `content-transformed` 175 — the subject IS a whole-file read, wearing
- *     a transform the analyser cannot follow: `codeOnly(readFileSync(…))`,
- *     `src.toLowerCase()`, `SECTION_SRC.trimStart()`. 22 are written inline
- *     at the assertion, 153 are reached through a `const` binding.
- *   · `needle-carries-span` 134 — the regex holds an unbounded `[\s\S]*`
+ *   · `needle-carries-span` 120 — the regex holds an unbounded `[\s\S]*`
  *     span. A greedy span collapses every candidate into one match, so a
  *     count would be meaningless. Those sites are Class C's population, and
  *     `assertion-span-reach-ratchet.test.ts` caps them.
  *   · `binding-not-resolvable` 97 — the subject identifier is shadowed or
  *     declared twice in one scope.
- *   · `needle-interpolated` 32 — a template literal needle, i.e. the
+ *   · `content-transformed` 73 — the subject IS a whole-file read, wearing
+ *     a transform the analyser cannot follow: `src.toLowerCase()`,
+ *     `SECTION_SRC.trimStart()`. A comment mask is no longer one of them.
+ *   · `needle-interpolated` 31 — a template literal needle, i.e. the
  *     `describe.each` shape the issue calls the worst case. Being unable to
  *     see it is the honest position, and capping it is what stops the blind
  *     spot growing.
@@ -180,8 +192,19 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 269;
  *     whole-file read that used to leave the population as
  *     `not-a-file-read`. The number rose because the blind spot was always
  *     this size; only its accounting changed.
+ *   • 1447 (2026-09-03, #2246 Class A): −118, and this one is a genuine
+ *     shrink of the blind spot rather than a re-label. The analyser now
+ *     follows a comment mask (`codeOf(readFileSync(…))`, inline or hoisted
+ *     into the read helper), so 102 sites left `content-transformed` — a
+ *     CAPPED skip — and became analysed. Had the mask NOT been taught to the
+ *     analyser, the 88-file Class A conversion would have pushed this ceiling
+ *     UP by roughly that much: the fix for one defect class paying a ceiling
+ *     to the detector for the other. `path-not-constant` rose 901 → 913 in
+ *     the same pass, because a masked read whose path comes from a loop now
+ *     gets far enough to be classified by its PATH instead of dropping out
+ *     one step earlier.
  */
-const UNANALYSABLE_READ_BASELINE = 1507;
+const UNANALYSABLE_READ_BASELINE = 1447;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
@@ -430,12 +453,17 @@ describe('Class D — needles that match more than the thing they name', () => {
                 (a) => a.site.file.endsWith(file) && a.site.line === line,
             );
 
-        it('audit-s5-readiness-scoring.test.ts:21 — frameworkKey is in three models', () => {
-            expect(at('audit-s5-readiness-scoring.test.ts', 21)?.occurrences).toBe(3);
+        // Lines 24/25, not 21/22: the #2246 Class A conversion added the
+        // `codeOf` import and the read-seam comment above the assertions,
+        // shifting them down three. The OCCURRENCE counts are unchanged —
+        // all three `frameworkKey String` and both `auditCycleId String?`
+        // are real fields in audit-workflow.prisma, none in a comment.
+        it('audit-s5-readiness-scoring.test.ts:24 — frameworkKey is in three models', () => {
+            expect(at('audit-s5-readiness-scoring.test.ts', 24)?.occurrences).toBe(3);
         });
 
-        it('audit-s5-readiness-scoring.test.ts:22 — auditCycleId is in two', () => {
-            expect(at('audit-s5-readiness-scoring.test.ts', 22)?.occurrences).toBe(2);
+        it('audit-s5-readiness-scoring.test.ts:25 — auditCycleId is in two', () => {
+            expect(at('audit-s5-readiness-scoring.test.ts', 25)?.occurrences).toBe(2);
         });
 
         it('entra-ei2-group-mapping.test.ts:18 — @@index([tenantId]) is satisfied by fifteen models', () => {
@@ -461,9 +489,22 @@ describe('Class D — needles that match more than the thing they name', () => {
     describe('detector proof', () => {
         let dir: string;
         let data: string;
+        /** Same needle twice in raw text; ONCE outside comments. */
+        let commented: string;
 
         beforeAll(() => {
             dir = fs.mkdtempSync(path.join(os.tmpdir(), 'class-d-proof-'));
+            commented = path.join(dir, 'commented.prisma');
+            fs.writeFileSync(
+                commented,
+                [
+                    '// model Bundle — renamed from the old spelling, see #1.',
+                    'model Bundle {',
+                    '  frozenAt DateTime?',
+                    '}',
+                ].join('\n'),
+                'utf8',
+            );
             data = path.join(dir, 'schema.prisma');
             fs.writeFileSync(
                 data,
@@ -613,6 +654,162 @@ describe('Class D — needles that match more than the thing they name', () => {
             expect(r.subjectSkips['content-transformed']).toBe(5);
             expect(r.subjectSkips['not-a-file-read']).toBe(0);
             expect(r.skippedTotal).toBe(5);
+        });
+
+
+        // ── comment-masking wrappers: followed, not skipped ──
+        //
+        // These are the shape the #2246 Class A remediation writes, and they
+        // must not cost a ceiling. `codeOf(readFileSync(…))` — inline, or
+        // hoisted into the read helper so every call site inherits it — is
+        // still THE WHOLE FILE. Classifying it as a transform the analyser
+        // cannot follow would mean each converted read pushed the capped
+        // `content-transformed` bucket up, i.e. the fix for one defect class
+        // paying a ceiling to the detector for the other. Worse for the
+        // read-seam form, which the reader index did not recognise at all:
+        // those sites landed in `not-a-file-read`, which is uncapped, and
+        // left the population without moving any number.
+        //
+        // Following them is also strictly MORE accurate, which is the reason
+        // it is not a loosening: a needle whose extra matches were all inside
+        // comments was never ambiguous. The second case below is the
+        // discriminating one — the same needle against the same file, in the
+        // same test file: ambiguous read raw, unique read masked.
+        const IMPORT_CODE_OF = "import { codeOf } from '../helpers/source-blocks';";
+
+        it('follows `codeOf(readFileSync(…))` at the assertion', () => {
+            const abs = write('mask-inline.test.ts', [
+                IMPORT_CODE_OF,
+                "it('a', () => {",
+                "    expect(codeOf(fs.readFileSync('" + commented + "', 'utf8')))",
+                "        .toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            expect(r.wholeFileReads).toBe(1);
+            expect(r.analysed).toBe(1);
+            expect(r.subjectSkips['content-transformed']).toBe(0);
+            expect(r.subjectSkips['not-a-file-read']).toBe(0);
+            expect(r.skippedTotal).toBe(0);
+        });
+
+        it('counts against the MASKED text, so a comment cannot make a needle ambiguous', () => {
+            const abs = write('mask-counts.test.ts', [
+                IMPORT_CODE_OF,
+                "it('raw', () => {",
+                "    expect(fs.readFileSync('" + commented + "', 'utf8')).toContain('model Bundle');",
+                '});',
+                "it('masked', () => {",
+                "    expect(codeOf(fs.readFileSync('" + commented + "', 'utf8')))",
+                "        .toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // Both are whole-file reads of the same file with the same needle.
+            expect(r.analysed).toBe(2);
+            // 'model Bundle' appears twice in the bytes on disk — once in a
+            // comment, once as the model. Only the RAW read is ambiguous.
+            expect(r.ambiguous).toHaveLength(1);
+            expect(r.ambiguous[0].occurrences).toBe(2);
+            // Line 3 is the RAW read; the masked one on line 6 is clean. The
+            // line is asserted because "one of the two is ambiguous" would be
+            // satisfied by the mask being applied to the wrong one.
+            expect(r.ambiguous[0].site.line).toBe(3);
+        });
+
+        it('follows a mask applied at the READ SEAM, where the repo puts it', () => {
+            const abs = write('mask-reader.test.ts', [
+                IMPORT_CODE_OF,
+                "const read = (p: string) => codeOf(fs.readFileSync(p, 'utf8'));",
+                "it('a', () => {",
+                "    expect(read('" + commented + "')).toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // Before the reader index modelled a mask, `unwrapReadFileSync`
+            // saw a call to `codeOf` and refused the helper — so this site
+            // was `not-a-file-read`: out of the population, uncapped, silent.
+            expect(r.wholeFileReads).toBe(1);
+            expect(r.subjectSkips['not-a-file-read']).toBe(0);
+            expect(r.ambiguous).toHaveLength(0);
+        });
+
+        it('follows a reader that delegates to a sibling reader, masking only one', () => {
+            const abs = write('mask-delegating.test.ts', [
+                IMPORT_CODE_OF,
+                'const read = (rel: string) => codeOf(readRaw(rel));',
+                "const readRaw = (rel: string) => fs.readFileSync(rel, 'utf8');",
+                "it('masked', () => {",
+                "    expect(read('" + commented + "')).toContain('model Bundle');",
+                '});',
+                "it('raw', () => {",
+                "    expect(readRaw('" + commented + "')).toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // `read` is declared ABOVE the helper it delegates to, so a single
+            // top-down pass cannot resolve it — and the two must not be
+            // conflated: one masks, the other does not.
+            expect(r.wholeFileReads).toBe(2);
+            expect(r.ambiguous).toHaveLength(1);
+            expect(r.ambiguous[0].occurrences).toBe(2);
+            // Line 8 is the unmasked `readRaw` call, not the masked `read`.
+            expect(r.ambiguous[0].site.line).toBe(8);
+        });
+
+        it('rebuilds a LOCAL `.replace()` stripper from its own source', () => {
+            const abs = write('mask-local.test.ts', [
+                "const codeOnly = (s: string) =>",
+                "    s.replace(/\\/\\*[\\s\\S]*?\\*\\//g, '').replace(/\\/\\/[^\\n]*/g, '');",
+                "it('a', () => {",
+                "    expect(codeOnly(fs.readFileSync('" + commented + "', 'utf8')))",
+                "        .toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // The ~30 hand-rolled strippers under `tests/` do not agree with
+            // each other, so the mask is taken from the DEFINITION, never
+            // from the name. Applied here, it blanks the comment and the
+            // needle is unique.
+            expect(r.wholeFileReads).toBe(1);
+            expect(r.ambiguous).toHaveLength(0);
+        });
+
+        it('does NOT guess from the name: an unimported `codeOf` stays capped', () => {
+            const abs = write('mask-unbound.test.ts', [
+                "it('a', () => {",
+                "    expect(codeOf(fs.readFileSync('" + commented + "', 'utf8')))",
+                "        .toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // Nothing in this file says what `codeOf` is. Applying the shared
+            // mask on the strength of the identifier would be measuring text
+            // no assertion ran against — the detector committing the defect
+            // it exists to find.
+            expect(r.wholeFileReads).toBe(0);
+            expect(r.subjectSkips['content-transformed']).toBe(1);
+            expect(r.skippedTotal).toBe(1);
+        });
+
+        it('a transform it cannot rebuild is still `content-transformed`', () => {
+            const abs = write('mask-opaque.test.ts', [
+                IMPORT_CODE_OF,
+                "const lines = (s: string) => s.split('\\n').filter(Boolean).join('|');",
+                "it('a', () => {",
+                "    expect(parse(fs.readFileSync('" + commented + "', 'utf8')))",
+                "        .toContain('model Bundle');",
+                "    expect(lines(fs.readFileSync('" + commented + "', 'utf8')))",
+                "        .toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // The point of the two cases: `parse` is not a masker at all, and
+            // `lines` IS masker-SHAPED but is not a `.replace()` chain. Both
+            // stay in the capped bucket — the skip was narrowed, not disabled.
+            expect(r.wholeFileReads).toBe(0);
+            expect(r.subjectSkips['content-transformed']).toBe(2);
+            expect(r.skippedTotal).toBe(2);
         });
 
         it('a NARROWED read stays out of scope — narrowing is the fix, not a blind spot', () => {

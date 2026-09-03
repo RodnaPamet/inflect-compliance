@@ -13,9 +13,17 @@ import * as path from 'node:path';
 
 import { sanitizePolicyContent } from '@/lib/security/sanitize';
 import { normalizePolicyMarkdown } from '../../scripts/sync-ciso-toolkit-policies';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam, so a comment naming the source
+// credit cannot satisfy an assertion about the rendered code. The JSON fixture,
+// the catalog and the LICENSE markdown stay raw — there `//` is content.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 
 const FIXTURE = 'prisma/fixtures/policy-templates-ciso-toolkit.json';
 const LICENSE = 'prisma/fixtures/policy-templates-ciso-toolkit.LICENSE.md';

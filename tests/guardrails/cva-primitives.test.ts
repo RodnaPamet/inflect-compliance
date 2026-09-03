@@ -10,10 +10,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const UI_DIR = path.resolve(__dirname, '../../src/components/ui');
 
 function read(file: string): string {
-    return fs.readFileSync(path.join(UI_DIR, file), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(UI_DIR, file), 'utf-8'));
 }
 
 const RAW_LIGHT_COLOR_REGEX =
@@ -193,7 +195,10 @@ describe('EmptyState primitive', () => {
     });
 
     it('accepts icon, title, description, learnMore, children, className', () => {
-        expect(src).toContain('icon:');
+        // #2246 Class A — `toContain('icon:')` was satisfied by the JSDoc
+        // ("Default icon: AlertCircle"), never by the prop, which is declared
+        // OPTIONAL as `icon?: React.ElementType`. Name the declaration.
+        expect(src).toContain('icon?: React.ElementType');
         expect(src).toContain('title:');
         expect(src).toContain('description?:');
         expect(src).toContain('learnMore?:');

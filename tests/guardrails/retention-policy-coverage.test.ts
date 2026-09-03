@@ -27,21 +27,27 @@ import {
     RETENTION_COLUMN_MODELS,
     observedSweptModels,
 } from '../helpers/retention-sweep-probe';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const DOC = path.join(ROOT, 'docs/data-retention.md');
 const SCHEMA_DIR = path.join(ROOT, 'prisma/schema');
 
-function read(p: string): string {
-    return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : '';
-}
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// retention function cannot satisfy an assertion about the exported function.
+// Masking is the DEFAULT (`read`) so a new assertion inherits it; the policy
+// DOC is markdown and calls `readRaw`, because there the prose IS the subject.
+const readRaw = (p: string): string =>
+    fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : '';
+
+const read = (p: string): string => codeOf(readRaw(p));
 
 /** Every `model X { ... }` name across the multi-file schema. */
 function allModelNames(): string[] {
     const names: string[] = [];
     for (const f of fs.readdirSync(SCHEMA_DIR)) {
         if (!f.endsWith('.prisma')) continue;
-        const txt = fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf-8');
+        const txt = codeOf(fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf-8'));
         for (const m of txt.matchAll(/^model\s+(\w+)\s*\{/gm)) names.push(m[1]);
     }
     return names;
@@ -62,7 +68,7 @@ function retentionFunctions(): string[] {
     return fns;
 }
 
-const doc = read(DOC);
+const doc = readRaw(DOC);
 
 describe('data-retention policy doc', () => {
     it('exists', () => {

@@ -16,6 +16,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 /**
@@ -67,7 +69,10 @@ function readSurface(surface: TelemetrySurface): string {
         .map((f) => {
             const full = path.join(REPO_ROOT, f);
             if (!fs.existsSync(full)) return '';
-            return fs.readFileSync(full, 'utf-8');
+            // codeOf() at the READ SEAM (#2246): a comment naming
+            // `useFormTelemetry(...)` / `.trackSuccess(` must not stand in for
+            // the wiring these assertions are about.
+            return codeOf(fs.readFileSync(full, 'utf-8'));
         })
         .join('\n');
 }
@@ -111,9 +116,11 @@ describe('Epic 54 — useFormTelemetry adoption', () => {
     );
 
     it('the global telemetry sink is registered in Providers', () => {
-        const src = fs.readFileSync(
-            path.join(REPO_ROOT, 'src/app/providers.tsx'),
-            'utf-8',
+        const src = codeOf(
+            fs.readFileSync(
+                path.join(REPO_ROOT, 'src/app/providers.tsx'),
+                'utf-8',
+            ),
         );
         expect(src).toMatch(/registerFormTelemetrySink/);
     });

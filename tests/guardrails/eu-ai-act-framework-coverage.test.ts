@@ -22,9 +22,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam, so a comment naming a symbol
+// cannot satisfy (nor a commented-out mention violate) an assertion about
+// code. YAML / JSON stay raw — `//` there is content (URLs), not a comment.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 const LIB = 'src/data/libraries';
 
 const act = loadLibrary(parseLibraryFile(path.join(ROOT, LIB, 'eu-ai-act.yaml')), 'euaiact');

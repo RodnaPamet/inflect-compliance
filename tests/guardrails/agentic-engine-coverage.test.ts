@@ -22,9 +22,11 @@ import * as path from 'node:path';
 
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
 const engine = read('src/app-layer/usecases/workflow-runs.ts');
 const types = read('src/lib/agentic/workflow-types.ts');
@@ -102,7 +104,8 @@ describe('Agentic engine — scope + model hardening', () => {
 
 describe('Agentic engine — AISVS agentic-orchestration documented', () => {
     it('the implementation note records the composes-MCP-not-new-authority design', () => {
-        const note = read('docs/implementation-notes/2026-07-01-agentic-workflow-engine.md');
+        // Markdown: RAW on purpose — this assertion is about the note's prose.
+        const note = readRaw('docs/implementation-notes/2026-07-01-agentic-workflow-engine.md');
         expect(note).toMatch(/propose-not-commit/i);
         expect(note).toMatch(/multi-step|orchestrat/i);
         expect(note).toMatch(/AISVS|C9/);

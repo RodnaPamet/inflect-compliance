@@ -29,10 +29,11 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 function read(rel: string): string {
-    return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+    return codeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
 }
 function exists(rel: string): boolean {
     return fs.existsSync(path.join(REPO_ROOT, rel));

@@ -24,8 +24,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { MAX_REDUCTION } from '@/lib/risk-residual';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const riskUsecase = read('src/app-layer/usecases/risk.ts');
 const planUsecase = read('src/app-layer/usecases/risk-treatment-plan.ts');

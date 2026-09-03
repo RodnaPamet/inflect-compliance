@@ -21,11 +21,19 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf, declarationOf } from '../helpers/source-blocks';
+
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`read`) so a new assertion inherits it; `readRaw` is for the files
+// where a `//` is content rather than a comment — the `https://` of a URL in
+// YAML / JSON / Markdown — and masking would delete real text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const LIB = 'src/data/libraries';
 
 const pf = loadLibrary(
@@ -82,7 +90,7 @@ describe('NIST Privacy Framework library — nist-privacy-framework-1.0.yaml', (
     });
 
     it('carries the NIST public-domain copyright (not a copyrighted standard)', () => {
-        const yaml = read(`${LIB}/nist-privacy-framework-1.0.yaml`);
+        const yaml = readRaw(`${LIB}/nist-privacy-framework-1.0.yaml`);
         const copyrightBlock = yaml.slice(yaml.indexOf('copyright:'));
         expect(copyrightBlock).toMatch(/public information/i);
         expect(copyrightBlock).toMatch(/distributed or copied/i);
@@ -90,7 +98,7 @@ describe('NIST Privacy Framework library — nist-privacy-framework-1.0.yaml', (
 });
 
 describe('NIST Privacy Framework seed fixture', () => {
-    const fixture = JSON.parse(read('prisma/fixtures/nist_privacy_framework_requirements.json')) as Array<{
+    const fixture = JSON.parse(readRaw('prisma/fixtures/nist_privacy_framework_requirements.json')) as Array<{
         key: string; section: string; sortOrder: number; title: string;
     }>;
 
@@ -123,8 +131,19 @@ describe('NIST Privacy Framework seed wiring (seed.ts)', () => {
     });
 
     it('persists NIST provider + public-domain notice in framework metadata', () => {
-        expect(seed).toMatch(/provider:\s*'NIST'/);
-        expect(seed).toMatch(/public[\s-]*information/i);
+        // #2246 Class A — this read the WHOLE seed file and matched
+        // /public[\s-]*information/i, which in `prisma/seed.ts` is satisfied
+        // only by the `// PUBLIC DOMAIN (NIST): …` banner comment above the
+        // block. In CODE the same sentence is split across two adjacent
+        // string literals (`'… considered public ' + 'information …'`), which
+        // no character class can cross. Bind to the metadata declaration
+        // itself and name both halves.
+        const meta = declarationOf(seed, 'nistPrivacyMeta');
+        expect(meta).toMatch(/provider:\s*'NIST'/);
+        expect(meta).toMatch(/license:\s*'public-domain'/);
+        expect(meta).toMatch(
+            /'Information presented on NIST sites is considered public '\s*\+\s*'information and may be distributed or copied\.'/,
+        );
     });
 
     it('seeds a NIST Privacy Framework pack (idempotent upsert)', () => {

@@ -33,8 +33,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { repoRelativeFiles } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
+
+/**
+ * Comments MASKED at the read seam (#2246). `declarationsIn` matches on
+ * source text, so an `assertCanRead` written in a docblock — which is
+ * exactly how these helpers get discussed — would be reported as a shadowing
+ * DECLARATION; and the positive control below would be satisfied by prose
+ * naming `function assertCanRead` rather than by the function existing.
+ */
+const readCode = (rel: string): string =>
+    codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 /** The shared helpers whose names are reserved. */
 const RESERVED = new Set(['assertCanRead', 'assertCanWrite', 'assertCanAdmin', 'assertCanAudit']);
@@ -62,7 +73,7 @@ describe('policy assert names are unambiguous', () => {
         // A collapsed file list would make the assertion below pass while
         // examining nothing.
         expect(files.length).toBeGreaterThanOrEqual(200);
-        const commonSrc = fs.readFileSync(path.join(ROOT, COMMON), 'utf8');
+        const commonSrc = readCode(COMMON);
         // Positive control: the reserved names must actually exist where we
         // think they do, or "no shadowing found" means the wrong thing.
         for (const name of RESERVED) expect(commonSrc).toContain(`function ${name}`);
@@ -72,7 +83,7 @@ describe('policy assert names are unambiguous', () => {
         const offenders: string[] = [];
         for (const rel of files) {
             if (rel === COMMON) continue;
-            const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+            const src = readCode(rel);
             for (const name of declarationsIn(src)) {
                 if (RESERVED.has(name)) offenders.push(`${rel}: ${name}`);
             }

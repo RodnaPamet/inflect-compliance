@@ -16,9 +16,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 // ─── 1. Security Headers ────────────────────────────────────────────
 
@@ -214,10 +215,20 @@ describe('Admin Session Guard', () => {
         expect(guard).toContain('shouldBlockAdminRequest');
     });
 
-    test('admin guard checks Sec-Fetch-Site header', () => {
+    test('admin guard decides on the Sec-Fetch-Site value', () => {
+        // #2246 Class A — the third line here used to be
+        // `expect(guard).toContain('Sec-Fetch-Site')`, and the capitalised
+        // header name appears in this module ONLY in its JSDoc. It never
+        // could appear in the code: the function is handed the VALUE, and
+        // the header itself is read one layer up in src/middleware.ts —
+        // which the NEXT test covers, against the lowercase spelling the
+        // Headers API actually uses. Re-anchored on the signature that
+        // makes this module a Sec-Fetch-Site decision function.
         expect(guard).toContain('same-origin');
         expect(guard).toContain('cross-site');
-        expect(guard).toContain('Sec-Fetch-Site');
+        expect(guard).toMatch(
+            /function shouldBlockAdminRequest\(\s*secFetchSite: string \| null \| undefined,/,
+        );
     });
 
     test('middleware integrates admin session guard', () => {

@@ -25,9 +25,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import '@/app-layer/integrations/bootstrap';
 import { registry } from '@/app-layer/integrations/registry';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Comment-masked at the seam. Every harvest below (registered executors,
+// scheduled names, provider registrations) must come from live code — a
+// commented-out registration or a job name in prose vouches for nothing.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 /**
  * Executor jobs that run on-demand rather than on a cron — dispatched by a
@@ -169,7 +173,7 @@ describe('Runtime wiring forward-lock', () => {
             // the hole it replaced: a file must not be able to satisfy the
             // check by merely mentioning the job in a comment or a type.
             const dispatchers = walk(path.join(ROOT, 'src/app-layer'))
-                .map((f) => fs.readFileSync(f, 'utf8'))
+                .map((f) => codeOf(fs.readFileSync(f, 'utf8')))
                 .filter((src) => /\benqueue\(/.test(src));
 
             const unenqueued: string[] = [];

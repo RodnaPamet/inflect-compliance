@@ -22,13 +22,21 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
 
 const ROOT = path.resolve(__dirname, '../..');
 const LIB = path.join(ROOT, 'src/data/libraries');
 const MAP = path.join(LIB, 'mappings');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`read`) so a new assertion inherits it; `readRaw` is for the files
+// where a `//` is content rather than a comment — the `https://` of a URL in
+// YAML / JSON / Markdown — and masking would delete real text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
 function lib(file: string) {
     return loadLibrary(parseLibraryFile(path.join(LIB, file)), file);
@@ -90,7 +98,7 @@ describe('ASVS 4.0.3 — library structure', () => {
 });
 
 describe('ASVS 4.0.3 — licensing discipline (no verbatim ASVS text)', () => {
-    const src = read(`src/data/libraries/${ASVS}`);
+    const src = readRaw(`src/data/libraries/${ASVS}`);
 
     it('declares the structural-outline / CC BY-SA posture and links OWASP', () => {
         expect(src).toContain('NOT verbatim ASVS text');
@@ -120,7 +128,7 @@ describe('ASVS 4.0.3 — L1 Starter Pack fixture', () => {
     }
     const FREQUENCIES = new Set(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']);
     const controlsFixture = JSON.parse(
-        read('prisma/fixtures/asvs-l1-control-templates.json'),
+        readRaw('prisma/fixtures/asvs-l1-control-templates.json'),
     ) as StarterControl[];
     const L1_REFS = new Set(requirements.filter((r) => r.category === 'L1').map((r) => r.refId));
     const REQ_REFS = new Set(requirements.map((r) => r.refId));

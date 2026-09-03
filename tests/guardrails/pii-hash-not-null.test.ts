@@ -32,6 +32,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = join(__dirname, '..', '..');
 const SCHEMA_DIR = join(REPO_ROOT, 'prisma', 'schema');
 const MIGRATIONS_DIR = join(REPO_ROOT, 'prisma', 'migrations');
@@ -64,7 +66,9 @@ const NOT_NULL_DB_COLUMNS = [
 describe('GAP-21 — schema/DB nullability ratchet', () => {
     test('Prisma schema declares hash fields as nullable (TS ergonomics)', () => {
         for (const { file, model, field } of HASH_FIELDS_EXPECTED_NULLABLE) {
-            const text = readFileSync(join(SCHEMA_DIR, file), 'utf8');
+            // codeOf() at the READ SEAM (#2246): a `///` doc-comment naming the
+            // field must not read as the field declaration.
+            const text = codeOf(readFileSync(join(SCHEMA_DIR, file), 'utf8'));
             // Locate the model block.
             const modelMatch = text.match(
                 new RegExp(`^model ${model}\\s*\\{([\\s\\S]*?)^\\}`, 'm'),
@@ -171,7 +175,9 @@ describe('GAP-21 — runtime callers MUST not query plaintext columns on managed
             const rel = file.replace(ROOT + '/', '');
             if (EXEMPTED_PATHS.some((e) => rel === e.path)) continue;
             if (rel.endsWith('.test.ts')) continue;
-            const text = readFileSync(file, 'utf8');
+            // codeOf() at the READ SEAM (#2246): a commented-out
+            // `where: { email: ... }` is not a production query path.
+            const text = codeOf(readFileSync(file, 'utf8'));
             // Quick reject — most files don't mention `email:` at all.
             if (!text.includes('email')) continue;
             const lines = text.split('\n');

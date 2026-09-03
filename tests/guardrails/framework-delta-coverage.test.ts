@@ -18,9 +18,11 @@ import * as path from 'node:path';
 
 import { computeRequirementDiff } from '@/app-layer/services/library-updater';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 const engine = read('src/app-layer/usecases/framework-delta.ts');
 const importer = read('src/app-layer/services/library-importer.ts');
 

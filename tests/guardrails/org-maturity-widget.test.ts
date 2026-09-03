@@ -11,11 +11,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 import { assertWidgetTypedShape } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import { DEFAULT_ORG_DASHBOARD_PRESET } from '@/app-layer/usecases/org-dashboard-presets';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// codeOf() masks comments at the READ SEAM (#2246) — every path read here is
+// .prisma / .ts / .tsx, and every assertion is about code, not prose.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('ORG_MATURITY — schema + model', () => {
     const enums = read('prisma/schema/enums.prisma');
@@ -91,7 +95,12 @@ describe('ORG_MATURITY — renderer + preset', () => {
 
     it('renders a staleness note for ratings older than 90 days', () => {
         expect(widget).toMatch(/STALE_DAYS\s*=\s*90/);
-        expect(widget).toMatch(/may be stale/);
+        // #2246 Class A — this was `toMatch(/may be stale/)`, and that phrase
+        // lives only in the file-header comment: the note is localized, so the
+        // English words are in messages/, never in the widget. Anchor on the
+        // conditional and the i18n key that together ARE the note.
+        expect(widget).toMatch(/isStale\s*&&/);
+        expect(widget).toMatch(/widgets\.maturityStale/);
         expect(widget).toContain('org-maturity-stale');
     });
 

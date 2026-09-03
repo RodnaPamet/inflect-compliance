@@ -19,9 +19,12 @@ import '@/app-layer/integrations/bootstrap';
 import { registry } from '@/app-layer/integrations/registry';
 import { isScheduledCheckProvider } from '@/app-layer/integrations/types';
 import { isHrisSyncProvider } from '@/app-layer/integrations/providers/hris';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Comment-masked at the seam: a mapped test must EXERCISE its provider surface,
+// so a needle that only appears in that file's prose must not count.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /**

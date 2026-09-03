@@ -13,10 +13,11 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) =>
-    fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('Audit S7 — Access Review Campaigns', () => {
     describe('schema', () => {
@@ -34,10 +35,10 @@ describe('Audit S7 — Access Review Campaigns', () => {
                 'prisma/migrations/20260524150000_audit_s7_access_review_escalation',
             );
             expect(fs.existsSync(migDir)).toBe(true);
-            const sql = fs.readFileSync(
+            const sql = codeOf(fs.readFileSync(
                 path.join(migDir, 'migration.sql'),
                 'utf8',
-            );
+            ));
             expect(sql).toMatch(
                 /ADD VALUE IF NOT EXISTS 'ACCESS_REVIEW_OVERDUE_ESCALATION'/,
             );

@@ -19,8 +19,10 @@ import * as path from 'node:path';
 // Importing through the barrel verifies the export wiring compiles.
 import { listInstallableFrameworks } from '@/app-layer/usecases/framework';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('onboarding framework catalog — usecase + route', () => {
     it('exposes listInstallableFrameworks from the framework barrel', () => {

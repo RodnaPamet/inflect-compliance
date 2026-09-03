@@ -44,6 +44,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { REPO_ROOT, listGitFiles, repoFiles, repoRelativeFiles } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 describe('repo file population — what a source scan is allowed to see', () => {
     it('excludes what .gitignore excludes, and still sees an untracked file (proved on a throwaway repo)', () => {
@@ -272,7 +273,12 @@ describe('no guard walks the repo root', () => {
             // mutation proof above are the very shapes this scan looks for,
             // and they live in this file's own text.
             if (rel === 'tests/guardrails/source-scan-population.test.ts') continue;
-            hits.push(...rootSeededWalks(rel, fs.readFileSync(abs, 'utf-8')));
+            // Comments masked at the read seam. The detector already refuses a
+            // bare mention by requiring the open paren, but a fully-formed
+            // `walk(REPO_ROOT)` written INSIDE a comment — an example, a
+            // commented-out scan — is a call shape in prose, and prose is not
+            // the population.
+            hits.push(...rootSeededWalks(rel, codeOf(fs.readFileSync(abs, 'utf-8'))));
         }
 
         if (hits.length > 0) {

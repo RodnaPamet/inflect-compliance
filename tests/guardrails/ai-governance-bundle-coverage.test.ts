@@ -23,9 +23,18 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * Source read with COMMENTS MASKED — the seam for every .ts/.tsx assertion
+ * below, so a comment naming a thing can never satisfy an assertion about
+ * the code. Deliberately NOT applied to the YAML reads: `codeOf` blanks
+ * `//` to end-of-line, which would eat the `https://www.iso.org/...` URL
+ * the copyright assertion matches on.
+ */
+const readCode = (rel: string) => codeOf(read(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 const LIB = 'src/data/libraries';
 
@@ -121,7 +130,7 @@ describe('AI-governance bundle — generic machinery + reused surfaces', () => {
             'src/app-layer/usecases/framework/install.ts',
             'src/app-layer/usecases/framework/catalog.ts',
         ]) {
-            const src = read(rel);
+            const src = readCode(rel);
             expect(src).not.toMatch(/AISVS|42001|EU-AI-ACT|eu-ai-act/i);
         }
     });

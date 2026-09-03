@@ -18,10 +18,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 function read(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 }
 
 describe('R-3: signIn rejects email_verified=false', () => {

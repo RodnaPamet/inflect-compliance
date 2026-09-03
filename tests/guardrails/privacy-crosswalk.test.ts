@@ -19,11 +19,15 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const LIB = path.join(ROOT, 'src/data/libraries');
 const MAP = path.join(LIB, 'mappings');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Code reads are comment-masked at the seam. YAML/markdown reads keep
+// readRaw — codeOf() would mask `//` inside a URL there.
+const read = (rel: string) => codeOf(readRaw(rel));
 
 function nodes(file: string) {
     const lib = loadLibrary(parseLibraryFile(path.join(LIB, file)), file);
@@ -93,7 +97,7 @@ describe('Privacy crosswalk — ISO-copyright discipline (clause-ref only)', () 
     });
 
     it('the ISO 27701 yaml declares clause-ref-only discipline and no long verbatim block', () => {
-        const src = read(`src/data/libraries/${ISO27701}`);
+        const src = readRaw(`src/data/libraries/${ISO27701}`);
         // States the discipline explicitly.
         expect(src).toMatch(/ISO-copyrighted|clause IDENTIFIERS|our own/i);
         // No absurdly long single line (a pasted ISO passage would blow past this).
@@ -104,13 +108,13 @@ describe('Privacy crosswalk — ISO-copyright discipline (clause-ref only)', () 
 
 describe('Privacy crosswalk — attribution', () => {
     it('the ported crosswalk credits the Microsoft Data Protection Mapping Project (MIT)', () => {
-        const src = read(`src/data/libraries/mappings/iso27701-to-gdpr.yaml`);
+        const src = readRaw(`src/data/libraries/mappings/iso27701-to-gdpr.yaml`);
         expect(src).toMatch(/Microsoft Data Protection Mapping Project/);
         expect(src).toMatch(/MIT/);
     });
 
     it('docs/attributions.md records the MS project (MIT) source', () => {
-        const doc = read('docs/attributions.md');
+        const doc = readRaw('docs/attributions.md');
         expect(doc).toMatch(/Microsoft Data Protection Mapping Project/);
         expect(doc).toMatch(/MIT/);
         expect(doc).toMatch(/iso27701-to-gdpr\.yaml/);

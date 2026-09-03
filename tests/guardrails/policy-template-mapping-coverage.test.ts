@@ -20,9 +20,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-const readJson = (rel: string) => JSON.parse(read(rel));
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`read`) so a new assertion inherits it; `readRaw` is for the files
+// where a `//` is content rather than a comment — the `https://` of a URL in
+// YAML / JSON / Markdown — and masking would delete real text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+const readJson = (rel: string) => JSON.parse(readRaw(rel));
 
 const MAP_FIXTURE = 'prisma/fixtures/policy-template-framework-map.json';
 const ISO_FIXTURE = 'prisma/fixtures/iso27001_2022_annexA.json';
@@ -111,7 +119,7 @@ describe('policy-template framework mapping — fixture integrity', () => {
     });
 
     it('every imported policy is mapped to at least one framework requirement', () => {
-        const imported = JSON.parse(read('prisma/fixtures/policy-templates-imported.json')) as {
+        const imported = JSON.parse(readRaw('prisma/fixtures/policy-templates-imported.json')) as {
             templates: Array<{ externalRef: string }>;
         };
         const unmapped: string[] = [];

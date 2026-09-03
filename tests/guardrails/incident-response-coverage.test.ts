@@ -22,14 +22,16 @@ import { readPrismaSchema } from '../helpers/prisma-schema';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { computeDeadlines, PHASE_ORDER, suggestsReportable } from '@/lib/incidents/deadlines';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
 const exists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 
 const SCHEMA_DIR = 'prisma/schema';
 // Incident/BIA models moved to incidents.prisma (2026-07-10 schema split);
 // read the whole-folder concatenation so they're found wherever they live.
-const compliance = () => readPrismaSchema();
+const compliance = () => codeOf(readPrismaSchema());
 const enums = () => read(`${SCHEMA_DIR}/enums.prisma`);
 const usecase = () => read('src/app-layer/usecases/incident.ts');
 
@@ -188,7 +190,13 @@ describe('NIS2 incident-response — detail UI', () => {
 
     it('renders the seven-phase tracker', () => {
         const src = read(detail);
-        expect(src).toMatch(/7-phase/);
+        // #2246 Class A — this was `toMatch(/7-phase/)`, and "7-phase" occurs
+        // in the page only inside the JSX comment that labels the block. The
+        // tracker itself is a map over PHASE_ORDER, so assert the iteration
+        // (which is what "renders" means here) rather than the label on it.
+        // That the iterated flow IS the seven-phase one is asserted against
+        // the live import in `models the seven-phase flow (+ CLOSED)` above.
+        expect(src).toMatch(/PHASE_ORDER\.map\(/);
         // All phase labels referenced (the stepper renders the flow).
         expect(src).toMatch(/PHASE_ORDER|DETECTION/);
     });

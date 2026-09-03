@@ -36,6 +36,7 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const VENDOR_DIR = path.join(ROOT, 'public', 'swagger-ui');
@@ -86,7 +87,9 @@ function distDir(): string {
 
 /** Asset filenames the docs route actually points a browser at. */
 function assetsReferencedByRoute(): string[] {
-    const src = fs.readFileSync(ROUTE_FILE, 'utf8');
+    // Comments masked at the read: a `const … = '/swagger-ui/x';` line sitting
+    // inside a block comment matches `^const` just as well as a live one.
+    const src = codeOf(fs.readFileSync(ROUTE_FILE, 'utf8'));
     // Only the `const … = '/swagger-ui/x'` declarations, so the prose in
     // the file header can neither satisfy nor trip this on its own.
     const found = [...src.matchAll(/^const\s+\w+\s*=\s*'\/swagger-ui\/([^']+)';$/gm)].map(
@@ -97,7 +100,9 @@ function assetsReferencedByRoute(): string[] {
 
 /** Asset filenames the vendor script copies. */
 function assetsCopiedByScript(): string[] {
-    const src = fs.readFileSync(SCRIPT_FILE, 'utf8');
+    // Comments masked at the read, so a commented-out ASSETS list cannot be
+    // the block this anchors on.
+    const src = codeOf(fs.readFileSync(SCRIPT_FILE, 'utf8'));
     const block = /const ASSETS = \[([\s\S]*?)\];/.exec(src);
     if (!block) throw new Error(`Could not find the ASSETS list in ${SCRIPT_FILE}`);
     return [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();

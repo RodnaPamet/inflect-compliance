@@ -23,9 +23,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam, so a comment naming a fixture
+// or a DTO field cannot satisfy an assertion about code. JSON fixtures and
+// migration SQL stay raw (`//` there is content, and `--` is not a JS comment).
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 const readJson = (rel: string) => JSON.parse(read(rel));
 
 interface Ctrl {

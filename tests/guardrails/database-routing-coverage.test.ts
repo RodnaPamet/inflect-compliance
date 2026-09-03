@@ -14,9 +14,16 @@
 import fs from 'fs';
 import path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
+// codeOf() masks comments at the READ SEAM (#2246): a comment mentioning
+// `runInTenantReadContext(` must not satisfy the routing assertions below,
+// and a write token inside a comment must not read as a write.
 const read = (rel: string) =>
-    fs.existsSync(path.join(ROOT, rel)) ? fs.readFileSync(path.join(ROOT, rel), 'utf-8') : '';
+    fs.existsSync(path.join(ROOT, rel))
+        ? codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'))
+        : '';
 
 const WRITE_TOKENS = [
     '.create(',

@@ -8,8 +8,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('Audit S5 — Audit Readiness & Scoring', () => {
     describe('schema', () => {
@@ -43,9 +46,8 @@ describe('Audit S5 — Audit Readiness & Scoring', () => {
                 'prisma/migrations/20260524130000_audit_s5_readiness_snapshot_and_weights',
             );
             expect(fs.existsSync(migDir)).toBe(true);
-            const sql = fs.readFileSync(
-                path.join(migDir, 'migration.sql'),
-                'utf8',
+            const sql = codeOf(
+                fs.readFileSync(path.join(migDir, 'migration.sql'), 'utf8'),
             );
             expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "ReadinessSnapshot"/);
             expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "readinessWeightsJson"/);

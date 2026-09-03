@@ -13,9 +13,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
+/**
+ * Comments are MASKED at the read seam (#2246): every assertion below is
+ * about code, so a `// MITIGATED` left behind by a deletion must not
+ * satisfy one. `codeOf` keeps string literals, and leaves `messages/en.json`
+ * byte-identical (JSON carries no comment syntax outside its strings).
+ */
 const read = (rel: string) =>
-    fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('Audit-gap enum surfacing', () => {
     describe('RiskStatus.MITIGATED (Audit Coherence S1)', () => {

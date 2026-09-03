@@ -35,6 +35,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+
+import { codeOf } from '../helpers/source-blocks';
+
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -221,7 +224,10 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
 };
 
 const fileExists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
-const readFile = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+// codeOf() masks comments at the READ SEAM (#2246): the import/call assertions
+// below are about CODE — a comment naming `sanitizePlainText(` must not stand
+// in for the call. String literals are preserved (the import path is one).
+const readFile = (rel: string) => codeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
 
 describe('rich-text sanitiser coverage — structural completeness', () => {
     it('every encrypted-content model is classified (the completeness guarantee)', () => {

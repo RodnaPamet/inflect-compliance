@@ -15,9 +15,17 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam, so a commented-out `$on('query')`
+// or instrument name cannot satisfy an assertion about live wiring. package.json
+// is JSON and stays raw so it still parses.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 describe('perf instrumentation coverage', () => {

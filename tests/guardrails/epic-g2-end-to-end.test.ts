@@ -29,10 +29,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 function read(rel: string): string {
-    return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+    return codeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
 }
 
 function fileExists(rel: string): boolean {
@@ -123,7 +125,7 @@ describe('Epic G-2 — end-to-end readiness', () => {
     // [9]
     test('schema carries the G-2 enum and scheduling fields on ControlTestPlan', () => {
         const enums = read('prisma/schema/enums.prisma');
-        const compliance = readPrismaSchema();
+        const compliance = codeOf(readPrismaSchema());
         expect(enums).toMatch(/enum AutomationType\s*\{[\s\S]*?MANUAL[\s\S]*?\}/);
 
         const planMatch = compliance.match(

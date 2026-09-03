@@ -15,9 +15,10 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { LINDDUN_CODES } from '@/lib/privacy/linddun';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 const seed = read('prisma/seed.ts');
 
 // The OWASP entries in the seed share the `owasp-priv-` id prefix; parse their

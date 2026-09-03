@@ -25,9 +25,17 @@ import {
     isSupportedLocale,
     resolveLocale,
 } from '@/lib/locale-constants';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam — the JSX assertions below are
+// about the real element tree, not the prose in the comments beside it. The
+// message catalogs are JSON and stay raw so they still parse.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 
 describe('locale constants + resolver', () => {
     it('ships English + Bulgarian, defaulting to English', () => {

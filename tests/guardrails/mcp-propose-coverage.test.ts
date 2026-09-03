@@ -24,9 +24,17 @@ import * as path from 'node:path';
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam: neither the propose-not-commit
+// negative nor the "runs the real create usecases" positive may be decided by
+// a comment. Markdown and migration SQL stay raw.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 
 const proposeTools = read('src/lib/mcp/tools/propose-tools.ts');
 const usecase = read('src/app-layer/usecases/agent-proposals.ts');

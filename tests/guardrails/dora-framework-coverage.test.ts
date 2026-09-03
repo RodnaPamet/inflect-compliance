@@ -25,8 +25,10 @@ import * as path from 'node:path';
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 const LIB = 'src/data/libraries';
 
 const dora = loadLibrary(parseLibraryFile(path.join(ROOT, LIB, 'dora-2022.yaml')), 'dora');

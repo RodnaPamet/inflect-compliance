@@ -14,9 +14,10 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const seed = fs.readFileSync(path.join(ROOT, 'prisma/seed.ts'), 'utf8');
+const seed = codeOf(fs.readFileSync(path.join(ROOT, 'prisma/seed.ts'), 'utf8'));
 
 // Titles that must exist in the seeded starter set (original content).
 // NOTE: the thin one-paragraph pre-existing stubs (Information Security,

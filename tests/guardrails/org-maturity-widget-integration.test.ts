@@ -21,9 +21,17 @@ import {
     resolveWidgetTitle,
 } from '@/app-layer/usecases/org-dashboard-widget-titles';
 import { assertWidgetTypedShape } from '@/app-layer/schemas/org-dashboard-widget.schemas';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam, so the render-site assertions
+// below are about the real JSX, not about the comments that name the same
+// component. The en catalog is JSON and stays raw so it still parses.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 
 // i18n-aware: the DrillDownCtas label + donut band labels now route
 // through next-intl. Resolve the keys against the English catalog so

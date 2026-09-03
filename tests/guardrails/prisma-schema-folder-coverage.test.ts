@@ -36,6 +36,8 @@ import * as path from 'path';
 
 import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const SCHEMA_DIR = path.resolve(REPO_ROOT, 'prisma/schema');
 
 const REQUIRED_DOMAIN_FILES = [
@@ -77,10 +79,10 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
         // location is now declared in `prisma.config.ts`. Pin the
         // config path so a future cleanup can't silently revert to
         // the monolith.
-        const config = fs.readFileSync(
+        const config = codeOf(fs.readFileSync(
             path.resolve(REPO_ROOT, 'prisma.config.ts'),
             'utf-8',
-        );
+        ));
         // Pin the `schema:` field pointing at the folder. The exact
         // expression is `path.join('prisma', 'schema')` — match
         // either that literal or the constants.
@@ -93,7 +95,7 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
         // Prisma rejects duplicates across the folder.
         const otherFiles = REQUIRED_DOMAIN_FILES.filter((f) => f !== 'base.prisma');
         for (const f of otherFiles) {
-            const src = fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf-8');
+            const src = codeOf(fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf-8'));
             expect(src).not.toMatch(/^\s*generator\s+\w+\s*\{/m);
             expect(src).not.toMatch(/^\s*datasource\s+\w+\s*\{/m);
         }
@@ -138,7 +140,7 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
             if (rel === 'tests/helpers/prisma-schema.ts') continue;
             if (rel === 'tests/guardrails/prisma-schema-folder-coverage.test.ts') continue;
 
-            const src = fs.readFileSync(full, 'utf-8');
+            const src = codeOf(fs.readFileSync(full, 'utf-8'));
             // Match only real read calls — readFileSync, statSync,
             // existsSync — applied to a path that ends in
             // `prisma/schema.prisma`. Comments and JSDoc references

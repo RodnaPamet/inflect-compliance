@@ -17,9 +17,11 @@ import * as path from 'node:path';
 import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { READ_TOOLS } from '@/lib/mcp/tools/registry';
 import { PROPOSE_TOOLS } from '@/lib/mcp/tools/propose-tools';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const READ_TOOL_NAMES = new Set(READ_TOOLS.map((t) => t.name));
 const PROPOSE_TOOL_NAMES = new Set(PROPOSE_TOOLS.map((t) => t.name));

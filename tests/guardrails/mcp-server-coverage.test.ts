@@ -15,10 +15,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`read`) so a new assertion inherits it; `readRaw` is for the files
+// where a `//` is content rather than a comment — the `https://` of a URL in
+// YAML / JSON / Markdown — and masking would delete real text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const MCP_DIR = path.join(ROOT, 'src/lib/mcp');
 const ROUTE = 'src/app/api/mcp/route.ts';
 
@@ -51,7 +59,7 @@ describe('MCP server — cross-tenant-leak lock', () => {
         // (which binds RLS via runInTenantContext).
         const offenders: string[] = [];
         for (const file of mcpSourceFiles()) {
-            const src = fs.readFileSync(file, 'utf8');
+            const src = codeOf(fs.readFileSync(file, 'utf8'));
             if (/from ['"]@\/lib\/prisma['"]/.test(src)) offenders.push(`${path.relative(ROOT, file)}: imports @/lib/prisma`);
             if (/from ['"]@prisma\/client['"]/.test(src) && /new PrismaClient/.test(src)) offenders.push(`${path.relative(ROOT, file)}: instantiates PrismaClient`);
             if (/from ['"]@\/app-layer\/repositories/.test(src)) offenders.push(`${path.relative(ROOT, file)}: imports a repository`);
@@ -110,7 +118,7 @@ describe('MCP server — every read tool is usecase-backed, scope-gated, audited
         const files = toolImplFiles();
         expect(files.length).toBeGreaterThanOrEqual(1);
         for (const file of files) {
-            const src = fs.readFileSync(file, 'utf8');
+            const src = codeOf(fs.readFileSync(file, 'utf8'));
             expect(src).toMatch(/from ['"]@\/app-layer\/usecases/);
         }
     });
@@ -139,7 +147,7 @@ describe('MCP server — propose-not-commit lock (no direct entity mutation)', (
         const mutating = /\b(create|update|delete|remove|apply|install|generate|draft)[A-Z]\w*/;
         const offenders: string[] = [];
         for (const file of mcpSourceFiles()) {
-            const src = fs.readFileSync(file, 'utf8');
+            const src = codeOf(fs.readFileSync(file, 'utf8'));
             for (const m of src.matchAll(/import\s+\{([^}]*)\}\s+from\s+['"](@\/app-layer\/usecases[^'"]*)['"]/g)) {
                 const modulePath = m[2];
                 if (modulePath.includes('agent-proposals')) continue; // the proposal queue is allowed
@@ -154,7 +162,7 @@ describe('MCP server — propose-not-commit lock (no direct entity mutation)', (
 
 describe('MCP server — AISVS C9/C10 applicability documented', () => {
     it('the implementation note records the AISVS agentic + MCP-security applicability', () => {
-        const note = read('docs/implementation-notes/2026-07-01-mcp-server.md');
+        const note = readRaw('docs/implementation-notes/2026-07-01-mcp-server.md');
         expect(note).toMatch(/AISVS/);
         expect(note).toMatch(/C9/);
         expect(note).toMatch(/C10/);

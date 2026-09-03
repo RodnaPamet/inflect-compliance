@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const CHARTS_DIR = path.join(ROOT, 'src/components/ui/charts');
 const PKG = JSON.parse(
@@ -36,6 +38,15 @@ function hasDep(name: string): boolean {
 }
 
 function read(rel: string): string {
+    return codeOf(fs.readFileSync(path.join(CHARTS_DIR, rel), 'utf-8'));
+}
+
+/**
+ * Raw text, comments INCLUDED. Only the header-contract assertion below uses
+ * it — that one is deliberately ABOUT a comment, so masking would break a
+ * correct test. Every other assertion in this file reads through `read()`.
+ */
+function readRaw(rel: string): string {
     return fs.readFileSync(path.join(CHARTS_DIR, rel), 'utf-8');
 }
 
@@ -154,7 +165,8 @@ describe('Epic 59 — chart platform foundation', () => {
         });
 
         it('documents the module contract in a header comment', () => {
-            expect(barrel).toMatch(/Epic 59 — chart platform/);
+            // Deliberately about the COMMENT — reads the unmasked text.
+            expect(readRaw('index.ts')).toMatch(/Epic 59 — chart platform/);
         });
     });
 });

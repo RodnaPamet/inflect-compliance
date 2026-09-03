@@ -12,10 +12,18 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) =>
-    fs.existsSync(path.join(ROOT, rel)) ? fs.readFileSync(path.join(ROOT, rel), 'utf-8') : '';
+// SOURCE reads are comment-masked at the seam, so a commented-out region or a
+// prose mention cannot satisfy an assertion about code. The markdown doc is
+// read raw — there prose IS the subject.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    if (!fs.existsSync(path.join(ROOT, rel))) return '';
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 
 const enums = read('prisma/schema/enums.prisma');
 const authSchema = read('prisma/schema/auth.prisma');

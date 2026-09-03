@@ -17,6 +17,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 import {
     AGGREGATIONS,
     MAX_AGGREGATION_TTL_SECONDS,
@@ -25,7 +26,7 @@ import {
 } from '@/lib/cache/aggregation-registry';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 // Each aggregation → the route file that must wrap its compute.
@@ -82,7 +83,7 @@ describe('aggregation-cache coverage', () => {
     });
 
     describe('every dependsOn entity is bumped by at least one usecase', () => {
-        const allSources = appLayerSources().map((f) => fs.readFileSync(f, 'utf8'));
+        const allSources = appLayerSources().map((f) => codeOf(fs.readFileSync(f, 'utf8')));
         const blob = allSources.join('\n');
 
         // Union of every entity referenced across all aggregations.
