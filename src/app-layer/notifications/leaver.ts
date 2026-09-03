@@ -49,12 +49,27 @@
  *                     for a hybrid object forever, so doing what the mail asked
  *                     produced the same mail the next day.
  *
- *   REFUSED_PROTECTED The account is the one this connection authenticates AS,
- *                     or is otherwise protected. Same audience and same shape
- *                     as REFUSED_TARGET — the account is LIVE — but the refusal
- *                     is permanent rather than a rung to climb, so it can never
- *                     be resolved by waiting. Silence here would leave a real
- *                     leaver enabled with nobody told.
+ *   REFUSED_PROTECTED TWO rails share this outcome and they want opposite mail,
+ *                     which is why `DisableResult.protection` exists.
+ *
+ *                     SELF_ACCOUNT — the account this connection authenticates
+ *                     AS. Same audience and same shape as REFUSED_TARGET (the
+ *                     account is LIVE), but the refusal is permanent rather
+ *                     than a rung to climb, so it can never be resolved by
+ *                     waiting, and the product cannot resolve it from here.
+ *                     Silence would leave a real leaver enabled with nobody
+ *                     told. NEEDS_ACTION, IT only.
+ *
+ *                     OPERATOR_FLAG — somebody marked the account break-glass.
+ *                     The account is live because that is what was ASKED FOR,
+ *                     so NEEDS_ACTION would tell IT to reverse a deliberate
+ *                     decision — nightly, for as long as the worker stays
+ *                     TERMINATED and the flag stays set, and in DRY_RUN too
+ *                     since the rail sits above the mode gate. Silent, on the
+ *                     same argument as REFUSED_MODE below: nothing happened
+ *                     because nothing was supposed to. The refusal is still on
+ *                     the pass report with its reason, which is where a
+ *                     deliberate policy outcome belongs.
  *
  *   FAILED            The provider PROVED it rejected the write, so the
  *                     directory is unchanged and the account is still live.
@@ -106,7 +121,7 @@
  */
 import type { EmailNotificationType } from '@prisma/client';
 import type { RequestContext } from '../types';
-import type { DisableOutcome } from '../usecases/identity-disable-account';
+import type { DisableOutcome, ProtectionBasis } from '../usecases/identity-disable-account';
 import { runInTenantContext } from '@/lib/db-context';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { logger } from '@/lib/observability/logger';
@@ -322,10 +337,14 @@ export interface LeaverNotificationPlan {
  *   ALREADY_DISABLED this is the ONLY signal distinguishing "steady state,
  *   nothing to say" from "we just reconciled an unconfirmed write", so it is a
  *   parameter rather than something the caller resolves into a second outcome.
+ * @param protection which protected rail refused, for REFUSED_PROTECTED. Same
+ *   argument as `hasJournalRef` one line up: one outcome, two meanings, and the
+ *   mail they want is opposite. Absent for every other outcome.
  */
 export function planLeaverNotifications(
     outcome: DisableOutcome,
     hasJournalRef: boolean,
+    protection?: ProtectionBasis,
 ): LeaverNotificationPlan {
     switch (outcome) {
         case 'DISABLED':
@@ -334,14 +353,34 @@ export function planLeaverNotifications(
             return { it: 'IDENTITY_LEAVER_UNCONFIRMED', manager: 'IDENTITY_LEAVER_UNCONFIRMED' };
         case 'REFUSED_TARGET':
         case 'FAILED':
-        // A protected account — the bind account this connection authenticates
-        // AS, or one the writer otherwise refuses — is left LIVE, and the
-        // refusal is permanent rather than a rung to climb. That makes it the
-        // NEEDS_ACTION shape and not the silent one: somebody has to disable
-        // this person by hand. IT only, for the same reason as the others —
-        // a manager can do nothing about which account we bind as.
-        case 'REFUSED_PROTECTED':
             return { it: 'IDENTITY_LEAVER_NEEDS_ACTION', manager: null };
+        // Two rails share this outcome and they want opposite mail.
+        //
+        // SELF_ACCOUNT is the bind account this connection authenticates AS.
+        // It is left LIVE, the refusal is permanent rather than a rung to
+        // climb, and the product cannot fix it from here — so somebody does
+        // have to disable this person by hand. IT only, for the same reason as
+        // the others: a manager can do nothing about which account we bind as.
+        //
+        // OPERATOR_FLAG is an operator's break-glass mark, and the refusal is
+        // the behaviour they asked for. Sending NEEDS_ACTION here tells IT to
+        // undo a deliberate decision, nightly, for as long as the worker stays
+        // TERMINATED and the flag stays set — the rail sits above the mode
+        // gate, so it fires in DRY_RUN too. Silent is the honest arm, and it
+        // is the arm REFUSED_MODE and DRY_RUN already take: the ones where
+        // nothing happened because nothing was supposed to.
+        //
+        // Silent is not invisible. The refusal is persisted with its reason in
+        // IntegrationExecution.resultJson and rendered in the Reason column at
+        // /admin/identity-leaver-passes. That is the surface for a deliberate
+        // policy outcome; a daily action-required mail is not.
+        //
+        // An absent basis falls to NEEDS_ACTION: of the two, telling somebody
+        // about an account still live is the safer thing to get wrong.
+        case 'REFUSED_PROTECTED':
+            return protection === 'OPERATOR_FLAG'
+                ? { it: null, manager: null }
+                : { it: 'IDENTITY_LEAVER_NEEDS_ACTION', manager: null };
         case 'ALREADY_DISABLED':
             return hasJournalRef
                 ? { it: 'IDENTITY_LEAVER_DISABLED', manager: 'IDENTITY_LEAVER_DISABLED' }
@@ -389,6 +428,8 @@ export interface NotifyLeaverInput {
      */
     readonly externalUserId?: string | null;
     readonly outcome: DisableOutcome;
+    /** Which protected rail refused. Only meaningful on REFUSED_PROTECTED. */
+    readonly protection?: ProtectionBasis;
     /** Provider or refusal text. Sanitised and clamped here, not by the caller. */
     readonly reason?: string;
     readonly journalId?: string;
@@ -425,7 +466,7 @@ export async function notifyLeaverOutcome(
     input: NotifyLeaverInput,
 ): Promise<NotifyLeaverResult> {
     const journalRef = input.journalId ?? null;
-    const plan = planLeaverNotifications(input.outcome, journalRef !== null);
+    const plan = planLeaverNotifications(input.outcome, journalRef !== null, input.protection);
     if (!plan.it && !plan.manager) return { enqueued: 0, failed: 0, silent: true };
 
     // Declared OUTSIDE the try because the catch reads it. Which audiences

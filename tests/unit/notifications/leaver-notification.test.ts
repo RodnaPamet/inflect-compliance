@@ -113,7 +113,7 @@ describe('planLeaverNotifications', () => {
         });
     });
 
-    it.each(['REFUSED_TARGET', 'FAILED', 'REFUSED_PROTECTED'] as const)(
+    it.each(['REFUSED_TARGET', 'FAILED'] as const)(
         'tells IT but not the manager about %s — the account is live and only an operator can fix it',
         (outcome) => {
             expect(planLeaverNotifications(outcome, false)).toEqual({
@@ -122,6 +122,47 @@ describe('planLeaverNotifications', () => {
             });
         },
     );
+
+    // REFUSED_PROTECTED is returned by two rails that want opposite mail. The
+    // outcome alone cannot say which, so `protection` does — and getting this
+    // wrong is not a missing mail but a wrong instruction, sent nightly.
+    describe('REFUSED_PROTECTED routes on which rail refused', () => {
+        it('tells IT to act when it is the account the connection authenticates AS', () => {
+            expect(planLeaverNotifications('REFUSED_PROTECTED', false, 'SELF_ACCOUNT')).toEqual({
+                it: 'IDENTITY_LEAVER_NEEDS_ACTION',
+                manager: null,
+            });
+        });
+
+        it('says nothing when an operator marked the account break-glass', () => {
+            // NEEDS_ACTION reads "disable this account by hand" — which is the
+            // operator's own decision, reversed. The rail sits above the mode
+            // gate, so it fires in DRY_RUN too: this would be a nightly mail to
+            // every IT recipient for as long as the flag stays set.
+            expect(planLeaverNotifications('REFUSED_PROTECTED', false, 'OPERATOR_FLAG')).toEqual({
+                it: null,
+                manager: null,
+            });
+        });
+
+        it('falls back to telling IT when no basis was carried', () => {
+            // Of the two ways to be wrong about an account that is still live,
+            // saying something is the safer one. This arm also keeps every
+            // pre-existing caller behaving as it did.
+            expect(planLeaverNotifications('REFUSED_PROTECTED', false)).toEqual({
+                it: 'IDENTITY_LEAVER_NEEDS_ACTION',
+                manager: null,
+            });
+        });
+
+        it('never tells the manager, on either rail', () => {
+            // A manager can act on neither: not on which account we bind as,
+            // and not on a break-glass policy they do not own.
+            for (const basis of ['SELF_ACCOUNT', 'OPERATOR_FLAG', undefined] as const) {
+                expect(planLeaverNotifications('REFUSED_PROTECTED', false, basis).manager).toBeNull();
+            }
+        });
+    });
 
     it('says nothing about REFUSED_MODE — normal for every tenant climbing the ladder', () => {
         expect(planLeaverNotifications('REFUSED_MODE', false)).toEqual({ it: null, manager: null });

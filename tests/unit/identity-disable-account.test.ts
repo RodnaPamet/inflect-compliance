@@ -157,6 +157,11 @@ describe('SELF-LOCKOUT — the one refusal that comes before everything', () => 
         expect(r.outcome).toBe('REFUSED_PROTECTED');
         expect(r.reason).toMatch(/lock the product out/i);
         expect(w.disabled).toEqual([]);
+        // The outcome is shared with the operator-flag rail below and the two
+        // want opposite notifications, so the basis is the only thing that can
+        // tell them apart downstream. Without this the routing test passes
+        // while nothing ever produces the value it routes on.
+        expect(r.protection).toBe('SELF_ACCOUNT');
     });
 
     it('compares case- and whitespace-insensitively', async () => {
@@ -251,6 +256,11 @@ describe('SELF-LOCKOUT — the one refusal that comes before everything', () => 
         expect(r.outcome).toBe('REFUSED_PROTECTED');
         expect(r.reason).toMatch(/break-glass|policy/i);
         expect(w.disabled).toEqual([]);
+        // Distinguishes this rail from the self-account one above, which
+        // returns the SAME outcome and wants the opposite notification: this
+        // refusal is what the operator asked for, so telling IT to go and
+        // disable the account by hand would reverse their own decision.
+        expect(r.protection).toBe('OPERATOR_FLAG');
     });
 });
 
