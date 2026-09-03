@@ -7,6 +7,7 @@
 
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
+import { deploymentSenderAddress } from '@/lib/email/sender-identity';
 
 export interface TenantNotificationSettingsData {
     enabled: boolean;
@@ -15,12 +16,24 @@ export interface TenantNotificationSettingsData {
     complianceMailbox: string | null;
 }
 
-const DEFAULTS: TenantNotificationSettingsData = {
-    enabled: true,
-    defaultFromName: 'Inflect Compliance',
-    defaultFromEmail: 'noreply@inflect.app',
-    complianceMailbox: null,
-};
+/**
+ * The sender a tenant that has never opened the notifications page sends AS.
+ *
+ * `processOutbox` overrides each message's `from` from HERE, so for outbox mail
+ * this value — not the mailer's transport default — is what reaches the relay.
+ * It was its own hardcoded copy of `noreply@inflect.app`, which is why a
+ * deployment with `SMTP_FROM` set correctly still had every message rejected
+ * `550 ... domain is not verified`. See `@/lib/email/sender-identity` for the
+ * full account; the point of importing it is that there is now one thing to set.
+ */
+function defaults(): TenantNotificationSettingsData {
+    return {
+        enabled: true,
+        defaultFromName: 'Inflect Compliance',
+        defaultFromEmail: deploymentSenderAddress(),
+        complianceMailbox: null,
+    };
+}
 
 /**
  * Get tenant notification settings.
@@ -34,7 +47,7 @@ export async function getTenantNotificationSettings(
     const row = await db.tenantNotificationSettings.findUnique({
         where: { tenantId },
     });
-    if (!row) return { ...DEFAULTS };
+    if (!row) return defaults();
     return {
         enabled: row.enabled,
         defaultFromName: row.defaultFromName,
@@ -56,7 +69,7 @@ export async function updateTenantNotificationSettings(
         where: { tenantId: ctx.tenantId },
         create: {
             tenantId: ctx.tenantId,
-            ...DEFAULTS,
+            ...defaults(),
             ...data,
         },
         update: data,
