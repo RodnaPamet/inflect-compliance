@@ -301,3 +301,68 @@ describe('revokeAssessmentLink', () => {
         },
     );
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Missing relations — the `?? ''` / `?? 'unknown'` fallbacks
+// ═══════════════════════════════════════════════════════════════════
+//
+// `templateId` is nullable (the G-3 migration made it so) and the
+// resend/revoke reads pull `vendor` and `templateVersion` through
+// OPTIONAL relations, so both can come back null on a real row. Neither
+// fallback is defensive decoration: without them the send throws inside
+// the transaction — after the fresh token has already been written —
+// leaving the assessment with a hash nobody holds the preimage of. Each
+// case below is paired with the populated-relation case so the two arms
+// of the coalesce produce visibly different output.
+
+describe('resendAssessmentInvite — email payload when relations are missing', () => {
+    it('emits empty vendor/template names rather than throwing when both relations are null', async () => {
+        mockTx.vendorAssessment.findFirst.mockResolvedValue(
+            row({ vendor: null, templateVersion: null }),
+        );
+
+        const out = await resendAssessmentInvite(makeCtx(), 'a1');
+
+        const payload = mockEnqueueEmail.mock.calls[0][1].payload;
+        expect(payload.vendorName).toBe('');
+        expect(payload.templateName).toBe('');
+        // The resend still completes — the whole point of the fallback.
+        expect(out.notificationQueued).toBe(true);
+        expect(mockTx.vendorAssessment.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('carries the real vendor/template names when the relations ARE present', async () => {
+        mockTx.vendorAssessment.findFirst.mockResolvedValue(row());
+
+        await resendAssessmentInvite(makeCtx(), 'a1');
+
+        const payload = mockEnqueueEmail.mock.calls[0][1].payload;
+        expect(payload.vendorName).toBe('Acme');
+        expect(payload.templateName).toBe('SIG Lite v3');
+    });
+});
+
+describe('revokeAssessmentLink — audit detail when the vendor relation is missing', () => {
+    it('names the vendor as "unknown" rather than emitting "undefined"', async () => {
+        mockTx.vendorAssessment.findFirst.mockResolvedValue(row({ vendor: null }));
+
+        await revokeAssessmentLink(makeCtx(), 'a1');
+
+        // The audit row is the only durable record of WHICH link was
+        // killed; an interpolated `undefined` there is what an incident
+        // reviewer would be reading six months later.
+        const entry = mockLog.mock.calls[0][2] as { details?: string };
+        expect(entry.details).toContain('(vendor=unknown)');
+        expect(entry.details).not.toContain('undefined');
+    });
+
+    it('names the real vendor when the relation is present', async () => {
+        mockTx.vendorAssessment.findFirst.mockResolvedValue(row());
+
+        await revokeAssessmentLink(makeCtx(), 'a1');
+
+        const entry = mockLog.mock.calls[0][2] as { details?: string };
+        expect(entry.details).toContain('(vendor=Acme)');
+        expect(entry.details).not.toContain('unknown');
+    });
+});

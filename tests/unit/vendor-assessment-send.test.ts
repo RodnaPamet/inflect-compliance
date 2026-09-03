@@ -43,7 +43,19 @@ jest.mock('@/app-layer/notifications/enqueue', () => ({
     enqueueEmail: (...args: unknown[]) => mockEnqueueEmail(...args),
 }));
 
+// `resolveAppOrigin` reads `env.APP_URL` through a lazy `require('@/env')`.
+// A GETTER (not a bare `{ env: mockEnv }`) because `@/lib/errors/types`
+// imports `env` at module load — i.e. during the hoisted import block, before
+// `mockEnv`'s `const` is initialised. The getter defers the read to use time.
+const mockEnv: { APP_URL?: string; NODE_ENV: string } = { NODE_ENV: 'test' };
+jest.mock('@/env', () => ({
+    get env() {
+        return mockEnv;
+    },
+}));
+
 import { sendAssessment } from '@/app-layer/usecases/vendor-assessment-send';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import { getPermissionsForRole } from '@/lib/permissions';
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -91,6 +103,7 @@ beforeEach(() => {
         (fn as jest.Mock).mockReset(),
     );
     mockEnqueueEmail.mockReset();
+    delete mockEnv.APP_URL;
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -383,5 +396,173 @@ describe('sendAssessment — happy path', () => {
         // Assessment WAS created — the outbox skip doesn't roll
         // back the row.
         expect(mockTx.vendorAssessment.create).toHaveBeenCalledTimes(1);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 4. Response-URL origin resolution
+// ═══════════════════════════════════════════════════════════════════
+//
+// The response URL is the ONLY artefact carrying the raw token. Getting
+// the origin wrong does not fail loudly — it mails the external
+// respondent a link that 404s (or, worse, points at the wrong
+// deployment), while the assessment row, the audit entry and the
+// returned token all look perfectly healthy. So each of the three
+// origin sources is pinned to a DISTINCT host, and the assertion is on
+// the whole URL rather than on a substring: `toContain('example')`
+// would be satisfied by any of them.
+
+describe('sendAssessment — response URL origin', () => {
+    function setupSuccess() {
+        mockTx.vendor.findFirst.mockResolvedValueOnce({
+            id: 'v-1',
+            name: 'Acme Cloud',
+        });
+        mockTx.vendorAssessmentTemplate.findFirst.mockResolvedValueOnce({
+            id: 't-v3',
+            name: 'SOC 2 questionnaire',
+            isPublished: true,
+        });
+        mockTx.vendorAssessment.findFirst.mockResolvedValueOnce(null);
+        mockTx.vendorAssessment.create.mockResolvedValueOnce({ id: 'a-new' });
+        mockEnqueueEmail.mockResolvedValueOnce({ id: 'outbox-1' });
+    }
+
+    function queuedUrl(): string {
+        return mockEnqueueEmail.mock.calls[0][1].payload.responseUrl;
+    }
+
+    test('uses env.APP_URL when no override is supplied, stripping the trailing slash', async () => {
+        mockEnv.APP_URL = 'https://prod.inflect.example/';
+        setupSuccess();
+
+        const result = await sendAssessment(makeCtx(), 'v-1', 't-v3', VALID_INPUT);
+
+        // Exact — a `//` from an unstripped trailing slash and a silent
+        // fall-through to localhost both fail here.
+        expect(queuedUrl()).toBe(
+            `https://prod.inflect.example/vendor-assessment/a-new?t=${result.externalAccessToken}`,
+        );
+    });
+
+    test('falls back to localhost:3000 when APP_URL is unset', async () => {
+        // mockEnv.APP_URL deliberately left undefined by beforeEach.
+        setupSuccess();
+
+        const result = await sendAssessment(makeCtx(), 'v-1', 't-v3', VALID_INPUT);
+
+        expect(queuedUrl()).toBe(
+            `http://localhost:3000/vendor-assessment/a-new?t=${result.externalAccessToken}`,
+        );
+    });
+
+    test('an explicit appOriginOverride beats a configured APP_URL', async () => {
+        // The two sources are different HOSTS on purpose: if the override
+        // and the env value were the same string, no assertion could tell
+        // which one the code actually read.
+        mockEnv.APP_URL = 'https://prod.inflect.example';
+        setupSuccess();
+
+        const result = await sendAssessment(makeCtx(), 'v-1', 't-v3', {
+            ...VALID_INPUT,
+            appOriginOverride: 'https://preview.inflect.example/',
+        });
+
+        expect(queuedUrl()).toBe(
+            `https://preview.inflect.example/vendor-assessment/a-new?t=${result.externalAccessToken}`,
+        );
+        expect(queuedUrl()).not.toContain('prod.inflect.example');
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 5. Recipient name — default vs sanitised
+// ═══════════════════════════════════════════════════════════════════
+
+describe('sendAssessment — recipientName', () => {
+    function setupSuccess() {
+        mockTx.vendor.findFirst.mockResolvedValueOnce({
+            id: 'v-1',
+            name: 'Acme Cloud',
+        });
+        mockTx.vendorAssessmentTemplate.findFirst.mockResolvedValueOnce({
+            id: 't-v3',
+            name: 'SOC 2 questionnaire',
+            isPublished: true,
+        });
+        mockTx.vendorAssessment.findFirst.mockResolvedValueOnce(null);
+        mockTx.vendorAssessment.create.mockResolvedValueOnce({ id: 'a-new' });
+        mockEnqueueEmail.mockResolvedValueOnce({ id: 'outbox-1' });
+    }
+
+    test('greets "Vendor team" when no respondentName is supplied', async () => {
+        setupSuccess();
+        await sendAssessment(makeCtx(), 'v-1', 't-v3', {
+            respondentEmail: 'security@example.com',
+        });
+
+        expect(mockEnqueueEmail.mock.calls[0][1].payload.recipientName).toBe(
+            'Vendor team',
+        );
+    });
+
+    test('routes a supplied respondentName through sanitizePlainText, not raw', async () => {
+        // The mock is stubbed to a value the raw input can never equal, so
+        // the assertion separates "sanitised" from "passed straight
+        // through" — a fixture where both sides read the same string could
+        // not. The name reaches an emailed HTML body; the sanitiser is the
+        // only thing standing between the two.
+        (sanitizePlainText as jest.Mock).mockReturnValueOnce('Bob');
+        setupSuccess();
+
+        await sendAssessment(makeCtx(), 'v-1', 't-v3', {
+            respondentEmail: 'security@example.com',
+            respondentName: '<script>alert(1)</script>Bob',
+        });
+
+        const recipientName =
+            mockEnqueueEmail.mock.calls[0][1].payload.recipientName;
+        expect(recipientName).toBe('Bob');
+        expect(recipientName).not.toContain('<script>');
+        // And it is not the "no name given" default either.
+        expect(recipientName).not.toBe('Vendor team');
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 6. In-flight lookup is tenant- and recipient-scoped
+// ═══════════════════════════════════════════════════════════════════
+
+describe('sendAssessment — in-flight query shape', () => {
+    test('scopes the idempotency probe to tenant + vendor + template + LOWERCASED recipient', async () => {
+        mockTx.vendor.findFirst.mockResolvedValueOnce({
+            id: 'v-1',
+            name: 'Acme Cloud',
+        });
+        mockTx.vendorAssessmentTemplate.findFirst.mockResolvedValueOnce({
+            id: 't-v3',
+            name: 'SOC 2 questionnaire',
+            isPublished: true,
+        });
+        mockTx.vendorAssessment.findFirst.mockResolvedValueOnce(null);
+        mockTx.vendorAssessment.create.mockResolvedValueOnce({ id: 'a-new' });
+        mockEnqueueEmail.mockResolvedValueOnce({ id: 'outbox-1' });
+
+        // Mixed case on the way in, so the stored/queried form is provably
+        // the normalised one and not simply the argument echoed back.
+        await sendAssessment(makeCtx(), 'v-1', 't-v3', {
+            respondentEmail: 'Security@Example.COM',
+        });
+
+        expect(mockTx.vendorAssessment.findFirst).toHaveBeenCalledWith({
+            where: {
+                tenantId: 'tenant-1',
+                vendorId: 'v-1',
+                templateVersionId: 't-v3',
+                respondentEmail: 'security@example.com',
+                status: { in: ['SENT', 'IN_PROGRESS'] },
+            },
+            select: { id: true },
+        });
     });
 });

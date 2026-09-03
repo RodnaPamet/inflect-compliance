@@ -55,6 +55,7 @@ import {
 } from '@/app-layer/usecases/mfa';
 import { prisma } from '@/lib/prisma';
 import { makeRequestContext } from '../../helpers/make-context';
+import { AppError, ForbiddenError, ValidationError } from '@/lib/errors/types';
 
 const mockMembershipFind = prisma.tenantMembership.findMany as jest.MockedFunction<
     typeof prisma.tenantMembership.findMany
@@ -450,5 +451,232 @@ describe('getUserMfaStatus', () => {
             where: { userId_tenantId_type: { userId: 'u-9', tenantId: 't-9', type: 'TOTP' } },
         });
         expect(mockSettingsFind).toHaveBeenCalledWith({ where: { tenantId: 't-9' } });
+    });
+});
+
+// ─── Defects that survived 100% branch coverage ─────────────────────
+//
+// Everything above this line already executed every branch in mfa.ts — the
+// file measured 100/100/100/100 before this block was written. Six source
+// mutations were nonetheless applied one at a time and the whole suite stayed
+// green for all six:
+//
+//   1. `mfaPolicy: settings.mfaPolicy`   → `input.mfaPolicy`
+//   2. `sessionMaxAgeMinutes: settings.…`→ `input.sessionMaxAgeMinutes ?? null`
+//   3. the count's `type: 'TOTP'` filter  deleted
+//   4. the `canAdmin` guard               moved BELOW the anti-lockout block
+//   5. `throw badRequest(…)`             → `throw forbidden(…)`
+//   6. `input.mfaPolicy === 'REQUIRED'`  → `!== 'DISABLED'`
+//
+// Each is a real defect (a lie about what was stored, a safeguard satisfied by
+// the wrong factor, a roster read by someone who may not administer the
+// tenant, a 403 where the client must see a 400, a roster read on a policy
+// change that needs none). Executing a line proved none of them. The tests
+// below assert the observable DIFFERENCE each one erases.
+
+describe('updateTenantMfaPolicy — what the caller is told, and what is read', () => {
+    // Kills mutations 1 and 2.
+    //
+    // The return value is the caller's only report of what is now in force,
+    // and it must come from the row Postgres actually wrote — not from the
+    // request. A column default, a concurrent write, or a mid-deploy schema
+    // skew all make those two differ, and echoing the input would report
+    // success for a policy that was never stored.
+    //
+    // The fixture makes them differ ON PURPOSE, on BOTH fields: the request
+    // asks for REQUIRED / 15, the persisted row comes back OPTIONAL / 45.
+    // A fixture where the requested and stored values coincide cannot tell
+    // `settings.mfaPolicy` from `input.mfaPolicy` no matter how it asserts.
+    it('reports the PERSISTED row, not the requested input', async () => {
+        mockMembershipFind.mockResolvedValue([{ userId: 'owner-1' }] as never);
+        mockEnrollCount.mockResolvedValue(1);
+        mockSettingsUpsert.mockResolvedValue({
+            ...settingsRow,
+            mfaPolicy: 'OPTIONAL',
+            sessionMaxAgeMinutes: 45,
+        } as never);
+
+        const result = await updateTenantMfaPolicy(makeRequestContext('OWNER'), {
+            mfaPolicy: 'REQUIRED',
+            sessionMaxAgeMinutes: 15,
+        } as never);
+
+        // toStrictEqual, not toEqual: an `undefined` field would satisfy
+        // toEqual against an absent one, and "the policy is undefined" is
+        // exactly the shape a broken read returns.
+        expect(result).toStrictEqual({ mfaPolicy: 'OPTIONAL', sessionMaxAgeMinutes: 45 });
+
+        // And the write itself still carried the REQUEST — the two values are
+        // separate for a reason, so pin both directions.
+        const upsertArgs = mockSettingsUpsert.mock.calls[0][0];
+        expect(upsertArgs.update.mfaPolicy).toBe('REQUIRED');
+        expect(upsertArgs.update.sessionMaxAgeMinutes).toBe(15);
+    });
+
+    // Kills mutation 3.
+    //
+    // The safeguard asks "can anybody still turn this off?", and only a
+    // verified TOTP factor answers yes — that is the factor the MFA challenge
+    // actually accepts. An enrolment row of another type must NOT satisfy it,
+    // or REQUIRED goes on with nobody able to complete a challenge.
+    //
+    // Asserting the `type: 'TOTP'` key appears in the query would be weaker:
+    // it pins the spelling of the filter, not its effect. This mock holds a
+    // small enrolment table and HONOURS the filter, so deleting the filter
+    // changes the outcome from a refusal to an acceptance.
+    it('does not let a non-TOTP enrolment satisfy the anti-lockout check', async () => {
+        const enrolments: Array<{ userId: string; type: string; isVerified: boolean }> = [
+            // The tenant's only owner has a verified factor — but not TOTP.
+            { userId: 'owner-1', type: 'SMS', isVerified: true },
+        ];
+        mockMembershipFind.mockResolvedValue([{ userId: 'owner-1' }] as never);
+        // Unannotated `args` — contextually typed by Prisma's own `count`
+        // signature; annotating it compiles under jest and fails tsc.
+        mockEnrollCount.mockImplementation((args) => {
+            const where = (args?.where ?? {}) as {
+                userId?: { in?: string[] };
+                type?: string;
+                isVerified?: boolean;
+            };
+            const ids = where.userId?.in ?? [];
+            const hits = enrolments.filter(
+                (e) =>
+                    ids.includes(e.userId) &&
+                    (where.type === undefined || e.type === where.type) &&
+                    (where.isVerified === undefined || e.isVerified === where.isVerified),
+            );
+            return Promise.resolve(hits.length) as never;
+        });
+
+        const err = await updateTenantMfaPolicy(makeRequestContext('OWNER'), {
+            mfaPolicy: 'REQUIRED',
+        } as never).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ValidationError);
+        expect(mockSettingsUpsert).not.toHaveBeenCalled();
+    });
+
+    // The contrasting arm of the test above: the SAME filter-honouring mock,
+    // with the factor changed to TOTP, must accept. Without this the previous
+    // test would also pass against a function that refuses unconditionally.
+    it('accepts once that same owner holds a verified TOTP factor', async () => {
+        const enrolments: Array<{ userId: string; type: string; isVerified: boolean }> = [
+            { userId: 'owner-1', type: 'TOTP', isVerified: true },
+        ];
+        mockMembershipFind.mockResolvedValue([{ userId: 'owner-1' }] as never);
+        mockEnrollCount.mockImplementation((args) => {
+            const where = (args?.where ?? {}) as {
+                userId?: { in?: string[] };
+                type?: string;
+                isVerified?: boolean;
+            };
+            const ids = where.userId?.in ?? [];
+            const hits = enrolments.filter(
+                (e) =>
+                    ids.includes(e.userId) &&
+                    (where.type === undefined || e.type === where.type) &&
+                    (where.isVerified === undefined || e.isVerified === where.isVerified),
+            );
+            return Promise.resolve(hits.length) as never;
+        });
+        mockSettingsUpsert.mockResolvedValue({
+            ...settingsRow,
+            mfaPolicy: 'REQUIRED',
+        } as never);
+
+        const result = await updateTenantMfaPolicy(makeRequestContext('OWNER'), {
+            mfaPolicy: 'REQUIRED',
+        } as never);
+
+        expect(result.mfaPolicy).toBe('REQUIRED');
+        expect(mockSettingsUpsert).toHaveBeenCalled();
+    });
+
+    // Kills mutation 5.
+    //
+    // The two refusals are NOT interchangeable at the HTTP boundary: the
+    // lockout is a 400 the admin can act on ("enrol first, then retry"), the
+    // role denial is a 403 that also writes an authz denial upstream. Swapping
+    // `badRequest` for `forbidden` turns actionable advice into "you may not
+    // do this", and every message-substring assertion in this file stays green
+    // through it, because the message is unchanged.
+    it('refuses the lockout with a 400 ValidationError, not a 403', async () => {
+        mockMembershipFind.mockResolvedValue([{ userId: 'owner-1' }] as never);
+        mockEnrollCount.mockResolvedValue(0);
+
+        const err = await updateTenantMfaPolicy(makeRequestContext('OWNER'), {
+            mfaPolicy: 'REQUIRED',
+        } as never).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ValidationError);
+        expect(err).not.toBeInstanceOf(ForbiddenError);
+        expect((err as AppError).status).toBe(400);
+        expect((err as AppError).code).toBe('BAD_REQUEST');
+    });
+
+    it('refuses a non-admin with a 403 ForbiddenError', async () => {
+        const err = await updateTenantMfaPolicy(makeRequestContext('EDITOR'), {
+            mfaPolicy: 'OPTIONAL',
+        } as never).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ForbiddenError);
+        expect((err as AppError).status).toBe(403);
+        expect((err as AppError).code).toBe('FORBIDDEN');
+    });
+
+    // Kills mutation 4.
+    //
+    // Order, not just outcome. With the guard below the safeguard, an EDITOR
+    // asking for REQUIRED reaches two tenant-wide reads before being refused,
+    // and is answered "enrol MFA first" — a message that tells a member who
+    // cannot administer the tenant both that the roster was consulted and that
+    // the policy is theirs to set. The fixture is seeded so the misordered
+    // version throws a DIFFERENT error as well as reading: owner present,
+    // nobody enrolled.
+    it('refuses a non-admin BEFORE reading the membership roster', async () => {
+        mockMembershipFind.mockResolvedValue([{ userId: 'owner-1' }] as never);
+        mockEnrollCount.mockResolvedValue(0);
+
+        const err = await updateTenantMfaPolicy(makeRequestContext('EDITOR'), {
+            mfaPolicy: 'REQUIRED',
+        } as never).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ForbiddenError);
+        expect(mockMembershipFind).not.toHaveBeenCalled();
+        expect(mockEnrollCount).not.toHaveBeenCalled();
+        expect(mockSettingsUpsert).not.toHaveBeenCalled();
+    });
+
+    // Kills mutation 6.
+    //
+    // The existing OPTIONAL test asserts only that the COUNT was skipped, and
+    // the count is skipped for an empty roster anyway — so widening the
+    // trigger from `=== 'REQUIRED'` to `!== 'DISABLED'` left it green while
+    // every OPTIONAL policy change started reading the tenant roster. The
+    // roster read is the first observable step, so assert on that one.
+    it('does not read the roster at all for an OPTIONAL policy change', async () => {
+        await updateTenantMfaPolicy(makeRequestContext('ADMIN'), {
+            mfaPolicy: 'OPTIONAL',
+        } as never);
+
+        expect(mockMembershipFind).not.toHaveBeenCalled();
+        expect(mockEnrollCount).not.toHaveBeenCalled();
+        expect(mockSettingsUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({ update: expect.objectContaining({ mfaPolicy: 'OPTIONAL' }) }),
+        );
+    });
+
+    // The other arm: REQUIRED must read it. Without this, the test above is
+    // satisfied by a function that never reads the roster for anything.
+    it('does read the roster for a REQUIRED policy change', async () => {
+        mockMembershipFind.mockResolvedValue([{ userId: 'owner-1' }] as never);
+        mockEnrollCount.mockResolvedValue(1);
+
+        await updateTenantMfaPolicy(makeRequestContext('ADMIN'), {
+            mfaPolicy: 'REQUIRED',
+        } as never);
+
+        expect(mockMembershipFind).toHaveBeenCalledTimes(1);
+        expect(mockEnrollCount).toHaveBeenCalledTimes(1);
     });
 });
