@@ -82,7 +82,10 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
  *     exactly 2, 497 at 3-4, 204 at 5-9, 67 at 10 or more. By directory:
  *     guards 640, guardrails 435, unit 401, integration 68, rendered 10.
  */
-const AMBIGUOUS_NEEDLE_BASELINE = 1554;
+// Re-seated 2026-09-02 (#2226): same cause as the sibling span ratchet — twelve
+// guard suites over never-applied Terraform and an EKS deploy pipeline were
+// deleted, taking their short, repeated YAML/HCL identifiers with them.
+const AMBIGUOUS_NEEDLE_BASELINE = 1515;
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;
@@ -100,7 +103,7 @@ const HIGH_MULTIPLICITY = 5;
  *   • 276 (2026-09-02): seated with the ratchet.
  *   • 271 (2026-09-03): re-measured after the rebase described above.
  */
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 271;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 270;
 
 /**
  * Sites this detector could NOT analyse, having established they read a file.
@@ -169,7 +172,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 271;
  *     `not-a-file-read`. The number rose because the blind spot was always
  *     this size; only its accounting changed.
  */
-const UNANALYSABLE_READ_BASELINE = 1565;
+const UNANALYSABLE_READ_BASELINE = 1507;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
