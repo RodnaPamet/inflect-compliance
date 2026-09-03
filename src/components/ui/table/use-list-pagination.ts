@@ -30,7 +30,10 @@
  * those three props are set.
  */
 
-import { type PaginationState } from "@tanstack/react-table";
+// TanStack's `{ pageIndex, pageSize }` — imported from the library, not
+// from `./types`, because `./pagination-utils` owns the name
+// `PaginationState` on the barrel. See the note in `./types`.
+import type { PaginationState } from "@tanstack/react-table";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_PAGE_SIZE } from "./pagination-utils";

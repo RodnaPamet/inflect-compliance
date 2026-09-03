@@ -22,11 +22,12 @@
  *
  * `TableBodyRow` compares props shallowly, and one prop churned on
  * every render: `cells`. `row.getVisibleCells()` is TanStack-memoized
- * on `[getLeftVisibleCells(), getCenterVisibleCells(),
- * getRightVisibleCells()]`, and each of those is in turn memoized on
- * `table.getState().columnPinning.left` / `.right`. `useTable` built
- * that state inline — `columnPinning: { left: [], right: [],
- * ...columnPinning }` — so `.left` was a FRESH `[]` on every render,
+ * on `[getStartVisibleCells(), getCenterVisibleCells(),
+ * getEndVisibleCells()]`, and each of those is in turn memoized on
+ * `table.state.columnPinning.start` / `.end` (TanStack v9 renamed the
+ * physical left/right pin regions to the logical start/end pair).
+ * `useTable` built that state inline — `columnPinning: { start: [],
+ * end: [], ...columnPinning }` — so `.start` was a FRESH `[]` every render,
  * every cells memo missed, and the row got a new array every time.
  * One useMemo in `useTable` fixed it. `getVisibleCellsIdentity` below
  * is the regression lock on exactly that.

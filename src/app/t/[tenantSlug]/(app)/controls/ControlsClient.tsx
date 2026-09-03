@@ -7,7 +7,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import type { Row, RowSelectionState } from '@tanstack/react-table';
+import type { Row, RowSelectionState } from '@/components/ui/table';
 import { useRouter, useSearchParams } from 'next/navigation';
 // NewControlModal was previously lazy-loaded via next/dynamic, but the JIT
 // race in `next dev` made the modal occasionally fail to mount in serial-mode

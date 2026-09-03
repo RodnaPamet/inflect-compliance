@@ -1,18 +1,45 @@
 /* eslint-disable @typescript-eslint/no-explicit-any --
- * Generic type aliases over `TData`. The `any` defaults exist so
- * unspecialised consumers don't explode at type-check time; they
- * mirror tanstack-react-table's own default-generic strategy.
+ * The `any` DEFAULT on `TValue` below is load-bearing, and it is the same
+ * default this file carried under v8 (`ColumnDef<T, any>[]`). A column's
+ * cell renderer reads `getValue()`, whose return type is `TValue`; with
+ * `unknown` there, every `cell: ({ getValue }) => <span>{getValue()}</span>`
+ * in the product stops compiling — measured at 44 errors across 15 pages.
+ * Narrowing it is a real cleanup, but it is a per-column-def change on every
+ * page, not part of a library migration.
  */
-import {
-  Cell,
-  ColumnDef,
+/**
+ * Project-local, feature-bound aliases over TanStack Table's public types,
+ * plus the prop contracts for `useTable` / `<Table>`.
+ *
+ * ── The seam ────────────────────────────────────────────────────────────
+ * TanStack Table v9 made the table's FEATURE SET the first type parameter
+ * of nearly every public type — `ColumnDef<TFeatures, TData, TValue>`,
+ * `Row<TFeatures, TData>`, `Table<TFeatures, TData>`. Every call site that
+ * wrote `ColumnDef<MyRow>` under v8 would otherwise have to write
+ * `ColumnDef<typeof dataTableFeatures, MyRow>` under v9.
+ *
+ * This module binds `DataTableFeatures` (see `./features`) once and
+ * re-exports the SAME NAMES with the v8 arity. App pages therefore change
+ * their import source — `@tanstack/react-table` → `@/components/ui/table`
+ * — and nothing else; the next time the library reshapes its generics,
+ * this file absorbs it instead of every list page.
+ *
+ * These aliases are re-exported by the table barrel (`./index`), so the
+ * canonical app-side import is `@/components/ui/table`.
+ */
+import type {
+  Cell as TanstackCell,
+  Column as TanstackColumn,
+  ColumnDef as TanstackColumnDef,
   ColumnPinningState,
   ColumnResizeMode,
+  ColumnVisibilityState,
+  ExpandedState,
   PaginationState,
-  Row,
+  RowData,
+  Row as TanstackRow,
   RowSelectionState,
-  Table as TableType,
-  VisibilityState,
+  Table as TanstackTable,
 } from "@tanstack/react-table";
 import {
   Dispatch,
@@ -22,18 +49,96 @@ import {
   ReactNode,
   SetStateAction,
 } from "react";
+import type { DataTableFeatures } from "./features";
 
-type BaseTableProps<T> = {
-  columns: ColumnDef<T, any>[];
+/**
+ * The constraint TanStack v9 places on a table's row type — an object or an
+ * array, i.e. not a primitive. v8 effectively allowed anything (its `RowData`
+ * widened to `unknown`), so every generic in this platform that reaches a
+ * TanStack type now has to carry the bound. Concrete row types — interfaces, type
+ * aliases, classes — all satisfy it; only an UNCONSTRAINED generic does not,
+ * which is why the platform's own `<T>` parameters name it explicitly.
+ */
+export type TableRowData = RowData;
+
+/**
+ * Column definition bound to the platform's feature set.
+ *
+ * `TValue` defaults to `any` rather than TanStack's `unknown` — see the
+ * file-header note. This preserves the exact ergonomics of the v8-era
+ * `ColumnDef<T, any>` the platform used everywhere.
+ */
+export type ColumnDef<
+  TData extends TableRowData,
+  TValue = any,
+> = TanstackColumnDef<DataTableFeatures, TData, TValue>;
+
+/** A row instance bound to the platform's feature set. */
+export type Row<TData extends TableRowData> = TanstackRow<
+  DataTableFeatures,
+  TData
+>;
+
+/** A cell instance bound to the platform's feature set. */
+export type Cell<
+  TData extends TableRowData,
+  TValue = any,
+> = TanstackCell<DataTableFeatures, TData, TValue>;
+
+/** A column instance bound to the platform's feature set. */
+export type Column<
+  TData extends TableRowData,
+  TValue = any,
+> = TanstackColumn<DataTableFeatures, TData, TValue>;
+
+/**
+ * A table instance bound to the platform's feature set.
+ *
+ * Named `TableInstance`, not `Table`, because `./table` already exports a
+ * `<Table>` React component and the barrel re-exports both with `export *`
+ * — two `Table` exports would collide and silently drop the name.
+ */
+export type TableInstance<TData extends TableRowData> = TanstackTable<
+  DataTableFeatures,
+  TData
+>;
+
+/**
+ * Un-parameterised state slices, re-exported so consumers have ONE import
+ * source for the table platform. `ColumnVisibilityState` is v9's name for
+ * what v8 called `VisibilityState`; the platform adopted the new name
+ * rather than keeping an alias, so there is exactly one name for it.
+ */
+export type {
+  ColumnPinningState,
+  ColumnResizeMode,
+  ColumnVisibilityState,
+  ExpandedState,
+  RowSelectionState,
+};
+
+/**
+ * `PaginationState` is deliberately NOT re-exported.
+ *
+ * `./pagination-utils` already exports its own `PaginationState` (the
+ * cursor/offset shape the list APIs return, unrelated to TanStack's
+ * `{ pageIndex, pageSize }`), and the barrel re-exports both modules with
+ * `export *`. Two exports of one name are ambiguous and the symbol is
+ * silently dropped. The three platform modules that need TanStack's shape
+ * import it from the library directly.
+ */
+
+type BaseTableProps<T extends TableRowData> = {
+  columns: ColumnDef<T>[];
   data: T[];
   loading?: boolean;
   error?: string;
   emptyState?: ReactNode;
   resourceName?: (plural: boolean) => string;
 
-  defaultColumn?: Partial<ColumnDef<T, any>>;
+  defaultColumn?: Partial<ColumnDef<T>>;
   columnPinning?: ColumnPinningState;
-  cellRight?: (cell: Cell<T, any>) => ReactNode;
+  cellRight?: (cell: Cell<T>) => ReactNode;
 
   // Sorting
   sortableColumns?: string[];
@@ -49,8 +154,8 @@ type BaseTableProps<T> = {
   columnResizeMode?: ColumnResizeMode;
 
   // Column visibility
-  columnVisibility?: VisibilityState;
-  onColumnVisibilityChange?: (visibility: VisibilityState) => void;
+  columnVisibility?: ColumnVisibilityState;
+  onColumnVisibilityChange?: (visibility: ColumnVisibilityState) => void;
 
   // Row selection — R12-PR1 made the select column DEFAULT-ON. Pages
   // opt out by passing `selectionEnabled={false}` (rare: card-list
@@ -62,7 +167,7 @@ type BaseTableProps<T> = {
   getRowId?: (row: T) => string;
   onRowSelectionChange?: (rows: Row<T>[]) => void;
   selectedRows?: RowSelectionState;
-  selectionControls?: (table: TableType<T>) => ReactNode;
+  selectionControls?: (table: TableInstance<T>) => ReactNode;
   /**
    * Opt out of the default-on select column. Pass `false` for tables
    * that are deliberately read-only at the row level (sub-component
@@ -120,7 +225,7 @@ type BaseTableProps<T> = {
   tdClassName?: string | ((columnId: string, row: Row<T>) => string);
 };
 
-export type UseTableProps<T> = BaseTableProps<T> &
+export type UseTableProps<T extends TableRowData> = BaseTableProps<T> &
   (
     | {
         pagination?: PaginationState;
@@ -130,9 +235,9 @@ export type UseTableProps<T> = BaseTableProps<T> &
     | { pagination?: never; onPaginationChange?: never; rowCount?: never }
   );
 
-export type TableProps<T> = BaseTableProps<T> &
+export type TableProps<T extends TableRowData> = BaseTableProps<T> &
   PropsWithChildren<{
-    table: TableType<T>;
+    table: TableInstance<T>;
   }> &
   (
     | {

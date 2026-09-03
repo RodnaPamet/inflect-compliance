@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef } from '@/components/ui/table';
 
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';

@@ -21,8 +21,12 @@ jest.mock('next/navigation', () => ({
     useParams: () => ({}),
 }));
 
-import { DataTable, createColumns } from '@/components/ui/table';
-import type { Row } from '@tanstack/react-table';
+import {
+    DataTable,
+    createColumns,
+    type Row,
+    type RowSelectionState,
+} from '@/components/ui/table';
 
 interface RowT {
     id: string;
@@ -70,7 +74,9 @@ describe('<DataTable> row selection highlight', () => {
 
     it('controlled: parent state drives the row highlight', () => {
         function Wrap() {
-            const [sel, setSel] = React.useState<Record<string, boolean>>({});
+            // v9's `RowSelectionState` is `Record<string, true>` — an
+            // unselected row is an ABSENT key, never a `false` one.
+            const [sel, setSel] = React.useState<RowSelectionState>({});
             return (
                 <DataTable<RowT>
                     data={data}

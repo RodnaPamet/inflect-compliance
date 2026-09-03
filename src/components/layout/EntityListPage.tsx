@@ -55,7 +55,7 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { PageHeader } from '@/components/layout/PageHeader';
 import type { PageHeaderBack } from '@/components/layout/PageHeader';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
-import { DataTable, type DataTableProps } from '@/components/ui/table';
+import { DataTable, type DataTableProps, type TableRowData } from '@/components/ui/table';
 import type { FilterType } from '@/components/ui/filter';
 import { type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 
@@ -156,7 +156,7 @@ export interface EntityListPageFilters {
  * prop doesn't require a shell change — it surfaces here via the
  * `Pick` type below.
  */
-export type EntityListPageTable<TRow> = Pick<
+export type EntityListPageTable<TRow extends TableRowData> = Pick<
     DataTableProps<TRow>,
     | 'data'
     | 'columns'
@@ -198,7 +198,7 @@ export type EntityListPageTable<TRow> = Pick<
     fillBody?: boolean;
 };
 
-export interface EntityListPageProps<TRow> {
+export interface EntityListPageProps<TRow extends TableRowData> {
     header: EntityListPageHeader;
     /** Omit when the page doesn't have any filter UI. */
     filters?: EntityListPageFilters;
@@ -259,7 +259,9 @@ export interface EntityListPageProps<TRow> {
 
 // ─── Component ──────────────────────────────────────────────────
 
-export function EntityListPage<TRow>(props: EntityListPageProps<TRow>) {
+export function EntityListPage<TRow extends TableRowData>(
+    props: EntityListPageProps<TRow>,
+) {
     const {
         header,
         filters,
