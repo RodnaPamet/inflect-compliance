@@ -5,9 +5,11 @@
 # image tagged `:latest` and `:sha-<short>` to GHCR. The VM's
 # Watchtower container polls :latest and rolls the running app.
 #
-# Separate from the heavier `deploy.yml` pipeline (which gates on
-# CI + has staging/production environments) — this one exists purely
-# so `git push` → running in prod is ~5 min.
+# This is the ONLY deploy path. A heavier `deploy.yml` pipeline
+# (EKS, staging/production GitHub Environments, helm) was written and
+# never worked — it was `workflow_dispatch`-only with its auto-trigger
+# commented out pending an EKS environment that was never provisioned,
+# and it was removed along with the rest of the unapplied AWS estate.
 #
 name: Publish image to GHCR
 

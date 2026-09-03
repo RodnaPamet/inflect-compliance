@@ -1,5 +1,23 @@
 # Incident Response Runbook
 
+> **⚠ Read this first — the recovery commands below are being rewritten.**
+> Procedures in this runbook that invoke `kubectl`, `helm rollback`,
+> `restore-db-instance` or PagerDuty describe an EKS/RDS estate that was
+> **never provisioned** and was removed on 2026-09-02. **Production is a single
+> GCP VM running Docker Compose.** The real equivalents are:
+>
+> | If the runbook says | Actually do |
+> |---|---|
+> | `helm rollback inflect-production …` | `gcloud compute ssh inflect-compliance --zone europe-west1-b` then `sudo docker compose -f /opt/inflect/docker-compose.prod.yml up -d` with the previous GHCR tag pinned |
+> | `kubectl rollout restart deployment/…` | `sudo docker compose -f /opt/inflect/docker-compose.prod.yml restart app worker` |
+> | `kubectl get pods` | `sudo docker ps` on the VM |
+> | `restore-db-instance-to-point-in-time` | **There is no PITR.** Restore the newest `inflect-daily-snapshot` disk snapshot — see [`docs/disaster-recovery.md`](./disaster-recovery.md). Recovery point is up to 24h. |
+> | "page via PagerDuty" | **There is no paging path.** `infra/alerts/` was an in-cluster Alertmanager config with no cluster. Detection depends on somebody looking. |
+>
+> Tracked in
+> [#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).
+
+
 > **New to the codebase?** Start at [CONTRIBUTING.md](../CONTRIBUTING.md) — the developer onboarding guide.
 
 > This runbook owns the on-call rotation that
