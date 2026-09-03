@@ -918,7 +918,7 @@ Reconcile is gated on the sync returning `PASSED` — a `PARTIAL` (resumable) or
 `ConnectedIdentityAccount.email`, and only when exactly one employee holds that
 address. For Entra that address is `u.mail || u.userPrincipalName`.
 
-**The write-mode ladder** (`DISABLED → DRY_RUN → PROPOSE → AUTOMATIC`) is stored
+**The write-mode ladder** (`DISABLED → DRY_RUN → AUTOMATIC`) is stored
 per direction on `TenantSecuritySettings.identity{Leaver,Joiner}Mode`, defaulting
 to `DISABLED`. `setIdentityWriteMode` in `usecases/identity-write-policy.ts`
 refuses multi-rung widening, refuses to leave `DRY_RUN` before
@@ -926,6 +926,37 @@ refuses multi-rung widening, refuses to leave `DRY_RUN` before
 `DIRECTION_IMPLEMENTED` flag is false — which is the joiner, since
 2026-09-01., and any move out of
 `DRY_RUN` — including narrowing — nulls `dryRunSince` and restarts the clock.
+
+**There was a fourth rung, `PROPOSE`, and deleting it CLOSED a hole rather than
+opening one** (2026-09-02, #2241). It sat between `DRY_RUN` and `AUTOMATIC` and
+meant "a human approves each disable" — a queue that was never built, so
+`identity-disable-account` refused every candidate at that rung: the rung above
+yielded strictly less than the rung below. The harm was in the composition. The
+seven-day dwell fires on `current.mode === 'DRY_RUN'` only, so it gated
+`DRY_RUN → PROPOSE` and nothing gated `PROPOSE → AUTOMATIC`; combined with the
+widen-one-rung rule, the compulsory rung was also the only ungated one. The real
+price of unattended directory writes was seven days and two PUTs that could
+follow each other by a second. With the rung gone, `DRY_RUN → AUTOMATIC` is one
+move and the dwell that already existed now stands in front of it. **No new gate
+was added — the detour around the old one was removed.**
+
+Two consequences worth knowing before touching this:
+
+- **The DB enum still carries `PROPOSE`, on purpose, and no migration was
+  written.** Postgres cannot drop an enum value without recreating the type, and
+  an `ALTER TYPE` mid-rolling-deploy makes still-running old containers fail with
+  SQLSTATE 42704 — the same lesson the `@@map("WorkItem*")` pins record. So the
+  value outlives the rung.
+- **A stored `PROPOSE` is therefore an UNKNOWN mode, and unknown fails
+  PERMISSIVE.** `isAboveClamp` sorts it to -1, i.e. *not* above the clamp, i.e.
+  cleared to run, and it is not the literal `'DRY_RUN'` the writer factory used
+  to look for either. `coerceStoredMode` in `write-ladder.ts` translates it (to
+  `DRY_RUN`; anything else unrecognised, and absence, to `DISABLED`) and is
+  applied at the READ boundary in `getIdentityWritePolicy` — before any
+  comparison, clamp check or dwell arithmetic anywhere. Two backstops sit behind
+  it, both written as allowlists: the writer factory builds a live writer only at
+  `AUTOMATIC`, and the disable usecase writes only at `AUTOMATIC`. If you add a
+  rung, it inherits nothing by falling through.
 
 `LEAVER_MAX_MODE` is a **source constant, not config**, enforced at gate 1 of
 `runIdentityLeaverPass`. It was `DRY_RUN` until 2026-08-30 and is now
@@ -938,8 +969,12 @@ which is correct only while the clamp sits at the second rung — at `AUTOMATIC`
 tenant at `DRY_RUN` is not equal but is BELOW, and the inequality would have
 refused it `MODE_ABOVE_CLAMP`, a refusal that records no row. The ladder order
 now lives in one place, `src/lib/identity/write-ladder.ts`, used by the pass, the
-policy usecase and the admin client; it carries no server imports so a client
-component can hold it.
+policy usecase, the admin route's GET and the admin client; it carries no server
+imports so a client component can hold it. (The route's `GET` held a fifth
+verbatim copy until #2241 — the module's own docstring named the copies it
+replaced and missed that one, which is how a route can go on offering a rung the
+ladder no longer has. Its `PUT` body schema is now `z.enum(LADDER)`, so a PUT
+naming a retired rung is a 400 rather than a silently coerced write.)
 
 The admin route reports the clamp to the UI in a `honoured` block. Lowering the
 clamp again must be a diff somebody reviews.
@@ -956,10 +991,17 @@ but BELOW the `NO_CONNECTION` and `AMBIGUOUS_CONNECTION` refusals, so a dry run
 still needs exactly one enabled connection to get a snapshot at all, so a dry run needs neither
 `writesEnabled` nor `User.EnableDisableAccount.All` and opens no socket. It does
 still decrypt the connection secret (for self-account ids) and degrades to
-config-only with a WARN if that fails. Consequence worth knowing: `beginWrite` on
-the write journal sits *below* the dry-run early return, so
-**`IdentityWriteJournal` has no reachable caller today** — do not treat journal
-rows as evidence a pass ran.
+config-only with a WARN if that fails.
+
+`beginWrite` on the write journal sits *below* the mode allowlist, so it is
+reached only at `AUTOMATIC`. This sentence used to read "`IdentityWriteJournal`
+has no reachable caller today", which was true when the clamp was `DRY_RUN` and
+became **false on 2026-08-30 when #2187 raised it to `AUTOMATIC`** — a caller
+appeared and the prose did not move. `IdentityWriteJournal` still has **0 rows**,
+so the practical advice is unchanged (do not treat journal rows as evidence a
+pass ran), but the reason is now "nobody has reached AUTOMATIC yet", not "no
+caller exists". The first `AUTOMATIC` pass is also this journal's first exercise,
+and `checkDisableBlastRadius`'s.
 
 **Refusal order matters when reading an outcome.** `ALREADY_DISABLED` is checked
 before the write-target rail, so an account that last synced as suspended returns
@@ -1161,6 +1203,75 @@ Three codebase-hygiene invariants are held by structural guardrails
 
 `tests/guards/codebase-hygiene-integrity.test.ts` is the meta-ratchet
 over these four guardrails.
+
+### Assertion-reach ratchets (#2246)
+
+Two downward ratchets over the TEST suite itself, both standing on
+`tests/helpers/assertion-reach.ts` — an AST walk (`ts.createSourceFile`,
+syntax only) over every `.ts`/`.tsx` file **git** lists under `tests/`. They
+police one sentence: *an assertion whose reach is not the thing it names.*
+
+- **`tests/guardrails/assertion-span-reach-ratchet.test.ts` — Class C.**
+  Counts `expect(x).toMatch(/…/)` regexes carrying an any-char span
+  BETWEEN two pieces of pattern. Such a span re-forms across a **sibling**
+  block, so deleting the thing under test leaves the assertion satisfied by a
+  neighbour — proved twice, both times leaving the suite fully green.
+  Baselines: **177** unbounded interior spans, **368** interior spans of any
+  boundedness (the second cap exists so rewriting `*?` as `{0,200}` cannot buy
+  the first number down), **59** un-analysable `toMatch` arguments.
+
+  All seven spellings of "any character" count — `[\s\S]` / `[\S\s]` /
+  `[\d\D]` / `[\D\d]` / `[\w\W]` / `[\W\w]` / `[^]`, plus `(?:.|\n)` and a
+  quantified `.` under the `s` flag. Two shapes are deliberately NOT counted
+  and are reported in their own buckets: a subject that is already a bounded
+  extraction (`declarationOf(src, 'fetchVendor')` — the span cannot leave the
+  extracted construct, and that site has the recommended fix applied), and a
+  `not.toMatch`, where a wider span forbids MORE and so makes the assertion
+  stronger. `toMatch('a literal')` is out of scope rather than un-analysable —
+  it cannot carry a span, so writing one must not move the skip ceiling.
+
+- **`tests/guardrails/assertion-needle-uniqueness-ratchet.test.ts` — Class D.**
+  For every `toMatch`/`toContain` against a **whole-file read**, counts how
+  many places in that file satisfy the needle. More than one and the named
+  thing can be deleted while a survivor keeps the guard green — proved three
+  times, one of them a `.toContain`, which is why both matchers are in scope.
+  Baselines: **1554** ambiguous needles, **271** of them with five or more
+  satisfying positions, **1565** un-analysable reads.
+
+  A whole-file read wearing a transform the analyser cannot follow
+  (`codeOnly(readFileSync(…))`, `src.toLowerCase()`, `` `${schema}` ``) is
+  `content-transformed` — a CAPPED skip. It used to be `not-a-file-read`,
+  which is uncapped, so four such assertions could be added and every ceiling
+  held. A NARROWED read (`declarationOf(src, name)`, `src.slice(…)`) stays out
+  of scope, because narrowing is the fix and a guard that reddens when you
+  take its advice is one people route around.
+
+Three things about these that are easy to get wrong:
+
+- **The denominator is part of the result.** Each ratchet caps its own
+  SKIPPED count and floors its analysed share, because a detector that
+  silently drops what it cannot parse reports full coverage of the subset it
+  understands — the same defect one level up. Concretely: hiding a span
+  behind `new RegExp(someVariable)` does not evade Class C, it turns the
+  skip ceiling red instead.
+- **`DRIFT_ALLOWANCE` is 0 in both**, unlike the older count ratchets. These
+  numbers never move incidentally, so any allowance would be pure headroom
+  for the next regression. Removing one of these means lowering the baseline
+  by one in the same diff.
+- **Class D can fire on a diff that touches no test.**
+  `.toContain('model VendorEvidenceBundle')` was unambiguous until somebody
+  added `VendorEvidenceBundleItem` to the same schema file. Being told is the
+  point — which is why its failure message samples the population
+  **ascending**: a site that has just crossed the threshold sits at exactly 2,
+  and a descending sample lists twenty standing offenders the diff never
+  touched.
+
+The fix for a hit is never to add an exemption — there is no allowlist. Bind
+the read to the construct (`declarationOf` / `functionBodyOf` /
+`interfaceBodyOf` / `braceBlockAfter` / `callExpressionOf` / `codeOf` from
+`tests/helpers/source-blocks.ts`) or narrow the needle until only the named
+thing satisfies it. See
+`docs/implementation-notes/2026-09-02-assertion-reach-ratchets.md`.
 
 ### Epic-ratchet lifecycle
 

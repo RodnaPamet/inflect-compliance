@@ -216,7 +216,7 @@ export function createSnapshotWriter(
 
         async disable(externalUserId: string): Promise<void> {
             // Loud, not silent. A snapshot writer that no-opped here would make
-            // a mode bug — a PROPOSE or AUTOMATIC pass handed the observation
+            // a mode bug — an AUTOMATIC pass handed the observation
             // writer — look exactly like a successful dry run.
             throw new DirectoryWriteError(
                 `Refusing to disable ${externalUserId}: this is the observation reader, which has no ` +
@@ -281,7 +281,14 @@ function selfAccountIdsFromConnection(conn: {
 export interface ResolveWriterInput {
     readonly ctx: RequestContext;
     readonly provider: string;
-    /** The rung this pass is running at. Only AUTOMATIC/PROPOSE get a live writer. */
+    /**
+     * The rung this pass is running at. ONLY `AUTOMATIC` gets a live writer —
+     * see the allowlist below, which is deliberately written that way round.
+     *
+     * `string` rather than `IdentityWriteMode` because this is the boundary a
+     * stored value crosses; the arm below is what makes an unrecognised one
+     * harmless instead of live.
+     */
     readonly mode: string;
 }
 
@@ -361,7 +368,19 @@ export async function resolveDirectoryWriter(
     // degrades to what configJson alone can say, so an undecryptable secret still
     // yields a dry run with one bind protected instead of none. That half of the
     // phase 1 argument survives intact.
-    if (mode === 'DRY_RUN') {
+    //
+    // WRITTEN AS AN ALLOWLIST (`!== 'AUTOMATIC'`), NOT `=== 'DRY_RUN'`.
+    //
+    // This is the line that decides whether a socket is opened against a
+    // customer's directory, and it used to be reached by exhaustion: every mode
+    // that was not the literal DRY_RUN got a live writer. That was safe only
+    // while every other mode happened to be one that should. When PROPOSE was
+    // retired from the ladder (#2241) a stored PROPOSE became an UNRECOGNISED
+    // mode, and an unrecognised mode taking the live arm is precisely the
+    // failure this subsystem cannot have. `getIdentityWritePolicy` coerces such
+    // a value long before it reaches here; this is the second lock, on the door
+    // that actually opens the connection.
+    if (mode !== 'AUTOMATIC') {
         const selfIds = selfAccountIdsFromConnection(conns[0]);
         return {
             kind: 'snapshot',

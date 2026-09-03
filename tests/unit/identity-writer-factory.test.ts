@@ -309,6 +309,39 @@ describe('refusals, cheapest first', () => {
     });
 });
 
+/**
+ * The line that decides whether a socket is opened against a customer's
+ * directory, asked the way an adversary would ask it.
+ *
+ * It used to read `mode === 'DRY_RUN'`, i.e. the live writer was reached by
+ * EXHAUSTION: anything that was not that exact string got one. That was safe
+ * only while every other string was a rung that should. #2241 retired PROPOSE
+ * from the ladder, which turned a value still sitting in the database into an
+ * unrecognised mode — and an unrecognised mode taking the live arm is the one
+ * outcome this subsystem cannot have.
+ */
+describe('only AUTOMATIC gets a live writer', () => {
+    it('hands a retired rung the snapshot reader, not a directory connection', async () => {
+        const r = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'PROPOSE' });
+        expect(r.kind).toBe('snapshot');
+        expect(createEntra).not.toHaveBeenCalled();
+    });
+
+    it('hands an unknown mode the snapshot reader too', async () => {
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'SUPERUSER' });
+        expect(r.kind).toBe('snapshot');
+        expect(createAd).not.toHaveBeenCalled();
+    });
+
+    it('still builds the live writer for the one mode that authorises it', async () => {
+        // The half that keeps the two above honest: a factory that returned the
+        // snapshot for everything would satisfy them and break the feature.
+        const r = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
+        expect(r.kind).toBe('live');
+        expect(createEntra).toHaveBeenCalled();
+    });
+});
+
 describe('disposal is in the type, not in a convention', () => {
     it('gives every resolution a close(), so the caller’s finally is unconditional', async () => {
         const dry = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'DRY_RUN' });

@@ -77,9 +77,10 @@ model ConnectedIdentityAccount {
   /// AN OPERATOR FLAG ON THE ACCOUNT, chosen over a list in the connection's
   /// config. Two alternatives were considered and rejected: deriving protection
   /// from `isAdmin` fails OPEN across an entire directory on one swallowed Graph
-  /// 403, and a PROPOSE-style approval queue duplicates a rung the ladder
-  /// already has — this rail has to work at AUTOMATIC, which is the mode where
-  /// nothing is in front of the write.
+  /// 403, and a per-account approval queue is a different product — this rail
+  /// has to work at AUTOMATIC, which is the mode where nothing is in front of
+  /// the write. (The ladder did carry an approval rung, PROPOSE, when this was
+  /// written; it was never built behind the setting and was removed in #2241.)
   ///
   /// ** OMITTED FROM THE SYNC UPSERT'S `update` BLOCK, DELIBERATELY. ** The
   /// nightly sync would otherwise clear it, and the failure is invisible until

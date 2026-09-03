@@ -318,7 +318,7 @@ describe('an empty page says WHY it is empty', () => {
     });
 
     it('names a setting above the clamp, with both values', async () => {
-        arrange([], policy('PROPOSE', 'DRY_RUN'));
+        arrange([], policy('AUTOMATIC', 'DRY_RUN'));
         await renderReport();
 
         expect(await screen.findByText(M.emptyClampMismatch)).toBeInTheDocument();
@@ -344,11 +344,11 @@ describe('an empty page says WHY it is empty', () => {
         expect(screen.queryByText(M.emptyOverdue)).toBeNull();
     });
 
-    it('survives a clamp raise — PROPOSE at a PROPOSE clamp still reports', async () => {
+    it('survives a clamp raise — a tenant sitting AT the clamp still reports', async () => {
         // The only one of these that survives LEAVER_MAX_MODE being raised.
         // Comparing against a hardcoded 'DRY_RUN' would drop this tenant into
         // the nameless fallback the whole item exists to remove.
-        arrange([], policy('PROPOSE', 'PROPOSE', LONG_AGO));
+        arrange([], policy('AUTOMATIC', 'AUTOMATIC', LONG_AGO));
         await renderReport();
 
         expect(await screen.findByText(M.emptyOverdue)).toBeInTheDocument();
@@ -392,7 +392,10 @@ describe('an empty page says WHY it is empty', () => {
 
     it('still names a setting genuinely ABOVE a raised clamp', async () => {
         // The ordinal comparison must not have gone soft: above is still above.
-        arrange([], policy('AUTOMATIC', 'PROPOSE', LONG_AGO));
+        // Same rungs as 'names a setting above the clamp' — the difference here
+        // is the overdue clock, so this is also the precedence assertion: a
+        // mismatch outranks the DUE-and-silent arm.
+        arrange([], policy('AUTOMATIC', 'DRY_RUN', LONG_AGO));
         await renderReport();
 
         expect(await screen.findByText(M.emptyClampMismatch)).toBeInTheDocument();
@@ -464,7 +467,7 @@ describe('the page does not make a safety claim the ladder no longer backs', () 
 
     it('states the mode as a fact about this tenant, not as a claim in the intro', async () => {
         arrange([], {
-            directions: { leaver: { mode: 'PROPOSE', dryRunSince: null } },
+            directions: { leaver: { mode: 'AUTOMATIC', dryRunSince: null } },
             honoured: { leaver: { maxMode: 'AUTOMATIC' } },
         });
         await renderReport();
@@ -475,7 +478,7 @@ describe('the page does not make a safety claim the ladder no longer backs', () 
         expect(intro.textContent).not.toMatch(/DRY_RUN/);
         // Paired positive: the real mode IS on the page, two paragraphs down.
         expect(document.getElementById('leaver-pass-mode')!.textContent).toContain(
-            EN_MODE.PROPOSE,
+            EN_MODE.AUTOMATIC,
         );
     });
 });

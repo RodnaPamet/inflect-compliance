@@ -39,7 +39,11 @@
  */
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { LADDER as SHARED_LADDER, isAboveClamp } from '@/lib/identity/write-ladder';
+import {
+    LADDER as SHARED_LADDER,
+    isAboveClamp,
+    type IdentityWriteMode,
+} from '@/lib/identity/write-ladder';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -53,7 +57,12 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { formatDate } from '@/lib/format-date';
 
-type Mode = 'DISABLED' | 'DRY_RUN' | 'PROPOSE' | 'AUTOMATIC';
+// Imported, not respelled. This was a hand-written union of the same strings,
+// which is how a client keeps offering a rung the ladder has retired: when
+// PROPOSE was removed (#2241) a local copy would have gone on type-checking a
+// `MODE_VARIANT` entry and a `writeLadder.mode.PROPOSE` lookup for a value the
+// server can no longer send. Deriving it makes a retired rung a build error here.
+type Mode = IdentityWriteMode;
 type Direction = 'leaver' | 'joiner';
 
 // Imported, not redeclared. This was a verbatim copy of the usecase's private
@@ -66,7 +75,6 @@ const LADDER = SHARED_LADDER;
 const MODE_VARIANT: Record<Mode, StatusBadgeVariant> = {
     DISABLED: 'neutral',
     DRY_RUN: 'info',
-    PROPOSE: 'warning',
     AUTOMATIC: 'error',
 };
 

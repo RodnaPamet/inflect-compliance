@@ -448,6 +448,31 @@ export type MembershipCapture =
     | { readonly memberOf: 'complete' | 'truncated'; readonly memberOfGroupIds: string[] };
 
 /** Config the writer needs. Shaped like `{...configJson, ...decryptedSecrets}`. */
+/**
+ * WHY THIS WRITER NEVER SETS `selfAccountIds`, and why that is not an oversight.
+ *
+ * `identity-disable-account.ts:394` refuses a candidate that `matchesSelf` —
+ * the rail that stops a leaver pass disabling the account it is authenticating
+ * as. `matchesSelf` returns false on `undefined`, so a writer that leaves
+ * `selfAccountIds` unset is silently exempt from that rail, which reads exactly
+ * like a bug. The Active Directory writer DOES set it
+ * (`active-directory/writer.ts:811`, from the bind DN).
+ *
+ * It is structurally inapplicable here. This writer authenticates with
+ * `grant_type: 'client_credentials'` against `https://graph.microsoft.com/.default`
+ * (see `token()` below) and its whole config is
+ * `{ tenantId, clientId, clientSecret, writesEnabled }` — app-only. The
+ * authenticating identity is therefore a service principal, which cannot appear
+ * in a user-disable candidate set: candidates come from
+ * `ConnectedIdentityAccount` rows, which are directory USERS. Setting
+ * `selfAccountIds = [clientId]` would be cosmetic — it would never match.
+ *
+ * THIS BECOMES REAL if a delegated grant is ever added. The moment an
+ * `authorization_code` or `refresh_token` flow lands on an entra-id connection,
+ * the authenticating identity IS a user account, it CAN be a candidate, and this
+ * writer must populate `selfAccountIds` or the self-lockout rail is genuinely
+ * open. There is no such grant in `src/` today — checked.
+ */
 export interface EntraWriterConfig {
     readonly tenantId?: unknown;
     readonly clientId?: unknown;

@@ -9,7 +9,15 @@
  * a wrongful disable locks an employee out of their job until someone notices;
  * a wrongful create spends money on a licence and leaves an unowned account
  * behind. So the directions are configured separately, and each moves through
- * DISABLED → DRY_RUN → PROPOSE → AUTOMATIC rather than flipping on.
+ * DISABLED → DRY_RUN → AUTOMATIC rather than flipping on.
+ *
+ * There was a fourth rung, PROPOSE, between DRY_RUN and AUTOMATIC. It refused
+ * every candidate (its approval queue was never built) AND it was the only
+ * transition the seven-day dwell did not gate, so it was the step around the
+ * only real delay on the ladder rather than a step on it. Removing it is what
+ * makes DRY_RUN → AUTOMATIC a single, dwell-gated move — see
+ * `@/lib/identity/write-ladder` for the full argument, and `coerceStoredMode`
+ * for what a row still holding the old value now reads as.
  *
  * The ladder is not ceremony. The status normalisation that triggers all of this
  * has never been run against a real Workday tenant (see the operator decision
@@ -28,6 +36,7 @@ import { logger } from '@/lib/observability/logger';
 import {
     LADDER,
     DIRECTION_IMPLEMENTED,
+    coerceStoredMode,
     type IdentityWriteMode,
     type IdentityDirection,
 } from '@/lib/identity/write-ladder';
@@ -62,6 +71,21 @@ const FIELDS = {
  * Read both directions. A tenant with no settings row has never configured
  * anything, which is DISABLED — the absence is a real answer, not a missing one,
  * so callers never have to distinguish undefined from off.
+ *
+ * ═══ THE ONLY PLACE A STORED MODE BECOMES A RUNG ═══
+ *
+ * Every consumer of the ladder — the leaver pass's clamp check, the writer
+ * factory's dry-run arm, the disable usecase's mode gate, the admin GET, the
+ * dwell arithmetic — reads its mode from here. So `coerceStoredMode` is applied
+ * HERE and nowhere downstream: the retired PROPOSE value is translated before
+ * anything compares, ranks or acts on it.
+ *
+ * That placement is load-bearing rather than tidy. `isAboveClamp` sorts a mode
+ * it does not recognise to -1, which reads as BELOW the clamp and therefore
+ * permitted to run; a stored PROPOSE reaching one single comparison unconverted
+ * would be a tenant handed a live directory writer. The failure direction is
+ * permissive, so the conversion has to happen before the first comparison, not
+ * at each one.
  */
 export async function getIdentityWritePolicy(
     ctx: RequestContext,
@@ -78,11 +102,11 @@ export async function getIdentityWritePolicy(
         });
         return {
             leaver: {
-                mode: (row?.identityLeaverMode ?? 'DISABLED') as IdentityWriteMode,
+                mode: coerceStoredMode(row?.identityLeaverMode),
                 dryRunSince: row?.identityLeaverDryRunSince ?? null,
             },
             joiner: {
-                mode: (row?.identityJoinerMode ?? 'DISABLED') as IdentityWriteMode,
+                mode: coerceStoredMode(row?.identityJoinerMode),
                 dryRunSince: row?.identityJoinerDryRunSince ?? null,
             },
         };
@@ -138,7 +162,24 @@ export function describeRefusal(
         return `Cannot go from ${current.mode} to ${next} in one step. Widen one level at a time (${LADDER.slice(from, to + 1).join(' → ')}), so each level is observed before the next is granted.`;
     }
 
-    // Leaving DRY_RUN requires having actually spent time in it.
+    // ═══ THE DWELL. SINCE #2241 IT GATES THE ONLY WIDEN THAT GRANTS AUTHORITY. ═══
+    //
+    // Leaving DRY_RUN requires having actually spent time in it. That sentence
+    // has not changed; what changed is what it now covers.
+    //
+    // While PROPOSE existed the ladder read DISABLED → DRY_RUN → PROPOSE →
+    // AUTOMATIC, this check fired only on `DRY_RUN → PROPOSE`, and NOTHING gated
+    // `PROPOSE → AUTOMATIC`. Since the one-rung rule made PROPOSE compulsory on
+    // the way up, the mandatory rung was also the ungated one: seven days bought
+    // a move to a rung that refused every candidate, and the move that actually
+    // granted unattended directory writes was free. Deleting PROPOSE puts the
+    // dwell in front of that move. No gate was added; the detour was removed.
+    //
+    // A tenant coerced down from a stored PROPOSE arrives here with a null
+    // `dryRunSince` — the write path nulls it on every move out of DRY_RUN — and
+    // is refused by the branch below until it re-selects DRY_RUN and spends the
+    // days. That is the intended answer for a rung nobody should have been able
+    // to reach without them.
     if (current.mode === 'DRY_RUN') {
         if (!current.dryRunSince) {
             return 'Dry-run has no recorded start. Re-select DRY_RUN to start the observation window.';

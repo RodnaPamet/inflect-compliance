@@ -13,9 +13,11 @@
  *   - Deriving protection from `isAdmin` fails OPEN across an entire directory
  *     on one swallowed Graph 403. A rail that silently stops protecting is worse
  *     than no rail, because nobody is watching for its absence.
- *   - A PROPOSE-style approval queue duplicates a rung the ladder already has,
- *     and this rail has to work at AUTOMATIC — the mode where, by definition,
- *     nothing else stands in front of the write.
+ *   - A per-account approval queue puts a human in front of every disable, which
+ *     is a different product, and this rail has to work at AUTOMATIC — the mode
+ *     where, by definition, nothing else stands in front of the write. (The
+ *     ladder did carry an approval rung, PROPOSE, when this was written; it was
+ *     never built behind the setting and was removed in #2241.)
  *
  * WHAT IT DOES NOT DO. It does not decide WHICH accounts belong on the list.
  * Nothing in the schema identifies a break-glass credential, and any rule
