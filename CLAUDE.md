@@ -1215,9 +1215,12 @@ police one sentence: *an assertion whose reach is not the thing it names.*
   BETWEEN two pieces of pattern. Such a span re-forms across a **sibling**
   block, so deleting the thing under test leaves the assertion satisfied by a
   neighbour — proved twice, both times leaving the suite fully green.
-  Baselines: **177** unbounded interior spans, **368** interior spans of any
-  boundedness (the second cap exists so rewriting `*?` as `{0,200}` cannot buy
-  the first number down), **59** un-analysable `toMatch` arguments.
+  Three baselines, and the ratchet file is the authority for their values —
+  `UNBOUNDED_INTERIOR_SPAN_BASELINE` (unbounded interior spans),
+  `INTERIOR_SPAN_BASELINE` (interior spans of any boundedness; this second cap
+  exists so rewriting `*?` as `{0,200}` cannot buy the first number down), and
+  `UNANALYSABLE_TOMATCH_BASELINE`. They are in the low hundreds and they only
+  ever go down.
 
   All seven spellings of "any character" count — `[\s\S]` / `[\S\s]` /
   `[\d\D]` / `[\D\d]` / `[\w\W]` / `[\W\w]` / `[^]`, plus `(?:.|\n)` and a
@@ -1234,8 +1237,11 @@ police one sentence: *an assertion whose reach is not the thing it names.*
   many places in that file satisfy the needle. More than one and the named
   thing can be deleted while a survivor keeps the guard green — proved three
   times, one of them a `.toContain`, which is why both matchers are in scope.
-  Baselines: **1554** ambiguous needles, **271** of them with five or more
-  satisfying positions, **1565** un-analysable reads.
+  Three baselines, again authoritative in the ratchet file:
+  `AMBIGUOUS_NEEDLE_BASELINE`, `HIGHLY_AMBIGUOUS_NEEDLE_BASELINE` (needles with
+  five or more satisfying positions) and `UNANALYSABLE_READ_BASELINE`. Class D's
+  are an order of magnitude larger than Class C's — over a thousand each for the
+  two big ones.
 
   A whole-file read wearing a transform the analyser cannot follow
   (`codeOnly(readFileSync(…))`, `src.toLowerCase()`, `` `${schema}` ``) is
@@ -1257,6 +1263,13 @@ Three things about these that are easy to get wrong:
   numbers never move incidentally, so any allowance would be pure headroom
   for the next regression. Removing one of these means lowering the baseline
   by one in the same diff.
+- **Read the constant, never a number quoted about it.** This section used to
+  carry all six figures inline and every one of them had rotted — by 29, 29, 2,
+  87, 19 and 118 — because each drain lowers a baseline and nothing makes prose
+  follow. With `DRIFT_ALLOWANCE` at 0 that rot is not cosmetic: an author who
+  trusts a stale, higher figure believes in headroom the ratchet will not grant.
+  Same defect as the `counts` header this repo deleted from
+  `doc-classification.json` — derived data stored beside its own source.
 - **Class D can fire on a diff that touches no test.**
   `.toContain('model VendorEvidenceBundle')` was unambiguous until somebody
   added `VendorEvidenceBundleItem` to the same schema file. Being told is the
