@@ -1129,7 +1129,10 @@ executorRegistry.register('identity-sync-dispatch', async () => {
     });
 });
 
-// identity-leaver-pass: one DRY_RUN leaver pass for one (tenant, provider).
+// identity-leaver-pass: one leaver pass for one (tenant, provider). The mode is
+// the tenant's own identityLeaverMode, NOT a constant — at AUTOMATIC this writes
+// to a real directory. It said "one DRY_RUN leaver pass" until #2187 raised the
+// clamp and nothing came back here to correct it.
 executorRegistry.register('identity-leaver-pass', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();
