@@ -1204,6 +1204,75 @@ Three codebase-hygiene invariants are held by structural guardrails
 `tests/guards/codebase-hygiene-integrity.test.ts` is the meta-ratchet
 over these four guardrails.
 
+### Assertion-reach ratchets (#2246)
+
+Two downward ratchets over the TEST suite itself, both standing on
+`tests/helpers/assertion-reach.ts` — an AST walk (`ts.createSourceFile`,
+syntax only) over every `.ts`/`.tsx` file **git** lists under `tests/`. They
+police one sentence: *an assertion whose reach is not the thing it names.*
+
+- **`tests/guardrails/assertion-span-reach-ratchet.test.ts` — Class C.**
+  Counts `expect(x).toMatch(/…/)` regexes carrying an any-char span
+  BETWEEN two pieces of pattern. Such a span re-forms across a **sibling**
+  block, so deleting the thing under test leaves the assertion satisfied by a
+  neighbour — proved twice, both times leaving the suite fully green.
+  Baselines: **177** unbounded interior spans, **368** interior spans of any
+  boundedness (the second cap exists so rewriting `*?` as `{0,200}` cannot buy
+  the first number down), **59** un-analysable `toMatch` arguments.
+
+  All seven spellings of "any character" count — `[\s\S]` / `[\S\s]` /
+  `[\d\D]` / `[\D\d]` / `[\w\W]` / `[\W\w]` / `[^]`, plus `(?:.|\n)` and a
+  quantified `.` under the `s` flag. Two shapes are deliberately NOT counted
+  and are reported in their own buckets: a subject that is already a bounded
+  extraction (`declarationOf(src, 'fetchVendor')` — the span cannot leave the
+  extracted construct, and that site has the recommended fix applied), and a
+  `not.toMatch`, where a wider span forbids MORE and so makes the assertion
+  stronger. `toMatch('a literal')` is out of scope rather than un-analysable —
+  it cannot carry a span, so writing one must not move the skip ceiling.
+
+- **`tests/guardrails/assertion-needle-uniqueness-ratchet.test.ts` — Class D.**
+  For every `toMatch`/`toContain` against a **whole-file read**, counts how
+  many places in that file satisfy the needle. More than one and the named
+  thing can be deleted while a survivor keeps the guard green — proved three
+  times, one of them a `.toContain`, which is why both matchers are in scope.
+  Baselines: **1554** ambiguous needles, **271** of them with five or more
+  satisfying positions, **1565** un-analysable reads.
+
+  A whole-file read wearing a transform the analyser cannot follow
+  (`codeOnly(readFileSync(…))`, `src.toLowerCase()`, `` `${schema}` ``) is
+  `content-transformed` — a CAPPED skip. It used to be `not-a-file-read`,
+  which is uncapped, so four such assertions could be added and every ceiling
+  held. A NARROWED read (`declarationOf(src, name)`, `src.slice(…)`) stays out
+  of scope, because narrowing is the fix and a guard that reddens when you
+  take its advice is one people route around.
+
+Three things about these that are easy to get wrong:
+
+- **The denominator is part of the result.** Each ratchet caps its own
+  SKIPPED count and floors its analysed share, because a detector that
+  silently drops what it cannot parse reports full coverage of the subset it
+  understands — the same defect one level up. Concretely: hiding a span
+  behind `new RegExp(someVariable)` does not evade Class C, it turns the
+  skip ceiling red instead.
+- **`DRIFT_ALLOWANCE` is 0 in both**, unlike the older count ratchets. These
+  numbers never move incidentally, so any allowance would be pure headroom
+  for the next regression. Removing one of these means lowering the baseline
+  by one in the same diff.
+- **Class D can fire on a diff that touches no test.**
+  `.toContain('model VendorEvidenceBundle')` was unambiguous until somebody
+  added `VendorEvidenceBundleItem` to the same schema file. Being told is the
+  point — which is why its failure message samples the population
+  **ascending**: a site that has just crossed the threshold sits at exactly 2,
+  and a descending sample lists twenty standing offenders the diff never
+  touched.
+
+The fix for a hit is never to add an exemption — there is no allowlist. Bind
+the read to the construct (`declarationOf` / `functionBodyOf` /
+`interfaceBodyOf` / `braceBlockAfter` / `callExpressionOf` / `codeOf` from
+`tests/helpers/source-blocks.ts`) or narrow the needle until only the named
+thing satisfies it. See
+`docs/implementation-notes/2026-09-02-assertion-reach-ratchets.md`.
+
 ### Epic-ratchet lifecycle
 
 Guard naming — **epic ratchets are retired when their epic ships**
