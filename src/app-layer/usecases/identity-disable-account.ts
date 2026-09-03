@@ -135,10 +135,32 @@ export type DecisionBasis = {
     readonly observedAt?: string;
 };
 
+/**
+ * WHICH of the two protected rails refused, for `REFUSED_PROTECTED` only.
+ *
+ * The outcome code is shared by two rails that mean opposite things to whoever
+ * reads the result, and nothing downstream could tell them apart:
+ *
+ *   SELF_ACCOUNT   the account this connection authenticates AS. The product
+ *                  cannot disable it — doing so locks itself out of the
+ *                  directory — so a human genuinely has to.
+ *   OPERATOR_FLAG  an operator marked it break-glass. Not doing it IS the
+ *                  requested behaviour; telling somebody to go and do it by
+ *                  hand asks them to reverse the decision the flag records.
+ *
+ * Same shape and same reason as `hasJournalRef` in `planLeaverNotifications`:
+ * an outcome with two meanings needs a second field, not a second outcome —
+ * the pass report, the counters and the UI all key on the outcome and should
+ * keep reading one value.
+ */
+export type ProtectionBasis = 'SELF_ACCOUNT' | 'OPERATOR_FLAG';
+
 export interface DisableResult {
     readonly outcome: DisableOutcome;
     readonly reason?: string;
     readonly journalId?: string;
+    /** Present only on `REFUSED_PROTECTED`. See `ProtectionBasis`. */
+    readonly protection?: ProtectionBasis;
     /**
      * Present on every outcome the write-target rail participated in, absent on
      * the refusals decided before it (self-lockout, protected, mode).
@@ -403,6 +425,7 @@ async function decideAndDisable(
         });
         return {
             outcome: 'REFUSED_PROTECTED',
+            protection: 'SELF_ACCOUNT',
             reason:
                 'Refusing to disable the account this integration authenticates as. Doing so would lock the ' +
                 'product out of this directory by its own hand — the next sync could not authenticate, so ' +
@@ -420,6 +443,7 @@ async function decideAndDisable(
         });
         return {
             outcome: 'REFUSED_PROTECTED',
+            protection: 'OPERATOR_FLAG',
             reason:
                 'Refusing to disable an account marked protected. Break-glass and service accounts are ' +
                 'excluded from automated offboarding by policy, not by accident.',
@@ -853,6 +877,7 @@ export async function disableAccountsForLeaver(
                 linkId: candidate.linkId,
                 provider: writer.provider,
                 outcome: result.outcome,
+                protection: result.protection,
                 reason: result.reason,
                 journalId: result.journalId,
                 // Not for rendering — the notification layer uses it to strip
