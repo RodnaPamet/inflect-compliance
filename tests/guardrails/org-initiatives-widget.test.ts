@@ -99,8 +99,12 @@ describe('ORG_INITIATIVES — renderer + surface + preset', () => {
     });
 
     it('the list + detail use the org-table pattern; unlink uses the Epic 67 undo-toast', () => {
-        expect(list).toMatch(/from '@\/components\/ui\/table'/);
-        expect(detail).toMatch(/from '@\/components\/ui\/table'/);
+        // Name the VALUE import specifically. Both files also carry
+        // `import type { ColumnDef } from '@/components/ui/table'`, so a bare
+        // `from '@/components/ui/table'` needle is satisfied by the type
+        // import alone — it would stay green with <DataTable> ripped out.
+        expect(list).toMatch(/import \{[^}]*\bDataTable\b[^}]*\} from '@\/components\/ui\/table'/);
+        expect(detail).toMatch(/import \{[^}]*\bDataTable\b[^}]*\} from '@\/components\/ui\/table'/);
         expect(detail).toMatch(/useToastWithUndo/);
     });
 
