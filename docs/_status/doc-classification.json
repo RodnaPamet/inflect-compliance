@@ -1,387 +1,387 @@
 {
-    "$schema": "internal: docs classification source of truth",
-    "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record; deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. NOTE: docs/implementation-notes/** is classified BY PATH (always historical) and must NOT appear in this map — adding an entry for one fails the ratchet. Only docs whose class is a real decision are listed here. See CLAUDE.md \"Doc classifications\". NOTE: this file deliberately carries no per-class `counts` header — it was derived data stored beside its own source, and two branches each incrementing it merged CLEANLY to a wrong number three times (#1798/#1803, then again in the 2026-08-16 batch). Count the entries.",
-    "docs": {
-        "docs/admin-rbac-scim.md": {
-            "class": "authoritative"
-        },
-        "docs/audits-surface-do-not-touch.md": {
-            "class": "authoritative"
-        },
-        "docs/adr/0001-ui-primitive-stack.md": {
-            "class": "historical"
-        },
-        "docs/api-consumer-guide.md": {
-            "class": "authoritative"
-        },
-        "docs/app-layer.md": {
-            "class": "authoritative"
-        },
-        "docs/attributions.md": {
-            "class": "authoritative"
-        },
-        "docs/auth.md": {
-            "class": "authoritative"
-        },
-        "docs/automation-events.md": {
-            "class": "authoritative"
-        },
-        "docs/billing.md": {
-            "class": "authoritative"
-        },
-        "docs/cdn.md": {
-            "class": "authoritative"
-        },
-        "docs/change-management-policy.md": {
-            "class": "authoritative"
-        },
-        "docs/charts-elegance.md": {
-            "class": "authoritative"
-        },
-        "docs/charts-fluid.md": {
-            "class": "authoritative"
-        },
-        "docs/charts.md": {
-            "class": "authoritative"
-        },
-        "docs/ci-cd-pipeline-integrity.md": {
-            "class": "authoritative"
-        },
-        "docs/ci-cd.md": {
-            "class": "authoritative"
-        },
-        "docs/ci-local.md": {
-            "class": "authoritative"
-        },
-        "docs/cloud-storage.md": {
-            "class": "authoritative"
-        },
-        "docs/codebase-hygiene.md": {
-            "class": "authoritative"
-        },
-        "docs/combobox-form-strategy.md": {
-            "class": "authoritative"
-        },
-        "docs/coverage-policy.md": {
-            "class": "authoritative"
-        },
-        "docs/dast.md": {
-            "class": "authoritative"
-        },
-        "docs/data-processing-agreement-template.md": {
-            "class": "authoritative"
-        },
-        "docs/data-residency.md": {
-            "class": "authoritative"
-        },
-        "docs/data-retention.md": {
-            "class": "authoritative"
-        },
-        "docs/vendor-monitoring.md": {
-            "class": "authoritative"
-        },
-        "docs/database-routing.md": {
-            "class": "authoritative"
-        },
-        "docs/date-picker.md": {
-            "class": "authoritative"
-        },
-        "docs/dependency-governance.md": {
-            "class": "authoritative"
-        },
-        "docs/dependency-policy.md": {
-            "class": "authoritative"
-        },
-        "docs/dependency-risk-review.md": {
-            "class": "authoritative"
-        },
-        "docs/deployment.md": {
-            "class": "authoritative"
-        },
-        "docs/design-system.md": {
-            "class": "authoritative"
-        },
-        "docs/destructive-actions.md": {
-            "class": "authoritative"
-        },
-        "docs/disaster-recovery.md": {
-            "class": "authoritative"
-        },
-        "docs/domain-import-export.md": {
-            "class": "authoritative"
-        },
-        "docs/dsar.md": {
-            "class": "authoritative"
-        },
-        "docs/e2e-spec-migration-tracker.md": {
-            "class": "living"
-        },
-        "docs/editable-lifecycle.md": {
-            "class": "authoritative"
-        },
-        "docs/encryption-data-protection.md": {
-            "class": "authoritative"
-        },
-        "docs/enterprise-identity-custom-roles-api-keys.md": {
-            "class": "authoritative"
-        },
-        "docs/enterprise-sso.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-1-access-control.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-52-list-page-shell.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-60-shared-hooks-and-polish.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-a-security.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-b-encryption.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-c-security.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-d-completeness.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-e-observability.md": {
-            "class": "authoritative"
-        },
-        "docs/epic-f-finishing-touches.md": {
-            "class": "authoritative"
-        },
-        "docs/filters.md": {
-            "class": "authoritative"
-        },
-        "docs/framework-library-system.md": {
-            "class": "authoritative"
-        },
-        "docs/i18n.md": {
-            "class": "authoritative"
-        },
-        "docs/frontend-assurance-model.md": {
-            "class": "authoritative"
-        },
-        "docs/immutable-audit-trail.md": {
-            "class": "authoritative"
-        },
-        "docs/incident-response.md": {
-            "class": "authoritative"
-        },
-        "docs/infrastructure-runtime.md": {
-            "class": "authoritative"
-        },
-        "docs/infrastructure.md": {
-            "class": "authoritative"
-        },
-        "docs/integration-framework.md": {
-            "class": "authoritative"
-        },
-        "docs/integration-registry-sync-architecture.md": {
-            "class": "authoritative"
-        },
-        "docs/jml-joiner-design.md": {
+  "$schema": "internal: docs classification source of truth",
+  "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record; deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. NOTE: docs/implementation-notes/** is classified BY PATH (always historical) and must NOT appear in this map \u2014 adding an entry for one fails the ratchet. Only docs whose class is a real decision are listed here. See CLAUDE.md \"Doc classifications\". NOTE: this file deliberately carries no per-class `counts` header \u2014 it was derived data stored beside its own source, and two branches each incrementing it merged CLEANLY to a wrong number three times (#1798/#1803, then again in the 2026-08-16 batch). Count the entries.",
+  "docs": {
+    "docs/admin-rbac-scim.md": {
+      "class": "authoritative"
+    },
+    "docs/audits-surface-do-not-touch.md": {
+      "class": "authoritative"
+    },
+    "docs/adr/0001-ui-primitive-stack.md": {
+      "class": "historical"
+    },
+    "docs/api-consumer-guide.md": {
+      "class": "authoritative"
+    },
+    "docs/app-layer.md": {
+      "class": "authoritative"
+    },
+    "docs/attributions.md": {
+      "class": "authoritative"
+    },
+    "docs/auth.md": {
+      "class": "authoritative"
+    },
+    "docs/automation-events.md": {
+      "class": "authoritative"
+    },
+    "docs/billing.md": {
+      "class": "authoritative"
+    },
+    "docs/cdn.md": {
+      "class": "deprecated"
+    },
+    "docs/change-management-policy.md": {
+      "class": "authoritative"
+    },
+    "docs/charts-elegance.md": {
+      "class": "authoritative"
+    },
+    "docs/charts-fluid.md": {
+      "class": "authoritative"
+    },
+    "docs/charts.md": {
+      "class": "authoritative"
+    },
+    "docs/ci-cd-pipeline-integrity.md": {
+      "class": "authoritative"
+    },
+    "docs/ci-cd.md": {
+      "class": "authoritative"
+    },
+    "docs/ci-local.md": {
+      "class": "authoritative"
+    },
+    "docs/cloud-storage.md": {
+      "class": "authoritative"
+    },
+    "docs/codebase-hygiene.md": {
+      "class": "authoritative"
+    },
+    "docs/combobox-form-strategy.md": {
+      "class": "authoritative"
+    },
+    "docs/coverage-policy.md": {
+      "class": "authoritative"
+    },
+    "docs/dast.md": {
+      "class": "authoritative"
+    },
+    "docs/data-processing-agreement-template.md": {
+      "class": "authoritative"
+    },
+    "docs/data-residency.md": {
+      "class": "authoritative"
+    },
+    "docs/data-retention.md": {
+      "class": "authoritative"
+    },
+    "docs/vendor-monitoring.md": {
+      "class": "authoritative"
+    },
+    "docs/database-routing.md": {
+      "class": "authoritative"
+    },
+    "docs/date-picker.md": {
+      "class": "authoritative"
+    },
+    "docs/dependency-governance.md": {
+      "class": "authoritative"
+    },
+    "docs/dependency-policy.md": {
+      "class": "authoritative"
+    },
+    "docs/dependency-risk-review.md": {
+      "class": "authoritative"
+    },
+    "docs/deployment.md": {
+      "class": "authoritative"
+    },
+    "docs/design-system.md": {
+      "class": "authoritative"
+    },
+    "docs/destructive-actions.md": {
+      "class": "authoritative"
+    },
+    "docs/disaster-recovery.md": {
+      "class": "authoritative"
+    },
+    "docs/domain-import-export.md": {
+      "class": "authoritative"
+    },
+    "docs/dsar.md": {
+      "class": "authoritative"
+    },
+    "docs/e2e-spec-migration-tracker.md": {
+      "class": "living"
+    },
+    "docs/editable-lifecycle.md": {
+      "class": "authoritative"
+    },
+    "docs/encryption-data-protection.md": {
+      "class": "authoritative"
+    },
+    "docs/enterprise-identity-custom-roles-api-keys.md": {
+      "class": "authoritative"
+    },
+    "docs/enterprise-sso.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-1-access-control.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-52-list-page-shell.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-60-shared-hooks-and-polish.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-a-security.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-b-encryption.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-c-security.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-d-completeness.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-e-observability.md": {
+      "class": "authoritative"
+    },
+    "docs/epic-f-finishing-touches.md": {
+      "class": "authoritative"
+    },
+    "docs/filters.md": {
+      "class": "authoritative"
+    },
+    "docs/framework-library-system.md": {
+      "class": "authoritative"
+    },
+    "docs/i18n.md": {
+      "class": "authoritative"
+    },
+    "docs/frontend-assurance-model.md": {
+      "class": "authoritative"
+    },
+    "docs/immutable-audit-trail.md": {
+      "class": "authoritative"
+    },
+    "docs/incident-response.md": {
+      "class": "authoritative"
+    },
+    "docs/infrastructure-runtime.md": {
+      "class": "authoritative"
+    },
+    "docs/infrastructure.md": {
+      "class": "deprecated"
+    },
+    "docs/integration-framework.md": {
+      "class": "authoritative"
+    },
+    "docs/integration-registry-sync-architecture.md": {
+      "class": "authoritative"
+    },
+    "docs/jml-joiner-design.md": {
       "class": "living"
     },
     "docs/keyboard-shortcuts.md": {
-            "class": "authoritative"
-        },
-        "docs/kpi-filterables.md": {
-            "class": "authoritative"
-        },
-        "docs/lickable-sidebar.md": {
-            "class": "authoritative"
-        },
-        "docs/list-virtualization.md": {
-            "class": "authoritative"
-        },
-        "docs/living-sidebar.md": {
-            "class": "authoritative"
-        },
-        "docs/living-topbar.md": {
-            "class": "authoritative"
-        },
-        "docs/loading-states.md": {
-            "class": "authoritative"
-        },
-        "docs/mfa-session-security.md": {
-            "class": "authoritative"
-        },
-        "docs/modal-sheet-strategy.md": {
-            "class": "authoritative"
-        },
-        "docs/multi-region.md": {
-            "class": "living"
-        },
-        "docs/observability-reliability.md": {
-            "class": "authoritative"
-        },
-        "docs/observability.md": {
-            "class": "authoritative"
-        },
-        "docs/observability/01-deployment-topology.md": {
-            "class": "authoritative"
-        },
-        "docs/observability/02-otel-collector.md": {
-            "class": "authoritative"
-        },
-        "docs/observability/03-prometheus-grafana.md": {
-            "class": "authoritative"
-        },
-        "docs/observability/04-production-hardening.md": {
-            "class": "authoritative"
-        },
-        "docs/observability/05-job-tracing.md": {
-            "class": "authoritative"
-        },
-        "docs/observability/06-business-kpis.md": {
-            "class": "authoritative"
-        },
-        "docs/observability/README.md": {
-            "class": "authoritative"
-        },
-        "docs/pagination.md": {
-            "class": "authoritative"
-        },
-        "docs/perf/README.md": {
-            "class": "authoritative"
-        },
-        "docs/plan-prisma-7-migration.md": {
-            "class": "historical"
-        },
-        "docs/primitives-api-reference.md": {
-            "class": "authoritative"
-        },
-        "docs/processes-canvas-semantics.md": {
-            "class": "authoritative"
-        },
-        "docs/processes-canvas-world-class-review.md": {
-            "class": "living"
-        },
-        "docs/processes-canvas.md": {
-            "class": "authoritative"
-        },
-        "docs/processes-realtime-collab.md": {
-            "class": "living"
-        },
-        "docs/r17-dashboard-reimagined.md": {
-            "class": "authoritative"
-        },
-        "docs/rate-limiting.md": {
-            "class": "authoritative"
-        },
-        "docs/requirement-mapping-sets.md": {
-            "class": "authoritative"
-        },
-        "docs/response-caching.md": {
-            "class": "authoritative"
-        },
-        "docs/right-rail-aside-roadmap.md": {
-            "class": "living"
-        },
-        "docs/risk-quantification.md": {
-            "class": "authoritative"
-        },
-        "docs/rls-tenant-isolation.md": {
-            "class": "authoritative"
-        },
-        "docs/rls.md": {
-            "class": "deprecated"
-        },
-        "docs/roadmap-audit-2026-05-13.md": {
-            "class": "historical"
-        },
-        "docs/roadmap-audit-qa-2026-05-13.md": {
-            "class": "historical"
-        },
-        "docs/rq3-roadmap-complete.md": {
-            "class": "authoritative"
-        },
-        "docs/rsc-guidelines.md": {
-            "class": "authoritative"
-        },
-        "docs/scheduled-notification-system.md": {
-            "class": "authoritative"
-        },
-        "docs/security-hardening.md": {
-            "class": "authoritative"
-        },
-        "docs/security/aisvs-self-assessment.md": {
-            "class": "authoritative"
-        },
-        "docs/sharepoint.md": {
-            "class": "authoritative"
-        },
-        "docs/sizing.md": {
-            "class": "authoritative"
-        },
-        "docs/slos.md": {
-            "class": "authoritative"
-        },
-        "docs/staging.md": {
-            "class": "authoritative"
-        },
-        "docs/sub-processor-change-policy.md": {
-            "class": "authoritative"
-        },
-        "docs/sub-processors.md": {
-            "class": "authoritative"
-        },
-        "docs/test-portfolio.md": {
-            "class": "authoritative"
-        },
-        "docs/testing.md": {
-            "class": "authoritative"
-        },
-        "docs/token-cheatsheet.md": {
-            "class": "authoritative"
-        },
-        "docs/tooltip-and-copy-strategy.md": {
-            "class": "authoritative"
-        },
-        "docs/typescript-contracts.md": {
-            "class": "authoritative"
-        },
-        "docs/typography-tones.md": {
-            "class": "authoritative"
-        },
-        "docs/ui-buttons.md": {
-            "class": "authoritative"
-        },
-        "docs/validation.md": {
-            "class": "authoritative"
-        },
-        "docs/verification-policy.md": {
-            "class": "authoritative"
-        },
-        "docs/worker-autoscaling.md": {
-            "class": "authoritative"
-        },
-        "docs/aws-posture-connector.md": {
-            "class": "authoritative"
-        },
-        "docs/device-monitoring.md": {
-            "class": "authoritative"
-        },
-        "docs/integration-observability.md": {
-            "class": "authoritative"
-        },
-        "docs/branch-divergence-o64va-analysis.md": {
-            "class": "historical"
-        },
-        "docs/prisma-upgrade-path.md": {
-            "class": "authoritative"
-        },
-        "docs/new-subsystem-checklist.md": {
-            "class": "authoritative"
-        },
-        "docs/calendar-surface-do-not-touch.md": {
-            "class": "authoritative"
-        }
+      "class": "authoritative"
+    },
+    "docs/kpi-filterables.md": {
+      "class": "authoritative"
+    },
+    "docs/lickable-sidebar.md": {
+      "class": "authoritative"
+    },
+    "docs/list-virtualization.md": {
+      "class": "authoritative"
+    },
+    "docs/living-sidebar.md": {
+      "class": "authoritative"
+    },
+    "docs/living-topbar.md": {
+      "class": "authoritative"
+    },
+    "docs/loading-states.md": {
+      "class": "authoritative"
+    },
+    "docs/mfa-session-security.md": {
+      "class": "authoritative"
+    },
+    "docs/modal-sheet-strategy.md": {
+      "class": "authoritative"
+    },
+    "docs/multi-region.md": {
+      "class": "living"
+    },
+    "docs/observability-reliability.md": {
+      "class": "authoritative"
+    },
+    "docs/observability.md": {
+      "class": "authoritative"
+    },
+    "docs/observability/01-deployment-topology.md": {
+      "class": "authoritative"
+    },
+    "docs/observability/02-otel-collector.md": {
+      "class": "authoritative"
+    },
+    "docs/observability/03-prometheus-grafana.md": {
+      "class": "authoritative"
+    },
+    "docs/observability/04-production-hardening.md": {
+      "class": "authoritative"
+    },
+    "docs/observability/05-job-tracing.md": {
+      "class": "authoritative"
+    },
+    "docs/observability/06-business-kpis.md": {
+      "class": "authoritative"
+    },
+    "docs/observability/README.md": {
+      "class": "authoritative"
+    },
+    "docs/pagination.md": {
+      "class": "authoritative"
+    },
+    "docs/perf/README.md": {
+      "class": "authoritative"
+    },
+    "docs/plan-prisma-7-migration.md": {
+      "class": "historical"
+    },
+    "docs/primitives-api-reference.md": {
+      "class": "authoritative"
+    },
+    "docs/processes-canvas-semantics.md": {
+      "class": "authoritative"
+    },
+    "docs/processes-canvas-world-class-review.md": {
+      "class": "living"
+    },
+    "docs/processes-canvas.md": {
+      "class": "authoritative"
+    },
+    "docs/processes-realtime-collab.md": {
+      "class": "living"
+    },
+    "docs/r17-dashboard-reimagined.md": {
+      "class": "authoritative"
+    },
+    "docs/rate-limiting.md": {
+      "class": "authoritative"
+    },
+    "docs/requirement-mapping-sets.md": {
+      "class": "authoritative"
+    },
+    "docs/response-caching.md": {
+      "class": "authoritative"
+    },
+    "docs/right-rail-aside-roadmap.md": {
+      "class": "living"
+    },
+    "docs/risk-quantification.md": {
+      "class": "authoritative"
+    },
+    "docs/rls-tenant-isolation.md": {
+      "class": "authoritative"
+    },
+    "docs/rls.md": {
+      "class": "deprecated"
+    },
+    "docs/roadmap-audit-2026-05-13.md": {
+      "class": "historical"
+    },
+    "docs/roadmap-audit-qa-2026-05-13.md": {
+      "class": "historical"
+    },
+    "docs/rq3-roadmap-complete.md": {
+      "class": "authoritative"
+    },
+    "docs/rsc-guidelines.md": {
+      "class": "authoritative"
+    },
+    "docs/scheduled-notification-system.md": {
+      "class": "authoritative"
+    },
+    "docs/security-hardening.md": {
+      "class": "authoritative"
+    },
+    "docs/security/aisvs-self-assessment.md": {
+      "class": "authoritative"
+    },
+    "docs/sharepoint.md": {
+      "class": "authoritative"
+    },
+    "docs/sizing.md": {
+      "class": "authoritative"
+    },
+    "docs/slos.md": {
+      "class": "authoritative"
+    },
+    "docs/staging.md": {
+      "class": "authoritative"
+    },
+    "docs/sub-processor-change-policy.md": {
+      "class": "authoritative"
+    },
+    "docs/sub-processors.md": {
+      "class": "authoritative"
+    },
+    "docs/test-portfolio.md": {
+      "class": "authoritative"
+    },
+    "docs/testing.md": {
+      "class": "authoritative"
+    },
+    "docs/token-cheatsheet.md": {
+      "class": "authoritative"
+    },
+    "docs/tooltip-and-copy-strategy.md": {
+      "class": "authoritative"
+    },
+    "docs/typescript-contracts.md": {
+      "class": "authoritative"
+    },
+    "docs/typography-tones.md": {
+      "class": "authoritative"
+    },
+    "docs/ui-buttons.md": {
+      "class": "authoritative"
+    },
+    "docs/validation.md": {
+      "class": "authoritative"
+    },
+    "docs/verification-policy.md": {
+      "class": "authoritative"
+    },
+    "docs/worker-autoscaling.md": {
+      "class": "authoritative"
+    },
+    "docs/aws-posture-connector.md": {
+      "class": "authoritative"
+    },
+    "docs/device-monitoring.md": {
+      "class": "authoritative"
+    },
+    "docs/integration-observability.md": {
+      "class": "authoritative"
+    },
+    "docs/branch-divergence-o64va-analysis.md": {
+      "class": "historical"
+    },
+    "docs/prisma-upgrade-path.md": {
+      "class": "authoritative"
+    },
+    "docs/new-subsystem-checklist.md": {
+      "class": "authoritative"
+    },
+    "docs/calendar-surface-do-not-touch.md": {
+      "class": "authoritative"
     }
+  }
 }

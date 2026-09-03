@@ -114,7 +114,14 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
  *     `*` 64, `+?` 18. By directory: guards 91, unit 48, guardrails 30,
  *     integration 4, rendered 4.
  */
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 177;
+// Re-seated 2026-09-02 (#2226): removing the unapplied AWS estate deleted twelve
+// guard suites that existed only to certify its shape (terraform-foundation,
+// terraform-vpc-database, deploy-workflow, …). Those guards grepped `.tf` and
+// workflow YAML, so they were dense with exactly the spans this ratchet counts.
+// Re-seated in the same diff that made the improvement, as this ratchet's own
+// sentinel requires — leaving the headroom would let a future regression spend
+// it with a green build.
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 148;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -134,7 +141,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 177;
  *     is why this number falls further than the one above). 191 of the 368
  *     are character-bounded.
  */
-const INTERIOR_SPAN_BASELINE = 368;
+const INTERIOR_SPAN_BASELINE = 339;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.
@@ -169,7 +176,7 @@ const INTERIOR_SPAN_BASELINE = 368;
  *     which reads 0 today. Recorded because the DEFINITION moved even though
  *     the number did not.
  */
-const UNANALYSABLE_TOMATCH_BASELINE = 59;
+const UNANALYSABLE_TOMATCH_BASELINE = 57;
 
 /**
  * Floor on the share of `toMatch` sites whose pattern is recovered.
