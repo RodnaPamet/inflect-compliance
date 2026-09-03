@@ -19,11 +19,19 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const LIB = path.join(ROOT, 'src/data/libraries');
 const MAP = path.join(LIB, 'mappings');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam (`codeOf`), so a comment
+// naming a symbol can never satisfy an assertion meant to be about code.
+// YAML / JSON / markdown are read raw — there `//` is content, not a comment.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 
 function lib(file: string) {
     return loadLibrary(parseLibraryFile(path.join(LIB, file)), file);

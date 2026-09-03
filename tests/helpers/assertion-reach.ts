@@ -56,6 +56,7 @@ import * as path from 'node:path';
 import * as ts from 'typescript';
 
 import { REPO_ROOT, repoFiles, repoRelative } from './repo-files';
+import { codeOf } from './source-blocks';
 
 // ───────────────────────────── parsing ──────────────────────────────────
 
@@ -925,10 +926,255 @@ function foldString(
     return null;
 }
 
-/** A local `const read = (p) => fs.readFileSync(<pathExpr>, …)` shape. */
+// ─────────────────────── comment-masking wrappers ───────────────────────
+
+/**
+ * A transform on file text that this analyser can reproduce EXACTLY — in
+ * practice a comment mask, since that is what the suite wraps its reads in.
+ *
+ * Following one keeps a masked read inside the analysed population instead
+ * of dropping it into a skip bucket, and the occurrence count is then taken
+ * against the transformed text. That is not a leniency: it is the text the
+ * assertion itself matched against, so counting it is strictly more accurate
+ * than counting the bytes on disk. The exactness is the whole licence — a
+ * transform reproduced only approximately would make the detector guess, and
+ * a guess low reads as "this needle is unique".
+ */
+type MaskFn = (text: string) => string;
+
+/**
+ * Maskers this analyser can apply EXACTLY, by name, when the test file
+ * imports them from `tests/helpers/source-blocks.ts`.
+ *
+ * `codeOf` is the shared masker: comments blanked, string literals kept,
+ * offsets preserved. It is listed here as the FUNCTION ITSELF rather than a
+ * re-implementation, which is the whole point — the analyser then measures
+ * the identical text the assertion measured, byte for byte, and cannot drift
+ * from it. (It previously measured a local regex look-alike that blanked
+ * from a `//` inside a string literal to end of line. A URL in a fixture was
+ * enough to make the two disagree, and disagreeing quietly means UNDER-
+ * counting occurrences, i.e. calling an ambiguous needle unique.)
+ *
+ * The other `source-blocks` exports — `declarationOf`, `functionBodyOf`,
+ * `interfaceBodyOf`, `braceBlockAfter`, `callExpressionOf` — mask comments
+ * too, but they also NARROW, so they are not maskers for this purpose: a
+ * narrowed read is out of scope by design (see `resolveSubject`), because
+ * narrowing is the fix this ratchet asks for and a guard that reddens when
+ * you take its advice is one people route around. `maskNonCode` is not
+ * exported and would not qualify anyway — it blanks string literals, and a
+ * string literal is code to a guard.
+ */
+const SOURCE_BLOCKS_MASKERS: ReadonlyMap<string, MaskFn> = new Map([['codeOf', codeOf]]);
+
+/** Is this module specifier `tests/helpers/source-blocks`, however spelled? */
+function isSourceBlocksSpecifier(spec: string): boolean {
+    return /(^|\/)source-blocks(\.[tj]sx?)?$/.test(spec.replace(/\\/g, '/'));
+}
+
+/**
+ * Rebuild a local comment-stripper from its own source, or refuse.
+ *
+ * DELIBERATELY NOT NAME-BASED. `codeOnly` / `stripComments` / `maskComments`
+ * are hand-rolled ~30 times across `tests/`, and they do NOT agree: some
+ * strip only line-leading `//` (anchored `^\s*` + `m` flag), some strip a
+ * trailing one anywhere on the line, one keeps the leading whitespace by
+ * capturing it and replacing with `'$1'`. Keying on the name would mean
+ * measuring text the assertion never saw — which is the same defect this
+ * module exists to find, committed by the detector itself.
+ *
+ * So the definition is read instead. The one shape accepted is a chain of
+ * `.replace(<regex literal>, <string literal>)` calls bottoming out at the
+ * function's own parameter — which is what all but a handful of them are.
+ * The regexes and the replacement strings are handed to `String.replace`
+ * verbatim, so `$1` / `$&` behave identically.
+ *
+ * Anything else returns null and the caller leaves the site classified
+ * exactly as before: `content-transformed`, a CAPPED skip. A masker built
+ * with `.split().filter().map()`, or one that calls out to another helper,
+ * is not followed and is not pretended to be.
+ */
+function reconstructReplaceChain(
+    fn: ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression,
+    sf: ts.SourceFile,
+): MaskFn | null {
+    if (fn.parameters.length !== 1) return null;
+    const param = fn.parameters[0];
+    if (!ts.isIdentifier(param.name)) return null;
+    const paramName = param.name.text;
+
+    let expr: ts.Expression;
+    if (ts.isArrowFunction(fn) && !ts.isBlock(fn.body)) {
+        expr = fn.body;
+    } else {
+        const block = fn.body;
+        if (block === undefined || !ts.isBlock(block)) return null;
+        if (block.statements.length !== 1) return null;
+        const ret = block.statements[0];
+        if (!ts.isReturnStatement(ret) || ret.expression === undefined) return null;
+        expr = ret.expression;
+    }
+
+    const steps: Array<[RegExp, string]> = [];
+    for (let guard = 0; guard < 8; guard++) {
+        if (ts.isParenthesizedExpression(expr)) {
+            expr = expr.expression;
+            continue;
+        }
+        if (ts.isIdentifier(expr)) {
+            if (expr.text !== paramName) return null;
+            if (steps.length === 0) return null;
+            steps.reverse();
+            return (text: string) =>
+                steps.reduce((acc: string, [re, to]) => acc.replace(re, to), text);
+        }
+        if (
+            !ts.isCallExpression(expr) ||
+            !ts.isPropertyAccessExpression(expr.expression) ||
+            expr.expression.name.text !== 'replace' ||
+            expr.arguments.length !== 2
+        ) {
+            return null;
+        }
+        const [patternArg, replacementArg] = expr.arguments;
+        if (patternArg.kind !== ts.SyntaxKind.RegularExpressionLiteral) return null;
+        if (
+            !ts.isStringLiteral(replacementArg) &&
+            !ts.isNoSubstitutionTemplateLiteral(replacementArg)
+        ) {
+            return null;
+        }
+        const { pattern, flags } = splitRegexLiteral(patternArg.getText(sf));
+        let re: RegExp;
+        try {
+            re = new RegExp(pattern, flags);
+        } catch {
+            return null;
+        }
+        steps.push([re, replacementArg.text]);
+        expr = expr.expression.expression;
+    }
+    return null;
+}
+
+/**
+ * Every name in this file that denotes a followable comment mask.
+ *
+ * A name maps to `null` when it IS a masker-shaped local declaration whose
+ * body could not be rebuilt, or when it is declared twice — both cases mean
+ * "do not follow", and are kept distinct from "absent" so a local
+ * declaration always beats the import table.
+ */
+function indexMaskers(sf: ts.SourceFile): Map<string, MaskFn | null> {
+    const out = new Map<string, MaskFn | null>();
+
+    for (const stmt of sf.statements) {
+        if (!ts.isImportDeclaration(stmt)) continue;
+        const spec = stmt.moduleSpecifier;
+        if (!ts.isStringLiteral(spec) || !isSourceBlocksSpecifier(spec.text)) continue;
+        const bindings = stmt.importClause?.namedBindings;
+        if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
+        for (const el of bindings.elements) {
+            const exported = (el.propertyName ?? el.name).text;
+            const mask = SOURCE_BLOCKS_MASKERS.get(exported);
+            if (mask !== undefined) out.set(el.name.text, mask);
+        }
+    }
+
+    const consider = (
+        name: string,
+        fn: ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression,
+    ): void => {
+        const rebuilt = reconstructReplaceChain(fn, sf);
+        out.set(name, out.has(name) ? null : rebuilt);
+    };
+    const visit = (node: ts.Node): void => {
+        if (
+            ts.isVariableDeclaration(node) &&
+            ts.isIdentifier(node.name) &&
+            node.initializer !== undefined &&
+            (ts.isArrowFunction(node.initializer) ||
+                ts.isFunctionExpression(node.initializer))
+        ) {
+            consider(node.name.text, node.initializer);
+        }
+        if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
+            consider(node.name.text, node);
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    return out;
+}
+
+/**
+ * Strip the followable masks off an expression, composing them left to right.
+ *
+ * `codeOf(stripComments(x))` yields `x` plus the composition that applies
+ * `stripComments` first and `codeOf` second — the order the program runs
+ * them in, which matters because neither is idempotent with respect to the
+ * other.
+ */
+function peelMaskers(
+    expr: ts.Expression,
+    maskers: ReadonlyMap<string, MaskFn | null>,
+): { readonly inner: ts.Expression; readonly mask: MaskFn | null } {
+    const applied: MaskFn[] = [];
+    let cur = expr;
+    for (let guard = 0; guard < 4; guard++) {
+        if (ts.isParenthesizedExpression(cur)) {
+            cur = cur.expression;
+            continue;
+        }
+        if (
+            !ts.isCallExpression(cur) ||
+            !ts.isIdentifier(cur.expression) ||
+            cur.arguments.length !== 1
+        ) {
+            break;
+        }
+        const mask = maskers.get(cur.expression.text);
+        // `undefined` = not a masker at all; `null` = a masker we refused to
+        // rebuild. Both stop the peel, and the second is why they are
+        // distinguished: falling through on `null` would apply no mask and
+        // then claim the text was analysed.
+        if (mask === undefined || mask === null) break;
+        applied.push(mask);
+        cur = cur.arguments[0];
+    }
+    if (applied.length === 0) return { inner: expr, mask: null };
+    applied.reverse();
+    return {
+        inner: cur,
+        mask: (text: string) => applied.reduce((acc, f) => f(acc), text),
+    };
+}
+
+/**
+ * A local `const read = (p) => fs.readFileSync(<pathExpr>, …)` shape,
+ * possibly wearing a comment mask — `const read = (p) => codeOf(readFileSync(…))`
+ * — or delegating to a sibling reader — `const read = (p) => codeOf(readRaw(p))`.
+ *
+ * The mask lives HERE rather than only at the assertion because that is
+ * where the repo puts it. Masking at the read seam is the better habit (one
+ * site instead of every call), and it is the shape a reader that does not
+ * model it drops on the floor: `unwrapReadFileSync` sees a call to `codeOf`,
+ * not to `readFileSync`, so the helper is never indexed, every
+ * `expect(read('x'))` in the file becomes `not-a-file-read` — the one bucket
+ * that is both excluded from `skippedTotal` and uncapped — and the file
+ * leaves Class D's population without moving a single number.
+ */
 interface ReaderFn {
     readonly paramName: string | null;
     readonly pathExpr: ts.Expression;
+    /** Applied to the file text after reading; `null` for a raw reader. */
+    readonly mask: MaskFn | null;
+}
+
+/** `second` after `first`, skipping the identity when either is absent. */
+function composeMasks(first: MaskFn | null, second: MaskFn | null): MaskFn | null {
+    if (first === null) return second;
+    if (second === null) return first;
+    return (text: string) => second(first(text));
 }
 
 function unwrapReadFileSync(expr: ts.Expression): ts.Expression | null {
@@ -950,11 +1196,37 @@ function unwrapReadFileSync(expr: ts.Expression): ts.Expression | null {
     return cur.arguments[0];
 }
 
-/** Index the file-reading helper arrows/functions declared in a test file. */
-function indexReaderFns(sf: ts.SourceFile): Map<string, ReaderFn | null> {
+/** `const read = (p) => <mask>(<otherReader>(p))` — resolved in a second pass. */
+interface ReaderAlias {
+    readonly target: string;
+    readonly mask: MaskFn | null;
+}
+
+/**
+ * Index the file-reading helper arrows/functions declared in a test file.
+ *
+ * Two passes, because a reader may be written in terms of a sibling declared
+ * BELOW it (`const read = (rel) => codeOf(readRaw(rel))` above
+ * `const readRaw = …`), and hoisting is not something a single top-down walk
+ * can see. Delegation is followed only when the outer helper passes its own
+ * parameter straight through — anything else (a rewritten path, a second
+ * argument, a conditional) is a different read, not a masked one.
+ */
+function indexReaderFns(
+    sf: ts.SourceFile,
+    maskers: ReadonlyMap<string, MaskFn | null>,
+): Map<string, ReaderFn | null> {
     const out = new Map<string, ReaderFn | null>();
+    const aliases = new Map<string, ReaderAlias | null>();
+    const seen = new Set<string>();
     const record = (name: string, fn: ReaderFn | null): void => {
-        out.set(name, out.has(name) ? null : fn);
+        out.set(name, seen.has(name) ? null : fn);
+        seen.add(name);
+    };
+    const recordAlias = (name: string, alias: ReaderAlias): void => {
+        aliases.set(name, seen.has(name) ? null : alias);
+        if (seen.has(name)) out.set(name, null);
+        seen.add(name);
     };
     const bodyExpr = (
         node: ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression,
@@ -971,19 +1243,34 @@ function indexReaderFns(sf: ts.SourceFile): Map<string, ReaderFn | null> {
     ): void => {
         const body = bodyExpr(node);
         if (body === null) return;
-        const pathExpr = unwrapReadFileSync(body);
-        if (pathExpr === null) return;
         const param = node.parameters[0];
-        record(
-            name,
-            {
-                paramName:
-                    param !== undefined && ts.isIdentifier(param.name)
-                        ? param.name.text
-                        : null,
-                pathExpr,
-            },
-        );
+        const paramName =
+            param !== undefined && ts.isIdentifier(param.name) ? param.name.text : null;
+        const { inner, mask } = peelMaskers(body, maskers);
+
+        const pathExpr = unwrapReadFileSync(inner);
+        if (pathExpr !== null) {
+            record(name, { paramName, pathExpr, mask });
+            return;
+        }
+
+        // `<mask>(<sibling>(p))` — same file, same argument, extra mask.
+        if (
+            ts.isCallExpression(inner) &&
+            ts.isIdentifier(inner.expression) &&
+            inner.expression.text !== name
+        ) {
+            const args = inner.arguments;
+            const passesThrough =
+                (args.length === 0 && paramName === null) ||
+                (args.length === 1 &&
+                    paramName !== null &&
+                    ts.isIdentifier(args[0]) &&
+                    args[0].text === paramName);
+            if (passesThrough) {
+                recordAlias(name, { target: inner.expression.text, mask });
+            }
+        }
     };
     const visit = (node: ts.Node): void => {
         if (
@@ -1001,6 +1288,28 @@ function indexReaderFns(sf: ts.SourceFile): Map<string, ReaderFn | null> {
         ts.forEachChild(node, visit);
     };
     visit(sf);
+
+    const resolveAlias = (name: string, depth: number): ReaderFn | null | undefined => {
+        if (depth > 4) return null;
+        const direct = out.get(name);
+        if (direct !== undefined) return direct;
+        const alias = aliases.get(name);
+        if (alias === undefined) return undefined;
+        if (alias === null) return null;
+        const target = resolveAlias(alias.target, depth + 1);
+        if (target === undefined) return undefined;
+        if (target === null) return null;
+        return {
+            paramName: target.paramName,
+            pathExpr: target.pathExpr,
+            mask: composeMasks(target.mask, alias.mask),
+        };
+    };
+    for (const name of aliases.keys()) {
+        if (out.has(name)) continue;
+        const resolved = resolveAlias(name, 0);
+        if (resolved !== undefined) out.set(name, resolved);
+    }
     return out;
 }
 
@@ -1053,6 +1362,8 @@ function readIfPresent(abs: string): string | null {
 interface FileScope {
     readonly constants: ReadonlyMap<string, string>;
     readonly readers: ReadonlyMap<string, ReaderFn | null>;
+    /** Names that denote a followable comment mask — see `indexMaskers`. */
+    readonly maskers: ReadonlyMap<string, MaskFn | null>;
     readonly dir: string;
 }
 
@@ -1098,9 +1409,11 @@ function scopeOf(sf: ts.SourceFile): FileScope {
     const hit = scopeCache.get(sf);
     if (hit !== undefined) return hit;
     const dir = path.dirname(sf.fileName);
+    const maskers = indexMaskers(sf);
     const scope: FileScope = {
         constants: foldFileConstants(sf, dir),
-        readers: indexReaderFns(sf),
+        readers: indexReaderFns(sf, maskers),
+        maskers,
         dir,
     };
     scopeCache.set(sf, scope);
@@ -1115,9 +1428,14 @@ function scopeOf(sf: ts.SourceFile): FileScope {
  *   · `readPrismaSchema()` — the concatenated schema folder
  *   · `fs.readFileSync(path.join(ROOT, 'x'), 'utf8')`, inline or via a
  *     `const src = …` binding
- *   · `read('x')` where `read` is a local arrow wrapping `readFileSync`
- *   · `codeOf(<any of the above>)` — comments blanked, offsets preserved,
- *     which is what the assertion actually runs against
+ *   · `read('x')` where `read` is a local arrow wrapping `readFileSync`,
+ *     including one that masks at the read seam
+ *     (`const read = (p) => codeOf(readFileSync(p, 'utf8'))`) or delegates to
+ *     a sibling that does (`const read = (p) => codeOf(readRaw(p))`)
+ *   · `<mask>(<any of the above>)` — `codeOf` imported from
+ *     `tests/helpers/source-blocks`, or a local `.replace()`-chain stripper
+ *     this analyser rebuilt from its own source. Comments blanked, so the
+ *     text measured is the text the assertion ran against.
  */
 function resolveSubjectCore(
     subject: ts.Expression,
@@ -1150,15 +1468,25 @@ function resolveSubjectCore(
             };
         }
 
-        // `codeOf(x)` / `stripComments(x)` — a transform that preserves
-        // offsets, so it is still "the whole file" for occurrence counting.
-        if (ts.isIdentifier(callee) && callee.text === 'codeOf') {
-            if (subject.arguments.length === 0) {
-                return { kind: 'skipped', reason: 'not-a-file-read' };
+        // `codeOf(x)` / a rebuilt local `stripComments(x)` — a comment mask.
+        // It is still THE WHOLE FILE, so the site stays in the population;
+        // the count is then taken against the MASKED text, which is what the
+        // assertion itself ran against. That is strictly more accurate than
+        // counting raw text, not a loosening: a needle whose extra matches
+        // were all inside comments was never ambiguous in the first place.
+        //
+        // Keyed on what the name RESOLVES to (an import from
+        // `source-blocks`, or a local definition this analyser rebuilt), not
+        // on the name itself — the ~30 hand-rolled strippers in `tests/` do
+        // not agree with each other, so a name-keyed mask would measure text
+        // no assertion ever saw.
+        if (ts.isIdentifier(callee) && subject.arguments.length === 1) {
+            const mask = scope.maskers.get(callee.text);
+            if (mask !== undefined && mask !== null) {
+                const inner = resolveSubjectCore(subject.arguments[0], sf, depth + 1);
+                if (inner.kind !== 'content') return inner;
+                return { kind: 'content', label: inner.label, text: mask(inner.text) };
             }
-            const inner = resolveSubjectCore(subject.arguments[0], sf, depth + 1);
-            if (inner.kind !== 'content') return inner;
-            return { kind: 'content', label: inner.label, text: maskComments(inner.text) };
         }
 
         // A direct `fs.readFileSync(...)`.
@@ -1191,7 +1519,9 @@ function resolveSubjectCore(
                 }
                 const p = foldString(reader.pathExpr, inner, scope.dir);
                 if (p === null) return { kind: 'skipped', reason: 'path-not-constant' };
-                return contentAt(p);
+                const read = contentAt(p);
+                if (read.kind !== 'content' || reader.mask === null) return read;
+                return { kind: 'content', label: read.label, text: reader.mask(read.text) };
             }
         }
 
@@ -1315,13 +1645,6 @@ function contentAt(p: string): SubjectResult {
     const text = readIfPresent(abs);
     if (text === null) return { kind: 'skipped', reason: 'file-not-found' };
     return { kind: 'content', label: repoRelative(abs), text };
-}
-
-/** Blank `//` and block comments, preserving offsets — mirrors `codeOf`. */
-function maskComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-        .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
 }
 
 // ─────────────────── Class D — needle occurrence count ──────────────────

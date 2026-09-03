@@ -16,6 +16,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
@@ -100,9 +102,22 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     PLATFORM_ADMIN_API_KEY_PREVIOUS: 'internal platform-admin secret rotation',
 };
 
-/** Parse every `KEY: process.env.KEY` from the runtimeEnv block of src/env.ts. */
+/**
+ * Parse every `KEY: process.env.KEY` from the runtimeEnv block of src/env.ts.
+ *
+ * `codeOf` masks COMMENTS at this one read, and only this one — the three
+ * document reads below are markdown, where prose IS the content and masking
+ * would destroy it. Without the mask, a BLOCK-commented entry
+ *
+ *     \/*  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,  *\/
+ *
+ * still satisfies `^\s*[A-Z]` and is counted as a live env var, so this guard
+ * would demand an inventory entry for a variable the runtime no longer reads.
+ * env.ts carries six block comments today, so the hazard is not hypothetical.
+ * (A `//` line is already excluded — it fails `^\s*[A-Z]` on the slash.)
+ */
 function envKeys(): string[] {
-    const src = read('src/env.ts');
+    const src = codeOf(read('src/env.ts'));
     const keys = new Set<string>();
     const re = /^\s*([A-Z][A-Z0-9_]+):\s*process\.env\./gm;
     let m: RegExpExecArray | null;

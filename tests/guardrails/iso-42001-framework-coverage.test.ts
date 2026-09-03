@@ -18,10 +18,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`read`) so a new assertion inherits it; `readRaw` is for the files
+// where a `//` is content rather than a comment — the `https://` of a URL in
+// YAML / JSON / Markdown — and masking would delete real text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const LIB = 'src/data/libraries';
 
 const iso = loadLibrary(parseLibraryFile(path.join(ROOT, LIB, 'iso-42001.yaml')), 'iso42001');
@@ -81,7 +89,7 @@ describe('ISO 42001 library — iso-42001.yaml', () => {
     });
 
     it('the copyright points at ISO and disclaims verbatim reproduction', () => {
-        const yaml = read(`${LIB}/iso-42001.yaml`);
+        const yaml = readRaw(`${LIB}/iso-42001.yaml`);
         const copyrightBlock = yaml.slice(yaml.indexOf('copyright:'));
         expect(copyrightBlock.toLowerCase()).toContain('iso.org');
         expect(copyrightBlock).toMatch(/NOT a reproduction|structural outline/i);
@@ -89,7 +97,7 @@ describe('ISO 42001 library — iso-42001.yaml', () => {
 });
 
 describe('ISO 42001 seed fixture', () => {
-    const fixture = JSON.parse(read('prisma/fixtures/iso_42001_requirements.json')) as Array<{
+    const fixture = JSON.parse(readRaw('prisma/fixtures/iso_42001_requirements.json')) as Array<{
         key: string; section: string; sortOrder: number; title: string;
     }>;
 

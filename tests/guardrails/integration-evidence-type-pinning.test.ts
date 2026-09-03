@@ -13,6 +13,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const WRITERS = [
@@ -22,7 +23,7 @@ const WRITERS = [
 
 describe('integration evidence-type pinning', () => {
     for (const rel of WRITERS) {
-        const src = fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+        const src = codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
         it(`${rel} maps integration evidence to EvidenceType.TEXT`, () => {
             expect(src).toMatch(/type:\s*EvidenceType\.TEXT/);

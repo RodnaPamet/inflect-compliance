@@ -18,11 +18,16 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
+
+/** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
+const readCode = (abs: string): string => codeOf(fs.readFileSync(abs, 'utf8'));
 
 /** Parse the TaskSource enum members from the live Prisma schema. */
 function validSources(): Set<string> {
-    const enums = fs.readFileSync(path.join(ROOT, 'prisma/schema/enums.prisma'), 'utf8');
+    const enums = readCode(path.join(ROOT, 'prisma/schema/enums.prisma'));
     const m = enums.match(/enum TaskSource\s*\{([^}]+)\}/);
     if (!m) throw new Error('TaskSource enum not found in enums.prisma');
     const members = m[1]
@@ -62,7 +67,7 @@ describe('Guardrail: valid TaskSource at every task-creation call site', () => {
     it('every literal `source:` on a task-create call is a real enum member', () => {
         const violations: string[] = [];
         for (const file of files) {
-            const src = fs.readFileSync(file, 'utf8');
+            const src = readCode(file);
             let call: RegExpExecArray | null;
             CREATE_CALL.lastIndex = 0;
             while ((call = CREATE_CALL.exec(src)) !== null) {

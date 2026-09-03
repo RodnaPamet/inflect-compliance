@@ -33,38 +33,25 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { codeOf, functionBodyOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+// Comments masked at the read seam: an assertion about a multiplication site
+// must not be satisfiable by prose that merely names `weights.coverage`.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 describe("Audit S7 — ISO + NIS2 routed through loadEffectiveWeights", () => {
     const src = () => read("src/app-layer/usecases/audit-readiness/scoring.ts");
 
+    // Bounded by the function's own braces. The previous hand-rolled slice
+    // ended at the `// ─── NIS2 Scoring` COMMENT, which both anchors the guard
+    // on prose and cannot survive comment masking.
     function isoBody(): string {
-        const s = src();
-        const start = s.indexOf(
-            "async function computeISO27001Readiness",
-        );
-        const end = s.indexOf("// ─── NIS2 Scoring", start);
-        if (start < 0 || end < 0 || end <= start) {
-            throw new Error("could not locate computeISO27001Readiness body");
-        }
-        return s.slice(start, end);
+        return functionBodyOf(src(), "computeISO27001Readiness");
     }
 
     function nis2Body(): string {
-        const s = src();
-        const start = s.indexOf("async function computeNIS2Readiness");
-        // The NIS2 function is followed by the generic helper / the
-        // GENERIC_WEIGHTS constant. Both are robust enough end markers
-        // — search for the next `async function` after this one and
-        // stop there, or fall back to EOF.
-        const after = s.indexOf("async function", start + 30);
-        const end = after > 0 ? after : s.length;
-        if (start < 0) {
-            throw new Error("could not locate computeNIS2Readiness body");
-        }
-        return s.slice(start, end);
+        return functionBodyOf(src(), "computeNIS2Readiness");
     }
 
     describe("computeISO27001Readiness", () => {

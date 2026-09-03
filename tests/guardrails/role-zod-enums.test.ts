@@ -16,6 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -40,7 +41,7 @@ const OWNER_EXEMPT_FILES: Array<{ file: string; reason: string }> = [
 const ROLE_ENUM_PATTERN = /z\.enum\(\[[^\]]*['"]ADMIN['"][^\]]*\]/;
 
 function readFile(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 }
 
 describe('Role Zod enums include OWNER where member-management relevant', () => {

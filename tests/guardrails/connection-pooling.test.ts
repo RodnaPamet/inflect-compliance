@@ -7,9 +7,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`read`) so a new assertion inherits it; `readRaw` is for the files
+// where a `//` is content rather than a comment — the `https://` of a URL in
+// YAML / JSON / Markdown — and masking would delete real text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
 describe('Connection Pooling Configuration', () => {
 
@@ -20,7 +27,7 @@ describe('Connection Pooling Configuration', () => {
         //   - the config file passes DATABASE_URL through (the runtime
         //     adapter reads it directly so this is also the source of
         //     truth that `prisma migrate / generate` reads).
-        const schema = readPrismaSchema();
+        const schema = codeOf(readPrismaSchema());
         const config = read('prisma.config.ts');
 
         test('datasource block declares postgresql provider', () => {
@@ -56,7 +63,7 @@ describe('Connection Pooling Configuration', () => {
     });
 
     describe('docker-compose.yml (dev)', () => {
-        const compose = read('docker-compose.yml');
+        const compose = readRaw('docker-compose.yml');
 
         test('has pgbouncer service', () => {
             expect(compose).toContain('pgbouncer:');
@@ -88,7 +95,7 @@ describe('Connection Pooling Configuration', () => {
     });
 
     describe('docker-compose.prod.yml', () => {
-        const compose = read('docker-compose.prod.yml');
+        const compose = readRaw('docker-compose.prod.yml');
 
         test('has pgbouncer service', () => {
             expect(compose).toContain('pgbouncer:');
@@ -127,7 +134,7 @@ describe('Connection Pooling Configuration', () => {
     });
 
     describe('.env.example', () => {
-        const envExample = read('.env.example');
+        const envExample = readRaw('.env.example');
 
         test('has DATABASE_URL with PgBouncer port', () => {
             expect(envExample).toContain('DATABASE_URL');

@@ -34,6 +34,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 function readRepoFile(rel: string): string {
@@ -58,7 +60,7 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // assert against the SCRIPT that actually runs.
         expect(ci).toMatch(/run: node scripts\/audit-gate\.mjs/);
 
-        const gate = readRepoFile('scripts/audit-gate.mjs');
+        const gate = codeOf(readRepoFile('scripts/audit-gate.mjs'));
         // The blocking set is the severity floor. `moderate` present ⇒ the
         // gate is at least as strict as it was; dropping it would let
         // moderate findings through, which is the 2026-05-12 regression.

@@ -17,14 +17,22 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 import { sanitizePolicyContent } from '@/lib/security/sanitize';
 import { htmlPolicyToMarkdown } from '../../scripts/import-policy-templates';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`read`) so a new assertion inherits it; `readRaw` is for the files
+// where a `//` is content rather than a comment — the `https://` of a URL in
+// YAML / JSON / Markdown — and masking would delete real text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
 const FIXTURE = 'prisma/fixtures/policy-templates-imported.json';
-const fixture = JSON.parse(read(FIXTURE)) as {
+const fixture = JSON.parse(readRaw(FIXTURE)) as {
     source: string;
     templates: Array<Record<string, string>>;
 };

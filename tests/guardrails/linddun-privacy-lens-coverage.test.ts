@@ -24,8 +24,10 @@ import {
 } from '@/lib/privacy/linddun';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('LINDDUN taxonomy — reference data', () => {
     it('defines exactly the 7 LINDDUN categories', () => {
@@ -76,7 +78,7 @@ describe('PET treatment hints — advisory, not auto-applied', () => {
 });
 
 describe('risks carry a LINDDUN classification (lens over existing machinery)', () => {
-    const schema = readPrismaSchema();
+    const schema = codeOf(readPrismaSchema());
 
     it('Risk + RiskTemplate have a linddunCategories field (not a new model)', () => {
         const modelBlock = (name: string): string => {

@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
+import { codeOf } from '../helpers/source-blocks';
 
 const TABLE_MODULE_DIR = path.resolve(__dirname, '../../src/components/ui/table');
 const UI_DIR = path.resolve(__dirname, '../../src/components/ui');
@@ -54,8 +55,10 @@ const MIGRATED_PAGES = [
     'admin/audit-log/AuditLogClient.tsx',
 ];
 
+// codeOf() masks comments at the READ SEAM (#2246): a page that deleted its
+// <DataTable> and left a comment naming it must not still read as migrated.
 function readClientFile(rel: string): string {
-    return fs.readFileSync(path.join(CLIENT_DIR, rel), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(CLIENT_DIR, rel), 'utf-8'));
 }
 
 function findFilesRecursive(dir: string, filter: (name: string) => boolean): string[] {
@@ -167,7 +170,7 @@ describe('Convention compliance — column patterns', () => {
 
 describe('Table module integrity', () => {
     it('barrel index.ts re-exports all modules', () => {
-        const barrel = fs.readFileSync(path.join(TABLE_MODULE_DIR, 'index.ts'), 'utf-8');
+        const barrel = codeOf(fs.readFileSync(path.join(TABLE_MODULE_DIR, 'index.ts'), 'utf-8'));
         const tsFiles = fs.readdirSync(TABLE_MODULE_DIR)
             .filter(f => /\.(ts|tsx)$/.test(f) && f !== 'index.ts');
 
@@ -206,7 +209,7 @@ describe('Table module integrity', () => {
             if (migratedSet.has(basename) || excludedSet.has(basename)) continue;
 
             // Check if this unknown page has a raw <table> without DataTable
-            const src = fs.readFileSync(file, 'utf-8');
+            const src = codeOf(fs.readFileSync(file, 'utf-8'));
             const hasRawTable = /<table[\s>]/.test(src);
             const hasDataTable = src.includes('DataTable');
 
@@ -289,33 +292,29 @@ const RATCHET_ALLOWLIST = new Set<string>([
 //            from 3 to 1 — leaving four units of headroom nothing
 //            reported.
 //
-// Live hits (2026-08-29). Note what this regex actually counts: the
-// pattern is a text scan, so a `<table` written in a COMMENT counts
-// exactly like markup. Six of the eleven are prose, which is why the
-// list below marks each one.
-//   2  admin/roles/page.tsx          1 markup (role/permission grid)
-//                                    + 1 in the header comment
-//   1  admin/members/page.tsx        comment only — migrated to DataTable
+//   11 → 5   (#2246) the scan now reads `codeOf(...)`, so it counts MARKUP
+//            only. The previous note recorded the defect precisely and then
+//            budgeted for it — "a `<table` written in a COMMENT counts
+//            exactly like markup. Six of the eleven are prose" — which meant
+//            deleting a real grid and leaving `{/* <table> */}` behind kept
+//            the total identical. Six of the eleven hits were comments; the
+//            note's own arithmetic ("the real ad-hoc-markup residue is 5")
+//            is what this baseline now equals.
+//
+// Live hits (2026-09-03), markup only — comments no longer counted:
+//   1  admin/roles/page.tsx          markup (role/permission grid)
 //   1  admin/rbac/page.tsx           markup (server component)
-//   1  controls/ControlsClient.tsx   comment only
-//   1  evidence/EvidenceClient.tsx   comment only
 //   1  reports/soa/SoAClient.tsx     markup — cross-cutting SoA grid
 //                                    (also in EXCLUDED_PAGES: expandable-row UX)
 //   1  risks/correlations/page.tsx   markup (correlation matrix)
 //   1  risks/scenarios/page.tsx      markup (scenario grid)
-//   1  tasks/[taskId]/page.tsx       comment only
-//   1  vendors/[vendorId]/page.tsx   comment only
-//
-// So the real ad-hoc-markup residue is 5, and a PR that only reworded
-// a comment would move this number. That coupling is why
-// DRIFT_ALLOWANCE below is not zero.
-const RAW_TABLE_BASELINE = 11;
+const RAW_TABLE_BASELINE = 5;
 
-// See `tests/helpers/ratchet-slack.ts`. Three, because the count is
-// small and partly comment-coupled: a doc pass should not have to edit
-// this guard, but the four units of drift that accumulated before
-// 2026-08-29 must not be able to accumulate again.
-const RAW_TABLE_DRIFT_ALLOWANCE = 3;
+// See `tests/helpers/ratchet-slack.ts`. One, not three: the old three was
+// justified by comment-coupling ("a doc pass should not have to edit this
+// guard"), and masking comments at the read seam removed that coupling
+// entirely. It stays strictly below the drift being corrected here (6).
+const RAW_TABLE_DRIFT_ALLOWANCE = 1;
 const RAW_TABLE_RE = /<table\b/g;
 
 function countAdHocTables(): { total: number; byFile: Record<string, number> } {
@@ -325,7 +324,10 @@ function countAdHocTables(): { total: number; byFile: Record<string, number> } {
     for (const full of files) {
         const rel = path.relative(CLIENT_DIR, full);
         if (RATCHET_ALLOWLIST.has(rel)) continue;
-        const src = fs.readFileSync(full, 'utf-8');
+        // codeOf() at the READ SEAM (#2246): this ratchet is about ad-hoc
+        // MARKUP. Counting a `<table` inside a comment made "migrated to
+        // DataTable" and "commented the grid out" indistinguishable.
+        const src = codeOf(fs.readFileSync(full, 'utf-8'));
         const matches = src.match(RAW_TABLE_RE);
         if (matches && matches.length > 0) {
             byFile[rel] = matches.length;

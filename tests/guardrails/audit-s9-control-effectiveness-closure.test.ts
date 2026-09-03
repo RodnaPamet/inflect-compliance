@@ -37,8 +37,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { codeOf } from "../helpers/source-blocks";
+
 const ROOT = path.resolve(__dirname, "../..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+// codeOf() masks comments at the READ SEAM (#2246): every assertion below is
+// about CODE, so a comment naming `computeControlEffectivenessMap` or the
+// 90-day window must not satisfy one. String literals are preserved.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 describe("Audit S9 — control effectiveness scoring (closure lock)", () => {
     const src = () => read("src/app-layer/usecases/control/test-plans.ts");

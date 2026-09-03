@@ -30,11 +30,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
-function readRepoFile(rel: string): string {
-    return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
-}
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`readRepoFile`) so a new assertion inherits it; `readRepoFileRaw`
+// is for the surfaces where a `//` is content rather than a comment — the
+// Compose files, the .env templates and the CI workflow — and where the
+// signal being asserted (`# DEPRECATED …`) legitimately IS a comment.
+const readRepoFileRaw = (rel: string): string =>
+    fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
+
+const readRepoFile = (rel: string): string => codeOf(readRepoFileRaw(rel));
 
 describe('GAP-03 ratchet — schema layer', () => {
     it('src/env.ts has DATA_ENCRYPTION_KEY with a superRefine that mentions production', () => {
@@ -122,7 +131,7 @@ describe('GAP-03 ratchet — Docker Compose surfaces', () => {
     it.each(COMPOSE_FILES)(
         '%s declares DATA_ENCRYPTION_KEY with the :?error fail-fast suffix',
         (file) => {
-            const src = readRepoFile(file);
+            const src = readRepoFileRaw(file);
             // The :?error syntax aborts `docker compose up` before
             // the container is even created. A refactor that switches
             // to a default value (`:-`) or drops the directive entirely
@@ -139,7 +148,7 @@ describe('GAP-03 ratchet — Docker Compose surfaces', () => {
 
 describe('GAP-03 ratchet — env templates', () => {
     it('.env.production.example sets DATA_ENCRYPTION_KEY (uncommented)', () => {
-        const src = readRepoFile('.env.production.example');
+        const src = readRepoFileRaw('.env.production.example');
         // Regression: an empty production template (the original
         // GAP-03 state) gives operators no signal that this var is
         // required. Uncommented placeholder is the visibility lever.
@@ -147,12 +156,12 @@ describe('GAP-03 ratchet — env templates', () => {
     });
 
     it('.env.staging.example sets DATA_ENCRYPTION_KEY (uncommented)', () => {
-        const src = readRepoFile('.env.staging.example');
+        const src = readRepoFileRaw('.env.staging.example');
         expect(src).toMatch(/^DATA_ENCRYPTION_KEY=/m);
     });
 
     it('deploy/.env.prod.example signals DATA_ENCRYPTION_KEY lives in AWS Secrets Manager (post-OI-1 model)', () => {
-        const src = readRepoFile('deploy/.env.prod.example');
+        const src = readRepoFileRaw('deploy/.env.prod.example');
         // Epic OI-1 migrated DATA_ENCRYPTION_KEY (and 4 other runtime
         // secrets) out of plaintext deploy/.env.prod into AWS Secrets
         // Manager. The pre-OI-1 contract was an uncommented
@@ -173,7 +182,7 @@ describe('GAP-03 ratchet — env templates', () => {
 
 describe('GAP-03 ratchet — CI workflow', () => {
     it('CI test + coverage jobs set DATA_ENCRYPTION_KEY in their env block', () => {
-        const src = readRepoFile('.github/workflows/ci.yml');
+        const src = readRepoFileRaw('.github/workflows/ci.yml');
         // Regression: removing the env entry would not break unit
         // tests today (they use the dev fallback under NODE_ENV=test)
         // but would silently make any future test that flips

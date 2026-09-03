@@ -19,12 +19,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 import { computeAiGovCoverage, type AiGovScoredQuestion } from '@/app-layer/services/ai-gov-coverage';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// codeOf() masks comments at the READ SEAM (#2246), so a COMMENT naming a
+// thing cannot satisfy an assertion meant to be about CODE. Masking is the
+// DEFAULT (`read`) so a new assertion inherits it; `readRaw` is for the files
+// where a `//` is content rather than a comment — the `https://` of a URL in
+// YAML / JSON / Markdown — and masking would delete real text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
-const fixture = JSON.parse(read('prisma/fixtures/ai-governance-self-assessment.json')) as {
+const fixture = JSON.parse(readRaw('prisma/fixtures/ai-governance-self-assessment.json')) as {
     questionSetVersion: number; attribution: string; disclaimer: string;
     domains: Array<{ id: number; code: string; name: string }>;
     questions: Array<{ id: string; domainId: number; criticality: string; conditional: string | null; text: string; mappings: { aisvs: string[]; iso42001: string[]; euAiAct: string[] } }>;
@@ -122,7 +130,7 @@ describe('AI-governance gap→finding + RLS/encryption/index', () => {
     });
 
     it('the tenant models carry RLS + an encrypted note', () => {
-        const migration = read('prisma/migrations/20260629140000_add_ai_gov_self_assessment/migration.sql');
+        const migration = readRaw('prisma/migrations/20260629140000_add_ai_gov_self_assessment/migration.sql');
         for (const t of ['AiGovSelfAssessment', 'AiGovSelfAssessmentAnswer']) {
             expect(migration).toContain(`ALTER TABLE "${t}" FORCE ROW LEVEL SECURITY`);
             expect(migration).toMatch(new RegExp(`CREATE POLICY tenant_isolation ON "${t}"`));

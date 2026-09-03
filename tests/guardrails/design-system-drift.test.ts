@@ -12,6 +12,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const TENANT_ROUTES_DIR = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 const COMPONENTS_DIR = path.resolve(__dirname, '../../src/components');
 
@@ -120,8 +122,15 @@ const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b
 const LEGACY_BTN_RE = /className="btn btn-/g;
 const LEGACY_BADGE_RE = /className="badge badge-|className=\{`badge \$/g;
 
+/**
+ * Comments are MASKED at the read seam (#2246) so every check below reads
+ * CODE. `codeOf` preserves offsets and newlines, so the per-line violation
+ * report keeps its line numbers; it supersedes (and is stricter than) the
+ * hand-rolled `startsWith('//')` line skip in the raw-colour scan, which
+ * never saw a trailing or block comment.
+ */
 function readFile(...segments: string[]): string {
-    return fs.readFileSync(path.join(TENANT_ROUTES_DIR, ...segments), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(TENANT_ROUTES_DIR, ...segments), 'utf-8'));
 }
 
 describe('Migrated page anti-drift', () => {
@@ -202,7 +211,7 @@ describe('Duplicate implementation detector', () => {
         const violations: string[] = [];
         for (const f of componentFiles) {
             if (f.endsWith('button.tsx') && f.includes(path.join('ui', 'button.tsx'))) continue;
-            const content = fs.readFileSync(f, 'utf-8');
+            const content = codeOf(fs.readFileSync(f, 'utf-8'));
             if (/\bcva\b.*variant/.test(content) && /button/i.test(path.basename(f))) {
                 violations.push(path.relative(COMPONENTS_DIR, f).replace(/\\/g, '/'));
             }

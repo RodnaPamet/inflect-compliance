@@ -13,10 +13,12 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) =>
+const readRaw = (rel: string) =>
     fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
 describe('Audit S10 — Tenant Isolation & Authorization', () => {
     describe('Gap 1 — entity-specific restore validators', () => {
@@ -112,7 +114,9 @@ describe('Audit S10 — Tenant Isolation & Authorization', () => {
     });
 
     describe('Gap 2 & Gap 3 — decision docs land alongside the SHIP scope', () => {
-        const note = read(
+        // Markdown: read RAW — codeOf() would mask `//` in prose/URLs, and
+        // these assertions are deliberately about the note's prose.
+        const note = readRaw(
             'docs/implementation-notes/2026-05-24-audit-s10-tenant-isolation.md',
         );
 

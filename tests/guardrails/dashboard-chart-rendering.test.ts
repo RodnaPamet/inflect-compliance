@@ -17,9 +17,10 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const FRAME = read('src/components/ui/charts/chart-frame.tsx');
 const MATURITY = read('src/app/org/[orgSlug]/(app)/OrgMaturityWidget.tsx');

@@ -10,9 +10,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { scoreNis2Assessment } from '@/app-layer/usecases/nis2-readiness';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// SOURCE reads are comment-masked at the seam, so a comment naming a usecase
+// or a component cannot satisfy an assertion about code. The en catalog is
+// JSON and stays raw so it still parses.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (rel: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    return CODE_FILE.test(rel) ? codeOf(raw) : raw;
+};
 
 const USECASE = 'src/app-layer/usecases/nis2-readiness.ts';
 const VIEW = 'src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/readiness/Nis2ReadinessClient.tsx';

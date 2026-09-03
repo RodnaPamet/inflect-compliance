@@ -12,9 +12,10 @@ import * as path from 'node:path';
 
 import { isStepApplicable } from '@/app-layer/usecases/onboarding';
 import { ONBOARDING_STEPS, SKIPPABLE_STEPS } from '@/lib/schemas/onboarding';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const STEP = 'NIS2_SELF_ASSESSMENT';
 

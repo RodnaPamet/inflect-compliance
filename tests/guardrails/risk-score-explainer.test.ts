@@ -21,8 +21,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+/** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const component = read('src/components/risks/RiskScoreExplainer.tsx');
 const usecase = read('src/app-layer/usecases/risk-score-explanation.ts');

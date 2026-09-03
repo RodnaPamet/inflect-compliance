@@ -23,9 +23,12 @@ import {
     containmentRunbookFor,
 } from '@/data/incident-containment';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+/** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
+const read = (rel: string) => codeOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 
 const REAL_TYPES = ['RANSOMWARE', 'DATA_BREACH', 'DDOS', 'UNAUTHORIZED_ACCESS'] as const;
@@ -144,7 +147,12 @@ describe('incident detail UI — containment + forensic', () => {
 
 describe('provenance — CC BY 4.0 attribution', () => {
     it('credits Paolo Carner / BARE Consulting (CC BY 4.0) in the reference data', () => {
-        const src = read('src/data/incident-containment.ts');
+        // RAW read ON PURPOSE — the one assertion in this file that is
+        // deliberately ABOUT a comment. CC BY 4.0 requires the attribution to
+        // live in the file header, so masking comments (which every other
+        // read here does, per #2246) would delete the very thing being
+        // asserted and turn a correct licence check red.
+        const src = readRaw('src/data/incident-containment.ts');
         expect(src).toMatch(/CC BY 4\.0/);
         expect(src.toLowerCase()).toMatch(/paolo carner|bare consulting/);
     });

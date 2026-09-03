@@ -12,10 +12,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const SRC_DIR = path.resolve(__dirname, '../../src');
+/**
+ * Comments MASKED at the read seam (#2246). Offsets and newlines survive, so
+ * the `file:line` violation reports below still point at the right line; the
+ * masking supersedes the per-line `startsWith('//')` skips, which never saw a
+ * trailing or block comment, and it stops `dbUser.role` in prose from
+ * failing (or satisfying) the whole-file `toContain` checks.
+ */
 function readSrcFile(relativePath: string): string {
-    return fs.readFileSync(path.join(SRC_DIR, relativePath), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(SRC_DIR, relativePath), 'utf-8'));
 }
 
 async function getFiles(pattern: string, baseDir: string = SRC_DIR): Promise<string[]> {

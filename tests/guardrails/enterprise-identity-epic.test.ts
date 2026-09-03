@@ -16,9 +16,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+/**
+ * Comments MASKED at the read seam (#2246). These assertions are almost all
+ * bare `toContain('<identifier>')` against a whole file, which is exactly the
+ * shape a comment naming the identifier satisfies — the "no bcrypt import"
+ * case below even documents having been bitten by it.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const schema = readPrismaSchema();
 const tenantContext = read('src/lib/tenant-context.ts');

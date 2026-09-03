@@ -18,9 +18,17 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Comments are masked at the read seam for SOURCE files, so a comment
+// mentioning a symbol can never satisfy an assertion about code. JSON and
+// markdown are read raw — `//` there is content (URLs, prose), not a comment.
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|prisma)$/;
+const read = (p: string) => {
+    const raw = fs.readFileSync(path.join(ROOT, p), 'utf8');
+    return CODE_FILE.test(p) ? codeOf(raw) : raw;
+};
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 // Current path count is 431 (591 operations). Floor well below that so

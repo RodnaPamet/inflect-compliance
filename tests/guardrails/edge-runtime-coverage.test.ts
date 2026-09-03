@@ -19,10 +19,13 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const API_DIR = path.join(ROOT, 'src/app/api');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Comments masked at the seam: a commented-out `runtime = 'edge'` (or a
+// commented-out node-only import) must not decide either assertion below.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 const EDGE_ROUTES = ['src/app/api/csp-report/route.ts'];
@@ -66,7 +69,7 @@ describe('edge-runtime coverage', () => {
     it('NO edge route imports a Node-only dependency (the load-bearing invariant)', () => {
         const offenders: string[] = [];
         for (const abs of routeFiles(API_DIR)) {
-            const src = fs.readFileSync(abs, 'utf8');
+            const src = codeOf(fs.readFileSync(abs, 'utf8'));
             if (!DECLARES_EDGE.test(src)) continue;
             if (NODE_ONLY_IMPORT.test(src)) {
                 offenders.push(path.relative(ROOT, abs));

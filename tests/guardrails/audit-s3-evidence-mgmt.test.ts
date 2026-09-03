@@ -5,9 +5,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
+// codeOf() masks comments at the READ SEAM (#2246): the enum and usecase
+// assertions below are about CODE, so a `///` doc-comment in the Prisma schema
+// or a `//` note in evidence.ts must not satisfy them. Literals are preserved.
 const read = (rel: string) =>
-    fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('Audit S3 — Evidence Management & Retention', () => {
     describe('schema', () => {

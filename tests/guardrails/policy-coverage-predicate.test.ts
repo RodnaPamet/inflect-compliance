@@ -16,8 +16,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 const PREDICATE_MODULE = 'src/lib/policy/coverage-predicate.ts';

@@ -24,8 +24,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
+
+/**
+ * Every source read in this file goes through here so COMMENTS ARE MASKED
+ * (#2246). Both directions matter for an allowlist ratchet: a commented-out
+ * `tenantMembership.create(` would otherwise put a file on the violation
+ * list, and — the direction that bites — a file kept on the allowlist by a
+ * commented-out call would pass the "allowlisted file still contains the
+ * pattern" check while holding no such call at all.
+ */
+const readSrc = (abs: string): string => codeOf(fs.readFileSync(abs, 'utf8'));
 
 interface AllowlistedSite {
     /** Path relative to repo root. */
@@ -175,7 +187,7 @@ describe('Guardrail: TenantMembership creation sites are allowlisted', () => {
 
         for (const rel of files) {
             const full = path.join(SRC, rel);
-            const content = fs.readFileSync(full, 'utf8');
+            const content = readSrc(full);
             if (!MEMBERSHIP_CREATION_PATTERN.test(content)) continue;
 
             const srcRelPath = `src/${rel}`;
@@ -203,7 +215,7 @@ describe('Guardrail: TenantMembership creation sites are allowlisted', () => {
         for (const site of ALLOWLISTED_MEMBERSHIP_SITES) {
             const full = path.join(ROOT, site.file);
             expect(fs.existsSync(full)).toBe(true);
-            const content = fs.readFileSync(full, 'utf8');
+            const content = readSrc(full);
             expect(MEMBERSHIP_CREATION_PATTERN.test(content)).toBe(true);
         }
     });
@@ -219,7 +231,7 @@ describe('Guardrail: TenantMembership creation sites are allowlisted', () => {
 
         const matches: string[] = [];
         for (const rel of files) {
-            const content = fs.readFileSync(path.join(SRC, rel), 'utf8');
+            const content = readSrc(path.join(SRC, rel));
             if (/ensureDefaultTenantMembership/.test(content)) {
                 matches.push(`src/${rel}`);
             }
@@ -246,7 +258,7 @@ describe('Guardrail: OrgMembership creation sites are allowlisted', () => {
 
         for (const rel of files) {
             const full = path.join(SRC, rel);
-            const content = fs.readFileSync(full, 'utf8');
+            const content = readSrc(full);
             if (!ORG_MEMBERSHIP_CREATION_PATTERN.test(content)) continue;
 
             const srcRelPath = `src/${rel}`;
@@ -275,7 +287,7 @@ describe('Guardrail: OrgMembership creation sites are allowlisted', () => {
         for (const site of ALLOWLISTED_ORG_MEMBERSHIP_SITES) {
             const full = path.join(ROOT, site.file);
             expect(fs.existsSync(full)).toBe(true);
-            const content = fs.readFileSync(full, 'utf8');
+            const content = readSrc(full);
             expect(ORG_MEMBERSHIP_CREATION_PATTERN.test(content)).toBe(true);
         }
     });
@@ -295,7 +307,7 @@ describe('Guardrail: OrgMembership creation sites are allowlisted', () => {
 
         const matches: string[] = [];
         for (const rel of files) {
-            const content = fs.readFileSync(path.join(SRC, rel), 'utf8');
+            const content = readSrc(path.join(SRC, rel));
             if (/ensureDefaultOrgMembership/.test(content)) {
                 matches.push(`src/${rel}`);
             }

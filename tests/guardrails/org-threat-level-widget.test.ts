@@ -12,9 +12,11 @@ import * as path from 'node:path';
 
 import { assertWidgetTypedShape } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import { DEFAULT_ORG_DASHBOARD_PRESET } from '@/app-layer/usecases/org-dashboard-presets';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('ORG_THREAT_LEVEL — schema + model', () => {
     const enums = read('prisma/schema/enums.prisma');
@@ -93,7 +95,12 @@ describe('ORG_THREAT_LEVEL — renderer + preset', () => {
 
     it('renders a staleness note for postures older than 30 days', () => {
         expect(widget).toMatch(/STALE_DAYS\s*=\s*30/);
-        expect(widget).toMatch(/may be stale/);
+        // #2246 Class A — this was `toMatch(/may be stale/)`, and that phrase
+        // lives only in the file-header comment: the note is localized, so the
+        // English words are in messages/, never in the widget. Anchor on the
+        // conditional and the i18n key that together ARE the note.
+        expect(widget).toMatch(/isStale\s*&&/);
+        expect(widget).toMatch(/widgets\.threatStale/);
         expect(widget).toContain('org-threat-level-stale');
     });
 

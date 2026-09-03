@@ -10,10 +10,13 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) =>
-    fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** Raw file text — only for the one block below that asserts about a COMMENT. */
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** Comments masked: an assertion about code can never be satisfied by prose. */
+const read = (rel: string) => codeOf(readRaw(rel));
 
 describe('Audit S2 — Control Framework & Testing', () => {
     describe('schema', () => {
@@ -94,7 +97,9 @@ describe('Audit S2 — Control Framework & Testing', () => {
     });
 
     describe('OVERDUE semantics — documented divergence', () => {
-        const src = read('src/app-layer/usecases/control/test-plans.ts');
+        // DELIBERATELY raw: this block asserts that a rationale COMMENT is
+        // present, so masking comments here would break a correct test.
+        const src = readRaw('src/app-layer/usecases/control/test-plans.ts');
 
         it('the inline rationale comment exists', () => {
             // The comment block explains why TestPlanStatus does NOT

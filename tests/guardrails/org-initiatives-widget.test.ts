@@ -15,9 +15,10 @@ import * as path from 'node:path';
 import { assertWidgetTypedShape } from '@/app-layer/schemas/org-dashboard-widget.schemas';
 import { DEFAULT_ORG_DASHBOARD_PRESET } from '@/app-layer/usecases/org-dashboard-presets';
 import { deriveProgress } from '@/app-layer/usecases/org-security-initiative';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('ORG_INITIATIVES — schema + models', () => {
     const enums = read('prisma/schema/enums.prisma');
@@ -95,7 +96,12 @@ describe('ORG_INITIATIVES — renderer + surface + preset', () => {
     it('the widget renders ProgressBar rows + the at-risk flag', () => {
         expect(widget).toMatch(/ProgressBar/);
         expect(widget).toMatch(/atRisk/);
-        expect(widget).toMatch(/at risk/);
+        // #2246 Class A — this was `toMatch(/at risk/)`, satisfied only by the
+        // file-header comment; the spaced spelling appears nowhere in the
+        // markup. The at-risk HEADLINE is an i18n key, so name that: it is a
+        // distinct artefact from the per-row `atRisk` flag above, and it
+        // disappears if the summary line is dropped.
+        expect(widget).toMatch(/widgets\.atRiskCount/);
     });
 
     it('the list + detail use the org-table pattern; unlink uses the Epic 67 undo-toast', () => {

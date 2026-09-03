@@ -19,9 +19,16 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+/**
+ * Comments MASKED at the read seam (#2246). The CFQI-clone guard below is a
+ * whole-file `not.toMatch(/CFQI|compositeScore|…/i)` over three concatenated
+ * sources — the one shape a comment can flip in the failing direction — and
+ * every positive assertion here names an identifier a comment could spell.
+ */
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
 const COMPLIANCE_SCHEMA = readPrismaSchema();
 const MIGRATION = read('prisma/migrations/20260701120000_scanner_ingestion/migration.sql');
