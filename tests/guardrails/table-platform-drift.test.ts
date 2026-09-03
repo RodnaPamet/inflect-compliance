@@ -186,8 +186,13 @@ describe('Table module integrity', () => {
         expect(fs.existsSync(guidePath)).toBe(true);
         const content = fs.readFileSync(guidePath, 'utf-8');
         expect(content.length).toBeGreaterThan(500);
-        expect(content).toContain('createColumns');
-        expect(content).toContain('DataTable');
+        // Assert the canonical import LINE, not bare mentions. `createColumns`
+        // occurs 5x and `DataTable` 17x in this guide, so either bare needle is
+        // satisfied by any surviving prose — the guide could lose its usage
+        // example entirely and stay green. This line appears exactly once.
+        expect(content).toContain(
+            "import { DataTable, createColumns } from '@/components/ui/table';",
+        );
     });
 
     it('no new *Client.tsx pages bypass DataTable without being in EXCLUDED_PAGES', () => {

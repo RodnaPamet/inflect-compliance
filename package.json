@@ -104,7 +104,7 @@
     "@sentry/nextjs": "^10.72.0",
     "@sindresorhus/slugify": "^3.0.0",
     "@t3-oss/env-nextjs": "^0.13.10",
-    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-table": "^9.2.4",
     "@tiptap/extension-link": "^3.30.5",
     "@tiptap/extension-placeholder": "^3.30.5",
     "@tiptap/pm": "^3.30.5",

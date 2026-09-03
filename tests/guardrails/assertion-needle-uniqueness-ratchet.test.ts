@@ -85,7 +85,13 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // Re-seated 2026-09-02 (#2226): same cause as the sibling span ratchet — twelve
 // guard suites over never-applied Terraform and an EKS deploy pipeline were
 // deleted, taking their short, repeated YAML/HCL identifiers with them.
-const AMBIGUOUS_NEEDLE_BASELINE = 1515;
+// Re-seated 2026-09-03 (#2263): −2. Four sites fixed, two added. The v9 type
+// import gave the two Initiatives clients a SECOND `from '@/components/ui/table'`
+// line, so org-initiatives-widget's bare needle was satisfied by the type import
+// alone; it now names the DataTable value import. table-platform-drift's
+// `createColumns` (5x) / `DataTable` (17x) mentions in GUIDE.md collapsed into
+// one assertion on the canonical import line, which occurs exactly once.
+const AMBIGUOUS_NEEDLE_BASELINE = 1513;
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;
@@ -102,8 +108,11 @@ const HIGH_MULTIPLICITY = 5;
  * History — only edit DOWNWARD.
  *   • 276 (2026-09-02): seated with the ratchet.
  *   • 271 (2026-09-03): re-measured after the rebase described above.
+ *   • 269 (2026-09-03, #2263): the two GUIDE.md mention-needles retired — a
+ *     guide legitimately repeats the API it documents, so no needle of that
+ *     shape can ever be unique there. Replaced by the canonical import line.
  */
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 270;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 269;
 
 /**
  * Sites this detector could NOT analyse, having established they read a file.

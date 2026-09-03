@@ -245,6 +245,52 @@ import {
 
 ---
 
+## TanStack Table v9 — where the feature set lives
+
+The platform is built on TanStack Table **v9**, which composes capabilities
+explicitly instead of accepting one row-model factory per capability. Two
+things follow, and both are absorbed inside this directory:
+
+1. **`features.ts` is the single declaration of what these tables can do.**
+   Every method the platform calls on `table` / `row` / `column` / `header`
+   exists because a feature registered there put it on the instance. Need a
+   capability the platform does not have yet (grouping, column ordering,
+   client-side filtering)? Add its feature to `tableFeatures({ … })` there —
+   not to a call site.
+
+2. **Type arguments stay inside the platform.** v9's public types take the
+   feature set FIRST — `ColumnDef<TFeatures, TData, TValue>`. `types.ts`
+   binds that argument once and re-exports the same names at the arity call
+   sites already use, so a page writes `ColumnDef<MyRow>` and imports it
+   from `@/components/ui/table`:
+
+   ```tsx
+   import { createColumns, type ColumnDef, type Row } from '@/components/ui/table';
+   ```
+
+   **Never import a table type from `@tanstack/react-table` in an app page.**
+   Every wrong form fails *at the line you wrote it on*, which is why there is
+   no import-ban ratchet here — the compiler is already a complete guard.
+   Measured against 9.2.4:
+
+   | you write | you get |
+   | --- | --- |
+   | `ColumnDef<MyRow, MyValue>` | TS2559 — `Type 'MyRow' has no properties in common with type 'TableFeatures'` |
+   | `ColumnDef<MyRow>` | TS2707 — requires between 2 and 3 type arguments |
+   | `Row<MyRow>` | TS2314 — requires 2 type arguments |
+   | `ColumnDef<T, …>` inside a generic | TS2344 — `Type 'T' does not satisfy the constraint 'TableFeatures'` |
+
+   None of them degrade silently and none surface in a cell renderer. Import
+   from `@/components/ui/table` instead and the feature slot is bound for you,
+   so `ColumnDef<MyRow>` means what it did under v8.
+
+A generic component that forwards a row type to `<DataTable>` needs the
+`TableRowData` bound (v9 requires a row type to be an object or an array):
+`function MyList<TRow extends TableRowData>(…)`. `TableRowData` is exported
+from the barrel too.
+
+---
+
 ## Architecture Compliance
 
 Architecture compliance tests in `tests/unit/data-table.test.ts` enforce:

@@ -75,15 +75,20 @@ describe('table-utils', () => {
 
 // ─── Column definition contract tests ───────────────────────────────
 
-import type { ColumnDef } from '@tanstack/react-table';
+// The platform's own alias, not the library's. Under TanStack v9 the
+// library type is `ColumnDef<TFeatures, TData, TValue>` — features first —
+// and `@/components/ui/table` re-exports it with the project's feature set
+// already bound so call sites keep the two-argument shape. Importing it
+// from here is exactly what app pages do, so this test also pins the seam.
+import type { ColumnDef, TableRowData } from '@/components/ui/table';
 
 /**
  * Helper to create a typed column array — mirrors createColumns from
  * data-table.tsx but avoids the JSX import.
  */
-function createTestColumns<T>(
-  columns: ColumnDef<T, any>[],
-): ColumnDef<T, any>[] {
+function createTestColumns<T extends TableRowData>(
+  columns: ColumnDef<T>[],
+): ColumnDef<T>[] {
   return columns;
 }
 
@@ -415,18 +420,24 @@ describe('Type contracts', () => {
 });
 // ─── Selection & Batch Action Architecture Tests ────────────────────
 
-import type { RowSelectionState, Table as TableType } from '@tanstack/react-table';
+import type { RowSelectionState, TableInstance } from '@/components/ui/table';
 
 describe('Selection state management', () => {
-  it('RowSelectionState is a Record<string, boolean> for row tracking', () => {
+  // TanStack v9 narrowed `RowSelectionState` from `Record<string, boolean>`
+  // to `Record<string, true>`: a row is deselected by REMOVING its key, not
+  // by writing `false`. Both encodings read identically through
+  // `row.getIsSelected()` (truthiness), so the platform's behaviour is
+  // unchanged — but code that writes the state has to use the absent-key
+  // spelling, and these tests pin that.
+  it('RowSelectionState records only the SELECTED rows', () => {
     const state: RowSelectionState = {
       'row-1': true,
       'row-2': true,
-      'row-3': false,
     };
-    expect(Object.keys(state)).toHaveLength(3);
+    expect(Object.keys(state)).toHaveLength(2);
     expect(state['row-1']).toBe(true);
-    expect(state['row-3']).toBe(false);
+    // Deselected rows are absent, not present-and-false.
+    expect(state['row-3']).toBeUndefined();
   });
 
   it('empty RowSelectionState means no rows selected', () => {
@@ -434,10 +445,12 @@ describe('Selection state management', () => {
     expect(Object.entries(state).filter(([, v]) => v)).toHaveLength(0);
   });
 
-  it('selected row count is computed from true values', () => {
-    const state: RowSelectionState = { a: true, b: true, c: false, d: true };
+  it('selected row count is the number of present keys', () => {
+    const state: RowSelectionState = { a: true, b: true, d: true };
     const selectedCount = Object.values(state).filter(Boolean).length;
     expect(selectedCount).toBe(3);
+    // `c` was never selected, so it is simply not a key.
+    expect('c' in state).toBe(false);
   });
 
   it('select-all is modeled as all row IDs set to true', () => {
@@ -457,10 +470,11 @@ describe('Selection state management', () => {
     expect(Object.keys(state)).toHaveLength(2);
   });
 
-  it('toggle-row flips a single row in the selection state', () => {
+  it('toggle-row adds then removes a single row key', () => {
     const toggleRow = (state: RowSelectionState, id: string): RowSelectionState => {
       const next = { ...state };
-      next[id] = !next[id];
+      if (next[id]) delete next[id];
+      else next[id] = true;
       return next;
     };
 
@@ -468,7 +482,8 @@ describe('Selection state management', () => {
     state = toggleRow(state, 'row-1');
     expect(state['row-1']).toBe(true);
     state = toggleRow(state, 'row-1');
-    expect(state['row-1']).toBe(false);
+    expect(state['row-1']).toBeUndefined();
+    expect(Object.keys(state)).toEqual([]);
   });
 
   it('shift-select range selects contiguous rows', () => {
@@ -546,7 +561,7 @@ describe('SelectionToolbar visibility contract', () => {
 
 describe('BatchAction type contracts', () => {
   // Import the actual type to ensure it's well-formed
-  type BatchAction<T> = import('@/components/ui/table/selection-toolbar').BatchAction<T>;
+  type BatchAction<T extends TableRowData> = import('@/components/ui/table/selection-toolbar').BatchAction<T>;
 
   interface MockEntity {
     id: string;
@@ -620,13 +635,13 @@ describe('renderBatchActions helper', () => {
   // Test the pure function behavior of renderBatchActions
   it('returns a function when given an action array', () => {
     // We can't import the JSX-heavy implementation here, but we can test the contract
-    type BatchAction<T> = import('@/components/ui/table/selection-toolbar').BatchAction<T>;
+    type BatchAction<T extends TableRowData> = import('@/components/ui/table/selection-toolbar').BatchAction<T>;
 
     interface Item { id: string }
 
     // The type contract: renderBatchActions returns (table) => ReactNode
     type RenderFn = (actions: BatchAction<Item>[]) =>
-      (table: TableType<Item>) => import('react').ReactNode;
+      (table: TableInstance<Item>) => import('react').ReactNode;
 
     // Type-level assertion only (would need JSX environment for actual rendering)
     const typeCheck: RenderFn | undefined = undefined;
@@ -635,7 +650,7 @@ describe('renderBatchActions helper', () => {
 });
 
 describe('DataTable selection props contract', () => {
-  type DataTableProps<T> = import('@/components/ui/table/data-table').DataTableProps<T>;
+  type DataTableProps<T extends TableRowData> = import('@/components/ui/table/data-table').DataTableProps<T>;
 
   interface MockItem {
     id: string;
@@ -732,7 +747,7 @@ describe('Selection keyboard ergonomics', () => {
 });
 
 describe('No regression: read-only table usage', () => {
-  type DataTableProps<T> = import('@/components/ui/table/data-table').DataTableProps<T>;
+  type DataTableProps<T extends TableRowData> = import('@/components/ui/table/data-table').DataTableProps<T>;
 
   interface ReadOnlyItem {
     id: string;
@@ -1121,7 +1136,7 @@ describe('TableEmptyState contract', () => {
 // ─── Loading State Contract Tests ───────────────────────────────────
 
 describe('Loading state contract', () => {
-  type DataTableProps<T> = import('@/components/ui/table/data-table').DataTableProps<T>;
+  type DataTableProps<T extends TableRowData> = import('@/components/ui/table/data-table').DataTableProps<T>;
 
   interface Item { id: string; name: string }
 
@@ -1242,7 +1257,7 @@ import {
   COLUMN_VISIBILITY_PREFIX,
 } from '@/components/ui/table/column-visibility-utils';
 import type { ColumnVisibilityConfig } from '@/components/ui/table/column-visibility-utils';
-import type { VisibilityState } from '@tanstack/react-table';
+import type { ColumnVisibilityState } from '@/components/ui/table';
 
 const testConfig: ColumnVisibilityConfig = {
   all: ['code', 'name', 'status', 'owner', 'updatedAt', 'category'],
@@ -1320,7 +1335,7 @@ describe('mergeVisibility', () => {
   });
 
   it('uses saved values for known columns', () => {
-    const saved: VisibilityState = {
+    const saved: ColumnVisibilityState = {
       code: true,
       name: false, // user hid name
       status: true,
@@ -1334,7 +1349,7 @@ describe('mergeVisibility', () => {
   });
 
   it('forces fixed columns to true regardless of saved state', () => {
-    const saved: VisibilityState = {
+    const saved: ColumnVisibilityState = {
       code: false, // user tried to hide fixed column
       name: true,
       status: true,
@@ -1352,7 +1367,7 @@ describe('mergeVisibility', () => {
       all: ['code', 'name', 'priority'],
       defaultVisible: ['code', 'name', 'priority'],
     };
-    const saved: VisibilityState = {
+    const saved: ColumnVisibilityState = {
       code: true,
       name: false,
       // 'priority' not in saved — should get default
@@ -1369,7 +1384,7 @@ describe('mergeVisibility', () => {
       all: ['a', 'b'],
       defaultVisible: ['a'],
     };
-    const saved: VisibilityState = {
+    const saved: ColumnVisibilityState = {
       a: true,
       b: false,
       oldCol: true, // no longer in config
@@ -1382,7 +1397,7 @@ describe('mergeVisibility', () => {
 
 describe('countVisibility', () => {
   it('counts visible and hidden columns', () => {
-    const state: VisibilityState = {
+    const state: ColumnVisibilityState = {
       a: true,
       b: true,
       c: false,
@@ -1396,14 +1411,14 @@ describe('countVisibility', () => {
   });
 
   it('handles all visible', () => {
-    const state: VisibilityState = { a: true, b: true, c: true };
+    const state: ColumnVisibilityState = { a: true, b: true, c: true };
     const counts = countVisibility(state);
     expect(counts.visible).toBe(3);
     expect(counts.hidden).toBe(0);
   });
 
   it('handles all hidden', () => {
-    const state: VisibilityState = { a: false, b: false };
+    const state: ColumnVisibilityState = { a: false, b: false };
     const counts = countVisibility(state);
     expect(counts.visible).toBe(0);
     expect(counts.hidden).toBe(2);
@@ -1422,7 +1437,7 @@ describe('hasCustomVisibility', () => {
   });
 
   it('returns true when user has hidden a default-visible column', () => {
-    const current: VisibilityState = {
+    const current: ColumnVisibilityState = {
       ...getDefaultVisibility(testConfig),
       name: false, // user hid name
     };
@@ -1430,7 +1445,7 @@ describe('hasCustomVisibility', () => {
   });
 
   it('returns true when user has shown a default-hidden column', () => {
-    const current: VisibilityState = {
+    const current: ColumnVisibilityState = {
       ...getDefaultVisibility(testConfig),
       updatedAt: true, // user showed updatedAt
     };
@@ -1457,7 +1472,7 @@ describe('getVisibilityStorageKey', () => {
 });
 
 describe('EditColumnsButton contract', () => {
-  type EditColumnsButtonProps<T> = import('@/components/ui/table/edit-columns-button').EditColumnsButtonProps<T>;
+  type EditColumnsButtonProps<T extends TableRowData> = import('@/components/ui/table/edit-columns-button').EditColumnsButtonProps<T>;
 
   interface Item { id: string; name: string }
 
@@ -1488,7 +1503,7 @@ describe('EditColumnsButton contract', () => {
 });
 
 describe('Column visibility integration with DataTable', () => {
-  type DataTableProps<T> = import('@/components/ui/table/data-table').DataTableProps<T>;
+  type DataTableProps<T extends TableRowData> = import('@/components/ui/table/data-table').DataTableProps<T>;
 
   interface Item { id: string; name: string; status: string }
 
@@ -1502,7 +1517,7 @@ describe('Column visibility integration with DataTable', () => {
   });
 
   it('DataTable accepts onColumnVisibilityChange callback', () => {
-    const changes: VisibilityState[] = [];
+    const changes: ColumnVisibilityState[] = [];
     const props: Partial<DataTableProps<Item>> = {
       data: [],
       columns: [],
@@ -1514,7 +1529,7 @@ describe('Column visibility integration with DataTable', () => {
   });
 
   it('columnVisibility and onColumnVisibilityChange work together', () => {
-    let visibility: VisibilityState = { name: true, status: true };
+    let visibility: ColumnVisibilityState = { name: true, status: true };
     const props: Partial<DataTableProps<Item>> = {
       data: [],
       columns: [],
@@ -1550,7 +1565,7 @@ describe('Fixed columns cannot be hidden', () => {
     };
 
     // Even if user saved them as hidden
-    const saved: VisibilityState = { id: false, name: false, actions: false };
+    const saved: ColumnVisibilityState = { id: false, name: false, actions: false };
     const result = mergeVisibility(saved, config);
 
     expect(result.id).toBe(true);     // fixed
@@ -1588,7 +1603,7 @@ describe('Schema evolution resilience', () => {
   });
 
   it('handles column removed from config after user saved preferences', () => {
-    const saved: VisibilityState = { a: true, b: true, removed: false };
+    const saved: ColumnVisibilityState = { a: true, b: true, removed: false };
 
     const newConfig: ColumnVisibilityConfig = {
       all: ['a', 'b'],
@@ -1600,7 +1615,7 @@ describe('Schema evolution resilience', () => {
   });
 
   it('handles column renamed (old removed, new added)', () => {
-    const saved: VisibilityState = { oldName: true, b: false };
+    const saved: ColumnVisibilityState = { oldName: true, b: false };
 
     const newConfig: ColumnVisibilityConfig = {
       all: ['newName', 'b'],

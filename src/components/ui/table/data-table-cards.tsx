@@ -17,18 +17,19 @@
  * — selection lands at the top of the card, actions at the bottom.
  */
 import * as React from "react";
-import { flexRender, type Row, type Table as TanstackTable } from "@tanstack/react-table";
+import { flexRender } from "@tanstack/react-table";
+import type { Row, TableInstance, TableRowData } from "./types";
 
 import { cn } from "@/lib/cn";
 import { cardVariants } from "@/components/ui/card";
 
-export interface DataTableCardsProps<T> {
-    table: TanstackTable<T>;
+export interface DataTableCardsProps<T extends TableRowData> {
+    table: TableInstance<T>;
     onRowClick?: (row: Row<T>, e: React.MouseEvent) => void;
     className?: string;
 }
 
-export function DataTableCards<T>({
+export function DataTableCards<T extends TableRowData>({
     table,
     onRowClick,
     className,

@@ -16,7 +16,7 @@
  */
 
 import { cn } from "./table-utils";
-import { Table } from "@tanstack/react-table";
+import type { TableInstance, TableRowData } from "./types";
 import { Command } from "cmdk";
 import { RotateCcw, Settings } from "lucide-react";
 import { useState } from "react";
@@ -26,9 +26,9 @@ import { ScrollContainer } from "../scroll-container";
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export interface EditColumnsButtonProps<T> {
+export interface EditColumnsButtonProps<T extends TableRowData> {
   /** The TanStack table instance. */
-  table: Table<T>;
+  table: TableInstance<T>;
 
   /** Callback to reset column visibility to defaults. */
   onReset?: () => void;
@@ -59,7 +59,7 @@ function getColumnLabel(column: { id: string; columnDef: { header?: unknown } })
 
 // ── Component ───────────────────────────────────────────────────────
 
-export function EditColumnsButton<T>({
+export function EditColumnsButton<T extends TableRowData>({
   table,
   onReset,
   className,

@@ -58,9 +58,26 @@
 // TEST-HARNESS break only: `Build`, `Docker Build`, `Trivy` and `E2E` were
 // all green on the same commit, i.e. Next handles the ESM entries fine at
 // build and runtime.
+//
+// The TanStack Table cluster (2026-09, v8 → v9). v8 shipped a CJS build;
+// v9 is ESM-ONLY — `@tanstack/react-table` and `@tanstack/table-core` are
+// both `"type": "module"` with an `exports` map that has no `require`
+// condition and no `main`, so Jest's CJS runtime cannot load them at all.
+// Symptom without this: every suite that reaches `@/components/ui/table`
+// at RUNTIME dies with "Must use import to load ES Module", reported
+// against `src/components/ui/table/table.tsx` — the frame that imported
+// it, not the module at fault. Type-only importers are unaffected (the
+// import is erased), which is why the source-contract suites stayed green
+// while 11 of the 15 rendered table suites failed to run.
+//
+// Only these two. `@tanstack/react-store` and `@tanstack/store` come along
+// as new transitive deps of v9 but ship DUAL builds (`exports.require` →
+// `dist/index.cjs`), so Jest resolves them to CommonJS and transforming
+// them would be wasted work.
 const ESM_TRANSFORM_ALLOW_LIST =
     'jose|preact|preact-render-to-string|marked' +
-    '|sanitize-html|htmlparser2|domhandler|domutils|dom-serializer|domelementtype|entities';
+    '|sanitize-html|htmlparser2|domhandler|domutils|dom-serializer|domelementtype|entities' +
+    '|@tanstack/(?:react-table|table-core)';
 
 // ─── Coverage thresholds ─────────────────────────────────────────────
 //
@@ -426,6 +443,12 @@ const jsdomProject = {
             // entry. Allow it through transform so the legacy
             // wrapper used by `<DashboardGrid>` resolves under jsdom.
             'react-grid-layout|react-resizable|react-draggable|' +
+            // TanStack Table v9 is ESM-ONLY (no `require` condition, no
+            // `main`), unlike v8 which shipped CJS. `<DataTable>` and every
+            // rendered table test import it at runtime. See the longer note
+            // on ESM_TRANSFORM_ALLOW_LIST above for the symptom and for why
+            // @tanstack/react-store and @tanstack/store are NOT listed.
+            '@tanstack/(?:react-table|table-core)|' +
             // NextAuth v5 ships as ESM. The edge/node auth split
             // makes middleware.ts directly `import NextAuth from
             // "next-auth"`, so any unit/integration test that
