@@ -1036,7 +1036,13 @@ function readIfPresent(abs: string): string | null {
     if (hit !== undefined) return hit;
     let text: string | null = null;
     try {
-        if (fs.statSync(abs).isFile()) text = fs.readFileSync(abs, 'utf8');
+        // Read directly rather than stat-then-read. The guard was redundant —
+        // `readFileSync` already throws EISDIR on a directory and ENOENT on a
+        // missing path, both of which land in the catch as `null` — and the
+        // check-then-use pair is a TOCTOU that CodeQL flags as
+        // `js/file-system-race` (high). Nothing is lost: verified that both
+        // error codes are raised and swallowed identically.
+        text = fs.readFileSync(abs, 'utf8');
     } catch {
         text = null;
     }
