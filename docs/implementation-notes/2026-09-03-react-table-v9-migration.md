@@ -1,6 +1,6 @@
 # 2026-09-03 — TanStack Table v8 → v9 (feature composition at the platform boundary)
 
-**Commit:** `<pending>` feat(table): migrate @tanstack/react-table v8.21.3 → v9.2.4 (#2263)
+**Commit:** `024a0754f` feat(table): migrate @tanstack/react-table v8.21.3 → v9.2.4 (#2263)
 **Branch:** `feat/react-table-v9`
 
 Closes #2263. Dependabot proposed this twice as a plain version bump (#2199,
@@ -25,12 +25,14 @@ always built, so v8's `getCoreRowModel()` has no successor at all, and
 `ColumnDef<TData, TValue>` became `ColumnDef<TFeatures, TData, TValue>`;
 likewise `Row`, `Cell`, `Column`, `Table`. The platform spelled its aliases
 `ColumnDef<T, any>` everywhere, so under v9 that binds `T` to `TFeatures`
-and `any` to `TData` — it still COMPILES, and `row.original` silently
-becomes `any`/`unknown` at the cell renderers. That is what the 46 × TS2322,
-39 × TS7006 and 18 × TS18046 all are: one defect with a long tail, reported
-everywhere except at the import that caused it. (A single-argument
-`ColumnDef<MyRow>` is the loud case — TS2707, "requires between 2 and 3
-type arguments".)
+and `any` to `TData`. The compiler rejects that **at the alias itself** —
+TS2344 (`Type 'T' does not satisfy the constraint 'TableFeatures'`) for a
+generic parameter, TS2559 for a concrete row type — and the now-unusable
+alias produces a long tail downstream: the 46 × TS2322, 39 × TS7006 and
+18 × TS18046 are that tail. Nothing here degrades silently; every wrong form
+names the line it is written on. (A single-argument `ColumnDef<MyRow>` is the
+loudest — TS2707, "requires between 2 and 3 type arguments".) All four forms
+are measured against 9.2.4 in the table in `src/components/ui/table/GUIDE.md`.
 
 Three smaller renames rode along, each a real semantic change rather than a
 spelling one:

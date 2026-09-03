@@ -429,12 +429,6 @@ export function useTable<T extends TableRowData>(
     [columnPinning],
   );
 
-  // TanStack Table's options object isn't designed for the React
-  // Compiler's reactivity model — it expects a fresh object per render
-  // (the library does its own internal stability tracking). The rule's
-  // "incompatible-library" warning is correct: TanStack predates the
-  // Compiler. Working as intended in production.
-  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useTanstackTable({
     // v9 composes capabilities explicitly instead of accepting a row-model
     // factory per capability. `dataTableFeatures` (./features) is the single

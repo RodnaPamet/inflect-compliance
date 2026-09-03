@@ -269,12 +269,20 @@ things follow, and both are absorbed inside this directory:
    ```
 
    **Never import a table type from `@tanstack/react-table` in an app page.**
-   One type argument fails outright — `Generic type 'ColumnDef' requires
-   between 2 and 3 type arguments` (TS2707), `Row` likewise (TS2314). Two
-   arguments is the dangerous one: `ColumnDef<MyRow, MyValue>` binds `MyRow`
-   to the FEATURE slot and `MyValue` to the row slot, compiles, and then
-   `row.original` is whatever `MyValue` was — which surfaces as a spray of
-   unrelated-looking errors in the cell renderers rather than at the import.
+   Every wrong form fails *at the line you wrote it on*, which is why there is
+   no import-ban ratchet here — the compiler is already a complete guard.
+   Measured against 9.2.4:
+
+   | you write | you get |
+   | --- | --- |
+   | `ColumnDef<MyRow, MyValue>` | TS2559 — `Type 'MyRow' has no properties in common with type 'TableFeatures'` |
+   | `ColumnDef<MyRow>` | TS2707 — requires between 2 and 3 type arguments |
+   | `Row<MyRow>` | TS2314 — requires 2 type arguments |
+   | `ColumnDef<T, …>` inside a generic | TS2344 — `Type 'T' does not satisfy the constraint 'TableFeatures'` |
+
+   None of them degrade silently and none surface in a cell renderer. Import
+   from `@/components/ui/table` instead and the feature slot is bound for you,
+   so `ColumnDef<MyRow>` means what it did under v8.
 
 A generic component that forwards a row type to `<DataTable>` needs the
 `TableRowData` bound (v9 requires a row type to be an object or an array):

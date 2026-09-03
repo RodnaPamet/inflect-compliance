@@ -61,7 +61,17 @@
  * successor and simply disappears. Only `expandedRowModel` is registered:
  * the pipeline runs core → filtering → grouping → sorting → expanding →
  * pagination, and each un-registered stage passes its input straight
- * through. Filtering, grouping and sorting are all done outside the table
+ * through.
+ *
+ * `expandedRowModel` is INERT today, and that is deliberate — do not read it
+ * as backing the expand affordance. TanStack's expanded row model only
+ * flattens `row.subRows` into the row list, and nothing in this repo
+ * populates `subRows` (zero references outside this file); the platform's
+ * expansion is `rowExpandingFeature` state plus a consumer-rendered
+ * `renderAlignedSubRows`. Removing the slot leaves every expansion test
+ * green, so no test can tell it is here. It stays for v8 parity: if a
+ * consumer ever does populate `subRows`, expansion flattens as it always
+ * did rather than silently ignoring them. Filtering, grouping and sorting are all done outside the table
  * by the page, and pagination is `manualPagination: true`, so registering
  * their row models would be dead weight that also drags every built-in
  * filter/sort function into the bundle.
