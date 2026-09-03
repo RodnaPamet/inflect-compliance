@@ -1266,8 +1266,8 @@ model TenantSecuritySettings {
   /// rationally accept one unattended and not the other.
   identityLeaverMode           IdentityWriteMode @default(DISABLED)
   identityJoinerMode           IdentityWriteMode @default(DISABLED)
-  /// When the current DRY_RUN period began, per direction. The gate to PROPOSE
-  /// or AUTOMATIC reads this: dry-run is time-boxed and mandatory, so a tenant
+  /// When the current DRY_RUN period began, per direction. The gate to
+  /// AUTOMATIC reads this: dry-run is time-boxed and mandatory, so a tenant
   /// cannot enable unattended writes the same afternoon it enables the feature.
   /// Reset whenever a direction returns to DRY_RUN, so the clock measures the
   /// CURRENT observation window rather than the first one ever started.

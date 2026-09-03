@@ -117,7 +117,14 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // AFTER identity-sync-dispatch (03:00) on purpose: the pass acts only on
         // links a COMPLETE sync re-observed, so running it before the sync would
         // read yesterday's evidence and refuse for the wrong reason.
-        description: 'Fan out a leaver pass per (tenant, writable directory provider). Clamped at DRY_RUN: it decides what a disable would do and writes nothing to any directory.',
+        // NOT clamped at DRY_RUN any more. This description asserted "writes
+        // nothing to any directory" for the four days after #2187 raised
+        // LEAVER_MAX_MODE to AUTOMATIC (2026-08-30), which is the shape of
+        // safety claim that is worst to leave stale: an operator reading job
+        // config to decide whether this job can act on a real directory got the
+        // wrong answer from the field named `description`. What bounds the
+        // blast radius is the per-tenant ladder, not a clamp.
+        description: 'Fan out a leaver pass per (tenant, writable directory provider). What each pass may do is the tenant\'s own identityLeaverMode: DRY_RUN decides and records what a disable WOULD do; AUTOMATIC performs it. Tenants default to DISABLED.',
         defaultPayload: {},
     },
     {

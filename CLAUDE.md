@@ -923,8 +923,7 @@ per direction on `TenantSecuritySettings.identity{Leaver,Joiner}Mode`, defaultin
 to `DISABLED`. `setIdentityWriteMode` in `usecases/identity-write-policy.ts`
 refuses multi-rung widening, refuses to leave `DRY_RUN` before
 `DRY_RUN_MIN_DAYS` (7), and refuses ANY widen of a direction whose
-`DIRECTION_IMPLEMENTED` flag is false — which is the joiner, since
-2026-09-01., and any move out of
+`DIRECTION_IMPLEMENTED` flag is false — which is the joiner. Any move out of
 `DRY_RUN` — including narrowing — nulls `dryRunSince` and restarts the clock.
 
 **There was a fourth rung, `PROPOSE`, and deleting it CLOSED a hole rather than
@@ -970,7 +969,7 @@ tenant at `DRY_RUN` is not equal but is BELOW, and the inequality would have
 refused it `MODE_ABOVE_CLAMP`, a refusal that records no row. The ladder order
 now lives in one place, `src/lib/identity/write-ladder.ts`, used by the pass, the
 policy usecase, the admin route's GET and the admin client; it carries no server
-imports so a client component can hold it. (The route's `GET` held a fifth
+imports so a client component can hold it. (The route's `GET` held a fourth
 verbatim copy until #2241 — the module's own docstring named the copies it
 replaced and missed that one, which is how a route can go on offering a rung the
 ladder no longer has. Its `PUT` body schema is now `z.enum(LADDER)`, so a PUT
