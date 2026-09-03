@@ -7,6 +7,7 @@
 
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
+import { deploymentSenderAddress } from '@/lib/email/sender-identity';
 
 export interface TenantNotificationSettingsData {
     enabled: boolean;
@@ -18,43 +19,18 @@ export interface TenantNotificationSettingsData {
 /**
  * The sender a tenant that has never opened the notifications page sends AS.
  *
- * THIS IS A DEPLOYMENT FACT, NOT A PRODUCT CONSTANT. It was the literal
- * `noreply@inflect.app`, and that address is deliverable only from a deployment
- * whose relay has verified the `inflect.app` domain. On any other deployment —
- * including this product's own production VM — the relay rejects it:
- *
- *     550 The inflect.app domain is not verified.
- *
- * That failure is per-message and silent. `processOutbox` marks the row FAILED
- * and moves on, nothing reads `lastError`, and no alert fires on the rate — so
- * production sent its last successful email on 2026-06-03 and accumulated 520
- * failures across digests, policy-approval requests and identity-leaver alerts
- * before anyone looked. Every tenant was affected, because the fallback applies
- * to any tenant with no `TenantNotificationSettings` row and none of the seven
- * had one.
- *
- * `SMTP_FROM` was configured correctly (`noreply@inflect.bg`, the verified
- * domain) the whole time. It simply was not on this path: the mailer reads it
- * for its transport default, and then `processOutbox` overrides `from` per
- * tenant from HERE. Two sender defaults, one of them right, and the wrong one won.
- *
- * Read from `process.env` rather than `@/env` for the reason given at
- * `src/lib/mailer.ts` — a bundled chunk can carry an `@/env` copy whose
- * server-only vars are not surfaced, which is the same silent-drop this fixes.
- *
- * Resolved per call, not at module load: the worker reads it after
- * `initMailerFromEnv`, and pinning it at import time would reintroduce an
- * order dependency between two modules that otherwise have none.
+ * `processOutbox` overrides each message's `from` from HERE, so for outbox mail
+ * this value — not the mailer's transport default — is what reaches the relay.
+ * It was its own hardcoded copy of `noreply@inflect.app`, which is why a
+ * deployment with `SMTP_FROM` set correctly still had every message rejected
+ * `550 ... domain is not verified`. See `@/lib/email/sender-identity` for the
+ * full account; the point of importing it is that there is now one thing to set.
  */
-function fallbackFromEmail(): string {
-    return process.env.SMTP_FROM || 'noreply@inflect.app';
-}
-
 function defaults(): TenantNotificationSettingsData {
     return {
         enabled: true,
         defaultFromName: 'Inflect Compliance',
-        defaultFromEmail: fallbackFromEmail(),
+        defaultFromEmail: deploymentSenderAddress(),
         complianceMailbox: null,
     };
 }

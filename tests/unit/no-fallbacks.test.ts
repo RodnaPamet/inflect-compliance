@@ -54,6 +54,18 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // env.ts-snapshot-doesn't-reach-this-chunk rationale as the
             // rate-limit / docs / health carve-outs above.
             if (file.endsWith('mailer.ts') && file.includes('lib')) continue;
+            // The deployment's sender address, which `mailer.ts` (transport
+            // default) and `notifications/settings.ts` (per-tenant fallback)
+            // both need. It carries the SAME carve-out reason as mailer.ts
+            // directly above — a bundled route chunk can surface no SMTP_* on
+            // the `@/env` copy, so `env.SMTP_FROM` reads undefined and the
+            // caller silently falls back. That is not hypothetical here: both
+            // files previously hardcoded `noreply@inflect.app`, production's
+            // relay had verified a different domain, and 520 messages were
+            // rejected `550 ... not verified` between 2026-06-03 and
+            // 2026-09-03 with nothing surfacing it. This module exists so
+            // there is one address to set rather than two to keep in sync.
+            if (file.endsWith('sender-identity.ts')) continue;
             // Edge middleware reads CSP_REPORT_ONLY before env validation (optional runtime toggle)
             if (file.endsWith('middleware.ts') && !file.includes('pii-middleware')) continue;
             // Dub-ported utility files use process.env by upstream design

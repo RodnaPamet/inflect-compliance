@@ -10,6 +10,7 @@
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { logger } from '@/lib/observability/logger';
+import { deploymentSenderAddress } from '@/lib/email/sender-identity';
 
 export interface EmailAttachment {
     filename: string;
@@ -154,7 +155,7 @@ export function initMailerFromEnv(): void {
         const port = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587;
         const user = process.env.SMTP_USER || undefined;
         const pass = process.env.SMTP_PASS || undefined;
-        const from = process.env.SMTP_FROM || 'noreply@inflect.app';
+        const from = deploymentSenderAddress();
         setEmailProvider(new NodemailerProvider({ host, port, user, pass, from }));
         logger.info('Mailer initialised: SMTP transport', {
             component: 'mailer',

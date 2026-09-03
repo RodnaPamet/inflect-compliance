@@ -20,6 +20,12 @@
  * never emits the hardcoded product domain.
  */
 import { getTenantNotificationSettings } from '@/app-layer/notifications/settings';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { deploymentSenderAddress, UNCONFIGURED_SENDER } from '@/lib/email/sender-identity';
+import { repoRelativeFiles, REPO_ROOT } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 type SettingsDb = Parameters<typeof getTenantNotificationSettings>[0];
 
@@ -85,5 +91,52 @@ describe('notification sender fallback', () => {
 
         const s = await getTenantNotificationSettings(db, 't1');
         expect(s.defaultFromEmail).toBe('compliance@acme.test');
+    });
+});
+
+describe('deploymentSenderAddress (the single owner)', () => {
+    const original = process.env.SMTP_FROM;
+    afterEach(() => {
+        if (original === undefined) delete process.env.SMTP_FROM;
+        else process.env.SMTP_FROM = original;
+    });
+
+    it('is the configured sender', () => {
+        process.env.SMTP_FROM = 'ops@example-verified.test';
+        expect(deploymentSenderAddress()).toBe('ops@example-verified.test');
+    });
+
+    it('falls back to the placeholder only when nothing is configured', () => {
+        delete process.env.SMTP_FROM;
+        expect(deploymentSenderAddress()).toBe(UNCONFIGURED_SENDER);
+    });
+
+    it('is the ONLY hardcoded sender in src/ code', () => {
+        // The defect was two copies of this literal that could disagree. If a
+        // third appears, this fails rather than waiting for a relay to reject it.
+        //
+        // Population comes from `repoRelativeFiles()` (git ls-files --cached
+        // --others), NOT `git grep`: git grep skips UNTRACKED files, so the
+        // first draft of this test could not see the very module it names.
+        //
+        // `codeOf` strips comments — every file here discusses the literal in
+        // prose, and a docstring naming the address is not a second place that
+        // decides it.
+        // `.tsx` is in scope deliberately. Scanning only `.ts` would let this
+        // assertion keep its name while missing half of `src/` — the reach
+        // would not be the thing it claims. It costs one exclusion below.
+        const offenders = repoRelativeFiles()
+            .filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f))
+            // env.ts declares the same literal as the zod default for SMTP_FROM,
+            // which is the schema's business, not a second sender decision.
+            .filter((f) => f !== 'src/env.ts')
+            // The notification-settings page shows the literal as an input
+            // `placeholder` — greyed-out example text for an operator typing
+            // their own sender. It is rendered, never read: nothing resolves a
+            // from-address through it, so it cannot disagree with the module.
+            .filter((f) => f !== 'src/app/t/[tenantSlug]/(app)/admin/notifications/page.tsx')
+            .filter((f) => codeOf(readFileSync(join(REPO_ROOT, f), 'utf8')).includes(UNCONFIGURED_SENDER));
+
+        expect(offenders).toEqual(['src/lib/email/sender-identity.ts']);
     });
 });
