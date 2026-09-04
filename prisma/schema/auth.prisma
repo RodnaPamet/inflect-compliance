@@ -614,6 +614,25 @@ model TenantApiKey {
   /// agent. `onDelete: Restrict` — a registered agent with live credentials
   /// cannot be deleted out from under them; retire it instead.
   agentId     String?
+  /// The HIGHEST rung on the 0-6 agent-autonomy ladder this credential may
+  /// exercise — the same ladder as `RegisteredAgent.autonomyLevel`.
+  ///
+  /// The effective ceiling for a call is `min(this, the agent's own level)`, so
+  /// a key can only ever NARROW what its agent may do. That direction is the
+  /// point: without it, authority belonged to whoever held the key, and a
+  /// credential minted for a read-only integration could drive an agent's full
+  /// autonomy simply by carrying the right scopes.
+  ///
+  /// NULL means NO KEY-LEVEL NARROWING, not "deny" — the agent term is always
+  /// present for an agent-bound key, so the ceiling is still bounded. That is
+  /// the OPPOSITE of `RegisteredAgent.riskTier`, where NULL means UNSCORED and
+  /// must be read as deny: an absent narrowing is not an absent assessment.
+  ///
+  /// A CHECK constraint pins the range AND refuses a value on a key bound to no
+  /// agent: a ceiling with no agent term to min against is exactly the state
+  /// this column exists to end, so it is unrepresentable rather than merely
+  /// discouraged.
+  maxAutonomyLevel Int?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   tenant      Tenant    @relation(fields: [tenantId], references: [id])

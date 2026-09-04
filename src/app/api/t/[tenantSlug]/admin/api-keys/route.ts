@@ -16,6 +16,12 @@ const CreateApiKeySchema = z.object({
      * i.e. every newly created one — can mint no usable MCP credential.
      */
     agentId: z.string().nullable().optional(),
+    /**
+     * The ceiling this credential may drive its agent to, 0-6. Requires
+     * `agentId` and may not exceed the agent's own registered level — both
+     * refused in the usecase, where the agent row is resolved under RLS.
+     */
+    maxAutonomyLevel: z.number().int().min(0).max(6).nullable().optional(),
 });
 
 export const GET = withApiErrorHandling(

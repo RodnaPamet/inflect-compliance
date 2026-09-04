@@ -4541,7 +4541,15 @@
             "signatureVerifiedTooltip": "Ed25519 signature verified; linked to the hash-chained audit trail.",
             "unverified": "Unverified",
             "unverifiedTooltip": "Signature invalid or absent — retained + flagged, not linked to the audit trail.",
-            "export": "Export"
+            "export": "Export",
+            "credentialsTitle": "Agent credentials",
+            "credentialsDesc": "Every API key bound to a registered agent, and how far up the autonomy ladder it can actually drive that agent. Revoked and expired credentials stay listed — a revocation you cannot see is one nobody can confirm took effect.",
+            "credentialsEmpty": "No API key is bound to a registered agent yet. Bind one when you create the key in Admin → API keys.",
+            "credentialAutonomy": "Autonomy ceiling {level}",
+            "credentialNoAgent": "No agent",
+            "credentialLive": "Live",
+            "credentialRevoked": "Revoked",
+            "credentialExpired": "Expired"
         },
         "sharepoint": {
             "title": "Microsoft SharePoint",

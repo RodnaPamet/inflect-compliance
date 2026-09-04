@@ -70,6 +70,19 @@ export interface McpToolAuthorization {
     policy?: 'read' | 'write';
     basis: McpAuthorizationBasis;
     /**
+     * The rung on the 0-6 agent-autonomy ladder that CALLING this tool
+     * represents, when it differs from its capability class's default
+     * (`AUTONOMY_REQUIRED_BY_CAPABILITY` in `agentic/autonomy-ceiling.ts`:
+     * read 1, propose 2, orchestrate 3).
+     *
+     * Optional rather than required, because the class is ALREADY declared data
+     * — the funnel knows whether it is running a read tool or a propose tool —
+     * and fourteen hand-written copies of the same `1` would be fourteen
+     * opportunities to write `6`. Declare it only where a tool is genuinely more
+     * autonomous than its neighbours.
+     */
+    autonomy?: number;
+    /**
      * The human route this mirrors, for the reader and for the guard's error
      * message. Where a tool has no human equivalent, say so here explicitly —
      * an empty string is not accepted.

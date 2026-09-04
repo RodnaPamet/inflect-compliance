@@ -12,6 +12,12 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { generateApiKey, validateScopes } from '@/lib/auth/api-key-auth';
+import {
+    AUTONOMY_MAX,
+    AUTONOMY_MIN,
+    RISK_TIER_CEILING_UNWIRED,
+    resolveAutonomyCeiling,
+} from '@/lib/agentic/autonomy-ceiling';
 
 // ─── List API Keys ───
 
@@ -32,11 +38,92 @@ export async function listApiKeys(ctx: RequestContext) {
                 lastUsedIp: true,
                 createdById: true,
                 createdAt: true,
+                agentId: true,
+                maxAutonomyLevel: true,
                 createdBy: { select: { id: true, name: true, email: true } },
             },
             orderBy: { createdAt: 'desc' },
         })
     );
+}
+
+/**
+ * The agent-bound credentials, with the two facts an operator running agents
+ * actually needs: is this key still live, and how far up the autonomy ladder can
+ * it drive its agent?
+ *
+ * A separate reader from `listApiKeys` rather than a filter over it, because the
+ * questions differ. `/admin/api-keys` asks "what integrations exist"; this asks
+ * "what can act autonomously right now, and what have we switched off". It
+ * therefore RETURNS revoked and expired rows rather than hiding them: a
+ * revocation you cannot see is one nobody can confirm took effect, and the whole
+ * point of surfacing it here is that revoking a key is the operator's move
+ * during an incident.
+ */
+export async function listAgentCredentials(ctx: RequestContext) {
+    assertCanViewAdminSettings(ctx);
+
+    const now = new Date();
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.tenantApiKey.findMany({
+            where: { tenantId: ctx.tenantId, agentId: { not: null } },
+            select: {
+                id: true,
+                name: true,
+                keyPrefix: true,
+                scopes: true,
+                expiresAt: true,
+                revokedAt: true,
+                lastUsedAt: true,
+                maxAutonomyLevel: true,
+                agentId: true,
+                agent: { select: { id: true, name: true, status: true, autonomyLevel: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 200,
+        });
+
+        return rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            keyPrefix: row.keyPrefix,
+            scopes: Array.isArray(row.scopes) ? (row.scopes as string[]) : [],
+            lastUsedAt: row.lastUsedAt,
+            revokedAt: row.revokedAt,
+            expiresAt: row.expiresAt,
+            /**
+             * One word an operator can scan a column for. `revoked` wins over
+             * `expired` when both apply: revocation is the deliberate act and is
+             * what somebody wants confirmation of.
+             */
+            state: row.revokedAt
+                ? ('revoked' as const)
+                : row.expiresAt !== null && row.expiresAt <= now
+                  ? ('expired' as const)
+                  : ('live' as const),
+            agent: row.agent
+                ? {
+                      id: row.agent.id,
+                      name: row.agent.name,
+                      status: row.agent.status,
+                      autonomyLevel: row.agent.autonomyLevel,
+                  }
+                : null,
+            keyMaxAutonomy: row.maxAutonomyLevel,
+            /**
+             * The ceiling this credential actually exercises — the SAME `min`
+             * the tool funnel computes, from the same two terms. Shown rather
+             * than left for the reader to do in their head, because the whole
+             * hazard the column exists for is somebody assuming the key's own
+             * number is the answer.
+             */
+            effectiveAutonomy: resolveAutonomyCeiling({
+                keyMax: row.maxAutonomyLevel,
+                agentAutonomy: row.agent?.autonomyLevel ?? null,
+                riskTierCeiling: RISK_TIER_CEILING_UNWIRED,
+            }),
+        }));
+    });
 }
 
 // ─── Create API Key ───
@@ -60,6 +147,13 @@ export interface CreateApiKeyInput {
      * unregistered.
      */
     agentId?: string | null;
+    /**
+     * The highest rung on the 0-6 agent-autonomy ladder this credential may
+     * drive its agent to. Requires `agentId`: a ceiling with no agent term to be
+     * the lower of would read as the whole authority rather than a narrowing of
+     * it, which is the state the column exists to end.
+     */
+    maxAutonomyLevel?: number | null;
 }
 
 export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput) {
@@ -97,10 +191,30 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
         // foreign-key checks as the table owner, which bypasses row security, so
         // an id belonging to another tenant would satisfy the constraint.
         const agentId = input.agentId ?? null;
+        const maxAutonomyLevel = input.maxAutonomyLevel ?? null;
+
+        if (maxAutonomyLevel !== null && agentId === null) {
+            throw badRequest(
+                'A maximum autonomy level requires an agent binding: without one there ' +
+                    'is no agent level for it to be the lower of, so it would read as the ' +
+                    'whole of the authority rather than a narrowing of it.',
+            );
+        }
+        if (
+            maxAutonomyLevel !== null &&
+            (!Number.isInteger(maxAutonomyLevel) ||
+                maxAutonomyLevel < AUTONOMY_MIN ||
+                maxAutonomyLevel > AUTONOMY_MAX)
+        ) {
+            throw badRequest(
+                `Maximum autonomy level must be a whole number between ${AUTONOMY_MIN} and ${AUTONOMY_MAX}.`,
+            );
+        }
+
         if (agentId !== null) {
             const agent = await db.registeredAgent.findFirst({
                 where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
-                select: { id: true, status: true },
+                select: { id: true, status: true, autonomyLevel: true },
             });
             if (!agent) {
                 throw badRequest('Unknown agent.');
@@ -111,6 +225,19 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
             if (agent.status !== 'ACTIVE') {
                 throw badRequest(
                     `Agent is ${agent.status.toLowerCase()}; only an ACTIVE agent can be bound to a key.`,
+                );
+            }
+            // A key ceiling ABOVE the agent's own level is refused rather than
+            // silently clamped. The runtime `min` would make it harmless, but a
+            // stored 6 against an agent registered at 2 reads to the next
+            // operator as "this key may do 6" — and the register is supposed to
+            // be the place you can read an agent's authority off. Refusing keeps
+            // the stored number and the effective number the same thing.
+            if (maxAutonomyLevel !== null && maxAutonomyLevel > agent.autonomyLevel) {
+                throw badRequest(
+                    `Maximum autonomy level ${maxAutonomyLevel} exceeds the agent's own ` +
+                        `registered level of ${agent.autonomyLevel}. A key may narrow an ` +
+                        'agent\'s authority, never widen it.',
                 );
             }
         }
@@ -125,6 +252,7 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
                 expiresAt,
                 createdById: ctx.userId,
                 agentId,
+                maxAutonomyLevel,
             },
             select: {
                 id: true,
@@ -133,6 +261,8 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
                 scopes: true,
                 expiresAt: true,
                 createdAt: true,
+                agentId: true,
+                maxAutonomyLevel: true,
             },
         });
 
@@ -145,7 +275,13 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
                 category: 'entity_lifecycle',
                 entityName: 'TenantApiKey',
                 operation: 'created',
-                after: { name, scopes: input.scopes, expiresAt: expiresAt?.toISOString() ?? null },
+                after: {
+                    name,
+                    scopes: input.scopes,
+                    expiresAt: expiresAt?.toISOString() ?? null,
+                    agentId,
+                    maxAutonomyLevel,
+                },
                 summary: `Created API key: ${name}`,
             },
         });

@@ -134,9 +134,16 @@ export async function runReadTool(
 
     const ctx = inv.ctx;
 
-    // 1. The one gate: exposure → credential scope → the human route's own
-    //    permission check. Audits exactly one row on whichever step refuses.
-    await authorizeToolCall(inv, tool);
+    // 1. The one gate: token audience → credential liveness → deny-by-default
+    //    exposure → the autonomy ceiling → credential scope → the human route's
+    //    own permission check. Audits exactly one row on whichever step refuses.
+    //
+    //    `capabilityClass: 'read'` is the AUTONOMY class, not a credential
+    //    check: read tools deliberately carry no `capability`, because the
+    //    endpoint gate already accepted `mcp:read` OR `mcp:propose` and
+    //    re-checking here would newly refuse propose-only keys the read tools
+    //    they can call today.
+    await authorizeToolCall(inv, { ...tool, capabilityClass: 'read' });
 
     // 2. Validate arguments.
     const parsed = tool.argsSchema.safeParse(rawArgs ?? {});

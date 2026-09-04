@@ -34,6 +34,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { generateApiKey } from '@/lib/auth/api-key-auth';
 import { verifyAuditChain } from '@/lib/audit/audit-writer';
+import { mintExchangedToken } from '@/lib/mcp/token-exchange';
 import { POST } from '@/app/api/mcp/route';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -75,6 +76,15 @@ let keyReaderPropose = '';
 let keyRiskBlind = '';
 /** Minted by a member who is later DEACTIVATED. */
 let keyDeadPrincipal = '';
+/** Bound to an agent registered at rung 1 — below what a propose tool needs. */
+let keyLowAutonomy = '';
+/** Revoked after minting, to exercise the per-call liveness re-read. */
+let keyRevoked = '';
+/**
+ * An RFC 8693 token whose audience is `list_risks` alone, so calling any OTHER
+ * granted tool with it must refuse on the audience and nothing else.
+ */
+let tokenForRisksOnly = '';
 
 async function rpc(token: string, body: unknown): Promise<{ status: number; raw: string }> {
     const req = new NextRequest('http://localhost/api/mcp', {
@@ -123,9 +133,9 @@ function reasonOf(row: { detailsJson: unknown }): string | undefined {
     return (row.detailsJson as { reason?: string } | null)?.reason;
 }
 
-async function mintKey(userId: string, scopes: string[], boundAgent: string | null) {
+async function mintKeyRow(userId: string, scopes: string[], boundAgent: string | null) {
     const { plaintext, keyHash, keyPrefix } = generateApiKey();
-    await prisma.tenantApiKey.create({
+    const row = await prisma.tenantApiKey.create({
         data: {
             tenantId: TENANT,
             name: `k-${randomUUID().slice(0, 6)}`,
@@ -135,8 +145,13 @@ async function mintKey(userId: string, scopes: string[], boundAgent: string | nu
             createdById: userId,
             agentId: boundAgent,
         },
+        select: { id: true },
     });
-    return plaintext;
+    return { plaintext, id: row.id };
+}
+
+async function mintKey(userId: string, scopes: string[], boundAgent: string | null) {
+    return (await mintKeyRow(userId, scopes, boundAgent)).plaintext;
 }
 
 async function seedUser(suffix: string): Promise<string> {
@@ -201,7 +216,13 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
                     tenantId: TENANT,
                     aiSystemId: aiSystem.id,
                     name: 'denial subject',
-                    autonomyLevel: 1,
+                    // Rung 2 — the PROPOSE rung. This suite's subject is which
+                    // refusal fires for a given misconfiguration, and an agent
+                    // registered below the rung a propose tool needs would trip
+                    // the autonomy gate first and mask every one of them. The
+                    // rung-1 case is a separate agent below, tested on purpose
+                    // rather than as a side effect of a fixture.
+                    autonomyLevel: 2,
                     dataAccessScope: 'READ_TENANT_DATA',
                     reversibility: 'REVERSIBLE',
                     provenance: 'FIRST_PARTY',
@@ -216,8 +237,50 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
             });
         }
 
+        // A second agent, identical but registered one rung lower, so the
+        // autonomy refusal can be observed with everything else held constant.
+        const lowSystem = await prisma.aiSystem.create({
+            data: { tenantId: TENANT, name: 'low-rung host', ownerUserId: ownerId },
+        });
+        const lowAgentId = (
+            await prisma.registeredAgent.create({
+                data: {
+                    tenantId: TENANT,
+                    aiSystemId: lowSystem.id,
+                    name: 'low-rung subject',
+                    autonomyLevel: 1,
+                    dataAccessScope: 'READ_TENANT_DATA',
+                    reversibility: 'REVERSIBLE',
+                    provenance: 'FIRST_PARTY',
+                    ownerUserId: ownerId,
+                    status: 'ACTIVE',
+                },
+            })
+        ).id;
+        for (const toolName of ['list_risks', 'propose_finding', 'get_compliance_posture']) {
+            await prisma.registeredAgentTool.create({
+                data: { tenantId: TENANT, agentId: lowAgentId, toolName, grantedByUserId: ownerId },
+            });
+        }
+
         const wide = ['mcp:read', 'mcp:propose', 'risks:read', 'controls:read', 'audits:read'];
         keyUngranted = await mintKey(ownerId, wide, agentId);
+        keyLowAutonomy = await mintKey(ownerId, wide, lowAgentId);
+
+        const revoked = await mintKeyRow(ownerId, wide, agentId);
+        keyRevoked = revoked.plaintext;
+        await prisma.tenantApiKey.update({
+            where: { id: revoked.id },
+            data: { revokedAt: new Date() },
+        });
+
+        const forToken = await mintKeyRow(ownerId, wide, agentId);
+        tokenForRisksOnly = mintExchangedToken({
+            tenantId: TENANT,
+            apiKeyId: forToken.id,
+            agentId,
+            audience: ['list_risks'],
+        }).token;
         keyNoScope = await mintKey(ownerId, ['mcp:read'], agentId);
         keyNoCapability = await mintKey(ownerId, ['mcp:read', 'audits:read'], agentId);
         keyReaderPropose = await mintKey(readerId, ['mcp:propose', 'audits:read'], agentId);
@@ -297,6 +360,51 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
         expect(row.entity).toBe('McpTool');
         expect(row.entityId).toBe('propose_finding');
         expect(reasonOf(row)).toBe('policy_denied');
+    });
+
+    it('an agent whose registered autonomy does not reach the rung a propose tool needs', async () => {
+        // Everything else is identical to the passing case: same principal,
+        // same scopes, same grants. Only the register's rung differs, which is
+        // the claim that authority is a property of the agent.
+        const { row } = await denialFor(() =>
+            callTool(keyLowAutonomy, 'propose_finding', { items: [{ title: 'x' }] }),
+        );
+        expect(row.entity).toBe('McpTool');
+        expect(row.entityId).toBe('propose_finding');
+        expect(reasonOf(row)).toBe('autonomy_denied');
+        expect(row.detailsJson).toMatchObject({ required: 2, ceiling: 1 });
+    });
+
+    it('a credential revoked BEFORE the request is refused at authentication, and writes no tool row', async () => {
+        // Deliberately the opposite assertion to the others, and it is here to
+        // stop a plausible "improvement": the tool boundary re-reads revocation
+        // on every call, so it is tempting to expect a `credential_revoked` row
+        // here too. There must not be one. `verifyApiKey` refuses this request
+        // at the door with a 401, before any invocation exists — and adding a
+        // second row for the same refusal is precisely the inflated signal this
+        // suite's one-row bracket exists to prevent.
+        //
+        // The case the tool-boundary check DOES catch is a key revoked while a
+        // run is already executing, where authentication happened minutes ago.
+        // That lives in `mcp-token-audience-and-ceiling.test.ts`, asserted with
+        // a tool spy, because no status code can distinguish it.
+        const before = (await denialRows()).length;
+        const res = await callTool(keyRevoked, 'list_risks');
+        expect(res.status).toBe(401);
+        expect((await denialRows()).length).toBe(before);
+    });
+
+    it('an audience-scoped token used against a tool it does not name', async () => {
+        // The tool IS granted and the principal MAY call it — the token is the
+        // only thing standing in the way, which is what makes this an audience
+        // refusal rather than any of the five above wearing a new name.
+        const { row } = await denialFor(() =>
+            callTool(tokenForRisksOnly, 'get_compliance_posture'),
+        );
+        expect(row.entity).toBe('McpTool');
+        expect(row.entityId).toBe('get_compliance_posture');
+        expect(reasonOf(row)).toBe('audience_denied');
+        expect(row.detailsJson).toMatchObject({ tokenAudience: ['list_risks'] });
     });
 
     it('a credential whose principal was deactivated after it was minted', async () => {

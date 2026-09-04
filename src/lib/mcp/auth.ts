@@ -37,14 +37,53 @@
  * through and intersects the two, so the credential can never exceed the person
  * it speaks for. A principal that no longer resolves is a refusal, audited with
  * a reason naming the credential to rebind — see `agent-authority.ts`.
+ *
+ * ## TWO CREDENTIAL SHAPES REACH THIS DOOR, AND ONLY THIS DOOR
+ *
+ *   • `iflk_…` — the long-lived `TenantApiKey`. No audience: it may reach any
+ *     tool its agent is granted, exactly as before.
+ *   • `ifxt_…` — an RFC 8693 EXCHANGED token, minted at `POST /api/mcp/token`
+ *     from one of those keys and scoped to a named audience (a set of tool
+ *     names, or the resources surface). Short-lived, signed, and refused at
+ *     anything outside its audience — see `token-exchange.ts`.
+ *
+ * An exchanged token is accepted HERE and nowhere else. `getTenantCtx`'s API-key
+ * path recognises `iflk_` only, so an `ifxt_` presented at `/api/t/**` is a 401.
+ * That is deliberate and is half of the audience property: a credential minted
+ * for one MCP tool is not a credential for the REST surface either. It also
+ * means the workflow engine — which enters through `resolveMcpInvocation` with a
+ * ctx built by `getTenantCtx` — can never be started with an exchanged token, so
+ * there is no path where orchestration launders a narrow audience into a wide
+ * one.
+ *
+ * The exchanged token names its issuing key by ID and carries no copy of it.
+ * Resolution goes through `resolveApiKeyById`, which runs the IDENTICAL
+ * revocation / expiry / tenant-liveness checks `verifyApiKey` runs — the same
+ * function tail, not a second implementation — so a key revoked after exchange
+ * cannot be used through the token it minted.
  */
 import type { NextRequest } from 'next/server';
 
-import { extractBearerToken, verifyApiKey } from '@/lib/auth/api-key-auth';
+import { extractBearerToken, resolveApiKeyById, verifyApiKey } from '@/lib/auth/api-key-auth';
 import {
     assertRegisteredAgent,
     evaluateAgentRegistration,
+    type AgentGateVerdict,
 } from '@/lib/agentic/agent-registration-gate';
+import {
+    RISK_TIER_CEILING_UNWIRED,
+    resolveAutonomyCeiling,
+} from '@/lib/agentic/autonomy-ceiling';
+import {
+    isExchangedToken,
+    mintExchangedToken,
+    verifyExchangedToken,
+    MCP_RESOURCES_AUDIENCE,
+    type Clock,
+    type MintedToken,
+    systemClock,
+} from './token-exchange';
+import { isKnownMcpTool } from './tool-catalogue';
 import {
     resolveAgentAuthority,
     PrincipalUnresolvedError,
@@ -54,10 +93,10 @@ import {
 import { listGrantedToolNames } from '@/lib/agentic/agent-tool-exposure';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
-import { unauthorized, forbidden } from '@/lib/errors/types';
+import { unauthorized, forbidden, badRequest } from '@/lib/errors/types';
 import type { RequestContext } from '@/app-layer/types';
 
-import type { McpInvocation } from './authorize';
+import { denyToolCall, type McpInvocation } from './authorize';
 
 /**
  * Enforce an MCP capability scope (`mcp:read` or `mcp:propose`). Mirrors
@@ -148,7 +187,9 @@ async function denyUnresolvedPrincipal(
  */
 export async function authenticateMcpRequest(
     req: NextRequest,
+    options: { now?: Clock } = {},
 ): Promise<McpAuthResult> {
+    const now = options.now ?? systemClock;
     const token = extractBearerToken(req.headers.get('authorization'));
     if (!token) {
         throw unauthorized('MCP requires a Bearer TenantApiKey');
@@ -159,7 +200,27 @@ export async function authenticateMcpRequest(
         req.headers.get('x-real-ip') ??
         null;
 
-    const result = await verifyApiKey(token, clientIp);
+    // Two credential shapes, ONE resolution tail. An exchanged token is verified
+    // (signature, server, expiry — all on the injected clock) and then resolves
+    // its ISSUING KEY through the same checks a directly-presented key gets, so
+    // there is no second set of liveness rules for the token path to drift from.
+    let audience: readonly string[] | null = null;
+    let tokenExpiresAt: Date | null = null;
+    let result;
+    if (isExchangedToken(token)) {
+        const claims = verifyExchangedToken(token, { now });
+        audience = claims.audience;
+        tokenExpiresAt = claims.expiresAt;
+        result = await resolveApiKeyById(claims.apiKeyId, clientIp);
+        // A token whose tenant no longer matches the key's is refused rather
+        // than trusted: the claim is signed, but the KEY is the authority on
+        // which tenant it belongs to, and a mismatch means one of them moved.
+        if (result.valid && result.ctx.tenantId !== claims.tenantId) {
+            throw unauthorized('MCP token does not match its issuing credential.');
+        }
+    } else {
+        result = await verifyApiKey(token, clientIp);
+    }
     if (!result.valid) {
         throw unauthorized(`API key authentication failed: ${result.reason}`);
     }
@@ -186,9 +247,13 @@ export async function authenticateMcpRequest(
     // would write those rows unattributed. The gate decides whether the request
     // runs and what it may reach; it does not decide who made it.
     const surface = { method: req.method, path: new URL(req.url).pathname };
-    const agentId = await assertRegisteredAgent(result.ctx, surface);
+    const verdict = await assertRegisteredAgent(result.ctx, surface);
 
-    const invocation = await buildMcpInvocation(result.ctx, agentId, surface);
+    const invocation = await buildMcpInvocation(result.ctx, verdict, surface, {
+        audience,
+        tokenExpiresAt,
+        now,
+    });
     return { ctx: invocation.ctx, invocation };
 }
 
@@ -204,10 +269,24 @@ export async function authenticateMcpRequest(
  * Throws `forbidden` — after exactly one hash-chained `AUTHZ_DENIED` row — when
  * the credential's principal no longer resolves.
  */
+export interface BuildInvocationOptions {
+    /**
+     * The RFC 8693 audience of the presented token, or `null` for a caller
+     * holding the long-lived key itself. `null` and `[]` are different — see
+     * `McpInvocation.audience`.
+     */
+    audience?: readonly string[] | null;
+    /** The exchanged token's expiry, re-checked at every tool boundary. */
+    tokenExpiresAt?: Date | null;
+    /** Injected clock, threaded onto the invocation for the funnel to use. */
+    now?: Clock;
+}
+
 export async function buildMcpInvocation(
     keyCtx: RequestContext,
-    agentId: string | null,
+    verdict: AgentGateVerdict,
     surface: { method: string; path: string },
+    options: BuildInvocationOptions = {},
 ): Promise<McpInvocation> {
     // Authority: resolve the human this credential speaks for and narrow the
     // context to what BOTH of them hold. A SESSION context has already been
@@ -239,9 +318,37 @@ export async function buildMcpInvocation(
     // effect on the next call. `null` when the caller is bound to no live ACTIVE
     // agent — a signed-in human, or a tenant that has switched the register off.
     // See `agent-tool-exposure.ts` for why that is not an exposure bypass.
+    const agentId = verdict.agentId;
     const grantedTools = agentId ? await listGrantedToolNames(ctx.tenantId, agentId) : null;
 
-    return { ctx, principal, agentId, grantedTools };
+    // The autonomy ceiling: min(key max, agent's registered level).
+    //
+    // `RISK_TIER_CEILING_UNWIRED` is the 3/10 SEAM and it is a placeholder, not
+    // a decision. 3/10 replaces it with `ceilingForRiskTier(agent.riskTier)`
+    // once the operational risk scorer ships — and that function already encodes
+    // the direction that matters, NULL ⇒ DENY, so the wiring cannot get it
+    // backwards. It is not wired today because every agent in every register is
+    // currently unscored (`createRegisteredAgent` leaves the tier NULL on
+    // purpose), so folding it in now would take the whole MCP surface dark.
+    const autonomyCeiling = resolveAutonomyCeiling({
+        keyMax: keyCtx.apiKeyMaxAutonomy,
+        agentAutonomy: verdict.autonomyLevel,
+        riskTierCeiling: RISK_TIER_CEILING_UNWIRED,
+    });
+
+    return {
+        ctx,
+        principal,
+        agentId,
+        grantedTools,
+        audience: options.audience ?? null,
+        autonomyCeiling,
+        credential: {
+            apiKeyId: keyCtx.apiKeyId ?? null,
+            tokenExpiresAt: options.tokenExpiresAt ?? null,
+        },
+        now: options.now ?? systemClock,
+    };
 }
 
 /**
@@ -256,10 +363,167 @@ export async function buildMcpInvocation(
  * orchestration would be a way around it, which is the one thing the engine
  * promises it is not.
  */
-export async function resolveMcpInvocation(ctx: RequestContext): Promise<McpInvocation> {
+export async function resolveMcpInvocation(
+    ctx: RequestContext,
+    options: { now?: Clock } = {},
+): Promise<McpInvocation> {
     const verdict = await evaluateAgentRegistration(ctx);
-    return buildMcpInvocation(ctx, verdict.agentId, {
-        method: 'POST',
-        path: '/api/mcp (workflow engine)',
+    return buildMcpInvocation(
+        ctx,
+        verdict,
+        { method: 'POST', path: '/api/mcp (workflow engine)' },
+        {
+            // No audience: a run cannot be STARTED with an exchanged token
+            // (`getTenantCtx` does not accept one), so there is never an
+            // audience to carry here. Stated rather than left implicit, because
+            // if that ever changes this is the line that has to change with it.
+            audience: null,
+            now: options.now,
+        },
+    );
+}
+
+// ─── RFC 8693 token exchange ─────────────────────────────────────────
+
+export interface McpTokenExchangeResult extends MintedToken {
+    /** The agent the minted token speaks for, for the response body. */
+    agentId: string | null;
+}
+
+/**
+ * Exchange a long-lived `TenantApiKey` for a short-lived, audience-scoped token.
+ *
+ * ## What it refuses, and why each refusal is here rather than at first use
+ *
+ *   • A SUBJECT TOKEN THAT IS ITSELF AN EXCHANGED TOKEN. No chaining: a token
+ *     minted for `list_risks` cannot be re-exchanged for `list_controls`, which
+ *     would make the audience a suggestion. Refusing at exchange also means
+ *     there is no code path where this function holds two tokens at once.
+ *   • AN AUDIENCE NAMING SOMETHING THAT IS NOT A TOOL. Validated against the
+ *     live catalogue, so a typo is a 400 at mint rather than a token that
+ *     silently works for nothing.
+ *   • AN AUDIENCE THE AGENT IS NOT GRANTED. Deny-by-default exposure composes
+ *     with the audience rather than sitting beside it: exchange can only ever
+ *     narrow what the agent may already reach, never widen it. This refusal
+ *     writes the same hash-chained `AUTHZ_DENIED` row an ungranted tool CALL
+ *     writes, because it is the same finding one step earlier.
+ *
+ * ## What it never does
+ *
+ * It never forwards the subject token. `mintExchangedToken` takes ids, not
+ * tokens, so the long-lived credential cannot be embedded in, echoed by, or
+ * carried alongside the short-lived one — that is a property of the signature,
+ * not a promise in a comment.
+ */
+export async function exchangeMcpToken(
+    subjectToken: string,
+    request: { audience: readonly string[]; expiresIn?: number },
+    surface: { method: string; path: string },
+    options: { clientIp?: string | null; now?: Clock } = {},
+): Promise<McpTokenExchangeResult> {
+    const now = options.now ?? systemClock;
+
+    if (isExchangedToken(subjectToken)) {
+        throw badRequest(
+            'An exchanged MCP token cannot be exchanged again. Present the ' +
+                'original API key: re-exchange would let a narrow audience be ' +
+                'traded for a wider one.',
+        );
+    }
+
+    const result = await verifyApiKey(subjectToken, options.clientIp ?? null);
+    if (!result.valid) {
+        throw unauthorized(`API key authentication failed: ${result.reason}`);
+    }
+
+    // The same endpoint gate `authenticateMcpRequest` applies: a key with no MCP
+    // capability has nothing to exchange FOR.
+    const scopes = result.ctx.apiKeyScopes ?? [];
+    const hasMcp =
+        scopes.includes('*') ||
+        scopes.includes('mcp:*') ||
+        scopes.includes('mcp:read') ||
+        scopes.includes('mcp:propose');
+    if (!hasMcp) {
+        throw forbidden('API key does not have an MCP capability scope (mcp:read / mcp:propose).');
+    }
+
+    // The registration gate, unchanged — and it audits its own refusal.
+    const verdict = await assertRegisteredAgent(result.ctx, surface);
+
+    // The principal must still resolve. Reusing `buildMcpInvocation` rather than
+    // re-deriving means the token is minted against exactly the authority a tool
+    // call would have run on, including the deny-by-default grant list.
+    const invocation = await buildMcpInvocation(result.ctx, verdict, surface, { now });
+
+    const audience = [...new Set(request.audience)];
+    for (const entry of audience) {
+        if (entry === MCP_RESOURCES_AUDIENCE) continue;
+        if (!isKnownMcpTool(entry)) {
+            throw badRequest(
+                `"${entry}" is not an MCP tool. An audience names tool names, or ` +
+                    `"${MCP_RESOURCES_AUDIENCE}" for the resources surface.`,
+            );
+        }
+        if (invocation.grantedTools !== null && !invocation.grantedTools.has(entry)) {
+            await denyToolCall(invocation.ctx, 'tool_not_granted', {
+                tool: entry,
+                agentId: invocation.agentId,
+                message:
+                    `This agent is not granted the "${entry}" tool, so no token can be ` +
+                    'issued for it. An administrator must grant it in the agent register first.',
+                extra: { stage: 'token_exchange' },
+            });
+        }
+    }
+
+    // `verifyApiKey` always sets this on a valid result; asserting it rather
+    // than `!`-ing it means a future refactor that stops setting it fails here
+    // instead of minting a token whose `kid` names nothing — a token that would
+    // then fail the per-call liveness re-read as `missing` and be very hard to
+    // trace back to its issuer.
+    const apiKeyId = result.ctx.apiKeyId;
+    if (!apiKeyId) {
+        throw unauthorized('This credential cannot be exchanged for an MCP token.');
+    }
+
+    const minted = mintExchangedToken({
+        tenantId: invocation.ctx.tenantId,
+        apiKeyId,
+        agentId: invocation.agentId,
+        audience,
+        ttlSeconds: request.expiresIn,
+        now,
     });
+
+    // Issuance is an authority event and is audited as one — the row names the
+    // audience, so an incident review can answer "what was this token for"
+    // without the token.
+    await appendAuditEntry({
+        tenantId: invocation.ctx.tenantId,
+        userId: invocation.ctx.userId,
+        actorType: 'API_KEY',
+        entity: 'TenantApiKey',
+        entityId: apiKeyId,
+        action: 'MCP_TOKEN_EXCHANGED',
+        details: `Issued an audience-scoped MCP token for [${audience.join(', ')}]`,
+        detailsJson: {
+            category: 'access',
+            event: 'mcp_token_exchanged',
+            audience,
+            agentId: invocation.agentId,
+            apiKeyId,
+            expiresAt: minted.expiresAt.toISOString(),
+        },
+        requestId: invocation.ctx.requestId,
+        metadataJson: { apiKeyId, audience },
+    }).catch((err) => {
+        logger.warn('audit: failed to record MCP token exchange', {
+            requestId: invocation.ctx.requestId,
+            tenantId: invocation.ctx.tenantId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    });
+
+    return { ...minted, agentId: invocation.agentId };
 }

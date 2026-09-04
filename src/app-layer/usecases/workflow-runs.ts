@@ -21,8 +21,14 @@
  * deny-by-default tool allowlist that a direct tool call gets. Without that,
  * orchestration would be a way around the allowlist, which is the one thing this
  * engine promises it is not. (A resume re-enters `executeFrom` and therefore
- * re-resolves, so a revoke lands on the next execution rather than being carried
- * across a human checkpoint.)
+ * re-resolves, so every settled term is re-read across a human checkpoint.)
+ *
+ * REVOCATION IS CHECKED AT THE TOOL BOUNDARY, NOT AT DISPATCH. `authorizeToolCall`
+ * re-reads the credential's live state before EVERY step's tool call, so revoking
+ * a key stops a run already in flight at its next step. A status code cannot tell
+ * that design from one that checks only at dispatch — both refuse the next
+ * request — so the property is tested as "no further tool executed after the
+ * revoke", with a spy on the tool itself.
  */
 import { WorkflowRunStatus } from '@prisma/client';
 
@@ -221,11 +227,19 @@ async function executeFrom(
     let stepCount = fromSeq;
     let costTokens = await currentCost(ctx, runId);
 
-    // Resolved ONCE per execution, not per step: the principal's membership and
-    // the agent's tool grants cannot change mid-run, and re-reading them for
-    // every step of a long workflow would be the same two queries repeated. A
-    // revoke lands on the next run, which is the same freshness a direct tool
-    // call gets between requests.
+    // Resolved ONCE per execution, and that is now safe in a way it was not.
+    //
+    // The invocation carries the SETTLED terms — the principal's membership, the
+    // agent's tool grants, the autonomy ceiling — which are read here and reused
+    // for every step. The term that can change mid-run, CREDENTIAL REVOCATION,
+    // is deliberately not one of them: `authorizeToolCall` re-reads it at every
+    // tool boundary, uncached. So a key revoked while this loop is running stops
+    // the very next step rather than riding out the run.
+    //
+    // The comment this replaces said a revoke "lands on the next run, which is
+    // the same freshness a direct tool call gets between requests". That was the
+    // defect stated as a design: a run is exactly where the two differ, because
+    // a run keeps executing after the operator has acted.
     const invocation = await resolveMcpInvocation(ctx);
 
     for (let seq = fromSeq; seq < def.steps.length; seq++) {

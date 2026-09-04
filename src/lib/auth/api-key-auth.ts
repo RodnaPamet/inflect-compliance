@@ -366,6 +366,39 @@ export async function verifyApiKey(
         include: { tenant: true },
     });
 
+    return finaliseApiKeyAuth(apiKey, clientIp);
+}
+
+/**
+ * Resolve a key by its ID and run the IDENTICAL liveness checks + context build
+ * `verifyApiKey` runs.
+ *
+ * Exists for the RFC 8693 exchanged token, which names its issuing key by id
+ * rather than carrying it: the token is proof that the key was presented ONCE,
+ * at exchange time, and this re-establishes what that key is authorised for now
+ * — revocation, expiry, tenant liveness and scopes all re-read.
+ *
+ * Deliberately the same `finaliseApiKeyAuth` body rather than a second copy.
+ * A parallel resolver here would be a second authentication path over the same
+ * credential, free to drift from the first, which is the shape this whole epic
+ * exists to remove.
+ */
+export async function resolveApiKeyById(
+    apiKeyId: string,
+    clientIp?: string | null,
+): Promise<ApiKeyVerifyResult> {
+    const apiKey = await prisma.tenantApiKey.findUnique({
+        where: { id: apiKeyId },
+        include: { tenant: true },
+    });
+    return finaliseApiKeyAuth(apiKey, clientIp);
+}
+
+/** The shared tail of both resolvers: liveness, tracking, context. */
+async function finaliseApiKeyAuth(
+    apiKey: (TenantApiKey & { tenant: Tenant }) | null,
+    clientIp?: string | null,
+): Promise<ApiKeyVerifyResult> {
     if (!apiKey) {
         return { valid: false, reason: 'not_found' };
     }
@@ -429,6 +462,11 @@ export async function verifyApiKey(
         // consumer that forgets to handle it gets `undefined` and not a value
         // that looks deliberate.
         ...(apiKey.agentId ? { agentId: apiKey.agentId } : {}),
+        // The key's own autonomy narrowing. Carried as `null` when the column is
+        // null — unlike `agentId` above, because here the null has a MEANING
+        // ("no key-level narrowing") that a consumer should see rather than have
+        // to infer from an absent property.
+        apiKeyMaxAutonomy: apiKey.maxAutonomyLevel ?? null,
     };
 
     return { valid: true, apiKey, ctx };

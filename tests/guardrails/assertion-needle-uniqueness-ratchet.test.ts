@@ -100,7 +100,13 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // alone; it now names the DataTable value import. table-platform-drift's
 // `createColumns` (5x) / `DataTable` (17x) mentions in GUIDE.md collapsed into
 // one assertion on the canonical import line, which occurs exactly once.
-const AMBIGUOUS_NEEDLE_BASELINE = 1467;
+// Re-seated 2026-09-05 (Agentic 2/10): −1. `mcp-server-coverage`'s
+// `/enforceApiKeyScope\(/` needle over `src/lib/mcp/resources.ts` was satisfied
+// by either of that file's two call sites; the audience/liveness work collapsed
+// both into one `assertFrameworkScope` helper, so the needle now names exactly
+// one thing. A source refactor moving this number is the ordinary case, not a
+// surprise — the count is a property of the pair, not of the test.
+const AMBIGUOUS_NEEDLE_BASELINE = 1466;
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;

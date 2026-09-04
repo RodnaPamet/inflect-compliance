@@ -3,10 +3,12 @@
  *
  * A THIN ADAPTER: it speaks the MCP JSON-RPC wire protocol over HTTP and
  * routes every tool/resource call through IC's EXISTING secured chain —
- *   Bearer TenantApiKey → verifyApiKey → registration gate → principal
+ *   Bearer TenantApiKey (or an RFC 8693 exchanged token, which resolves to
+ *   one) → verifyApiKey → registration gate → principal
  *   resolution (the SAME resolveTenantContext a human goes through) →
  *   EFFECTIVE RequestContext (principal ∧ credential) →
- *   (per tool) deny-by-default exposure → assertPermission / assertCan* — the
+ *   (per tool) token audience → live-credential re-check → deny-by-default
+ *   exposure → autonomy ceiling → assertPermission / assertCan* — the
  *   SAME gate the equivalent human route uses → enforceApiKeyScope → usecase
  *   (runInTenantContext RLS + its own permission check) → per-domain redaction
  *   → appendAuditEntry.
@@ -63,7 +65,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     // per HTTP request and passed down, so a tool cannot construct its own —
     // which is what makes "no tool self-authorizes" a structural property
     // rather than a convention.
-    const { ctx, invocation } = await authenticateMcpRequest(req);
+    const { invocation } = await authenticateMcpRequest(req);
 
     let payload: unknown;
     try {
@@ -88,8 +90,11 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
             isProposeTool(name)
                 ? runProposeTool(invocation, name, args)
                 : runReadTool(invocation, name, args),
-        listResources: () => listMcpResources(ctx),
-        readResource: (uri) => readMcpResource(ctx, uri),
+        // Resources take the INVOCATION, not a bare ctx. Until this change they
+        // were the one door into `/api/mcp` that skipped the shared gate: scope
+        // enforcement only, no audit row on refusal, no audience, no ceiling.
+        listResources: () => listMcpResources(invocation),
+        readResource: (uri) => readMcpResource(invocation, uri),
     };
 
     // JSON-RPC allows a single request or a batch (array).

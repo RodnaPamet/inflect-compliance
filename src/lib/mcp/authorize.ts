@@ -4,18 +4,24 @@
  *
  * ## What runs, in order, and why that order
  *
- *   1. EXPOSURE — is this tool on the agent's allowlist? Deny-by-default.
- *   2. CAPABILITY — does the CREDENTIAL carry `mcp:propose`? (propose tools).
- *   3. RESOURCE SCOPE — does the CREDENTIAL carry `risks:read`?
- *   4. PERMISSION — may the PRINCIPAL do this? `assertPermission`, the SAME
+ *   1. AUDIENCE — was the token the caller presented minted FOR this tool?
+ *      (RFC 8693; `null` for a caller holding the long-lived key itself.)
+ *   2. LIVENESS — is the credential still live RIGHT NOW? Re-read per tool
+ *      call, never cached, so a revoke lands inside a run in flight.
+ *   3. EXPOSURE — is this tool on the agent's allowlist? Deny-by-default.
+ *   4. AUTONOMY — is the rung this tool represents at or below the effective
+ *      ceiling, `min(key max, agent autonomyLevel)`?
+ *   5. CAPABILITY — does the CREDENTIAL carry `mcp:propose`? (propose tools).
+ *   6. RESOURCE SCOPE — does the CREDENTIAL carry `risks:read`?
+ *   7. PERMISSION — may the PRINCIPAL do this? `assertPermission`, the SAME
  *      function `requirePermission` calls on the equivalent human route.
- *   5. POLICY — the shared `assertCanRead` / `assertCanWrite` the mirrored route
+ *   8. POLICY — the shared `assertCanRead` / `assertCanWrite` the mirrored route
  *      applies, where `PermissionSet` has no key to name.
  *
  * Cheapest and least-revealing first, and CREDENTIAL checks before PRINCIPAL
- * checks. That ordering is not cosmetic: 1-3 are configuration — a key scoped
+ * checks. That ordering is not cosmetic: 1-6 are configuration — a key scoped
  * for controls calling a risks tool is an integration that needs a wider key,
- * and its refusal should say "scope", by name, so somebody can fix it. 4-5 are
+ * and its refusal should say "scope", by name, so somebody can fix it. 7-8 are
  * the authority question, and a refusal there means the human this agent speaks
  * for genuinely may not do this. If the order were reversed, every under-scoped
  * integration would surface as a generic "Permission denied" and the audit trail
@@ -23,6 +29,22 @@
  * was only pointed at the wrong tool. An agent probing for reach it does not
  * have is the whole reason these rows exist; burying that in routine
  * misconfiguration is how a security signal stops being read.
+ *
+ * LIVENESS sits at 2 rather than later for two reasons. It is the check whose
+ * ANSWER CHANGES DURING A RUN — every other term was fixed when the invocation
+ * was assembled — so it has to be re-asked, and asking it early means a revoked
+ * credential learns nothing about grants or ceilings on its way out. And it is
+ * the one an operator reaches for in an incident: "revoke the key" has to mean
+ * the next tool call, not the next run.
+ *
+ * ## The boundary, not the dispatch
+ *
+ * Steps 1, 2 and 4 all run HERE, per tool call, and that placement is the whole
+ * of subpoint 6. The workflow engine resolves ONE `McpInvocation` per execution
+ * and then runs many steps on it; a revocation checked at dispatch would leave a
+ * run already in flight holding its authority to the end. A status code cannot
+ * tell the two designs apart — both refuse the next REQUEST — so the property is
+ * stated as "no further tool executes", and tested that way.
  *
  * ## Exactly one audit row per denial
  *
@@ -43,6 +65,18 @@
 import { appendAuditEntry } from '@/lib/audit';
 import { enforceApiKeyScope } from '@/lib/auth/api-key-auth';
 import { forbidden } from '@/lib/errors/types';
+import {
+    requiredAutonomyFor,
+    withinCeiling,
+    type McpCapabilityClass,
+} from '@/lib/agentic/autonomy-ceiling';
+import { checkCredentialLiveness } from '@/lib/agentic/agent-credential-state';
+import {
+    audienceCovers,
+    isTokenLive,
+    MCP_RESOURCES_AUDIENCE,
+    type Clock,
+} from './token-exchange';
 import { logger } from '@/lib/observability/logger';
 import { assertPermission } from '@/lib/security/permission-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
@@ -77,11 +111,46 @@ export interface McpInvocation {
      * the only state that skips the exposure check.
      */
     grantedTools: ReadonlySet<string> | null;
+    /**
+     * The RFC 8693 audience the presented token was minted for, or `null` when
+     * the caller presented the long-lived API key itself.
+     *
+     * `null` and `[]` are DIFFERENT and must stay different. `null` is "this
+     * credential carries no audience", which is the pre-exchange behaviour every
+     * existing integration relies on; `[]` would be "an audience naming
+     * nothing", which `mintExchangedToken` refuses to issue. Collapsing the two
+     * turns the check into a formality in whichever direction you collapse them.
+     */
+    audience: readonly string[] | null;
+    /**
+     * `min(key.maxAutonomyLevel, agent.autonomyLevel)` — the highest rung this
+     * invocation may reach. See `agentic/autonomy-ceiling.ts`, including the
+     * 3/10 risk-tier seam and why a NULL tier must deny while a NULL key ceiling
+     * must not.
+     */
+    autonomyCeiling: number;
+    /** What must still be TRUE at every tool boundary, not merely at auth. */
+    credential: {
+        /** The `TenantApiKey.id` revocation is re-checked against. */
+        apiKeyId: string | null;
+        /** The exchanged token's expiry, re-checked against `now` per call. */
+        tokenExpiresAt: Date | null;
+    };
+    /**
+     * Injected clock. Every expiry comparison the funnel makes reads this, so a
+     * test can prove an expiry without sleeping — and, more usefully, so an
+     * expiry that stops being checked cannot hide behind real time passing.
+     */
+    now: Clock;
 }
 
 /** Why a tool call was refused, for the audit row an operator reads. */
 export type McpDenialReason =
+    | 'audience_denied'
+    | 'credential_revoked'
+    | 'credential_expired'
     | 'tool_not_granted'
+    | 'autonomy_denied'
     | 'capability_denied'
     | 'scope_denied'
     | 'policy_denied';
@@ -146,6 +215,141 @@ export function isToolExposed(inv: McpInvocation, toolName: string): boolean {
 }
 
 /**
+ * Step 1 — AUDIENCE. Was the token the caller presented minted for this target?
+ *
+ * `target` is a tool name, or `MCP_RESOURCES_AUDIENCE` for the resources
+ * surface. A caller holding the long-lived key has `audience === null` and this
+ * is a no-op — the exchange is opt-in, and a key that never went through it
+ * behaves exactly as it did before token exchange existed.
+ */
+async function assertAudience(inv: McpInvocation, target: string): Promise<void> {
+    if (inv.audience === null) return;
+    if (audienceCovers(inv.audience, target)) return;
+    await denyToolCall(inv.ctx, 'audience_denied', {
+        tool: target,
+        agentId: inv.agentId,
+        // Names the audience the caller ALREADY HOLDS and the one it asked for
+        // — both already known to it — and nothing else. An actionable message
+        // for a misconfigured integration; no new information for a prober.
+        message:
+            `This token was issued for [${inv.audience.join(', ')}] and cannot be ` +
+            `used for "${target}". Exchange a token naming that audience.`,
+        extra: { requested: target, tokenAudience: [...inv.audience] },
+    });
+}
+
+/**
+ * Step 2 — LIVENESS. Re-read the credential, per tool call, uncached.
+ *
+ * The uncached read IS the feature. Everything else on the invocation was
+ * settled when it was assembled; this is the only term whose answer can change
+ * between two steps of the same run, and caching it — even for the length of one
+ * execution — reintroduces exactly the window subpoint 6 exists to close.
+ *
+ * A key that vanished between assembly and now is treated as REVOKED rather than
+ * ignored: the fail direction for "the credential I was told about is not there"
+ * has to be refusal.
+ */
+async function assertCredentialLive(inv: McpInvocation, target: string): Promise<void> {
+    const now = inv.now();
+
+    // The exchanged token's own expiry, checked first: it needs no query, and a
+    // spent token should not cost a database round trip to refuse.
+    if (!isTokenLive(inv.credential.tokenExpiresAt, now)) {
+        await denyToolCall(inv.ctx, 'credential_expired', {
+            tool: target,
+            agentId: inv.agentId,
+            message: 'This MCP token has expired. Exchange a new one.',
+            extra: { basis: 'exchanged_token' },
+        });
+    }
+
+    const apiKeyId = inv.credential.apiKeyId;
+    // A session-authenticated caller (the workflow engine started by a human)
+    // has no key to revoke; its session was already checked upstream.
+    if (!apiKeyId) return;
+
+    // Uncached, per call — see `agent-credential-state.ts` for why that is the
+    // feature rather than the cost.
+    const failure = await checkCredentialLiveness(apiKeyId, inv.ctx.tenantId, now);
+    if (failure === null) return;
+
+    if (failure === 'expired') {
+        await denyToolCall(inv.ctx, 'credential_expired', {
+            tool: target,
+            agentId: inv.agentId,
+            message: 'The API key behind this request has expired.',
+            extra: { basis: 'api_key' },
+        });
+        return;
+    }
+
+    await denyToolCall(inv.ctx, 'credential_revoked', {
+        tool: target,
+        agentId: inv.agentId,
+        message:
+            'The API key behind this request has been revoked. Every further ' +
+            'tool call is refused, including within a run already in progress.',
+        // `missing` and `revoked` are one REFUSAL and two diagnoses: an operator
+        // reading the trail needs to tell "somebody revoked this" from "the row
+        // is gone", which are different investigations.
+        extra: { basis: failure },
+    });
+}
+
+/**
+ * Step 4 — AUTONOMY. Is the rung this call represents within the ceiling?
+ *
+ * The ceiling is `min(key.maxAutonomyLevel, agent.autonomyLevel)`, computed once
+ * per invocation — see `agentic/autonomy-ceiling.ts`. This is what makes the
+ * authority a property of the AGENT: a credential can narrow it and can never
+ * widen it, so "what may this agent do" stops depending on which of its keys
+ * somebody is holding.
+ */
+async function assertAutonomy(
+    inv: McpInvocation,
+    target: string,
+    capabilityClass: McpCapabilityClass,
+    declared: number | undefined,
+): Promise<void> {
+    const required = requiredAutonomyFor(capabilityClass, declared);
+    if (withinCeiling(required, inv.autonomyCeiling)) return;
+    await denyToolCall(inv.ctx, 'autonomy_denied', {
+        tool: target,
+        agentId: inv.agentId,
+        message:
+            `This agent's autonomy ceiling does not reach the level "${target}" ` +
+            'requires. Raise the agent\'s registered autonomy level, or the key\'s ' +
+            'maximum, whichever is lower.',
+        extra: { required, ceiling: inv.autonomyCeiling, capabilityClass },
+    });
+}
+
+/**
+ * The gate applied to the MCP RESOURCES surface.
+ *
+ * Resources used to be gated by `enforceApiKeyScope` alone — a throw that wrote
+ * no audit row, applied no allowlist and consulted no ceiling. `/api/mcp` had
+ * two doors and only one of them was fully gated. This closes the three checks
+ * that DO apply cleanly to a surface with no catalogue entries of its own:
+ * audience (resources have their own audience name, so a token minted for
+ * `list_risks` cannot read them), liveness, and the autonomy ceiling. Every
+ * refusal now writes the same one hash-chained row a tool refusal writes.
+ *
+ * The deny-by-default EXPOSURE allowlist is deliberately not applied here, and
+ * the reason is that there is nothing to apply it to: `RegisteredAgentTool` rows
+ * name tools from the grantable catalogue, resources have no entries in it, and
+ * inventing a parallel grant vocabulary is a register change rather than a gate
+ * change. Recorded rather than papered over — a resource read is scope-gated,
+ * audience-gated, ceiling-gated and audited, but not allowlisted.
+ */
+export async function authorizeResourceRead(inv: McpInvocation): Promise<void> {
+    await assertAudience(inv, MCP_RESOURCES_AUDIENCE);
+    await assertCredentialLive(inv, MCP_RESOURCES_AUDIENCE);
+    await assertAutonomy(inv, MCP_RESOURCES_AUDIENCE, 'read', undefined);
+}
+
+/**
  * The gate. Throws `forbidden` — after exactly one audit row — when this
  * invocation may not call this tool.
  */
@@ -157,9 +361,22 @@ export async function authorizeToolCall(
         resourceScope: { resource: string; action: ScopeAction };
         /** Propose tools only — the MCP capability the credential must carry. */
         capability?: 'read' | 'propose' | 'orchestrate';
+        /**
+         * Which autonomy rung this tool's CLASS sits on. Passed by the two
+         * funnels rather than derived from `capability`, which is a CREDENTIAL
+         * check and is deliberately absent on read tools — deriving one from the
+         * other would have made every read tool resolve to the orchestrate rung.
+         */
+        capabilityClass: McpCapabilityClass;
     },
 ): Promise<void> {
-    // 1. Deny-by-default exposure.
+    // 1. Was this token minted for this tool?
+    await assertAudience(inv, tool.name);
+
+    // 2. Is the credential still live, right now?
+    await assertCredentialLive(inv, tool.name);
+
+    // 3. Deny-by-default exposure.
     if (!isToolExposed(inv, tool.name)) {
         await denyToolCall(inv.ctx, 'tool_not_granted', {
             tool: tool.name,
@@ -170,7 +387,10 @@ export async function authorizeToolCall(
         });
     }
 
-    // 2. Credential capability (propose tools). Message preserved verbatim from
+    // 4. Is this rung within the agent's ceiling?
+    await assertAutonomy(inv, tool.name, tool.capabilityClass, tool.authorize.autonomy);
+
+    // 5. Credential capability (propose tools). Message preserved verbatim from
     //    `enforceMcpCapability` — it names a scope, not a permission key.
     if (tool.capability) {
         try {
@@ -186,7 +406,7 @@ export async function authorizeToolCall(
         }
     }
 
-    // 3. Credential resource scope. Same treatment: the existing message is the
+    // 6. Credential resource scope. Same treatment: the existing message is the
     //    actionable one and is safe (it echoes scopes the caller already holds).
     try {
         enforceApiKeyScope(inv.ctx, tool.resourceScope.resource, tool.resourceScope.action);
@@ -205,7 +425,7 @@ export async function authorizeToolCall(
 
     const { authorize } = tool;
 
-    // 4. Permission keys — through the SAME `assertPermission` the human
+    // 7. Permission keys — through the SAME `assertPermission` the human
     //    route's `requirePermission` calls. It audits its own denial and
     //    throws the generic 403, so nothing is added here.
     if (authorize.keys && authorize.keys.length > 0) {
@@ -216,7 +436,7 @@ export async function authorizeToolCall(
         );
     }
 
-    // 5. The shared read/write policy, for a mirrored route that has no
+    // 8. The shared read/write policy, for a mirrored route that has no
     //    permission key to name. `assertCanRead` / `assertCanWrite` throw
     //    without auditing — which is precisely how an agent denial used to be
     //    invisible — so the throw is caught and turned into the one row.

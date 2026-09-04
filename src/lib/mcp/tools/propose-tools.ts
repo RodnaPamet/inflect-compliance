@@ -217,7 +217,7 @@ export async function runProposeTool(
     // 1. The one gate: exposure → the `mcp:propose` capability → the domain
     //    scope → the PRINCIPAL's create permission (the same `assertPermission`
     //    the human create route runs). Exactly one audit row on refusal.
-    await authorizeToolCall(inv, { ...tool, capability: 'propose' });
+    await authorizeToolCall(inv, { ...tool, capability: 'propose', capabilityClass: 'propose' });
 
     // 2. Validate the envelope.
     const parsed = proposeArgs.safeParse(rawArgs ?? {});

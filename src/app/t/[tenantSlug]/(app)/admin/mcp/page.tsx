@@ -2,6 +2,10 @@ import { SquareCheck, Workflow, BadgeCheck, Robot } from '@/components/ui/icons/
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { Heading } from '@/components/ui/typography';
+import { getTenantCtx } from '@/app-layer/context';
+import { listAgentCredentials } from '@/app-layer/usecases/api-keys';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,15 +19,41 @@ export const dynamic = 'force-dynamic';
  *   - Agent runs — orchestrator observability: start / watch / resume / abort
  *     the tenant's agentic workflow runs.
  * Admin-gated by the parent /admin layout.
+ *
+ * It also carries the CREDENTIAL panel, and that placement is the point. Every
+ * other agent surface here answers "what did an agent do"; this answers "what
+ * can act right now, and what have we switched off". Revocation is the
+ * operator's move during an incident, and a revocation you cannot see is one
+ * nobody can confirm took effect — so the panel deliberately lists revoked and
+ * expired credentials rather than filtering them out.
+ *
+ * The panel shows the EFFECTIVE autonomy ceiling — `min(key max, agent level)`,
+ * computed by the same function the tool funnel uses — rather than the key's own
+ * number, because reading the key's number as the answer is the exact
+ * misunderstanding the ceiling exists to prevent.
  */
 export default async function McpAdminPage({
     params,
 }: {
     params: Promise<{ tenantSlug: string }>;
 }) {
-    const { tenantSlug } = await params;
+    const resolved = await params;
+    const { tenantSlug } = resolved;
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const t = await getTranslations('admin');
+    const ctx = await getTenantCtx(resolved);
+    const credentials = await listAgentCredentials(ctx);
+
+    const stateVariant = {
+        live: 'success',
+        revoked: 'error',
+        expired: 'warning',
+    } as const;
+    const stateLabel = {
+        live: t('mcp.credentialLive'),
+        revoked: t('mcp.credentialRevoked'),
+        expired: t('mcp.credentialExpired'),
+    } as const;
 
     const cards = [
         {
@@ -93,6 +123,58 @@ export default async function McpAdminPage({
                     );
                 })}
             </div>
+
+            <section id="mcp-agent-credentials" className="space-y-default">
+                <div className="space-y-tight">
+                    <Heading level={2}>{t('mcp.credentialsTitle')}</Heading>
+                    <p className="text-sm text-content-muted">{t('mcp.credentialsDesc')}</p>
+                </div>
+
+                {credentials.length === 0 ? (
+                    <p
+                        id="mcp-agent-credentials-empty"
+                        className="rounded-lg border border-border-subtle bg-bg-default p-4 text-sm text-content-muted"
+                    >
+                        {t('mcp.credentialsEmpty')}
+                    </p>
+                ) : (
+                    <ul className="space-y-default">
+                        {credentials.map((cred) => (
+                            <li
+                                key={cred.id}
+                                id={`mcp-agent-credential-${cred.id}`}
+                                className="flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                                <span className="flex flex-col gap-tight">
+                                    <span className="font-medium text-content-emphasis">
+                                        {cred.name}
+                                    </span>
+                                    <span className="text-sm text-content-muted">
+                                        {cred.keyPrefix}… ·{' '}
+                                        {cred.agent?.name ?? t('mcp.credentialNoAgent')}
+                                    </span>
+                                </span>
+                                <span className="flex items-center gap-compact">
+                                    <span
+                                        className="text-sm text-content-muted"
+                                        data-autonomy={cred.effectiveAutonomy}
+                                    >
+                                        {t('mcp.credentialAutonomy', {
+                                            level: cred.effectiveAutonomy,
+                                        })}
+                                    </span>
+                                    <StatusBadge
+                                        variant={stateVariant[cred.state]}
+                                        data-state={cred.state}
+                                    >
+                                        {stateLabel[cred.state]}
+                                    </StatusBadge>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
         </div>
     );
 }

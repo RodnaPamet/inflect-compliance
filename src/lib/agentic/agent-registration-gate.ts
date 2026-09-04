@@ -56,6 +56,17 @@ export interface AgentGateVerdict {
     enforcing: boolean;
     /** The agent the caller speaks for, when it resolved to a live ACTIVE one. */
     agentId: string | null;
+    /**
+     * That agent's registered rung on the 0-6 autonomy ladder, or `null` when
+     * no live ACTIVE agent resolved.
+     *
+     * Read HERE rather than by a second query later because this is already the
+     * one place that loads the agent to decide whether traffic runs, and the
+     * autonomy ceiling is decided from the same row on the same request. A
+     * separate read would be a second answer to "which agent is this", free to
+     * disagree with the first between the two queries.
+     */
+    autonomyLevel: number | null;
     /** Set only when the caller was refused. */
     reason: AgentGateDenialReason | null;
 }
@@ -83,7 +94,12 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
     const enforcing = await isAgentRegistrationEnforced(ctx.tenantId);
 
     if (!ctx.agentId) {
-        return { enforcing, agentId: null, reason: enforcing ? 'no_agent_binding' : null };
+        return {
+            enforcing,
+            agentId: null,
+            autonomyLevel: null,
+            reason: enforcing ? 'no_agent_binding' : null,
+        };
     }
 
     // Read the agent by (id, tenantId) rather than by id alone. The FK already
@@ -91,17 +107,32 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
     // that decides whether traffic runs, and it does not get to rely on that.
     const agent = await prisma.registeredAgent.findFirst({
         where: { id: ctx.agentId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true, status: true },
+        select: { id: true, status: true, autonomyLevel: true },
     });
 
     if (!agent) {
-        return { enforcing, agentId: null, reason: enforcing ? 'agent_not_found' : null };
+        return {
+            enforcing,
+            agentId: null,
+            autonomyLevel: null,
+            reason: enforcing ? 'agent_not_found' : null,
+        };
     }
     if (agent.status !== 'ACTIVE') {
-        return { enforcing, agentId: null, reason: enforcing ? 'agent_not_active' : null };
+        return {
+            enforcing,
+            agentId: null,
+            autonomyLevel: null,
+            reason: enforcing ? 'agent_not_active' : null,
+        };
     }
 
-    return { enforcing, agentId: agent.id, reason: null };
+    return {
+        enforcing,
+        agentId: agent.id,
+        autonomyLevel: agent.autonomyLevel,
+        reason: null,
+    };
 }
 
 const DENIAL_MESSAGE: Record<AgentGateDenialReason, string> = {
@@ -115,15 +146,16 @@ const DENIAL_MESSAGE: Record<AgentGateDenialReason, string> = {
 
 /**
  * Enforce the gate. Refusals write a hash-chained `AUTHZ_DENIED` row and throw
- * `forbidden`. Returns the resolved agent id when it resolved to one — including
- * when the tenant is NOT enforcing, so a caller can still attribute the work.
+ * `forbidden`. Returns the whole verdict when the caller passes — including when
+ * the tenant is NOT enforcing, so a caller can still attribute the work and read
+ * the agent's registered autonomy level without a second query.
  */
 export async function assertRegisteredAgent(
     ctx: RequestContext,
     surface: { method: string; path: string },
-): Promise<string | null> {
+): Promise<AgentGateVerdict> {
     const verdict = await evaluateAgentRegistration(ctx);
-    if (!verdict.reason) return verdict.agentId;
+    if (!verdict.reason) return verdict;
 
     await auditAgentGateDenied(ctx, verdict.reason, surface);
     throw forbidden(DENIAL_MESSAGE[verdict.reason]);
