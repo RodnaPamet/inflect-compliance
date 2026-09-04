@@ -220,6 +220,24 @@ const config = [
             ],
         },
     },
+    {
+        // `require-agent-attribution` is an invariant about PRODUCTION write
+        // sites, and its companion guard already says so — the guard's
+        // population is `repoFiles({ under: 'src' })`. The ESLint config did
+        // not agree, so the rule also ran over `tests/`, where the one fixture
+        // that MUST create an unattributed row lives: the legacy-backfill suite
+        // seeds pre-migration `AgentProposal` / `WorkflowRun` rows precisely to
+        // prove the backfill adopts them. Attributing those would delete the
+        // thing under test.
+        //
+        // Scoped here rather than inside the rule so the two populations are
+        // stated in one idiom each and can be compared: guard = under 'src',
+        // lint = off outside it.
+        files: ['tests/**/*.ts', 'tests/**/*.tsx'],
+        rules: {
+            'local/require-agent-attribution': 'off',
+        },
+    },
 ];
 
 export default config;
