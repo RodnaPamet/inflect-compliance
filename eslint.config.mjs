@@ -242,6 +242,17 @@ const config = [
         files: ['tests/**/*.ts', 'tests/**/*.tsx'],
         rules: {
             'local/require-agent-attribution': 'off',
+            // Same reasoning, same shape. `require-mcp-tool-authorization`'s
+            // companion guard is `tests/guards/mcp-tools-use-shared-authz.test.ts`,
+            // whose population is `repoFiles({ under: 'src' })` — it runs the
+            // rule itself over exactly the files under `src/` that mention
+            // `inputSchema`. Leaving the lint side repo-wide would make the two
+            // populations disagree, and the disagreement is where the trouble
+            // lives: a test that needs to BUILD a descriptor with no
+            // `authorize` — to prove the funnel refuses one — would be
+            // unwritable, which is the same trap the sibling rule above fell
+            // into with the legacy-backfill fixture.
+            'local/require-mcp-tool-authorization': 'off',
         },
     },
 ];

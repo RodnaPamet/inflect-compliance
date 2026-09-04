@@ -214,10 +214,17 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
     // operations on data. These two are authority over the principals
     // themselves, which is a different kind of thing to hand a token.
     if (scopes.includes('*')) {
+        // Resolved ONCE, rather than calling the role resolver a second time
+        // for the nested spread. Two calls built two identical objects for no
+        // reason, and the duplicated call site also made
+        // `enterprise-identity-epic.test.ts`'s whole-file assertion about this
+        // branch satisfiable by either of them — a Class D ambiguity that a
+        // source diff touching no test had introduced.
+        const adminPermissions = getPermissionsForRole('ADMIN');
         return {
-            ...getPermissionsForRole('ADMIN'),
+            ...adminPermissions,
             admin: {
-                ...getPermissionsForRole('ADMIN').admin,
+                ...adminPermissions.admin,
                 agent_registry: false,
                 agent_tool_exposure: false,
             },
