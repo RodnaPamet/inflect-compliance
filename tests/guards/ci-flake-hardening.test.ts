@@ -168,13 +168,23 @@ describe('CI timeout ceilings', () => {
             //                      everywhere else -> 20
             //   Ratchets           114s -> 174s under --coverage
             //                      (measured 2026-08-25), + npm ci
-            //                      retry -> 10
+            //                      retry -> 20. It was 10, which is
+            //                      that arithmetic with ~1 minute
+            //                      spare, and it ran out three times
+            //                      on 2026-09-04 at 10m13-16s. This
+            //                      map's own rule two blocks down —
+            //                      observed-max PLUS the retry path,
+            //                      never observed-max alone — was
+            //                      stated for Lint/Typecheck/Build
+            //                      and not applied to this entry.
+            //                      Lint's observed work is longer and
+            //                      it gets 20.
             //   Coverage (≥60%)    merge of five JSON files -> 8
             //
             // If the shards are ever de-sharded back into one job, the
             // Test entry has to go to 50 in the same diff.
             'Test (shard ${{ matrix.shard }}/${{ matrix.total }})': 20,
-            Ratchets: 10,
+            Ratchets: 20,
             'Coverage (≥60%)': 8,
             'Trivy Image Scan': 25,
             Security: 12,

@@ -591,9 +591,25 @@ jobs:
   ratchets:
     name: Ratchets
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    # Observed ~35s locally for the full 776 files. 10 minutes is a
-    # generous ceiling that still bounds a hang.
-    timeout-minutes: 10
+    # 20, not 10, and the difference is the npm ci retry path rather
+    # than the suite. The old value paired "~35s locally" with a
+    # "generous ceiling" — but local time is not the budget for a job
+    # that installs dependencies first, which is the rule
+    # tests/guards/ci-flake-hardening.test.ts states for Lint,
+    # Typecheck and Build and did not apply here: the shared setup
+    # action retries npm ci three times before this job's own work
+    # begins, ~5-7 min on a cold cache. 174s of suite plus that is 10
+    # minutes with nothing left, and it duly ran out three times on
+    # 2026-09-04 (main 06:49, then #2303 twice) at 10m13s, 10m15s,
+    # 10m16s. Lint's observed work is LONGER than this job's and it
+    # gets 20.
+    #
+    # The cancellations were also expensive to read: a cancelled job
+    # is not a failed one, so it surfaced as "Test" and
+    # "Coverage (>=60%)" failing — Test checks needs.ratchets.result,
+    # and Coverage finds four shard artifacts instead of five. Two red
+    # checks on jobs that were never the problem.
+    timeout-minutes: 20
     env:
       SKIP_ENV_VALIDATION: '1'
     steps:
