@@ -139,7 +139,7 @@ enabling any of them adds a sub-processor and requires an entry above.
 - **Processing instructions:** deliver the message; no independent use.
 - **Transfer:** depends on the operator-chosen provider (SES / SendGrid / Postmark / …). The operator MUST register their chosen provider here (see [`docs/deployment.md`](./deployment.md)).
 - **Vendor pages:** provider-specific (the operator records the chosen provider's DPA link).
-- **Codebase:** `src/lib/mailer.ts:56` (`nodemailer.createTransport`); env `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (`src/env.ts:199`).
+- **Codebase:** `src/lib/mailer.ts:56` (`nodemailer.createTransport`); env `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (declared in `src/env.ts`; the sender is resolved by `src/lib/email/sender-identity.ts`).
 
 ### OpenRouter — AI risk suggestions (optional)
 - **PII shared:** the risk-assessment **prompt text** — risk titles/descriptions, which may contain business content. No user account PII is sent.

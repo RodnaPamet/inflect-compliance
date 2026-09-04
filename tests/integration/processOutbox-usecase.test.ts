@@ -59,7 +59,7 @@ describeFn('processOutbox (real DB)', () => {
         await prisma.tenant.upsert({ where: { id: T_OFF }, update: {}, create: { id: T_OFF, name: T_OFF, slug: T_OFF } });
         await prisma.tenantNotificationSettings.upsert({
             where: { tenantId: T_OFF }, update: { enabled: false },
-            create: { tenantId: T_OFF, enabled: false },
+            create: { tenantId: T_OFF, enabled: false, defaultFromEmail: 'fixture@example.test' },
         });
     });
 

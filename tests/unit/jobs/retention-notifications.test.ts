@@ -235,7 +235,9 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
                 data: { tenantId, userId: ownerId, role: 'ADMIN', status: 'ACTIVE' },
             });
             await prisma.tenantNotificationSettings.create({
-                data: { tenantId, enabled: false },
+                // defaultFromEmail has no column default any more (#2296) —
+                // the sender is a deployment fact the caller must supply.
+                data: { tenantId, enabled: false, defaultFromEmail: 'fixture@example.test' },
             });
             await prisma.evidence.create({
                 data: {

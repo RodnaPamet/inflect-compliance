@@ -289,7 +289,7 @@ Every flag the credentials path honors:
 | `RATE_LIMIT_MODE` | no | `upstash` | `memory` to use in-process fallback (dev/CI) |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | if `RATE_LIMIT_MODE=upstash` | — | Rate-limit backing store |
 | `APP_URL` | no but recommended | unset | Base URL used to construct verification links in outbound email. Unset → relative URL which most mail clients won't render as clickable |
-| `SMTP_FROM` / `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | if real email is needed | `SMTP_FROM=noreply@inflect.app` only | `src/lib/mailer.ts` picks `NodemailerProvider` when `SMTP_HOST` is set; otherwise `ConsoleEmailProvider` logs the message to stdout |
+| `SMTP_FROM` / `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | if real email is needed | none — `SMTP_FROM` must be an address on a domain your relay has verified, or it rejects every message `550 ... domain is not verified`. Unset, senders fall back to `UNCONFIGURED_SENDER` in `src/lib/email/sender-identity.ts`, which is a placeholder and delivers nowhere | `src/lib/mailer.ts` picks `NodemailerProvider` when `SMTP_HOST` is set; otherwise `ConsoleEmailProvider` logs the message to stdout |
 
 ## Operational caveats
 

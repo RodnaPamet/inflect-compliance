@@ -9,6 +9,7 @@ import {
     getOutboxStats,
 } from '@/app-layer/notifications/settings';
 import { jsonResponse } from '@/lib/api-response';
+import { UpdateNotificationSettingsSchema } from '@/app-layer/schemas/notification-settings.schemas';
 
 /** GET — returns tenant notification settings + outbox stats */
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
@@ -32,14 +33,9 @@ export const PUT = withApiErrorHandling(async (req: NextRequest, { params: param
     const ctx = await getTenantCtx(params, req);
     assertCanAdmin(ctx);
 
-    const body = await req.json();
+    const input = UpdateNotificationSettingsSchema.parse(await req.json());
     const updated = await runInTenantContext(ctx, (db) =>
-        updateTenantNotificationSettings(db, ctx, {
-            enabled: body.enabled,
-            defaultFromName: body.defaultFromName,
-            defaultFromEmail: body.defaultFromEmail,
-            complianceMailbox: body.complianceMailbox || null,
-        }),
+        updateTenantNotificationSettings(db, ctx, input),
     );
 
     return jsonResponse(updated);

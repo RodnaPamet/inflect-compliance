@@ -36,6 +36,27 @@ function defaults(): TenantNotificationSettingsData {
 }
 
 /**
+ * Drop keys whose value is `undefined` before they reach Prisma.
+ *
+ * `create: { ...defaults(), ...data }` spreads `data` LAST, so a key that is
+ * PRESENT with an undefined value overwrites the resolved default — and Prisma
+ * treats an undefined argument as "not supplied", so the column is omitted from
+ * the INSERT and the database default decides it instead. That is how a caller
+ * who merely omitted `defaultFromEmail` still got `noreply@inflect.app`
+ * written, months after #2286 removed that literal from this file.
+ *
+ * The route now validates its body, which is the real fix; this keeps the
+ * usecase correct for every OTHER caller, present and future. Object spread
+ * and Prisma disagree about what an undefined value means, and the seam where
+ * they meet is here.
+ */
+function definedOnly<T extends object>(data: T): T {
+    return Object.fromEntries(
+        Object.entries(data).filter(([, value]) => value !== undefined),
+    ) as T;
+}
+
+/**
  * Get tenant notification settings.
  * Returns defaults if no row exists yet.
  */
@@ -65,14 +86,15 @@ export async function updateTenantNotificationSettings(
     data: Partial<TenantNotificationSettingsData>,
 ): Promise<TenantNotificationSettingsData> {
 
+    const supplied = definedOnly(data);
     const row = await db.tenantNotificationSettings.upsert({
         where: { tenantId: ctx.tenantId },
         create: {
             tenantId: ctx.tenantId,
             ...defaults(),
-            ...data,
+            ...supplied,
         },
-        update: data,
+        update: supplied,
     });
     return {
         enabled: row.enabled,
