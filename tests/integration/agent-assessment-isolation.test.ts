@@ -33,7 +33,7 @@ import {
     completeAgentRiskAssessment,
     getAgentRiskAssessmentState,
     listAgentRiskAssessments,
-    refreshAgentAssessmentStaleness,
+    reassessAgentAfterChange,
     saveAgentAssessmentAnswer,
 } from '@/app-layer/usecases/agent-risk-assessment';
 
@@ -397,7 +397,7 @@ describe('completing a run scores the agent and writes the tier back', () => {
 
 describe('staleness is detected against the basis, per tenant', () => {
     it('a freshly scored assessment is not stale', async () => {
-        const verdict = await refreshAgentAssessmentStaleness(ctxFor(T1), seeded[T1].agentId);
+        const verdict = await reassessAgentAfterChange(ctxFor(T1), seeded[T1].agentId);
         expect(verdict.stale).toBe(false);
         expect(verdict.triggers).toEqual([]);
     });
@@ -408,17 +408,20 @@ describe('staleness is detected against the basis, per tenant', () => {
             data: { autonomyLevel: 5 },
         });
 
-        const verdict = await refreshAgentAssessmentStaleness(ctxFor(T1), seeded[T1].agentId);
+        const verdict = await reassessAgentAfterChange(ctxFor(T1), seeded[T1].agentId);
         expect(verdict.stale).toBe(true);
         expect(verdict.triggers).toEqual(['AUTONOMY_RAISED']);
 
         const agent = await prisma.registeredAgent.findUniqueOrThrow({
             where: { id: seeded[T1].agentId },
         });
-        // WARNS, does not block: the tier stays in force, so the agent keeps
-        // exactly the authority its last real assessment justified. "Stale" and
-        // "never scored" are different states and only the second one denies.
+        // WARNS, does not block: the agent keeps a tier and keeps running.
+        // "Stale" and "never scored" are different states and only the second
+        // one denies. What the tier IS may have moved — a widening re-scores
+        // from the answers on file, and it only ever moves upward — so this
+        // asserts the state the decision rests on rather than a fixed value.
         expect(agent.riskTier).not.toBeNull();
+        expect(verdict.rescored?.to ?? agent.riskTier).toBe(agent.riskTier);
 
         const run = await prisma.agentRiskAssessment.findFirstOrThrow({
             where: { tenantId: T1, status: 'COMPLETED' },

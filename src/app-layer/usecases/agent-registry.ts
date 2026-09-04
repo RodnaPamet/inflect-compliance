@@ -36,7 +36,7 @@ import { badRequest, conflict, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { RegisteredAgentRepository } from '../repositories/RegisteredAgentRepository';
-import { refreshAgentAssessmentStalenessInTx } from './agent-risk-assessment';
+import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
 import { authorAiSystemEntry } from './ai-system';
 import { assertOwnerInTenant } from './vendor-link-targets';
@@ -56,6 +56,22 @@ function sanitizeOptional(value: string | null | undefined): string | null | und
     if (value === undefined) return undefined;
     if (value === null) return null;
     return sanitizePlainText(value);
+}
+
+/**
+ * The declared model reference, as it goes to the column.
+ *
+ * Sanitised because it is operator free text that the register export and the
+ * assessment surface both render, and folded to `null` when it is empty:
+ * "declared as nothing" and "never declared" are one fact, and the staleness
+ * comparison normalises the same way, so a save of `''` over a NULL column must
+ * not read back as a model change.
+ */
+function normalizeModelRef(value: string | null | undefined): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const clean = sanitizePlainText(value).trim();
+    return clean === '' ? null : clean;
 }
 
 /**
@@ -130,6 +146,7 @@ export async function createRegisteredAgent(ctx: RequestContext, input: unknown)
             dataAccessScope: parsed.dataAccessScope,
             reversibility: parsed.reversibility,
             provenance: parsed.provenance,
+            modelRef: normalizeModelRef(parsed.modelRef) ?? null,
             ownerUserId: parsed.ownerUserId,
             vendorId: parsed.vendorId ?? null,
         });
@@ -236,6 +253,9 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
                 : {}),
             ...(parsed.reversibility !== undefined ? { reversibility: parsed.reversibility } : {}),
             ...(parsed.provenance !== undefined ? { provenance: parsed.provenance } : {}),
+            ...(parsed.modelRef !== undefined
+                ? { modelRef: normalizeModelRef(parsed.modelRef) ?? null }
+                : {}),
             ...(parsed.ownerUserId !== undefined ? { ownerUserId: parsed.ownerUserId } : {}),
             ...(parsed.vendorId !== undefined ? { vendorId: parsed.vendorId ?? null } : {}),
         });
@@ -256,14 +276,25 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
             },
         });
 
-        // An amendment can move a scorer input, so the standing assessment's
-        // freshness is re-evaluated HERE rather than by a nightly sweep. A
-        // sweep leaves a window in which the register says an assessment is
-        // current when it is not, and that window is exactly when somebody is
-        // looking at the page they just changed. Runs in the SAME transaction:
-        // opening a second one from inside this one would hold two connections
+        // An amendment can move a scorer input, so the standing assessment is
+        // reconciled HERE rather than by a nightly sweep — and reconciling
+        // means two things, not one:
+        //
+        //   • the tier is RE-SCORED from the answers already on file, so a
+        //     widening of any axis the scorer reads narrows the ceiling in the
+        //     SAME transaction that recorded it. Without this an agent could
+        //     move READ_TENANT_DATA → EXTERNAL_EGRESS, keep a LOW tier and the
+        //     full ladder, and be running at an authority a fresh score of the
+        //     very same agent would have refused;
+        //   • the run is stamped STALE, which now means only "the questionnaire
+        //     answers may be out of date" — a genuine warning rather than a
+        //     euphemism for "the tier is wrong".
+        //
+        // Same transaction on both counts: a sweep leaves a window in which the
+        // register says an assessment is current when it is not, and opening a
+        // second transaction from inside this one would hold two connections
         // against a transaction-mode pooler.
-        const staleness = await refreshAgentAssessmentStalenessInTx(db, ctx, id);
+        const staleness = await reassessAgentAfterChangeInTx(db, ctx, id);
 
         return { id, updated: true, staleness };
     });
@@ -416,6 +447,7 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
             dataAccessScope: parsed.dataAccessScope,
             reversibility: parsed.reversibility,
             provenance: parsed.provenance,
+            modelRef: normalizeModelRef(parsed.modelRef) ?? null,
             ownerUserId: parsed.ownerUserId,
             vendorId: parsed.vendorId ?? null,
         });

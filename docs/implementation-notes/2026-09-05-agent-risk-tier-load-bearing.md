@@ -44,6 +44,16 @@ and, at the usecase layer:
 the scorer in stage 1 and is unchanged. `autonomy-ceiling.ts` owns the
 composition; the scorer owns the numbers.
 
+> **Correction (same day).** LOW's cap is **4**, not 6. `UNATTENDED_AUTONOMY`
+> (5) floors at MODERATE, so LOW is unreachable above rung 4 — an exhaustive
+> sweep of the axis grid confirms it — and a cap of 6 therefore granted two
+> rungs the tier could never itself be scored at. `assertRaiseWithinTier` would
+> have accepted a raise from 4 to 6 into a state no fresh assessment could hold
+> as LOW. Latent, not exploited, only because no MCP tool declares a rung above
+> PROPOSE (2), and `src/lib/mcp/tools/types.ts` carries an `autonomy` override
+> precisely so one can. See
+> [`2026-09-05-agent-widening-rescore.md`](2026-09-05-agent-widening-rescore.md).
+
 ## The three nulls, and the one that would have caused an outage
 
 2/10's `autonomy-ceiling.ts` header already warned that two nulls in this
@@ -106,13 +116,20 @@ drifts on the first weight change.
 The scorer counts an unanswered question as NO, so a run with no answers carries
 the full `MAX_ANSWER_POINTS` (12). Twelve points alone exceed the LOW band, so:
 
-- **A provisional score can never come out LOW**, and LOW is the only tier that
-  leaves the ladder whole. Nobody can use the backfill to buy an agent its full
-  autonomy — filling in the questionnaire is the only route to rung 6, which is
-  what makes the questionnaire worth filling in. Swept over the whole axis grid
-  in `tests/unit/agent-risk-scoring.test.ts`, with the paired positive that
-  answering everything YES *does* reach LOW (a tier nobody can reach is a tier
-  nobody fills in the form for).
+- **A provisional score can never come out LOW**, and LOW is the tier that costs
+  the agent fewest rungs. Nobody can use the backfill to buy an agent the widest
+  ladder any tier grants — filling in the questionnaire is the only route to it,
+  which is what makes the questionnaire worth filling in. Swept over the whole
+  axis grid in `tests/unit/agent-risk-scoring.test.ts`, with the paired positive
+  that answering everything YES *does* reach LOW (a tier nobody can reach is a
+  tier nobody fills in the form for).
+
+  > **Correction (same day).** This read "LOW is the only tier that leaves the
+  > ladder whole … the only route to rung 6". No tier reaches rung 6, and none
+  > should: rungs 5-6 are unattended operation, which floors at MODERATE, so no
+  > assessment can score an unattended agent below MODERATE and MODERATE caps at
+  > 3. The ladder's top two rungs are declarable and unreachable, which is the
+  > floor table meaning what it says.
 - **It is a floor, not a cliff.** The least-exposed agent lands at MODERATE,
   whose cap (3) admits the highest rung any MCP capability class requires, so a
   narrow read-only integration keeps working. An agent with write access, egress,
@@ -146,20 +163,38 @@ register's own maintenance the outage — granting a tool is the correct, audite
 act that fires a trigger, and an operator whose agent goes dark for doing the
 right thing stops doing the right thing.
 
-The widening is inert anyway, and **that is a property of the composition, not a
-hope**: the tier in force was scored against the NARROWER basis, and the ceiling
-composes as a `min` alongside `agent.autonomyLevel` rather than replacing it. So
-an agent raised from 3 to 5 stays capped at the MODERATE cap until somebody
-re-scores. Stale does not stop the agent; it stops the widening, which is the
-part nobody assessed. Stage 2's autonomy-raise refusal makes the same point one
-layer up: the raise above the cap does not even land.
+> **Correction (same day).** The paragraph that followed claimed the widening
+> was "inert anyway", and called that "a property of the composition, not a
+> hope". It was neither: it was true only of `AUTONOMY_RAISED`, the single
+> example both notes reached for. `agent.autonomyLevel` is a term in the `min`;
+> `dataAccessScope`, `reversibility` and `provenance` are terms in NOTHING, and
+> `updateRegisteredAgent` checked only `autonomyLevel`. So an agent could be
+> walked READ_TENANT_DATA → EXTERNAL_EGRESS and REVERSIBLE → TERMINAL and keep
+> its LOW tier and its full ceiling while a fresh score of that same agent came
+> out CRITICAL. `TOOL_GRANTED` was worse: the grant took effect in the same
+> transaction that recorded the assessment as overtaken.
+
+**What makes the claim true now: a widening RE-SCORES.** The scorer is a pure
+function of the four declared axes plus the answers, so when an axis moves the
+tier is recomputed on the spot from the answers already on file — in the
+transaction that records the widening — and written back whenever it comes out
+worse. The ceiling narrows immediately, and stale narrows to mean only *the
+questionnaire answers may be out of date*. The `min` composition is still
+load-bearing and still must not become a lookup; it is simply no longer asked to
+carry an argument about axes it does not contain. See
+[`2026-09-05-agent-widening-rescore.md`](2026-09-05-agent-widening-rescore.md).
+
+Stage 2's autonomy-raise refusal makes a related point one layer up: a raise
+above the cap does not even land.
 
 Stage 1 left `refreshAgentAssessmentStaleness` with no caller. It has two now —
-`updateRegisteredAgent` and `grantAgentTool` — both through a new
-`refreshAgentAssessmentStalenessInTx` that takes the OPEN transaction, so the
-staleness note commits or rolls back with the change that caused it, and so a
-second transaction is never opened from inside the first against a
-transaction-mode pooler.
+`updateRegisteredAgent` and `grantAgentTool` — both through a function taking
+the OPEN transaction, so the re-scored tier and the staleness note commit or
+roll back with the change that caused them, and so a second transaction is never
+opened from inside the first against a transaction-mode pooler. (Both functions
+were renamed to `reassessAgentAfterChange{,InTx}` when the re-score landed: they
+no longer only refresh staleness, and a name that undersells what a function
+writes is how the next caller misjudges it.)
 
 ## Seams: two declared, one carried forward
 

@@ -210,6 +210,19 @@ export function maxTier(a: AgentRiskTier, b: AgentRiskTier): AgentRiskTier {
     return tierIndex(a) >= tierIndex(b) ? a : b;
 }
 
+/**
+ * Is `candidate` strictly RISKIER than `current`?
+ *
+ * Exported because the re-score on a widening writes back only when the answer
+ * is yes — a re-score must never LOWER a standing tier, since the questionnaire
+ * behind that tier has not been re-answered and an over-restrictive cap is the
+ * safe error. An unrecognised tier ranks worst on both sides, so a value this
+ * build does not know cannot be mistaken for an improvement.
+ */
+export function isTierAbove(candidate: AgentRiskTier, current: AgentRiskTier): boolean {
+    return tierIndex(candidate) > tierIndex(current);
+}
+
 function bandFor(score: number): AgentRiskTier {
     for (const b of BAND_UPPER) if (score <= b.upTo) return b.tier;
     return 'CRITICAL';
@@ -329,9 +342,29 @@ export function scoreAgentRisk(input: AgentRiskScoreInput): AgentRiskScore {
  * the COMPOSITION (`min` over independent narrowing terms); this owns the
  * number each tier contributes.
  *
+ * ## A TIER MAY NEVER BUY A RUNG IT COULD NOT ITSELF BE SCORED AT
+ *
+ * This table and the floors above it are two halves of one statement, and they
+ * have to agree. `UNATTENDED_AUTONOMY` (5) floors at MODERATE, so no
+ * combination of the other axes and no set of answers produces LOW above rung
+ * 4 — swept exhaustively in `tests/unit/agent-risk-scoring.test.ts`. LOW's cap
+ * was nevertheless 6, which meant the tier granted two rungs its own scoring
+ * refuses: `assertRaiseWithinTier` would accept a raise from 4 to 6 into a
+ * state no fresh assessment could hold as LOW. That was latent rather than
+ * exploited only because no MCP tool today declares a rung above PROPOSE (2) —
+ * and `src/lib/mcp/tools/types.ts` carries an `autonomy` field precisely so one
+ * can.
+ *
+ * So each cap below is the HIGHEST rung at which that tier is reachable, or
+ * lower. The property is pinned as a property, over the whole axis grid, rather
+ * than as four literals somebody has to keep in step by hand.
+ *
  * The numbers, and the reasoning behind each:
- *   LOW      → 6. No narrowing. The assessment found nothing that warrants
- *                 capping below the agent's own registration.
+ *   LOW      → 4. The top of the attended ladder — the highest rung at which
+ *                 LOW can be scored at all, because rung 5 is where the agent
+ *                 stops being watched and the unattended floor takes over. This
+ *                 is not "no narrowing": rungs 5 and 6 are reachable by no tier,
+ *                 which is the floor table meaning what it says.
  *   MODERATE → 3. Up to ORCHESTRATE: it may chain steps between checkpoints,
  *                 but it is not driven unattended across systems.
  *   HIGH     → 2. Up to PROPOSE: it may put drafts in front of a human, and a
@@ -346,7 +379,7 @@ export function scoreAgentRisk(input: AgentRiskScoreInput): AgentRiskScore {
  * "unscored" key here would be a tier, and unscored is the absence of one.
  */
 export const MAX_AUTONOMY_BY_TIER: Readonly<Record<AgentRiskTier, number>> = {
-    LOW: 6,
+    LOW: 4,
     MODERATE: 3,
     HIGH: 2,
     CRITICAL: 1,

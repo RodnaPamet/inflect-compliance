@@ -39,11 +39,18 @@ import {
 import { MAX_AUTONOMY_BY_TIER, RISK_TIER_ORDER } from '@/lib/agentic/agent-risk-scoring';
 
 /**
- * A tier term that narrows nothing, so the assertions below are about the OTHER
- * two terms. Spelled as a scored LOW agent rather than as the bare constant,
+ * The GENTLEST tier term the table has, so the assertions below are about the
+ * OTHER two terms. Spelled as a scored LOW agent rather than as a bare constant,
  * because that is a state the product can actually be in.
+ *
+ * It is not `UNCLAMPED`, and that matters when reading these: LOW caps at the
+ * top of the ATTENDED ladder, because rungs 5-6 are unattended operation and no
+ * assessment can score an unattended agent LOW. Every case below therefore
+ * chooses key and agent numbers at or under that cap, so what is being observed
+ * is the term under test rather than the tier quietly winning.
  */
 const scoredLow = { riskTierCeiling: riskTierCeilingFor({ riskTier: 'LOW' as const }) };
+const LOW_CAP = MAX_AUTONOMY_BY_TIER.LOW;
 
 describe('the ceiling is the lowest present term', () => {
     it('takes the KEY when the key is the lower of the two', () => {
@@ -67,6 +74,17 @@ describe('the ceiling is the lowest present term', () => {
         ).toBe(2);
     });
 
+    it('a key asking for the maximum is clamped by the TIER when nothing else narrows', () => {
+        // The same request with no agent term: `AUTONOMY_MAX` does not come
+        // back, because even the gentlest tier stops below the top of the
+        // ladder. This is the assertion that would have caught a cap granting a
+        // rung its own tier could not be scored at.
+        expect(
+            resolveAutonomyCeiling({ keyMax: AUTONOMY_MAX, agentAutonomy: null, ...scoredLow }),
+        ).toBe(LOW_CAP);
+        expect(LOW_CAP).toBeLessThan(AUTONOMY_MAX);
+    });
+
     it('an ABSENT key ceiling contributes no term, leaving the agent in force', () => {
         for (const absent of [null, undefined]) {
             expect(
@@ -81,11 +99,20 @@ describe('the ceiling is the lowest present term', () => {
         ).toBe(2);
     });
 
-    it('with neither term present it is UNCLAMPED, not zero', () => {
+    it('with neither narrowing term present, the TIER is what remains — not zero', () => {
         // A missing narrowing must not itself be a narrowing, or adding a
-        // nullable column silently denies every existing credential.
+        // nullable column silently denies every existing credential. So the
+        // answer is the one term that IS present, exactly, with nothing
+        // defaulted in beside it.
         expect(
             resolveAutonomyCeiling({ keyMax: null, agentAutonomy: null, ...scoredLow }),
+        ).toBe(LOW_CAP);
+        expect(
+            resolveAutonomyCeiling({
+                keyMax: undefined,
+                agentAutonomy: undefined,
+                riskTierCeiling: UNCLAMPED,
+            }),
         ).toBe(UNCLAMPED);
     });
 
@@ -157,19 +184,29 @@ describe('the risk-tier term', () => {
         }
     });
 
-    it('the caps fall as the tier rises, and only LOW leaves the ladder whole', () => {
+    it('the caps fall as the tier rises, and NO tier leaves the ladder whole', () => {
         // The property that makes the assessment worth filling in: every tier
-        // above LOW costs the agent rungs, and no tier above LOW reaches the
-        // top. Stated as an ordering rather than as four literals so it stays
-        // true if the numbers are re-tuned.
+        // costs the agent rungs, and each worse tier costs more. Stated as an
+        // ordering rather than as four literals so it stays true if the numbers
+        // are re-tuned.
         const caps = RISK_TIER_ORDER.map((t) => MAX_AUTONOMY_BY_TIER[t]);
         for (let i = 1; i < caps.length; i += 1) {
             expect(caps[i]).toBeLessThan(caps[i - 1]);
         }
-        expect(ceilingForRiskTier('LOW')).toBe(UNCLAMPED);
-        for (const tier of RISK_TIER_ORDER.filter((t) => t !== 'LOW')) {
+        // Not even LOW reaches `UNCLAMPED`, and that is the floor table meaning
+        // what it says rather than an oversight: rungs 5 and 6 are unattended
+        // operation, which floors at MODERATE, so LOW is unreachable there and
+        // must not GRANT there either. The reachability sweep that establishes
+        // this lives with the scorer, in `agent-risk-scoring.test.ts`.
+        for (const tier of RISK_TIER_ORDER) {
             expect(ceilingForRiskTier(tier)).toBeLessThan(UNCLAMPED);
         }
+        // The paired positive, so "everything is clamped" cannot be satisfied by
+        // a table that denies outright: the gentlest tier still admits every
+        // rung an MCP capability class asks for today.
+        expect(ceilingForRiskTier('LOW')).toBeGreaterThanOrEqual(
+            Math.max(...Object.values(AUTONOMY_REQUIRED_BY_CAPABILITY)),
+        );
     });
 
     it('a tier this build does not recognise DENIES rather than admitting', () => {

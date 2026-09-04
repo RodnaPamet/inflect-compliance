@@ -56,6 +56,13 @@ export interface RegisteredAgentWriteFields {
     dataAccessScope: AgentDataAccessScope;
     reversibility: AgentReversibility;
     provenance: AgentProvenance;
+    /**
+     * The declared underlying model. Present here because `MODEL_CHANGED` is an
+     * assessment staleness trigger and a trigger with no write path can never
+     * fire — this field was missing from the write shape, so the column was
+     * permanently NULL and the comparison behind it permanently false.
+     */
+    modelRef: string | null;
     ownerUserId: string;
     vendorId: string | null;
 }
@@ -88,7 +95,9 @@ export class RegisteredAgentRepository {
     static async getById(db: PrismaTx, ctx: RequestContext, id: string) {
         return db.registeredAgent.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
-            select: { ...listSelect, description: true, updatedAt: true },
+            // `modelRef` is on the DETAIL read, not `listSelect`: it is one
+            // agent's declaration, not a column any register list renders.
+            select: { ...listSelect, description: true, modelRef: true, updatedAt: true },
         });
     }
 

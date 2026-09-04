@@ -103,6 +103,7 @@ direction that raises risk:
 | `TOOL_GRANTED` | granted-tool count up |
 | `DATA_SCOPE_WIDENED` | data-access ordinal up |
 | `REVERSIBILITY_WORSENED` | reversibility ordinal up |
+| `PROVENANCE_WIDENED` | provenance FIRST_PARTY → THIRD_PARTY |
 | `MODEL_CHANGED` | `modelRef` differs, either direction |
 
 Moving the other way does NOT mark stale: the stored tier is then merely too
@@ -110,20 +111,42 @@ high, and an over-restrictive cap is a safe error. Renaming the agent, changing
 its owner, editing its description — `AssessmentBasis` has no such fields, so
 they cannot reach the comparison at all.
 
-`REVERSIBILITY_WORSENED` is a fifth trigger beyond the four the brief names,
-for the same reason as the other three axis triggers: reversibility is a scorer
-input carrying the strongest floor in the table, so leaving it out would make it
-the one axis you could worsen without re-assessing.
+`REVERSIBILITY_WORSENED` and `PROVENANCE_WIDENED` are the fourth and fifth AXIS
+triggers, beyond the ones the brief names, and the rule behind both is that the
+basis carries EXACTLY the scorer's agent-side inputs. Reversibility carries the
+strongest floor in the table; provenance is worth two points, enough to move a
+run across a band boundary on its own. An axis the scorer weighs but the basis
+omits is an axis you can worsen with nobody noticing.
+
+> **Correction (same day).** `PROVENANCE_WIDENED` was NOT in the first version
+> of this list, and `basisProvenance` was stored on the row but read by nothing.
+> That was the gap this rule exists to prevent, present in the diff that stated
+> the rule. See
+> [`2026-09-05-agent-widening-rescore.md`](2026-09-05-agent-widening-rescore.md).
 
 `MODEL_CHANGED` needs something to compare, so this adds
 `RegisteredAgent.modelRef` — nullable, not backfilled, because the platform
 cannot observe which model an agent runs on and inventing a value would be a
 declaration nobody made. NULL → NULL is not a change; NULL → a value is.
 
+> **Correction (same day).** As first shipped, NULL → a value was NOT reachable.
+> `modelRef` was absent from `CreateRegisteredAgentSchema`,
+> `UpdateRegisteredAgentSchema` and `RegisteredAgentWriteFields`; both schemas
+> are strict objects, so a caller supplying the field had it silently STRIPPED
+> and the column stayed NULL for the life of every agent. `MODEL_CHANGED` could
+> therefore never fire in production, and its only coverage hand-built two
+> values no product surface could produce — this repo's own "guard validates
+> diagnosis, not remedy" trap. The write path now exists on all three create /
+> update seams and is proved end-to-end through the usecases in
+> `tests/integration/agent-widening-reassessment.test.ts`.
+
 ### The decision that was asked for: **stale WARNS, it does not block**
 
-Three reasons, and the third is the one that makes it safe rather than merely
-convenient.
+> **Correction (same day).** Reason 3 below, as first written, was FALSE — and
+> it was the reason that made the decision safe rather than merely convenient.
+> It is struck through and replaced. The decision itself did not change; what
+> changed is that it is now true. See
+> [`2026-09-05-agent-widening-rescore.md`](2026-09-05-agent-widening-rescore.md).
 
 1. **"Never scored" and "stale" are different epistemic states.** Never-scored
    means nobody has ever looked, and `ceilingForRiskTier(null)` already resolves
@@ -135,17 +158,27 @@ convenient.
    is the correct, audited act that fires `TOOL_GRANTED`. An operator whose
    agent goes dark the instant they do the right thing stops doing the right
    thing — they stop granting through the register, or stop registering.
-3. **The widening is inert anyway.** The tier still in force is the tier scored
-   against the NARROWER basis, and the ceiling composes as a `min` over
-   independent narrowing terms. So an agent whose autonomy was raised from 3 to
-   5 on a MODERATE assessment is still capped at `MAX_AUTONOMY_BY_TIER.MODERATE`
-   = 3 until somebody re-scores. Stale does not stop the agent; it stops the
-   WIDENING, which is precisely the part that was never assessed.
-
-Point 3 is a property stage 2 must preserve: the tier term must compose as a
-`min` alongside `agent.autonomyLevel`, never replace it. If a future change made
-the tier cap the only term, a stale assessment would start granting authority
-nobody assessed, and this decision would have to be revisited.
+3. ~~**The widening is inert anyway.** The tier still in force is the tier
+   scored against the NARROWER basis, and the ceiling composes as a `min` over
+   independent narrowing terms.~~ **False for four of the five triggers.** The
+   `min` argument holds only for `AUTONOMY_RAISED`, because
+   `agent.autonomyLevel` is itself a term in that `min`. `DATA_SCOPE_WIDENED`,
+   `REVERSIBILITY_WORSENED` and `PROVENANCE_WIDENED` move axes that appear in
+   the ceiling NOWHERE, and `updateRegisteredAgent` accepted every one of them
+   without a murmur: an agent could be walked READ_TENANT_DATA →
+   EXTERNAL_EGRESS and REVERSIBLE → TERMINAL, keep a LOW tier and the full
+   ladder, and run at an authority a fresh score of the same agent put at
+   CRITICAL. `TOOL_GRANTED` was worse still — the grant took effect immediately,
+   in the transaction that recorded the assessment as overtaken.
+3. **(replacement) The tier does not lag the agent, because a widening
+   RE-SCORES.** The scorer is pure in (autonomy, data access, reversibility,
+   provenance, answers). Four of those five are declared fields an operator has
+   just changed and the fifth is on file, so the tier for the agent as it now
+   stands is computable with no human in the loop — and it is computed, in the
+   same transaction that records the widening, and written back whenever it is
+   worse. The ceiling narrows at once. "Stale" then means only *the twenty
+   answers may be out of date*, which genuinely is a warning rather than a
+   euphemism for *the tier is wrong*.
 
 Staleness is stamped ONCE (`staleAt` is not moved by a later re-evaluation that
 finds the same thing) because the operator-facing question is "how long has this

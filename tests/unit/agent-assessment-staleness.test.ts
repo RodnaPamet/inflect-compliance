@@ -19,6 +19,7 @@ import {
     evaluateAssessmentStaleness,
     type AssessmentBasis,
 } from '@/lib/agentic/agent-assessment-staleness';
+import type { AgentRiskScoreInput } from '@/lib/agentic/agent-risk-scoring';
 
 /** The state a completed assessment froze. Deliberately mid-ladder on every
  *  axis so an edit can move in either direction from here. */
@@ -26,6 +27,7 @@ const BASIS: AssessmentBasis = {
     autonomyLevel: 3,
     dataAccessScope: 'READ_TENANT_DATA',
     reversibility: 'COMPENSABLE',
+    provenance: 'FIRST_PARTY',
     toolCount: 2,
     modelRef: 'model-a',
 };
@@ -73,6 +75,22 @@ describe('each trigger fires on its own change', () => {
         expect(v.triggers).toEqual(['REVERSIBILITY_WORSENED']);
     });
 
+    /**
+     * The sixth trigger, and the one that closes the basis over the scorer's
+     * inputs: provenance is worth two points, which is enough to move a run
+     * across a band boundary on its own, and it is editable through the same
+     * amendment route as every other axis.
+     */
+    it('PROVENANCE_WIDENED', () => {
+        const v = evaluateAssessmentStaleness(BASIS, {
+            ...unchanged(),
+            provenance: 'THIRD_PARTY',
+        });
+        expect(v.stale).toBe(true);
+        expect(v.triggers).toEqual(['PROVENANCE_WIDENED']);
+        expect(v.detail).toEqual(['provenance FIRST_PARTY → THIRD_PARTY']);
+    });
+
     it('every declared trigger code is reachable — none is decoration', () => {
         const seen = new Set<string>();
         for (const current of [
@@ -80,6 +98,7 @@ describe('each trigger fires on its own change', () => {
             { ...unchanged(), toolCount: 9 },
             { ...unchanged(), dataAccessScope: 'EXTERNAL_EGRESS' as const },
             { ...unchanged(), reversibility: 'TERMINAL' as const },
+            { ...unchanged(), provenance: 'THIRD_PARTY' as const },
             { ...unchanged(), modelRef: 'model-z' },
         ]) {
             for (const t of evaluateAssessmentStaleness(BASIS, current).triggers) seen.add(t);
@@ -108,6 +127,10 @@ describe('an unrelated edit does NOT mark the assessment stale', () => {
         ['data scope narrowed', { dataAccessScope: 'READ_METADATA' as const }],
         ['data scope narrowed to NONE', { dataAccessScope: 'NONE' as const }],
         ['reversibility improved', { reversibility: 'REVERSIBLE' as const }],
+        [
+            'provenance brought back in-house',
+            { provenance: 'FIRST_PARTY' as const },
+        ],
     ])('%s is not stale', (_label, patch) => {
         const v = evaluateAssessmentStaleness(BASIS, { ...unchanged(), ...patch });
         expect(v.stale).toBe(false);
@@ -128,9 +151,46 @@ describe('an unrelated edit does NOT mark the assessment stale', () => {
             'autonomyLevel',
             'dataAccessScope',
             'modelRef',
+            'provenance',
             'reversibility',
             'toolCount',
         ]);
+    });
+
+    /**
+     * The other half of that, and the one that actually bites: the basis must
+     * carry EVERY agent-side input the scorer reads. An axis the scorer weighs
+     * but the basis omits is an axis an operator can worsen with no trigger and
+     * no re-score — which is exactly what `provenance` was. Written against the
+     * scorer's own input type via a value that must satisfy both, so adding a
+     * fifth axis to `AgentRiskScoreInput` fails to compile here until the basis
+     * grows it too.
+     */
+    it('the basis covers every agent-side input the scorer weighs', () => {
+        const scorerAxes: Omit<AgentRiskScoreInput, 'questions'> = {
+            autonomyLevel: BASIS.autonomyLevel,
+            dataAccessScope: BASIS.dataAccessScope,
+            reversibility: BASIS.reversibility,
+            provenance: BASIS.provenance,
+        };
+        for (const axis of Object.keys(scorerAxes)) {
+            expect(Object.keys(BASIS)).toContain(axis);
+        }
+
+        // And each of them, moved in the risk-RAISING direction, is detected.
+        // Presence in the type is not detection; this is the behavioural half.
+        const raised: Array<Partial<AssessmentBasis>> = [
+            { autonomyLevel: BASIS.autonomyLevel + 1 },
+            { dataAccessScope: 'EXTERNAL_EGRESS' },
+            { reversibility: 'TERMINAL' },
+            { provenance: 'THIRD_PARTY' },
+        ];
+        expect(raised.length).toBe(Object.keys(scorerAxes).length);
+        for (const patch of raised) {
+            expect(
+                evaluateAssessmentStaleness(BASIS, { ...unchanged(), ...patch }).stale,
+            ).toBe(true);
+        }
     });
 });
 
@@ -152,6 +212,26 @@ describe('the model reference, where NULL is a real state', () => {
         const v = evaluateAssessmentStaleness(BASIS, { ...unchanged(), modelRef: null });
         expect(v.triggers).toEqual(['MODEL_CHANGED']);
     });
+
+    /**
+     * `''` is "no model declared", the same state as NULL — the write path folds
+     * it to null and the comparison normalises the same way. Without both, a
+     * form that posts an empty string over a never-declared column would report
+     * the model as having CHANGED, and the register would show a stale
+     * assessment because somebody opened an edit dialog and saved it.
+     */
+    it.each([
+        ['empty string over never-declared', null, ''],
+        ['whitespace over never-declared', null, '   '],
+        ['never-declared over empty string', '', null],
+    ])('%s is NOT a model change', (_label, before, after) => {
+        const v = evaluateAssessmentStaleness(
+            { ...BASIS, modelRef: before },
+            { ...BASIS, modelRef: after },
+        );
+        expect(v.triggers).toEqual([]);
+        expect(v.stale).toBe(false);
+    });
 });
 
 describe('several changes at once are all reported', () => {
@@ -160,6 +240,7 @@ describe('several changes at once are all reported', () => {
             autonomyLevel: 6,
             dataAccessScope: 'EXTERNAL_EGRESS',
             reversibility: 'TERMINAL',
+            provenance: 'THIRD_PARTY',
             toolCount: 7,
             modelRef: 'model-b',
         });

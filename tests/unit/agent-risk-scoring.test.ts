@@ -37,6 +37,7 @@ import {
     MAX_SCORE,
     RISK_TIER_ORDER,
     MAX_AUTONOMY_BY_TIER,
+    UNATTENDED_AUTONOMY,
     scoreAgentRisk,
     type AgentAnswerValue,
     type ScorableQuestion,
@@ -421,12 +422,76 @@ describe('the cap a tier buys', () => {
         }
     });
 
-    it('every tier has a cap, and no cap admits the whole ladder except LOW', () => {
+    it('every tier has a cap, and the caps are ordered', () => {
         for (const tier of RISK_TIER_ORDER) {
             expect(typeof MAX_AUTONOMY_BY_TIER[tier]).toBe('number');
         }
-        expect(MAX_AUTONOMY_BY_TIER.LOW).toBe(6);
         expect(MAX_AUTONOMY_BY_TIER.CRITICAL).toBeLessThan(MAX_AUTONOMY_BY_TIER.LOW);
+    });
+
+    /**
+     * ── NO TIER MAY BUY A RUNG IT COULD NOT ITSELF BE SCORED AT ──────
+     *
+     * The floors and the cap table are two halves of one statement and they have
+     * to agree. `UNATTENDED_AUTONOMY` floors rungs 5 and 6 at MODERATE, so LOW is
+     * unreachable above rung 4 — yet LOW's cap was 6, which meant
+     * `assertRaiseWithinTier` would accept a raise from 4 to 6 into a state no
+     * fresh assessment of that agent could hold as LOW. Latent rather than
+     * exploited only because no MCP tool declares a rung above PROPOSE (2), and
+     * `src/lib/mcp/tools/types.ts` carries an `autonomy` override precisely so
+     * one can.
+     *
+     * Asserted as a PROPERTY over the whole grid rather than as four literals: a
+     * re-weighted axis or a new floor changes which rungs a tier can reach, and
+     * the version written as literals goes on passing while the table it is
+     * about becomes wrong.
+     */
+    describe('the cap is reachable', () => {
+        /** The highest rung at which each tier is produced by ANY input. */
+        const highestReachableRung = new Map<AgentRiskTier, number>();
+        for (const cell of ALL_CELLS) {
+            const { tier } = score(cell);
+            const best = highestReachableRung.get(tier);
+            if (best === undefined || cell.autonomyLevel > best) {
+                highestReachableRung.set(tier, cell.autonomyLevel);
+            }
+        }
+
+        it('every tier is reachable at all, so the sweep below has a subject', () => {
+            // Without this, a tier the scorer can never produce would vacuously
+            // satisfy the cap check by having no reachable rung to exceed.
+            expect([...highestReachableRung.keys()].sort()).toEqual([...RISK_TIER_ORDER].sort());
+        });
+
+        it.each([...RISK_TIER_ORDER])(
+            '%s grants no more autonomy than it can itself be scored at',
+            (tier) => {
+                const reachable = highestReachableRung.get(tier);
+                expect(reachable).toBeDefined();
+                expect(MAX_AUTONOMY_BY_TIER[tier]).toBeLessThanOrEqual(reachable as number);
+            },
+        );
+
+        it('LOW stops at the attended rungs — the unattended floor says so', () => {
+            // The concrete case the property was written for, pinned by value so
+            // the reason is legible: rung 5 IS the definition of unattended, and
+            // the floor there is MODERATE.
+            expect(highestReachableRung.get('LOW')).toBe(UNATTENDED_AUTONOMY - 1);
+            expect(MAX_AUTONOMY_BY_TIER.LOW).toBe(UNATTENDED_AUTONOMY - 1);
+        });
+
+        it('and an agent AT the cap really does score that tier — not merely at or below it', () => {
+            // The paired positive. "cap <= reachable" is also satisfied by a
+            // needlessly stingy cap, and a tier that costs more rungs than it
+            // has to is a different defect pointing the same way.
+            for (const tier of RISK_TIER_ORDER) {
+                const cap = MAX_AUTONOMY_BY_TIER[tier];
+                const atCap = ALL_CELLS.filter(
+                    (c) => c.autonomyLevel === cap && score(c).tier === tier,
+                );
+                expect(atCap.length).toBeGreaterThan(0);
+            }
+        });
     });
 });
 
