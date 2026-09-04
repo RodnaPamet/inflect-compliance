@@ -39,6 +39,7 @@ import { prisma } from '@/lib/prisma';
 import { appendAuditEntry } from '@/lib/audit';
 import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
+import type { AgentRiskTier } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
 
 /**
@@ -67,6 +68,22 @@ export interface AgentGateVerdict {
      * disagree with the first between the two queries.
      */
     autonomyLevel: number | null;
+    /**
+     * That agent's SCORED operational risk tier, which caps how far up the
+     * ladder it may actually be driven — see `riskTierCeilingFor`.
+     *
+     * Meaningful ONLY when `agentId` is non-null. Read on its own it is
+     * ambiguous in exactly the way that takes the product dark: `null` here is
+     * "unscored" when an agent resolved, and "there is no agent" when one did
+     * not, and those must resolve to opposite ceilings. Callers build the term
+     * with `riskTierCeilingFor(agentId === null ? null : { riskTier })` rather
+     * than passing this field to `ceilingForRiskTier` directly.
+     *
+     * Read HERE, from the same row and the same query as `autonomyLevel`, for
+     * the reason stated above it: a second read is a second answer to "which
+     * agent is this", free to disagree with the first.
+     */
+    riskTier: AgentRiskTier | null;
     /** Set only when the caller was refused. */
     reason: AgentGateDenialReason | null;
 }
@@ -98,6 +115,7 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
             enforcing,
             agentId: null,
             autonomyLevel: null,
+            riskTier: null,
             reason: enforcing ? 'no_agent_binding' : null,
         };
     }
@@ -107,7 +125,7 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
     // that decides whether traffic runs, and it does not get to rely on that.
     const agent = await prisma.registeredAgent.findFirst({
         where: { id: ctx.agentId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true, status: true, autonomyLevel: true },
+        select: { id: true, status: true, autonomyLevel: true, riskTier: true },
     });
 
     if (!agent) {
@@ -115,6 +133,7 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
             enforcing,
             agentId: null,
             autonomyLevel: null,
+            riskTier: null,
             reason: enforcing ? 'agent_not_found' : null,
         };
     }
@@ -123,6 +142,7 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
             enforcing,
             agentId: null,
             autonomyLevel: null,
+            riskTier: null,
             reason: enforcing ? 'agent_not_active' : null,
         };
     }
@@ -131,6 +151,7 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
         enforcing,
         agentId: agent.id,
         autonomyLevel: agent.autonomyLevel,
+        riskTier: agent.riskTier,
         reason: null,
     };
 }

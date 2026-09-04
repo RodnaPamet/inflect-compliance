@@ -53,16 +53,50 @@ interface DbOptions {
     agent?: { id: string; status: string } | null;
     /** Rows the revoke deleteMany reports. */
     revoked?: number;
+    /**
+     * The agent's standing COMPLETED risk assessment, if it has one. `null`
+     * (the default) is "never scored", which is the state in which the
+     * post-grant staleness re-evaluation has nothing to compare against and
+     * returns without writing.
+     */
+    standingAssessment?: Record<string, unknown> | null;
 }
 
 function makeDb(options: DbOptions = {}) {
     const upserts: any[] = [];
     const deletes: any[] = [];
+    const staleness: any[] = [];
     const db = {
         registeredAgent: {
             findFirst: jest.fn(async () =>
-                options.agent === undefined ? { id: 'agent-1', status: 'ACTIVE' } : options.agent,
+                options.agent === undefined
+                    ? {
+                          id: 'agent-1',
+                          status: 'ACTIVE',
+                          // The extra columns `getScoringState` selects. A grant
+                          // is one of the assessment staleness triggers, so the
+                          // usecase re-evaluates freshness in the same
+                          // transaction and reads the agent through that
+                          // selection.
+                          name: 'Agent one',
+                          autonomyLevel: 2,
+                          dataAccessScope: 'READ_TENANT_DATA',
+                          reversibility: 'REVERSIBLE',
+                          provenance: 'FIRST_PARTY',
+                          modelRef: null,
+                          riskTier: 'LOW',
+                          riskTierScoredAt: new Date(),
+                          _count: { tools: 1 },
+                      }
+                    : options.agent,
             ),
+        },
+        agentRiskAssessment: {
+            findFirst: jest.fn(async () => options.standingAssessment ?? null),
+            updateMany: jest.fn(async (args: any) => {
+                staleness.push(args);
+                return { count: 1 };
+            }),
         },
         registeredAgentTool: {
             findMany: jest.fn(async () => [
@@ -79,7 +113,7 @@ function makeDb(options: DbOptions = {}) {
         },
     };
     mockRunInTx.mockImplementation(async (_ctx: any, fn: any) => fn(db));
-    return { db, upserts, deletes };
+    return { db, upserts, deletes, staleness };
 }
 
 beforeEach(() => {

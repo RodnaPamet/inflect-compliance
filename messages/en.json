@@ -4547,6 +4547,7 @@
             "credentialsEmpty": "No API key is bound to a registered agent yet. Bind one when you create the key in Admin → API keys.",
             "credentialAutonomy": "Autonomy ceiling {level}",
             "credentialNoAgent": "No agent",
+            "credentialUnassessed": "Unassessed — no authority",
             "credentialLive": "Live",
             "credentialRevoked": "Revoked",
             "credentialExpired": "Expired"

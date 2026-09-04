@@ -429,3 +429,67 @@ describe('the cap a tier buys', () => {
         expect(MAX_AUTONOMY_BY_TIER.CRITICAL).toBeLessThan(MAX_AUTONOMY_BY_TIER.LOW);
     });
 });
+
+/**
+ * The property the TRANSITION stands on.
+ *
+ * Wiring the tier into the autonomy ceiling denies every agent nobody has
+ * assessed. For an estate of agents that were ACTIVE before that landed, the
+ * bulk route out is `scripts/backfill-agent-risk-tiers.ts`, which scores each
+ * one through this very scorer with NOTHING answered.
+ *
+ * That is only defensible because of what the arithmetic guarantees, and this
+ * is where it is guaranteed rather than asserted in a docstring: an unanswered
+ * question counts as NO, so a run with no answers carries the full answer
+ * weight, which alone exceeds the LOW band. A provisional score can therefore
+ * never come out LOW — and LOW is the only tier that leaves the ladder whole.
+ * Nobody can use the backfill to buy an agent its full autonomy; filling in the
+ * questionnaire is the only route there, which is what makes the questionnaire
+ * worth filling in.
+ */
+describe('a provisional score — nothing answered — can never be the friendliest tier', () => {
+    const provisionalCells = ALL_CELLS.filter((c) => c.profile === 'UNANSWERED');
+
+    it('covers the whole axis grid, so this is a sweep and not a sample', () => {
+        expect(provisionalCells.length).toBe(
+            AUTONOMY_LEVELS.length * DATA_ACCESS_ORDER.length * REVERSIBILITIES.length * PROVENANCES.length,
+        );
+    });
+
+    it('never returns LOW, for ANY combination of the four axes', () => {
+        for (const cell of provisionalCells) {
+            expect(score(cell).tier).not.toBe('LOW');
+        }
+    });
+
+    it('and the friendliest provisional tier still reaches every rung a tool needs today', () => {
+        // The other half, and the reason the backfill is not itself an outage:
+        // the least-exposed agent lands at a tier whose cap admits the highest
+        // rung any MCP capability class requires (ORCHESTRATE, 3). An agent
+        // with write access, egress, irreversibility or unattended operation
+        // lands lower and IS bounded until a human assesses it — which is the
+        // correct direction for a control nobody has applied by hand yet.
+        const gentlest = score({
+            autonomyLevel: 0,
+            dataAccessScope: 'NONE',
+            reversibility: 'REVERSIBLE',
+            provenance: 'FIRST_PARTY',
+            profile: 'UNANSWERED',
+        });
+        expect(MAX_AUTONOMY_BY_TIER[gentlest.tier]).toBeGreaterThanOrEqual(3);
+    });
+
+    it('answering everything YES is what buys LOW back — the questionnaire moves the tier', () => {
+        // The paired positive. Without it, "provisional is never LOW" would be
+        // satisfied by a scorer that can never say LOW at all, and a tier
+        // nobody can reach is a tier nobody fills in the form for.
+        const answered = score({
+            autonomyLevel: 0,
+            dataAccessScope: 'NONE',
+            reversibility: 'REVERSIBLE',
+            provenance: 'FIRST_PARTY',
+            profile: 'ALL_YES',
+        });
+        expect(answered.tier).toBe('LOW');
+    });
+});

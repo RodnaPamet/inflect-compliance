@@ -13,7 +13,7 @@
  * The ceiling makes authority a property of the AGENT rather than of the bearer.
  * It is a MINIMUM over independent narrowing terms, so no term can widen:
  *
- *     effective = min( key.maxAutonomyLevel , agent.autonomyLevel [ , tierCap ] )
+ *     effective = min( key.maxAutonomyLevel , agent.autonomyLevel , tierCap )
  *
  * and a tool refuses when the rung it requires is above the effective ceiling.
  *
@@ -27,15 +27,19 @@
  *
  *   • `RegisteredAgent.riskTier = NULL` means UNSCORED, and UNSCORED MUST MEAN
  *     DENY. An agent nobody has assessed is precisely the one that should not be
- *     running. See `ceilingForRiskTier` below — it is the 3/10 seam and it is
- *     written so that getting this backwards requires deleting a line rather
- *     than forgetting one.
+ *     running. See `ceilingForRiskTier` below, which encodes that direction and
+ *     is wired into the live funnel — getting it backwards now requires
+ *     deleting a line rather than forgetting one.
  *
  * An absent NARROWING is not an absent ASSESSMENT. Reading either null like the
  * other is the whole hazard, which is why they are stated together here rather
- * than in two files that never meet.
+ * than in two files that never meet. A THIRD null joined them when the tier
+ * term was wired — "no agent resolved at all" — and it is stated at
+ * `riskTierCeilingFor` below.
  */
 import type { AgentRiskTier } from '@prisma/client';
+
+import { MAX_AUTONOMY_BY_TIER } from './agent-risk-scoring';
 
 /** The ladder `RegisteredAgent.autonomyLevel` lives on, pinned by a CHECK. */
 export const AUTONOMY_MIN = 0;
@@ -77,43 +81,66 @@ export const AUTONOMY_REQUIRED_BY_CAPABILITY = {
 export type McpCapabilityClass = keyof typeof AUTONOMY_REQUIRED_BY_CAPABILITY;
 
 /**
- * ── THE 3/10 SEAM. READ THIS BEFORE WIRING IT. ──────────────────────
+ * ── THE TIER CAP. WIRED (3/10). ─────────────────────────────────────
  *
- * 3/10 introduces the operational risk scorer, and the scored `riskTier` will
- * CAP how far an agent may be driven regardless of its registered autonomy. That
- * cap composes here, as one more term inside the same `min`.
+ * A scored `riskTier` CAPS how far an agent may actually be driven, whatever
+ * autonomy its registration claims. This is the term that makes the risk
+ * assessment load-bearing rather than a questionnaire: coming out HIGH costs
+ * the agent four rungs of the ladder, server-side, on every tool call.
  *
- * **A NULL tier MUST resolve to `DENY_CEILING`, never to a low tier.** NULL is
+ * The per-tier numbers live with the SCORER (`MAX_AUTONOMY_BY_TIER` in
+ * `agent-risk-scoring.ts`) because they are the assessment's MEANING; this file
+ * owns only how the term composes. A tier missing from that table resolves to
+ * `DENY_CEILING` rather than to no narrowing — a rung added to `AgentRiskTier`
+ * without a cap must refuse, not admit.
+ *
+ * **A NULL tier resolves to `DENY_CEILING`, never to a low tier.** NULL is
  * UNSCORED — the state between insert and the first scoring run — and an agent
- * nobody has assessed is the one that should not be running. Mapping it to "LOW"
- * would be the exact inversion: the least-assessed agent would get the
- * friendliest treatment, and nothing downstream would look wrong. This function
- * encodes that direction TODAY and is unit-tested for it, so 3/10 inherits the
- * decision rather than re-making it.
+ * nobody has assessed is the one that should not be running. Mapping it to
+ * "LOW" would be the exact inversion: the least-assessed agent would get the
+ * friendliest treatment, and nothing downstream would look wrong.
  *
- * It is deliberately NOT wired into `resolveAutonomyCeiling`'s live call site
- * yet. Every agent in the register currently has `riskTier = NULL`, because
- * `createRegisteredAgent` leaves it unscored on purpose and the scorer does not
- * exist — so folding this in before the scorer ships would take the entire MCP
- * surface dark for every tenant, which is a product outage rather than a
- * control. The call site passes `RISK_TIER_CEILING_UNWIRED` and says so; 3/10
- * replaces that one argument with `ceilingForRiskTier(agent.riskTier)` after the
- * scorer backfills, and nothing else in the funnel moves.
- *
- * The scored tiers return `UNCLAMPED` because the tier→rung table is 3/10's
- * decision to make, not this commit's. Only the NULL direction is settled here.
+ * DO NOT call this with the tier of an agent that did not RESOLVE. See
+ * `riskTierCeilingFor` immediately below — "there is no agent here" and "the
+ * agent here is unscored" are different states, and this function only answers
+ * the second.
  */
 export function ceilingForRiskTier(tier: AgentRiskTier | null | undefined): number {
     if (tier === null || tier === undefined) return DENY_CEILING;
-    return UNCLAMPED;
+    const cap: number | undefined = MAX_AUTONOMY_BY_TIER[tier];
+    return cap ?? DENY_CEILING;
 }
 
 /**
- * What the live call site passes for the tier term until 3/10 lands. Named
- * rather than spelled `UNCLAMPED` inline so the seam is greppable and so
- * deleting it is a compile error rather than a silent no-op.
+ * ── THE THIRD NULL, AND THE ONE THAT WOULD HAVE CAUSED THE OUTAGE ───
+ *
+ * The header above names two nulls that mean opposite things. Wiring the tier
+ * term surfaced a THIRD, and it is the one that takes the product dark if it is
+ * read as either of the others:
+ *
+ *   • NO AGENT RESOLVED AT ALL — a signed-in human, an ordinary integration
+ *     key, or a tenant that has switched the register off. `evaluateAgent-
+ *     Registration` reports this as `agentId === null`. There is no agent, so
+ *     there is nothing to have assessed, so the tier contributes NO TERM. Read
+ *     as "unscored" it would deny every non-agent caller on the MCP surface and
+ *     every tenant that never turned the register on — the register's own
+ *     switch doubling as a kill switch for the product, which is precisely what
+ *     `agentAutonomy: null` is documented above as refusing to do.
+ *
+ *   • AN AGENT RESOLVED AND ITS TIER IS NULL — somebody registered it, somebody
+ *     activated it, and nobody assessed it. That DENIES.
+ *
+ * Passing the resolved agent as an OBJECT-OR-NULL rather than as a bare tier is
+ * what keeps those two apart at the type level: `null` here cannot be spelled
+ * the same way as `{ riskTier: null }`.
  */
-export const RISK_TIER_CEILING_UNWIRED = UNCLAMPED;
+export type ResolvedAgentTier = { riskTier: AgentRiskTier | null | undefined } | null;
+
+export function riskTierCeilingFor(agent: ResolvedAgentTier): number {
+    // No agent in play — no term. NOT a deny; see above.
+    if (agent === null) return UNCLAMPED;
+    return ceilingForRiskTier(agent.riskTier);
+}
 
 export interface AutonomyCeilingTerms {
     /** `TenantApiKey.maxAutonomyLevel`. NULL contributes no term. */
@@ -127,8 +154,10 @@ export interface AutonomyCeilingTerms {
      */
     agentAutonomy: number | null | undefined;
     /**
-     * The 3/10 tier cap. Pass `RISK_TIER_CEILING_UNWIRED` until the scorer
-     * ships; pass `ceilingForRiskTier(agent.riskTier)` after it does.
+     * The scored-tier cap. Build it with `riskTierCeilingFor(resolvedAgent)`,
+     * never by reaching for a tier directly — the difference between "no agent"
+     * and "an unscored agent" is the whole hazard, and that function is where
+     * it is stated.
      */
     riskTierCeiling: number;
 }

@@ -46,6 +46,10 @@ import {
     type AssessmentBasis,
     type StalenessVerdict,
 } from '@/lib/agentic/agent-assessment-staleness';
+import {
+    buildAgentAssessmentEvidence,
+    unemittedAgentAssessmentEvidence,
+} from '@/lib/agentic/agent-assessment-evidence';
 import { SaveAgentAssessmentAnswerSchema } from '../schemas/agent-assessment.schemas';
 import type { RequestContext } from '../types';
 
@@ -296,23 +300,47 @@ export async function completeAgentRiskAssessment(ctx: RequestContext, agentId: 
                 basisDataAccessScope: basis.dataAccessScope,
                 basisReversibility: basis.reversibility,
                 basisToolCount: basis.toolCount,
+                // Stated in the trail rather than left to be inferred from the
+                // absence of an evidence row: "no artefact was filed" and "an
+                // artefact was filed and later deleted" look identical to a
+                // reconstruction that only counts rows.
+                evidenceEmitted: false,
             },
         });
 
         // ── SEAM (Agentic 10/10) — EVIDENCE EMISSION. ──────────────────
         // A completed agent risk assessment is an audit artefact: it is the
-        // document an assessor asks for when they ask how the tenant bounded
-        // an agent's risk. It belongs in the evidence subsystem, attached to
-        // the agent, with the score and the basis as its content.
+        // document an assessor asks for when they ask how the tenant bounded an
+        // agent's risk. It belongs in the evidence subsystem, attached to the
+        // agent, with the score and the basis as its content.
         //
-        // NOT wired here, and deliberately not silently skipped: the evidence
-        // emission point for agentic artefacts is 10/10's, and inventing one
-        // now would mean 10/10 either adopts a shape it did not choose or
-        // migrates rows that already exist. The audit row above is the durable
-        // record in the meantime — it is hash-chained, it carries the tier, the
-        // score and the basis, and it is what a reconstruction would read.
-        // 10/10 replaces this comment with the emission call; the assessment
-        // row already holds everything such a call needs.
+        // The emission point for agentic artefacts is 10/10's to design, so it
+        // is not invented here — but it is not silently skipped either. The
+        // DESCRIPTOR is built for real on every completion and travels back to
+        // the caller and into the audit row beside an explicit `emitted:
+        // false`, so nothing downstream can come to believe an artefact was
+        // filed when none was. See `agent-assessment-evidence.ts`.
+        const evidence = unemittedAgentAssessmentEvidence(
+            buildAgentAssessmentEvidence({
+                agentId,
+                agentName: agent.name,
+                assessmentId: assessment.id,
+                tier: result.tier,
+                score: result.score,
+                band: result.band,
+                floors: result.floors,
+                applicableQuestions: result.breakdown.applicableQuestions,
+                unansweredQuestions: result.breakdown.unansweredQuestions,
+                basis: {
+                    autonomyLevel: basis.autonomyLevel,
+                    dataAccessScope: basis.dataAccessScope,
+                    reversibility: basis.reversibility,
+                    toolCount: basis.toolCount,
+                    modelRef: basis.modelRef,
+                },
+                scoredAt,
+            }),
+        );
 
         return {
             assessmentId: assessment.id,
@@ -323,6 +351,7 @@ export async function completeAgentRiskAssessment(ctx: RequestContext, agentId: 
             floors: result.floors,
             breakdown: result.breakdown,
             scoredAt,
+            evidence,
         };
     });
 }
@@ -379,57 +408,77 @@ function stalenessFor(
  */
 export async function refreshAgentAssessmentStaleness(ctx: RequestContext, agentId: string) {
     assertCanWrite(ctx);
+    return runInTenantContext(ctx, (db) => refreshAgentAssessmentStalenessInTx(db, ctx, agentId));
+}
 
-    return runInTenantContext(ctx, async (db) => {
-        const agent = await loadAgentScoringState(db, ctx, agentId);
-        const standing = await AgentRiskAssessmentRepository.findLatestCompleted(db, ctx, agentId);
-        if (!standing) return { assessmentId: null, stale: false, triggers: [] as string[] };
+/**
+ * The same re-evaluation, taking an OPEN transaction.
+ *
+ * Exists because the callers that most need it — the agent amendment and the
+ * tool grant — are already inside `runInTenantContext`, and opening a second
+ * transaction from inside the first would hold two connections against a
+ * transaction-mode pooler for the length of the outer one. It also means the
+ * staleness stamp commits or rolls back WITH the change that caused it: an
+ * amendment that fails must not leave behind a note saying the assessment is
+ * stale because of it.
+ *
+ * Authorization is the CALLER's: every call site is already past
+ * `assertCanWrite`, and re-asserting here would be a second check on the same
+ * context that can only ever agree with the first.
+ */
+export async function refreshAgentAssessmentStalenessInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    agentId: string,
+) {
+    const agent = await loadAgentScoringState(db, ctx, agentId);
+    const standing = await AgentRiskAssessmentRepository.findLatestCompleted(db, ctx, agentId);
+    if (!standing) return { assessmentId: null, stale: false, triggers: [] as string[] };
 
-        const verdict = stalenessFor(standing, agent);
-        if (!verdict) return { assessmentId: standing.id, stale: false, triggers: [] as string[] };
+    const verdict = stalenessFor(standing, agent);
+    if (!verdict) return { assessmentId: standing.id, stale: false, triggers: [] as string[] };
 
-        const alreadyStale = standing.staleAt !== null;
-        const staleAt = verdict.stale ? (standing.staleAt ?? new Date()) : null;
+    const alreadyStale = standing.staleAt !== null;
+    const staleAt = verdict.stale ? (standing.staleAt ?? new Date()) : null;
 
-        await AgentRiskAssessmentRepository.setStaleness(db, ctx, standing.id, {
-            staleAt,
-            triggers: verdict.triggers,
-        });
-
-        // Audited only on a TRANSITION into staleness. Every call that finds the
-        // same standing staleness would otherwise write a row, and a trail
-        // where the same fact repeats a thousand times is a trail nobody reads.
-        if (verdict.stale && !alreadyStale) {
-            await logEvent(db, ctx, {
-                action: 'AGENT_ASSESSMENT_STALE',
-                entityType: 'AgentRiskAssessment',
-                entityId: standing.id,
-                detailsJson: {
-                    category: 'custom',
-                    event: 'agent_assessment_stale',
-                    agentId,
-                    triggers: verdict.triggers,
-                    // `triggerDetail`, not `detail`: the canonical audit
-                    // details schema reserves `detail` for a single free-form
-                    // STRING, and handing it an array is a 400 at the write
-                    // rather than a truncated field.
-                    triggerDetail: verdict.detail,
-                    // The tier that REMAINS in force. Stale warns; it does not
-                    // deny, and the widening that made it stale is inert until
-                    // somebody re-scores.
-                    standingTier: standing.scoredTier,
-                },
-            });
-        }
-
-        return {
-            assessmentId: standing.id,
-            stale: verdict.stale,
-            triggers: verdict.triggers,
-            detail: verdict.detail,
-            staleAt,
-        };
+    await AgentRiskAssessmentRepository.setStaleness(db, ctx, standing.id, {
+        staleAt,
+        triggers: verdict.triggers,
     });
+
+    // Audited only on a TRANSITION into staleness. Every call that finds the
+    // same standing staleness would otherwise write a row, and a trail
+    // where the same fact repeats a thousand times is a trail nobody reads.
+    if (verdict.stale && !alreadyStale) {
+        await logEvent(db, ctx, {
+            action: 'AGENT_ASSESSMENT_STALE',
+            entityType: 'AgentRiskAssessment',
+            entityId: standing.id,
+            detailsJson: {
+                category: 'custom',
+                event: 'agent_assessment_stale',
+                agentId,
+                triggers: verdict.triggers,
+                // `triggerDetail`, not `detail`: the canonical audit
+                // details schema reserves `detail` for a single free-form
+                // STRING, and handing it an array is a 400 at the write
+                // rather than a truncated field.
+                triggerDetail: verdict.detail,
+                // The tier that REMAINS in force. Stale warns; it does not
+                // deny, and the widening that made it stale is inert until
+                // somebody re-scores.
+                standingTier: standing.scoredTier,
+            },
+        });
+    }
+
+    return {
+        assessmentId: standing.id,
+        stale: verdict.stale,
+        triggers: verdict.triggers,
+        detail: verdict.detail,
+        staleAt,
+    };
 }
 
 /** Every run against one agent, newest first — the assessment history. */

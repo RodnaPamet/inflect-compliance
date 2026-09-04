@@ -39,6 +39,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
+import { refreshAgentAssessmentStalenessInTx } from './agent-risk-assessment';
 import { AgentToolGrantSchema } from '../schemas/agent-registry.schemas';
 import type { RequestContext } from '../types';
 
@@ -100,7 +101,20 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
             },
         });
 
-        return { agentId, toolName, grantedAt: granted.createdAt };
+        // A grant is one of the assessment's staleness triggers — the agent can
+        // now reach something it could not when somebody scored it. Re-evaluated
+        // in THIS transaction so the note commits with the grant that caused it,
+        // and so the register never shows a fresh assessment beside a tool it
+        // never saw.
+        //
+        // It WARNS; it does not block. Blocking here would make the correct,
+        // audited act — widening an agent deliberately and on the record — the
+        // thing that takes it dark, and the widening is inert anyway: the tier
+        // in force was scored against the narrower basis and the ceiling
+        // composes as a `min`. See `agent-assessment-staleness.ts`.
+        const staleness = await refreshAgentAssessmentStalenessInTx(db, ctx, agentId);
+
+        return { agentId, toolName, grantedAt: granted.createdAt, staleness };
     });
 }
 

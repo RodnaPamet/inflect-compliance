@@ -223,6 +223,9 @@ the fixture must not silently delete the answers that cite it.
   `ceilingForRiskTier` in `src/lib/agentic/autonomy-ceiling.ts` still returns
   `UNCLAMPED` for every scored tier and the live call site still passes
   `RISK_TIER_CEILING_UNWIRED`. `MAX_AUTONOMY_BY_TIER` is the table it consumes.
+  *(Stage 2 landed in the same PR and closed this: the constant is gone and the
+  cap is wired. See
+  [`2026-09-05-agent-risk-tier-load-bearing.md`](2026-09-05-agent-risk-tier-load-bearing.md).)*
 - **Evidence emission (10/10).** `completeAgentRiskAssessment` carries a named
   comment where the emission call goes, and states why it is not invented here:
   10/10 owns the emission point for agentic artefacts, and inventing one now

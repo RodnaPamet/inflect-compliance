@@ -155,13 +155,26 @@ export default async function McpAdminPage({
                                     </span>
                                 </span>
                                 <span className="flex items-center gap-compact">
+                                    {/*
+                                      * An UNSCORED agent's ceiling is
+                                      * DENY_CEILING (-1) — below rung 0, so the
+                                      * credential reaches nothing. Rendering
+                                      * "Autonomy ceiling -1" would put a magic
+                                      * number in front of an operator whose
+                                      * integration has just stopped working;
+                                      * the word says what the number means and
+                                      * points at the fix.
+                                      */}
                                     <span
                                         className="text-sm text-content-muted"
                                         data-autonomy={cred.effectiveAutonomy}
+                                        data-unscored={cred.unscored ? 'true' : undefined}
                                     >
-                                        {t('mcp.credentialAutonomy', {
-                                            level: cred.effectiveAutonomy,
-                                        })}
+                                        {cred.unscored
+                                            ? t('mcp.credentialUnassessed')
+                                            : t('mcp.credentialAutonomy', {
+                                                  level: cred.effectiveAutonomy,
+                                              })}
                                     </span>
                                     <StatusBadge
                                         variant={stateVariant[cred.state]}

@@ -184,6 +184,14 @@ async function seedAgent(tenantId: string, ownerUserId: string, name: string): P
             provenance: 'FIRST_PARTY',
             ownerUserId,
             status: 'ACTIVE',
+            // Scored LOW so the TIER term is never what refuses here. From
+            // Agentic 3/10 an UNSCORED agent (riskTier NULL) is denied every
+            // tool by `riskTierCeilingFor`, and an unscored fixture would make
+            // every assertion below pass for the wrong reason — the tier gate
+            // firing before the one under test. LOW leaves the ladder whole, so
+            // the arithmetic these suites assert on is unchanged.
+            riskTier: 'LOW',
+            riskTierScoredAt: new Date(),
         },
     });
     return agent.id;

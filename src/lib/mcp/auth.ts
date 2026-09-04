@@ -71,8 +71,8 @@ import {
     type AgentGateVerdict,
 } from '@/lib/agentic/agent-registration-gate';
 import {
-    RISK_TIER_CEILING_UNWIRED,
     resolveAutonomyCeiling,
+    riskTierCeilingFor,
 } from '@/lib/agentic/autonomy-ceiling';
 import {
     isExchangedToken,
@@ -321,19 +321,21 @@ export async function buildMcpInvocation(
     const agentId = verdict.agentId;
     const grantedTools = agentId ? await listGrantedToolNames(ctx.tenantId, agentId) : null;
 
-    // The autonomy ceiling: min(key max, agent's registered level).
+    // The autonomy ceiling: min(key max, agent's registered level, tier cap).
     //
-    // `RISK_TIER_CEILING_UNWIRED` is the 3/10 SEAM and it is a placeholder, not
-    // a decision. 3/10 replaces it with `ceilingForRiskTier(agent.riskTier)`
-    // once the operational risk scorer ships — and that function already encodes
-    // the direction that matters, NULL ⇒ DENY, so the wiring cannot get it
-    // backwards. It is not wired today because every agent in every register is
-    // currently unscored (`createRegisteredAgent` leaves the tier NULL on
-    // purpose), so folding it in now would take the whole MCP surface dark.
+    // The tier term is 3/10's, and it is the one that can DENY outright: an
+    // agent that resolved but has never been scored gets `DENY_CEILING`, which
+    // is below rung 0, so no tool reaches it. An agent that did NOT resolve —
+    // a human, an ordinary integration key, a tenant with the register switched
+    // off — contributes no term at all. Those two states are both spelled
+    // `null` on the verdict and mean opposite things, so the object below is
+    // built once, by name, rather than by passing `verdict.riskTier` to a
+    // function that cannot tell them apart.
+    const resolvedAgentTier = verdict.agentId === null ? null : { riskTier: verdict.riskTier };
     const autonomyCeiling = resolveAutonomyCeiling({
         keyMax: keyCtx.apiKeyMaxAutonomy,
         agentAutonomy: verdict.autonomyLevel,
-        riskTierCeiling: RISK_TIER_CEILING_UNWIRED,
+        riskTierCeiling: riskTierCeilingFor(resolvedAgentTier),
     });
 
     return {
@@ -343,6 +345,10 @@ export async function buildMcpInvocation(
         grantedTools,
         audience: options.audience ?? null,
         autonomyCeiling,
+        // Carried so a refusal can say WHY the ceiling is where it is. A
+        // denial reading `ceiling: -1` with no tier beside it sends an operator
+        // to the agent's autonomy level, which is not the thing refusing.
+        riskTier: verdict.agentId === null ? null : verdict.riskTier,
         credential: {
             apiKeyId: keyCtx.apiKeyId ?? null,
             tokenExpiresAt: options.tokenExpiresAt ?? null,

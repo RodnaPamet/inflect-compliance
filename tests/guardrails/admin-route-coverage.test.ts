@@ -67,6 +67,12 @@ const ADMIN_ONLY_ROUTES = [
     // Deny-by-default MCP tool exposure — its own key,
     // `admin.agent_tool_exposure`, narrower than the register's.
     'admin/agents/[agentId]/tools/route.ts',
+    // The agent risk assessment (Agentic 3) — read the instrument, answer one
+    // question, and score the agent. Same `admin.agent_registry` key as the
+    // register: completing a run writes the tier that caps the agent's
+    // authority, so this IS the authority to set an agent's authority.
+    'admin/agents/[agentId]/risk-assessment/route.ts',
+    'admin/agents/[agentId]/risk-assessment/complete/route.ts',
     'admin/device-tokens/route.ts',
     'admin/device-tokens/[tokenId]/route.ts',
     'admin/dsar-requests/route.ts',

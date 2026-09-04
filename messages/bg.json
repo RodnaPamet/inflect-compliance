@@ -4547,6 +4547,7 @@
             "credentialsEmpty": "Все още няма API ключ, свързан с регистриран агент. Свържете такъв при създаването на ключа в Администрация → API ключове.",
             "credentialAutonomy": "Таван на автономност {level}",
             "credentialNoAgent": "Без агент",
+            "credentialUnassessed": "Неоценен — без права",
             "credentialLive": "Активен",
             "credentialRevoked": "Отменен",
             "credentialExpired": "Изтекъл"

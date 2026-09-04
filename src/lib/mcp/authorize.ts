@@ -66,6 +66,7 @@ import { appendAuditEntry } from '@/lib/audit';
 import { enforceApiKeyScope } from '@/lib/auth/api-key-auth';
 import { forbidden } from '@/lib/errors/types';
 import {
+    DENY_CEILING,
     requiredAutonomyFor,
     withinCeiling,
     type McpCapabilityClass,
@@ -82,6 +83,7 @@ import { assertPermission } from '@/lib/security/permission-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { isAppError } from '@/lib/errors/types';
 import type { PermissionSet } from '@/lib/permissions';
+import type { AgentRiskTier } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
 import type { AgentPrincipal } from '@/lib/agentic/agent-authority';
 
@@ -123,12 +125,20 @@ export interface McpInvocation {
      */
     audience: readonly string[] | null;
     /**
-     * `min(key.maxAutonomyLevel, agent.autonomyLevel)` — the highest rung this
-     * invocation may reach. See `agentic/autonomy-ceiling.ts`, including the
-     * 3/10 risk-tier seam and why a NULL tier must deny while a NULL key ceiling
-     * must not.
+     * `min(key.maxAutonomyLevel, agent.autonomyLevel, tierCap)` — the highest
+     * rung this invocation may reach. See `agentic/autonomy-ceiling.ts`,
+     * including why a NULL tier must deny while a NULL key ceiling must not.
      */
     autonomyCeiling: number;
+    /**
+     * The resolved agent's scored risk tier, or `null`.
+     *
+     * `null` here is NOT "unscored" on its own — it is also what a request with
+     * no resolved agent carries. It exists for the DENIAL MESSAGE, which needs
+     * to tell an operator whether the thing refusing them is the tier or the
+     * registration, and those need different fixes.
+     */
+    riskTier: AgentRiskTier | null;
     /** What must still be TRUE at every tool boundary, not merely at auth. */
     credential: {
         /** The `TenantApiKey.id` revocation is re-checked against. */
@@ -300,11 +310,17 @@ async function assertCredentialLive(inv: McpInvocation, target: string): Promise
 /**
  * Step 4 — AUTONOMY. Is the rung this call represents within the ceiling?
  *
- * The ceiling is `min(key.maxAutonomyLevel, agent.autonomyLevel)`, computed once
- * per invocation — see `agentic/autonomy-ceiling.ts`. This is what makes the
- * authority a property of the AGENT: a credential can narrow it and can never
- * widen it, so "what may this agent do" stops depending on which of its keys
- * somebody is holding.
+ * The ceiling is `min(key.maxAutonomyLevel, agent.autonomyLevel, tierCap)`,
+ * computed once per invocation — see `agentic/autonomy-ceiling.ts`. This is
+ * what makes the authority a property of the AGENT: a credential can narrow it
+ * and can never widen it, so "what may this agent do" stops depending on which
+ * of its keys somebody is holding.
+ *
+ * The refusal names the term that is actually binding, because the three have
+ * completely different fixes and an operator handed the wrong one edits the
+ * wrong record. A ceiling of `DENY_CEILING` can only have come from the tier
+ * term (the other two are bounded at 0), so an UNSCORED agent gets told to
+ * assess itself rather than to raise a number that would change nothing.
  */
 async function assertAutonomy(
     inv: McpInvocation,
@@ -314,14 +330,32 @@ async function assertAutonomy(
 ): Promise<void> {
     const required = requiredAutonomyFor(capabilityClass, declared);
     if (withinCeiling(required, inv.autonomyCeiling)) return;
+
+    const unscored = inv.autonomyCeiling === DENY_CEILING;
+    const message = unscored
+        ? 'This agent has not been risk-assessed, so it holds no authority at ' +
+          'all. Complete its agent risk assessment in the register — an ' +
+          'unassessed agent is refused every tool, by design.'
+        : inv.riskTier !== null
+          ? `This agent's autonomy ceiling does not reach the level "${target}" ` +
+            `requires. Its assessed risk tier is ${inv.riskTier}, which caps it; ` +
+            "the agent's registered autonomy level and the key's maximum apply " +
+            'as well, and the lowest of the three wins.'
+          : `This agent's autonomy ceiling does not reach the level "${target}" ` +
+            "requires. Raise the agent's registered autonomy level, or the key's " +
+            'maximum, whichever is lower.';
+
     await denyToolCall(inv.ctx, 'autonomy_denied', {
         tool: target,
         agentId: inv.agentId,
-        message:
-            `This agent's autonomy ceiling does not reach the level "${target}" ` +
-            'requires. Raise the agent\'s registered autonomy level, or the key\'s ' +
-            'maximum, whichever is lower.',
-        extra: { required, ceiling: inv.autonomyCeiling, capabilityClass },
+        message,
+        extra: {
+            required,
+            ceiling: inv.autonomyCeiling,
+            capabilityClass,
+            riskTier: inv.riskTier,
+            unscored,
+        },
     });
 }
 
