@@ -38,6 +38,8 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { generateApiKey } from '@/lib/auth/api-key-auth';
 import { POST } from '@/app/api/mcp/route';
+import { createApiKey } from '@/app-layer/usecases/api-keys';
+import { makeRequestContext } from '../helpers/make-context';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -324,6 +326,118 @@ describeFn('the agent-registration gate', () => {
             // attribution assertion below would pass over an empty array.
             expect(proposals).toHaveLength(before + 1);
             expect(proposals[0].agentId).toBe(activeAgentId);
+        });
+    });
+
+    /**
+     * The gate's ALLOW path has to be reachable through the product, not only
+     * through SQL.
+     *
+     * Everything above mints its credentials with `prisma.tenantApiKey.create`,
+     * which sets `agentId` directly. That proves the gate READS the binding; it
+     * cannot prove an operator can ever WRITE one. Those are different claims, and
+     * the difference is not academic: `TenantApiKey.agentId` shipped with no writer
+     * anywhere in `src/`, so a tenant with no `TenantSecuritySettings` row — which
+     * is every tenant created after the gate, since the absence reads as ENFORCING
+     * — could mint no usable MCP credential at all. Every assertion above passed
+     * while `/api/mcp` was unreachable in production.
+     *
+     * So this block mints through `createApiKey`, the usecase the admin route
+     * calls, and asserts the resulting credential passes the gate it must pass.
+     */
+    describe('the binding is writable through the product', () => {
+        const adminCtx = () => makeRequestContext('OWNER', { tenantId: TENANT, userId: USER });
+
+        it('a key minted through createApiKey and bound to an ACTIVE agent passes the gate', async () => {
+            await setEnforcement(true);
+
+            const { plaintext } = (await createApiKey(adminCtx(), {
+                name: 'minted-bound',
+                scopes: ['mcp:read'],
+                agentId: activeAgentId,
+            })) as { plaintext: string };
+
+            const res = await callMcp(plaintext);
+            expect(res.status).toBe(200);
+        });
+
+        it('the binding it wrote is the agent asked for, not merely non-null', async () => {
+            const { keyPrefix } = (await createApiKey(adminCtx(), {
+                name: 'minted-attributed',
+                scopes: ['mcp:read'],
+                agentId: activeAgentId,
+            })) as { keyPrefix: string };
+
+            const row = await prisma.tenantApiKey.findFirst({
+                where: { tenantId: TENANT, keyPrefix },
+                select: { agentId: true },
+            });
+            expect(row?.agentId).toBe(activeAgentId);
+        });
+
+        it('a key minted with no agent is refused once the tenant enforces', async () => {
+            await setEnforcement(true);
+
+            const { plaintext } = (await createApiKey(adminCtx(), {
+                name: 'minted-unbound',
+                scopes: ['mcp:read'],
+            })) as { plaintext: string };
+
+            const res = await callMcp(plaintext);
+            expect(res.status).toBe(403);
+        });
+
+        it('refuses another tenant`s agent as the binding', async () => {
+            const otherTenant = `t-other-${randomUUID().slice(0, 8)}`;
+            await prisma.tenant.create({ data: { id: otherTenant, name: otherTenant, slug: otherTenant } });
+            const foreignSystem = await prisma.aiSystem.create({
+                data: { tenantId: otherTenant, name: 'foreign host', ownerUserId: USER },
+            });
+            const foreign = await prisma.registeredAgent.create({
+                data: {
+                    tenantId: otherTenant,
+                    aiSystemId: foreignSystem.id,
+                    name: 'foreign',
+                    autonomyLevel: 1,
+                    dataAccessScope: 'READ_METADATA',
+                    reversibility: 'REVERSIBLE',
+                    provenance: 'FIRST_PARTY',
+                    ownerUserId: USER,
+                    status: 'ACTIVE',
+                },
+            });
+
+            try {
+                // A plain FK would accept this: Postgres runs foreign-key checks
+                // as the table owner, which bypasses row security. The
+                // tenant-scoped lookup is what refuses it.
+                await expect(
+                    createApiKey(adminCtx(), {
+                        name: 'minted-foreign',
+                        scopes: ['mcp:read'],
+                        agentId: foreign.id,
+                    }),
+                ).rejects.toThrow();
+            } finally {
+                // This case reaches OUTSIDE the suite's fixture, so it clears up
+                // after itself. The foreign agent names USER as its owner and the
+                // suite's teardown deletes that user, so leaving these rows behind
+                // turns a passing suite into "failed to run" on a foreign-key
+                // violation — which reads as a broken suite rather than a leak.
+                await prisma.registeredAgent.deleteMany({ where: { tenantId: otherTenant } });
+                await prisma.aiSystem.deleteMany({ where: { tenantId: otherTenant } });
+                await prisma.tenant.deleteMany({ where: { id: otherTenant } });
+            }
+        });
+
+        it('refuses a SUSPENDED agent at mint time rather than at first use', async () => {
+            await expect(
+                createApiKey(adminCtx(), {
+                    name: 'minted-suspended',
+                    scopes: ['mcp:read'],
+                    agentId: suspendedAgentId,
+                }),
+            ).rejects.toThrow();
         });
     });
 });

@@ -45,6 +45,21 @@ export interface CreateApiKeyInput {
     name: string;
     scopes: string[];
     expiresAt?: string | null;
+    /**
+     * The registered agent this credential acts as.
+     *
+     * REQUIRED IN PRACTICE once the tenant enforces agent registration, and the
+     * reason it is optional in the type is only that the flag is per-tenant.
+     * `assertRegisteredAgent` refuses a key whose `agentId` is null, and an
+     * absent `TenantSecuritySettings` row reads as ENFORCING — which together
+     * mean that without this field a tenant created after the gate shipped
+     * could mint no usable MCP credential at all. The binding lives on the KEY
+     * rather than on the agent because rotation issues the new key before
+     * revoking the old, so a single `apiKeyId` on the agent would make every
+     * rotation a window in which the agent is, by the gate's own definition,
+     * unregistered.
+     */
+    agentId?: string | null;
 }
 
 export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput) {
@@ -77,6 +92,29 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
     const { plaintext, keyHash, keyPrefix } = generateApiKey();
 
     return runInTenantContext(ctx, async (db) => {
+        // Resolve the agent binding INSIDE the tenant context, so RLS is what
+        // proves the agent is this tenant's. A plain FK would not: Postgres runs
+        // foreign-key checks as the table owner, which bypasses row security, so
+        // an id belonging to another tenant would satisfy the constraint.
+        const agentId = input.agentId ?? null;
+        if (agentId !== null) {
+            const agent = await db.registeredAgent.findFirst({
+                where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
+                select: { id: true, status: true },
+            });
+            if (!agent) {
+                throw badRequest('Unknown agent.');
+            }
+            // A key minted against a SUSPENDED or RETIRED agent is refused by the
+            // gate on every request, so minting one is a configuration error
+            // worth failing loudly at creation rather than at first use.
+            if (agent.status !== 'ACTIVE') {
+                throw badRequest(
+                    `Agent is ${agent.status.toLowerCase()}; only an ACTIVE agent can be bound to a key.`,
+                );
+            }
+        }
+
         const apiKey = await db.tenantApiKey.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -86,6 +124,7 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
                 scopes: input.scopes,
                 expiresAt,
                 createdById: ctx.userId,
+                agentId,
             },
             select: {
                 id: true,
