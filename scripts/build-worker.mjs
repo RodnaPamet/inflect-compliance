@@ -63,6 +63,12 @@ await build({
     entryPoints: ['scripts/seed-policy-templates.ts'],
     outfile: 'dist/seed-policy-templates.mjs',
 });
+
+await build({
+    ...common,
+    entryPoints: ['scripts/seed-control-template-tasks.ts'],
+    outfile: 'dist/seed-control-template-tasks.mjs',
+});
 // Built-in vendor-assessment questionnaire seeder — run from the entrypoint
 // after migrate deploy so the Supplier Due Diligence + Supplier Security
 // Assessment templates (RLS-tenant-scoped, seeded per-tenant) self-heal on
@@ -73,4 +79,4 @@ await build({
     outfile: 'dist/seed-vendor-questionnaires.mjs',
 });
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs');
+console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs');
