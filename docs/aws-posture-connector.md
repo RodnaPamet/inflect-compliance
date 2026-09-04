@@ -95,6 +95,39 @@ The connector never mutates AWS resources — every action above is read-only.
 - Failing / alarm controls are surfaced as a gap signal only — no risks are
   auto-created.
 
+## Run outcomes and the collector's exit code
+
+Powerpipe overloads its exit status: a non-zero code usually means the run
+finished and found something, not that it failed. The connector reads it that
+way, and the distinction decides whether a benchmark produces a verdict and
+evidence at all.
+
+| Exit | Powerpipe's meaning | What the connector does |
+| --- | --- | --- |
+| `0` | no runtime errors, no control errors, no alarms | parse and score |
+| `1` | one or more **alarms** | parse and score — the routine outcome of any account with a single failing control |
+| `2` | one or more **control errors** | parse and score, and never report `PASSED`: the collector counted an error, so a clean verdict is not ours to give |
+| anything else | — | `ERROR`, nothing parsed |
+| killed by a signal (the 15-minute timeout sends `SIGTERM`) | — | `ERROR`, nothing parsed |
+| `ENOENT` — no `powerpipe` on the host | — | `ERROR`, with the install-the-collector message |
+
+The refusal is therefore about whether the run **completed**, not about whether
+the exit code was zero. Treating any non-zero exit as a broken run discards
+every benchmark that has anything to report, which is nearly all of them.
+
+Verdicts, once a run is parsed: any alarming control gives `FAILED`; otherwise
+any errored or unreadable control gives `ERROR`; otherwise `PASSED`. A run
+whose JSON does not parse, or that yields zero controls, is `ERROR` — a
+compliance product does not read silence as a pass.
+
+`resultJson` on the `IntegrationExecution` carries the bounded summary, plus
+`collectorExitCode` / `collectorSignal` / `collectorFailure` whenever the run
+had something to say about how it ended. A clean exit adds none of those keys.
+
+Only a `PASSED` or `FAILED` run clears a revoked-credential banner on the
+connection; `ERROR` deliberately leaves it standing, because an `ERROR` means
+the collector never observed the account.
+
 ## Framework coverage
 
 The foundation maps to **SOC 2** (IC's SOC 2 Trust Services Criteria — `CC6.*`

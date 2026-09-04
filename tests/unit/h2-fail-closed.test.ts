@@ -20,15 +20,56 @@ import {
 } from '../helpers/powerpipe-benchmark-fixture';
 
 const NOW = new Date('2026-07-07T00:00:00Z');
-const fakeExec = (stdout: string, ok = true, missing = false) => async () => ({ ok, stdout, stderr: ok ? '' : 'boom', missing });
+/**
+ * `code` is the collector's exit status. It is OPTIONAL because omitting it is
+ * itself a case worth covering: a failure with no exit status is what a signal
+ * death and a spawn failure both look like, and that must keep refusing.
+ */
+const fakeExec = (stdout: string, ok = true, missing = false, code?: number, signal?: string) =>
+    async () => ({ ok, stdout, stderr: ok ? '' : 'boom', missing, code, signal });
 
 function acct(over: Partial<NormalizedIdentityAccount> = {}): NormalizedIdentityAccount {
     return { externalUserId: 'u1', email: 'a@x.com', status: 'ACTIVE', isAdmin: false, mfaEnrolled: true, ssoEnrolled: true, onPremisesSyncEnabled: null, groups: [], lastActiveAt: NOW, ...over };
 }
 
 describe('H2 — collectors fail closed', () => {
-    it('non-zero collector exit → ERROR, never PASSED', async () => {
-        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec('', false) });
+    /**
+     * Each of these feeds VALID, all-ok benchmark JSON. That is the point: the
+     * refusal has to come from how the run ENDED, so a leak past the gate shows
+     * up as PASSED rather than as some other error string.
+     */
+    const ALL_OK = powerpipeBenchmarkJson('b', { controls: [powerpipeControl('c1', 'ok')] });
+
+    it('a collector run that did not complete → ERROR, never PASSED', async () => {
+        // A signal death: the 15-minute `timeout` sends SIGTERM, and Node
+        // reports `{code: null, signal: 'SIGTERM'}`. Whatever stdout survived
+        // is not a benchmark result.
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec(ALL_OK, false, false, undefined, 'SIGTERM') });
+        expect(r.status).toBe('ERROR');
+    });
+
+    it('an exit code outside powerpipe\'s documented {0,1,2} → ERROR, never PASSED', async () => {
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec(ALL_OK, false, false, 137) });
+        expect(r.status).toBe('ERROR');
+    });
+
+    it('a failure carrying no exit status at all → ERROR, never PASSED', async () => {
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec(ALL_OK, false) });
+        expect(r.status).toBe('ERROR');
+    });
+
+    it('exit 2 (the collector counted a control error) → ERROR, never PASSED', async () => {
+        // Exit 2 is a COMPLETED run, so its JSON is parsed rather than
+        // discarded — but the collector says a control broke and our parse of
+        // this payload says none did. We do not certify an account over that
+        // disagreement. (See powerpipe-core.test.ts for the FAILED and ERROR
+        // arms of the same exit code, which are untouched.)
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec(ALL_OK, false, false, 2) });
+        expect(r.status).toBe('ERROR');
+    });
+
+    it('exit 2 with output we cannot parse → ERROR, never PASSED', async () => {
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec('not json at all', false, false, 2) });
         expect(r.status).toBe('ERROR');
     });
 
@@ -37,9 +78,40 @@ describe('H2 — collectors fail closed', () => {
         expect(r.status).toBe('ERROR');
     });
 
+    it('exit 1 with nothing parseable is still ERROR — parsing it is not a way in', async () => {
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec('', false, false, 1) });
+        expect(r.status).toBe('ERROR');
+    });
+
     it('CLI missing → ERROR', async () => {
         const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec('', false, true) });
         expect(r.status).toBe('ERROR');
+    });
+});
+
+/**
+ * The counterweight, and it belongs in THIS file. Fail-closed is a claim about
+ * what a collector does with a run it could not read; it is not a licence to
+ * refuse every run that found something. Powerpipe exits 1 for "one or more
+ * alarms", so before #2284 the two were conflated and every real benchmark was
+ * discarded — the fail-closed posture had quietly become fail-shut, and no test
+ * here could tell.
+ */
+describe('H2 — a run that DID complete is scored, not refused', () => {
+    it('exit 1 with alarming controls → FAILED, with the real counts', async () => {
+        const alarming = powerpipeBenchmarkJson('b', {
+            controls: [powerpipeControl('c1', 'ok'), powerpipeControl('c2', 'alarm')],
+        });
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec(alarming, false, false, 1) });
+        expect(r.status).toBe('FAILED');
+        expect(r.summaryObj?.counts.alarm).toBe(1);
+    });
+
+    it('exit 1 with an ALL-OK payload still PASSES — the code gates nothing on its own', async () => {
+        // Powerpipe would not normally return 1 for a benchmark with no alarms,
+        // but the verdict must come from the controls, not from the exit code.
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec(powerpipeBenchmarkJson('b', { controls: [powerpipeControl('c1', 'ok')] }), false, false, 1) });
+        expect(r.status).toBe('PASSED');
     });
 });
 

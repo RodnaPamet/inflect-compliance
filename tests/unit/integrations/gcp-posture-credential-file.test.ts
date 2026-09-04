@@ -62,6 +62,14 @@ const OK_JSON = powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
     controls: [powerpipeControl('gcp_compliance.control.iam_ok', 'ok', { title: 'IAM' })],
 });
 
+/** The routine shape: one control alarming, which powerpipe reports as exit 1. */
+const ALARM_JSON = powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
+    controls: [
+        powerpipeControl('gcp_compliance.control.iam_ok', 'ok', { title: 'IAM' }),
+        powerpipeControl('gcp_compliance.control.bucket_public', 'alarm', { title: 'Bucket' }),
+    ],
+});
+
 function cliResult(opts: { stdout?: string; stderr?: string; err?: unknown }) {
     execFileMock.mockImplementationOnce(
         (_file: string, _args: string[], _o: unknown, cb: Cb) => {
@@ -136,17 +144,33 @@ describe('GcpPostureProvider.runCheck — service-account key file', () => {
         expect(unlinkMock).toHaveBeenCalledWith(CRED_PATH);
     });
 
-    it('unlinks the key file even when the collector exits non-zero', async () => {
+    it('unlinks the key file even when the collector run does not complete', async () => {
         // The `finally` is the whole point: a failed run must not leave a
-        // usable service-account key on the collector host.
-        cliResult({ err: Object.assign(new Error('exited'), { code: 1 }), stderr: 'denied' });
+        // usable service-account key on the collector host. Exit 137, not exit
+        // 1 — powerpipe's 1 means "controls alarmed" and is now a completed run
+        // that is parsed and scored (#2284).
+        cliResult({ err: Object.assign(new Error('exited'), { code: 137 }), stderr: 'denied' });
 
         const res = await new GcpPostureProvider().runCheck(
             checkInput({ benchmark: 'soc2', serviceAccountJson: SA_KEY }),
         );
 
         expect(res.status).toBe('ERROR');
-        expect(res.summary).toBe('Powerpipe collector exited non-zero.');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
+        expect(unlinkMock).toHaveBeenCalledWith(CRED_PATH);
+    });
+
+    it('unlinks the key file after an ALARMING run too, which is the routine one', async () => {
+        // Exit 1 no longer short-circuits ahead of the parser, so it reaches a
+        // different return statement — the cleanup has to hold on that path as
+        // well, and this is the path a real GCP project takes every night.
+        cliResult({ err: Object.assign(new Error('exited'), { code: 1 }), stdout: ALARM_JSON });
+
+        const res = await new GcpPostureProvider().runCheck(
+            checkInput({ benchmark: 'soc2', serviceAccountJson: SA_KEY }),
+        );
+
+        expect(res.status).toBe('FAILED');
         expect(unlinkMock).toHaveBeenCalledWith(CRED_PATH);
     });
 
@@ -227,8 +251,10 @@ describe('GcpPostureProvider.runCheck — service-account key file', () => {
     });
 
     it('scrubs the service-account key out of the surfaced stderr', async () => {
+        // Exit 137: only a run that did NOT complete surfaces stderr in
+        // `errorMessage`, so exit 1 would prove nothing about redaction here.
         cliResult({
-            err: Object.assign(new Error('exited'), { code: 1 }),
+            err: Object.assign(new Error('exited'), { code: 137 }),
             stderr: `auth failed with key ${SA_KEY}`,
         });
 

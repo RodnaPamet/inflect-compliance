@@ -18,6 +18,17 @@
  *   - The secret is never echoed in logs, errors, or results.
  */
 import { execFile } from 'node:child_process';
+import { logger } from '@/lib/observability/logger';
+import {
+    childExitFromCliResult,
+    classifyPowerpipeExit,
+    collectorDiagnostics,
+    describeChildExit,
+    powerpipeRunCompleted,
+    powerpipeVerdict,
+    POWERPIPE_EXIT_CONTROLS_ERROR,
+    type PowerpipeCliResult,
+} from './cloud-posture/powerpipe-exit';
 import type {
     ScheduledCheckProvider,
     ConnectionConfigSchema,
@@ -320,22 +331,36 @@ function secretValues(s: AwsPostureSecrets): string[] {
     return [s.accessKeyId, s.secretAccessKey, s.sessionToken, s.externalId].filter((v): v is string => !!v);
 }
 
+/**
+ * Invoke a CLI, scrubbing both output streams and reporting how the child
+ * actually ended.
+ *
+ * The `code` this used to derive was `err ? (err.code ?? 1) : 0`, which lied in
+ * two directions and could not have supported an exit-code-aware caller. `?? 1`
+ * reported a SIGNAL death — including the 15-minute timeout — as exit 1, which
+ * powerpipe defines as "ran fine, some controls alarmed"; and on a maxBuffer
+ * overflow Node puts the STRING `ERR_CHILD_PROCESS_STDIO_MAXBUFFER` in
+ * `err.code`, so the field declared `number | null` held a string. Both are
+ * fixed at the source in `describeChildExit`, which discriminates on
+ * `typeof code === 'number'` and keeps signal and spawn-failure separate.
+ */
 function runCli(
     file: string,
     args: string[],
     env: NodeJS.ProcessEnv,
     secrets: AwsPostureSecrets,
-): Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null; missing: boolean }> {
+): Promise<PowerpipeCliResult> {
     const redact = secretValues(secrets);
     return new Promise((resolve) => {
         execFile(file, args, { env, maxBuffer: 64 * 1024 * 1024, timeout: 15 * 60_000 }, (err, stdout, stderr) => {
             const so = scrubAwsCredentials(String(stdout ?? ''), redact);
             const se = scrubAwsCredentials(String(stderr ?? ''), redact);
-            if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-                resolve({ ok: false, stdout: so, stderr: se, code: null, missing: true });
+            const exit = describeChildExit(err);
+            if (exit.failure === 'ENOENT') {
+                resolve({ ok: false, stdout: so, stderr: se, missing: true, ...exit });
                 return;
             }
-            resolve({ ok: !err, stdout: so, stderr: se, code: err ? ((err as { code?: number }).code ?? 1) : 0, missing: false });
+            resolve({ ok: !err, stdout: so, stderr: se, missing: false, ...exit });
         });
     });
 }
@@ -392,6 +417,10 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         if (res.missing) {
             return { valid: false, error: 'AWS CLI not available on the collector host — install aws-cli + powerpipe (see docs/aws-posture-connector.md).' };
         }
+        // `!res.ok` is correct HERE and must not be "harmonised" with the
+        // collector gate below: this shells the AWS CLI, whose exit codes carry
+        // ordinary POSIX semantics. Only powerpipe overloads non-zero to mean
+        // "the run completed and found something" (#2284).
         if (!res.ok) {
             return { valid: false, error: `AWS credential check failed: ${res.stderr.slice(0, 300) || 'sts:GetCallerIdentity denied'}` };
         }
@@ -411,32 +440,50 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         if (res.missing) {
             return { status: 'ERROR', summary: 'Powerpipe CLI not installed on the collector host.', details: { benchmark }, durationMs: Date.now() - start, errorMessage: 'powerpipe not installed — see docs/aws-posture-connector.md' };
         }
-        // H2 — fail CLOSED on a non-zero collector exit (revoked credential /
-        // network error) rather than parsing empty stdout into a false PASS.
-        if (!res.ok) {
-            return { status: 'ERROR', summary: 'Powerpipe collector exited non-zero.', details: { benchmark }, durationMs: Date.now() - start, errorMessage: `collector error; stderr: ${res.stderr.slice(0, 300)}` };
+        const exit = childExitFromCliResult(res);
+        const outcome = classifyPowerpipeExit(exit);
+        // The collector's own account of the run, carried into `details` so it
+        // survives into `IntegrationExecution.resultJson`. Empty on a clean exit.
+        const diagnostics = collectorDiagnostics(exit);
+        // H2 — fail CLOSED when the run did NOT complete: a signal death (the
+        // 15-minute timeout sends SIGTERM), a maxBuffer overflow, or an exit
+        // code outside the documented {0,1,2}. Parsing whatever stdout survived
+        // such a run is how a revoked credential became a PASS.
+        //
+        // The gate is deliberately NOT `!res.ok` any more. Exit 1 means "one or
+        // more alarms" and exit 2 "one or more control errors" — both COMPLETED
+        // runs that wrote their JSON, and exit 1 is the routine outcome of any
+        // benchmark with a single failing control. Refusing them discarded the
+        // verdict, the parsed controls, and every piece of evidence a real
+        // account would have produced (#2284).
+        if (!powerpipeRunCompleted(outcome)) {
+            return { status: 'ERROR', summary: 'Powerpipe collector did not complete the run.', details: { benchmark, ...diagnostics }, durationMs: Date.now() - start, errorMessage: `collector error; stderr: ${res.stderr.slice(0, 300)}` };
         }
         let controls: PowerpipeControlResult[] = [];
         try {
             controls = parsePowerpipeBenchmarkJson(JSON.parse(res.stdout || '{}'));
         } catch {
-            return { status: 'ERROR', summary: 'Failed to parse Powerpipe JSON output.', details: { benchmark }, durationMs: Date.now() - start, errorMessage: `parse error; stderr: ${res.stderr.slice(0, 300)}` };
+            return { status: 'ERROR', summary: 'Failed to parse Powerpipe JSON output.', details: { benchmark, ...diagnostics }, durationMs: Date.now() - start, errorMessage: `parse error; stderr: ${res.stderr.slice(0, 300)}` };
         }
         const summary = summariseBenchmark(benchmark, controls);
         // H2 — zero parsed controls is insufficient data, not a pass.
         if (summary.counts.total === 0) {
-            return { status: 'ERROR', summary: `${benchmark}: no controls parsed (insufficient data).`, details: summary as unknown as Record<string, unknown>, durationMs: Date.now() - start, errorMessage: 'collector returned zero controls' };
+            return { status: 'ERROR', summary: `${benchmark}: no controls parsed (insufficient data).`, details: { ...summary, ...diagnostics }, durationMs: Date.now() - start, errorMessage: 'collector returned zero controls' };
         }
-        // An illegible control is not a passing one: `unknown` joins `error` in
-        // the ERROR arm so a run we could not read never reports compliant.
-        const status: CheckResult['status'] =
-            summary.counts.alarm > 0 ? 'FAILED'
-            : summary.counts.error > 0 || summary.counts.unknown > 0 ? 'ERROR'
-            : 'PASSED';
+        if (exit.code === POWERPIPE_EXIT_CONTROLS_ERROR) {
+            // Loud on purpose: exit 2 is the collector telling us a control
+            // broke. The verdict below already refuses to call such a run
+            // PASSED, but the code must be visible without opening resultJson.
+            logger.warn('powerpipe reported control errors', { component: 'aws-posture', benchmark, collectorExitCode: exit.code, parsedErrorControls: summary.counts.error });
+        }
+        // The ladder is shared with the Azure/GCP collector — an illegible
+        // control is not a passing one (`unknown` joins `error`), and an exit-2
+        // run is never PASSED.
+        const status: CheckResult['status'] = powerpipeVerdict(summary.counts, outcome);
         return {
             status,
             summary: `${benchmark}: ${summary.counts.ok} ok / ${summary.counts.alarm} alarm / ${summary.counts.error} error / ${summary.counts.skip} skip / ${summary.counts.unknown} unknown of ${summary.counts.total}`,
-            details: summary as unknown as Record<string, unknown>,
+            details: { ...summary, ...diagnostics },
             durationMs: Date.now() - start,
         };
     }

@@ -17,11 +17,22 @@
  * before it is surfaced or persisted.
  */
 import { execFile } from 'node:child_process';
+import { logger } from '@/lib/observability/logger';
 import {
     parsePowerpipeBenchmarkJson,
     summariseBenchmark,
     type BenchmarkSummary,
 } from '../aws-posture-provider';
+import {
+    childExitFromCliResult,
+    classifyPowerpipeExit,
+    collectorDiagnostics,
+    describeChildExit,
+    powerpipeRunCompleted,
+    powerpipeVerdict,
+    POWERPIPE_EXIT_CONTROLS_ERROR,
+    type PowerpipeCliResult,
+} from './powerpipe-exit';
 import type { CheckResult } from '../types';
 
 /** One entry in a cloud → IC framework control crosswalk (per-cloud data). */
@@ -62,23 +73,31 @@ export function scrubSecrets(text: string, secretValues: string[] = [], patterns
     return out;
 }
 
-/** Run a Powerpipe benchmark; scrub both output streams. */
+/**
+ * Run a Powerpipe benchmark; scrub both output streams.
+ *
+ * The exit triple rides on the result because a caller cannot interpret an exit
+ * code it never receives — this runner used to return `{ok, stdout, stderr,
+ * missing}` and nothing else, so the shared core had no way to tell "exited 1
+ * with a benchmark's worth of alarms" from "died on SIGTERM" (#2284).
+ */
 function runCli(
     file: string,
     args: string[],
     env: NodeJS.ProcessEnv,
     secretValues: string[],
     patterns: RegExp[],
-): Promise<{ ok: boolean; stdout: string; stderr: string; missing: boolean }> {
+): Promise<PowerpipeCliResult> {
     return new Promise((resolve) => {
         execFile(file, args, { env, maxBuffer: 64 * 1024 * 1024, timeout: 15 * 60_000 }, (err, stdout, stderr) => {
             const so = scrubSecrets(String(stdout ?? ''), secretValues, patterns);
             const se = scrubSecrets(String(stderr ?? ''), secretValues, patterns);
-            if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-                resolve({ ok: false, stdout: so, stderr: se, missing: true });
+            const exit = describeChildExit(err);
+            if (exit.failure === 'ENOENT') {
+                resolve({ ok: false, stdout: so, stderr: se, missing: true, ...exit });
                 return;
             }
-            resolve({ ok: !err, stdout: so, stderr: se, missing: false });
+            resolve({ ok: !err, stdout: so, stderr: se, missing: false, ...exit });
         });
     });
 }
@@ -103,6 +122,10 @@ export interface RunBenchmarkInput {
  * by `summariseBenchmark`); creds are scrubbed. `status` is FAILED on any
  * alarm, ERROR on collector/parse failure OR on any control we could not read,
  * else PASSED.
+ *
+ * Exits 0, 1 and 2 all mean the run COMPLETED, so all three are parsed and
+ * scored — see `powerpipe-exit.ts` for the codes and for why refusing on
+ * non-zero discarded every benchmark that had anything to report.
  */
 export async function runPowerpipeBenchmark(input: RunBenchmarkInput): Promise<CheckResult & { summaryObj: BenchmarkSummary | null }> {
     const exec = input.exec ?? runCli;
@@ -112,35 +135,50 @@ export async function runPowerpipeBenchmark(input: RunBenchmarkInput): Promise<C
     if (res.missing) {
         return { status: 'ERROR', summary: 'Powerpipe CLI not installed on the collector host.', details: { benchmark: input.benchmarkId }, durationMs: nowMs() - start, errorMessage: 'powerpipe not installed — see docs/cloud-posture-connector.md', summaryObj: null };
     }
-    // H2 — fail CLOSED on a non-zero collector exit. Previously `JSON.parse(
-    // res.stdout || '{}')` ran regardless of `res.ok`, so a revoked credential
-    // (non-zero exit, empty stdout) parsed to zero controls and the ladder
-    // below yielded PASSED — marking the tenant compliant off a broken run.
-    if (!res.ok) {
-        return { status: 'ERROR', summary: 'Powerpipe collector exited non-zero.', details: { benchmark: input.benchmarkId }, durationMs: nowMs() - start, errorMessage: `collector error; stderr: ${res.stderr.slice(0, 300)}`, summaryObj: null };
+    const exit = childExitFromCliResult(res);
+    const outcome = classifyPowerpipeExit(exit);
+    // The collector's own account of the run, carried into `details` so it
+    // survives into `IntegrationExecution.resultJson`. Empty on a clean exit.
+    const diagnostics = collectorDiagnostics(exit);
+    // H2 — fail CLOSED when the run did NOT complete: a signal death (the
+    // 15-minute timeout sends SIGTERM), a maxBuffer overflow, or an exit code
+    // outside the documented {0,1,2}. Parsing whatever stdout survived such a
+    // run is how a revoked credential became a PASS.
+    //
+    // The gate is deliberately NOT `!res.ok` any more. Exit 1 means "one or
+    // more alarms" and exit 2 "one or more control errors" — both COMPLETED
+    // runs that wrote their JSON, and exit 1 is the routine outcome of any
+    // benchmark with a single failing control. Refusing them discarded the
+    // verdict, the parsed controls, and every piece of evidence a real account
+    // would have produced.
+    if (!powerpipeRunCompleted(outcome)) {
+        return { status: 'ERROR', summary: 'Powerpipe collector did not complete the run.', details: { benchmark: input.benchmarkId, ...diagnostics }, durationMs: nowMs() - start, errorMessage: `collector error; stderr: ${res.stderr.slice(0, 300)}`, summaryObj: null };
     }
     let controls;
     try {
         controls = parsePowerpipeBenchmarkJson(JSON.parse(res.stdout || '{}'));
     } catch {
-        return { status: 'ERROR', summary: 'Failed to parse Powerpipe JSON output.', details: { benchmark: input.benchmarkId }, durationMs: nowMs() - start, errorMessage: `parse error; stderr: ${res.stderr.slice(0, 300)}`, summaryObj: null };
+        return { status: 'ERROR', summary: 'Failed to parse Powerpipe JSON output.', details: { benchmark: input.benchmarkId, ...diagnostics }, durationMs: nowMs() - start, errorMessage: `parse error; stderr: ${res.stderr.slice(0, 300)}`, summaryObj: null };
     }
     const summary = summariseBenchmark(input.benchmarkId, controls);
     // H2 — zero parsed controls is insufficient data, NOT a pass. Only allow
     // PASSED when ≥1 control parsed with a real status.
     if (summary.counts.total === 0) {
-        return { status: 'ERROR', summary: `${input.benchmarkId}: no controls parsed (insufficient data).`, details: summary as unknown as Record<string, unknown>, durationMs: nowMs() - start, errorMessage: 'collector returned zero controls', summaryObj: summary };
+        return { status: 'ERROR', summary: `${input.benchmarkId}: no controls parsed (insufficient data).`, details: { ...summary, ...diagnostics }, durationMs: nowMs() - start, errorMessage: 'collector returned zero controls', summaryObj: summary };
     }
-    // An illegible control is not a passing one: `unknown` joins `error` in the
-    // ERROR arm so a run we could not read never reports compliant.
-    const status: CheckResult['status'] =
-        summary.counts.alarm > 0 ? 'FAILED'
-        : summary.counts.error > 0 || summary.counts.unknown > 0 ? 'ERROR'
-        : 'PASSED';
+    if (exit.code === POWERPIPE_EXIT_CONTROLS_ERROR) {
+        // Loud on purpose: exit 2 is the collector telling us a control broke.
+        // The verdict below already refuses to call such a run PASSED, but the
+        // code must be visible without anyone opening resultJson.
+        logger.warn('powerpipe reported control errors', { component: 'cloud-posture', benchmark: input.benchmarkId, collectorExitCode: exit.code, parsedErrorControls: summary.counts.error });
+    }
+    // The ladder is shared with the AWS collector — an illegible control is not
+    // a passing one (`unknown` joins `error`), and an exit-2 run is never PASSED.
+    const status: CheckResult['status'] = powerpipeVerdict(summary.counts, outcome);
     return {
         status,
         summary: `${input.benchmarkId}: ${summary.counts.ok} ok / ${summary.counts.alarm} alarm / ${summary.counts.error} error / ${summary.counts.skip} skip / ${summary.counts.unknown} unknown of ${summary.counts.total}`,
-        details: summary as unknown as Record<string, unknown>,
+        details: { ...summary, ...diagnostics },
         durationMs: nowMs() - start,
         summaryObj: summary,
     };

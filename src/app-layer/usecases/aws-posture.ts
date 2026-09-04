@@ -180,13 +180,20 @@ export async function runAwsPostureCollection(input: {
         // account, so clearing on it retracts a revoked-credential banner on no
         // evidence at all, and a still-revoked connection is declared healthy.
         //
-        // Note this is currently the ONLY half of the story that is fixed.
-        // `markAuthFailure` remains unreachable for these two collectors — the
-        // providers RETURN `{status:'ERROR'}` on a non-zero exit rather than
-        // throwing, so the catch that would raise the banner is never entered.
-        // See the parked analysis: raising it correctly needs a trigger that
-        // is not "non-zero exit", because powerpipe exits 1 on any ALARMING
-        // control, i.e. on most healthy runs.
+        // Note this is still the ONLY half of the story that is fixed.
+        // `markAuthFailure` remains unreachable for the posture collectors, and
+        // #2284 did not change that: the providers RETURN `{status:'ERROR'}`
+        // rather than throwing, so the catch above — the sole caller that
+        // raises the banner — is never entered.
+        //
+        // What #2284 DID change is which runs reach ERROR at all. Exit 1
+        // ("one or more alarms") and exit 2 ("one or more control errors") are
+        // documented COMPLETED runs and are now parsed and scored, so the ERROR
+        // arm no longer swallows every real benchmark; it now means the
+        // collector did not complete the run. That makes the missing banner
+        // more visible, not less — it supplies no trigger. Designing one is
+        // #2252, still open: every candidate reviewed so far also fires on a
+        // healthy credential.
         //
         // Deliberately NOT `status === 'PASSED'`: that clamp would strand the
         // banner on a healthy connection whose benchmark keeps reporting gaps.

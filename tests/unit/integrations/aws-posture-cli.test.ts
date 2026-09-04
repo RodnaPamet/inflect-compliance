@@ -9,10 +9,17 @@
  * The behaviours pinned here are the fail-CLOSED ones (H2). Every one of
  * these must produce ERROR rather than a green check:
  *   • a missing CLI (ENOENT)
- *   • a non-zero collector exit — a revoked credential must never parse
- *     empty stdout into a false PASS
+ *   • a run that did NOT complete — a signal death, a maxBuffer overflow, or
+ *     an exit code outside powerpipe's documented {0,1,2}. Whatever stdout
+ *     survived such a run must never be scored.
  *   • unparseable JSON
  *   • zero parsed controls — insufficient data, not a pass
+ *
+ * Note what is NOT on that list: a non-zero exit as such. Powerpipe returns 1
+ * for "one or more alarms" and 2 for "one or more control errors" — completed
+ * runs that wrote their JSON — and exit 1 is what every real benchmark with a
+ * single failing control returns. Refusing it discarded the verdict and every
+ * piece of evidence a real account would have produced (#2284).
  *
  * Plus the invariant that credentials reach the child via ENV, never argv,
  * and that stdout/stderr are scrubbed before they can be surfaced.
@@ -234,18 +241,58 @@ describe('AwsPostureProvider.runCheck — fail-closed contracts (H2)', () => {
         expect(res.details).toEqual({ benchmark: 'aws_compliance.benchmark.soc_2' });
     });
 
-    it('ERRORs on a non-zero exit rather than parsing empty stdout as a pass', async () => {
-        cliResult({ err: exitCode(1), stdout: '', stderr: 'ExpiredToken' });
+    it('ERRORs on an exit outside {0,1,2} rather than scoring the stdout that survived', async () => {
+        // Valid all-ok JSON is supplied on purpose: if the refusal ever leaked,
+        // this would surface as PASSED rather than as a different error string.
+        cliResult({ err: exitCode(137), stdout: benchmarkJson([control('c1', 'ok')]), stderr: 'ExpiredToken' });
 
         const res = await provider().runCheck(input() as never);
 
         expect(res.status).toBe('ERROR');
-        expect(res.summary).toBe('Powerpipe collector exited non-zero.');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
         expect(res.errorMessage).toContain('ExpiredToken');
+        expect(res.details).toEqual({ benchmark: 'aws_compliance.benchmark.soc_2', collectorExitCode: 137 });
+    });
+
+    it('exit 1 is parsed and scored — the routine "controls alarmed" outcome', async () => {
+        // #2284: the `!res.ok` gate refused this, so no AWS account with a
+        // single failing control ever produced a verdict, and the FAILED arm of
+        // the ladder below was unreachable in production.
+        cliResult({ err: exitCode(1), stdout: benchmarkJson([control('c1', 'ok'), control('c2', 'alarm')]) });
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('FAILED');
+        expect(res.summary).toBe(
+            'aws_compliance.benchmark.soc_2: 1 ok / 1 alarm / 0 error / 0 skip / 0 unknown of 2',
+        );
+        expect(res.details).toMatchObject({
+            counts: { ok: 1, alarm: 1, skip: 0, error: 0, unknown: 0, total: 2 },
+            collectorExitCode: 1,
+        });
+    });
+
+    it('exit 2 is parsed, and is never PASSED even on an all-ok payload', async () => {
+        // "Completed with no runtime errors, but one or more control errors
+        // occurred" — the JSON is there, so it is read; but the collector
+        // counted an error our parse did not, and we do not certify an account
+        // over that disagreement.
+        cliResult({ err: exitCode(2), stdout: benchmarkJson([control('c1', 'ok')]) });
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('ERROR');
+        expect(res.details).toMatchObject({
+            counts: { ok: 1, alarm: 0, skip: 0, error: 0, unknown: 0, total: 1 },
+            collectorExitCode: 2,
+        });
     });
 
     it('scrubs credentials out of the propagated stderr', async () => {
-        cliResult({ err: exitCode(1), stderr: 'denied for AKIA_TEST_KEY' });
+        // Exit 137 rather than exit 1: only a run that did NOT complete
+        // surfaces stderr in `errorMessage`, so exit 1 would prove nothing
+        // about redaction. The invariant is unchanged.
+        cliResult({ err: exitCode(137), stderr: 'denied for AKIA_TEST_KEY' });
         const res = await provider().runCheck(input() as never);
         expect(res.errorMessage).not.toContain('AKIA_TEST_KEY');
         expect(res.errorMessage).toContain('[REDACTED]');
@@ -434,24 +481,55 @@ describe('AwsPostureProvider — child-process edge shapes', () => {
         connectionConfig: { benchmark: 'soc2', ...CREDS },
     });
 
-    it('treats an error carrying no numeric code as a FAILURE, not a pass', async () => {
-        // A signal kill (`{signal: 'SIGKILL'}`, no `code`) is still a broken
-        // run. `ok: !err` is what keeps it off the pass path, and that is the
-        // whole of what this test proves.
+    it('treats a SIGNAL death as a broken run, never as "exit 1"', async () => {
+        // A signal kill (`{signal: 'SIGKILL'}`, no `code`) is a broken run.
         //
-        // It deliberately does NOT claim the `(err.code ?? 1)` fallback beside
-        // it: `runCli`'s `code` field has ZERO readers — neither `runCheck`
-        // nor `validateConnection` reads `res.code`, and `runCli` is
-        // module-private — so `?? 1` and `?? 0` are behaviourally identical
-        // and no test in this repo can distinguish them. The honest fix is to
-        // drop the dead field from `runCli`'s return type in src/; a test that
-        // "covered" it could only assert the mechanism back to itself.
-        rawCliResult(Object.assign(new Error('killed'), { signal: 'SIGKILL' }), '', '');
+        // The comment that used to sit here said `runCli`'s `code` field had
+        // ZERO readers, so `?? 1` and `?? 0` were behaviourally identical and
+        // no test could distinguish them. That was true then and is false now:
+        // the collector gate reads the exit code, and `?? 1` would classify
+        // THIS shape as powerpipe's exit 1 — "ran fine, some controls alarmed"
+        // — and parse the stdout of a killed process. Valid all-ok JSON is fed
+        // in so that mistake would surface as PASSED.
+        rawCliResult(
+            Object.assign(new Error('killed'), { signal: 'SIGKILL' }),
+            benchmarkJson([control('c1', 'ok')]),
+            '',
+        );
 
         const res = await provider().runCheck(input() as never);
 
         expect(res.status).toBe('ERROR');
-        expect(res.summary).toBe('Powerpipe collector exited non-zero.');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
+        // The signal is reported as a signal. No exit code is invented for it.
+        expect(res.details).toEqual({
+            benchmark: 'aws_compliance.benchmark.soc_2',
+            collectorSignal: 'SIGKILL',
+        });
+    });
+
+    it('treats a maxBuffer overflow as a broken run — its `code` is a STRING', async () => {
+        // Node reports a 64 MiB overflow as `code:
+        // 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'` in the same field a numeric exit
+        // status uses, which is why the runner's `code: number | null` could
+        // hold a string. Truncated stdout must never be scored.
+        rawCliResult(
+            Object.assign(new Error('stdout maxBuffer length exceeded'), {
+                code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+                signal: 'SIGTERM',
+            }),
+            benchmarkJson([control('c1', 'ok')]),
+            '',
+        );
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('ERROR');
+        expect(res.details).toEqual({
+            benchmark: 'aws_compliance.benchmark.soc_2',
+            collectorSignal: 'SIGTERM',
+            collectorFailure: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+        });
     });
 
     it('treats an error carrying no numeric code as a credential failure at validate time', async () => {
