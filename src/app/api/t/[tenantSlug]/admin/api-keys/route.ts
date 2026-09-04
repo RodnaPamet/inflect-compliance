@@ -10,6 +10,12 @@ const CreateApiKeySchema = z.object({
     name: z.string().min(1).max(100),
     scopes: z.array(z.string()).min(1),
     expiresAt: z.string().nullable().optional(),
+    /**
+     * The registered agent this credential acts as. Without it a tenant that
+     * enforces agent registration — which is every tenant with no settings row,
+     * i.e. every newly created one — can mint no usable MCP credential.
+     */
+    agentId: z.string().nullable().optional(),
 });
 
 export const GET = withApiErrorHandling(

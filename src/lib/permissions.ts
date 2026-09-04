@@ -103,6 +103,24 @@ export type PermissionSet = {
          * observes the register but never moves a request through it.
          */
         compliance_dsar_manage: boolean;
+        /**
+         * The AGENT REGISTER: register an autonomous agent, change what
+         * authority it holds, activate it, suspend it, retire it.
+         *
+         * Its own key rather than `admin.manage` because of what activation
+         * MEANS. An ACTIVE row here is what lets a credential through the
+         * `/api/mcp` registration gate, so this flag is the authority to decide
+         * which autonomous agents may act inside the tenant at all. Folding it
+         * into the general admin flag would have made that decision a side
+         * effect of holding any admin authority.
+         *
+         * NOT split view/manage the way the DSAR pair is. There is a real case
+         * for an AUDITOR reading the register — it is the inventory an audit
+         * asks for — and the split is the obvious next move; it is left undone
+         * rather than guessed at, because a `_view` flag nobody grants is
+         * indistinguishable from one nobody needed.
+         */
+        agent_registry: boolean;
     };
 };
 
@@ -161,6 +179,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'view', 'manage', 'members', 'sso', 'scim',
         'tenant_lifecycle', 'owner_management',
         'compliance_dsar_view', 'compliance_dsar_manage',
+        'agent_registry',
     ],
 };
 
@@ -198,6 +217,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     tenant_lifecycle: true, owner_management: true,
                     compliance_dsar_view: true, compliance_dsar_manage: true,
+                    agent_registry: true,
                 },
             };
         case 'ADMIN':
@@ -223,6 +243,12 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // Delete / DEK rotation / OWNER management require OWNER role.
                     tenant_lifecycle: false, owner_management: false,
                     compliance_dsar_view: true, compliance_dsar_manage: true,
+                    // ADMIN holds this. Deciding which agents may act is
+                    // operational administration, not tenant ownership — the
+                    // two OWNER-only flags above are about the tenant's own
+                    // existence and its owners, and an agent register is
+                    // neither.
+                    agent_registry: true,
                 },
             };
         case 'EDITOR':
@@ -244,7 +270,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false },
             };
         case 'AUDITOR':
             return {
@@ -266,7 +292,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false },
             };
         case 'READER':
         default:
@@ -286,7 +312,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false },
             };
     }
 }

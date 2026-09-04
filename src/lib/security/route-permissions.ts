@@ -184,6 +184,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'credential against the tenant; treat as admin-only.',
     },
 
+    // ── Agent register (Epic Agentic) ───────────────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),
+        permission: 'admin.agent_registry',
+        note:
+            'Register / amend / activate / suspend / retire an autonomous ' +
+            'agent. Its own key, not admin.manage: an ACTIVE row here is what ' +
+            'lets a credential through the /api/mcp registration gate, so this ' +
+            'is the authority to decide which agents may act in the tenant.',
+    },
+
     // ── Device-agent tokens (PR-5) ──────────────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/device-tokens(\\/.*)?$`),

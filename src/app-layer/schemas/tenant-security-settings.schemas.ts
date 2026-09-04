@@ -44,6 +44,13 @@ export const UpdateTenantSecuritySettingsInput = z
 
         /** When true, an MFA verification failure denies rather than degrades. */
         mfaFailClosed: z.boolean().optional(),
+        /**
+         * Epic Agentic — the per-tenant agent-registration gate on `/api/mcp`.
+         * A plain boolean: it is either enforcing or it is not, and there is no
+         * third state worth expressing. Absence of the key means "leave it
+         * alone", per this schema's patch semantics.
+         */
+        requireRegisteredAgent: z.boolean().optional(),
     })
     .strict();
 

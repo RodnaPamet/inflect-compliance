@@ -65,6 +65,7 @@ model Vendor {
   links                    VendorLink[]
   primaryOf                VendorRelationship[]   @relation("PrimaryRelation")
   subprocessorOf           VendorRelationship[]   @relation("SubprocessorRelation")
+  registeredAgents         RegisteredAgent[]      @relation("RegisteredAgentVendor")
 
   @@unique([tenantId, name])
   @@index([tenantId])

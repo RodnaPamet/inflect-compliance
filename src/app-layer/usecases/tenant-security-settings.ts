@@ -60,6 +60,15 @@ export interface TenantSecurityConfig {
     aiLocalBaseUrl: string | null;
     aiLocalModel: string | null;
     mfaFailClosed: boolean;
+    /**
+     * Epic Agentic — refuse `/api/mcp` traffic from a credential not bound to
+     * an ACTIVE registered agent.
+     *
+     * Reported as TRUE when the row is absent, matching what the gate itself
+     * does. A settings page that showed "off" for a tenant the gate is
+     * enforcing would be worse than no page.
+     */
+    requireRegisteredAgent: boolean;
 }
 
 export interface TenantSecurityConfigPatch {
@@ -71,6 +80,7 @@ export interface TenantSecurityConfigPatch {
     aiLocalBaseUrl?: string | null;
     aiLocalModel?: string | null;
     mfaFailClosed?: boolean;
+    requireRegisteredAgent?: boolean;
 }
 
 const MAX_CONCURRENT_SESSIONS_CEILING = 100;
@@ -93,6 +103,7 @@ export async function getTenantSecurityConfig(
                 aiLocalBaseUrl: true,
                 aiLocalModel: true,
                 mfaFailClosed: true,
+                requireRegisteredAgent: true,
             },
         });
 
@@ -105,6 +116,11 @@ export async function getTenantSecurityConfig(
             aiLocalBaseUrl: row?.aiLocalBaseUrl ?? null,
             aiLocalModel: row?.aiLocalModel ?? null,
             mfaFailClosed: row?.mfaFailClosed ?? false,
+            // Absent row reads as ENFORCING — the same rule the gate applies,
+            // stated in one more place because a settings page disagreeing with
+            // the gate is how an operator turns off something already off and
+            // believes the opposite.
+            requireRegisteredAgent: row?.requireRegisteredAgent ?? true,
         };
     });
 }
@@ -186,7 +202,7 @@ export async function updateTenantSecurityConfig(
         changed.push('auditStreamSecret');
     }
 
-    for (const key of ['aiGuardMode', 'aiResidency', 'mfaFailClosed'] as const) {
+    for (const key of ['aiGuardMode', 'aiResidency', 'mfaFailClosed', 'requireRegisteredAgent'] as const) {
         if (patch[key] !== undefined) {
             data[key] = patch[key];
             changed.push(key);
@@ -292,6 +308,7 @@ export async function updateTenantSecurityConfig(
                 aiLocalBaseUrl: true,
                 aiLocalModel: true,
                 mfaFailClosed: true,
+                requireRegisteredAgent: true,
             },
         });
 
@@ -304,6 +321,11 @@ export async function updateTenantSecurityConfig(
             aiLocalBaseUrl: row?.aiLocalBaseUrl ?? null,
             aiLocalModel: row?.aiLocalModel ?? null,
             mfaFailClosed: row?.mfaFailClosed ?? false,
+            // Absent row reads as ENFORCING — the same rule the gate applies,
+            // stated in one more place because a settings page disagreeing with
+            // the gate is how an operator turns off something already off and
+            // believes the opposite.
+            requireRegisteredAgent: row?.requireRegisteredAgent ?? true,
         };
     });
 }

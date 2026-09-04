@@ -184,6 +184,7 @@ model Tenant {
   riskSuggestionSessions            RiskSuggestionSession[]
   agentProposals                    AgentProposal[]
   workflowRuns                      WorkflowRun[]
+  registeredAgents                  RegisteredAgent[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?
@@ -594,14 +595,34 @@ model TenantApiKey {
   lastUsedAt  DateTime? /// Updated on each successful auth
   lastUsedIp  String? /// IP of last auth request
   createdById String /// User who created this key
+  /// The registered agent this credential speaks for, when it speaks for one.
+  ///
+  /// NULLABLE, and the null is the whole point: most keys are integrations, not
+  /// agents, and binding every key to an agent would make the register a lie.
+  /// What a null MEANS depends on the traffic — for `/api/mcp` it means
+  /// UNREGISTERED, and `TenantSecuritySettings.requireRegisteredAgent` decides
+  /// whether that is refused.
+  ///
+  /// The binding lives on the KEY, not on the agent, because rotation is the
+  /// normal case: an agent needs a new credential while the old one is still
+  /// alive, so the relation has to be many-keys-to-one-agent. A single
+  /// `apiKeyId` on `RegisteredAgent` would make every rotation a window in
+  /// which the agent is unregistered.
+  ///
+  /// Composite FK to (id, tenantId) so a key can never name another tenant's
+  /// agent. `onDelete: Restrict` — a registered agent with live credentials
+  /// cannot be deleted out from under them; retire it instead.
+  agentId     String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   tenant      Tenant    @relation(fields: [tenantId], references: [id])
   createdBy   User      @relation("ApiKeyCreator", fields: [createdById], references: [id])
+  agent       RegisteredAgent? @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
   @@unique([keyHash])
   @@index([tenantId])
   @@index([tenantId, revokedAt])
+  @@index([tenantId, agentId])
 }
 
 /// A per-tenant device-agent token (PR-5). Authenticates POST /devices/report
@@ -1002,6 +1023,9 @@ model User {
   calendarConnections           UserCalendarConnection[]
   calendarEventMappings         UserCalendarEventMapping[]
   calendarConsentsGranted       TenantCalendarConsent[]         @relation("CalendarConsentGrantedBy")
+  /// Epic Agentic — agents this user is the accountable owner of. The FK is
+  /// NOT NULL on the agent side, so every registered agent appears here.
+  registeredAgentsOwned         RegisteredAgent[]               @relation("RegisteredAgentOwner")
 }
 
 model Account {
@@ -1295,6 +1319,22 @@ model TenantSecuritySettings {
   /// Null or empty = no external recipients permitted; schedules may only be
   /// delivered to ACTIVE members of this tenant.
   reportRecipientAllowlistJson Json?
+  /// Epic Agentic — refuse MCP traffic from a credential that is not bound to
+  /// an ACTIVE registered agent.
+  ///
+  /// The default is TRUE and the ABSENCE of a settings row reads as TRUE as
+  /// well (`getAgentRegistrationPolicy` defaults it), so a tenant created after
+  /// this shipped is fail-closed whether or not anyone has ever opened the
+  /// security-settings page. Existing tenants were explicitly opted OUT by the
+  /// migration — which had to INSERT a row for every tenant that had none,
+  /// because otherwise "no row" would have silently turned enforcement on for
+  /// them at deploy time.
+  ///
+  /// Positively named on purpose. The inverted spelling
+  /// (`allowUnregisteredAgents`) gives the same absence semantics for free, but
+  /// every read site then has to negate it, and a negated flag read under
+  /// pressure is how a kill switch gets inverted.
+  requireRegisteredAgent       Boolean           @default(true)
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt
   mfaFailClosed                Boolean           @default(false)

@@ -70,6 +70,13 @@ export async function startWorkflowRun(
                 status: 'RUNNING',
                 startedByUserId: ctx.userId,
                 triggeredViaKeyId: ctx.apiKeyId ?? null,
+                // WHICH registered agent this run belongs to. `null` for a
+                // human-started run — a person is not an agent, and inventing
+                // one to satisfy the column would put a fiction in the
+                // register's own attribution. Written explicitly either way;
+                // `local/require-agent-attribution` refuses a write site that
+                // leaves the field out.
+                agentId: ctx.agentId ?? null,
                 contextJson: JSON.stringify(context),
             },
             select: { id: true },
@@ -84,8 +91,8 @@ export async function startWorkflowRun(
         entityId: run.id,
         action: 'WORKFLOW_RUN_STARTED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', workflowKey },
-        metadataJson: { apiKeyId: ctx.apiKeyId ?? null },
+        detailsJson: { category: 'access', workflowKey, agentId: ctx.agentId ?? null },
+        metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
 
     const status = await executeFrom(ctx, run.id, def, 0, Date.now());

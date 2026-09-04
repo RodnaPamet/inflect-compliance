@@ -76,6 +76,18 @@ async function seedTenant(tenantId: string, slug: string): Promise<string> {
     const userId = `u-${slug}`;
     const email = `${slug}@example.test`;
     await prisma.user.upsert({ where: { id: userId }, update: {}, create: { id: userId, email, emailHash: hashForLookup(email) } });
+    // The agent-registration gate defaults to ENFORCING for a tenant with no
+    // security-settings row, so a suite that mints a bare API key and calls
+    // /api/mcp would now be refused. These fixtures predate the register and
+    // test a different property; opt them out explicitly rather than
+    // registering an agent they do not otherwise need. The gate's own
+    // behaviour — both directions — is proved in
+    // tests/integration/agent-registry-enforcement.test.ts.
+    await prisma.tenantSecuritySettings.upsert({
+        where: { tenantId },
+        update: { requireRegisteredAgent: false },
+        create: { tenantId, requireRegisteredAgent: false },
+    });
     return userId;
 }
 

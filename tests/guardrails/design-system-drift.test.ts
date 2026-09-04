@@ -410,10 +410,19 @@ describe('New page token discipline', () => {
         //     legacy btn/badge/glass-card); in the unmigrated tally only
         //     because the surface is new and not yet promoted to
         //     MIGRATED_PAGES.
+        //   - 137 (+2): Agent register — admin/agents/page.tsx +
+        //     AgentsClient.tsx, the record of which autonomous agents may act
+        //     inside the tenant. Token-clean (semantic content-*/bg-*/border-*
+        //     only; EntityListPage + DataTable + StatusBadge + EmptyState +
+        //     InfoTooltip primitives, Nucleo icons, no legacy
+        //     btn/badge/glass-card); in the unmigrated tally only because the
+        //     surface is new and not yet promoted to MIGRATED_PAGES. The
+        //     NewAgentModal beside them is a modal, not a page, so it is
+        //     outside this tally.
         // Each increment names the epic + page + reason; promotion
         // to MIGRATED_PAGES is the path forward, never silent
         // floor-bumping.
-        expect(unmigrated.length).toBeLessThanOrEqual(135);
+        expect(unmigrated.length).toBeLessThanOrEqual(137);
     });
 
     it('migrated page count is at least 4', () => {

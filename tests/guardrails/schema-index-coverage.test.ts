@@ -413,6 +413,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // take ≤200.
     AiSystem:
         'listAiSystems filters by tenantId (+riskTier/status) — covered by @@index([tenantId, riskTier]) + @@index([tenantId, status]); bounded take ≤200.',
+    // Agent register — listRegisteredAgents filters by tenantId (+ optional
+    // status), soft-delete rail on deletedAt, orders by createdAt desc.
+    RegisteredAgent:
+        'listRegisteredAgents filters by (tenantId, deletedAt IS NULL, +status) and orders by createdAt desc — covered by @@index([tenantId, status]) + @@index([tenantId, deletedAt]) + @@index([tenantId, createdAt]); bounded take ≤200.',
     // MCP agent proposals — listAgentProposals filters by tenantId (+ optional
     // status), orders by createdAt desc; fully covered by
     // @@index([tenantId, status, createdAt]). Bounded take ≤100.
