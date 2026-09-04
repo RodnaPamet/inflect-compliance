@@ -47,7 +47,7 @@ interface ExecCall {
  */
 function recordingExec(
     stdout: string,
-    over: { ok?: boolean; stderr?: string; missing?: boolean } = {},
+    over: { ok?: boolean; stderr?: string; missing?: boolean; code?: number | null } = {},
 ) {
     const calls: ExecCall[] = [];
     const exec = async (
@@ -63,6 +63,7 @@ function recordingExec(
             stdout: scrubSecrets(stdout, secretValues, patterns),
             stderr: scrubSecrets(over.stderr ?? '', secretValues, patterns),
             missing: over.missing ?? false,
+            code: over.code,
         };
     };
     return { exec, calls };
@@ -505,13 +506,29 @@ describe('GcpPostureProvider.runCheck — with the exec seam injected', () => {
     });
 
     it('propagates a fail-closed refusal from the core unchanged', async () => {
+        // The double reports failure with no exit status — a signal death or a
+        // spawn failure, which is what `{ok:false}` alone models. A non-zero
+        // EXIT is a different thing: powerpipe's 1 and 2 are completed runs and
+        // are parsed (see the exit-code suite in powerpipe-core.test.ts).
         const { exec } = recordingExec('', { ok: false, stderr: 'permission denied' });
         const res = await new GcpPostureProvider({ exec }).runCheck(
             checkInput('gcp-posture', 'soc2', { benchmark: 'soc2' }),
         );
         expect(res.status).toBe('ERROR');
-        expect(res.summary).toBe('Powerpipe collector exited non-zero.');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
         expect(res.errorMessage).toContain('permission denied');
+    });
+
+    it('scores an exit-1 run rather than refusing it — the alarms reach the caller', async () => {
+        // #2284, at the provider seam: the Azure/GCP providers hand the core's
+        // result straight through, so the routine "controls alarmed" outcome
+        // has to arrive as a verdict here, not as a collector error.
+        const { exec } = recordingExec(MIXED_JSON, { ok: false, code: 1 });
+        const res = await new GcpPostureProvider({ exec }).runCheck(
+            checkInput('gcp-posture', 'soc2', { benchmark: 'soc2' }),
+        );
+        expect(res.status).toBe('FAILED');
+        expect(res.details).toMatchObject({ collectorExitCode: 1 });
     });
 });
 

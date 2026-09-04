@@ -17,9 +17,17 @@
  *     cannot exhaust the worker.
  *
  * The rest of the file pins the fail-CLOSED refusal ladder in
- * `runPowerpipeBenchmark` — missing CLI, non-zero exit, unparseable JSON,
- * zero parsed controls — and the exact discriminators a caller uses to tell
- * those four apart (`summary`, `errorMessage`, `details`, `summaryObj`).
+ * `runPowerpipeBenchmark` — missing CLI, a run that did not complete,
+ * unparseable JSON, zero parsed controls — and the exact discriminators a
+ * caller uses to tell those four apart (`summary`, `errorMessage`, `details`,
+ * `summaryObj`).
+ *
+ * "Did not complete" is NOT "exited non-zero", and the difference is the whole
+ * of #2284. Powerpipe exits 1 for "one or more alarms" and 2 for "one or more
+ * control errors"; both are completed runs that wrote their JSON, and exit 1 is
+ * what every real benchmark with a single failing control returns. The refusal
+ * is reserved for a signal death, a spawn/stream failure, or a code outside
+ * {0,1,2}.
  */
 const execFileMock = jest.fn();
 jest.mock('node:child_process', () => ({
@@ -75,14 +83,26 @@ const control = (id: string, status: PowerpipeRowStatus) =>
     powerpipeControl(`x.control.${id}`, status, { title: id });
 const benchmarkJson = (controls: unknown[]) => JSON.stringify({ controls });
 
-/** An injected runner — the seam the provider suites use. */
+/**
+ * An injected runner — the seam the provider suites use.
+ *
+ * `code` is optional here on purpose, mirroring the seam: a double that models
+ * only success-vs-failure must keep behaving as it did before exit codes were
+ * carried, i.e. `{ok:false}` alone still refuses. Tests that care about a
+ * specific exit status say so.
+ */
 const fakeExec =
-    (stdout: string, over: { ok?: boolean; stderr?: string; missing?: boolean } = {}) =>
+    (
+        stdout: string,
+        over: { ok?: boolean; stderr?: string; missing?: boolean; code?: number | null; signal?: string } = {},
+    ) =>
     async () => ({
         ok: over.ok ?? true,
         stdout,
         stderr: over.stderr ?? '',
         missing: over.missing ?? false,
+        code: over.code,
+        signal: over.signal,
     });
 
 beforeEach(() => {
@@ -247,7 +267,12 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
     });
 
     it('scrubs the connection secret out of STDERR before it is surfaced', async () => {
-        cliResult({ err: exitCode(1), stderr: `auth failed for ${SECRET}` });
+        // Exit 137 rather than exit 1: only a run that did NOT complete
+        // surfaces stderr in `errorMessage` at all, so exit 1 would prove
+        // nothing about redaction. (Exit 1 is a completed run — see the ladder
+        // suite below.) The invariant under test is unchanged: whatever reaches
+        // `errorMessage` has been through `scrubSecrets` first.
+        cliResult({ err: exitCode(137), stderr: `auth failed for ${SECRET}` });
 
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'b',
@@ -262,7 +287,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
 
     it('applies the per-cloud credential patterns to captured output', async () => {
         cliResult({
-            err: exitCode(1),
+            err: exitCode(137),
             stderr: 'tenant 11111111-2222-3333-4444-555555555555 denied',
         });
 
@@ -288,21 +313,63 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
         expect(res.summaryObj).toBeNull();
     });
 
-    it('treats a non-ENOENT failure as a collector error, NOT a missing CLI', async () => {
+    it('treats an UNDOCUMENTED exit code as a collector error, NOT a missing CLI', async () => {
         // The two refusals carry different operator remedies; conflating them
-        // sends someone to install a CLI that is already there.
-        cliResult({ err: exitCode(1), stderr: 'ExpiredToken' });
+        // sends someone to install a CLI that is already there. Exit 3 is
+        // outside powerpipe's documented {0,1,2}, so it means the run did not
+        // complete — unlike 1 and 2, which do.
+        cliResult({ err: exitCode(3), stderr: 'ExpiredToken' });
 
         const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
 
-        expect(res.summary).toBe('Powerpipe collector exited non-zero.');
+        expect(res.status).toBe('ERROR');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
         expect(res.errorMessage).toContain('ExpiredToken');
+        // The code an operator needs in order to look it up rides in details,
+        // which the usecases persist as IntegrationExecution.resultJson.
+        expect(res.details).toEqual({ benchmark: 'b', collectorExitCode: 3 });
     });
 
-    it('treats an error carrying no `code` as a collector error too', async () => {
-        cliResult({ err: new Error('killed'), stderr: 'timed out' });
+    it('a SIGNAL death is a refusal, and is never reported as an exit code', async () => {
+        // The 15-minute `timeout` kills the child with SIGTERM: `{code: null,
+        // signal: 'SIGTERM'}`. The old derivation was `err.code ?? 1`, so this
+        // shape reported exit 1 — which powerpipe defines as "ran fine, some
+        // controls alarmed". Under the new gate that would have been PARSED.
+        cliResult({ err: Object.assign(new Error('killed'), { signal: 'SIGTERM' }), stderr: 'timed out' });
+
         const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
-        expect(res.summary).toBe('Powerpipe collector exited non-zero.');
+
+        expect(res.status).toBe('ERROR');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
+        expect(res.details).toEqual({ benchmark: 'b', collectorSignal: 'SIGTERM' });
+    });
+
+    it('a maxBuffer overflow is a refusal — its STRING `code` is not an exit status', async () => {
+        // On a 64 MiB overflow Node sets `err.code` to the string
+        // ERR_CHILD_PROCESS_STDIO_MAXBUFFER and kills the child. The field the
+        // runner used to declare `number | null` therefore held a string.
+        cliResult({
+            err: Object.assign(new Error('stdout maxBuffer exceeded'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', signal: 'SIGTERM' }),
+            stdout: benchmarkJson([control('a', 'ok')]),
+        });
+
+        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
+
+        expect(res.status).toBe('ERROR');
+        expect(res.details).toEqual({
+            benchmark: 'b',
+            collectorSignal: 'SIGTERM',
+            collectorFailure: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+        });
+    });
+
+    it('treats an error carrying neither code nor signal as a collector error too', async () => {
+        cliResult({ err: new Error('killed'), stderr: 'unknown failure' });
+        const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
+        expect(res.status).toBe('ERROR');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
+        // Nothing is invented: no code, no signal, no failure string.
+        expect(res.details).toEqual({ benchmark: 'b' });
     });
 
     it('tolerates undefined stdout/stderr from the child', async () => {
@@ -334,9 +401,15 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
         expect(res.summaryObj).toBeNull();
     });
 
-    it('never reaches the parser on a non-zero exit', async () => {
-        // The H2 regression this guards: a revoked credential exits non-zero
-        // with empty stdout, which used to parse to zero controls and PASS.
+    it('never reaches the parser when the run did not complete', async () => {
+        // The H2 regression this guards: a broken collector run must not be
+        // scored off whatever stdout happened to survive it. Valid, all-ok JSON
+        // is supplied precisely so a leak past the gate would show as PASSED.
+        //
+        // The double reports failure with NO exit status, which is what a
+        // signal death and a spawn failure both look like — and what every
+        // `{ok:false}` double in the repo means. It is NOT "exit 1": that case
+        // now completes, and its counterpart is the next test.
         const res = await runPowerpipeBenchmark({
             benchmarkId: 'bench',
             env: emptyEnv(),
@@ -344,8 +417,119 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
             exec: fakeExec(benchmarkJson([control('a', 'ok')]), { ok: false, stderr: 'denied' }),
         });
         expect(res.status).toBe('ERROR');
-        expect(res.summary).toBe('Powerpipe collector exited non-zero.');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
         expect(res.summaryObj).toBeNull();
+    });
+
+    it('exit 1 DOES reach the parser — it is the routine "controls alarmed" outcome', async () => {
+        // #2284: this is the case the `!res.ok` gate discarded. Powerpipe
+        // returns 1 for a benchmark with one or more alarms, so refusing it
+        // threw away every real compliance run and left the FAILED arm of the
+        // verdict ladder unreachable in production.
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([control('a', 'ok'), control('b', 'alarm')]), { ok: false, code: 1, stderr: '' }),
+        });
+        expect(res.status).toBe('FAILED');
+        expect(res.summaryObj?.counts).toEqual({ ok: 1, alarm: 1, skip: 0, error: 0, unknown: 0, total: 2 });
+        expect(res.details).toEqual({
+            benchmark: 'bench',
+            counts: { ok: 1, alarm: 1, skip: 0, error: 0, unknown: 0, total: 2 },
+            controls: [{ id: 'a', status: 'ok' }, { id: 'b', status: 'alarm' }],
+            truncated: false,
+            collectorExitCode: 1,
+        });
+    });
+
+    it('exit 2 reaches the parser, and its per-control errors decide the verdict', async () => {
+        // Powerpipe: exit 2 = "completed with no runtime errors, but one or
+        // more control errors occurred". Completed — so the JSON is there, and
+        // the errored controls are in it. The existing ladder already knows
+        // what to do with them; refusing the run would instead have discarded
+        // every alarm alongside them.
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([control('a', 'ok'), control('b', 'error')]), { ok: false, code: 2 }),
+        });
+        expect(res.status).toBe('ERROR');
+        expect(res.summaryObj?.counts.error).toBe(1);
+        expect(res.summary).toBe('bench: 1 ok / 0 alarm / 1 error / 0 skip / 0 unknown of 2');
+    });
+
+    it('exit 2 with alarms is FAILED — the real findings are not thrown away', async () => {
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([control('a', 'alarm'), control('b', 'error')]), { ok: false, code: 2 }),
+        });
+        expect(res.status).toBe('FAILED');
+    });
+
+    it('exit 2 is NEVER PASSED, even when our parse found no errored control', async () => {
+        // The collector counted a control error and our parse did not. That is
+        // a disagreement about what happened, and a compliance product does not
+        // certify an account over one. FAILED and ERROR are untouched — only
+        // the pass is refused.
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([control('a', 'ok')]), { ok: false, code: 2 }),
+        });
+        expect(res.status).toBe('ERROR');
+        // Not the zero-controls refusal: a real control parsed, and the counts
+        // say so. The ERROR comes from the exit code alone.
+        expect(res.summaryObj?.counts).toEqual({ ok: 1, alarm: 0, skip: 0, error: 0, unknown: 0, total: 1 });
+    });
+
+    it('a signal BEATS an exit status — a killed child did not complete, whatever number rode with it', async () => {
+        // MEASURED GAP: without this, deleting the signal/failure guard from
+        // `classifyPowerpipeExit` changed nothing, because every other fixture
+        // that carries a signal carries `code: null` and so lands on the
+        // `default` arm anyway. The guard only bites when the two disagree —
+        // which the `exec` seam can produce, since a caller supplies the whole
+        // result object. The rule it encodes: a child that died by signal did
+        // not complete its run, and a documented-looking exit code does not
+        // rehabilitate it.
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([control('a', 'ok')]), { ok: false, code: 1, signal: 'SIGKILL' }),
+        });
+        expect(res.status).toBe('ERROR');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
+        expect(res.summaryObj).toBeNull();
+        // Both are reported; neither is dropped in favour of the other.
+        expect(res.details).toEqual({ benchmark: 'bench', collectorExitCode: 1, collectorSignal: 'SIGKILL' });
+    });
+
+    it('the same all-ok JSON at exit 0 PASSES — the clamp above is the exit code, not the payload', async () => {
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([control('a', 'ok')]), { code: 0 }),
+        });
+        expect(res.status).toBe('PASSED');
+    });
+
+    it('an exit-1 run with nothing parseable is still refused as insufficient data', async () => {
+        // Parsing exit 1 must not become a way in for an empty payload: the
+        // zero-controls refusal sits below the gate and still fires.
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec('', { ok: false, code: 1, stderr: 'denied' }),
+        });
+        expect(res.status).toBe('ERROR');
+        expect(res.errorMessage).toBe('collector returned zero controls');
     });
 
     it('truncates a huge stderr to 300 chars in the surfaced message', async () => {
