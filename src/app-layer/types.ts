@@ -52,6 +52,18 @@ export interface RequestContext {
 
     /** Scopes granted to the API key (e.g. ["controls:read", "evidence:write"]) */
     apiKeyScopes?: string[];
+
+    /**
+     * The registered agent this request speaks for, resolved from the API key's
+     * `agentId` binding. Absent means the caller is not an agent — an ordinary
+     * integration key, or a signed-in human.
+     *
+     * ABSENCE IS NOT PERMISSION. `/api/mcp` refuses an absent value when the
+     * tenant has `requireRegisteredAgent` on, and the agentic write seams record
+     * it as `null` rather than guessing, so an unattributed row stays visibly
+     * unattributed. Nothing may read this as "some agent".
+     */
+    agentId?: string;
 }
 
 export interface PaginatedResult<T> {

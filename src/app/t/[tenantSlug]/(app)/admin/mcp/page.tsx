@@ -1,4 +1,4 @@
-import { SquareCheck, Workflow, BadgeCheck } from '@/components/ui/icons/nucleo';
+import { SquareCheck, Workflow, BadgeCheck, Robot } from '@/components/ui/icons/nucleo';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -26,6 +26,16 @@ export default async function McpAdminPage({
     const t = await getTranslations('admin');
 
     const cards = [
+        {
+            // First card on purpose: the register is what decides whether an
+            // agent may act at all, so it sits ahead of the surfaces that
+            // review what agents have already proposed.
+            href: tenantHref('/admin/agents'),
+            id: 'mcp-agent-register-card',
+            icon: Robot,
+            title: t('agentRegistry.title'),
+            description: t('agentRegistry.intro'),
+        },
         {
             href: tenantHref('/agent-proposals'),
             id: 'mcp-agent-proposals-card',

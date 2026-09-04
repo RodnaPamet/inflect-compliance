@@ -99,6 +99,14 @@ const config = [
             // request — behind a proxy `nextUrl.host` is the internal bind
             // address, which shipped as 0.0.0.0:3000 in production webhook URLs.
             'local/no-request-derived-public-url': 'error',
+            // An AgentProposal / WorkflowRun row that names no agent cannot be
+            // resolved back to the register, so "which agents run here?" gets
+            // two answers and the register is the one on the compliance report.
+            // The column is nullable (it was added to populated tables, and a
+            // human-started run genuinely has no agent), so the type system
+            // cannot ask for it — this does. It demands the field be NAMED, not
+            // non-null: `agentId: null` is a correct value, silence is not.
+            'local/require-agent-attribution': 'error',
             '@typescript-eslint/no-explicit-any': 'warn',
             '@typescript-eslint/ban-ts-comment': [
                 'warn',

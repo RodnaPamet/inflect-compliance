@@ -19,7 +19,7 @@ import { logEvent } from '../events/audit';
 import { classifyAiSystem } from '@/lib/eu-ai-act/classification';
 import { TIER_OBLIGATIONS, type AiRiskTier } from '@/lib/eu-ai-act/obligations';
 import { AiSystemRepository } from '../repositories/AiSystemRepository';
-import { CreateAiSystemSchema } from '../schemas/ai-system.schemas';
+import { CreateAiSystemSchema, type CreateAiSystemInput } from '../schemas/ai-system.schemas';
 import type { RequestContext } from '../types';
 
 const AI_FRAMEWORK_KEYS = ['EU-AI-ACT', 'ISO42001'] as const;
@@ -65,33 +65,63 @@ async function resolveTierRequirementIds(db: PrismaTx, tier: AiRiskTier): Promis
     return ids;
 }
 
+/**
+ * Author an AI-Act register entry inside an ALREADY-OPEN tenant transaction:
+ * classify, create the row, link the tier's obligations. Returns the created id
+ * alongside the classification so the caller can audit what the Act decided.
+ *
+ * Extracted so the agent register can reuse it (`registerAgent` creates the
+ * register entry and the agent in ONE transaction). It takes `db` rather than
+ * opening its own context precisely because of that: two `runInTenantContext`
+ * calls would be two transactions, and a failure between them would leave an
+ * orphan AI system in the register with no agent — a fabricated entry, which is
+ * the thing running the real classifier was supposed to prevent.
+ *
+ * The free-text sanitisation lives HERE, at the write seam, so both callers get
+ * it. Encryption protects the columns at rest and does nothing for the PDF
+ * export or an SDK consumer that decrypts and renders the value verbatim.
+ */
+export async function authorAiSystemEntry(
+    db: PrismaTx,
+    ctx: RequestContext,
+    parsed: CreateAiSystemInput,
+) {
+    // Deterministic, explainable classification — authored from the Act.
+    const classification = classifyAiSystem(parsed.classification);
+    const requirementIds = await resolveTierRequirementIds(db, classification.tier);
+
+    const created = await AiSystemRepository.create(db, ctx, {
+        name: parsed.name,
+        // Free-text: sanitised on write; encrypted at rest (Epic B manifest).
+        purpose: parsed.purpose ? sanitizePlainText(parsed.purpose) : null,
+        useContext: parsed.useContext ? sanitizePlainText(parsed.useContext) : null,
+        provider: parsed.provider ? sanitizePlainText(parsed.provider) : null,
+        deploymentRole: parsed.deploymentRole,
+        riskTier: classification.tier,
+        classificationClauseId: classification.clauseId,
+        classificationRationale: classification.rationale,
+        ownerUserId: parsed.ownerUserId ?? null,
+    });
+
+    const obligationsLinked = await AiSystemRepository.linkRequirements(
+        db,
+        ctx,
+        created.id,
+        requirementIds,
+    );
+
+    return { created, classification, obligationsLinked };
+}
+
 export async function createAiSystem(ctx: RequestContext, input: unknown) {
     assertCanWrite(ctx);
     const parsed = CreateAiSystemSchema.parse(input);
 
-    // Deterministic, explainable classification — authored from the Act.
-    const classification = classifyAiSystem(parsed.classification);
-
     return runInTenantContext(ctx, async (db) => {
-        const requirementIds = await resolveTierRequirementIds(db, classification.tier);
-        const created = await AiSystemRepository.create(db, ctx, {
-            name: parsed.name,
-            // Free-text: sanitised on write; encrypted at rest (Epic B manifest).
-            purpose: parsed.purpose ? sanitizePlainText(parsed.purpose) : null,
-            useContext: parsed.useContext ? sanitizePlainText(parsed.useContext) : null,
-            provider: parsed.provider ? sanitizePlainText(parsed.provider) : null,
-            deploymentRole: parsed.deploymentRole,
-            riskTier: classification.tier,
-            classificationClauseId: classification.clauseId,
-            classificationRationale: classification.rationale,
-            ownerUserId: parsed.ownerUserId ?? null,
-        });
-
-        const obligationsLinked = await AiSystemRepository.linkRequirements(
+        const { created, classification, obligationsLinked } = await authorAiSystemEntry(
             db,
             ctx,
-            created.id,
-            requirementIds,
+            parsed,
         );
 
         await logEvent(db, ctx, {

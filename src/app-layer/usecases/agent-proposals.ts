@@ -125,6 +125,14 @@ export async function createAgentProposal(
                 rationale,
                 proposedViaKeyId: ctx.apiKeyId ?? null,
                 proposedBySessionRef: input.proposedBySessionRef ?? null,
+                // WHICH registered agent proposed this. Resolved at the MCP
+                // entry gate from the credential's binding; `null` means the
+                // credential names no agent, which only a tenant with the
+                // registration gate OFF can still produce. Written explicitly
+                // rather than omitted so the row's attribution is a decision
+                // this seam made, not a column nobody thought about — the
+                // `local/require-agent-attribution` lint rule enforces that.
+                agentId: ctx.agentId ?? null,
             },
             select: { id: true, kind: true, status: true },
         }),
@@ -138,8 +146,8 @@ export async function createAgentProposal(
         entityId: proposal.id,
         action: 'AGENT_PROPOSAL_CREATED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', kind: input.kind },
-        metadataJson: { apiKeyId: ctx.apiKeyId ?? null },
+        detailsJson: { category: 'access', kind: input.kind, agentId: ctx.agentId ?? null },
+        metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
 
     return { id: proposal.id, kind: proposal.kind as AgentProposalKind, status: proposal.status };

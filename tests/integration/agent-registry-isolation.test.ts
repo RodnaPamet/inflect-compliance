@@ -12,10 +12,20 @@
  * cross-tenant READ is one customer learning another's automation surface; a
  * cross-tenant WRITE is one customer un-suspending another's kill switch.
  *
- * Stage 1 ships the model plus the write seam the encryption manifest requires,
- * so the usecases driven here are the create/list/get/update/retire set. The
- * HTTP surface lands on top of them and extends this suite rather than
- * replacing it.
+ * Stage 1 shipped the model plus the write seam the encryption manifest
+ * requires, and this suite drove the create/list/get/update/retire set. Stage 2
+ * extends it rather than replacing it: `registerAgent` (which authors the EU AI
+ * Act entry in the same transaction) and the two cross-tenant refusals the
+ * usecase owns because the DATABASE cannot own them —
+ *
+ *   • `ownerUserId` is a plain FK to a GLOBAL table, so the constraint accepts
+ *     another tenant's user;
+ *   • `vendorId` is a plain FK too, and Postgres runs FK checks as the table
+ *     owner, so RLS does not stop a cross-tenant supplier being named.
+ *
+ * Both produce a row that reads as entirely legitimate. Neither is a read
+ * breach on its own, which is what makes them worth a behavioural test: the
+ * register would simply carry a lie.
  */
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -25,7 +35,9 @@ import {
     createRegisteredAgent,
     getRegisteredAgent,
     listRegisteredAgents,
+    registerAgent,
     retireRegisteredAgent,
+    suspendRegisteredAgent,
     updateRegisteredAgent,
 } from '@/app-layer/usecases/agent-registry';
 
@@ -324,5 +336,172 @@ describe('the refusals that live in DDL, not in a usecase', () => {
                 },
             }),
         ).rejects.toThrow();
+    });
+});
+
+describe('registration authors the register entry in the same transaction', () => {
+    /** Rows this block creates, cleared after it so the counts above stay true. */
+    const created: string[] = [];
+
+    afterAll(async () => {
+        if (created.length === 0) return;
+        const agents = await prisma.registeredAgent.findMany({
+            where: { id: { in: created } },
+            select: { id: true, aiSystemId: true },
+        });
+        await prisma.registeredAgent.deleteMany({ where: { id: { in: created } } });
+        await prisma.aiSystem.deleteMany({
+            where: { id: { in: agents.map((a) => a.aiSystemId) } },
+        });
+    });
+
+    it('creates BOTH rows, links them, and classifies from the answers', async () => {
+        const result = await registerAgent(ctxFor(T1), {
+            name: 'Hiring screener',
+            description: '<b>Screens</b> applications',
+            autonomyLevel: 4,
+            dataAccessScope: 'WRITE_TENANT_DATA',
+            reversibility: 'COMPENSABLE',
+            provenance: 'FIRST_PARTY',
+            ownerUserId: seeded[T1].ownerUserId,
+            // Annex III(4) — employment. The Act says HIGH; the classifier is
+            // what says so, and this asserts the classifier ran rather than a
+            // default being written.
+            classification: { annexIIIArea: 'employment' },
+        });
+        created.push(result.id);
+
+        expect(result.aiActRiskTier).toBe('HIGH');
+        expect(result.aiActClauseId).toBe('Annex III(4)');
+
+        const agent = await prisma.registeredAgent.findUniqueOrThrow({
+            where: { id: result.id },
+            include: { aiSystem: true },
+        });
+        expect(agent.tenantId).toBe(T1);
+        expect(agent.aiSystemId).toBe(result.aiSystemId);
+        expect(agent.aiSystem.riskTier).toBe('HIGH');
+        expect(agent.aiSystem.tenantId).toBe(T1);
+        // The agent's OWN tier is a different taxonomy and is still unscored.
+        expect(agent.riskTier).toBeNull();
+        expect(agent.status).toBe('DRAFT');
+        // Free text sanitised at the write seam. Read back through the USECASE,
+        // not the bare test client: the column is encrypted by the Prisma
+        // extension, which the raw client does not carry, so a direct read
+        // returns the `v2:` ciphertext.
+        const throughTheUsecase = await getRegisteredAgent(ctxFor(T1), result.id);
+        expect(throughTheUsecase.description).toBe('Screens applications');
+    });
+
+    it('leaves NO orphan register entry when the agent write is refused', async () => {
+        // One transaction is the claim; this is what would catch two. The owner
+        // check runs first, so the ordering alone does not prove it — the count
+        // is taken across the whole call.
+        const before = await prisma.aiSystem.count({ where: { tenantId: T1 } });
+        await expect(
+            registerAgent(ctxFor(T1), {
+                name: 'Never lands',
+                autonomyLevel: 99,
+                dataAccessScope: 'NONE',
+                reversibility: 'REVERSIBLE',
+                provenance: 'FIRST_PARTY',
+                ownerUserId: seeded[T1].ownerUserId,
+            }),
+        ).rejects.toThrow();
+        expect(await prisma.aiSystem.count({ where: { tenantId: T1 } })).toBe(before);
+    });
+});
+
+describe("the usecase refuses ids the foreign key would have accepted", () => {
+    it("refuses another tenant's user as the accountable owner", async () => {
+        // The FK on `ownerUserId` points at the GLOBAL User table, so the
+        // database is perfectly happy with this. The row would then say tenant
+        // one's agent is owned by a person who is not a member, cannot see it,
+        // and will never act on it.
+        await expect(
+            createRegisteredAgent(ctxFor(T1), {
+                aiSystemId: seeded[T1].aiSystemId,
+                name: 'Foreign owner probe',
+                autonomyLevel: 1,
+                dataAccessScope: 'NONE',
+                reversibility: 'REVERSIBLE',
+                provenance: 'FIRST_PARTY',
+                ownerUserId: seeded[T2].ownerUserId,
+            }),
+        ).rejects.toThrow(/active member/i);
+    });
+
+    it("refuses another tenant's vendor as the supplier", async () => {
+        const foreignVendor = await prisma.vendor.create({
+            data: { tenantId: T2, name: 'Supplier of tenant two' },
+        });
+        try {
+            await expect(
+                registerAgent(ctxFor(T1), {
+                    name: 'Foreign vendor probe',
+                    autonomyLevel: 1,
+                    dataAccessScope: 'NONE',
+                    reversibility: 'REVERSIBLE',
+                    provenance: 'THIRD_PARTY',
+                    vendorId: foreignVendor.id,
+                    ownerUserId: seeded[T1].ownerUserId,
+                }),
+            ).rejects.toThrow(/vendor/i);
+        } finally {
+            await prisma.vendor.deleteMany({ where: { id: foreignVendor.id } });
+        }
+    });
+});
+
+describe('retirement waits for the review queue; suspension does not', () => {
+    let pendingId = '';
+
+    beforeAll(async () => {
+        const proposal = await prisma.agentProposal.create({
+            data: {
+                tenantId: T1,
+                kind: 'RISK',
+                status: 'PENDING',
+                payloadJson: '{"title":"awaiting a human"}',
+                agentId: seeded[T1].agentId,
+            },
+        });
+        pendingId = proposal.id;
+    });
+
+    afterAll(async () => {
+        if (pendingId) await prisma.agentProposal.deleteMany({ where: { id: pendingId } });
+    });
+
+    it('refuses to retire while a proposal awaits a human', async () => {
+        await expect(retireRegisteredAgent(ctxFor(T1), seeded[T1].agentId)).rejects.toThrow(
+            /awaiting review/i,
+        );
+        const after = await prisma.registeredAgent.findUniqueOrThrow({
+            where: { id: seeded[T1].agentId },
+        });
+        expect(after.status).toBe('DRAFT');
+    });
+
+    it('suspends anyway — the emergency stop has no precondition', async () => {
+        await expect(suspendRegisteredAgent(ctxFor(T1), seeded[T1].agentId)).resolves.toEqual({
+            id: seeded[T1].agentId,
+            status: 'SUSPENDED',
+        });
+    });
+
+    it('retires once the proposal is decided', async () => {
+        await prisma.agentProposal.update({
+            where: { id: pendingId },
+            data: { status: 'REJECTED' },
+        });
+        await expect(retireRegisteredAgent(ctxFor(T1), seeded[T1].agentId)).resolves.toEqual({
+            id: seeded[T1].agentId,
+            status: 'RETIRED',
+        });
+        // The proposal SURVIVES retirement. It is the agent's audit trail, and
+        // a register that discards what its agents did is not a register.
+        const proposal = await prisma.agentProposal.findUniqueOrThrow({ where: { id: pendingId } });
+        expect(proposal.agentId).toBe(seeded[T1].agentId);
     });
 });

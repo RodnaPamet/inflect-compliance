@@ -213,6 +213,10 @@ model RegisteredAgent {
   vendor    Vendor?         @relation("RegisteredAgentVendor", fields: [vendorId], references: [id])
   proposals AgentProposal[]
   runs      WorkflowRun[]
+  /// The credentials that speak for this agent. Many, not one: rotation issues
+  /// a new key before revoking the old, and an agent must not become
+  /// unregistered for the width of that window.
+  apiKeys   TenantApiKey[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.

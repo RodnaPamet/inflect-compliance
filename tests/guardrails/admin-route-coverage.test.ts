@@ -57,6 +57,13 @@ const ADMIN_ONLY_ROUTES = [
     'admin/trust-center/enable/route.ts',
     'admin/api-keys/route.ts',
     'admin/api-keys/[keyId]/route.ts',
+    // Agent register (Epic Agentic) — register / amend / activate / suspend /
+    // retire an autonomous agent. Gated on `admin.agent_registry`, its own key:
+    // an ACTIVE row here is what lets a credential through the /api/mcp
+    // registration gate.
+    'admin/agents/route.ts',
+    'admin/agents/[agentId]/route.ts',
+    'admin/agents/[agentId]/status/route.ts',
     'admin/device-tokens/route.ts',
     'admin/device-tokens/[tokenId]/route.ts',
     'admin/dsar-requests/route.ts',

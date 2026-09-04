@@ -35,6 +35,17 @@ const listSelect = {
     vendorId: true,
     isLegacyPlaceholder: true,
     createdAt: true,
+    // The accountable human, by name. The register's whole job is to say who
+    // answers for an agent, and a bare user id answers for nothing on a page.
+    owner: { select: { id: true, name: true } },
+    // The EU AI Act tier, from the required register entry. Shown BESIDE the
+    // agent's own `riskTier` and never merged with it: one is the Regulation's
+    // classification of the system, the other is operational authority. A LOW
+    // agent inside a HIGH AI system is an ordinary combination.
+    aiSystem: { select: { id: true, riskTier: true, classificationClauseId: true } },
+    // How many credentials speak for this agent — the number that decides
+    // whether suspending it actually stops anything.
+    _count: { select: { apiKeys: true } },
 } as const satisfies Prisma.RegisteredAgentSelect;
 
 export interface RegisteredAgentWriteFields {

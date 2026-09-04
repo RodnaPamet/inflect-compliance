@@ -54,5 +54,6 @@ module.exports = {
     rules: {
         'no-request-derived-public-url': require('./rules/no-request-derived-public-url'),
         'no-fail-open-teardown-filter': noFailOpenTeardownFilter,
+        'require-agent-attribution': require('./rules/require-agent-attribution'),
     },
 };

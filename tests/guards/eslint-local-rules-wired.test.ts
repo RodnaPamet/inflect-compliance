@@ -23,6 +23,7 @@ const CONFIG = path.join(ROOT, 'eslint.config.mjs');
 const LOCAL_RULES = [
     'no-fail-open-teardown-filter',
     'no-request-derived-public-url',
+    'require-agent-attribution',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

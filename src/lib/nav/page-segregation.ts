@@ -146,6 +146,7 @@ export const SUBPAGES: readonly string[] = [
     '/access-reviews/[reviewId]',
 
     // Admin subpages
+    '/admin/agents',
     '/admin/api-keys',
     '/admin/audit-log',
     '/admin/billing',

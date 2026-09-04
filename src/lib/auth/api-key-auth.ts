@@ -385,6 +385,11 @@ export async function verifyApiKey(
         appPermissions,
         apiKeyId: apiKey.id,
         apiKeyScopes: scopes,
+        // The agent principal this credential speaks for, when it speaks for
+        // one. Left UNSET rather than null when the key names no agent, so a
+        // consumer that forgets to handle it gets `undefined` and not a value
+        // that looks deliberate.
+        ...(apiKey.agentId ? { agentId: apiKey.agentId } : {}),
     };
 
     return { valid: true, apiKey, ctx };
