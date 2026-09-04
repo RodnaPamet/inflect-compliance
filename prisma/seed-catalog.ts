@@ -15,6 +15,8 @@
  * Run on VM:     docker exec -it inflect-app-1 npx tsx /app/prisma/seed-catalog.ts
  */
 const { PrismaClient } = require('@prisma/client');
+// Shared with seed.ts and catalog-applier.ts — see prisma/generic-template-tasks.ts.
+const { GENERIC_TEMPLATE_TASKS } = require('./generic-template-tasks');
 // Granular ISO 27001 domain taxonomy — the SAME module the Controls
 // "Browse" rail derives categories from at runtime, so the persisted
 // FrameworkRequirement / ControlTemplate categories never drift from
@@ -24,13 +26,6 @@ const { iso27001Domain } = require('../src/lib/controls/control-taxonomy');
 
 const prisma = new PrismaClient();
 
-const defaultTasks = [
-    { title: 'Define control owner and scope', description: 'Assign an owner and define the scope of this control within the organization.' },
-    { title: 'Document procedure or policy', description: 'Create or reference the policy/procedure that implements this control.' },
-    { title: 'Implement technical or operational measure', description: 'Put the control into practice — deploy tooling, configure settings, or establish processes.' },
-    { title: 'Collect evidence of implementation', description: 'Gather evidence demonstrating the control is operating effectively.' },
-    { title: 'Review effectiveness', description: 'Periodically review and assess whether the control meets its objectives.' },
-];
 
 async function main() {
     console.log('🌱 Seeding global catalog (frameworks, requirements, control templates, packs)…');
@@ -166,7 +161,7 @@ async function main() {
             const template = await prisma.controlTemplate.create({
                 data: { code, title: req.title, description: req.summary || null, category: iso27001Domain(req.key) || req.theme, defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: template.id, title: task.title, description: task.description } });
             }
             await prisma.controlTemplateRequirementLink.create({
@@ -206,7 +201,7 @@ async function main() {
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'NIS2', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {
@@ -249,7 +244,7 @@ async function main() {
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'ISO9001', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {
@@ -285,7 +280,7 @@ async function main() {
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'ISO28000', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {
@@ -323,7 +318,7 @@ async function main() {
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'ISO39001', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {

@@ -128,7 +128,7 @@ export async function listTemplates(
     const templates = await db.controlTemplate.findMany({
         where,
         include: {
-            tasks: true,
+            tasks: { orderBy: { sortOrder: 'asc' } },
             requirementLinks: { include: { requirement: { include: { framework: true } } } },
             packLinks: { include: { pack: true } },
         },

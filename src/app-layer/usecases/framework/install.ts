@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma';
 import { getEffectivePlan } from '@/lib/billing/entitlements';
 import { recordFrameworkInstalled } from '@/lib/observability/business-metrics';
 import { controlDataFromTemplate, resolveRelatedPolicyIds } from '../control/template-projection';
+import { taskFromTemplateTask, installableTemplateTasks } from '../control/task-from-template';
 
 // в”Ђв”Ђв”Ђ Pack Install (tenant-scoped, idempotent) в”Ђв”Ђв”Ђ
 
@@ -20,7 +21,7 @@ export async function previewPackInstall(ctx: RequestContext, packKey: string) {
             templateLinks: {
                 include: {
                     template: {
-                        include: { tasks: true, requirementLinks: { include: { requirement: true } } },
+                        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: { include: { requirement: true } } },
                     },
                 },
             },
@@ -65,7 +66,7 @@ export async function installPack(ctx: RequestContext, packKey: string) {
             templateLinks: {
                 include: {
                     template: {
-                        include: { tasks: true, requirementLinks: true },
+                        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: true },
                     },
                 },
             },
@@ -86,7 +87,7 @@ export async function installPack(ctx: RequestContext, packKey: string) {
             id: { notIn: packTemplateIds },
             requirementLinks: { some: { requirement: { frameworkId: pack.frameworkId } } },
         },
-        include: { tasks: true, requirementLinks: true },
+        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: true },
     });
     const installedTemplates = [
         ...pack.templateLinks.map((l) => l.template),
@@ -157,18 +158,9 @@ export async function installPack(ctx: RequestContext, packKey: string) {
             controlsCreated++;
 
             // Create tasks from template tasks
-            for (const tt of tmpl.tasks) {
+            for (const tt of installableTemplateTasks(tmpl.tasks)) {
                 await tdb.task.create({
-                    data: {
-                        tenantId: ctx.tenantId,
-                        controlId: control.id,
-                        title: tt.title,
-                        description: tt.description,
-                        status: 'OPEN',
-                        type: 'TASK',
-                        createdByUserId: ctx.userId,
-                        assigneeUserId: ctx.userId,
-                    },
+                    data: taskFromTemplateTask(tt, ctx, control.id),
                 });
                 tasksCreated++;
             }
@@ -229,7 +221,7 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
 
     const tmpl = await db.controlTemplate.findUnique({
         where: { code: templateCode },
-        include: { tasks: true, requirementLinks: true },
+        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: true },
     });
     if (!tmpl) throw notFound('Template not found');
 
@@ -265,18 +257,9 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
         });
 
         let tasksCreated = 0;
-        for (const tt of tmpl.tasks) {
+        for (const tt of installableTemplateTasks(tmpl.tasks)) {
             await tdb.task.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    controlId: control.id,
-                    title: tt.title,
-                    description: tt.description,
-                    status: 'OPEN',
-                    type: 'TASK',
-                    createdByUserId: ctx.userId,
-                    assigneeUserId: ctx.userId,
-                },
+                data: taskFromTemplateTask(tt, ctx, control.id),
             });
             tasksCreated++;
         }
@@ -381,7 +364,7 @@ export async function bulkInstallTemplates(
     const db = prisma;
     const templates = await db.controlTemplate.findMany({
         where: { code: { in: templateCodes } },
-        include: { tasks: true, requirementLinks: true },
+        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: true },
     });
     const foundCodes = new Set(templates.map((t) => t.code));
     const notFound_codes = templateCodes.filter((c) => !foundCodes.has(c));
@@ -422,18 +405,9 @@ export async function bulkInstallTemplates(
             });
             controlsCreated++;
 
-            for (const tt of tmpl.tasks) {
+            for (const tt of installableTemplateTasks(tmpl.tasks)) {
                 await tdb.task.create({
-                    data: {
-                        tenantId: ctx.tenantId,
-                        controlId: control.id,
-                        title: tt.title,
-                        description: tt.description,
-                        status: 'OPEN',
-                        type: 'TASK',
-                        createdByUserId: ctx.userId,
-                        assigneeUserId: ctx.userId,
-                    },
+                    data: taskFromTemplateTask(tt, ctx, control.id),
                 });
                 tasksCreated++;
             }

@@ -25,29 +25,125 @@ import {
     type CatalogFile,
     assertCatalogConsistency,
 } from './catalog-loader';
+import { GENERIC_TEMPLATE_TASKS } from './generic-template-tasks';
+import { taskContentHash } from './catalog-loader';
 
-const DEFAULT_TASKS = [
-    {
-        title: 'Define control owner and scope',
-        description: 'Assign an owner and define the scope of this control within the organization.',
-    },
-    {
-        title: 'Document procedure or policy',
-        description: 'Create or reference the policy/procedure that implements this control.',
-    },
-    {
-        title: 'Implement technical or operational measure',
-        description: 'Put the control into practice — deploy tooling, configure settings, or establish processes.',
-    },
-    {
-        title: 'Collect evidence of implementation',
-        description: 'Gather evidence demonstrating the control is operating effectively.',
-    },
-    {
-        title: 'Review effectiveness',
-        description: 'Periodically review and assess whether the control meets its objectives.',
-    },
-];
+
+/** What one template's task reconcile did. */
+export interface TaskReconcileResult {
+    created: number;
+    updated: number;
+    deprecated: number;
+    unchanged: number;
+}
+
+function addReconcile(a: TaskReconcileResult, b: TaskReconcileResult): TaskReconcileResult {
+    return {
+        created: a.created + b.created,
+        updated: a.updated + b.updated,
+        deprecated: a.deprecated + b.deprecated,
+        unchanged: a.unchanged + b.unchanged,
+    };
+}
+
+/** The authored-task shape this file receives from the loader. */
+type AuthoredTask = {
+    title: { en: string; bg?: string };
+    description: { en: string; bg?: string };
+    phase: 'SCOPE' | 'IMPLEMENT' | 'OPERATE' | 'REVIEW';
+    steps?: Array<{ text: { en: string; bg?: string }; hint?: { en: string; bg?: string } }>;
+    evidenceHint?: { en: string; bg?: string };
+    suggestedRole?: string;
+    sortOrder: number;
+};
+
+/**
+ * Reconcile one template's tasks against its authored content.
+ *
+ * Keyed on `(templateId, contentHash)`, four outcomes:
+ *
+ *   unchanged   the hash is already on a live row  -> skip
+ *   new         the hash is absent                 -> create
+ *   changed     same sortOrder, different hash     -> update in place
+ *   missing     a live row no file task claims     -> set deprecatedAt
+ *
+ * NOTHING IS EVER DELETED, and that is the load-bearing rule rather than a
+ * preference: a tenant may have installed the task, and its `Task` rows
+ * outlive the template by design. Deprecation stops it being installed AGAIN
+ * without touching what already exists — `installableTemplateTasks` filters
+ * on it, and every previously-installed copy keeps working.
+ *
+ * "Changed" is matched on `sortOrder` because that is the only stable handle
+ * authored content carries: titles are exactly what re-authoring rewrites, so
+ * matching on title would read every edit as a delete plus a create and lose
+ * the row identity that `Task.templateTaskId` now depends on.
+ */
+export async function reconcileTemplateTasks(
+    prisma: PrismaClient,
+    templateId: string,
+    authored: readonly AuthoredTask[],
+): Promise<TaskReconcileResult> {
+    const result: TaskReconcileResult = { created: 0, updated: 0, deprecated: 0, unchanged: 0 };
+    if (authored.length === 0) return result;
+
+    const existing = await prisma.controlTemplateTask.findMany({
+        where: { templateId },
+        select: { id: true, contentHash: true, sortOrder: true, deprecatedAt: true },
+    });
+    const liveHashes = new Set(
+        existing.filter((e) => !e.deprecatedAt && e.contentHash).map((e) => e.contentHash as string),
+    );
+    const bySortOrder = new Map(existing.filter((e) => !e.deprecatedAt).map((e) => [e.sortOrder, e]));
+    const seenSortOrders = new Set<number>();
+
+    for (const task of authored) {
+        const hash = taskContentHash(task);
+        seenSortOrders.add(task.sortOrder);
+
+        if (liveHashes.has(hash)) {
+            result.unchanged++;
+            continue;
+        }
+
+        // The scalar columns carry `en`; `i18nJson` carries everything, so a
+        // reader that only knows English is unaffected and a reader that
+        // wants Bulgarian has somewhere to find it.
+        const data = {
+            title: task.title.en,
+            description: task.description.en,
+            phase: task.phase,
+            sortOrder: task.sortOrder,
+            stepsJson: task.steps ? (task.steps as unknown as object) : undefined,
+            evidenceHint: task.evidenceHint?.en ?? null,
+            suggestedRole: task.suggestedRole ?? null,
+            contentHash: hash,
+            i18nJson: task as unknown as object,
+            deprecatedAt: null,
+        };
+
+        const atSameOrder = bySortOrder.get(task.sortOrder);
+        if (atSameOrder) {
+            await prisma.controlTemplateTask.update({ where: { id: atSameOrder.id }, data });
+            result.updated++;
+        } else {
+            await prisma.controlTemplateTask.create({ data: { templateId, ...data } });
+            result.created++;
+        }
+    }
+
+    // A live row at a sortOrder the file no longer claims. Deprecated, never
+    // deleted — see the docblock.
+    for (const [sortOrder, row] of bySortOrder) {
+        if (seenSortOrders.has(sortOrder)) continue;
+        await prisma.controlTemplateTask.update({
+            where: { id: row.id },
+            data: { deprecatedAt: new Date() },
+        });
+        result.deprecated++;
+    }
+
+    return result;
+}
 
 export interface ApplyCatalogResult {
     framework: { id: string; key: string; created: boolean };
@@ -137,6 +233,7 @@ export async function applyCatalogFile(
     // ── 3. ControlTemplates + 4. Tasks + 5. Requirement links ──
     let templatesCreated = 0;
     let templatesExisting = 0;
+    let tasksReconciled: TaskReconcileResult = { created: 0, updated: 0, deprecated: 0, unchanged: 0 };
     const templateMap: Record<string, string> = {};
     for (const t of file.templates) {
         const existing = await prisma.controlTemplate.findUnique({
@@ -145,6 +242,14 @@ export async function applyCatalogFile(
         if (existing) {
             templatesExisting++;
             templateMap[t.code] = existing.id;
+            // Template-level fields keep the existing skip — re-titling a
+            // shipped control is a decision, not a sync. Its TASKS reconcile,
+            // because authored content is the thing this file now carries and
+            // an existing template is exactly where re-authored content lands.
+            tasksReconciled = addReconcile(
+                tasksReconciled,
+                await reconcileTemplateTasks(prisma, existing.id, t.tasks),
+            );
             continue;
         }
         const tmpl = await prisma.controlTemplate.create({
@@ -159,14 +264,20 @@ export async function applyCatalogFile(
         templateMap[t.code] = tmpl.id;
         templatesCreated++;
 
-        for (const task of DEFAULT_TASKS) {
-            await prisma.controlTemplateTask.create({
-                data: {
-                    templateId: tmpl.id,
-                    title: task.title,
-                    description: task.description,
-                },
-            });
+        if (t.tasks.length > 0) {
+            tasksReconciled = addReconcile(
+                tasksReconciled,
+                await reconcileTemplateTasks(prisma, tmpl.id, t.tasks),
+            );
+        } else {
+            // No authored content for this template yet. The generic five are
+            // still the honest default — see prisma/generic-template-tasks.ts
+            // for why they survive and what deletes them.
+            for (const task of GENERIC_TEMPLATE_TASKS) {
+                await prisma.controlTemplateTask.create({
+                    data: { templateId: tmpl.id, title: task.title, description: task.description },
+                });
+            }
         }
 
         for (const reqCode of t.requirementCodes) {

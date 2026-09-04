@@ -198,7 +198,6 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     // query dimension (nothing lists links "created by user X").
     'EvidenceRiskLink.createdByUserId': R_ACTOR,
     'EvidenceAssetLink.createdByUserId': R_ACTOR,
-    'ControlTemplateTask.templateId': R_LIBRARY_TABLE,
     'ControlTemplateRequirementLink.requirementId': R_LIBRARY_TABLE,
     'Evidence.fileRecordId': R_ONE_TO_ONE,
     'FileRecord.uploadedByUserId': R_ACTOR,

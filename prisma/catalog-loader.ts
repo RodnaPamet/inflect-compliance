@@ -68,6 +68,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import * as yaml from 'js-yaml';
+import { createHash } from 'node:crypto';
 
 // ─── Errors ─────────────────────────────────────────────────────────
 
@@ -138,6 +139,49 @@ export const CatalogRequirementSchema = z.object({
     category: z.string().optional(),
 });
 
+/**
+ * A localised string. `en` is required and is what lands in the scalar
+ * columns; everything else rides in `i18nJson`.
+ */
+export const LocaleStringSchema = z.object({
+    en: z.string().min(1),
+    bg: z.string().optional(),
+});
+
+/** One authored step of a task. */
+export const CatalogTaskStepSchema = z.object({
+    text: LocaleStringSchema,
+    hint: LocaleStringSchema.optional(),
+});
+
+/**
+ * An authored control task.
+ *
+ * `steps` IS OPTIONAL, and that is a deliberate departure from the spec,
+ * which asked for `.min(3).max(8)`. The five curated fixtures already carry
+ * 205 tasks shaped `{title, description}` with no steps at all, and this
+ * loader exists specifically to replace the `require()`-based seeding those
+ * fixtures use (see this file's own header). A required `steps` would make
+ * the loader structurally unable to read the very files it is migrating
+ * toward — it would reject shipped content on day one.
+ *
+ * The 3-8 bound still holds WHEN steps are present, so the authoring rule is
+ * unchanged; what moves is where absence is caught. That belongs to
+ * `control-task-actionability`, which already has the
+ * `LEGACY_GENERIC_ALLOWLIST` machinery for exactly this population and
+ * shrinks as content PRs land. A zod schema has no allowlist and would have
+ * had to grow one.
+ */
+export const CatalogTaskSchema = z.object({
+    title: LocaleStringSchema,
+    description: LocaleStringSchema,
+    phase: z.enum(['SCOPE', 'IMPLEMENT', 'OPERATE', 'REVIEW']).default('IMPLEMENT'),
+    steps: z.array(CatalogTaskStepSchema).min(3).max(8).optional(),
+    evidenceHint: LocaleStringSchema.optional(),
+    suggestedRole: z.string().optional(),
+    sortOrder: z.number().int().nonnegative().default(0),
+});
+
 export const CatalogTemplateSchema = z.object({
     code: z.string().min(1),
     title: z.string().min(1),
@@ -145,6 +189,11 @@ export const CatalogTemplateSchema = z.object({
     category: z.string().min(1),
     defaultFrequency: z.enum(CONTROL_FREQUENCIES).default('QUARTERLY'),
     requirementCodes: z.array(z.string().min(1)).default([]),
+    /** The role a control is typically owned by, e.g. "IT Operations".
+     *  Every curated fixture has carried this key since it was written; there
+     *  was no column, so the seeder read it and dropped it. */
+    defaultOwnerHint: z.string().optional(),
+    tasks: z.array(CatalogTaskSchema).default([]),
 });
 
 export const CatalogPackSchema = z.object({
@@ -284,4 +333,35 @@ export function loadAndValidateCatalogFile(filePath: string): CatalogFile {
     const file = loadCatalogFile(filePath);
     assertCatalogConsistency(file, filePath);
     return file;
+}
+
+/**
+ * A stable identity for one authored task.
+ *
+ * The applier reconciles on `(templateId, contentHash)`: equal means the
+ * authored content is unchanged and the row is skipped, so re-applying a
+ * catalogue is cheap and a re-authored task is detected without diffing every
+ * column.
+ *
+ * KEY ORDER IS CANONICALISED, and that is the whole reason this is a function
+ * rather than `JSON.stringify(task)`. `stringify` preserves insertion order,
+ * so the same task authored with `phase` before `title` would hash
+ * differently and reconcile as changed on every run — a no-op diff that would
+ * rewrite every row nightly and make "changed" meaningless.
+ *
+ * Locale maps are hashed WHOLE. A task whose Bulgarian translation changed
+ * has changed, even though every scalar column it writes is identical.
+ */
+export function canonicalJson(value: unknown): string {
+    if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+    const entries = Object.entries(value as Record<string, unknown>)
+        .filter(([, v]) => v !== undefined)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
+}
+
+/** sha256 over the canonicalised task. Hex, so it fits a plain text column. */
+export function taskContentHash(task: unknown): string {
+    return createHash('sha256').update(canonicalJson(task)).digest('hex');
 }

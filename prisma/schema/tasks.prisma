@@ -12,6 +12,16 @@ model Task {
   priority                  TaskPriority         @default(P2)
   status                    TaskStatus           @default(OPEN)
   source                    TaskSource?          @default(MANUAL)
+  /// The template task this was installed from, when it was.
+  ///
+  /// Null for a hand-written task and for every task installed BEFORE this
+  /// column existed — those are permanently unidentifiable, because no
+  /// install path ever set `source` either, so they are indistinguishable
+  /// from user-written work. That is why this ships now rather than being
+  /// inferred later.
+  templateTaskId            String?
+  /// Authored steps, per-item done state. See TaskChecklistSchema.
+  checklistJson             Json?
   key                       String?
   resolution                String?
   dueAt                     DateTime?
@@ -66,6 +76,10 @@ model Task {
   // TP-3 — FK-index for the Finding relation (Layer B) + the
   // "tasks for this finding" lookup used by reconciliation.
   @@index([tenantId, findingId])
+  /// tenantId-leading like all ten of its neighbours — Layer B accepts a
+  /// `[tenantId, fk]` composite, and a bare `[templateTaskId]` would be the
+  /// only non-tenant-leading index on this model.
+  @@index([tenantId, templateTaskId])
   // #102 item 4 — the control-detail Tasks tab filters by both
   // controlId AND status; this composite serves that hot path.
   @@index([tenantId, controlId, status])

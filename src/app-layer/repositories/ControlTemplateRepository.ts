@@ -5,7 +5,7 @@ export class ControlTemplateRepository {
         return db.controlTemplate.findMany({
             orderBy: { code: 'asc' },
             include: {
-                tasks: true,
+                tasks: { orderBy: { sortOrder: 'asc' } },
                 requirementLinks: {
                     include: {
                         requirement: {
@@ -22,7 +22,7 @@ export class ControlTemplateRepository {
         return db.controlTemplate.findUnique({
             where: { id },
             include: {
-                tasks: true,
+                tasks: { orderBy: { sortOrder: 'asc' } },
                 requirementLinks: {
                     include: {
                         requirement: {
