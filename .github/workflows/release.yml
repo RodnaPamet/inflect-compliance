@@ -6,7 +6,8 @@
 #
 #  What it does:
 #    1. Analyzes commits since last release tag
-#    2. Determines version bump (major/minor/patch) from commit types
+#    2. Determines the version bump from commit types (minor/patch; the
+#       major is NOT commit-derived — see below)
 #    3. Generates CHANGELOG.md entries
 #    4. Creates a GitHub Release with release notes
 #    5. Tags the commit with the version (e.g. v1.2.3)
@@ -16,7 +17,12 @@
 #    feat(scope): → minor bump
 #    fix(scope):  → patch bump
 #    perf(scope): → patch bump
-#    BREAKING CHANGE: → major bump (or feat!:)
+#    BREAKING CHANGE: → minor bump (or feat!:) — deliberately NOT a major.
+#                       The major is an odometer: the minor climbs to 999 and
+#                       the next one rolls it (scripts/lib/minor-cap.mjs). The
+#                       major has no machine consumer, so spending one on a
+#                       breaking change only shortened the runway — it had cost
+#                       902 minors and left major 2 alive for eight hours.
 #    chore/refactor/test/docs: → no release (unless grouped)
 #
 #  This workflow is SEPARATE from deploy — a release does not

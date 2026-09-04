@@ -7,7 +7,7 @@
     [
       "./scripts/semrel-minor-cap.mjs",
       {
-        "_comment": "Wraps @semantic-release/commit-analyzer (forwarded this preset + releaseRules verbatim) to cap the MINOR component at three digits: the release that would become X.1000.0 rolls over to (X+1).0.0 instead. That rollover major is COSMETIC \u2014 no breaking change behind it \u2014 and is safe here because the app is npmPublish:false (the version only feeds Helm appVersion + Docker tags). A real breaking change still bumps the major the normal way via feat!/BREAKING CHANGE. See scripts/lib/minor-cap.mjs.",
+        "_comment": "Wraps @semantic-release/commit-analyzer (forwarded this preset + releaseRules verbatim) to make the MINOR component an odometer: it climbs to 999, and the release that would become X.1000.0 rolls over to (X+1).0.0 instead. THAT ROLLOVER IS NOW THE ONLY THING THAT BUMPS THE MAJOR \u2014 the `breaking` rule below maps to `minor` deliberately. The major has ZERO machine consumers, measured: npmPublish:false, infra/helm was deleted with its sync script (2026-09-02), and the GHCR image is tagged :latest + :sha-<short>, never by version (ghcr-publish.yml:68-70). Every runtime reader takes the whole string (OTel service.version, the diagnostics route, openapi info.version). So spending a major on a breaking change buys nothing and only shortens the odometer, and it had spent two: fix(authz)! took 1.903.12 to 2.0.0 and chore(infra)! took 2.0.5 to 3.0.0, which is why major 2 lasted six releases. DO NOT DELETE THE `breaking` RULE TO GET THIS \u2014 SET IT. commit-analyzer falls back to its DEFAULT rules whenever no custom rule matches (index.js:57-66) and default rule 0 is {breaking:true, release:major}, so deleting it yields three different answers by commit type: chore! falls through to major, feat! lands on minor via the feat rule, and fix! lands on PATCH. AND THIS RULE IS NOT SUFFICIENT ON ITS OWN. It shadows default rule 0 but not default-release-rules.js:24, {tag:Breaking, release:major}, which keys on a field no custom rule mentions and which the parser fills from an ordinary body (fieldPattern /^-(.*?)-$/) \u2014 measured, a body carrying a -tag- line then Breaking returned major and bypassed the odometer. The enforcement therefore lives in scripts/semrel-minor-cap.mjs, which demotes any major before the cap runs. This rule is the declaration; that demotion is the guarantee. Both verified by execution and pinned by tests/unit/minor-cap.test.ts.",
         "preset": "conventionalcommits",
         "releaseRules": [
           {
@@ -32,7 +32,7 @@
           },
           {
             "breaking": true,
-            "release": "major"
+            "release": "minor"
           }
         ]
       }
