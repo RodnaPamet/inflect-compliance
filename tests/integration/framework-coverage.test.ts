@@ -6,7 +6,7 @@
  * pattern for these surfaces (see also
  * tests/guards/helm-chart-foundation.test.ts and
  * tests/integration/audit-middleware.test.ts). */
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
@@ -253,37 +253,70 @@ describe('Framework Coverage & Templates', () => {
             expect(seed).toContain(packKey);
         });
 
-        it.each(['NIS2-', 'QMS-', 'SCS-', 'RTS-'])('seed creates templates with prefix %s', (prefix) => {
-            expect(seed).toContain(`code: '${prefix}`);
+        it.each(['NIS2-', 'QMS-', 'SCS-', 'RTS-'])('the catalogue carries templates with prefix %s', (prefix) => {
+            expect(templateCountByPrefix(prefix)).toBeGreaterThan(0);
         });
     });
+
+
+/**
+ * Count control templates carrying `prefix`, wherever they are declared.
+ *
+ * These assertions used to grep `prisma/seed.ts` for `code: '<PREFIX>`. That
+ * was a source-text assertion in an INTEGRATION test — a suite with a database
+ * in front of it, asserting on the shape of a file. Moving the five inline
+ * framework arrays into fixtures broke every one of them without changing a
+ * single seeded row.
+ *
+ * Counting across both sources makes the assertion about the CATALOGUE rather
+ * than about where it happens to be written, so the next move does not break
+ * it either.
+ */
+function templateCountByPrefix(prefix: string): number {
+    const fromSeed = (
+        readFileSync(join(basePath, 'prisma/seed.ts'), 'utf-8').match(
+            new RegExp(`code: '${prefix}`, 'g'),
+        ) ?? []
+    ).length;
+
+    const fixtureDir = join(basePath, 'prisma/fixtures');
+    const fromFixtures = readdirSync(fixtureDir)
+        .filter((f) => f.endsWith('.json'))
+        .reduce((n, f) => {
+            let raw: unknown;
+            try {
+                raw = JSON.parse(readFileSync(join(fixtureDir, f), 'utf-8'));
+            } catch {
+                return n;
+            }
+            const obj = raw as { templates?: unknown[]; controls?: unknown[] };
+            const list = (Array.isArray(raw) ? raw : (obj.templates ?? obj.controls ?? [])) as Array<{
+                code?: string;
+            }>;
+            return n + list.filter((t) => typeof t?.code === 'string' && t.code.startsWith(prefix)).length;
+        }, 0);
+
+    return fromSeed + fromFixtures;
+}
 
     // ─── Template fixtures quality checks ───
     describe('Template coverage', () => {
         const seed = readFileSync(join(basePath, 'prisma/seed.ts'), 'utf-8');
 
         it('NIS2 has >= 15 templates', () => {
-            const matches = seed.match(/code: 'NIS2-/g);
-            expect(matches).toBeTruthy();
-            expect(matches!.length).toBeGreaterThanOrEqual(15);
+            expect(templateCountByPrefix('NIS2-')).toBeGreaterThanOrEqual(15);
         });
 
         it('ISO 9001 has >= 15 templates', () => {
-            const matches = seed.match(/code: 'QMS-/g);
-            expect(matches).toBeTruthy();
-            expect(matches!.length).toBeGreaterThanOrEqual(15);
+            expect(templateCountByPrefix('QMS-')).toBeGreaterThanOrEqual(15);
         });
 
         it('ISO 28000 has >= 10 templates', () => {
-            const matches = seed.match(/code: 'SCS-/g);
-            expect(matches).toBeTruthy();
-            expect(matches!.length).toBeGreaterThanOrEqual(10);
+            expect(templateCountByPrefix('SCS-')).toBeGreaterThanOrEqual(10);
         });
 
         it('ISO 39001 has >= 10 templates', () => {
-            const matches = seed.match(/code: 'RTS-/g);
-            expect(matches).toBeTruthy();
-            expect(matches!.length).toBeGreaterThanOrEqual(10);
+            expect(templateCountByPrefix('RTS-')).toBeGreaterThanOrEqual(10);
         });
     });
 
