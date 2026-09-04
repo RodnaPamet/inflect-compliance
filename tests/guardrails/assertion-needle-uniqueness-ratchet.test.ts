@@ -204,7 +204,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 252;
  *     gets far enough to be classified by its PATH instead of dropping out
  *     one step earlier.
  */
-const UNANALYSABLE_READ_BASELINE = 1447;
+const UNANALYSABLE_READ_BASELINE = 1446;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
