@@ -22,6 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { repoRelativeFiles, REPO_ROOT } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 import { GENERIC_TEMPLATE_TASKS } from '../../prisma/generic-template-tasks';
 
 /** Frozen. See the docblock for why this is not an import. */
@@ -82,7 +83,12 @@ describe('the generic tasks have exactly one owner', () => {
             } catch {
                 continue;
             }
-            if (FROZEN_GENERIC_TITLES.some((title) => containsAsCompleteLiteral(content, title))) {
+            // Comments stripped first. A docblock that NAMES a generic title —
+            // control-task-conformance.test.ts quotes one to explain why
+            // substring matching is wrong — is discussing the string, not
+            // shipping it. The sender-identity guard makes the same
+            // distinction for the same reason.
+            if (FROZEN_GENERIC_TITLES.some((title) => containsAsCompleteLiteral(codeOf(content), title))) {
                 offenders.push(rel);
             }
         }
@@ -95,7 +101,7 @@ describe('the generic tasks have exactly one owner', () => {
         const stale = Object.keys(ALLOWED).filter((rel) => {
             const abs = path.join(REPO_ROOT, rel);
             if (!fs.existsSync(abs)) return true;
-            const body = fs.readFileSync(abs, 'utf8');
+            const body = codeOf(fs.readFileSync(abs, 'utf8'));
             return !FROZEN_GENERIC_TITLES.some((t) => containsAsCompleteLiteral(body, t));
         });
         expect(stale).toEqual([]);
