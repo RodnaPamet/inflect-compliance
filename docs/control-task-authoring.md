@@ -108,6 +108,14 @@ templates exist.
 | `OPERATE` | running it — the recurring act that produces evidence |
 | `REVIEW` | checking it still works — reconciliation, testing, assessment |
 
+A task set normally spans at least three of the four, because most controls
+have something to scope, something to put in place, and something to check. It
+is not a quota: a control whose subject *is* one lifecycle stage — ICN-048 is
+"ISMS Review and Monitoring", whose material describes running and reviewing an
+ISMS that already exists — legitimately spans two, and adding a SCOPE task to
+reach three would invent an obligation the control does not carry. The ratchet
+holds the rule for the other 150 and names that one as an exception.
+
 An `OPERATE` task **must** carry an `evidenceHint`: it is the phase whose whole
 output is proof, and a recurring task with no named artifact is the one most
 likely to be closed without doing anything.

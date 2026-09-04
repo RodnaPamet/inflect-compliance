@@ -37,7 +37,6 @@ const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
  * authors the content; when it is empty, every shipped template is actionable.
  */
 const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {
-    'ICN-': 'Internal controls (151) — internal-controls.json. The largest population and the only one with rich grounding metadata.',
     'TSC-': 'SOC 2 (29). Carries bespoke tasks already, not yet in the steps format.',
     'SDLC-': 'NIST SSDF starter (19). Carries bespoke tasks already, not yet in the steps format.',
     'CIS-': 'CIS v8 IG1 (15). Its existing tasks are formulaic ("Implement IG1 safeguards for Control {n}").',
@@ -74,17 +73,54 @@ const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {
  */
 export const UNSCANNABLE_INLINE_POPULATIONS: Record<string, number> = {};
 
-/** Curated for this repo's subject matter. Extend deliberately. */
+/**
+ * Curated for this repo's subject matter. Extend deliberately.
+ *
+ * It grew from 61 to 125 when the first authored content landed: the original
+ * list was written before any existed, so it was a guess at the vocabulary and
+ * it missed 'List', 'Compare', 'Reconcile' and 'Score' — four of the commonest
+ * openers a real task set uses. The failure direction is what makes growing it
+ * safe: an absent verb is a LOUD false positive that someone fixes here, while
+ * the noun-phrase titles this exists to reject ('Cryptography management')
+ * still cannot get in. Boilerplate is a separate check — the frozen phrase
+ * list in control-task-conformance.test.ts — so admitting 'Check' and 'Update'
+ * as verbs does not admit 'Check compliance' or 'Update documentation'.
+ */
 const IMPERATIVE_VERBS = new Set([
-    'Add', 'Agree', 'Align', 'Apply', 'Approve', 'Assess', 'Assign', 'Audit', 'Authorise',
-    'Baseline', 'Build', 'Capture', 'Catalogue', 'Classify', 'Collect', 'Configure', 'Confirm',
-    'Define', 'Deploy', 'Design', 'Detect', 'Determine', 'Disable', 'Document', 'Enable',
-    'Enforce', 'Establish', 'Evaluate', 'Extend', 'Identify', 'Implement', 'Inventory',
-    'Issue', 'Limit', 'Log', 'Maintain', 'Map', 'Measure', 'Monitor', 'Notify', 'Onboard',
-    'Publish', 'Record', 'Register', 'Remove', 'Restrict', 'Retire', 'Review', 'Revoke',
-    'Rotate', 'Schedule', 'Scope', 'Segment', 'Select', 'Separate', 'Store', 'Test',
-    'Track', 'Train', 'Validate', 'Verify',
+    'Account', 'Add', 'Agree', 'Align', 'Allocate', 'Analyse', 'Annotate', 'Apply', 'Approve',
+    'Assemble', 'Assess', 'Assign', 'Audit', 'Authorise', 'Baseline', 'Build', 'Capture',
+    'Catalogue', 'Check', 'Cite', 'Classify', 'Close', 'Collect', 'Compare', 'Compile',
+    'Complete', 'Configure', 'Confirm', 'Consolidate', 'Correlate', 'Cross-check',
+    'Cross-reference', 'Define', 'Deliver', 'Deploy', 'Design', 'Destroy', 'Detect',
+    'Determine', 'Diagram', 'Disable', 'Document', 'Enable', 'Enforce', 'Enrol', 'Establish',
+    'Evaluate', 'Examine', 'Exercise', 'Export', 'Express', 'Extend', 'Extract', 'File', 'Flag',
+    'Generate', 'Group', 'Identify', 'Implement', 'Inspect', 'Inventory', 'Issue', 'Label',
+    'Limit', 'List', 'Log', 'Maintain', 'Map', 'Mark', 'Match', 'Measure', 'Minute', 'Monitor',
+    'Move', 'Name', 'Notify', 'Onboard', 'Photograph', 'Populate', 'Produce', 'Publish',
+    'Raise', 'Rate', 'Re-verify', 'Reassess', 'Reconcile', 'Record', 'Register', 'Remove',
+    'Report', 'Restore', 'Restrict', 'Retest', 'Retire', 'Review', 'Revoke', 'Rotate', 'Run',
+    'Sample', 'Sanitise', 'Scan', 'Schedule', 'Scope', 'Score', 'Search', 'Seed', 'Segment',
+    'Select', 'Send', 'Separate', 'Set', 'Spot-check', 'Store', 'Summarise', 'Test', 'Trace',
+    'Track', 'Train', 'Triage', 'Turn', 'Update', 'Validate', 'Verify', 'Walk', 'Write',
 ]);
+
+/**
+ * Controls whose own material spans fewer than three phases.
+ *
+ * The >= 3 rule holds for 150 of 151 authored controls, so it keeps its
+ * signal and this stays a named exception rather than a weakened rule.
+ *
+ * ICN-048's subject IS the review activity — its objective, successCriteria
+ * and testingMethodology describe running and reviewing an ISMS that already
+ * exists, and carry nothing to scope or implement. Adding a SCOPE task to
+ * satisfy this check would mean inventing an obligation the control does not
+ * state, which `docs/control-task-authoring.md` rejects by name. The rule
+ * asserted that every control spans most of a lifecycle; a control that IS a
+ * lifecycle stage refutes that, and the content is right.
+ */
+const PHASE_SPREAD_EXCEPTIONS: Record<string, string> = {
+    'ICN-048': 'ISMS Review and Monitoring — OPERATE + REVIEW only; metadata carries no scope or implementation content.',
+};
 
 const MIN_STEP_CHARS = 25;
 
@@ -98,6 +134,8 @@ interface AuthoredTaskLike {
 interface TemplateLike {
     code?: string;
     tasks?: AuthoredTaskLike[];
+    /** Which fixture it came from. Scopes the reuse check below. */
+    file?: string;
 }
 
 function allTemplates(): TemplateLike[] {
@@ -126,7 +164,9 @@ function allTemplates(): TemplateLike[] {
             const list = (Array.isArray(raw)
                 ? raw
                 : (obj.templates ?? obj.controls ?? [])) as TemplateLike[];
-            return list.filter((t) => typeof t?.code === 'string');
+            return list
+                .filter((t) => typeof t?.code === 'string')
+                .map((t) => ({ ...t, file: f }));
         });
 }
 
@@ -194,8 +234,38 @@ describe('authored control tasks are actionable', () => {
         expect(bad).toEqual([]);
     });
 
+    it('no task title is reused across controls', () => {
+        // The reject list's first entry is "if the title would fit under any
+        // control in the catalogue, it belongs under none of them", and reuse
+        // is what that failure looks like from outside: the fastest way to
+        // author hundreds of task sets badly is to paste one set and swap a
+        // noun. A duplicate title is not proof of boilerplate, but boilerplate
+        // at volume cannot avoid producing duplicates.
+        //
+        // Scoped PER FIXTURE FILE, not globally. Two frameworks may each
+        // legitimately need "Inventory every system and application using
+        // cryptography"; one framework needing it twice is the defect.
+        const byFile = new Map<string, Map<string, string[]>>();
+        for (const t of held) {
+            const titles = byFile.get(t.file ?? '') ?? new Map<string, string[]>();
+            for (const k of t.tasks ?? []) {
+                const title = titleOf(k);
+                if (!title) continue;
+                titles.set(title, [...(titles.get(title) ?? []), t.code ?? '(no code)']);
+            }
+            byFile.set(t.file ?? '', titles);
+        }
+        const reused = [...byFile].flatMap(([file, titles]) =>
+            [...titles]
+                .filter(([, codes]) => new Set(codes).size > 1)
+                .map(([title, codes]) => `${file}: "${title}" — ${[...new Set(codes)].join(', ')}`),
+        );
+        expect(reused).toEqual([]);
+    });
+
     it('a template with authored content carries >= 3 tasks over >= 3 phases', () => {
         const bad = held
+            .filter((t) => !PHASE_SPREAD_EXCEPTIONS[t.code ?? ''])
             .filter((t) => {
                 const tasks = t.tasks ?? [];
                 const phases = new Set(tasks.map((k) => k.phase).filter(Boolean));
@@ -226,11 +296,20 @@ describe('the allowlist is honest', () => {
         expect(allTemplates().length).toBeGreaterThanOrEqual(340);
     });
 
+    it('the phase-spread exceptions are real and are not growing', () => {
+        // Same discipline as the prefix allowlist: an entry naming a control
+        // that no longer ships, or that now spans three phases, is a carve-out
+        // for a problem that is gone.
+        const codes = new Set(allTemplates().map((t) => t.code ?? ''));
+        expect(Object.keys(PHASE_SPREAD_EXCEPTIONS).filter((c) => !codes.has(c))).toEqual([]);
+        expect(Object.keys(PHASE_SPREAD_EXCEPTIONS)).toHaveLength(1);
+    });
+
     it('records how much is still exempt, so progress is visible', () => {
         // A downward ratchet. Each content PR deletes its prefix here in the
         // same diff that authors the content; at zero, every shipped template
         // is held to the bar and this whole allowlist is deleted.
-        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(20);
+        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(19);
     });
 
     it('no framework is seeded from an inline array any more', () => {
