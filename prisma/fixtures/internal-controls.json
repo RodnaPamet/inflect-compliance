@@ -26,7 +26,115 @@
         "Logging and Monitoring Policy"
       ],
       "code": "ICN-002",
-      "category": "Logging and Monitoring"
+      "category": "Logging and Monitoring",
+      "tasks": [
+        {
+          "title": {
+            "en": "Record every monitored network, system and application in a monitoring coverage register"
+          },
+          "description": {
+            "en": "Build the register the auditor asks for as the 'list of systems and applications under monitoring'. One row per monitored network segment, system or application, naming the tool watching it (IDS, IPS, firewall, endpoint agent, log collector), the data source or feed it sends, and the team that owns the asset. Source the rows from the tools' own configured feeds rather than from memory, so the register reflects what is actually being watched. Done when the register is populated for every tool in service and attached as an export."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Monitoring coverage register export: asset, monitoring tool, data source or feed, asset owner"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Document the normal-behaviour baseline for each monitored data source"
+          },
+          "description": {
+            "en": "Write down what 'normal' means for each feed in the coverage register, so a deviation is decidable rather than a judgement call. Cover at least network traffic volumes and destinations, access to critical systems, and changes to system and network configuration files — the three areas the control's log analysis examines. For each metric state the measured normal range, the deviation that constitutes an anomaly, and the severity it raises. Date and version the document so the baseline in force at any point is identifiable, and agree the operational ranges with IT Operations before it is issued."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Dated, versioned baseline document listing each metric, its source feed, normal range, deviation threshold and alert severity"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Derive the observed normal range for each feed from its own historical data."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the deviation threshold and the alert severity each metric raises when crossed."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the coverage-register row each baseline metric is measured from."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any metric for which no feed exists, so the shortfall is visible."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set each monitoring tool's detection thresholds and alert destinations to the documented baseline"
+          },
+          "description": {
+            "en": "Take the baseline document and make each IDS, IPS, firewall and log-collection tool enforce it: enable the rules that detect the listed deviations, set the thresholds to the documented values, and point each rule's alert at a destination a named responder watches. Where a tool cannot express a baseline rule, record the shortfall against that row of the coverage register. Finish by exporting the running configuration of each tool and filing it with its export date, so the configuration can be compared against the baseline without console access. Security engineering specifies the rule content; IT Operations executes the changes on network devices."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Exported running configuration of each monitoring tool (rules, thresholds, alert destinations) with export date, plus the list of baseline rules no tool can express"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Log every monitoring alert raised and the response taken against it"
+          },
+          "description": {
+            "en": "Maintain one running record of alerts across the monitoring tools. Each entry carries the timestamp, the tool and rule that fired, which baseline deviation triggered it, the triage outcome (true positive, false positive, tuned out), the named responder, when they first acted, and how it was closed. A false positive that led to a rule change must name the change. This log is what demonstrates that alerting and response are working, not just that tools are installed; it is the artifact attached for the evidence period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Alert and response log for the period: one row per alert with tool, triggering deviation, responder, time of first response and closure"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Check the monitoring logs for the period and record every registered source that reported nothing"
+          },
+          "description": {
+            "en": "A feed that stops sending produces no alerts and looks identical to a quiet network, so check liveness directly. Query the monitoring platform for the last event received per source and compare that list against the coverage register. Record the timestamp for every source and raise each source that reported nothing during the period as a gap, naming the asset owner who must restore it. The completed check sheet — every register row marked reporting or silent — is the deliverable."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Source-liveness check sheet: every register row with its last-event timestamp, marked reporting or silent, silent rows assigned to an owner"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Reconcile the monitoring coverage register against the asset inventory"
+          },
+          "description": {
+            "en": "Match the coverage register line by line to the organisation's inventory of systems and applications to find what is in the estate but watched by nothing. Produce a coverage matrix showing every inventory entry against its monitoring source; for each unmatched entry, record whether monitoring is missing, deliberately out of scope with the stated reason, or pending, and name the owner accountable for closing it. Registered sources that no longer appear in the inventory are removed in the same pass, so the register stops carrying decommissioned assets."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Coverage matrix mapping every inventory asset to its monitoring source, with unmonitored assets, the reason, and the remediation owner per gap"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "title": "Privileged Utility Program Management",
@@ -410,7 +518,142 @@
         "Human Resources Security Policy"
       ],
       "code": "ICN-037",
-      "category": "Human Resources Security"
+      "category": "Human Resources Security",
+      "tasks": [
+        {
+          "title": {
+            "en": "Extract the post-employment security duties from the Human Resources Security Policy into a clause checklist"
+          },
+          "description": {
+            "en": "Read the Human Resources Security Policy and the employee handbook sections that describe duties continuing after termination or a change of role, and transcribe each duty into a checklist with one row per duty, quoting the policy or handbook section it comes from. Do not paraphrase duties into new obligations — a row exists only where the policy or handbook states one, and related duties stay in separate rows rather than being merged. This checklist is the policy standard that agreements and exit interview records are compared against in the later tasks. Attach the completed checklist with the source policy version recorded on it."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Clause checklist listing every post-employment security duty with the Human Resources Security Policy or handbook section each is taken from, and the policy version reviewed"
+          },
+          "suggestedRole": "HR",
+          "steps": [
+            {
+              "text": {
+                "en": "Retrieve the current Human Resources Security Policy and the handbook sections covering termination and change of role."
+              }
+            },
+            {
+              "text": {
+                "en": "Transcribe each stated post-employment duty as its own checklist row, quoting the source clause verbatim."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each duty applies to terminations, to role changes, or to both."
+              }
+            },
+            {
+              "text": {
+                "en": "Number each row so agreements and exit interview forms can cite it in the compliance matrix."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Add the post-employment security clauses to the termination and role-change agreement templates"
+          },
+          "description": {
+            "en": "Amend the standard termination agreement and the change-of-employment agreement templates so that every duty on the clause checklist appears in the signed document, and annotate each clause with the checklist row number it satisfies so the mapping can be audited later. Confirm with HR which agreement templates are actually issued for terminations and for role changes, and hand HR the amended versions to replace the ones in use, so no variant is left on the old wording. Attach the amended templates with their version numbers and effective date."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Versioned termination and change-of-employment agreement templates showing the post-employment security clauses, with each clause annotated against its checklist row number"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Add a security responsibilities section with a signature block to the exit interview and role-change briefing form"
+          },
+          "description": {
+            "en": "Amend the exit interview form, and the equivalent briefing form used when someone changes role, so the interviewer walks through the duties on the clause checklist and the departing or moving employee signs to confirm they were explained. The section records which checklist rows were covered, the date, and the names of both the interviewer and the employee, so the completed form evidences that the responsibilities were communicated and understood rather than merely listed. HR issues and files these forms. Attach the amended forms and note where completed copies are filed."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Amended exit interview and role-change briefing templates containing the post-employment security responsibilities section, the covered-checklist-row fields, and the employee signature block"
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Capture a signed post-employment acknowledgement at every exit interview and role-change briefing"
+          },
+          "description": {
+            "en": "For each termination and each change of role, run the security responsibilities section of the briefing, obtain the employee's signature, file the completed form against their personnel record, and enter the acknowledgement reference in the leaver and role-change list HR keeps, so the population and the evidence can be tied together. Where an employee leaves without an exit interview, record the reason against their row rather than leaving it blank. Attach the signed acknowledgements for the period together with the list export covering the same period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Signed post-employment acknowledgement forms for the period, plus the HR leaver and role-change list export showing an acknowledgement reference or a recorded reason for each person"
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Compare each executed termination and role-change agreement against the clause checklist in a compliance matrix"
+          },
+          "description": {
+            "en": "Take the terminations and role changes HR recorded for the period, pull the executed agreement for each one, and build a matrix with agreements down one axis and the clause checklist rows across the other, marking each cell present, absent, or reworded. Every absent or reworded cell is a finding and needs the agreement version and the person's record identified so HR can reissue or remediate. Attach the completed matrix and a report naming the agreements reviewed and the gaps found."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Compliance matrix mapping every executed termination and change-of-employment agreement for the period to the clause checklist rows, with gaps marked, and the accompanying findings report"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the population of terminations and role changes for the period from the HR list."
+              }
+            },
+            {
+              "text": {
+                "en": "Retrieve the executed agreement for each person in the population."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each clause checklist row present, absent, or reworded for every agreement."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the agreement template version used, so gaps can be traced to a superseded template."
+              }
+            },
+            {
+              "text": {
+                "en": "List each gap as a finding with the person's record reference and pass it to HR for remediation."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Produce the exit interview review summary naming every termination and role change with no signed acknowledgement on file"
+          },
+          "description": {
+            "en": "Work through the same period's terminations and role changes and, for each person, confirm a completed and signed security responsibilities section is on file and that the checklist rows it records match the clause checklist. Give every person one of three statuses — acknowledgement on file and complete, on file but covering fewer duties than the checklist, or absent — and for each absent one quote the reason held against their row. Where the duties covered are narrower than the checklist, name the missing row numbers so the briefing form or the interviewer's script can be corrected. Attach the summary listing every person checked with their status."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Exit interview review summary naming each termination and role change checked for the period, its acknowledgement status, and the clause checklist rows missing from any incomplete acknowledgement"
+          },
+          "suggestedRole": "HR"
+        }
+      ]
     },
     {
       "title": "Disciplinary Process Compliance",
@@ -595,7 +838,174 @@
         "Documents and Records Policy"
       ],
       "code": "ICN-054",
-      "category": "Documents and Records"
+      "category": "Documents and Records",
+      "tasks": [
+        {
+          "title": {
+            "en": "Register every record category with its storage medium and holding system"
+          },
+          "description": {
+            "en": "Build one row per record category the organisation holds — HR, financial and legal at minimum, plus operational categories — capturing the medium it lives on (paper, file share, SaaS system, offline archive), the system or physical location holding it, and the named contact who can produce a record from that holding when it is sampled. IT Operations supplies the system and location details for electronic holdings. Where a category is held in more than one place, give each holding its own row so nothing is covered only by implication. This register is the population the retention schedule, the sampling test and the retrieval test all run against. Attach the completed register; a category with a blank medium or holding system is not done."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Record-category register export listing, per category and per holding, the storage medium, the holding system or physical location, and the named retrieval contact"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the retention period and disposal method for each record category"
+          },
+          "description": {
+            "en": "Extend the retention schedule so every category in the register carries a retention trigger (creation, contract end, employee exit), the retention period counted from that trigger, and the disposal method appropriate to the medium it is held on (secure deletion, crypto-erase, shredding). Beside each period, cite the source that set it — the named legal or regulatory obligation where one drives it, otherwise the internal decision. Cross-check the schedule against the register and close every gap: a category present in the register but absent from the schedule, or present with a blank period, is the gap this task exists to close. Attach the schedule showing full coverage of the register."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Retention schedule with one row per record category showing trigger, retention period, disposal method and the source that set the period, cross-referenced to the register"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Map each encrypted archive to the key and reader software needed to open it"
+          },
+          "description": {
+            "en": "For every archive holding records in encrypted or proprietary form, record the key identifier, where the key is escrowed, its named custodian, and the software plus exact version required to decrypt and render the content. Compare each key's rotation or expiry date against the retention end date of the records it protects, and flag any archive whose key or reader program lapses before those records reach the end of their retention period. Legal/DPO supplies the retention end dates. Attach the mapping with the flagged rows and a named remediation owner against each."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Key-and-program mapping for encrypted archives showing key id, escrow location, custodian, reader software version, and key lifetime set against record retention end"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List every archive whose records are stored encrypted or in a proprietary format."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the key identifier, escrow location and named custodian for each archive."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decryption and rendering software, with its exact version, for each archive."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare key rotation or expiry dates against the retention end date of the records protected."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag archives whose key or reader software lapses first and name a remediation owner."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Test a sample of HR, financial and legal records against the retention schedule"
+          },
+          "description": {
+            "en": "Draw a sample from the register covering HR, financial and legal categories at minimum, and for each sampled record capture its identifier, category, creation or trigger date, the disposal date its schedule row implies, and its actual state today (live, archived, disposed, overdue). Mark a pass or fail per record. Against every fail — a record held past its disposal date, or destroyed before it — write a remediation owner and target date in the same sheet, so the finding and its disposition travel together. Attach the completed comparison sheet: it evidences that the schedule is followed, not that it exists."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Completed sampling sheet with one row per sampled record showing category, trigger date, scheduled disposal date, actual state, pass or fail outcome and remediation owner for each fail"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the sample so that HR, financial and legal categories are each represented."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each sampled record's identifier, category and retention trigger date."
+              }
+            },
+            {
+              "text": {
+                "en": "Derive the scheduled disposal date from the retention schedule row for its category."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the record's actual state against that derived date and mark pass or fail."
+              }
+            },
+            {
+              "text": {
+                "en": "Write a remediation owner and target date against every record marked fail."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Test the sampled records' access and change logs for unauthorised access or manipulation"
+          },
+          "description": {
+            "en": "Pull the access history and change management records covering the sampled records for the period under test, and examine them for reads by accounts outside the category's authorised group, edits or deletions of records already closed, and changes made without a change record. Disposition every hit either as authorised — naming the change record or approval that covers it — or as an exception referred for investigation. IT Operations supplies the log extracts; where a holding system produces no usable log, record that as a finding against that system rather than leaving the row blank. Attach the extract alongside the dispositioned exception list; an empty exception list is evidence only when the extract shows the logs were actually read."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Access and change-log extract for the sampled records plus the exception list showing each hit dispositioned as authorised or referred, and any system that produced no usable log"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Test that the longest-stored record in each electronic storage system still opens and renders"
+          },
+          "description": {
+            "en": "For every electronic storage system in the register, pull back the record that has been in storage longest and confirm it can still be opened and read: note the retrieval time, the software and version that rendered it, whether content and metadata were intact, and any dependency — a key, a licence, an obsolete format — that made retrieval difficult. Record a result per system and raise a migration or format-conversion item, with a named owner, wherever a record could not be read or rendered incomplete. Attach the test log; it is what evidences that electronic storage remains adequate over time."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Retrieval test log with one row per storage system: record retrieved, retrieval time, rendering software and version, readability outcome and any migration item raised"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Select the longest-stored record available in each electronic storage system."
+              }
+            },
+            {
+              "text": {
+                "en": "Retrieve the record and record how long the retrieval took to complete."
+              }
+            },
+            {
+              "text": {
+                "en": "Open it and confirm content and metadata render intact, naming the software version used."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any key, licence or obsolete format the successful retrieval depended on."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a migration or format-conversion item, with an owner, for each unreadable record."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "title": "Authority Contact Compliance",
@@ -850,7 +1260,133 @@
         "Privacy Policy"
       ],
       "code": "ICN-077",
-      "category": "Privacy"
+      "category": "Privacy",
+      "tasks": [
+        {
+          "title": {
+            "en": "Record every notifiable party and the notification window its governing requirement sets"
+          },
+          "description": {
+            "en": "Build the notification obligations register covering the parties this control names as owed a notice — affected data subjects, regulators, and other relevant parties such as a controller or contractual counterparty. One row per party, carrying the legal, regulatory or contractual requirement that creates the duty, the notification window that requirement itself sets, and the delivery channel plus current contact address. Take no window from custom or memory: cite the source that sets it. Legal/DPO establishes the windows; Security engineering confirms which systems and data categories fall in scope. Attach the completed register, dated and version-marked."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Breach notification obligations register listing, per row, the notifiable party, the requirement creating the duty, its notification window and the contact route"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the jurisdictions and data categories the Privacy Policy commits the organisation to cover."
+              }
+            },
+            {
+              "text": {
+                "en": "Name each party owed a notice — data subject, regulator, counterparty — and the requirement creating that duty."
+              }
+            },
+            {
+              "text": {
+                "en": "Quote the notification window from the cited requirement, never from practice or memory."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the delivery channel and current contact address for each regulator and counterparty listed."
+              }
+            },
+            {
+              "text": {
+                "en": "Date and version-mark the register, then circulate it to whoever assesses reported incidents."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Publish a notification template per audience carrying every required content field"
+          },
+          "description": {
+            "en": "Produce one template for each audience in the obligations register — data subject, regulator, counterparty — and populate its field list from the requirements that register cites rather than from a generic sample. Every template must carry the fields that let a notice state the nature and extent of the breach, which is what this control tests notifications for. Pair the templates with a pre-dispatch completeness checklist naming each field, so an incomplete notice cannot be sent unnoticed. Legal/DPO owns the wording; Security engineering supplies the technical description blocks. Attach the template pack and the checklist."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Breach notification template pack, one per audience, with the pre-dispatch content completeness checklist naming each required field"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Log the awareness time and the notifiability decision for every reported breach"
+          },
+          "description": {
+            "en": "For each incident entered in the breach and incident records, record the timestamp at which the organisation became aware, the notifiability determination against each triggered row of the obligations register, who made that determination, and when. Where the decision is not to notify, record the reason in the same row — a blank is indistinguishable from an unmade decision. Legal/DPO makes the call; this task is the durable record of it and the clock start that the timeliness test reads."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Breach and incident register extract for the period showing, per incident, the awareness timestamp, notifiability decision, decision-maker and rationale"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "File the as-sent copy and dispatch timestamp of every notification issued"
+          },
+          "description": {
+            "en": "For each notification actually sent, store the as-sent copy — data subject notice, regulator submission, counterparty letter — with its dispatch timestamp and whatever receipt the channel returns, including the regulator's submission or case reference where one is issued. File it against the incident id so a reviewer can move from register row to issued notice without asking anyone. Later corrections or follow-up submissions are filed as further copies, never as edits to the original."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Per-incident notification file: as-sent copies of each notice, dispatch timestamps, and regulator submission or case references"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Test the period's incidents against the notification procedure and report every discrepancy"
+          },
+          "description": {
+            "en": "Take every incident recorded in the review period and test each one: whether a notification was required, whether it was issued, the elapsed time from awareness to dispatch measured against the window in the obligations register, and whether the notice content carried each field on the completeness checklist. Produce the adherence report naming each discrepancy by incident id and the specific requirement missed. Legal/DPO supplies the issued notices, Security engineering the awareness timestamps."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Breach notification adherence report for the period, with per-incident timeliness and content findings and a discrepancy list keyed by incident id"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull every incident logged in the review period from the breach and incident records."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each incident to the obligations register rows that it triggers."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each awareness-to-dispatch elapsed time against the recorded window."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each issued notice against the template completeness checklist."
+              }
+            },
+            {
+              "text": {
+                "en": "List every discrepancy with its incident id and the requirement that was missed."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "title": "URL Request Audit Logging",
@@ -1142,7 +1678,174 @@
         "Privacy Policy"
       ],
       "code": "ICN-104",
-      "category": "Privacy"
+      "category": "Privacy",
+      "tasks": [
+        {
+          "title": {
+            "en": "Compile the list of systems and processes used to dispose of personal information"
+          },
+          "description": {
+            "en": "List every place personal information ends its life: application and database deletion routines, backup and archive expiry, removable media, end-user devices, paper files, and disposals a supplier or processor performs on the entity's behalf. Work from the systems that hold personal information rather than from the disposal tools already in use, so a system with data and no disposal route shows up as a gap instead of an absence. For each row capture the trigger that starts the disposal (retention rule, deletion request, asset decommissioning) and the named owner. Legal/DPO owns the list; IT Operations supplies the system and asset detail. Attach the completed list with an owner named on every row — it is the population every later task in this control is measured against."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "List of systems, media and processes used to dispose of personal information, each with its disposal trigger and named owner"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Include live databases, backups, archives and any replica or reporting copy."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the paper, removable-media and end-user-device routes, not only applications and databases."
+              }
+            },
+            {
+              "text": {
+                "en": "Add disposals carried out by suppliers or processors on the entity's behalf."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the trigger that starts each disposal: retention rule, deletion request or decommissioning."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the accountable owner on every row and confirm it with that person."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the approved destruction method and standard for each medium on the list"
+          },
+          "description": {
+            "en": "For every row of the disposal list, write into the disposal procedure the method that renders the personal information unrecoverable and the standard or setting that method must meet — cross-cut shredding for paper, cryptographic erase or degauss for magnetic media, overwrite or physical destruction for solid-state media, hard delete plus backup-copy expiry for database records. Where a supplier performs the destruction, name the supplier and the agreement under which they do it. Security engineering sets the technical settings; Legal/DPO confirms each method satisfies the Privacy Policy and the regulatory obligations for that data category. Attach the updated procedure showing a method and standard against every row, with none left blank."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Disposal procedure section mapping an approved destruction method and standard to every medium on the list"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Define the disposal record that must be completed at the moment of destruction"
+          },
+          "description": {
+            "en": "Destruction leaves nothing behind to inspect, so the record made while it happens is the only evidence that survives it. Publish the disposal record template and fix the fields every entry must carry: date and time; the requester and the owner who authorised it; the data categories with record counts or asset identifiers (serial number, asset tag, tape label, table name and row count); the method used, taken from the approved list; the operator who performed it; the witness where the procedure requires one; and the supplier certificate reference where a third party destroyed it. IT Operations and the disposal owners are the people who will complete it. Attach the published template together with the procedure text that makes a completed record a precondition of releasing the medium or running the deletion."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Published disposal record template and the procedure clause requiring it to be completed before destruction"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the identifiers that outlive each medium: serial number, asset tag, tape label, table and row count."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the authorisation fields: requester, approving owner, and the retention rule or request that triggered it."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the execution fields: method used, operator, witness, date and time, supplier certificate reference."
+              }
+            },
+            {
+              "text": {
+                "en": "Amend the procedure so the record must be complete before the medium is released or the deletion runs."
+              }
+            },
+            {
+              "text": {
+                "en": "Circulate the template to every disposal owner on the list and record their acknowledgement."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every disposal of personal information in the disposal register as it is carried out"
+          },
+          "description": {
+            "en": "Each time personal information is destroyed under this procedure, the operator completes the disposal record and files it in the register as part of closing the disposal, attaching the supplier's certificate of destruction where a third party carried it out. IT Operations reconciles the register against the decommissioning and deletion tickets raised in the same period, so that nothing is destroyed without a surviving record, and chases any ticket closed with no matching entry. Attach the register extract for the period showing every disposal with its identifiers, method, operator and authorisation populated."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Disposal register extract for the period, with completed disposal records and any supplier certificates of destruction attached"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the review and approval of every change to disposal practices"
+          },
+          "description": {
+            "en": "When a disposal method, tool, supplier or retention trigger changes, raise it as a change request stating what is changing, which rows of the disposal list and which data categories it affects, and why the new practice still meets the Privacy Policy and the regulatory obligations for that data. The request carries the reviewer's decision and the date it was taken, and the approved request is filed with the disposal procedure version it produced. Legal/DPO is accountable for the decision; Security engineering and IT Operations describe the technical change. Attach the change requests raised since the last audit, each showing its reviewer, decision date and resulting procedure version."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Change requests for disposal practice changes raised since the last audit, each showing the reviewer, the decision and the procedure version it produced"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Score a sample of disposal records against the documented procedure in a compliance spreadsheet"
+          },
+          "description": {
+            "en": "Draw a sample from the disposal register covering every medium on the disposal list and test each record against the procedure: the method used was the approved one for that medium, the identifiers are specific enough to say which assets or records were destroyed, the authorisation predates the destruction, and any supplier certificate matches the batch identifiers it claims to cover. Score pass or fail per record in the compliance spreadsheet with the exception described in full, and give every failure a named owner and a date to clear it. Attach the completed spreadsheet with the exceptions and their owners."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Compliance spreadsheet scoring each sampled disposal record against the procedure, with every exception described and assigned"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the sample so that every medium on the disposal list is covered at least once."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the method recorded against the approved method and standard for that medium."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the authorisation was recorded before the destruction date and time."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each supplier certificate to the batch identifiers it claims to cover."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the procedure clause breached beside every record scored as a fail."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "title": "Cybersecurity Risk Assessment Implementation",
@@ -1380,7 +2083,169 @@
         "ICS/OT Security Policy"
       ],
       "code": "ICN-126",
-      "category": "ICS/OT Security"
+      "category": "ICS/OT Security",
+      "tasks": [
+        {
+          "title": {
+            "en": "Diagram every crossing point between the ICS/OT network and the corporate network"
+          },
+          "description": {
+            "en": "Walk the plant network at each site in scope with the OT engineer who runs it and draw, for every ICS/OT segment, the firewalls, ACL'd switches, data diodes, jump hosts, wireless links and remote-access paths that cross into the corporate network — and show the safety instrumented system on its own segment with the physical or virtual means that isolates it from both the process control network and corporate IT. Name the enforcing device at each crossing rather than drawing an unlabelled line. Attach the diagram set covering every site in scope, each sheet dated, version-labelled and carrying the name of whoever walked the network with you."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated, version-labelled ICS/OT network architecture diagram set covering every site in scope, showing each corporate-network crossing and the SIS isolation"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "List every site that operates an ICS/OT network in scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each cabled, VLAN and wireless path that crosses into corporate IT."
+              }
+            },
+            {
+              "text": {
+                "en": "Label the enforcing device at each crossing: firewall, diode or jump host."
+              }
+            },
+            {
+              "text": {
+                "en": "Draw the safety instrumented system on its own segment and state how it is isolated."
+              }
+            },
+            {
+              "text": {
+                "en": "Version and date each sheet and record who walked the plant network with you."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Export the configuration of every device enforcing an ICS/OT segmentation boundary"
+          },
+          "description": {
+            "en": "For each crossing point on the architecture diagram, export the running configuration that enforces it — firewall rule base, switch ACLs, VLAN and port assignments, data-diode direction setting, remote-access broker policy — and index each export to the crossing it belongs to, so a reviewer can move from a line on the diagram to the rule that implements it. List separately every rule that permits traffic inbound to the ICS/OT network, so the isolation the diagram claims can be tested against the rule base rather than taken on trust. Attach the exports carrying device identity, software version and capture date."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Configuration exports for each boundary-enforcing device, dated and indexed to its crossing point on the diagram, with the inbound-permitting rules listed separately"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the hardened build standard for each ICS/OT system type"
+          },
+          "description": {
+            "en": "Write down, per system type in the estate (engineering workstation, HMI, historian, controller/PLC, SIS engineering station), the settings that constitute its secure build: services and ports left enabled, local and shared accounts, removable-media handling, and the permitted remote-access method. Draft the removable-media and remote-access positions together with Security engineering, who hold the media and device controls elsewhere in this control. Where the control-system vendor's supported configuration forbids a hardening setting, record the vendor statement and the measure standing in its place — that constraint is the part of this standard a tester will probe. Attach the standard versioned, listing the assets each system type covers."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Versioned secure configuration and hardening standard per ICS/OT system type, with vendor constraints and substitute measures recorded"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the ICS/OT system types in the estate and the vendor behind each."
+              }
+            },
+            {
+              "text": {
+                "en": "Record enabled services, ports and accounts for each system type."
+              }
+            },
+            {
+              "text": {
+                "en": "State how removable media and remote access are handled on that type."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture in writing the vendor's supported-configuration constraints."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the substitute measure wherever a setting cannot be applied."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Produce the period's ICS/OT monitoring and event log extract"
+          },
+          "description": {
+            "en": "Pull the reporting period's events from the ICS/OT monitoring systems and present them asset by asset, so the extract shows which assets sent events and which sent none — a silent asset is the finding here, not the absence of alerts. Where the monitoring system records alert handling, carry the alerts raised and how each was closed out into the same extract. Name the source monitoring systems and the exact date range covered, and state for any asset shown on the architecture diagram but missing from the extract why it is not monitored."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "ICS/OT monitoring log extract for the period with per-asset event counts, zero-event and unmonitored assets identified, and alert outcomes where the system records them"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Issue the ICS/OT vulnerability and patch status report for the cycle"
+          },
+          "description": {
+            "en": "Report per ICS/OT asset the open vulnerabilities, the patches applied in this cycle and the maintenance window used, and every patch deferred with its reason (vendor approval outstanding, no maintenance window, unsupported by the control-system vendor) and the measure holding the risk until it lands. Draw the findings from ICS/OT-specific scanning and control-system vendor advisory feeds rather than the corporate IT report; Engineering lead owns the maintenance windows the report cites. State the date the data was taken and the asset population covered, and attach the report as issued."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "ICS/OT vulnerability and patch management report for the cycle, listing per-asset findings, patches applied with their windows, and deferred patches with reasons and holding measures"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Collect vendor advisories and scan results covering ICS/OT assets."
+              }
+            },
+            {
+              "text": {
+                "en": "Match every finding to an asset and its system type."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the patches applied this cycle and the maintenance window used."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each deferred patch with its reason and holding measure."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Cross-check the approved media and mobile device list against the ICS/OT connection logs"
+          },
+          "description": {
+            "en": "Take the period's connection and usage logs and test every removable-media and mobile-device connection to an ICS/OT asset against the approved list: each should resolve to an approved device and an authorised holder. Record the connections that match no approved entry, and the approved devices that never appear — those are the candidates for removal from the list — then record the explanation obtained and the outcome for each unmatched connection. Attach the reconciliation showing the count on both sides, every exception, and its disposition."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Reconciliation of the approved external storage media and mobile device list against the period's ICS/OT connection logs, with counts on both sides and every exception and its disposition"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "title": "Cryptography Management and Key Control",
@@ -1391,7 +2256,169 @@
         "Hardening Policy"
       ],
       "code": "ICN-127",
-      "category": "Hardening"
+      "category": "Hardening",
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every system, application and supplier that uses cryptography"
+          },
+          "description": {
+            "en": "The auditor's first request is a list of all cryptographic systems and applications in use, and this inventory is the denominator every later task counts against — the policy has to address each row, and the reconciliation reads each row's live configuration. Build it from what is actually running rather than from an architecture diagram or a procurement list. The in-house/supplier custody column is not decoration: it is what produces the population for the supplier register, so a blank there blocks a later task. Attach the inventory carrying the date it was compiled; if no external party holds key material, record that as an explicit nil rather than leaving the column empty."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated inventory of cryptographic systems and applications, one row per system, with purpose, owner and an in-house or supplier key-custody value populated for every row"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Enumerate cryptographic use from certificate inventories, disk and database encryption settings, backup tooling, code-signing and VPN/SSH configuration."
+              }
+            },
+            {
+              "text": {
+                "en": "Add every third-party service that encrypts, signs or holds key material on the organisation's behalf."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the system owner and the purpose the cryptography serves — confidentiality in transit, at rest, signing or authentication."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every row in-house or supplier-held so the supplier register and the key procedure inherit a complete population."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the inventory and hold it as the baseline the policy and the reconciliation are both read against."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the approved algorithms, minimum key strengths and legal constraints in the cryptography policy"
+          },
+          "description": {
+            "en": "The policy is the yardstick every later task is measured against, so it has to name values rather than principles: which algorithms and modes are permitted, the minimum key length for each, and the legal aspects that apply — export restrictions, the jurisdictions in which key material may be held, and any lawful-access obligation. Work down the inventory so no use in scope is left unaddressed, and state explicitly where an algorithm is permitted only for legacy interoperability, since that is where the reconciliation will otherwise report a deviation every cycle. Legal/DPO supplies the legal text; Security engineering owns the issued document. Attach the issued policy version showing the algorithm and minimum-key-length table and the legal section."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Issued cryptography policy version containing the approved-algorithm and minimum-key-length table and the legal-aspects section"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Document generation, distribution, recovery and destruction for each key type"
+          },
+          "description": {
+            "en": "Separate from the policy, produce the operating document an operator can follow at the keyboard — the key generation, distribution and management processes an auditor asks for as their own artifact. Cover every distinct key type the inventory implies rather than describing one exemplar key, and read each type's stated generation and protection back against the policy's algorithm and minimum-key-length table so the two documents cannot disagree with each other. Attach the issued procedure with the key-type table filled in end to end and no cell left as 'to be determined'."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Issued key management procedure with a completed row per key type covering generation, custody, distribution, recovery and destruction"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "List the distinct key types in use across the inventory — TLS, data-at-rest, signing, transport, tokenisation."
+              }
+            },
+            {
+              "text": {
+                "en": "For each key type name the generation method and the module or keystore that holds the material."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who is authorised to operate each key type and the route the material travels to reach the systems using it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the recovery or escrow arrangement that applies when the custodian is unavailable, and the destruction method."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every row's algorithm and key length against the policy table and correct whichever of the two documents is wrong."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the liability, reliability and response-time terms of each cryptographic supplier agreement"
+          },
+          "description": {
+            "en": "For every external supplier of cryptographic services the inventory names, pull the current contract or service level agreement and extract three things into a register: the liability position if key material is lost or exposed, the reliability or availability commitment for the key service, and the committed response time to a key compromise or revocation request. An agreement silent on any of the three is flagged as silent rather than scored — that flag list is the finding this task produces. Legal/DPO reads the liability wording. Where the inventory names no external custodian, record the nil return against it and attach that. Attach the register with the contract or SLA extracts it was built from."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Cryptographic supplier register giving liability, reliability and response-time terms per supplier, the contract or SLA extracts behind them, and the list of agreements silent on any of the three"
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Log every key generation, distribution, change, revocation and destruction"
+          },
+          "description": {
+            "en": "Each time a key is generated, distributed, changed, revoked or destroyed, write a record carrying the key identifier, the activity type, the system it serves, who requested it, who performed it and the date. Where a keystore or HSM emits its own audit trail, export that rather than re-keying it by hand, and cover separately the manual steps that leave no machine trace — a ceremony done offline is exactly the event the export will not contain. This record set is what demonstrates the procedure is being followed rather than merely written. Attach the key management activity log for the period under test."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Key management activity log or keystore/HSM audit export for the period, showing key identifier, activity, requester, operator and date per event"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Reconcile each system's live cryptographic configuration against the policy"
+          },
+          "description": {
+            "en": "Take the inventory row by row and read the cryptographic configuration actually in force from the system itself rather than from its documentation — documentation that agrees with the policy while the system does not is precisely the failure this task exists to catch. Compare what each system reports against the approved values in the policy and produce the compliance report the control calls for, carrying a pass or deviation verdict per system and, for every deviation, the accountable owner and the remediation they have agreed. Attach the report together with the raw configuration output it was derived from."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Cryptography compliance report listing every inventoried system with its observed algorithm, key length and mode, a pass or deviation verdict, and an owner plus remediation for each deviation"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the algorithm, key length and mode each inventoried system is actually running."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare every observed value against the approved algorithms and minimum key lengths in the policy."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each deviation with the affected system, the observed value and the accountable owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree a remediation per deviation and carry the unresolved ones into the report's conclusion."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "title": "Business Continuity Plan Documentation and Maintenance",
@@ -1531,7 +2558,115 @@
         "Supplier Management Policy"
       ],
       "code": "ICN-140",
-      "category": "Supplier Management"
+      "category": "Supplier Management",
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the contract security clause reference for every supplier on the register"
+          },
+          "description": {
+            "en": "Work through the Supplier Management Register and, for each supplier, open the executed contract or agreement and record where the information security requirements sit — clause number, document title and version — together with whether that clause states the requirements clearly enough to test a supplier against, or only refers to security in general terms. Where a supplier has no security clause at all, record 'no security clause'; where the executed version cannot be located, record 'contract not held' and ask Legal for the signed copy. The task is finished when every row on the register carries one of those three states and none is blank."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Supplier Management Register export showing, against every supplier row, a clause reference with a clarity note, or a 'no security clause' or 'contract not held' state"
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Record the assurance artifact expected from each supplier and the expiry of the copy held"
+          },
+          "description": {
+            "en": "Against each register entry, record which of the three assurance types we will accept from that supplier — an audit report, a security assessment, or a compliance certificate — naming the specific document (for example an ISO 27001 certificate covering the contracted service, or a completed security assessment questionnaire), and the expiry or report-period end date of the copy currently held. Where nothing has ever been received, record 'none held' rather than leaving the field empty, so the chase list can be filtered from the register itself. Security engineering decides which artifact is acceptable for the service being bought and is accountable for this entry; Procurement holds the register and enters the dates."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Register columns showing the expected assurance artifact and the expiry or report-period end date of the copy held, or 'none held', for every supplier"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Send and log the assurance evidence request for every supplier with a lapsed or missing artifact"
+          },
+          "description": {
+            "en": "Filter the register for suppliers whose assurance artifact is expired or marked 'none held', and send each one's named contact a written request for the artifact recorded against them. This task is finished when the request has been sent and logged for every supplier in that filter — not when the suppliers reply, which is not ours to complete. Against each supplier record the date sent, the contact addressed, and then either the artifact received or the escalation raised with the internal owner of that contract. The resulting log is that supplier's communication record and feeds the monitoring evaluation."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Request log listing supplier, contact addressed, date sent, and response or escalation status for each outstanding artifact"
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Log each supplier security incident and non-compliance against the supplier's register entry"
+          },
+          "description": {
+            "en": "For every security incident or non-compliance involving a supplier — a breach they notified, an outage affecting our data, a control failure found during assessment, or an expired certificate they declined to renew — add a dated entry to the supplier incident log carrying the supplier name, what happened, the action we took, and whether it is open or closed. Link each entry to the supplier's register row so repeat issues with one supplier are visible when the register is read."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Supplier incident and non-compliance log with dated entries, action taken, and open or closed status per supplier"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Compare each assurance artifact held against our security requirements and record the gaps"
+          },
+          "description": {
+            "en": "Take every certificate, audit report and completed assessment currently held and check it against the organisation's security standards as that supplier's contract clause imposes them. Judge the artifact, not the supplier's assurances: scope statements routinely exclude the service we actually buy, and a report can be in date while carrying exceptions against controls we rely on. Produce a comparison sheet giving each supplier a compliant, gap or expired verdict, naming the specific unmet requirement wherever the verdict is not compliant."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Supplier compliance comparison spreadsheet: supplier, artifact, verdict, and the named unmet requirement behind each gap"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Check the artifact's scope statement names the service or system we actually purchase."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the certificate or report period is still current at the date of review."
+              }
+            },
+            {
+              "text": {
+                "en": "List every exception, qualified opinion or user-entity control the report places back on us."
+              }
+            },
+            {
+              "text": {
+                "en": "Note where the artifact covers a different legal entity, region or subsidiary than the one we contract with."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record each supplier's last monitoring contact and the issues still open from it"
+          },
+          "description": {
+            "en": "For every supplier on the register, record the date and outcome of the most recent review meeting, service report or security correspondence held with them — the logged assurance requests count as correspondence — and whether the issues raised there, and any incident logged against that supplier, are now closed. State at the top of the report the window examined, because the control sets no review frequency: until the report says what period it covered, 'no contact recorded' means nothing. The two lists are the output — suppliers with no monitoring contact in that window, and suppliers with issues or incidents still open — and they are what show whether monitoring is running rather than merely scheduled."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Supplier monitoring evaluation report stating the window examined, the last contact date and outcome per supplier, and the lists of suppliers with no contact recorded and with issues or incidents still open"
+          },
+          "suggestedRole": "Procurement"
+        }
+      ]
     },
     {
       "title": "Information Security Continuity Control",

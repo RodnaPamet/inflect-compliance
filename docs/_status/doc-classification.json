@@ -1,6 +1,6 @@
 {
   "$schema": "internal: docs classification source of truth",
-  "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record; deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. NOTE: docs/implementation-notes/** is classified BY PATH (always historical) and must NOT appear in this map \u2014 adding an entry for one fails the ratchet. Only docs whose class is a real decision are listed here. See CLAUDE.md \"Doc classifications\". NOTE: this file deliberately carries no per-class `counts` header \u2014 it was derived data stored beside its own source, and two branches each incrementing it merged CLEANLY to a wrong number three times (#1798/#1803, then again in the 2026-08-16 batch). Count the entries.",
+  "description": "Classification of every docs/**/*.md. authoritative = true today; living = partially-shipped design direction; historical = moment-in-time record; deprecated = superseded redirect. Enforced by tests/guardrails/docs-accuracy.test.ts. NOTE: docs/implementation-notes/** is classified BY PATH (always historical) and must NOT appear in this map — adding an entry for one fails the ratchet. Only docs whose class is a real decision are listed here. See CLAUDE.md \"Doc classifications\". NOTE: this file deliberately carries no per-class `counts` header — it was derived data stored beside its own source, and two branches each incrementing it merged CLEANLY to a wrong number three times (#1798/#1803, then again in the 2026-08-16 batch). Count the entries.",
   "docs": {
     "docs/admin-rbac-scim.md": {
       "class": "authoritative"
@@ -381,6 +381,9 @@
       "class": "authoritative"
     },
     "docs/calendar-surface-do-not-touch.md": {
+      "class": "authoritative"
+    },
+    "docs/control-task-authoring.md": {
       "class": "authoritative"
     }
   }
