@@ -1,0 +1,182 @@
+[
+  {
+    "code": "NIS2-RA",
+    "title": "Risk analysis and information security policies",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(a)"
+    ]
+  },
+  {
+    "code": "NIS2-IH",
+    "title": "Incident handling procedures",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(b)"
+    ]
+  },
+  {
+    "code": "NIS2-BC",
+    "title": "Business continuity and crisis management",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(c)"
+    ]
+  },
+  {
+    "code": "NIS2-SC",
+    "title": "Supply chain security management",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(d)"
+    ]
+  },
+  {
+    "code": "NIS2-NS",
+    "title": "Network and information system security",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(e)"
+    ]
+  },
+  {
+    "code": "NIS2-EF",
+    "title": "Effectiveness assessment of cybersecurity measures",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(f)"
+    ]
+  },
+  {
+    "code": "NIS2-CH",
+    "title": "Cyber hygiene and security training",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(g)"
+    ]
+  },
+  {
+    "code": "NIS2-CR",
+    "title": "Cryptography and encryption policies",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(h)"
+    ]
+  },
+  {
+    "code": "NIS2-HR",
+    "title": "HR security and access control",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(i)"
+    ]
+  },
+  {
+    "code": "NIS2-MFA",
+    "title": "Multi-factor authentication and secured communications",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.21(2)(j)"
+    ]
+  },
+  {
+    "code": "NIS2-EW",
+    "title": "Early warning notification (24h)",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.23(1)"
+    ]
+  },
+  {
+    "code": "NIS2-IN",
+    "title": "Incident notification (72h)",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.23(2)"
+    ]
+  },
+  {
+    "code": "NIS2-FR",
+    "title": "Final incident report (1 month)",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.23(3)"
+    ]
+  },
+  {
+    "code": "NIS2-GO",
+    "title": "Management body cybersecurity oversight",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.20(1)"
+    ]
+  },
+  {
+    "code": "NIS2-TR",
+    "title": "Management cybersecurity training",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.20(2)"
+    ]
+  },
+  {
+    "code": "NIS2-CE",
+    "title": "Cybersecurity certification schemes",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.24(1)"
+    ]
+  },
+  {
+    "code": "NIS2-ST",
+    "title": "Standards and technical specifications",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.25"
+    ]
+  },
+  {
+    "code": "NIS2-DN",
+    "title": "Domain name registration accuracy",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.28(1)"
+    ]
+  },
+  {
+    "code": "NIS2-IS",
+    "title": "Information sharing arrangements",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.29(1)"
+    ]
+  },
+  {
+    "code": "NIS2-NS2",
+    "title": "National cybersecurity strategy compliance",
+    "category": "NIS2",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "Art.7(1)"
+    ]
+  }
+]

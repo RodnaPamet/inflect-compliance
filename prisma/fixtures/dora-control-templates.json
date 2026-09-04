@@ -1,0 +1,218 @@
+[
+  {
+    "code": "DORA-5",
+    "title": "ICT governance and management-body accountability",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.5"
+    ]
+  },
+  {
+    "code": "DORA-6",
+    "title": "ICT risk management framework",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.6"
+    ]
+  },
+  {
+    "code": "DORA-7",
+    "title": "ICT systems, protocols and tools",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.7"
+    ]
+  },
+  {
+    "code": "DORA-8",
+    "title": "Asset and dependency identification",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.8"
+    ]
+  },
+  {
+    "code": "DORA-9",
+    "title": "Protection and prevention controls",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.9"
+    ]
+  },
+  {
+    "code": "DORA-10",
+    "title": "Anomalous-activity detection",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.10"
+    ]
+  },
+  {
+    "code": "DORA-11",
+    "title": "Response and recovery / ICT business continuity",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.11"
+    ]
+  },
+  {
+    "code": "DORA-12",
+    "title": "Backup, restoration and recovery procedures",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.12"
+    ]
+  },
+  {
+    "code": "DORA-13",
+    "title": "Learning and evolving (post-incident review)",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.13"
+    ]
+  },
+  {
+    "code": "DORA-14",
+    "title": "Crisis communication",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.14"
+    ]
+  },
+  {
+    "code": "DORA-16",
+    "title": "Simplified ICT risk management framework",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.16"
+    ]
+  },
+  {
+    "code": "DORA-17",
+    "title": "ICT-related incident management process",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.17"
+    ]
+  },
+  {
+    "code": "DORA-18",
+    "title": "Incident classification",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.18"
+    ]
+  },
+  {
+    "code": "DORA-19",
+    "title": "Major-incident reporting to competent authority",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.19"
+    ]
+  },
+  {
+    "code": "DORA-23",
+    "title": "Payment-related operational/security incident handling",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.23"
+    ]
+  },
+  {
+    "code": "DORA-24",
+    "title": "Digital operational resilience testing programme",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.24"
+    ]
+  },
+  {
+    "code": "DORA-25",
+    "title": "Testing of ICT tools and systems",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.25"
+    ]
+  },
+  {
+    "code": "DORA-26",
+    "title": "Threat-led penetration testing (TLPT)",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.26"
+    ]
+  },
+  {
+    "code": "DORA-27",
+    "title": "TLPT tester suitability and independence",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.27"
+    ]
+  },
+  {
+    "code": "DORA-28",
+    "title": "ICT third-party risk strategy and Register of Information",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.28"
+    ]
+  },
+  {
+    "code": "DORA-29",
+    "title": "ICT concentration-risk assessment",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.29"
+    ]
+  },
+  {
+    "code": "DORA-30",
+    "title": "Key contractual provisions for ICT services",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.30"
+    ]
+  },
+  {
+    "code": "DORA-31",
+    "title": "Critical ICT third-party provider tracking",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.31"
+    ]
+  },
+  {
+    "code": "DORA-45",
+    "title": "Cyber threat information-sharing arrangements",
+    "category": "DORA",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "DORA.Art.45"
+    ]
+  }
+]

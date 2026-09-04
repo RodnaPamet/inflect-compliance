@@ -14,7 +14,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const seed = codeOf(fs.readFileSync(path.join(ROOT, 'prisma/seed.ts'), 'utf8'));
@@ -58,9 +58,45 @@ describe('policy-template coverage', () => {
         expect(missing).toEqual([]);
     });
 
-    it('seeds at least 25 policy templates', () => {
-        const count = (seed.match(/title:\s*'[^']+',\s*category:/g) ?? []).length;
-        expect(count).toBeGreaterThanOrEqual(25);
+    it('seeds at least 50 policy templates, counted from where they actually come from', () => {
+        // WHAT THIS USED TO DO, and why it was replaced. It ran
+        // `/title:\s*'[^']+',\s*category:/` over the WHOLE of seed.ts and
+        // asserted the count was >= 25. That needle is not specific to policy
+        // templates: it matched CONTROL templates too, and the assertion only
+        // ever passed because ten legacy control templates padded it. Moving
+        // those into a fixture dropped the number from 33 to 23 and turned
+        // this red — a guard failing because a control template moved, in a
+        // file about policies.
+        //
+        // The real count was never 25. The inline policy arrays hold 14
+        // between them; the other 47 come from three fixtures this scan could
+        // not see at all. So it was over-counting one population and blind to
+        // another, and both errors happened to cancel into a passing number.
+        //
+        // Counted from the actual sources now, and bound to the declarations
+        // rather than to the file.
+        const inline = ['policyTemplates', 'flagshipTemplates']
+            .map((name) => declarationOf(seed, name))
+            .reduce((n, block) => n + (block.match(/title:\s*'(?:[^'\\]|\\.)*'/g) ?? []).length, 0);
+
+        const fromFixtures = [
+            'policy-templates-ciso-toolkit.json',
+            'policy-templates-imported.json',
+            'policy-templates-original-gaps.json',
+        ].reduce((n, f) => {
+            const raw = JSON.parse(
+                fs.readFileSync(path.join(ROOT, 'prisma/fixtures', f), 'utf8'),
+            ) as unknown;
+            const list = Array.isArray(raw)
+                ? raw
+                : ((raw as { templates?: unknown[] }).templates ?? []);
+            return n + list.length;
+        }, 0);
+
+        // 14 inline + 47 fixture = 61 today. A floor, not an equality.
+        expect(inline).toBeGreaterThanOrEqual(14);
+        expect(fromFixtures).toBeGreaterThanOrEqual(45);
+        expect(inline + fromFixtures).toBeGreaterThanOrEqual(50);
     });
 
     it('contains NO JupiterOne CC-BY-SA placeholders (content is original, not copied)', () => {

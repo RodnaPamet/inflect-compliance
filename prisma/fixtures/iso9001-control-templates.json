@@ -1,0 +1,212 @@
+[
+  {
+    "code": "QMS-CTX",
+    "title": "Organizational context determination",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "4.1",
+      "4.2"
+    ]
+  },
+  {
+    "code": "QMS-SCP",
+    "title": "QMS scope definition",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "4.3"
+    ]
+  },
+  {
+    "code": "QMS-PRC",
+    "title": "QMS process management",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "4.4"
+    ]
+  },
+  {
+    "code": "QMS-LDR",
+    "title": "Leadership commitment and customer focus",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "5.1",
+      "5.1.2"
+    ]
+  },
+  {
+    "code": "QMS-POL",
+    "title": "Quality policy establishment",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "5.2"
+    ]
+  },
+  {
+    "code": "QMS-ROL",
+    "title": "Roles and responsibilities assignment",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "5.3"
+    ]
+  },
+  {
+    "code": "QMS-RSK",
+    "title": "Risk and opportunity management",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "6.1"
+    ]
+  },
+  {
+    "code": "QMS-OBJ",
+    "title": "Quality objectives planning",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "6.2"
+    ]
+  },
+  {
+    "code": "QMS-CHG",
+    "title": "Change planning",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "6.3"
+    ]
+  },
+  {
+    "code": "QMS-RES",
+    "title": "Resource management",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "7.1",
+      "7.1.5",
+      "7.1.6"
+    ]
+  },
+  {
+    "code": "QMS-CMP",
+    "title": "Competence and awareness",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "7.2",
+      "7.3"
+    ]
+  },
+  {
+    "code": "QMS-COM",
+    "title": "Communication management",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "7.4"
+    ]
+  },
+  {
+    "code": "QMS-DOC",
+    "title": "Documented information control",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "7.5"
+    ]
+  },
+  {
+    "code": "QMS-OPC",
+    "title": "Operational planning and control",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "8.1"
+    ]
+  },
+  {
+    "code": "QMS-REQ",
+    "title": "Product/service requirements",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "8.2"
+    ]
+  },
+  {
+    "code": "QMS-DES",
+    "title": "Design and development control",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "8.3"
+    ]
+  },
+  {
+    "code": "QMS-EXT",
+    "title": "External provider control",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "8.4"
+    ]
+  },
+  {
+    "code": "QMS-PRD",
+    "title": "Production and service provision",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "8.5",
+      "8.5.1",
+      "8.6",
+      "8.7"
+    ]
+  },
+  {
+    "code": "QMS-MON",
+    "title": "Performance monitoring and evaluation",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "9.1",
+      "9.1.2",
+      "9.1.3"
+    ]
+  },
+  {
+    "code": "QMS-AUD",
+    "title": "Internal audit program",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "9.2"
+    ]
+  },
+  {
+    "code": "QMS-MGR",
+    "title": "Management review",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "9.3"
+    ]
+  },
+  {
+    "code": "QMS-IMP",
+    "title": "Improvement and corrective action",
+    "category": "ISO9001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "10.1",
+      "10.2",
+      "10.3"
+    ]
+  }
+]

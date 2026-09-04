@@ -43,26 +43,36 @@ const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {
     'CIS-': 'CIS v8 IG1 (15). Its existing tasks are formulaic ("Implement IG1 safeguards for Control {n}").',
     'ASVS-': 'OWASP ASVS L1 (13). Same formulaic shape as CIS.',
     'PIMS-': 'ISO 27701 (10).',
+    'DORA-': 'DORA (24). Fixture extracted from seed.ts, no authored tasks yet.',
+    'QMS-': 'ISO 9001 (22). Fixture extracted from seed.ts, no authored tasks yet.',
+    'NIS2-': 'NIS2 (20). Fixture extracted from seed.ts, no authored tasks yet.',
+    'RTS-': 'ISO 39001 (17). Fixture extracted from seed.ts, no authored tasks yet.',
+    'SCS-': 'ISO 28000 (15). Fixture extracted from seed.ts, no authored tasks yet.',
+    'AC-': 'Legacy starter templates. Belong to no framework and carry ZERO tasks — the worst current state of any population.',
+    'IR-': 'Legacy starter templates.',
+    'RA-': 'Legacy starter templates.',
+    'CM-': 'Legacy starter templates.',
+    'SC-': 'Legacy starter templates.',
+    'BC-': 'Legacy starter templates.',
+    'SA-': 'Legacy starter templates.',
+    'AU-': 'Legacy starter templates.',
+    'VN-': 'Legacy starter templates.',
 };
 
 /**
- * Populations this scan CANNOT see, recorded so "the allowlist is empty" is
- * never mistaken for "every template is actionable".
+ * There are none left, and that is what the fixture-extraction PR was for.
  *
- * 98 templates are seeded from inline arrays in `prisma/seed.ts` and have no
- * fixture file at all — DORA (24), ISO 9001 (22), NIS2 (20), ISO 39001 (17),
- * ISO 28000 (15). They cannot be allowlisted by a fixture scan because the
- * scan has no record of them, and they cannot be held to the bar for the same
- * reason. Giving them fixtures is a prerequisite for their content PR, not an
- * afterthought of it.
+ * This slot held DORA (24), ISO 9001 (22), NIS2 (20), ISO 39001 (17) and ISO
+ * 28000 (15) — 98 templates declared as inline TypeScript arrays in
+ * `prisma/seed.ts`, which this scan had no way to see. They could be neither
+ * held to the bar nor honestly allowlisted, so "the allowlist is empty" would
+ * have certified nothing about them. They now have fixture files and appear in
+ * `LEGACY_GENERIC_ALLOWLIST` above like every other population.
+ *
+ * Kept as an empty record rather than deleted, because the assertion below is
+ * the thing that stops a future framework being added inline again.
  */
-export const UNSCANNABLE_INLINE_POPULATIONS = {
-    'DORA-': 24,
-    'QMS-': 22,
-    'NIS2-': 20,
-    'RTS-': 17,
-    'SCS-': 15,
-} as const;
+export const UNSCANNABLE_INLINE_POPULATIONS: Record<string, number> = {};
 
 /** Curated for this repo's subject matter. Extend deliberately. */
 const IMPERATIVE_VERBS = new Set([
@@ -211,14 +221,23 @@ describe('the allowlist is honest', () => {
     });
 
     it('sees the population it claims to guard', () => {
-        // 237 across six fixture files on the day this was written.
-        expect(allTemplates().length).toBeGreaterThanOrEqual(230);
+        // 345 across twelve fixture files, after the five inline frameworks and
+        // the legacy starter set were extracted. Was 237 across six.
+        expect(allTemplates().length).toBeGreaterThanOrEqual(340);
     });
 
     it('records how much is still exempt, so progress is visible', () => {
         // A downward ratchet. Each content PR deletes its prefix here in the
         // same diff that authors the content; at zero, every shipped template
         // is held to the bar and this whole allowlist is deleted.
-        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(6);
+        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(20);
+    });
+
+    it('no framework is seeded from an inline array any more', () => {
+        // The reason the five extractions happened. A framework declared
+        // inline in seed.ts is invisible to every fixture-reading tool: a
+        // content PR cannot author into it and this ratchet cannot see it, so
+        // it would sit outside the bar without ever appearing to.
+        expect(UNSCANNABLE_INLINE_POPULATIONS).toEqual({});
     });
 });

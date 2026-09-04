@@ -1,0 +1,161 @@
+[
+  {
+    "code": "RTS-CTX",
+    "title": "Organization context and interested parties",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "4.1",
+      "4.2"
+    ]
+  },
+  {
+    "code": "RTS-SCP",
+    "title": "RTS management system scope",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "4.3",
+      "4.4"
+    ]
+  },
+  {
+    "code": "RTS-LDR",
+    "title": "Leadership and RTS policy",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "5.1",
+      "5.2"
+    ]
+  },
+  {
+    "code": "RTS-ROL",
+    "title": "RTS roles and authorities",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "5.3"
+    ]
+  },
+  {
+    "code": "RTS-RSK",
+    "title": "RTS risk and opportunity management",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "6.1"
+    ]
+  },
+  {
+    "code": "RTS-OBJ",
+    "title": "RTS performance factors and objectives",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "6.2"
+    ]
+  },
+  {
+    "code": "RTS-CHG",
+    "title": "RTS change planning",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "6.3"
+    ]
+  },
+  {
+    "code": "RTS-RES",
+    "title": "Resource and competence management",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "7.1",
+      "7.2",
+      "7.3"
+    ]
+  },
+  {
+    "code": "RTS-COM",
+    "title": "Communication management",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "7.4"
+    ]
+  },
+  {
+    "code": "RTS-DOC",
+    "title": "Documented information",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "7.5"
+    ]
+  },
+  {
+    "code": "RTS-OPC",
+    "title": "Operational planning and control",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "8.1"
+    ]
+  },
+  {
+    "code": "RTS-EMR",
+    "title": "Emergency preparedness and response",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "8.2"
+    ]
+  },
+  {
+    "code": "RTS-MON",
+    "title": "Performance monitoring and evaluation",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "9.1"
+    ]
+  },
+  {
+    "code": "RTS-INV",
+    "title": "Crash and incident investigation",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "9.2"
+    ]
+  },
+  {
+    "code": "RTS-AUD",
+    "title": "Internal audit program",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "9.3"
+    ]
+  },
+  {
+    "code": "RTS-MGR",
+    "title": "Management review",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "9.4"
+    ]
+  },
+  {
+    "code": "RTS-IMP",
+    "title": "Improvement and corrective action",
+    "category": "ISO39001",
+    "defaultFrequency": "QUARTERLY",
+    "requirements": [
+      "10.1",
+      "10.2"
+    ]
+  }
+]

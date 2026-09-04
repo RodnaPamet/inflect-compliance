@@ -1,0 +1,72 @@
+[
+  {
+    "code": "AC-01",
+    "title": "Access Control Policy",
+    "category": "Access Control",
+    "description": "Define and enforce access control policies.",
+    "defaultFrequency": "ANNUALLY"
+  },
+  {
+    "code": "AC-02",
+    "title": "Account Management",
+    "category": "Access Control",
+    "description": "Manage user accounts lifecycle.",
+    "defaultFrequency": "QUARTERLY"
+  },
+  {
+    "code": "IR-01",
+    "title": "Incident Response Plan",
+    "category": "Incident Management",
+    "description": "Establish incident response plan.",
+    "defaultFrequency": "ANNUALLY"
+  },
+  {
+    "code": "RA-01",
+    "title": "Risk Assessment",
+    "category": "Risk Management",
+    "description": "Conduct regular risk assessments.",
+    "defaultFrequency": "ANNUALLY"
+  },
+  {
+    "code": "CM-01",
+    "title": "Change Management",
+    "category": "Operations",
+    "description": "Control changes to production systems.",
+    "defaultFrequency": "MONTHLY"
+  },
+  {
+    "code": "SC-01",
+    "title": "System Protection",
+    "category": "Technical",
+    "description": "Protect communications and enforce encryption.",
+    "defaultFrequency": "QUARTERLY"
+  },
+  {
+    "code": "BC-01",
+    "title": "Business Continuity",
+    "category": "Business Continuity",
+    "description": "Maintain BC plans.",
+    "defaultFrequency": "ANNUALLY"
+  },
+  {
+    "code": "SA-01",
+    "title": "Security Awareness",
+    "category": "Human Resource",
+    "description": "Security training for employees.",
+    "defaultFrequency": "ANNUALLY"
+  },
+  {
+    "code": "AU-01",
+    "title": "Audit Logging",
+    "category": "Operations",
+    "description": "Audit logging and monitoring.",
+    "defaultFrequency": "MONTHLY"
+  },
+  {
+    "code": "VN-01",
+    "title": "Vendor Risk Management",
+    "category": "Supply Chain",
+    "description": "Assess vendor security risks.",
+    "defaultFrequency": "ANNUALLY"
+  }
+]
