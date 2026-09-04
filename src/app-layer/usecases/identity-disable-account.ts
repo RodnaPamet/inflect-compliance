@@ -28,6 +28,9 @@
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
+import { sanitizePlainText } from '@/lib/security/sanitize';
+import { appendAuditEntry } from '@/lib/audit';
+import { validateAuditDetailsJson } from '@/app-layer/schemas/json-columns.schemas';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -35,15 +38,13 @@ import {
     type WriteTarget,
     type WriteTargetBasis,
 } from './identity-write-target';
-import { beginWrite } from './identity-write-journal';
+import { beginWrite, settleIndeterminateAsApplied, type WriteHandle } from './identity-write-journal';
 import { getIdentityWritePolicy, type IdentityWriteMode } from './identity-write-policy';
 import { checkDisableBlastRadius } from './identity-write-breaker';
 import {
     recordIdentityBatchRefused,
     recordIdentityWriteOutcome,
-    recordIdentityWritesUnsettled,
 } from '@/lib/observability/integration-metrics';
-import { settleIndeterminateAsApplied } from './identity-write-journal';
 import {
     buildLeaverAudienceBook,
     notifyLeaverOutcome,
@@ -161,6 +162,23 @@ export interface DisableResult {
     readonly journalId?: string;
     /** Present only on `REFUSED_PROTECTED`. See `ProtectionBasis`. */
     readonly protection?: ProtectionBasis;
+    /**
+     * The rung this candidate was authorised at.
+     *
+     * Absent on the three refusals decided BEFORE the ladder is read
+     * (self-account, protected, and the ladder's own refusal) — same rule as
+     * `basis`, and for the same reason: stamping a value on a decision that
+     * never consulted it would be a claim about a rule that did not run.
+     */
+    readonly mode?: IdentityWriteMode;
+    /**
+     * FALSE only when the journal settle itself failed.
+     *
+     * The distinction it carries is the one an operator most needs and the
+     * outcome alone cannot express: the directory write is KNOWN, the RECORD
+     * of it is not. Absent means settled, or that there was no row to settle.
+     */
+    readonly journalSettled?: boolean;
     /**
      * Present on every outcome the write-target rail participated in, absent on
      * the refusals decided before it (self-lockout, protected, mode).
@@ -337,6 +355,43 @@ export interface DisableAccountInput {
  */
 function scrubbed(detail: string, externalUserId: string): string {
     return redactDirectoryIdentifiers(detail, externalUserId);
+}
+
+/**
+ * Settle a journal row without letting the settle fail the offboarding.
+ *
+ * The three settles used to be bare `await`s. That put an ordinary DB round
+ * trip on the failure path of a directory write that had ALREADY happened: a
+ * pool blip after `writer.disable()` returned threw out of the write's own try,
+ * reached the batch catch-all, and the account came back INDETERMINATE — a
+ * claim of ignorance about a directory we had just successfully changed.
+ *
+ * Catching it converts that into the true statement. The outcome stays what the
+ * directory did; `journalSettled: false` carries the part that is actually
+ * unknown, which is the RECORD. That pairing is the thing #2285 step 2 tells an
+ * operator to watch for, and before this it had no way to be expressed.
+ */
+async function settleQuietly(
+    ctx: RequestContext,
+    handle: WriteHandle,
+    settle: (h: WriteHandle) => Promise<void>,
+    intendedOutcome: string,
+): Promise<boolean> {
+    try {
+        await settle(handle);
+        return true;
+    } catch (err) {
+        logger.error('directory write could not be settled in the journal', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            // The journal id, never the directory identifier — this line is
+            // neither encrypted nor tenant-scoped.
+            journalId: handle.journalId,
+            intendedOutcome,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+    }
 }
 
 /** Case- and whitespace-insensitive identity comparison for directory ids. */
@@ -527,6 +582,13 @@ async function decideAndDisable(
     // on such a row would describe a rule that never ran.
     return {
         ...(await decideWithTarget(ctx, writer, input, policy.mode, target)),
+        // Merged HERE for the same reason as `basis` directly below: one merge
+        // point over the whole tail, so a ninth return added later inherits it
+        // rather than having to remember. Reading it off the policy the pass
+        // actually consulted — rather than threading a batch-level mode through
+        // `LeaverBatchInput` — also keeps it per-candidate, so a mode that
+        // changed mid-batch cannot make the audit row disagree with the write.
+        mode: policy.mode,
         basis: {
             rule: target.basis,
             onPremisesSyncEnabled: input.onPremisesSyncEnabled,
@@ -722,7 +784,7 @@ async function decideWithTarget(
         // INDETERMINATE), so the captured prior state becomes unreachable and
         // nobody is told to look.
         if (provenNotApplied(err)) {
-            await handle.failed(detail);
+            const settled = await settleQuietly(ctx, handle, (h) => h.failed(detail), 'FAILED');
             logger.error('leaver disable refused by provider', {
                 component: 'identity-disable-account',
                 tenantId: ctx.tenantId,
@@ -731,23 +793,28 @@ async function decideWithTarget(
                 journalId: handle.journalId,
                 error: scrubbed(detail, input.externalUserId),
             });
-            return { outcome: 'FAILED', reason: detail, journalId: handle.journalId };
+            return { outcome: 'FAILED', reason: detail, journalId: handle.journalId, journalSettled: settled };
         }
 
-        await handle.indeterminate(detail);
+        const settled = await settleQuietly(ctx, handle, (h) => h.indeterminate(detail), 'INDETERMINATE');
         logger.error('leaver disable outcome UNKNOWN — verify in the directory', {
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
             provider: writer.provider,
             linkId: input.linkId,
             journalId: handle.journalId,
-            error: detail,
+            error: scrubbed(detail, input.externalUserId),
         });
-        return { outcome: 'INDETERMINATE', reason: detail, journalId: handle.journalId };
+        return { outcome: 'INDETERMINATE', reason: detail, journalId: handle.journalId, journalSettled: settled };
     }
 
-    await handle.applied();
-    return { outcome: 'DISABLED', journalId: handle.journalId };
+    const settled = await settleQuietly(ctx, handle, (h) => h.applied(), 'APPLIED');
+    // DISABLED even when the settle failed, and that is deliberate.
+    // `writer.disable()` returned without throwing, so the directory DID change.
+    // Reporting INDETERMINATE here would be a false claim of ignorance that
+    // sends an operator to check an account which is provably off. What is
+    // unknown is the record, and that is what `journalSettled` says.
+    return { outcome: 'DISABLED', journalId: handle.journalId, journalSettled: settled };
 }
 
 export interface LeaverBatchInput {
@@ -765,6 +832,131 @@ export interface LeaverBatchInput {
  * applied batch would perform some of a probably-wrong action and hide the
  * anomaly behind a number that looks deliberate.
  */
+/** Hard ceiling on provider text copied into an immutable row. */
+const MAX_AUDIT_REASON_CHARS = 300;
+
+/**
+ * The audit action for each outcome.
+ *
+ * EXHAUSTIVE over `DisableOutcome` on purpose: a new member fails the build
+ * here until somebody decides what it is called. A `Record<string, string>`
+ * would have accepted it silently and audited it as `undefined`.
+ */
+const DISABLE_AUDIT_ACTION: Readonly<Record<DisableOutcome, string>> = {
+    DISABLED: 'IDENTITY_ACCOUNT_DISABLED',
+    FAILED: 'IDENTITY_ACCOUNT_DISABLE_FAILED',
+    INDETERMINATE: 'IDENTITY_ACCOUNT_DISABLE_UNCONFIRMED',
+    ALREADY_DISABLED: 'IDENTITY_ACCOUNT_DISABLE_RECONCILED',
+    DRY_RUN: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
+    REFUSED_MODE: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
+    REFUSED_TARGET: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
+    REFUSED_PROTECTED: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
+};
+
+/** The batch catch-all. Not an outcome — `disableAccount` never returns it. */
+const ERRORED_ACTION = 'IDENTITY_ACCOUNT_DISABLE_ERRORED';
+
+/**
+ * Write the hash-chained record of a directory write.
+ *
+ * WHY THIS EXISTS. Disabling a person's account in a customer's directory is
+ * the highest-blast-radius thing this product does, and until now it wrote no
+ * `AuditLog` row at all — while MARKING that same account protected wrote two.
+ * An auditor could see the flag and never the act.
+ *
+ * WHAT IS AUDITED, as one predicate rather than a list of outcomes: a row is
+ * written iff `beginWrite` succeeded (so `journalId` exists, so a write was
+ * ISSUED) or the candidate threw. That admits the confirmed disable, the
+ * provider-refused FAILED, the lost-response INDETERMINATE and the
+ * ALREADY_DISABLED that actually reconciled a row — and excludes every refusal
+ * decided before the network, which already lands an `IntegrationExecution`
+ * row naming its reason. Copying those into an append-only chain would dilute
+ * a log whose whole value is that every row is a real act against a directory.
+ * A future outcome inherits the right default.
+ *
+ * WHY `appendAuditEntry` AND NOT `logEvent`. `logEvent` passes `ctx.userId`
+ * straight through, and a scheduled pass runs under `buildSystemContext`,
+ * whose `userId` is the literal `SYSTEM_PRINCIPAL` — which is not a real
+ * `User.id`. `AuditLog.userId` is FK-constrained to `User`, so that write
+ * would violate the constraint, throw, be swallowed by the catch below, and
+ * record NOTHING while looking like it worked. Production bears this out: no
+ * `User` row with that id exists, zero audit rows carry it, and 1006 rows
+ * carry `userId: null` instead. `validateAuditDetailsJson` is therefore called
+ * here explicitly — it is the one thing `logEvent` does that is worth keeping.
+ *
+ * WHY IT CANNOT FAIL THE OFFBOARDING. Everything is inside one try. An audit
+ * sink that is down must not leave a leaver enabled; the write has already
+ * happened by the time this runs, and refusing to record it does not un-happen
+ * it. A failure is logged loudly and the batch continues.
+ */
+async function auditDirectoryWrite(
+    ctx: RequestContext,
+    writer: DirectoryWriter,
+    candidate: DisableAccountInput,
+    result: DisableResult,
+    threw: boolean,
+): Promise<void> {
+    if (!threw && !result.journalId) return;
+
+    const reason = redactDirectoryIdentifiers(
+        sanitizePlainText(result.reason ?? '').trim(),
+        candidate.externalUserId,
+    ).slice(0, MAX_AUDIT_REASON_CHARS);
+
+    // TRI-STATE, and `null` is the honest answer rather than a missing field.
+    // A throw escaping `disableAccount` proves nothing about the directory: the
+    // likeliest causes are `getIdentityWritePolicy` and `beginWrite`, both plain
+    // DB round trips that happen BEFORE any directory contact. Saying "attempted
+    // and unconfirmed" here would put up to fifty uncorrectable rows in an
+    // immutable table claiming the product may have disabled people it never
+    // reached. The journal is authoritative on that question; this field defers.
+    const writeAttempted = threw ? null : result.outcome !== 'ALREADY_DISABLED';
+    const action = threw ? ERRORED_ACTION : DISABLE_AUDIT_ACTION[result.outcome];
+
+    try {
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            // NOT ctx.userId — see the docblock. FK-constrained, and the pass
+            // has no User behind it.
+            userId: null,
+            // 'SYSTEM' rather than ctx.actorType ('JOB'). Both describe a
+            // machine, but 1958 production rows use SYSTEM and none use JOB,
+            // and this column is hashed into the chain AND streamed to customer
+            // SIEMs — a fourth value is a parsing change for a consumer we
+            // cannot see, bought for nothing.
+            actorType: 'SYSTEM',
+            entity: 'IdentityAccountLink',
+            entityId: candidate.linkId,
+            action,
+            details: null,
+            detailsJson: validateAuditDetailsJson({
+                category: 'access',
+                entityName: 'IdentityAccountLink',
+                operation: 'permission_changed',
+                event: action,
+                provider: writer.provider,
+                outcome: threw ? 'ERRORED' : result.outcome,
+                writeAttempted,
+                mode: result.mode ?? null,
+                journalId: result.journalId ?? null,
+                journalUnsettled: result.journalSettled === false,
+                ...(result.basis?.rule ? { targetRule: result.basis.rule } : {}),
+                ...(reason ? { reason } : {}),
+            }),
+        });
+    } catch (err) {
+        logger.error('directory write happened but could not be audited', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+            linkId: candidate.linkId,
+            action,
+            journalId: result.journalId ?? null,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
 export async function disableAccountsForLeaver(
     ctx: RequestContext,
     writer: DirectoryWriter,
@@ -833,16 +1025,22 @@ export async function disableAccountsForLeaver(
         // batch, with no record of which half, is the shape of outage this is
         // least able to explain afterwards.
         let result: DisableResult;
+        let threw = false;
         try {
             result = await disableAccount(ctx, writer, candidate);
         } catch (err) {
+            threw = true;
             const detail = err instanceof Error ? err.message : String(err);
             logger.error('leaver disable threw unexpectedly; continuing the batch', {
                 component: 'identity-disable-account',
                 tenantId: ctx.tenantId,
                 provider: writer.provider,
-                externalUserId: candidate.externalUserId,
-                error: detail,
+                // The opaque link id, never the directory identifier — the same
+                // rule this module states at the self-account refusal above.
+                // This line is neither encrypted nor tenant-scoped, and the
+                // provider's own message routinely echoes the account.
+                linkId: candidate.linkId,
+                error: scrubbed(detail, candidate.externalUserId),
             });
             // INDETERMINATE, not FAILED. FAILED is a POSITIVE claim that the
             // directory is unchanged (see the outcome's own doc above), and it
@@ -861,6 +1059,13 @@ export async function disableAccountsForLeaver(
             result = { outcome: 'INDETERMINATE', reason: detail };
         }
         results.push({ ...result, linkId: candidate.linkId });
+
+        // The hash-chained record, written BEFORE the notification: of the two
+        // ways to tell somebody what happened, the immutable one is the one
+        // that must not be lost to a failure in the other. `auditDirectoryWrite`
+        // owns both the admission rule and its own try — it cannot throw, and
+        // it writes nothing for a decision that asked the directory for nothing.
+        await auditDirectoryWrite(ctx, writer, candidate, result, threw);
 
         // Tell the people who need to know — which is NOT everyone, on NOT
         // every outcome. `notifyLeaverOutcome` owns that decision and is

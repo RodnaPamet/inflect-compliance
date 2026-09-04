@@ -61,6 +61,12 @@ const mockDb = {
     // this key would leave the whole feature dead with the suite green. The
     // assertions below are positive for exactly that reason.
     integrationExecution: { create: jest.fn() },
+    // The unsettled-write backlog, read at the HEAD of every pass — before the
+    // ladder, so it is reported even by the two refusals that write no row.
+    // Same argument as the comment above: the read is wrapped so it cannot fail
+    // a pass, which means a mock missing this key would leave every assertion
+    // green while the reader threw on every call.
+    identityWriteJournal: { findMany: jest.fn() },
 };
 
 const NOW = new Date('2026-08-20T09:00:00.000Z');
@@ -79,6 +85,8 @@ beforeEach(() => {
     resolveWriter.mockResolvedValue({ kind: 'snapshot', writer: { provider: 'entra-id' }, close });
     disableBatch.mockResolvedValue({ results: [{ outcome: 'DRY_RUN', linkId: 'l1' }] });
     mockDb.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
+    // Default: nothing stranded. Tests that care override it.
+    mockDb.identityWriteJournal.findMany.mockResolvedValue([]);
 });
 
 describe('the durable record a dry run leaves behind', () => {
@@ -584,5 +592,70 @@ describe('it never throws', () => {
 
         expect(r).toMatchObject({ status: 'ERROR', errorMessage: 'settings read failed' });
         expect(passMetric).toHaveBeenCalledWith({ provider: 'entra-id', outcome: 'error' });
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The unsettled-write backlog (#2291)
+//
+// `listUnsettledWrites` shipped with NO caller, so a row stranded by a worker
+// killed mid-batch stayed PENDING for ever and `identity.write.unsettled` —
+// whose docblock says ALERT ON — could never be emitted, its only call site
+// being inside the function nobody called.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the backlog of writes nobody confirmed', () => {
+    it('is read on every pass, INCLUDING the ladder refusal that writes no row', async () => {
+        // The tenant narrowed back to DISABLED after an incident is exactly when
+        // rows strand and exactly when nothing else looks: this refusal returns
+        // before any IntegrationExecution row is written.
+        getPolicy.mockResolvedValue({ leaver: { mode: 'DISABLED' }, joiner: { mode: 'DISABLED' } });
+
+        const r = await runIdentityLeaverPass({ tenantId: 't1', provider: 'entra-id', now: NOW });
+
+        expect(r.refusal).toBe('MODE_DISABLED');
+        expect(mockDb.integrationExecution.create).not.toHaveBeenCalled();
+        expect(mockDb.identityWriteJournal.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('scopes the read to this provider, so a two-provider tenant is not counted twice', async () => {
+        // The dispatcher fans out one job per (tenant, provider) and the
+        // counter's only label is the tenant.
+        await runIdentityLeaverPass({ tenantId: 't1', provider: 'entra-id', now: NOW });
+        const where = mockDb.identityWriteJournal.findMany.mock.calls[0][0].where;
+        expect(where.provider).toBe('entra-id');
+        expect(where.outcome).toEqual({ in: ['PENDING', 'INDETERMINATE'] });
+    });
+
+    it('never selects a directory identifier or the encrypted detail', async () => {
+        // The count is persisted into IntegrationExecution.resultJson, which is
+        // NOT encrypted at rest. Leaving the columns unselected makes that
+        // structural rather than a matter of the caller remembering.
+        await runIdentityLeaverPass({ tenantId: 't1', provider: 'entra-id', now: NOW });
+        const select = mockDb.identityWriteJournal.findMany.mock.calls[0][0].select;
+        expect(select.externalUserId).toBeUndefined();
+        expect(select.detail).toBeUndefined();
+        expect(select.linkId).toBe(true);
+    });
+
+    it('reports the count on the pass record', async () => {
+        mockDb.identityWriteJournal.findMany.mockResolvedValue([
+            { id: 'j1', linkId: 'l9', outcome: 'PENDING' },
+            { id: 'j2', linkId: 'l8', outcome: 'INDETERMINATE' },
+        ]);
+        await runIdentityLeaverPass({ tenantId: 't1', provider: 'entra-id', now: NOW });
+        const row = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(row.resultJson.unsettledOnEntry).toBe(2);
+    });
+
+    it('a failed read reports null, not zero, and does not fail the pass', async () => {
+        // "The read failed" and "the backlog is clear" are different facts and
+        // only one of them needs a human.
+        mockDb.identityWriteJournal.findMany.mockRejectedValue(new Error('pool exhausted'));
+
+        const r = await runIdentityLeaverPass({ tenantId: 't1', provider: 'entra-id', now: NOW });
+
+        expect(r.status).not.toBe('ERROR');
+        const row = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(row.resultJson.unsettledOnEntry).toBeNull();
     });
 });

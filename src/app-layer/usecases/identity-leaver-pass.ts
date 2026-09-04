@@ -73,6 +73,7 @@ import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
 import { getIdentityWritePolicy } from './identity-write-policy';
+import { listUnsettledWrites } from './identity-write-journal';
 import { OBSERVATION_FRESHNESS_MS } from './identity-write-target';
 import { isAboveClamp } from '@/lib/identity/write-ladder';
 import {
@@ -482,6 +483,69 @@ function refused(
  * fan-out over tenants and one tenant's broken connection must not end the run
  * for the rest.
  */
+/**
+ * How stale an unsettled row must be before it counts as stranded.
+ *
+ * A row is minted and settled within the same candidate, seconds apart, so
+ * anything unsettled for an hour was left behind rather than being in flight.
+ * The window is generous on purpose: this read runs at the HEAD of the pass,
+ * before any row of its own exists, so its only real job is to avoid counting
+ * a concurrent pass's in-flight write on a tenant running two providers.
+ */
+const UNSETTLED_STALE_MS = 60 * 60 * 1000;
+
+/**
+ * Count the directory writes nobody ever confirmed, and emit the metric.
+ *
+ * WHY AT THE HEAD OF THE PASS. `listUnsettledWrites` shipped with no caller at
+ * all, which left the capture-before-write rail invisible: a row stranded by a
+ * worker killed mid-batch stayed PENDING for ever, no page read it, and
+ * `identity.write.unsettled` — whose docblock says ALERT ON — could never be
+ * emitted, because its only call site is inside the function nobody called.
+ *
+ * Reading here rather than beside the write means it runs before EVERY early
+ * return, including the two ladder refusals that write no execution row. That
+ * matters most for the tenant narrowed back to DISABLED after an incident,
+ * which is exactly when rows strand and exactly when nothing else would look.
+ *
+ * Provider-scoped, because the dispatcher fans out one job per (tenant,
+ * provider) and the counter's only label is the tenant — unscoped, a
+ * two-provider tenant would report its backlog twice under one series.
+ *
+ * Never throws: an observability read must not be able to stop an offboarding.
+ * Returns null when it could not read, which is NOT the same as zero and is
+ * carried into the report as such.
+ */
+async function readUnsettledBacklog(
+    ctx: RequestContext,
+    provider: string,
+    now: Date,
+): Promise<number | null> {
+    try {
+        const rows = await listUnsettledWrites(ctx, new Date(now.getTime() - UNSETTLED_STALE_MS), provider);
+        if (rows.length > 0) {
+            logger.warn('directory writes are still unconfirmed from an earlier pass', {
+                component: 'identity-leaver-pass',
+                tenantId: ctx.tenantId,
+                provider,
+                unsettled: rows.length,
+                // Opaque handles only — this line is not encrypted, and the
+                // reader's projection deliberately carries no directory id.
+                linkIds: rows.map((r) => r.linkId).filter(Boolean).slice(0, 10),
+            });
+        }
+        return rows.length;
+    } catch (err) {
+        logger.error('could not read the unsettled-write backlog', {
+            component: 'identity-leaver-pass',
+            tenantId: ctx.tenantId,
+            provider,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+    }
+}
+
 export async function runIdentityLeaverPass(input: {
     tenantId: string;
     provider: string;
@@ -493,6 +557,11 @@ export async function runIdentityLeaverPass(input: {
     const ctx = buildSystemContext({ tenantId: input.tenantId, job: 'identity-leaver-pass' });
 
     try {
+        // ── 0. What did an earlier pass leave unconfirmed? Read FIRST, so it is
+        // reported even when the ladder refuses below and no execution row is
+        // written at all. Cannot throw; see the helper.
+        const unsettledOnEntry = await readUnsettledBacklog(ctx, input.provider, now);
+
         // ── 1. The ladder. Cheapest gate, and the one that must never be skipped.
         const policy = await getIdentityWritePolicy(ctx);
         const mode = policy.leaver.mode;
@@ -622,6 +691,7 @@ export async function runIdentityLeaverPass(input: {
                 candidates: candidates.length,
                 population,
                 batchRefused: outcome.refused ?? null,
+                unsettledOnEntry,
                 counts,
             });
 
@@ -639,6 +709,11 @@ export async function runIdentityLeaverPass(input: {
                     {
                         mode,
                         evidence: resolution.kind,
+                        // A COUNT, never the rows: the reader's projection
+                        // carries no directory identifier and this column is
+                        // not encrypted at rest. `null` means the read itself
+                        // failed, which is not the same fact as zero.
+                        unsettledOnEntry,
                         terminatedWorkers: terminated.length,
                         candidates: candidates.length,
                         population,

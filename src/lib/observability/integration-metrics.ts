@@ -281,9 +281,17 @@ export function recordIdentityBatchRefused(attrs: {
  *
  * `listUnsettledWrites` existed with NO caller, which made the whole
  * capture-before-write rail invisible in production — a rail nobody can see is
- * one nobody acts on.
+ * one nobody acts on. It has one now: `readUnsettledBacklog` at the head of
+ * `runIdentityLeaverPass`, which runs before every early return.
  *
- * ALERT ON — a sustained non-zero.
+ * READ THE INSTRUMENT BEFORE WRITING THE ALERT. This is a monotonic Counter
+ * fed a LEVEL: three rows stranded and never resolved add +3 every night, so
+ * the sum only ever climbs and can never say "the backlog is clear" — only
+ * "it stopped growing".
+ *
+ * ALERT ON — `increase(identity_write_unsettled_total[2d]) > 0`.
+ * NOT on `> 0`, which is satisfied for ever after the first stranded row and
+ * would be a permanently-firing alert nobody can silence honestly.
  */
 export function recordIdentityWritesUnsettled(attrs: { tenantId: string; count: number }): void {
     getMeter()
