@@ -113,6 +113,25 @@ describe('API Key Scopes — scopesToPermissions', () => {
         expect(perms).toEqual(adminPerms);
     });
 
+    it('full access (*) still does NOT reach the two OWNER-only actions', () => {
+        // The consequence of the assertion above, named rather than implied.
+        // `perms === ADMIN` is a shape fact; a reader has to already know that
+        // ADMIN denies these to get the security property out of it — and the
+        // module docblock got it exactly backwards for that reason, telling
+        // operators a `*` key "still reaches them" and is therefore the grant to
+        // make consciously. It reaches neither. Deleting a tenant, rotating a
+        // DEK and managing OWNERs need a real OWNER session; no bearer token,
+        // however scoped, can do them.
+        const star = scopesToPermissions(['*']);
+        expect(star.admin.tenant_lifecycle).toBe(false);
+        expect(star.admin.owner_management).toBe(false);
+        // Paired positive, so it cannot pass on a permission set that denies
+        // everything — `*` really is the widest key there is.
+        expect(star.admin.manage).toBe(true);
+        // And the contrast that makes the point: OWNER has them.
+        expect(getPermissionsForRole('OWNER').admin.tenant_lifecycle).toBe(true);
+    });
+
     it('controls:read grants only controls.view', () => {
         const perms = scopesToPermissions(['controls:read']);
         expect(perms.controls.view).toBe(true);

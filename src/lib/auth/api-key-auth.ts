@@ -90,8 +90,21 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  * `admin.compliance_dsar_*` and `reports.schedule_external`. Deleting
  * the tenant, rotating the DEK, managing OWNERs, moving DSARs, and
  * aiming a standing report feed off-tenant are not things a bearer
- * token should be able to do; a `*` key still reaches them, and that
- * is the one grant an operator has to make consciously.
+ * token should be able to do.
+ *
+ * NOT EVEN `*`. This paragraph used to end "a `*` key still reaches
+ * them, and that is the one grant an operator has to make
+ * consciously", which is false: `*` returns
+ * `getPermissionsForRole('ADMIN')` below, and ADMIN denies
+ * `tenant_lifecycle` and `owner_management` explicitly
+ * (`permissions.ts` — OWNER is the only role that carries them). The
+ * error was safe in direction — it overstated what a key grants — but
+ * it described the security model wrongly, and automation planned
+ * against it earns a 403. There is NO bearer token for these actions;
+ * they need a real OWNER session. Pinned by the `*` case in
+ * `tests/unit/api-key-management.test.ts`, which now asserts the
+ * denial rather than only that `*` equals ADMIN — a shape assertion
+ * that stayed green all the while this comment said the opposite.
  */
 const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     controls:   { read: ['view'], write: ['create', 'edit'] },
