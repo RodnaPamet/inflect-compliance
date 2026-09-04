@@ -201,6 +201,7 @@ a `userId` but stores no contact PII).
 | `RiskSnapshot` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `RiskSuggestionItem` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `RiskSuggestionSession` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
+| `RegisteredAgent` | Business record | No | Soft-delete (`deletedAt`) — **NOT** auto-purged; `RESTRICT` from `AgentProposal`/`WorkflowRun` so an agent with attributed work cannot be hard-deleted; `description` encrypted (Epic B) | The register of which autonomous agents held what authority, and who was accountable. Deliberately long-lived: an incident review months later asks exactly this. `RETIRED`/`SUSPENDED` are lifecycle states, not deletions. Soft-deleted rows **not auto-purged** — same gap as `AiSystem`. Names an accountable person via `ownerUserId` |
 | `AgentProposal` | Operational | No | None today — cascade on tenant delete only | No TTL today — pending/rejected proposals are candidates for time-boxed prune |
 | `WorkflowRun` | Operational | maybe | None today — cascade on tenant delete only | No TTL today — completed/failed runs are candidates for time-boxed prune |
 | `WorkflowStep` | Operational | maybe | None today — cascade on run/tenant delete only | No TTL today — the run's append-only step narrative |

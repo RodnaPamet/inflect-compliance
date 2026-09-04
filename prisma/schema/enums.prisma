@@ -1471,3 +1471,87 @@ enum IdentityWriteAction {
   ASSIGN_GROUP
   REMOVE_GROUP
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Agentic agent registry (Epic Agentic — agent register).
+//
+// A RegisteredAgent is a SIBLING of AiSystem, not a discriminated row on it:
+// AiSystem is the EU AI Act register (Regulation (EU) 2024/1689) and its whole
+// vocabulary is Act vocabulary. These enums are the agent-safety vocabulary and
+// are deliberately separate from it — see `enum AgentRiskTier` below for the one
+// place the two taxonomies are easiest to confuse.
+// ─────────────────────────────────────────────────────────────────
+
+/// How far into the tenant's data an agent can reach.
+///
+/// The order is LEAST-EXPOSING → MOST-EXPOSING and it is load-bearing: the
+/// risk scorer reads the ORDINAL (position in this list), not the name. So this
+/// enum is APPEND-ONLY at the bottom, and reordering it silently rescores every
+/// registered agent. A new rung that is not strictly more exposing than the one
+/// above it does not belong here.
+enum AgentDataAccessScope {
+  /// No tenant data at all — the agent reasons only over what a caller hands it.
+  NONE
+  /// Names, ids, counts, timestamps. Enough to enumerate, not enough to read.
+  READ_METADATA
+  /// Reads tenant business content (control bodies, findings, evidence text).
+  READ_TENANT_DATA
+  /// Writes tenant business content. Strictly above READ_TENANT_DATA because a
+  /// write path can also read.
+  WRITE_TENANT_DATA
+  /// Sends tenant data to a destination outside the platform boundary. The most
+  /// exposing rung: it is the only one whose blast radius is not bounded by the
+  /// tenant's own database.
+  EXTERNAL_EGRESS
+}
+
+/// How hard it is to undo what an agent did.
+///
+/// REVERSIBLE  — the platform can restore the prior state from its own records.
+/// COMPENSABLE — the prior state is gone, but a compensating action exists
+///               (re-invite a removed member, re-enable a disabled account).
+/// TERMINAL    — neither. An external notification was sent, a third party was
+///               told, a document was published. Nothing brings that back.
+enum AgentReversibility {
+  REVERSIBLE
+  COMPENSABLE
+  TERMINAL
+}
+
+/// Who wrote the agent. THIRD_PARTY requires a Vendor — a supplier the tenant
+/// can name is the difference between third-party risk and an unattributed
+/// binary. The DB enforces the pairing with a CHECK constraint, not just the
+/// usecase.
+enum AgentProvenance {
+  FIRST_PARTY
+  THIRD_PARTY
+}
+
+/// Lifecycle of a registered agent.
+///
+/// DRAFT is the default and it is deliberately NOT a usable state: an agent
+/// arrives unscored, and nothing may run until a human has moved it on.
+/// SUSPENDED is the kill switch — reversible, unlike RETIRED.
+enum AgentStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  RETIRED
+}
+
+/// Agent-safety risk tier — a DIFFERENT taxonomy from `AiRiskTier`, and the two
+/// must never be read for one another.
+///
+/// `AiRiskTier` (PROHIBITED/HIGH/LIMITED/MINIMAL) is a REGULATORY classification:
+/// it answers "which EU AI Act obligations does this system pull in", is derived
+/// from Art 5 / Annex III / Art 50, and its ordering is the Act's precedence.
+/// `AgentRiskTier` is an OPERATIONAL score over autonomy × data access ×
+/// reversibility × provenance: it answers "how much authority may this agent be
+/// given, and how closely is it watched". A LOW agent inside a HIGH-tier AI
+/// system is an ordinary, expected combination — the two axes are independent.
+enum AgentRiskTier {
+  LOW
+  MODERATE
+  HIGH
+  CRITICAL
+}

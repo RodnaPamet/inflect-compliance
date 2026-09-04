@@ -20,11 +20,27 @@ model AgentProposal {
   reviewedByUserId     String?
   reviewedAt           DateTime?
   createdEntityId      String?
+  /// Which registered agent proposed this.
+  ///
+  /// NULLABLE IN THE SCHEMA, REQUIRED AT THE USECASE — and the split is
+  /// deliberate. The column has to be nullable for the migration that adds it:
+  /// the backfill below runs in the same transaction as the ALTER, so there is a
+  /// moment where existing rows have no value, and a NOT NULL column with no
+  /// sensible default cannot be added to a populated table without inventing
+  /// one. Making it optional in Prisma is what lets the backfill be honest
+  /// rather than fabricating an agent for rows that never had one.
+  ///
+  /// New writes go through `agent-registry`-aware usecases, which require it.
+  /// So a NULL here means "written before the register existed", and nothing
+  /// else — treat it as unattributed, never as "any agent".
+  agentId              String?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent                RegisteredAgent?     @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
   @@index([tenantId, status, createdAt])
+  @@index([tenantId, agentId])
 }
 
 /// Epic Agentic 1A — a durable, audited, human-gated agentic workflow run. The
@@ -48,12 +64,20 @@ model WorkflowRun {
   stepCount         Int               @default(0)
   costTokens        Int               @default(0)
   errorMessage      String?
+  /// Which registered agent this run belongs to. Same nullable-in-schema,
+  /// required-at-the-usecase split as `AgentProposal.agentId` above, and for the
+  /// same reason: the column is added to a populated table in the migration that
+  /// backfills it, so it cannot be NOT NULL at ALTER time. A NULL means
+  /// "pre-register", not "any agent".
+  agentId           String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent             RegisteredAgent?  @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
   steps             WorkflowStep[]
 
   @@index([tenantId, status, startedAt])
+  @@index([tenantId, agentId])
 }
 
 /// An append-only record of one workflow step — the run's audit narrative.
@@ -73,4 +97,140 @@ model WorkflowStep {
 
   @@index([runId, seq])
   @@index([tenantId, runId])
+}
+
+/// Epic Agentic — the agent REGISTER: one row per autonomous agent a tenant
+/// runs, with the four properties that decide how much authority it may hold.
+///
+/// ## Why a sibling of AiSystem rather than a discriminator on it
+///
+/// `AiSystem` is the EU AI Act register (Regulation (EU) 2024/1689). Every one
+/// of its columns is Act vocabulary — `riskTier` is the Act's tier,
+/// `classificationClauseId` is the clause that produced it, `deploymentRole` is
+/// provider-vs-deployer. An agent's governing questions (how autonomous, how far
+/// into tenant data, how reversible, whose code) are not Act questions and do
+/// not fit those columns. Three specifics settled it:
+///
+///   • `ownerUserId`. On a shared table it could only be a partial CHECK
+///     (required for agent rows, optional for the rest), so Prisma would type it
+///     `string | null` forever — and every "the approver must not be the owner"
+///     check downstream would then read `owner && owner === ctx.userId`, which
+///     passes when the owner is unknown. Here it is `String` with a real FK and
+///     the null is unrepresentable.
+///   • House precedent: discriminators sit on OPERATIONAL tables (`Asset.type`,
+///     `Task.type`); principals get their own table (`AuditorAccount`,
+///     `TenantDeviceToken`). An agent is a principal with a kill switch, and a
+///     kill switch on a row in a regulatory register is a category error.
+///   • `POST /api/t/:slug/ai-systems` carries no `requirePermission` (only
+///     `assertCanWrite`), so extending that table would have made a surface any
+///     write-capable member can insert into the authorization subject for tool
+///     exposure.
+///
+/// ## Why the link to AiSystem is REQUIRED
+///
+/// Every agent IS an AI system in the Act's sense, so the register must contain
+/// it: that keeps `ai-system-conformity`'s `riskTier === 'HIGH'` path reachable
+/// for agents and gives per-agent framework coverage somewhere to hang
+/// (`AiSystemRequirementLink`). `onDelete: Restrict` because deleting the AI
+/// system must not silently delete the agent that governs it — the delete has to
+/// be refused and the operator has to retire the agent explicitly.
+///
+/// OPEN: whether an agent must be registrable WITHOUT an EU AI Act
+/// classification. If it must, this link becomes optional and the model degrades
+/// to a plain sibling. Built NOT NULL because relaxing later is cheap (there are
+/// zero production rows) and tightening later is not.
+model RegisteredAgent {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// REQUIRED 1:1 to the EU AI Act register entry that covers this agent.
+  /// Composite FK to (id, tenantId) so an agent can never point at another
+  /// tenant's system, matching AiSystemRequirementLink.
+  aiSystemId String
+
+  name String
+
+  /// Free-text — what the agent does and what it is allowed to touch, in the
+  /// operator's words. ENCRYPTED at rest (Epic B manifest) and sanitised on
+  /// write (`sanitizePlainText`); it is read back by an operator surface and by
+  /// the agent-registry export, so the sanitising happens at the write seam.
+  description String?
+
+  /// 0-6 on the agent-autonomy ladder (0 = suggests only, 6 = acts unattended
+  /// across systems). An Int, and NEVER a boolean: the whole point of the
+  /// register is that "autonomous" is a spectrum, and a two-state column would
+  /// force the scorer to collapse four distinct rungs into one. A CHECK
+  /// constraint in the migration pins the range — the enum-shaped alternative
+  /// was rejected because the scorer does arithmetic on this value.
+  autonomyLevel Int
+
+  /// The three exposure axes. NONE of them carries a Prisma default, on
+  /// purpose: the least-exposing value is also the lowest-scoring one, so a
+  /// default here would silently UNDER-state risk for any writer that forgot the
+  /// field. An omitted axis must fail, not score zero.
+  dataAccessScope AgentDataAccessScope
+  reversibility   AgentReversibility
+  provenance      AgentProvenance
+
+  status AgentStatus @default(DRAFT)
+
+  /// The scored operational tier, and when it was scored.
+  ///
+  /// NULL means UNSCORED — the state between insert and the first scoring run.
+  /// Every consumer must treat NULL as "deny", never as a low tier: an agent
+  /// nobody has assessed is the one that should not be running. The two columns
+  /// move together (a CHECK constraint pins `riskTier IS NULL` ⇔
+  /// `riskTierScoredAt IS NULL`), so a tier can never be read without knowing
+  /// how stale it is.
+  riskTier         AgentRiskTier?
+  riskTierScoredAt DateTime?
+
+  /// The accountable human. NOT NULL with a real FK — see the header. Used by
+  /// the two-person rule downstream, which needs a value it can compare rather
+  /// than a maybe-null it has to guess about.
+  ownerUserId String
+
+  /// The supplier, for THIRD_PARTY agents. A CHECK constraint in the migration
+  /// refuses `provenance = 'THIRD_PARTY'` with no vendor — third-party risk you
+  /// cannot attribute to a named supplier is not third-party risk, it is an
+  /// unattributed binary.
+  vendorId String?
+
+  /// TRUE only for the synthetic row the agent-registry migration creates to
+  /// adopt pre-registry AgentProposal / WorkflowRun rows. It lands SUSPENDED and
+  /// is never a real agent — surfaces that count or score agents should exclude
+  /// it, and an operator's job is to replace it with real registrations.
+  isLegacyPlaceholder Boolean @default(false)
+
+  createdByUserId String?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  aiSystem  AiSystem        @relation(fields: [aiSystemId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  owner     User            @relation("RegisteredAgentOwner", fields: [ownerUserId], references: [id])
+  vendor    Vendor?         @relation("RegisteredAgentVendor", fields: [vendorId], references: [id])
+  proposals AgentProposal[]
+  runs      WorkflowRun[]
+
+  /// Composite parent key so the child tables that attribute work to an agent
+  /// can never point cross-tenant. Mirrors AiSystem's own shape.
+  @@unique([id, tenantId])
+  /// One agent per AI-system register entry — the 1:1 half of the required link.
+  /// Two declarations, and both earn their place: the single-column unique IS
+  /// the invariant ("an AI-system row is claimed by at most one agent"), while
+  /// Prisma requires a unique over the exact relation field list before it will
+  /// type a composite relation as 1:1. The composite is implied by the
+  /// single-column one, so the extra index is redundant at the DB — kept anyway
+  /// so neither half can be deleted as "obviously unnecessary" without the other
+  /// being noticed.
+  @@unique([aiSystemId])
+  @@unique([aiSystemId, tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, riskTier])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, ownerUserId])
+  @@index([tenantId, vendorId])
 }

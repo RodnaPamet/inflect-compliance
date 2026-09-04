@@ -119,6 +119,9 @@ model AiSystem {
   tenant           Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   requirementLinks AiSystemRequirementLink[]
   decisionLogs     AiDecisionLog[]
+  /// Epic Agentic — the agent register entry this system's row governs, if the
+  /// system IS an agent. At most one: the link is 1:1 from the agent side.
+  registeredAgent  RegisteredAgent?
 
   /// Composite parent key so child links can never point cross-tenant.
   @@unique([id, tenantId])

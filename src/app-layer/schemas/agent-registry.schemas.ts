@@ -1,0 +1,109 @@
+/**
+ * Zod schemas for the agent register.
+ *
+ * The three exposure axes (`dataAccessScope`, `reversibility`, `provenance`)
+ * are REQUIRED with no default on create. The least-exposing value is also the
+ * lowest-scoring one, so a default would let a writer that forgot the field
+ * silently under-state an agent's risk — an omitted axis has to fail, not score
+ * zero.
+ *
+ * The THIRD_PARTY ⇒ vendor rule is expressed here AND as a CHECK constraint in
+ * the migration. Two enforcements of one rule, on purpose: the schema gives the
+ * caller a field-level error, the constraint means no other write path can get
+ * around it.
+ */
+import { z } from 'zod';
+
+export const AGENT_DATA_ACCESS_SCOPES = [
+    'NONE',
+    'READ_METADATA',
+    'READ_TENANT_DATA',
+    'WRITE_TENANT_DATA',
+    'EXTERNAL_EGRESS',
+] as const;
+
+export const AGENT_REVERSIBILITIES = ['REVERSIBLE', 'COMPENSABLE', 'TERMINAL'] as const;
+export const AGENT_PROVENANCES = ['FIRST_PARTY', 'THIRD_PARTY'] as const;
+
+/**
+ * The autonomy ladder is 0-6 and it is an integer, never a boolean: the
+ * register exists because "autonomous" is a spectrum, and the scorer does
+ * arithmetic on this value.
+ */
+export const AGENT_AUTONOMY_MIN = 0;
+export const AGENT_AUTONOMY_MAX = 6;
+
+const autonomyLevel = z
+    .number()
+    .int('Autonomy level must be a whole number')
+    .min(AGENT_AUTONOMY_MIN)
+    .max(AGENT_AUTONOMY_MAX);
+
+/**
+ * The one cross-field rule: a THIRD_PARTY agent must name its supplier.
+ * Expressed as a predicate rather than a shared refinement callback so neither
+ * schema has to name Zod's context type.
+ */
+function isUnattributedThirdParty(value: {
+    provenance?: string;
+    vendorId?: string | null;
+}): boolean {
+    return value.provenance === 'THIRD_PARTY' && !value.vendorId;
+}
+
+const THIRD_PARTY_VENDOR_MESSAGE = 'A THIRD_PARTY agent must name the vendor that supplies it';
+
+export const CreateRegisteredAgentSchema = z
+    .object({
+        // The EU AI Act register entry this agent is covered by. Required —
+        // every agent is an AI system in the Act's sense.
+        aiSystemId: z.string().min(1, 'An AI-system register entry is required'),
+        name: z.string().min(2, 'Name is required').max(200).trim(),
+        description: z.string().max(4000).optional().nullable(),
+        autonomyLevel,
+        dataAccessScope: z.enum(AGENT_DATA_ACCESS_SCOPES),
+        reversibility: z.enum(AGENT_REVERSIBILITIES),
+        provenance: z.enum(AGENT_PROVENANCES),
+        // The accountable human. Required, so the two-person rule downstream
+        // compares a value rather than guessing about a null.
+        ownerUserId: z.string().min(1, 'An accountable owner is required'),
+        vendorId: z.string().optional().nullable(),
+    })
+    .superRefine((value, ctx) => {
+        if (!isUnattributedThirdParty(value)) return;
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['vendorId'],
+            message: THIRD_PARTY_VENDOR_MESSAGE,
+        });
+    });
+export type CreateRegisteredAgentInput = z.infer<typeof CreateRegisteredAgentSchema>;
+
+/**
+ * Partial update. The THIRD_PARTY refinement applies to the PAYLOAD, not the
+ * merged row: naming `provenance: 'THIRD_PARTY'` requires naming the vendor in
+ * the same call, even when the stored row already has one. That is deliberate —
+ * the alternative reads the current row to decide whether the payload is legal,
+ * which is a check that passes or fails depending on a value the caller never
+ * saw. The DB CHECK constraint remains the backstop either way.
+ */
+export const UpdateRegisteredAgentSchema = z
+    .object({
+        name: z.string().min(2).max(200).trim().optional(),
+        description: z.string().max(4000).optional().nullable(),
+        autonomyLevel: autonomyLevel.optional(),
+        dataAccessScope: z.enum(AGENT_DATA_ACCESS_SCOPES).optional(),
+        reversibility: z.enum(AGENT_REVERSIBILITIES).optional(),
+        provenance: z.enum(AGENT_PROVENANCES).optional(),
+        ownerUserId: z.string().min(1).optional(),
+        vendorId: z.string().optional().nullable(),
+    })
+    .superRefine((value, ctx) => {
+        if (!isUnattributedThirdParty(value)) return;
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['vendorId'],
+            message: THIRD_PARTY_VENDOR_MESSAGE,
+        });
+    });
+export type UpdateRegisteredAgentInput = z.infer<typeof UpdateRegisteredAgentSchema>;

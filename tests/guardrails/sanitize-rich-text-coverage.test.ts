@@ -98,6 +98,11 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/identity-write-journal.ts'],
         sanitizer: 'sanitizePlainText',
     },
+    // `description` on a registered agent is the operator's own account of what
+    // the agent does and what it may touch. Sanitised at the single
+    // agent-registry write seam before the Epic B middleware encrypts it — the
+    // register export and the operator surface both decrypt and render it.
+    RegisteredAgent: { usecases: ['src/app-layer/usecases/agent-registry.ts'], sanitizer: 'sanitizePlainText' },
     Finding: { usecases: ['src/app-layer/usecases/finding.ts'], sanitizer: 'sanitizePlainText' },
     Risk: { usecases: ['src/app-layer/usecases/risk.ts'], sanitizer: 'sanitizePlainText' },
     // MCP agent proposals — payloadJson (proposed entity content) + rationale

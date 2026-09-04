@@ -184,6 +184,7 @@ model Tenant {
   riskSuggestionSessions            RiskSuggestionSession[]
   agentProposals                    AgentProposal[]
   workflowRuns                      WorkflowRun[]
+  registeredAgents                  RegisteredAgent[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?
@@ -1002,6 +1003,9 @@ model User {
   calendarConnections           UserCalendarConnection[]
   calendarEventMappings         UserCalendarEventMapping[]
   calendarConsentsGranted       TenantCalendarConsent[]         @relation("CalendarConsentGrantedBy")
+  /// Epic Agentic — agents this user is the accountable owner of. The FK is
+  /// NOT NULL on the agent side, so every registered agent appears here.
+  registeredAgentsOwned         RegisteredAgent[]               @relation("RegisteredAgentOwner")
 }
 
 model Account {

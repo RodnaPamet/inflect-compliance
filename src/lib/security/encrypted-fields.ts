@@ -354,6 +354,16 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     WorkflowRun: ['contextJson', 'summary'],
     WorkflowStep: ['inputJson', 'outputJson'],
 
+    // ─── Epic Agentic — the agent register ─────────────
+    // `description` is the operator's own account of what an agent does and
+    // what it may touch: it names internal systems, the data the agent reaches
+    // and, frequently, the people accountable for it. It is read back by an
+    // operator surface and by the register export, so it is sanitised at the
+    // single write seam (agent-registry usecase) and encrypted here at rest.
+    // Not used in any WHERE/orderBy — the register filters on
+    // tenantId/status/riskTier and sorts on createdAt.
+    RegisteredAgent: ['description'],
+
     // ─── Epic G-7 risk treatment plans ─────────────────
     //  Both columns can name internal systems / vendors / users:
     //    - RiskTreatmentPlan.closingRemark — narrative rationale
