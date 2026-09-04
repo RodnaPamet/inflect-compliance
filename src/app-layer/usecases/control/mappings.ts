@@ -10,6 +10,7 @@ import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { controlDataFromTemplate, resolveRelatedPolicyIds } from './template-projection';
+import { taskFromTemplateTask, installableTemplateTasks } from './task-from-template';
 
 // ─── Templates ───
 
@@ -122,19 +123,14 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
             // encryption extension encrypts Task.description on createMany the
             // same as on create — `createMany` is in its WRITE_ACTIONS set and
             // the array `data` is walked per element.
-            const tasksCreated = template.tasks.length;
+            const installable = installableTemplateTasks(template.tasks);
+            const tasksCreated = installable.length;
             if (tasksCreated > 0) {
                 await db.task.createMany({
-                    data: template.tasks.map((tplTask): Prisma.TaskCreateManyInput => ({
-                        tenantId: ctx.tenantId,
-                        controlId: control.id,
-                        title: tplTask.title,
-                        description: tplTask.description,
-                        status: 'OPEN',
-                        type: 'TASK',
-                        createdByUserId: ctx.userId,
-                        assigneeUserId: ctx.userId,
-                    })),
+                    data: installable.map(
+                        (tplTask): Prisma.TaskCreateManyInput =>
+                            taskFromTemplateTask(tplTask, ctx, control.id),
+                    ),
                 });
             }
 

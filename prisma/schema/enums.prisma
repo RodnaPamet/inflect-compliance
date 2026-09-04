@@ -396,6 +396,20 @@ enum TaskStatus {
   @@map("WorkItemStatus")
 }
 
+/// Where a control task sits in the control's lifecycle.
+///
+/// Ordered narrowest-first as a reading order, not a state machine: a
+/// control is scoped, implemented, operated, and reviewed, and a template
+/// carries tasks across several of those at once. Nothing transitions
+/// between them — `TaskStatus` owns progress. This exists so a generated
+/// task set can be READ as a plan rather than a flat list.
+enum TaskPhase {
+  SCOPE
+  IMPLEMENT
+  OPERATE
+  REVIEW
+}
+
 enum TaskSource {
   MANUAL
   TEMPLATE

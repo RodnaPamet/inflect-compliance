@@ -238,6 +238,15 @@ model ControlTemplate {
   // export); resolved to PolicyControlLink per-tenant on install where a
   // matching policy exists. Framework mapping deferred (source Tags empty).
   relatedPolicies    String?
+  /// The role a control is typically owned by, e.g. "IT Operations".
+  ///
+  /// Every one of the five curated fixtures has carried this since they were
+  /// written, and the seeder has silently dropped it the whole time: there
+  /// was no column, so `require()`-ing the JSON read the key and threw it
+  /// away. Adding it here is what makes that authored data reachable, and it
+  /// is the natural default for a template task's `suggestedRole` — the
+  /// vocabulary is already the same ("IT Operations", "Security engineering").
+  defaultOwnerHint   String?
   isGlobal           Boolean                          @default(true)
   createdAt          DateTime                         @default(now())
   requirementLinks   ControlTemplateRequirementLink[]
@@ -246,11 +255,46 @@ model ControlTemplate {
 }
 
 model ControlTemplateTask {
-  id          String          @id @default(cuid())
+  id          String  @id @default(cuid())
   templateId  String
   title       String
   description String?
-  template    ControlTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  /// Authored order within a template. The five `include: { tasks: true }`
+  /// sites had no `orderBy`, so an authored sequence arrived in whatever
+  /// order Postgres returned it — which is why this ships together with the
+  /// `orderBy` at those sites rather than after them.
+  sortOrder     Int       @default(0)
+  /// Where this task sits in the control's lifecycle. Defaults to IMPLEMENT
+  /// because that is what every task written before this column was.
+  phase         TaskPhase @default(IMPLEMENT)
+  /// The concrete actions a practitioner executes, as authored content.
+  /// Shape is validated at the loader, not here — see CatalogTaskSchema.
+  stepsJson     Json?
+  /// The proof artifact this task produces, named for the operator.
+  evidenceHint  String?
+  /// Free text rather than an enum, and deliberately: the vocabulary is a
+  /// house convention that content PRs are still settling, and a premature
+  /// enum would need a migration every time it moved.
+  suggestedRole String?
+  /// sha256 over the canonicalised authored task. The applier reconciles on
+  /// (templateId, contentHash): equal means unchanged and is skipped, so a
+  /// re-apply is cheap and a re-authored task is detected without diffing
+  /// every field.
+  contentHash   String?
+  /// The full locale map. The scalar columns above carry `en` so every
+  /// existing reader keeps working untouched; this carries everything.
+  i18nJson      Json?
+  /// Set when a task disappears from its source file. NEVER deleted — a
+  /// tenant may have installed it, and its Task rows outlive the template.
+  deprecatedAt  DateTime?
+
+  template ControlTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  /// Reconcile reads (templateId, contentHash); install reads
+  /// (templateId, deprecatedAt) ordered by sortOrder.
+  @@index([templateId, contentHash])
+  @@index([templateId, deprecatedAt])
 }
 
 model ControlTemplateRequirementLink {

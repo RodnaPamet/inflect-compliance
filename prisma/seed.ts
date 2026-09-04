@@ -1,4 +1,5 @@
 import { PrismaClient, type ControlFrequency } from '@prisma/client';
+import { GENERIC_TEMPLATE_TASKS } from './generic-template-tasks';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -1126,13 +1127,6 @@ Reviewed at least annually.` },
     console.log('✅ SOC2 + NIS2 + ISO9001 + ISO28000 + ISO39001 frameworks seeded');
 
     // ─── ISO 27001:2022 Control Templates (one per Annex A control) ───
-    const defaultTasks = [
-        { title: 'Define control owner and scope', description: 'Assign an owner and define the scope of this control within the organization.' },
-        { title: 'Document procedure or policy', description: 'Create or reference the policy/procedure that implements this control.' },
-        { title: 'Implement technical or operational measure', description: 'Put the control into practice — deploy tooling, configure settings, or establish processes.' },
-        { title: 'Collect evidence of implementation', description: 'Gather evidence demonstrating the control is operating effectively.' },
-        { title: 'Review effectiveness', description: 'Periodically review and assess whether the control meets its objectives.' },
-    ];
 
     let templatesCreated = 0;
     for (const req of annexAData) {
@@ -1142,7 +1136,7 @@ Reviewed at least annually.` },
             const template = await prisma.controlTemplate.create({
                 data: { code, title: req.title, description: req.summary || null, category: req.theme, defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({
                     data: { templateId: template.id, title: task.title, description: task.description },
                 });
@@ -1184,7 +1178,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'NIS2', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {
@@ -1233,7 +1227,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'DORA', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {
@@ -1276,7 +1270,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'ISO9001', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {
@@ -1312,7 +1306,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'ISO28000', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {
@@ -1350,7 +1344,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code: t.code, title: t.title, category: 'ISO39001', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.reqs) {
@@ -1456,7 +1450,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code, title: info.title, category: 'OWASP AISVS', defaultFrequency: 'QUARTERLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
@@ -1527,7 +1521,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code, title: info.title, category: 'ISO 42001', defaultFrequency: 'ANNUALLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
@@ -1598,7 +1592,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code, title: info.title, category: 'EU AI Act', defaultFrequency: 'ANNUALLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
@@ -1667,7 +1661,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code, title: info.title, category: 'NIST Privacy', defaultFrequency: 'ANNUALLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
@@ -1739,7 +1733,7 @@ Reviewed at least annually.` },
             const tmpl = await prisma.controlTemplate.create({
                 data: { code, title: info.title, category: 'Secure Development', defaultFrequency: 'ANNUALLY' },
             });
-            for (const task of defaultTasks) {
+            for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {

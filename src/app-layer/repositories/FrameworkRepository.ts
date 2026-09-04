@@ -44,7 +44,7 @@ export class FrameworkRepository {
                     include: {
                         template: {
                             include: {
-                                tasks: true,
+                                tasks: { orderBy: { sortOrder: 'asc' } },
                                 requirementLinks: { include: { requirement: true } },
                             },
                         },

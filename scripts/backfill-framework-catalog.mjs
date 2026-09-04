@@ -44,6 +44,14 @@ if (!connectionString) {
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
+// FROZEN COPY — the fourth of what were four. The other three now import
+// `GENERIC_TEMPLATE_TASKS` from `prisma/generic-template-tasks.ts`; this file
+// is `.mjs` and run directly with node, so it cannot. It is also a completed
+// one-off (it backfilled environments seeded before these frameworks existed),
+// so it is left frozen rather than converted: what it wrote is history, and
+// rewriting the strings here would change a record rather than a behaviour.
+// It is allowlisted by name in tests/guardrails/no-generic-task-strings.test.ts
+// for exactly this reason. Do NOT copy these strings anywhere else.
 const defaultTasks = [
     { title: 'Define control owner and scope', description: 'Assign an owner and define the scope of this control within the organization.' },
     { title: 'Document procedure or policy', description: 'Create or reference the policy/procedure that implements this control.' },
