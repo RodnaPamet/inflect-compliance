@@ -14,11 +14,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { codeOf } from '../helpers/source-blocks';
-import { REPO_ROOT } from '../helpers/repo-files';
-import { declarationOf } from '../helpers/source-blocks';
-import fs from 'node:fs';
-import path from 'node:path';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const seed = codeOf(fs.readFileSync(path.join(ROOT, 'prisma/seed.ts'), 'utf8'));
@@ -89,7 +85,7 @@ describe('policy-template coverage', () => {
             'policy-templates-original-gaps.json',
         ].reduce((n, f) => {
             const raw = JSON.parse(
-                fs.readFileSync(path.join(REPO_ROOT, 'prisma/fixtures', f), 'utf8'),
+                fs.readFileSync(path.join(ROOT, 'prisma/fixtures', f), 'utf8'),
             ) as unknown;
             const list = Array.isArray(raw)
                 ? raw
