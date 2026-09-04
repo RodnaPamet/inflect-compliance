@@ -12,6 +12,12 @@ import type { NormalizedIdentityAccount } from '@/app-layer/integrations/provide
 import { runDeviceCheck } from '@/app-layer/integrations/providers/device/checks';
 import { runPersonnelCheck } from '@/app-layer/integrations/providers/personnel/checks';
 import { runTrainingCheck } from '@/app-layer/integrations/providers/training/checks';
+import {
+    powerpipeBenchmarkJson,
+    powerpipeControl,
+    powerpipeErroredControl,
+    groupShapedControlSummary,
+} from '../helpers/powerpipe-benchmark-fixture';
 
 const NOW = new Date('2026-07-07T00:00:00Z');
 const fakeExec = (stdout: string, ok = true, missing = false) => async () => ({ ok, stdout, stderr: ok ? '' : 'boom', missing });
@@ -34,6 +40,66 @@ describe('H2 — collectors fail closed', () => {
     it('CLI missing → ERROR', async () => {
         const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec('', false, true) });
         expect(r.status).toBe('ERROR');
+    });
+});
+
+/**
+ * The collector exited ZERO and wrote well-formed JSON — every refusal above is
+ * bypassed and the verdict is decided purely by reading the controls. That is
+ * the only path on which a misparse can manufacture a pass, and it is the path
+ * #2301 was open on.
+ */
+describe('H2 — a run that produced no usable observation is never PASSED', () => {
+    const runOn = (stdout: string) =>
+        runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec(stdout, true) });
+
+    it('every control errored on a dead credential → ERROR, never PASSED', async () => {
+        // The measured shape: a benchmark run whose every control failed with
+        // InvalidClientTokenId. Each control carries error counters and null
+        // rows. Reading those as `skip` left no alarms and no errors, so the
+        // ladder called it PASSED — a revoked credential scoring a clean audit.
+        const r = await runOn(
+            powerpipeBenchmarkJson('b', {
+                controls: [powerpipeErroredControl('c1'), powerpipeErroredControl('c2')],
+            }),
+        );
+        expect(r.status).toBe('ERROR');
+        expect(r.summaryObj?.counts.error).toBe(2);
+        expect(r.summaryObj?.counts.skip).toBe(0);
+    });
+
+    it('one dead control among healthy ones still ERRORs rather than passing', async () => {
+        const r = await runOn(
+            powerpipeBenchmarkJson('b', {
+                controls: [powerpipeControl('c1', 'ok'), powerpipeErroredControl('c2')],
+            }),
+        );
+        expect(r.status).toBe('ERROR');
+    });
+
+    it('controls in a shape we cannot read → ERROR, never PASSED', async () => {
+        // Should the collector's summary shape ever move again, the counters
+        // stop being legible. That must surface as ERROR, not as a quiet pass.
+        const r = await runOn(
+            powerpipeBenchmarkJson('b', {
+                controls: [
+                    powerpipeControl('c1', 'ok', { summary: groupShapedControlSummary('ok') as never, results: null }),
+                ],
+            }),
+        );
+        expect(r.status).toBe('ERROR');
+        expect(r.summaryObj?.counts.unknown).toBe(1);
+    });
+
+    it('a genuinely empty scope still PASSES — unknown has not swallowed skip', async () => {
+        // The counterweight: if illegible and inapplicable were merged the other
+        // way, an account with nothing in scope would ERROR forever.
+        const r = await runOn(
+            powerpipeBenchmarkJson('b', {
+                controls: [powerpipeControl('c1', 'ok'), powerpipeControl('c2', 'skip')],
+            }),
+        );
+        expect(r.status).toBe('PASSED');
     });
 });
 

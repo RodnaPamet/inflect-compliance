@@ -40,6 +40,10 @@ jest.mock('node:child_process', () => ({
 import { tmpdir } from 'node:os';
 import { GcpPostureProvider } from '@/app-layer/integrations/providers/gcp-posture-provider';
 import type { CheckInput } from '@/app-layer/integrations/types';
+import {
+    powerpipeBenchmarkJson,
+    powerpipeControl,
+} from '../../helpers/powerpipe-benchmark-fixture';
 
 type Cb = (err: unknown, stdout?: string, stderr?: string) => void;
 
@@ -53,10 +57,9 @@ const SA_KEY = JSON.stringify({
     private_key: '-----BEGIN PRIVATE KEY-----\nMIIabcdef0123456789\n-----END PRIVATE KEY-----', // pragma: allowlist secret — synthetic PEM header, no key material
 });
 
-const OK_JSON = JSON.stringify({
-    controls: [
-        { control_id: 'gcp_compliance.control.iam_ok', title: 'IAM', summary: { status: { ok: 1 } } },
-    ],
+/** A passing control in the REAL wire shape, from the source-cited module. */
+const OK_JSON = powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
+    controls: [powerpipeControl('gcp_compliance.control.iam_ok', 'ok', { title: 'IAM' })],
 });
 
 function cliResult(opts: { stdout?: string; stderr?: string; err?: unknown }) {

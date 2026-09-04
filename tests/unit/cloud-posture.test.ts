@@ -10,6 +10,12 @@ import {
     frameworkCodesForControl,
     type CloudPostureControlMapEntry,
 } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
+import {
+    powerpipeBenchmarkJson,
+    powerpipeControl,
+    powerpipeCounts,
+    powerpipeGroup,
+} from '../helpers/powerpipe-benchmark-fixture';
 import { AzurePostureProvider } from '@/app-layer/integrations/providers/azure-posture-provider';
 import { GcpPostureProvider } from '@/app-layer/integrations/providers/gcp-posture-provider';
 import { AZURE_POSTURE_CONTROL_MAP, allMappedRequirementCodes as azureCodes } from '@/data/integrations/azure-posture-control-map';
@@ -18,15 +24,22 @@ import { GCP_POSTURE_CONTROL_MAP, allMappedRequirementCodes as gcpCodes } from '
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-/** A fake Powerpipe benchmark JSON with a mix of ok/alarm/skip controls. */
-const BENCH_JSON = JSON.stringify({
-    groups: [{
-        controls: [
-            { control_id: 'aws_compliance.control.a_ok', title: 'A', summary: { status: { ok: 3, alarm: 0 } } },
-            { control_id: 'aws_compliance.control.b_alarm', title: 'B', summary: { status: { ok: 1, alarm: 2 } } },
-            { control_id: 'aws_compliance.control.c_skip', title: 'C', summary: { status: { skip: 1 } } },
-        ],
-    }],
+/**
+ * A Powerpipe benchmark JSON with a mix of ok/alarm/skip controls, in the REAL
+ * wire shape — flat control counters inside nested group counters. Built from
+ * the source-cited fixture module so it cannot drift back into agreeing with
+ * whatever the parser happens to expect.
+ */
+const BENCH_JSON = powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+    groups: [
+        powerpipeGroup('cc6', {
+            controls: [
+                powerpipeControl('a_ok', 'ok', { summary: powerpipeCounts('ok', 3), title: 'A' }),
+                powerpipeControl('b_alarm', 'alarm', { summary: { ...powerpipeCounts('alarm', 2), ok: 1 }, title: 'B' }),
+                powerpipeControl('c_skip', 'skip', { title: 'C' }),
+            ],
+        }),
+    ],
 });
 
 /** An injectable exec that returns our fake JSON. */
@@ -43,7 +56,7 @@ describe('runPowerpipeBenchmark', () => {
     });
 
     it('PASSes when no control alarms', async () => {
-        const allOk = JSON.stringify({ controls: [{ control_id: 'x.control.ok', summary: { status: { ok: 1 } } }] });
+        const allOk = powerpipeBenchmarkJson('b', { controls: [powerpipeControl('x.control.ok', 'ok')] });
         const r = await runPowerpipeBenchmark({ benchmarkId: 'b', env: process.env, secretValues: [], exec: fakeExec(allOk) });
         expect(r.status).toBe('PASSED');
     });

@@ -29,8 +29,17 @@ import type {
 
 // ─── Pure helpers (unit-tested directly) ─────────────────────────────
 
-/** Aggregate status of a single Powerpipe control across its result rows. */
-export type PowerpipeControlStatus = 'ok' | 'alarm' | 'skip' | 'error';
+/**
+ * Aggregate status of a single Powerpipe control across its result rows.
+ *
+ * `unknown` is not a Powerpipe status — it is ours, and it means "this control
+ * object carried no signal we could read". It exists so an UNREADABLE control
+ * is distinguishable from a genuinely skipped one. Collapsing the two is what
+ * made issue #2301 dangerous: a benchmark whose controls had all errored
+ * aggregated to `{ok:0, alarm:0, skip:N, error:0}`, and a run with no alarms
+ * and no errors is a PASS.
+ */
+export type PowerpipeControlStatus = 'ok' | 'alarm' | 'skip' | 'error' | 'unknown';
 
 export interface PowerpipeControlResult {
     controlId: string;
@@ -39,15 +48,74 @@ export interface PowerpipeControlResult {
     reason: string;
 }
 
+/**
+ * ── The wire shape, and where each key comes from ─────────────────────
+ *
+ * `powerpipe benchmark run <id> --output json` does NOT marshal the Go structs.
+ * It renders them through a text/template at
+ * `internal/controldisplay/templates/json/output.tmpl`, so THAT file — not the
+ * struct tags — is the authority for the key names below. (The struct tags
+ * still decide the shape of each `summary` value, because the template emits
+ * those with `toPrettyJson`.)
+ *
+ *   root      the template applies its group sub-template to the execution
+ *             tree's root ResultGroup, so the top-level object IS a group:
+ *             `{ group_id, title, description, tags, summary, groups, controls }`.
+ *             `groups` is `[]` and `controls` is `null` when empty.
+ *
+ *   GROUP     `summary` is a `controlexecute.GroupSummary`, declared
+ *   summary   `Status StatusSummary \`json:"status"\`` — so a group's counters
+ *             ARE nested one level: `{ "status": { ok, alarm, … } }`.
+ *
+ *   CONTROL   `summary` is a `controlstatus.StatusSummary` DIRECTLY
+ *   summary   (control_run.go: `Summary *controlstatus.StatusSummary
+ *             \`json:"summary"\``), and that struct is FLAT — five int
+ *             counters, `{ alarm, ok, info, skip, error }`, with no
+ *             intervening `status` key.
+ *
+ * The two differ, and reading a control's summary as if it were a group's was
+ * the defect: `summary.status` is undefined against real output, so every
+ * control silently fell through to a row scan.
+ *
+ *   control   `{ summary, results, control_id, description, severity, tags,
+ *             title, run_status, run_error }`. `results` is rendered from
+ *             `ControlRun.Rows` and is `null` — not `[]` — when the control
+ *             produced no rows. `run_status` is the template's numeric map of
+ *             `dashboardtypes.RunStatus` (4 = complete, 8 = error); `run_error`
+ *             is `ControlRun.RunErrorString`.
+ *
+ *   row       `{ reason, resource, status, dimensions }`.
+ *
+ * An errored control is `setError`'d upstream, which does `Summary.Error++`,
+ * fills RunErrorString and moves RunStatus to "error" — so it arrives as
+ * `{ summary: { …, error: 1 }, results: null, run_status: 8, run_error: "…" }`
+ * and never as a merely empty control.
+ */
+
+/** A control's flat counter block — `controlstatus.StatusSummary`. */
+interface RawStatusCounts {
+    alarm?: number;
+    ok?: number;
+    info?: number;
+    skip?: number;
+    error?: number;
+}
+const COUNT_KEYS: ReadonlyArray<keyof RawStatusCounts> = ['alarm', 'ok', 'info', 'skip', 'error'];
+
+/** `dashboardtypes.RunStatus` "error", as the JSON template numbers it. */
+const RUN_STATUS_ERROR = 8;
+
 interface RawControlResult { status?: string; reason?: string; resource?: string }
 interface RawControl {
     control_id?: string;
     name?: string;
     title?: string;
-    results?: RawControlResult[];
-    summary?: { status?: Record<string, number> };
+    results?: RawControlResult[] | null;
+    summary?: RawStatusCounts | null;
+    run_status?: number;
+    run_error?: string;
 }
-interface RawGroup { groups?: RawGroup[]; controls?: RawControl[] }
+interface RawGroup { groups?: RawGroup[] | null; controls?: RawControl[] | null }
 
 /** Extract the short check name from a Powerpipe control id
  *  (`aws_compliance.control.iam_root_user_mfa_enabled` → `iam_root_user_mfa_enabled`). */
@@ -59,19 +127,82 @@ export function shortControlName(controlId: string): string {
     return parts[parts.length - 1] || controlId;
 }
 
+/** True when the value is a counter block — at least one countable key present. */
+function isCountBlock(s: RawControl['summary']): s is RawStatusCounts {
+    if (!s || typeof s !== 'object') return false;
+    const rec = s as Record<string, unknown>;
+    return COUNT_KEYS.some((k) => typeof rec[k] === 'number' && Number.isFinite(rec[k] as number));
+}
+
+/** One counter, treating a non-number or a negative as zero. */
+function counter(s: RawStatusCounts, key: keyof RawStatusCounts): number {
+    const v = s[key];
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
+ * Status from the control's flat counters, or `null` for "said nothing".
+ *
+ * A GROUP-shaped `{ status: { … } }` reaches this with no countable key at the
+ * top level, so it yields `null` and the control ends up `unknown` — LOUD, not
+ * silently benign. That is deliberate: it is the shape this parser used to
+ * expect, and if a future Powerpipe moved to it we want a failed check rather
+ * than a rediscovery of #2301.
+ */
+function statusFromCounts(s: RawControl['summary']): PowerpipeControlStatus | null {
+    if (!isCountBlock(s)) return null;
+    if (counter(s, 'alarm') > 0) return 'alarm';
+    if (counter(s, 'error') > 0) return 'error';
+    // `StatusSummary.PassedCount()` upstream is Ok + Info — `info` passes.
+    if (counter(s, 'ok') + counter(s, 'info') > 0) return 'ok';
+    if (counter(s, 'skip') > 0) return 'skip';
+    return null; // every counter zero — no observation either way
+}
+
+/** Status from the control's rows, or `null` when the rows say nothing. */
+function statusFromRows(rows: RawControl['results']): PowerpipeControlStatus | null {
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    const has = (want: string) => rows.some((r) => r && r.status === want);
+    if (has('alarm')) return 'alarm';
+    if (has('error')) return 'error';
+    if (has('ok') || has('info')) return 'ok';
+    if (has('skip')) return 'skip';
+    return null; // rows carrying only statuses we do not recognise
+}
+
+/** An errored ControlRun: `run_error` filled, RunStatus moved to "error". */
+function hasRunError(c: RawControl): boolean {
+    return (
+        (typeof c.run_error === 'string' && c.run_error.trim().length > 0) ||
+        c.run_status === RUN_STATUS_ERROR
+    );
+}
+
 function aggregateStatus(c: RawControl): PowerpipeControlStatus {
-    const s = c.summary?.status;
-    if (s) {
-        if ((s.alarm ?? 0) > 0) return 'alarm';
-        if ((s.error ?? 0) > 0) return 'error';
-        if ((s.ok ?? 0) > 0) return 'ok';
-        return 'skip';
-    }
-    const rows = c.results ?? [];
-    if (rows.some((r) => r.status === 'alarm')) return 'alarm';
-    if (rows.some((r) => r.status === 'error')) return 'error';
-    if (rows.some((r) => r.status === 'ok')) return 'ok';
-    return 'skip';
+    const fromCounts = statusFromCounts(c.summary);
+    if (fromCounts) return fromCounts;
+
+    const fromRows = statusFromRows(c.results);
+    if (fromRows) return fromRows;
+
+    if (hasRunError(c)) return 'error';
+
+    // A well-formed counter block that is all zeroes is a control that ran and
+    // matched no resources — an empty population, which IS a genuine skip.
+    // Reaching here WITHOUT one means nothing in the object was legible.
+    return isCountBlock(c.summary) ? 'skip' : 'unknown';
+}
+
+/** The row reason to surface, falling back to the run error for a broken control. */
+function reasonFor(c: RawControl, status: PowerpipeControlStatus): string {
+    const rows = Array.isArray(c.results) ? c.results : [];
+    const matches = (r: RawControlResult) =>
+        status === 'ok' ? r.status === 'ok' || r.status === 'info' : r.status === status;
+    const rowReason = rows.find((r) => r && matches(r))?.reason;
+    if (rowReason) return rowReason;
+    // An errored control has no rows at all; its message is the run error.
+    if (status === 'error' && typeof c.run_error === 'string') return c.run_error;
+    return '';
 }
 
 /**
@@ -81,21 +212,23 @@ function aggregateStatus(c: RawControl): PowerpipeControlStatus {
 export function parsePowerpipeBenchmarkJson(raw: unknown): PowerpipeControlResult[] {
     const out: PowerpipeControlResult[] = [];
     const seen = new Set<string>();
-    const walk = (node: RawGroup | undefined): void => {
-        if (!node) return;
-        for (const c of node.controls ?? []) {
+    const walk = (node: RawGroup | undefined | null): void => {
+        if (!node || typeof node !== 'object') return;
+        const controls = Array.isArray(node.controls) ? node.controls : [];
+        for (const c of controls) {
+            if (!c || typeof c !== 'object') continue;
             const id = c.control_id ?? c.name;
             if (!id) continue;
             const shortId = shortControlName(id);
             if (seen.has(shortId)) continue;
             seen.add(shortId);
             const status = aggregateStatus(c);
-            const firstReason = (c.results ?? []).find((r) => r.status === status)?.reason;
-            out.push({ controlId: shortId, title: c.title ?? shortId, status, reason: firstReason ?? '' });
+            out.push({ controlId: shortId, title: c.title ?? shortId, status, reason: reasonFor(c, status) });
         }
-        for (const g of node.groups ?? []) walk(g);
+        const groups = Array.isArray(node.groups) ? node.groups : [];
+        for (const g of groups) walk(g);
     };
-    // Powerpipe wraps the benchmark either at the root or under `.groups`.
+    // The root object is itself a group, so the walk starts there.
     walk(raw as RawGroup);
     return out;
 }
@@ -125,7 +258,7 @@ export function scrubAwsCredentials(text: string, secretValues: string[] = []): 
 
 export interface BenchmarkSummary {
     benchmark: string;
-    counts: { ok: number; alarm: number; skip: number; error: number; total: number };
+    counts: { ok: number; alarm: number; skip: number; error: number; unknown: number; total: number };
     controls: Array<{ id: string; status: PowerpipeControlStatus }>;
     truncated: boolean;
 }
@@ -142,7 +275,7 @@ export function summariseBenchmark(
     benchmark: string,
     controls: PowerpipeControlResult[],
 ): BenchmarkSummary {
-    const counts = { ok: 0, alarm: 0, skip: 0, error: 0, total: controls.length };
+    const counts = { ok: 0, alarm: 0, skip: 0, error: 0, unknown: 0, total: controls.length };
     for (const c of controls) counts[c.status] += 1;
     let list = controls.map((c) => ({ id: c.controlId, status: c.status }));
     let truncated = false;
@@ -294,10 +427,15 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         if (summary.counts.total === 0) {
             return { status: 'ERROR', summary: `${benchmark}: no controls parsed (insufficient data).`, details: summary as unknown as Record<string, unknown>, durationMs: Date.now() - start, errorMessage: 'collector returned zero controls' };
         }
-        const status: CheckResult['status'] = summary.counts.alarm > 0 ? 'FAILED' : summary.counts.error > 0 ? 'ERROR' : 'PASSED';
+        // An illegible control is not a passing one: `unknown` joins `error` in
+        // the ERROR arm so a run we could not read never reports compliant.
+        const status: CheckResult['status'] =
+            summary.counts.alarm > 0 ? 'FAILED'
+            : summary.counts.error > 0 || summary.counts.unknown > 0 ? 'ERROR'
+            : 'PASSED';
         return {
             status,
-            summary: `${benchmark}: ${summary.counts.ok} ok / ${summary.counts.alarm} alarm / ${summary.counts.skip} skip of ${summary.counts.total}`,
+            summary: `${benchmark}: ${summary.counts.ok} ok / ${summary.counts.alarm} alarm / ${summary.counts.error} error / ${summary.counts.skip} skip / ${summary.counts.unknown} unknown of ${summary.counts.total}`,
             details: summary as unknown as Record<string, unknown>,
             durationMs: Date.now() - start,
         };

@@ -12,6 +12,9 @@
  *   • `buildCredentialEnv` — credentials must travel via env, NEVER argv
  *     (argv is world-readable via /proc on most hosts).
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import {
     shortControlName,
     parsePowerpipeBenchmarkJson,
@@ -20,6 +23,23 @@ import {
     buildCredentialEnv,
     RESULT_JSON_MAX_BYTES,
 } from '@/app-layer/integrations/aws-posture-provider';
+import {
+    powerpipeControl,
+    powerpipeCounts,
+    powerpipeEmptyControl,
+    powerpipeErroredControl,
+    groupShapedControlSummary,
+    POWERPIPE_RUN_ERROR,
+    type PowerpipeControl,
+} from '../../helpers/powerpipe-benchmark-fixture';
+
+/** The on-disk collector sample, in the real wire shape. */
+const SOC2_SAMPLE = JSON.parse(
+    fs.readFileSync(
+        path.resolve(__dirname, '../../fixtures/aws-posture-powerpipe-soc2.json'),
+        'utf8',
+    ),
+);
 
 describe('shortControlName', () => {
     it('strips everything up to and including the .control. marker', () => {
@@ -42,10 +62,14 @@ describe('shortControlName', () => {
 });
 
 describe('parsePowerpipeBenchmarkJson', () => {
-    const control = (over: Record<string, unknown> = {}) => ({
-        control_id: 'aws_compliance.control.c1',
+    /**
+     * Controls come from the shared, source-cited builder in
+     * `tests/helpers/powerpipe-benchmark-fixture.ts`. Building one inline here
+     * is what let the parser be checked against its own assumption.
+     */
+    const control = (over: Partial<PowerpipeControl> = {}): PowerpipeControl => ({
+        ...powerpipeControl('c1', 'ok'),
         title: 'Root MFA',
-        summary: { status: { ok: 1 } },
         ...over,
     });
 
@@ -56,7 +80,7 @@ describe('parsePowerpipeBenchmarkJson', () => {
 
     it('flattens controls at the root', () => {
         expect(parsePowerpipeBenchmarkJson({ controls: [control()] })).toEqual([
-            { controlId: 'c1', title: 'Root MFA', status: 'ok', reason: '' },
+            { controlId: 'c1', title: 'Root MFA', status: 'ok', reason: 'ok reason' },
         ]);
     });
 
@@ -73,8 +97,8 @@ describe('parsePowerpipeBenchmarkJson', () => {
     it('falls back to `name` when control_id is absent, and skips id-less controls', () => {
         const parsed = parsePowerpipeBenchmarkJson({
             controls: [
-                control({ control_id: undefined, name: 'x.control.named' }),
-                control({ control_id: undefined, name: undefined }),
+                { ...control(), control_id: undefined, name: 'x.control.named' },
+                { ...control(), control_id: undefined, name: undefined },
             ],
         });
         expect(parsed.map((c) => c.controlId)).toEqual(['named']);
@@ -98,26 +122,51 @@ describe('parsePowerpipeBenchmarkJson', () => {
         ).toBe('c1');
     });
 
-    describe('status aggregation from the summary block', () => {
+    describe('status aggregation from the flat summary counters', () => {
         const statusOf = (summary: unknown) =>
-            parsePowerpipeBenchmarkJson({ controls: [control({ summary })] })[0].status;
+            parsePowerpipeBenchmarkJson({
+                controls: [{ ...control(), summary, results: null }],
+            })[0].status;
 
         it('ranks alarm above error above ok', () => {
-            expect(statusOf({ status: { alarm: 1, error: 1, ok: 1 } })).toBe('alarm');
-            expect(statusOf({ status: { error: 1, ok: 1 } })).toBe('error');
-            expect(statusOf({ status: { ok: 1 } })).toBe('ok');
+            expect(statusOf({ alarm: 1, error: 1, ok: 1 })).toBe('alarm');
+            expect(statusOf({ error: 1, ok: 1 })).toBe('error');
+            expect(statusOf({ ok: 1 })).toBe('ok');
         });
 
-        it('falls to skip when every counter is zero or absent', () => {
-            expect(statusOf({ status: { alarm: 0, error: 0, ok: 0 } })).toBe('skip');
-            expect(statusOf({ status: {} })).toBe('skip');
+        it('counts `info` as passing, the way StatusSummary.PassedCount does', () => {
+            expect(statusOf(powerpipeCounts('info'))).toBe('ok');
+        });
+
+        it('reads skip only when nothing louder is set', () => {
+            expect(statusOf(powerpipeCounts('skip'))).toBe('skip');
+            expect(statusOf({ skip: 1, alarm: 1 })).toBe('alarm');
+        });
+
+        it('calls an all-zero counter block a skip — the collector answered, nothing was in scope', () => {
+            expect(statusOf(powerpipeCounts('ok', 0))).toBe('skip');
+        });
+
+        it('calls a summary carrying no counters at all UNKNOWN, not skip', () => {
+            // The distinction #2301 turned on: "we could not read this" must not
+            // wear the same label as "this ran and did not apply".
+            expect(statusOf({})).toBe('unknown');
+            expect(statusOf(undefined)).toBe('unknown');
+        });
+
+        it('refuses the GROUP-shaped summary instead of silently misreading it', () => {
+            // `{ status: { … } }` is what a RESULT GROUP carries. A control that
+            // arrived wearing it is a shape we do not understand, so it must
+            // come back unknown — loudly — rather than aggregate to skip.
+            expect(statusOf(groupShapedControlSummary('alarm'))).toBe('unknown');
+            expect(statusOf(groupShapedControlSummary('ok'))).toBe('unknown');
         });
     });
 
     describe('status aggregation from result rows', () => {
         const statusOf = (results: unknown) =>
             parsePowerpipeBenchmarkJson({
-                controls: [control({ summary: undefined, results })],
+                controls: [{ ...control(), summary: undefined, results }],
             })[0].status;
 
         it('ranks alarm above error above ok', () => {
@@ -126,24 +175,76 @@ describe('parsePowerpipeBenchmarkJson', () => {
             expect(statusOf([{ status: 'ok' }])).toBe('ok');
         });
 
-        it('falls to skip with no rows or only unknown statuses', () => {
-            expect(statusOf([])).toBe('skip');
-            expect(statusOf(undefined)).toBe('skip');
-            expect(statusOf([{ status: 'weird' }])).toBe('skip');
+        it('treats an info row as passing', () => {
+            expect(statusOf([{ status: 'info' }])).toBe('ok');
         });
+
+        it('yields unknown — not skip — when the rows say nothing legible', () => {
+            expect(statusOf([])).toBe('unknown');
+            expect(statusOf(undefined)).toBe('unknown');
+            expect(statusOf([{ status: 'weird' }])).toBe('unknown');
+        });
+
+        it('still reads a genuine skip row as skip', () => {
+            expect(statusOf([{ status: 'skip' }])).toBe('skip');
+        });
+    });
+
+    describe('a control whose query failed', () => {
+        it('is an error, not a skip — its counters are set and its rows are null', () => {
+            // `setError` upstream increments Summary.Error, records the message
+            // and marks the run errored; no rows are ever produced, so `results`
+            // renders as null. Before #2301 this whole object read as `skip`.
+            const [c] = parsePowerpipeBenchmarkJson({
+                controls: [powerpipeErroredControl('sts_broken')],
+            });
+            expect(c.status).toBe('error');
+        });
+
+        it('surfaces the run error as the reason, since there is no row to quote', () => {
+            const [c] = parsePowerpipeBenchmarkJson({
+                controls: [powerpipeErroredControl('sts_broken', 'InvalidClientTokenId')],
+            });
+            expect(c.reason).toBe('InvalidClientTokenId');
+        });
+
+        it('is an error on the run status alone, even with the counters unset', () => {
+            const [c] = parsePowerpipeBenchmarkJson({
+                controls: [
+                    {
+                        ...powerpipeErroredControl('sts_broken'),
+                        summary: undefined,
+                        run_error: '',
+                        run_status: POWERPIPE_RUN_ERROR,
+                    },
+                ],
+            });
+            expect(c.status).toBe('error');
+        });
+    });
+
+    it('reads a control that matched no resources as a skip, not an error', () => {
+        // The collector answered; there was simply nothing in scope. This is the
+        // case that must NOT be swept in with the illegible ones, or a normal
+        // account with no RDS instances would turn every run into an ERROR.
+        const [c] = parsePowerpipeBenchmarkJson({
+            controls: [powerpipeEmptyControl('rds_encrypted')],
+        });
+        expect(c.status).toBe('skip');
     });
 
     it('reports the first reason matching the aggregated status', () => {
         const [c] = parsePowerpipeBenchmarkJson({
             controls: [
-                control({
+                {
+                    ...control(),
                     summary: undefined,
                     results: [
                         { status: 'ok', reason: 'fine' },
                         { status: 'alarm', reason: 'root MFA disabled' },
                         { status: 'alarm', reason: 'second alarm' },
                     ],
-                }),
+                },
             ],
         });
         expect(c.status).toBe('alarm');
@@ -152,9 +253,23 @@ describe('parsePowerpipeBenchmarkJson', () => {
 
     it('defaults the reason to empty when the matching row carries none', () => {
         const [c] = parsePowerpipeBenchmarkJson({
-            controls: [control({ summary: undefined, results: [{ status: 'ok' }] })],
+            controls: [{ ...control(), summary: undefined, results: [{ status: 'ok' }] }],
         });
         expect(c.reason).toBe('');
+    });
+
+    it('parses the on-disk collector sample without inventing a shape for it', () => {
+        // The sample is the real wire shape: FLAT control counters beside NESTED
+        // group counters. A parser that read the group form on controls would
+        // score every one of these unknown.
+        const parsed = parsePowerpipeBenchmarkJson(SOC2_SAMPLE);
+        expect(parsed.map((c) => `${c.controlId}:${c.status}`)).toEqual([
+            'iam_root_user_mfa_enabled:ok',
+            's3_bucket_public_access_blocked:ok',
+            'iam_user_mfa_enabled:alarm',
+            'cloudtrail_multi_region_trail_enabled:ok',
+            'guardduty_enabled:skip',
+        ]);
     });
 });
 
@@ -219,7 +334,7 @@ describe('scrubAwsCredentials', () => {
 });
 
 describe('summariseBenchmark', () => {
-    const ctl = (id: string, status: 'ok' | 'alarm' | 'skip' | 'error') => ({
+    const ctl = (id: string, status: 'ok' | 'alarm' | 'skip' | 'error' | 'unknown') => ({
         controlId: id,
         title: id,
         status,
@@ -235,8 +350,14 @@ describe('summariseBenchmark', () => {
             ctl('e', 'ok'),
         ]);
         expect(s.benchmark).toBe('soc2');
-        expect(s.counts).toEqual({ ok: 2, alarm: 1, skip: 1, error: 1, total: 5 });
+        expect(s.counts).toEqual({ ok: 2, alarm: 1, skip: 1, error: 1, unknown: 0, total: 5 });
         expect(s.truncated).toBe(false);
+    });
+
+    it('counts illegible controls in their own bucket, not among the skipped', () => {
+        const s = summariseBenchmark('soc2', [ctl('a', 'unknown'), ctl('b', 'skip')]);
+        expect(s.counts.unknown).toBe(1);
+        expect(s.counts.skip).toBe(1);
     });
 
     it('carries only id + status per control — never resources or reasons', () => {

@@ -1,59 +1,174 @@
 {
   "group_id": "aws_compliance.benchmark.soc_2",
   "title": "SOC 2",
-  "summary": { "status": { "ok": 3, "alarm": 1, "skip": 1, "error": 0 } },
+  "description": "",
+  "tags": {},
+  "summary": {
+    "status": {
+      "alarm": 1,
+      "ok": 3,
+      "info": 0,
+      "skip": 1,
+      "error": 0
+    }
+  },
   "groups": [
     {
       "group_id": "aws_compliance.benchmark.soc_2_cc_6",
       "title": "CC6 Logical Access",
+      "description": "",
+      "tags": {},
+      "summary": {
+        "status": {
+          "alarm": 1,
+          "ok": 2,
+          "info": 0,
+          "skip": 0,
+          "error": 0
+        }
+      },
+      "groups": [],
       "controls": [
         {
+          "summary": {
+            "alarm": 0,
+            "ok": 1,
+            "info": 0,
+            "skip": 0,
+            "error": 0
+          },
+          "results": [
+            {
+              "reason": "Root user MFA enabled",
+              "resource": "arn:aws:iam::123456789012:root",
+              "status": "ok",
+              "dimensions": []
+            }
+          ],
           "control_id": "aws_compliance.control.iam_root_user_mfa_enabled",
+          "description": "",
+          "severity": "medium",
+          "tags": {},
           "title": "Root user MFA enabled",
-          "summary": { "status": { "ok": 1, "alarm": 0, "skip": 0, "error": 0 } },
-          "results": [
-            { "status": "ok", "reason": "Root user MFA enabled", "resource": "arn:aws:iam::123456789012:root" }
-          ]
+          "run_status": 4,
+          "run_error": ""
         },
         {
+          "summary": {
+            "alarm": 0,
+            "ok": 1,
+            "info": 0,
+            "skip": 0,
+            "error": 0
+          },
+          "results": [
+            {
+              "reason": "Public access blocked; owner arn:aws:iam::123456789012:role/svc-audit",
+              "resource": "arn:aws:s3:::example-bucket",
+              "status": "ok",
+              "dimensions": []
+            }
+          ],
           "control_id": "aws_compliance.control.s3_bucket_public_access_blocked",
+          "description": "",
+          "severity": "medium",
+          "tags": {},
           "title": "S3 public access blocked",
-          "summary": { "status": { "ok": 1, "alarm": 0, "skip": 0, "error": 0 } },
-          "results": [
-            { "status": "ok", "reason": "Public access blocked; owner arn:aws:iam::123456789012:role/svc-audit", "resource": "arn:aws:s3:::example-bucket" }
-          ]
+          "run_status": 4,
+          "run_error": ""
         },
         {
-          "control_id": "aws_compliance.control.iam_user_mfa_enabled",
-          "title": "IAM users have MFA",
-          "summary": { "status": { "ok": 0, "alarm": 1, "skip": 0, "error": 0 } },
+          "summary": {
+            "alarm": 1,
+            "ok": 0,
+            "info": 0,
+            "skip": 0,
+            "error": 0
+          },
           "results": [
-            { "status": "alarm", "reason": "User 'deploy' has no MFA", "resource": "arn:aws:iam::123456789012:user/deploy" }
-          ]
+            {
+              "reason": "User 'deploy' has no MFA",
+              "resource": "arn:aws:iam::123456789012:user/deploy",
+              "status": "alarm",
+              "dimensions": []
+            }
+          ],
+          "control_id": "aws_compliance.control.iam_user_mfa_enabled",
+          "description": "",
+          "severity": "medium",
+          "tags": {},
+          "title": "IAM users have MFA",
+          "run_status": 4,
+          "run_error": ""
         }
       ]
     },
     {
       "group_id": "aws_compliance.benchmark.soc_2_cc_7",
       "title": "CC7 System Operations",
+      "description": "",
+      "tags": {},
+      "summary": {
+        "status": {
+          "alarm": 0,
+          "ok": 1,
+          "info": 0,
+          "skip": 1,
+          "error": 0
+        }
+      },
+      "groups": [],
       "controls": [
         {
-          "control_id": "aws_compliance.control.cloudtrail_multi_region_trail_enabled",
-          "title": "Multi-region CloudTrail enabled",
-          "summary": { "status": { "ok": 1, "alarm": 0, "skip": 0, "error": 0 } },
+          "summary": {
+            "alarm": 0,
+            "ok": 1,
+            "info": 0,
+            "skip": 0,
+            "error": 0
+          },
           "results": [
-            { "status": "ok", "reason": "Multi-region trail present", "resource": "arn:aws:cloudtrail:eu-west-1:123456789012:trail/main" }
-          ]
+            {
+              "reason": "Multi-region trail present",
+              "resource": "arn:aws:cloudtrail:eu-west-1:123456789012:trail/main",
+              "status": "ok",
+              "dimensions": []
+            }
+          ],
+          "control_id": "aws_compliance.control.cloudtrail_multi_region_trail_enabled",
+          "description": "",
+          "severity": "medium",
+          "tags": {},
+          "title": "Multi-region CloudTrail enabled",
+          "run_status": 4,
+          "run_error": ""
         },
         {
-          "control_id": "aws_compliance.control.guardduty_enabled",
-          "title": "GuardDuty enabled",
-          "summary": { "status": { "ok": 0, "alarm": 0, "skip": 1, "error": 0 } },
+          "summary": {
+            "alarm": 0,
+            "ok": 0,
+            "info": 0,
+            "skip": 1,
+            "error": 0
+          },
           "results": [
-            { "status": "skip", "reason": "GuardDuty not in scope for this account", "resource": "" }
-          ]
+            {
+              "reason": "GuardDuty not in scope for this account",
+              "resource": "",
+              "status": "skip",
+              "dimensions": []
+            }
+          ],
+          "control_id": "aws_compliance.control.guardduty_enabled",
+          "description": "",
+          "severity": "medium",
+          "tags": {},
+          "title": "GuardDuty enabled",
+          "run_status": 4,
+          "run_error": ""
         }
       ]
     }
-  ]
+  ],
+  "controls": null
 }
