@@ -161,6 +161,34 @@ describe('a breaking change does NOT bump the major', () => {
         expect(releaseTypeFor(['fix: mend a thing'], '3.999.4')).toBe('patch');
     });
 
+    it('closes the default-rule fallthrough the config cannot reach', () => {
+        // The `breaking` rule shadows DEFAULT_RELEASE_RULES[0] ({breaking:true})
+        // because the predicate is identical. It does NOT shadow
+        // default-release-rules.js:24, {tag:'Breaking', release:'major'}, which
+        // keys on `commit.tag` — a field no custom rule mentions, and one
+        // conventional-commits-parser fills from an ordinary body via
+        // `fieldPattern: /^-(.*?)-$/`. Measured against the config alone, this
+        // commit returned `major` and took 3.1.3 to 4.0.0.
+        //
+        // The wrapper's demotion is what closes it, which is why the invariant
+        // lives there rather than in the rule table.
+        const sneaky = 'chore: tidy up\n\n-tag-\nBreaking';
+        expect(releaseTypeFor([sneaky], '3.1.3')).toBe('minor');
+        expect(releaseTypeFor(['docs: note\n\n-tag-\nBreaking'], '3.1.3')).toBe('minor');
+        // ...and it must not cost the odometer its own promotion.
+        expect(releaseTypeFor([sneaky], '3.999.4')).toBe('major');
+    });
+
+    it('demotes BEFORE capping, so the guard cannot defeat the odometer', () => {
+        // Order is load-bearing. capMinor passes an existing `major` straight
+        // through, so demoting AFTER it would undo the odometer's own promotion
+        // — and semver.inc('3.999.4', 'minor') is '3.1000.0', a four-digit minor.
+        // This asserts the observable consequence: at the boundary the result is
+        // `major`, which is only reachable if the demotion ran first.
+        expect(releaseTypeFor(['feat: add a thing'], '3.999.4')).toBe('major');
+        expect(releaseTypeFor(['chore: tidy\n\n-tag-\nBreaking'], '3.999.4')).toBe('major');
+    });
+
     it('keeps the breaking rule PRESENT — deleting it is not the same as setting it', () => {
         // commit-analyzer consults its own DEFAULT rules whenever no custom rule
         // matches (index.js:57-66), and default rule 0 is

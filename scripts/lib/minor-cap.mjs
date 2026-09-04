@@ -43,6 +43,13 @@
  * commit-analyzer falls back to its own defaults when no custom rule
  * matches.
  *
+ * The config is not sufficient by itself, either — it shadows one
+ * major-yielding default and not the other. The guarantee that only
+ * this function can produce a `major` is enforced one level up, in
+ * `scripts/semrel-minor-cap.mjs`, which demotes any incoming `major`
+ * before calling in here. See the comment there for the measured
+ * bypass and why the order cannot be reversed.
+ *
  * This module is intentionally DEPENDENCY-FREE and pure so it can be
  * unit-tested in isolation (see tests/unit/minor-cap.test.ts, which
  * exercises it through a subprocess to sidestep the ESM-only

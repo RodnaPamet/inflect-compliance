@@ -27,10 +27,10 @@ and a breaking change could consume the whole thing at any point. The fix is one
 word in `.releaserc.json` — the `breaking` releaseRule maps to `minor` instead of
 `major` — after which `capMinor` is the only path to a major bump.
 
-Expressed as **config, not code**. A demotion inside `semrel-minor-cap.mjs` would
-work too, but then two places decide the release type; the wrapper stays a pure
-`(baseType, lastVersion) → type` function and the rule table stays the single
-seam.
+That was the first version of this change, and it was not enough — see *the
+second hole* below. The config expresses the intent; the guarantee has to live
+in `semrel-minor-cap.mjs`, because a rule table can only shadow the defaults it
+happens to name.
 
 ## The trap: deleting the rule is not the same as setting it
 
@@ -62,8 +62,49 @@ outranks every real type inside the `.every` loop — so a `feat!` would produce
 **no release at all**.
 
 The rule must be **present and set to `minor`**.
-`tests/unit/minor-cap.test.ts` asserts both halves, and the config comment says
-so in capitals.
+
+## And the rule alone is not sufficient — the second hole
+
+Setting it correctly still left a live bypass, found by adversarial verification
+*after* the first version of this change was already pushed.
+
+Exactly two default rules yield `major`
+(`grep -n major lib/default-release-rules.js` → lines 7 and 24). The custom
+`breaking` rule shadows line 7 completely — identical predicate, so it always
+matches first and the defaults are never consulted. **Line 24 is not shadowed:**
+
+```js
+{ tag: "Breaking", release: "major" }
+```
+
+It keys on `commit.tag`, which no custom rule mentions, and
+conventional-commits-parser fills that field from an ordinary commit body via
+`fieldPattern: /^-(.*?)-$/` (`dist/options.js:23`). So:
+
+```
+chore: tidy up
+
+-tag-
+Breaking
+```
+
+matched nothing custom, fell through to the defaults, and returned `major` —
+measured against the shipped config at 3.1.3, next version **4.0.0**, odometer
+bypassed.
+
+So the guarantee cannot live in the rule table. `scripts/semrel-minor-cap.mjs`
+now demotes any incoming `major` to `minor` before calling `capMinor`. The
+config is the *declaration*; the demotion is the *enforcement*. Stated as an
+invariant rather than an enumeration of today's defaults, so a future
+commit-analyzer release adding another major-yielding rule cannot reopen it.
+
+**The order is load-bearing and the wrong order is silently worse than no fix.**
+`capMinor` passes an existing `major` straight through, so demoting *after* it
+would undo the odometer's own promotion — and `semver.inc('3.999.4', 'minor')`
+is `'3.1000.0'`, a four-digit minor. The cap defeated by its own guard.
+
+`tests/unit/minor-cap.test.ts` pins the bypass, the ordering, and that the rule
+stays present-and-`minor`; the config comment says all of it in capitals.
 
 ## Files
 
@@ -71,8 +112,8 @@ so in capitals.
 |---|---|
 | `.releaserc.json` | the one-word change, plus a `_comment` rewritten to record the fallthrough trap |
 | `scripts/lib/minor-cap.mjs` | docstring: the "a real breaking change still bumps the major" paragraph replaced; the "cosmetic" claim restated |
-| `scripts/semrel-minor-cap.mjs` | docstring + the promotion log line, which claimed "no breaking change" behind a rollover |
-| `tests/unit/minor-cap.test.ts` | new `describe`: four breaking shapes → `minor`, the odometer still rolls at 999, and the rule is present-and-`minor` |
+| `scripts/semrel-minor-cap.mjs` | **the enforcement** — demotes any incoming `major` before the cap; plus the docstring, which argued against exactly this, and the promotion log line, which claimed "no breaking change" behind a rollover |
+| `tests/unit/minor-cap.test.ts` | four breaking shapes → `minor`; the `-tag-`/`Breaking` bypass; the demote-before-cap ordering; the odometer still rolling at 999; the rule present-and-`minor` |
 | `.github/workflows/release.yml` | its header documented `BREAKING CHANGE: → major bump` |
 | `docs/api-consumer-guide.md` | told external consumers a MAJOR signals a breaking change |
 
@@ -100,6 +141,13 @@ so in capitals.
   release reference to buy nothing; the change is entirely prospective. For the
   record, had the rule always applied the repo would be at ~**1.906.3** — the two
   `!` commits cost 902 minors of odometer travel.
+
+- **The first version of this change was wrong, and the way it was wrong is the
+  point.** It closed the path everyone looks at (`feat!` / `BREAKING CHANGE:`)
+  and left open the one nobody does (`commit.tag`). A rule table can only
+  shadow the defaults it happens to name; an invariant does not have to know
+  what it is shadowing. That is why the enforcement moved into the wrapper even
+  though the config is the more natural place to express the intent.
 
 - **Population: 2 commits of 3868** (0.05%) carry a breaking marker. One further
   commit mentions `BREAKING CHANGE` in prose mid-line and never matched, because
