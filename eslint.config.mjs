@@ -107,6 +107,12 @@ const config = [
             // cannot ask for it — this does. It demands the field be NAMED, not
             // non-null: `agentId: null` is a correct value, silence is not.
             'local/require-agent-attribution': 'error',
+
+            // An MCP tool DECLARES the authorization its human equivalent
+            // applies and never performs its own. The funnel is the one gate;
+            // a tool that can check is a tool that can skip.
+            // See eslint-rules/rules/require-mcp-tool-authorization.js.
+            'local/require-mcp-tool-authorization': 'error',
             '@typescript-eslint/no-explicit-any': 'warn',
             '@typescript-eslint/ban-ts-comment': [
                 'warn',

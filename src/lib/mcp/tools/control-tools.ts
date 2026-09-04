@@ -53,6 +53,12 @@ export const listControlsTool: McpReadTool<z.infer<typeof listControlsArgs>> = {
     },
     argsSchema: listControlsArgs,
     resourceScope: { resource: 'controls', action: 'read' },
+    // `GET /api/t/:slug/controls` is `requirePermission('controls.view')`.
+    authorize: {
+        keys: ['controls.view'],
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/controls',
+    },
     run: async (ctx: RequestContext, args) => {
         const { limit, ...filters } = args;
         // No cast: `filters` must structurally satisfy ControlListInputFilters.
@@ -87,6 +93,16 @@ export const searchControlsTool: McpReadTool<z.infer<typeof searchControlsArgs>>
     },
     argsSchema: searchControlsArgs,
     resourceScope: { resource: 'controls', action: 'read' },
+    // Backed by `getUnifiedSearch`, whose human route (`GET /search`) gates on
+    // `getTenantCtx` + a read check across every entity type. This tool returns
+    // ONLY control hits, so the narrower, stricter key for the one domain it
+    // actually surfaces is the honest gate — not the union the search route
+    // needs.
+    authorize: {
+        keys: ['controls.view'],
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/search (control hits only)',
+    },
     run: async (ctx: RequestContext, args) => {
         const results = await getUnifiedSearch(ctx, args.query, { perTypeLimit: args.limit ?? 10 });
         // Surface only the control hits — this is a control-search tool.

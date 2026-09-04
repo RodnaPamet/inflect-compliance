@@ -24,6 +24,7 @@ const LOCAL_RULES = [
     'no-fail-open-teardown-filter',
     'no-request-derived-public-url',
     'require-agent-attribution',
+    'require-mcp-tool-authorization',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

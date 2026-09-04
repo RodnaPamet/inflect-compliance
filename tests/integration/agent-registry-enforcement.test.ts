@@ -143,8 +143,30 @@ describeFn('the agent-registration gate', () => {
             create: { id: USER, email, emailHash: hashForLookup(email) },
         });
 
+        // The key's PRINCIPAL must be a live member: as of Epic Agentic 2 the
+        // MCP surface resolves `TenantApiKey.createdById` through the same
+        // `resolveTenantContext` a human goes through and intersects the two.
+        // OWNER because this suite's `propose_risks` case needs a principal who
+        // could create the risk it proposes.
+        await prisma.tenantMembership.upsert({
+            where: { tenantId_userId: { tenantId: TENANT, userId: USER } },
+            update: { role: 'OWNER', status: 'ACTIVE' },
+            create: { tenantId: TENANT, userId: USER, role: 'OWNER', status: 'ACTIVE' },
+        });
+
         activeAgentId = await seedAgent('Live reconciler', 'ACTIVE');
         suspendedAgentId = await seedAgent('Stopped reconciler', 'SUSPENDED');
+
+        // Tool exposure is deny-by-default, so a registered agent reaches
+        // nothing until an administrator grants it. This suite is about the
+        // REGISTRATION gate, not the exposure list, so it grants the two tools
+        // it drives and leaves the allowlist's own behaviour to
+        // tests/integration/mcp-tool-authz-per-invocation.test.ts.
+        for (const toolName of ['list_risks', 'propose_risks']) {
+            await prisma.registeredAgentTool.create({
+                data: { tenantId: TENANT, agentId: activeAgentId, toolName, grantedByUserId: USER },
+            });
+        }
         keyActive = await mintKey(activeAgentId);
         keySuspended = await mintKey(suspendedAgentId);
         keyUnbound = await mintKey(null);
@@ -159,7 +181,16 @@ describeFn('the agent-registration gate', () => {
             await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
         });
         await prisma.agentProposal.deleteMany({ where: { tenantId: TENANT } });
+        await prisma.registeredAgentTool.deleteMany({ where: { tenantId: TENANT } });
         await prisma.tenantApiKey.deleteMany({ where: { tenantId: TENANT } });
+        // Same replica-mode escape as the AuditLog delete above, and for the
+        // same class of reason: `tenant_membership_last_owner_guard` raises
+        // P0001 on a DELETE that would leave the tenant with no ACTIVE OWNER,
+        // which a teardown always would.
+        await prisma.$transaction(async (tx) => {
+            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+            await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
+        });
         await prisma.registeredAgent.deleteMany({ where: { tenantId: TENANT } });
         await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } });
         await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: TENANT } });

@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { getExecutiveDashboard } from '@/app-layer/usecases/dashboard';
 import type { RequestContext } from '@/app-layer/types';
 
+import { EXECUTIVE_DASHBOARD_REDACTION } from './dashboard-redaction';
 import type { McpReadTool } from './types';
 
 const argsSchema = z.object({}).strict();
@@ -34,6 +35,19 @@ export const getCompliancePostureTool: McpReadTool<Record<string, never>> = {
     },
     argsSchema,
     resourceScope: { resource: 'controls', action: 'read' },
+    // `getExecutiveDashboard` gates on `assertCanRead`, and the human dashboard
+    // route resolves `getTenantCtx` with no key. `controls.view` is the key for
+    // the domain the payload LEADS with (coverage + implementation %), and it
+    // is the gate for the CALL only — the payload spans six more domains, so
+    // the sections below fall away per domain. Gating the call is not the same
+    // claim as returning only what the principal may read, and this tool has to
+    // make the second one.
+    authorize: {
+        keys: ['controls.view'],
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/dashboard/executive',
+    },
+    redact: EXECUTIVE_DASHBOARD_REDACTION,
     run: async (ctx: RequestContext) => {
         return getExecutiveDashboard(ctx);
     },

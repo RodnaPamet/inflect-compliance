@@ -185,6 +185,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     },
 
     // ── Agent register (Epic Agentic) ───────────────────────────────
+    // ORDER MATTERS: matching is first-wins, so the narrower tool-exposure rule
+    // has to precede the register's own catch-all below. Reversed, every grant
+    // would resolve to `admin.agent_registry` and the separate key would be
+    // unreachable — present in the type, enforced nowhere.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/tools$`),
+        permission: 'admin.agent_tool_exposure',
+        note:
+            'Grant / revoke an individual MCP tool for a registered agent. Its ' +
+            'own key, narrower than admin.agent_registry: the register decides ' +
+            'whether an agent may act, this decides what it may reach, and a ' +
+            'tool absent from the list is unreachable at /api/mcp however ' +
+            'widely the credential is scoped.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),
         permission: 'admin.agent_registry',

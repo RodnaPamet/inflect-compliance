@@ -76,6 +76,19 @@ async function seedTenant(tenantId: string, slug: string): Promise<string> {
     const userId = `u-${slug}`;
     const email = `${slug}@example.test`;
     await prisma.user.upsert({ where: { id: userId }, update: {}, create: { id: userId, email, emailHash: hashForLookup(email) } });
+    // The key's PRINCIPAL must be a live member of the tenant. `verifyApiKey`
+    // derives the credential's role from its SCOPES, but as of Epic Agentic 2
+    // `/api/mcp` also resolves `TenantApiKey.createdById` through the same
+    // `resolveTenantContext` a signed-in human goes through and intersects the
+    // two — a credential cannot exceed the person it speaks for, and a creator
+    // who is not a member has no authority to lend. These fixtures minted keys
+    // for a user with no membership at all, which used to work; the membership
+    // is what the fixture was always implying.
+    await prisma.tenantMembership.upsert({
+        where: { tenantId_userId: { tenantId, userId } },
+        update: { role: 'OWNER', status: 'ACTIVE' },
+        create: { tenantId, userId, role: 'OWNER', status: 'ACTIVE' },
+    });
     // The agent-registration gate defaults to ENFORCING for a tenant with no
     // security-settings row, so a suite that mints a bare API key and calls
     // /api/mcp would now be refused. These fixtures predate the register and

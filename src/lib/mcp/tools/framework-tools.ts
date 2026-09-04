@@ -41,6 +41,13 @@ export const findCoverageGapsTool: McpReadTool<z.infer<typeof gapsArgs>> = {
     },
     argsSchema: gapsArgs,
     resourceScope: { resource: 'frameworks', action: 'read' },
+    // `computeCoverage` gates on `assertCanViewFrameworks`, which reads
+    // `appPermissions.frameworks.view` — the same flag, named as the key.
+    authorize: {
+        keys: ['frameworks.view'],
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/frameworks/coverage',
+    },
     run: async (ctx: RequestContext, args) => {
         const coverage = await computeCoverage(ctx, args.frameworkKey, args.version);
         const cap = args.limit ?? 100;
@@ -77,6 +84,11 @@ export const getFrameworkStatusTool: McpReadTool<z.infer<typeof statusArgs>> = {
     },
     argsSchema: statusArgs,
     resourceScope: { resource: 'frameworks', action: 'read' },
+    authorize: {
+        keys: ['frameworks.view'],
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/frameworks',
+    },
     run: async (ctx: RequestContext, args) => {
         if (!args.frameworkKey) {
             return { frameworks: await listInstallableFrameworks(ctx) };

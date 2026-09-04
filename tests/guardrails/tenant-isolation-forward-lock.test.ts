@@ -40,6 +40,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     Device: "tests/integration/wave-features-rls.test.ts",
     Employee: "tests/integration/wave-features-rls.test.ts",
     RegisteredAgent: "tests/integration/agent-registry-isolation.test.ts",
+    RegisteredAgentTool: "tests/integration/mcp-tool-authz-per-invocation.test.ts",
 };
 
 /**

@@ -43,6 +43,13 @@ export const listRisksTool: McpReadTool<z.infer<typeof listRisksArgs>> = {
     },
     argsSchema: listRisksArgs,
     resourceScope: { resource: 'risks', action: 'read' },
+    // The human `GET /api/t/:slug/risks` is wrapped in
+    // `requirePermission('risks.view')`. Same key, same `assertPermission`.
+    authorize: {
+        keys: ['risks.view'],
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/risks',
+    },
     run: async (ctx: RequestContext, args) => {
         const { limit, ...filters } = args;
         return listRisks(ctx, filters as Parameters<typeof listRisks>[1], { take: limit ?? 50 });

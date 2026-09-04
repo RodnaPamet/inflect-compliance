@@ -64,6 +64,9 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/route.ts',
     'admin/agents/[agentId]/route.ts',
     'admin/agents/[agentId]/status/route.ts',
+    // Deny-by-default MCP tool exposure — its own key,
+    // `admin.agent_tool_exposure`, narrower than the register's.
+    'admin/agents/[agentId]/tools/route.ts',
     'admin/device-tokens/route.ts',
     'admin/device-tokens/[tokenId]/route.ts',
     'admin/dsar-requests/route.ts',

@@ -85,26 +85,36 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  * silently change what an already-issued `audits:write` key resolves
  * to, which is a behaviour break, not a tidy-up.
  *
- * Some ACTIONS are deliberately unreachable by any scope:
+ * Some ACTIONS are deliberately unreachable by any NAMED scope:
  * `admin.tenant_lifecycle`, `admin.owner_management`,
+ * `admin.agent_registry`, `admin.agent_tool_exposure`,
  * `admin.compliance_dsar_*` and `reports.schedule_external`. Deleting
- * the tenant, rotating the DEK, managing OWNERs, moving DSARs, and
- * aiming a standing report feed off-tenant are not things a bearer
- * token should be able to do.
+ * the tenant, rotating the DEK, managing OWNERs, deciding which agents
+ * may act and what they may reach, moving DSARs, and aiming a standing
+ * report feed off-tenant are not things a bearer token should be able
+ * to do.
  *
- * NOT EVEN `*`. This paragraph used to end "a `*` key still reaches
- * them, and that is the one grant an operator has to make
- * consciously", which is false: `*` returns
- * `getPermissionsForRole('ADMIN')` below, and ADMIN denies
- * `tenant_lifecycle` and `owner_management` explicitly
- * (`permissions.ts` — OWNER is the only role that carries them). The
- * error was safe in direction — it overstated what a key grants — but
- * it described the security model wrongly, and automation planned
- * against it earns a 403. There is NO bearer token for these actions;
- * they need a real OWNER session. Pinned by the `*` case in
- * `tests/unit/api-key-management.test.ts`, which now asserts the
- * denial rather than only that `*` equals ADMIN — a shape assertion
- * that stayed green all the while this comment said the opposite.
+ * NOT EVEN `*`, for FOUR of those six. This paragraph used to end "a
+ * `*` key still reaches them, and that is the one grant an operator
+ * has to make consciously", which is false: `*` resolves below to
+ * ADMIN, and ADMIN denies `tenant_lifecycle` and `owner_management`
+ * explicitly (`permissions.ts` — OWNER is the only role that carries
+ * them). The error was safe in direction — it overstated what a key
+ * grants — but it described the security model wrongly, and automation
+ * planned against it earns a 403.
+ *
+ * The two agent-governance flags are denied to `*` EXPLICITLY, at the
+ * branch below, because ADMIN does hold them: a `*` key carried by an
+ * agent could otherwise activate its own registration and grant itself
+ * every MCP tool, and an allowlist its subject can widen is not an
+ * allowlist. `compliance_dsar_*` and `reports.schedule_external` are
+ * the remaining two, and `*` DOES reach them — they are privileged
+ * operations on data, not authority over which principals may act.
+ *
+ * Pinned by the `*` cases in `tests/unit/api-key-management.test.ts`,
+ * which assert the denials rather than only that `*` equals ADMIN — a
+ * shape assertion that stayed green all the while this comment said
+ * the opposite.
  */
 const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     controls:   { read: ['view'], write: ['create', 'edit'] },
@@ -187,9 +197,31 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
         }
     }
 
-    // Full access shortcut
+    // Full access shortcut — ADMIN, MINUS the agent-governance flags.
+    //
+    // The two subtractions are the point of the branch, not a detail of it.
+    // `admin.agent_registry` decides which autonomous agents may act at all;
+    // `admin.agent_tool_exposure` decides what each of them may reach, and it is
+    // the list `/api/mcp` refuses a tool against. A `*` key held BY an agent
+    // that could set either would make both self-modifiable: the credential
+    // could activate its own registration and grant itself every tool, and a
+    // deny-by-default allowlist a caller can widen is not an allowlist. So they
+    // join `tenant_lifecycle` and `owner_management` — actions that need a real
+    // session and that no bearer token, however scoped, performs.
+    //
+    // Asymmetric with `compliance_dsar_manage` and `reports.schedule_external`,
+    // which `*` DOES grant, and deliberately: those are ordinary privileged
+    // operations on data. These two are authority over the principals
+    // themselves, which is a different kind of thing to hand a token.
     if (scopes.includes('*')) {
-        return getPermissionsForRole('ADMIN');
+        return {
+            ...getPermissionsForRole('ADMIN'),
+            admin: {
+                ...getPermissionsForRole('ADMIN').admin,
+                agent_registry: false,
+                agent_tool_exposure: false,
+            },
+        };
     }
 
     for (const scope of scopes) {
