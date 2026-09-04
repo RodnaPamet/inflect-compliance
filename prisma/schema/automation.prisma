@@ -82,7 +82,19 @@ model TenantNotificationSettings {
   tenantId          String   @unique
   enabled           Boolean  @default(true)
   defaultFromName   String   @default("Inflect Compliance")
-  defaultFromEmail  String   @default("noreply@inflect.app")
+  // No @default, deliberately. This column is the `From` header processOutbox
+  // puts on every message for the tenant, so its value is a DEPLOYMENT fact and
+  // the application is the only thing that may decide it — `defaults()` in
+  // app-layer/notifications/settings.ts resolves it from SMTP_FROM via
+  // lib/email/sender-identity. It used to default to the placeholder address
+  // that module now owns as UNCONFIGURED_SENDER, which is deliverable only from
+  // a relay that has verified that domain; the default outlived PR #2286 and
+  // could still reach a row through an insert that omitted the column.
+  // Requiring the caller to supply it means an omission now fails loudly
+  // instead of sending from a domain nobody verified.
+  // `defaultFromName` above keeps its default because a product name is not a
+  // deployment fact and cannot be rejected by a relay.
+  defaultFromEmail  String
   complianceMailbox String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

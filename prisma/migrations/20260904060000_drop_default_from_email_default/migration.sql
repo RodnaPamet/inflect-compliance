@@ -1,0 +1,28 @@
+-- Drop the column default on TenantNotificationSettings.defaultFromEmail (#2296).
+--
+-- The column carried DEFAULT 'noreply@inflect.app'. That address is deliverable
+-- only from a relay that has verified inflect.app; production's had verified a
+-- different domain and had SMTP_FROM set to it correctly the whole time, so
+-- every message was rejected `550 ... domain is not verified` — 520 of them,
+-- silently, between 2026-06-03 and 2026-09-03.
+--
+-- PR #2286 removed the literal from the application code but not from here, and
+-- the schema default was still REACHABLE: the settings route built its update
+-- payload unconditionally, so a body omitting defaultFromEmail passed the key
+-- with an undefined value, the usecase spread that over its resolved default,
+-- and Prisma omits undefined arguments from the INSERT. The database then
+-- supplied the retired address. This migration removes that last path.
+--
+-- The application always supplies the column now (`defaults()` resolves it from
+-- SMTP_FROM, and the route validates its body), so NOT NULL is retained rather
+-- than made nullable: a nullable column would push a second "what if it is
+-- absent" decision back into processOutbox, which is the two-places-to-decide
+-- shape this whole change exists to remove. An insert that omits the column now
+-- raises 23502 instead of sending mail from a domain nobody verified.
+--
+-- Rolling-deploy safety: this only removes a DEFAULT, it does not add a
+-- constraint. Existing rows are untouched (production has none), and every
+-- insert path in the codebase — before and after #2286 — puts a concrete string
+-- in the create payload. No backfill is required.
+ALTER TABLE "TenantNotificationSettings"
+    ALTER COLUMN "defaultFromEmail" DROP DEFAULT;

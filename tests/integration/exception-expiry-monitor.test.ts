@@ -321,7 +321,7 @@ describeFn('Epic G-5 expiry monitor — DB integration', () => {
         await globalPrisma.tenantNotificationSettings.upsert({
             where: { tenantId: TENANT_A_ID },
             update: { enabled: false },
-            create: { tenantId: TENANT_A_ID, enabled: false },
+            create: { tenantId: TENANT_A_ID, enabled: false, defaultFromEmail: 'fixture@example.test' },
         });
         try {
             await makeException({ expiresAt: futureMidnight(30) });

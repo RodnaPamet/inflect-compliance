@@ -42,18 +42,11 @@ describe('enqueueEmail with tenant settings', () => {
     });
 });
 
-describe('Settings defaults', () => {
-    it('default settings shape has expected fields', () => {
-        const defaults = {
-            enabled: true,
-            defaultFromName: 'Inflect Compliance',
-            defaultFromEmail: 'noreply@inflect.app',
-            complianceMailbox: null,
-        };
-
-        expect(defaults.enabled).toBe(true);
-        expect(defaults.defaultFromName).toBe('Inflect Compliance');
-        expect(defaults.defaultFromEmail).toBe('noreply@inflect.app');
-        expect(defaults.complianceMailbox).toBeNull();
-    });
-});
+// The 'Settings defaults' block that stood here asserted a locally-declared
+// object literal against its own literals: it built the defaults object and
+// then expected each field to equal the value written three lines above. It
+// never imported the real `defaults()` — this file mocks that whole module —
+// so it survived every mutation to the code it was named for, and it kept the
+// retired sender address alive in the tree as a supposed expectation. The real
+// behaviour is covered against the real module in
+// tests/unit/notification-sender-fallback.test.ts. Removed with #2296.

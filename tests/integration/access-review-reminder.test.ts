@@ -393,7 +393,7 @@ describeFn('Epic G-4 reminder — DB integration', () => {
         await globalPrisma.tenantNotificationSettings.upsert({
             where: { tenantId: TENANT_A_ID },
             update: { enabled: false },
-            create: { tenantId: TENANT_A_ID, enabled: false },
+            create: { tenantId: TENANT_A_ID, enabled: false, defaultFromEmail: 'fixture@example.test' },
         });
         try {
             await makeCampaign({

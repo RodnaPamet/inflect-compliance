@@ -262,7 +262,14 @@ export const env = createEnv({
         SMTP_PORT: z.coerce.number().optional(),
         SMTP_USER: z.string().optional(),
         SMTP_PASS: z.string().optional(),
-        SMTP_FROM: z.string().default("noreply@inflect.app"),
+        // Optional, and deliberately WITHOUT a default. Nothing reads
+        // `env.SMTP_FROM` — every consumer goes through
+        // `deploymentSenderAddress()`, which reads `process.env` directly for
+        // the bundling reason documented at lib/email/sender-identity.ts. A
+        // default here was therefore a second copy of the sender address with
+        // no consumer, free to drift from `UNCONFIGURED_SENDER`, in a system
+        // whose whole point is that there is one address to set (#2296).
+        SMTP_FROM: z.string().optional(),
 
         // Stripe Billing
         STRIPE_SECRET_KEY: z.string().optional(),
