@@ -1,0 +1,173 @@
+/**
+ * Authored control-template tasks REACH THE DATABASE.
+ *
+ * ═══ WHY THIS TEST EXISTS ═══
+ *
+ * On 2026-09-04, 865 authored control tasks shipped through a bespoke
+ * conformance gate, an actionability ratchet, 1,634 local suites and 24 green
+ * CI checks into a database that received none of them. `prisma/seed.ts` read
+ * `internal-controls.json` through an `as` cast whose type had no `tasks`
+ * field, so the content was discarded at the type boundary — silently, because
+ * a cast cannot fail — and `ControlTemplateTask` was never written.
+ *
+ * Every gate that passed was reading the same JSON the seeder was throwing
+ * away. Not one of them crossed the delivery boundary, so all of them agreed,
+ * and their agreement meant nothing.
+ *
+ * This test is the one assertion that could have caught it: it seeds into a
+ * real database and counts rows. It calls `seedInternalControls` — the
+ * same function both seeders call — rather than re-implementing delivery,
+ * because a test that re-implements what it checks only proves two pieces of
+ * code agree, which is precisely the failure above.
+ */
+import { PrismaClient } from '@prisma/client';
+import { prismaTestClient, resetDatabase } from '../helpers/db';
+import {
+    loadAuthoredControlTasks,
+    seedInternalControls,
+} from '../../prisma/internal-controls-seed';
+
+const FIXTURE = require('../../prisma/fixtures/internal-controls.json') as unknown;
+
+let prisma: PrismaClient;
+let templateIds: string[] = [];
+let seeded: Awaited<ReturnType<typeof seedInternalControls>>;
+
+/**
+ * Every count below is scoped to the templates under test.
+ *
+ * A global `controlTemplateTask.count()` reads ~1,490 rows here, because the
+ * other populations legitimately carry template tasks and `resetDatabase`
+ * preserves the global catalogue. Scoping is not a workaround — an unscoped
+ * count would pass or fail on what OTHER fixtures happen to hold.
+ */
+describe('authored control-template tasks reach the database', () => {
+    const authored = loadAuthoredControlTasks(FIXTURE);
+    const codes = [...authored.byCode.keys()];
+
+    beforeAll(async () => {
+        prisma = prismaTestClient();
+        await resetDatabase(prisma);
+        // No template pre-creation: the seeder owns that too, and production
+        // has zero ICN- templates, so template creation IS part of delivery.
+        seeded = await seedInternalControls(prisma, FIXTURE);
+        templateIds = (
+            await prisma.controlTemplate.findMany({
+                where: { code: { in: codes } },
+                select: { id: true },
+            })
+        ).map((t) => t.id);
+    });
+
+    afterAll(async () => {
+        await prisma.$disconnect();
+    });
+
+    it('the fixture actually carries authored tasks (the test is not vacuous)', () => {
+        // Without this, every assertion below passes on an empty fixture — the
+        // same shape of nothing that let the original defect look healthy.
+        expect(authored.controlCount).toBeGreaterThan(0);
+        expect(authored.taskCount).toBeGreaterThan(0);
+    });
+
+    it('creates the ControlTemplate rows themselves', async () => {
+        // Production has ZERO ICN- templates — its catalogue came from
+        // framework-import, not these fixtures — so a tasks-only seeder would
+        // find nothing to attach to and report success having done nothing.
+        // created vs updated depends on whether the global catalogue survived
+        // resetDatabase (it does), so assert the total — what matters is that
+        // every authored control HAS a template afterwards, however it got one.
+        expect(seeded.templates.created + seeded.templates.updated).toBeGreaterThanOrEqual(
+            codes.length,
+        );
+        expect(templateIds).toHaveLength(codes.length);
+    });
+
+    it('every authored task lands as a ControlTemplateTask row', async () => {
+        expect(seeded.created).toBe(authored.taskCount);
+
+        const live = await prisma.controlTemplateTask.count({
+            where: { templateId: { in: templateIds }, deprecatedAt: null },
+        });
+        expect(live).toBe(authored.taskCount);
+    });
+
+    it('the authored FIELDS survive delivery, not just title and description', async () => {
+        // The pre-existing seed loops that DID write tasks wrote only
+        // `{ templateId, title, description }`, so phase, sortOrder, steps,
+        // evidenceHint and suggestedRole would have been dropped even once the
+        // rows existed. Counting rows alone would not have noticed.
+        const [code, tasks] = [...authored.byCode.entries()][0]!;
+        const template = await prisma.controlTemplate.findUniqueOrThrow({ where: { code } });
+        const rows = await prisma.controlTemplateTask.findMany({
+            where: { templateId: template.id, deprecatedAt: null },
+            orderBy: { sortOrder: 'asc' },
+        });
+
+        expect(rows).toHaveLength(tasks.length);
+        rows.forEach((row, i) => {
+            const src = tasks[i]!;
+            expect(row.title).toBe(src.title.en);
+            expect(row.description).toBe(src.description.en);
+            expect(row.phase).toBe(src.phase);
+            expect(row.sortOrder).toBe(src.sortOrder);
+            expect(row.contentHash).toBeTruthy();
+            if (src.evidenceHint) expect(row.evidenceHint).toBe(src.evidenceHint.en);
+            if (src.suggestedRole) expect(row.suggestedRole).toBe(src.suggestedRole);
+            if (src.steps) {
+                expect(Array.isArray(row.stepsJson)).toBe(true);
+                expect(row.stepsJson as unknown[]).toHaveLength(src.steps.length);
+            }
+        });
+    });
+
+    it('an OPERATE task keeps the artifact it names', async () => {
+        // evidenceHint on OPERATE is the one field the authoring spec makes
+        // mandatory, so it is the one most worth proving survives the trip.
+        const operate = await prisma.controlTemplateTask.findMany({
+            where: { templateId: { in: templateIds }, phase: 'OPERATE', deprecatedAt: null },
+            select: { title: true, evidenceHint: true },
+        });
+        expect(operate.length).toBeGreaterThan(0);
+        expect(operate.filter((t) => !t.evidenceHint?.trim()).map((t) => t.title)).toEqual([]);
+    });
+
+    it('re-running is idempotent — no duplicates, no churn', async () => {
+        // The seeder runs on EVERY production deploy. If a second run created
+        // rows, the table would grow without bound and every tenant install
+        // would pick up duplicates.
+        const before = await prisma.controlTemplateTask.count({ where: { templateId: { in: templateIds } } });
+        const second = await seedInternalControls(prisma, FIXTURE);
+
+        expect(second.created).toBe(0);
+        expect(second.updated).toBe(0);
+        expect(second.deprecated).toBe(0);
+        expect(second.unchanged).toBe(authored.taskCount);
+        expect(
+            await prisma.controlTemplateTask.count({ where: { templateId: { in: templateIds } } }),
+        ).toBe(before);
+    });
+
+    it('a task the fixture stops claiming is deprecated, never deleted', async () => {
+        // A tenant may already have installed it, and its Task rows outlive the
+        // template by design. Deprecation stops re-installation without
+        // disturbing what exists.
+        const [code, tasks] = [...authored.byCode.entries()][0]!;
+        const template = await prisma.controlTemplate.findUniqueOrThrow({ where: { code } });
+        // `title` is required — the seeder filters malformed controls, and a
+        // fixture entry without one is exactly that.
+        const trimmed = {
+            controls: [{ code, title: `Template ${code}`, tasks: tasks.slice(0, -1) }],
+        };
+
+        const r = await seedInternalControls(prisma, trimmed);
+        expect(r.deprecated).toBe(1);
+
+        const rows = await prisma.controlTemplateTask.findMany({ where: { templateId: template.id } });
+        expect(rows).toHaveLength(tasks.length); // nothing deleted
+        expect(rows.filter((t) => t.deprecatedAt !== null)).toHaveLength(1);
+
+        // Restore, so ordering between tests cannot leak.
+        await seedInternalControls(prisma, FIXTURE);
+    });
+});

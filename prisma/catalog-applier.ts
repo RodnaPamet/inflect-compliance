@@ -47,7 +47,7 @@ function addReconcile(a: TaskReconcileResult, b: TaskReconcileResult): TaskRecon
 }
 
 /** The authored-task shape this file receives from the loader. */
-type AuthoredTask = {
+export type AuthoredTask = {
     title: { en: string; bg?: string };
     description: { en: string; bg?: string };
     phase: 'SCOPE' | 'IMPLEMENT' | 'OPERATE' | 'REVIEW';

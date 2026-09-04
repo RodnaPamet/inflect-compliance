@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { hashForLookup } from '@/lib/security/encryption';
 import { seedDefaultOrgDashboard } from '@/app-layer/usecases/org-dashboard-presets';
+import { seedInternalControls, type PolicyFrameworkMap } from './internal-controls-seed';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -1951,51 +1952,23 @@ Reviewed at least annually.` },
     // into ControlTemplateRequirementLinks. So installing a framework pack ALSO
     // populates the internal controls whose policies map to that framework, plus
     // their policy links (see usecases/framework/install.ts).
-    const internalControls = require('./fixtures/internal-controls.json') as {
-        controls: Array<{ code: string; title: string; objective: string; successCriteria: string; testingMethodology: string; relatedPolicies: string[]; category: string }>;
-    };
+    const internalControlsFixture = require('./fixtures/internal-controls.json') as unknown;
     const icPolicyFwMap = (require('./fixtures/internal-controls-policy-framework-map.json') as {
-        policies: Record<string, { iso27001?: string[]; nis2?: string[] }>;
+        policies: PolicyFrameworkMap;
     }).policies;
-    // ISO 27001 Annex A code → requirement id (NIS2 uses nis2ReqMap seeded above).
-    const isoReqMap: Record<string, string> = {};
-    for (const r of await prisma.frameworkRequirement.findMany({ where: { frameworkId: iso27001.id }, select: { id: true, code: true } })) {
-        isoReqMap[r.code] = r.id;
-    }
-    let icReqLinks = 0;
-    for (const c of internalControls.controls) {
-        const data = {
-            title: c.title,
-            description: c.objective || null,
-            category: c.category || null,
-            objective: c.objective || null,
-            successCriteria: c.successCriteria || null,
-            testingMethodology: c.testingMethodology || null,
-            relatedPolicies: c.relatedPolicies.join('|') || null,
-        };
-        const tmpl = await prisma.controlTemplate.upsert({
-            where: { code: c.code },
-            update: data,
-            create: { code: c.code, ...data },
-        });
-        // Policy-mediated framework mapping → ControlTemplateRequirementLink.
-        const reqIds = new Set<string>();
-        for (const p of c.relatedPolicies) {
-            const map = icPolicyFwMap[p];
-            if (!map) continue;
-            for (const code of map.iso27001 ?? []) if (isoReqMap[code]) reqIds.add(isoReqMap[code]);
-            for (const code of map.nis2 ?? []) if (nis2ReqMap[code]) reqIds.add(nis2ReqMap[code]);
-        }
-        for (const requirementId of reqIds) {
-            await prisma.controlTemplateRequirementLink.upsert({
-                where: { templateId_requirementId: { templateId: tmpl.id, requirementId } },
-                create: { templateId: tmpl.id, requirementId },
-                update: {},
-            });
-            icReqLinks++;
-        }
-    }
-    console.log(`✅ Internal Controls library + ${internalControls.controls.length} controls + ${icReqLinks} policy-mediated requirement links seeded`);
+
+    // Templates, policy-mediated requirement links AND authored tasks, through
+    // the same function the prod seeder and the delivery test call.
+    //
+    // This block used to be inline here, and it read the fixture through an
+    // `as` cast whose type had no `tasks` field — so every authored task was
+    // discarded at the type boundary without a single error anywhere, while a
+    // conformance gate, an actionability ratchet and 24 green CI checks all
+    // certified the file. A cast lies quietly; the loader now parses and
+    // throws. See prisma/internal-controls-seed.ts.
+    const ic = await seedInternalControls(prisma, internalControlsFixture, icPolicyFwMap);
+    console.log(`✅ Internal Controls: ${ic.templates.created} created / ${ic.templates.updated} updated templates + ${ic.requirementLinks} policy-mediated requirement links`);
+    console.log(`✅ Internal Controls authored tasks: ${ic.fixtureTaskCount} in fixture -> created ${ic.created}, updated ${ic.updated}, unchanged ${ic.unchanged}, deprecated ${ic.deprecated}`);
 
     // ISO 9001 Pack
     const iso9001Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'QMS-' } } });

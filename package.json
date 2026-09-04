@@ -25,6 +25,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed-self-assessments": "tsx scripts/seed-self-assessments.ts",
     "db:seed-policy-templates": "tsx scripts/seed-policy-templates.ts",
+    "db:seed-control-tasks": "tsx scripts/seed-control-template-tasks.ts",
     "db:seed-vendor-questionnaires": "tsx scripts/seed-vendor-questionnaires.ts",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force && tsx prisma/seed.ts",

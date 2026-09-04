@@ -78,6 +78,21 @@ echo ""
 echo "→ Seeding vendor-assessment questionnaires..."
 node dist/seed-vendor-questionnaires.mjs || echo "⚠ vendor-questionnaire seed skipped (non-fatal)"
 
+# ── 1e. Seed authored control-template tasks (idempotent) ──
+#
+# The authored task content on global ControlTemplate rows lives in
+# prisma/fixtures/internal-controls.json. prisma/seed.ts is not run on prod
+# deploys, so authored tasks would otherwise never reach an already-seeded
+# environment — and until 2026-09-04 they reached NO environment, because the
+# seed loop read that fixture through a cast with no `tasks` field and wrote
+# ControlTemplateTask nowhere.
+#
+# Writes go through reconcileTemplateTasks: contentHash-keyed, update-in-place,
+# deprecate-by-absence, never delete. Safe to re-run. Non-fatal.
+echo ""
+echo "→ Seeding control-template tasks..."
+node dist/seed-control-template-tasks.mjs || echo "⚠ control-template task seed skipped (non-fatal)"
+
 # ── 2. Create upload directory if missing ──
 FILE_DIR="${FILE_STORAGE_ROOT:-/data/uploads}"
 mkdir -p "$FILE_DIR" 2>/dev/null || true
