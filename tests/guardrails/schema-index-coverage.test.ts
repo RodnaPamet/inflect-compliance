@@ -363,6 +363,19 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'ai-gov-self-assessment getState/raiseFindings filter answers by [tenantId, assessmentId]',
     },
+    // ── Agent risk assessment (AgentRiskAssessmentRepository) ───────
+    {
+        model: 'AgentRiskAssessment',
+        fields: ['tenantId', 'agentId'],
+        justification:
+            'AgentRiskAssessmentRepository.findOpen/findLatestCompleted/listForAgent all filter by [tenantId, agentId]; @@index([tenantId, updatedAt]) covers the findOpen ordering and @@index([tenantId, status]) the status predicate',
+    },
+    {
+        model: 'AgentRiskAssessmentAnswer',
+        fields: ['tenantId', 'assessmentId'],
+        justification:
+            'AgentRiskAssessmentRepository.listAnswers filters by [tenantId, assessmentId]',
+    },
 ];
 
 // ─────────────────────────────────────────────────────────────────────

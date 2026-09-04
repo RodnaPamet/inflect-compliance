@@ -1,0 +1,197 @@
+{
+  "questionSetVersion": 1,
+  "attribution": "Dimensions follow Singapore IMDA's Model AI Governance Framework for Agentic AI (2025). Threat-class ids ASI01-ASI10 are the OWASP Agentic Security Initiative agentic threat taxonomy (© OWASP Foundation, CC-BY-SA-4.0). Questions are paraphrased and reference both sources BY ID only — never verbatim source prose.",
+  "disclaimer": "This is a self-assessment aid, NOT legal advice. It scores an agent's OPERATIONAL authority (AgentRiskTier); it is not an EU AI Act risk classification, which lives on the AiSystem register entry and is a legal call owned by your counsel.",
+  "domains": [
+    {
+      "id": 1,
+      "code": "RISK_BOUNDING",
+      "name": "Bounding the risk upfront",
+      "description": "IMDA dimension 1 — the agent's autonomy, data reach and action reversibility are declared, scoped and capped before it runs.",
+      "sortOrder": 1
+    },
+    {
+      "id": 2,
+      "code": "GUARDRAILS",
+      "name": "Technical guardrails",
+      "description": "IMDA dimension 2 — what stands between the agent's intent and the tenant's data: tool allowlists, input and output validation, egress control, blast-radius limits.",
+      "sortOrder": 2
+    },
+    {
+      "id": 3,
+      "code": "HUMAN_OVERSIGHT",
+      "name": "Human accountability and control",
+      "description": "IMDA dimension 3 — a named accountable human, approval gates on consequential actions, and a kill switch that actually stops the agent.",
+      "sortOrder": 3
+    },
+    {
+      "id": 4,
+      "code": "TRACEABILITY",
+      "name": "Traceability, evaluation and response",
+      "description": "IMDA dimension 4 — every action is attributable and reconstructable, the agent is evaluated before and after deployment, and there is a rehearsed response when it misbehaves.",
+      "sortOrder": 4
+    }
+  ],
+  "questions": [
+    {
+      "id": "ara-1-01",
+      "domainId": 1,
+      "criticality": "CRITICAL",
+      "text": "Is the agent's maximum autonomy level a deliberate decision recorded in the register, rather than whatever its credentials happen to permit?",
+      "guidance": "YES requires that the registered autonomy level was chosen for this agent's job and that no credential can drive it higher.",
+      "mappings": { "asi": ["ASI03"], "imda": ["D1"] }
+    },
+    {
+      "id": "ara-1-02",
+      "domainId": 1,
+      "criticality": "CRITICAL",
+      "text": "Is the agent's reach into tenant data the narrowest that lets it do its job — and does it stop at the platform boundary unless external egress is genuinely required?",
+      "guidance": "YES requires an explicit scope decision. An agent granted EXTERNAL_EGRESS 'in case it needs it' is a NO.",
+      "mappings": { "asi": ["ASI03", "ASI04"], "imda": ["D1"] }
+    },
+    {
+      "id": "ara-1-03",
+      "domainId": 1,
+      "criticality": "HIGH",
+      "text": "Have you enumerated the actions this agent can take that CANNOT be undone by the platform, and accepted each one?",
+      "guidance": "Sending an external notification, publishing a document, telling a third party. YES requires the list to exist and to have been read by the accountable owner.",
+      "mappings": { "asi": ["ASI02"], "imda": ["D1"] }
+    },
+    {
+      "id": "ara-1-04",
+      "domainId": 1,
+      "criticality": "HIGH",
+      "text": "For a third-party or vendor-supplied agent, have you assessed the supplier's own agent-security posture and pinned the version you run?",
+      "guidance": "Covers ASI08 (agent supply chain). A first-party agent built in-house may answer NA.",
+      "mappings": { "asi": ["ASI08"], "imda": ["D1"] }
+    },
+    {
+      "id": "ara-1-05",
+      "domainId": 1,
+      "criticality": "MEDIUM",
+      "text": "Is there a written statement of what this agent is NOT permitted to do, distinct from the list of what it is for?",
+      "guidance": "The out-of-scope list is what an incident review reads first. YES requires it to exist in writing.",
+      "mappings": { "asi": ["ASI01"], "imda": ["D1"] }
+    },
+    {
+      "id": "ara-2-01",
+      "domainId": 2,
+      "criticality": "CRITICAL",
+      "text": "Is the agent's tool access an explicit allowlist, so that a tool the server offers is not by itself permission to call it?",
+      "guidance": "Covers ASI02 (tool misuse). YES requires deny-by-default: an ungranted tool is refused server-side.",
+      "mappings": { "asi": ["ASI02"], "imda": ["D2"] }
+    },
+    {
+      "id": "ara-2-02",
+      "domainId": 2,
+      "criticality": "CRITICAL",
+      "text": "Are untrusted inputs the agent reads — retrieved documents, ticket bodies, web content, other agents' output — treated as data rather than as instructions?",
+      "guidance": "Covers ASI01 (behavioural manipulation) and ASI04 (context and memory poisoning). YES requires a concrete mechanism, not a prompt asking the model to be careful.",
+      "mappings": { "asi": ["ASI01", "ASI04"], "imda": ["D2"] }
+    },
+    {
+      "id": "ara-2-03",
+      "domainId": 2,
+      "criticality": "HIGH",
+      "text": "Are the agent's outputs validated against a schema or safety check before anything acts on them?",
+      "guidance": "Covers ASI05 (unexpected code execution) where output feeds a shell, a query, or another system.",
+      "mappings": { "asi": ["ASI05"], "imda": ["D2"] }
+    },
+    {
+      "id": "ara-2-04",
+      "domainId": 2,
+      "criticality": "HIGH",
+      "text": "Does the agent hold its OWN identity and credentials, rather than borrowing a human's session or a shared service account?",
+      "guidance": "Covers ASI03 (identity and privilege abuse). A borrowed identity makes every action unattributable and every permission the human's.",
+      "mappings": { "asi": ["ASI03"], "imda": ["D2"] }
+    },
+    {
+      "id": "ara-2-05",
+      "domainId": 2,
+      "criticality": "HIGH",
+      "text": "Is there a bound on how much the agent can do in one run — a rate limit, a step budget, or a blast-radius cap on records touched?",
+      "guidance": "Covers ASI06 (cascading failures). YES requires the bound to be enforced, not documented.",
+      "mappings": { "asi": ["ASI06"], "imda": ["D2"] }
+    },
+    {
+      "id": "ara-2-06",
+      "domainId": 2,
+      "criticality": "MEDIUM",
+      "text": "If this agent calls or is called by other agents, is that chain bounded and are the other agents themselves registered?",
+      "guidance": "Covers ASI06 and ASI10. An agent whose peers are unregistered has an unbounded effective surface. NA if the agent works alone.",
+      "mappings": { "asi": ["ASI06", "ASI10"], "imda": ["D2"] }
+    },
+    {
+      "id": "ara-3-01",
+      "domainId": 3,
+      "criticality": "CRITICAL",
+      "text": "Does a named human own this agent, and would that person be told — and expected to act — if it misbehaved today?",
+      "guidance": "A vacant or nominal owner is a NO. The register requires an owner; this asks whether the owner is real.",
+      "mappings": { "asi": ["ASI09"], "imda": ["D3"] }
+    },
+    {
+      "id": "ara-3-02",
+      "domainId": 3,
+      "criticality": "CRITICAL",
+      "text": "Do the agent's consequential actions pass through a human decision before they take effect?",
+      "guidance": "Covers ASI07 (human-agent trust exploitation) only when the review is real — an approver shown a summary they cannot check is a PARTIALLY at best.",
+      "mappings": { "asi": ["ASI07"], "imda": ["D3"] }
+    },
+    {
+      "id": "ara-3-03",
+      "domainId": 3,
+      "criticality": "HIGH",
+      "text": "Is there a kill switch that stops this agent within one request cycle, and has somebody used it in a drill?",
+      "guidance": "YES requires both. An untested kill switch is a plan, not a control.",
+      "mappings": { "asi": ["ASI09", "ASI10"], "imda": ["D3"] }
+    },
+    {
+      "id": "ara-3-04",
+      "domainId": 3,
+      "criticality": "MEDIUM",
+      "text": "Are the humans who review this agent's proposals trained on what it is plausibly wrong about?",
+      "guidance": "Covers ASI07. Fluent, confident and wrong is the failure mode an untrained approver rubber-stamps.",
+      "mappings": { "asi": ["ASI07"], "imda": ["D3"] }
+    },
+    {
+      "id": "ara-4-01",
+      "domainId": 4,
+      "criticality": "CRITICAL",
+      "text": "Is every action the agent takes attributable to THIS agent, with enough recorded to reconstruct why it acted?",
+      "guidance": "Covers ASI09 (insufficient observability). Logs that say a change happened but not which agent made it, or on what basis, are a NO.",
+      "mappings": { "asi": ["ASI09"], "imda": ["D4"] }
+    },
+    {
+      "id": "ara-4-02",
+      "domainId": 4,
+      "criticality": "HIGH",
+      "text": "Can you enumerate every agent running against this tenant, so that an unregistered one would be noticed?",
+      "guidance": "Covers ASI10 (rogue agents / governance evasion). YES requires the register to be enforced at the credential boundary, not maintained by convention.",
+      "mappings": { "asi": ["ASI10"], "imda": ["D4"] }
+    },
+    {
+      "id": "ara-4-03",
+      "domainId": 4,
+      "criticality": "HIGH",
+      "text": "Was this agent evaluated against adversarial cases — injection through its inputs, tool misuse, escalation attempts — before it was given live authority?",
+      "guidance": "Covers ASI01, ASI02 and ASI05. A functional test suite is not an adversarial evaluation.",
+      "mappings": { "asi": ["ASI01", "ASI02", "ASI05"], "imda": ["D4"] }
+    },
+    {
+      "id": "ara-4-04",
+      "domainId": 4,
+      "criticality": "HIGH",
+      "text": "Is there a rehearsed response for this agent misbehaving — who is paged, what is revoked, how the actions it took are found and undone?",
+      "guidance": "Covers ASI09. YES requires the recovery step, not only the stop step.",
+      "mappings": { "asi": ["ASI09"], "imda": ["D4"] }
+    },
+    {
+      "id": "ara-4-05",
+      "domainId": 4,
+      "criticality": "MEDIUM",
+      "text": "Is the agent monitored in production for behaviour drift after a model, prompt or tool change?",
+      "guidance": "Covers ASI04 and ASI06. A change that alters behaviour without altering the code is the one nothing else catches.",
+      "mappings": { "asi": ["ASI04", "ASI06"], "imda": ["D4"] }
+    }
+  ]
+}

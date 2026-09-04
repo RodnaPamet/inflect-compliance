@@ -1071,6 +1071,41 @@ Reviewed at least annually.` },
     }
     console.log(`✅ AI-governance self-assessment v${aiGov.questionSetVersion} — ${aiGov.domains.length} domains + ${aiGov.questions.length} questions seeded`);
 
+    // ─── Agent risk assessment (IMDA agentic dimensions + OWASP ASI classes) ───
+    // Global reference content (AgentAssessmentDomain + AgentAssessmentQuestion),
+    // idempotent — same upsert-by-stable-id shape as the AI-governance set above.
+    // The ids (`ara-<domain>-<nn>`) are STABLE EXTERNAL KEYS: an assessor citing
+    // a question in a report has to resolve to the same row forever, which is
+    // why this is an upsert and never a truncate-and-reload.
+    const agentRisk = require('./fixtures/agent-risk-assessment.json') as {
+        questionSetVersion: number;
+        domains: Array<{ id: number; code: string; name: string; description: string; sortOrder: number }>;
+        questions: Array<{ id: string; domainId: number; criticality: string; text: string; guidance: string | null; mappings: { asi: string[]; imda: string[] } }>;
+    };
+    for (const d of agentRisk.domains) {
+        const domainData = { code: d.code, name: d.name, description: d.description, sortOrder: d.sortOrder };
+        await prisma.agentAssessmentDomain.upsert({
+            where: { id: d.id },
+            update: domainData,
+            create: { id: d.id, ...domainData },
+        });
+    }
+    for (const q of agentRisk.questions) {
+        const data = {
+            domainId: q.domainId,
+            text: q.text,
+            guidance: q.guidance ?? null,
+            mappingsJson: q.mappings,
+            criticality: q.criticality,
+        };
+        await prisma.agentAssessmentQuestion.upsert({
+            where: { id: q.id },
+            update: data,
+            create: { id: q.id, ...data },
+        });
+    }
+    console.log(`✅ Agent risk assessment v${agentRisk.questionSetVersion} — ${agentRisk.domains.length} domains + ${agentRisk.questions.length} questions seeded`);
+
     // ISO 9001
     const iso9001Data = require('./fixtures/iso9001_clauses.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
     const iso9001 = await prisma.framework.upsert({

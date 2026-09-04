@@ -186,6 +186,8 @@ model Tenant {
   workflowRuns                      WorkflowRun[]
   registeredAgents                  RegisteredAgent[]
   registeredAgentTools              RegisteredAgentTool[]
+  agentRiskAssessments              AgentRiskAssessment[]
+  agentRiskAssessmentAnswers        AgentRiskAssessmentAnswer[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?
