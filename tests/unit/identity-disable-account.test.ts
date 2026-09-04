@@ -61,6 +61,23 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
     recordIdentityBatchRefused: (...a: unknown[]) => recordBatchRefused(...a),
 }));
 
+const appendAudit = jest.fn(async (_entry: Record<string, unknown>) => ({
+    id: 'a1',
+    entryHash: 'h',
+    previousHash: null,
+}));
+// MUST be mocked, and the reason is the shape this file keeps running into.
+// `appendAuditEntry` does not go through the mocked `runInTenantContext` — it
+// reaches the default client directly — so without this every batch test would
+// make a real round trip, fail the `AuditLog_tenantId_fkey` constraint ('t1' is
+// not a Tenant), and be swallowed by the audit helper's own catch. The suite
+// would be green, slower, and proving nothing about a row it never wrote.
+// Spread, not a listing factory, for the reason given directly above.
+jest.mock('@/lib/audit', () => ({
+    ...jest.requireActual('@/lib/audit'),
+    appendAuditEntry: (entry: Record<string, unknown>) => appendAudit(entry),
+}));
+
 import {
     DirectoryWriteError,
     disableAccount,
@@ -102,6 +119,7 @@ function setMode(mode: string, since: Date | null = null) {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    appendAudit.mockResolvedValue({ id: 'a1', entryHash: 'h', previousHash: null } as never);
     setMode('AUTOMATIC');
     db.identityWriteJournal.create.mockResolvedValue({ id: 'j1' });
     db.identityWriteJournal.updateMany.mockResolvedValue({ count: 1 });
@@ -679,13 +697,24 @@ describe('a failure to READ is contained, and the directory is untouched', () =>
             population: 500,
         });
 
-        // The directory WAS written to. Anything other than "we do not know"
-        // would be a guess with teeth.
+        // The directory WAS written to, and that is now SAID rather than
+        // hedged. This used to assert INDETERMINATE, on the reasoning that
+        // anything else would be "a guess with teeth" — but the guess ran the
+        // other way. INDETERMINATE is defined, on the outcome itself, as "we do
+        // not know whether the directory changed"; `writer.disable()` returned,
+        // so we do. What was unknown is the RECORD, and there was no way to say
+        // that until `journalSettled` existed.
+        //
+        // Only safe because the stranded row is now surfaced: `readUnsettledBacklog`
+        // at the head of every pass counts it, warns with the link id and emits
+        // identity.write.unsettled. Before that reader had a caller, downgrading
+        // this signal would have dropped it on the floor.
         expect(w.disabled).toEqual(['a']);
-        expect(r.results[0].outcome).toBe('INDETERMINATE');
+        expect(r.results[0].outcome).toBe('DISABLED');
+        expect(r.results[0].journalSettled).toBe(false);
     });
 
-    it('tells IT it could not be confirmed, not that the account is still live', async () => {
+    it('tells IT the account is off, because it is — the lost record is not IT\'s problem to chase', async () => {
         const w = fakeWriter();
         db.identityWriteJournal.updateMany.mockRejectedValueOnce(new Error('the database went away'));
 
@@ -694,10 +723,15 @@ describe('a failure to READ is contained, and the directory is untouched', () =>
             population: 500,
         });
 
+        // Previously UNCONFIRMED, which sent IT to check an account that is
+        // provably disabled. The settle failing is an operator problem about a
+        // journal row, not an access-control problem about a person — and it
+        // reaches an operator through the backlog reader and its metric, not
+        // through a mail to the service desk.
         const types = db.notificationOutbox.create.mock.calls.map(
             (c) => (c[0] as { data: { type: string } }).data.type,
         );
-        expect(types).toContain('IDENTITY_LEAVER_UNCONFIRMED');
+        expect(types).toContain('IDENTITY_LEAVER_DISABLED');
         expect(types).not.toContain('IDENTITY_LEAVER_NEEDS_ACTION');
     });
 
@@ -1145,3 +1179,124 @@ describe('every decision the write-target shaped says WHICH rule shaped it', () 
     });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The hash-chained record of a directory write (#2295)
+//
+// Disabling a person's account in a customer's directory wrote NO AuditLog row,
+// while marking that same account protected wrote two. An auditor could see the
+// flag and never the act. These pin the row, and — as importantly — pin what is
+// deliberately NOT chained.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('a directory write is recorded in the hash-chained trail', () => {
+    const entry = () => appendAudit.mock.calls[0][0];
+    const details = () => entry().detailsJson as Record<string, unknown>;
+
+    it('writes one row naming the LINK, for a confirmed disable', async () => {
+        const w = fakeWriter();
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ linkId: 'link-1', externalUserId: 'ext-1' })],
+            population: 500,
+        });
+
+        // Paired with the outcome so it cannot pass on a function that audited
+        // and never disabled.
+        expect(r.results[0].outcome).toBe('DISABLED');
+        expect(w.disabled).toEqual(['ext-1']);
+
+        expect(appendAudit).toHaveBeenCalledTimes(1);
+        expect(entry().action).toBe('IDENTITY_ACCOUNT_DISABLED');
+        expect(entry().entity).toBe('IdentityAccountLink');
+        expect(entry().entityId).toBe('link-1');
+        expect(details().category).toBe('access');
+        expect(details().writeAttempted).toBe(true);
+    });
+
+    it('names no user, because AuditLog.userId is a foreign key and a pass has none', async () => {
+        // `buildSystemContext` sets userId to the literal SYSTEM_PRINCIPAL,
+        // which is not a real User.id. Passing it through would violate
+        // AuditLog_userId_fkey, throw, be swallowed, and record nothing — while
+        // looking like it worked. Production carries 1006 rows with a null user
+        // and none with that literal.
+        const w = fakeWriter();
+        await disableAccountsForLeaver(ctx, w, { candidates: [input({})], population: 500 });
+        expect(entry().userId).toBeNull();
+        expect(entry().actorType).not.toBe('USER');
+    });
+
+    it('puts no directory identifier in a row that can never be edited', async () => {
+        const guid = '11111111-2222-3333-4444-555555555555';
+        const w = fakeWriter({
+            disable: jest.fn(async () => {
+                throw new DirectoryWriteError(`Entra refused to disable ${guid}`, {
+                    definitivelyNotApplied: true,
+                });
+            }),
+        });
+        await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ linkId: 'link-1', externalUserId: guid })],
+            population: 500,
+        });
+
+        // The VALUE, not the key name — a key-name assertion passes on a row
+        // that spells the identifier under a different key.
+        expect(JSON.stringify(entry())).not.toContain(guid);
+        // Paired positive, so it cannot pass by writing nothing at all.
+        expect(entry().entityId).toBe('link-1');
+    });
+
+    it('does NOT chain a decision that asked the directory for nothing', async () => {
+        const w = fakeWriter();
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ isProtected: true })],
+            population: 500,
+        });
+        expect(r.results[0].outcome).toBe('REFUSED_PROTECTED');
+        expect(appendAudit).not.toHaveBeenCalled();
+    });
+
+    it('records a throw BEFORE any directory contact as unknown, not as a possible disable', async () => {
+        // THE point of the tri-state. The batch catch-all sees every throw out
+        // of disableAccount, and the likeliest are plain DB round trips that
+        // happen before the writer is ever called. Claiming "attempted" here
+        // would put uncorrectable rows in an immutable table saying the product
+        // may have disabled people it never contacted.
+        const w = fakeWriter();
+        db.identityWriteJournal.create.mockRejectedValueOnce(new Error('pool exhausted'));
+
+        await disableAccountsForLeaver(ctx, w, { candidates: [input({})], population: 500 });
+
+        expect(entry().action).toBe('IDENTITY_ACCOUNT_DISABLE_ERRORED');
+        expect(details().writeAttempted).toBeNull();
+        // The directory was provably never touched.
+        expect(w.disabled).toEqual([]);
+    });
+
+    it('says the record is missing when the settle failed, and still reports the disable', async () => {
+        const w = fakeWriter();
+        db.identityWriteJournal.updateMany.mockRejectedValueOnce(new Error('the database went away'));
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates: [input({})], population: 500 });
+
+        expect(r.results[0].outcome).toBe('DISABLED');
+        expect(details().journalUnsettled).toBe(true);
+    });
+
+    it('an audit sink that is down does not leave a leaver enabled', async () => {
+        // The write has already happened by the time this runs. Refusing to
+        // record it does not un-happen it, so it must not fail the batch.
+        appendAudit.mockRejectedValueOnce(new Error('audit sink down') as never);
+        const w = fakeWriter();
+
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ externalUserId: 'ext-1' })],
+            population: 500,
+        });
+
+        expect(r.results[0].outcome).toBe('DISABLED');
+        expect(w.disabled).toEqual(['ext-1']);
+        expect(logger.error).toHaveBeenCalledWith(
+            expect.stringContaining('could not be audited'),
+            expect.anything(),
+        );
+    });
+});

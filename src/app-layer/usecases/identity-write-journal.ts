@@ -208,7 +208,11 @@ const MAX_UNSETTLED = 200;
  * changed. Surfacing them is the difference between a recoverable gap and a
  * silent one.
  */
-export async function listUnsettledWrites(ctx: RequestContext, olderThan: Date) {
+export async function listUnsettledWrites(
+    ctx: RequestContext,
+    olderThan: Date,
+    provider?: string,
+) {
     const rows = await runInTenantContext(ctx, (db) =>
         db.identityWriteJournal.findMany({
             // Both unsettled states: PENDING (we crashed before reporting) and
@@ -216,14 +220,37 @@ export async function listUnsettledWrites(ctx: RequestContext, olderThan: Date) 
             // thing to a human — go and look at the directory.
             where: {
                 tenantId: ctx.tenantId,
+                // Optional, and the caller passes it. The leaver dispatcher fans
+                // out one job per (tenant, provider) over WRITABLE_IDENTITY_PROVIDERS,
+                // and this counter's only label is `tenant_id` — so an unscoped
+                // read would add the tenant's whole backlog once per provider,
+                // under one series, and the number would silently double.
+                ...(provider ? { provider } : {}),
                 outcome: { in: ['PENDING', 'INDETERMINATE'] },
                 attemptedAt: { lt: olderThan },
             },
             orderBy: { attemptedAt: 'asc' },
             take: MAX_UNSETTLED,
+            // NARROW ON PURPOSE. Two columns are deliberately absent:
+            //
+            //   `detail` is on the Epic-B encryption manifest, and that entry
+            //   says why — free text about a NAMED person's access change, and
+            //   provider errors routinely echo the UPN. Selecting it decrypts
+            //   once per stranded row per night for a value no caller reads,
+            //   and a decrypt failure would warn per row for ever.
+            //
+            //   `externalUserId` is a directory identifier, which this
+            //   subsystem refuses to put in a durable record — and the caller
+            //   persists what it learns into `IntegrationExecution.resultJson`,
+            //   which is NOT encrypted at rest. One `...row` spread by a future
+            //   caller would be enough. Leaving the column unselected makes
+            //   that structural rather than a matter of caller discipline.
+            //
+            // `linkId` is the safe handle: opaque, tenant-scoped, and enough to
+            // find the row by hand.
             select: {
-                id: true, provider: true, externalUserId: true, action: true,
-                mode: true, attemptedAt: true, linkId: true, outcome: true, detail: true,
+                id: true, provider: true, action: true,
+                mode: true, attemptedAt: true, linkId: true, outcome: true,
             },
         }),
     );
