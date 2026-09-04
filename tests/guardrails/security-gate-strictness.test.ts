@@ -34,7 +34,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -69,9 +69,15 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         expect(gate).toMatch(/'critical'/);
         // It audits the PRODUCTION tree, not the whole tree.
         expect(gate).toMatch(/'--omit=dev'/);
-        // And it must still be capable of failing: a wrapper that only
-        // ever logs would satisfy every assertion above.
-        expect(gate).toMatch(/process\.exit\(1\)/);
+        // And it must still be capable of failing ON FINDINGS: a wrapper that
+        // only ever logs would satisfy every assertion above.
+        //
+        // Bound to the findings branch, not to the file. The script has a
+        // SECOND `process.exit(1)` — the registry-unavailable path added for
+        // #2306 — and a whole-file needle would be satisfied by that one alone,
+        // so the exit that actually blocks a vulnerable dependency could be
+        // deleted with this assertion still green.
+        expect(braceBlockAfter(gate, String.raw`if \(failures\.length > 0\)`)).toMatch(/process\.exit\(1\)/);
 
         // The all-deps informational scan (without `--omit=dev`)
         // legitimately stays at `critical` to limit dev-only noise — it is
