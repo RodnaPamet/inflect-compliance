@@ -225,3 +225,56 @@ export async function resolveAgentAuthority(keyCtx: RequestContext): Promise<Age
 
     return { ctx, principal };
 }
+
+/**
+ * Record the one AUTHZ_DENIED row for a credential whose principal no longer
+ * resolves.
+ *
+ * Lives here rather than in either door because BOTH refuse for this reason and
+ * the row must be written exactly once. It was originally emitted only from the
+ * MCP funnel; once the narrowing moved to the point where the credential's
+ * context is minted, the MCP funnel stopped being reached for this case and the
+ * row silently stopped being written — an agent denial going unaudited, which
+ * is the ASI10 signal this subsystem exists to surface.
+ *
+ * `surface` is optional because the auth layer legitimately does not know which
+ * route is calling. An absent surface is recorded as such rather than guessed.
+ */
+export async function auditPrincipalUnresolved(
+    ctx: RequestContext,
+    reason: PrincipalDenialReason,
+    surface?: { method: string; path: string },
+): Promise<void> {
+    const where = surface ? `${surface.method} ${surface.path}` : 'credential verification';
+    try {
+        const { appendAuditEntry } = await import('@/lib/audit');
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: 'API_KEY',
+            entity: 'TenantApiKey',
+            entityId: ctx.apiKeyId ?? 'unknown-api-key',
+            action: 'AUTHZ_DENIED',
+            details: `Agent principal unresolved for ${where}`,
+            detailsJson: {
+                category: 'access',
+                event: 'authz_denied',
+                gate: 'agent_principal',
+                reason,
+                apiKeyId: ctx.apiKeyId ?? null,
+                agentId: ctx.agentId ?? null,
+                method: surface?.method ?? null,
+                path: surface?.path ?? null,
+            },
+            requestId: ctx.requestId,
+            metadataJson: { apiKeyId: ctx.apiKeyId ?? null, reason },
+        });
+    } catch (err) {
+        const { logger } = await import('@/lib/observability/logger');
+        logger.warn('audit: failed to record agent-principal AUTHZ_DENIED', {
+            requestId: ctx.requestId,
+            tenantId: ctx.tenantId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}

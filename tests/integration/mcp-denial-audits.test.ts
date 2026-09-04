@@ -411,7 +411,17 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
         const { row, status } = await denialFor(() =>
             rpc(keyDeadPrincipal, { jsonrpc: '2.0', id: 1, method: 'tools/list' }),
         );
-        expect(status).toBe(403);
+        // 401, not the 403 this asserted while the narrowing lived only in the
+        // MCP funnel. The refusal moved to where the credential's context is
+        // MINTED — it had to, because the REST door bypassed the funnel
+        // entirely and an agent key could commit writes its principal could not
+        // — and at that point the credential simply does not resolve. That is
+        // the same class as `revoked` and `expired`, which are also 401.
+        //
+        // The 403 was never the load-bearing part; the ROW is. It is still
+        // written exactly once, still names the key, still carries the reason,
+        // and the assertions below are unchanged.
+        expect(status).toBe(401);
         // The KEY is the entity, not the person: the credential is what an
         // operator has to act on, and the user is already in `userId`.
         expect(row.entity).toBe('TenantApiKey');

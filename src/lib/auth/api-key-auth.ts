@@ -34,6 +34,11 @@ import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
 import { computePermissions } from '@/lib/tenant-context';
 import { forbidden } from '@/lib/errors/types';
 import type { RequestContext } from '@/app-layer/types';
+import {
+    PrincipalUnresolvedError,
+    resolveAgentAuthority,
+    auditPrincipalUnresolved,
+} from '@/lib/agentic/agent-authority';
 import type { TenantApiKey, Tenant } from '@prisma/client';
 
 // ─── Constants ───
@@ -337,7 +342,20 @@ export interface ApiKeyAuthResult {
 
 export interface ApiKeyAuthError {
     valid: false;
-    reason: 'not_found' | 'expired' | 'revoked' | 'invalid_format' | 'tenant_deleted';
+    reason:
+        | 'not_found'
+        | 'expired'
+        | 'revoked'
+        | 'invalid_format'
+        | 'tenant_deleted'
+        /**
+         * An agent-bound key whose human principal no longer resolves — removed
+         * from the tenant, deactivated, or their role withdrawn. Distinct from
+         * `revoked`, which is about the credential; this is about the person it
+         * speaks for. Fails closed rather than falling back to the key's own
+         * scopes, which is exactly the authority the narrowing exists to remove.
+         */
+        | 'principal_unresolved';
 }
 
 export type ApiKeyVerifyResult = ApiKeyAuthResult | ApiKeyAuthError;
@@ -468,6 +486,53 @@ async function finaliseApiKeyAuth(
         // to infer from an absent property.
         apiKeyMaxAutonomy: apiKey.maxAutonomyLevel ?? null,
     };
+
+    // ── Narrow an AGENT-BOUND credential to its principal, HERE ──────────
+    //
+    // Everything above derives authority from the KEY'S SCOPES alone. For an
+    // agent-bound key that is the confused deputy in its textbook form: the
+    // credential carries ambient authority the human who created it does not
+    // have, so the agent acts beyond its principal.
+    //
+    // This was closed at the MCP door only. `resolveAgentAuthority` had exactly
+    // one caller — `buildMcpInvocation` — while `iflk_` bearers are admitted at
+    // `/api/t/**` too (#2224). Measured on this branch before the fix: one key,
+    // created by a READER and bound to an ACTIVE agent, was refused
+    // `propose_risks` at `/api/mcp` and simultaneously accepted at
+    // `POST /api/t/<slug>/risks`, creating a real Risk row — strictly WORSE
+    // than the path that was blocked, because it commits outright instead of
+    // entering the propose-not-commit queue. A `*`-scoped key from the same
+    // principal issued an ADMIN invite.
+    //
+    // So the narrowing belongs where the credential's context is MINTED, not at
+    // each consumer. Every caller of `verifyApiKey` — REST and MCP alike —
+    // inherits it, and the PR's own rule ("no parallel agent-authz path that
+    // can drift") is satisfied by there being one path.
+    //
+    // Scoped to agent-bound keys deliberately. A key with no `agentId` keeps
+    // today's scope-derived authority: that broader question — should ANY key
+    // exceed its creator? — is a real one, but it is pre-existing, affects every
+    // existing integration, and is not this change's to decide silently.
+    if (apiKey.agentId) {
+        try {
+            const { ctx: narrowed } = await resolveAgentAuthority(ctx);
+            return { valid: true, apiKey, ctx: narrowed };
+        } catch (err) {
+            // The principal no longer resolves — the member was removed,
+            // deactivated, or their role was withdrawn. A credential whose
+            // human is gone must not keep acting on their behalf, so this
+            // fails CLOSED rather than falling back to the key's own scopes.
+            if (err instanceof PrincipalUnresolvedError) {
+                // Write the denial before returning. An agent refusal that
+                // leaves no audit row is invisible, and this refusal moved here
+                // from the MCP funnel — which no longer sees it, because the
+                // credential now fails verification before reaching that gate.
+                await auditPrincipalUnresolved(ctx, err.reason);
+                return { valid: false, reason: 'principal_unresolved' };
+            }
+            throw err;
+        }
+    }
 
     return { valid: true, apiKey, ctx };
 }
