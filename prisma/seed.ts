@@ -1150,38 +1150,17 @@ Reviewed at least annually.` },
     console.log(`✅ ISO 27001 control templates seeded (${templatesCreated} new)`);
 
     // ─── NIS2 Control Templates ───
-    const nis2Templates = [
-        { code: 'NIS2-RA', title: 'Risk analysis and information security policies', reqs: ['Art.21(2)(a)'] },
-        { code: 'NIS2-IH', title: 'Incident handling procedures', reqs: ['Art.21(2)(b)'] },
-        { code: 'NIS2-BC', title: 'Business continuity and crisis management', reqs: ['Art.21(2)(c)'] },
-        { code: 'NIS2-SC', title: 'Supply chain security management', reqs: ['Art.21(2)(d)'] },
-        { code: 'NIS2-NS', title: 'Network and information system security', reqs: ['Art.21(2)(e)'] },
-        { code: 'NIS2-EF', title: 'Effectiveness assessment of cybersecurity measures', reqs: ['Art.21(2)(f)'] },
-        { code: 'NIS2-CH', title: 'Cyber hygiene and security training', reqs: ['Art.21(2)(g)'] },
-        { code: 'NIS2-CR', title: 'Cryptography and encryption policies', reqs: ['Art.21(2)(h)'] },
-        { code: 'NIS2-HR', title: 'HR security and access control', reqs: ['Art.21(2)(i)'] },
-        { code: 'NIS2-MFA', title: 'Multi-factor authentication and secured communications', reqs: ['Art.21(2)(j)'] },
-        { code: 'NIS2-EW', title: 'Early warning notification (24h)', reqs: ['Art.23(1)'] },
-        { code: 'NIS2-IN', title: 'Incident notification (72h)', reqs: ['Art.23(2)'] },
-        { code: 'NIS2-FR', title: 'Final incident report (1 month)', reqs: ['Art.23(3)'] },
-        { code: 'NIS2-GO', title: 'Management body cybersecurity oversight', reqs: ['Art.20(1)'] },
-        { code: 'NIS2-TR', title: 'Management cybersecurity training', reqs: ['Art.20(2)'] },
-        { code: 'NIS2-CE', title: 'Cybersecurity certification schemes', reqs: ['Art.24(1)'] },
-        { code: 'NIS2-ST', title: 'Standards and technical specifications', reqs: ['Art.25'] },
-        { code: 'NIS2-DN', title: 'Domain name registration accuracy', reqs: ['Art.28(1)'] },
-        { code: 'NIS2-IS', title: 'Information sharing arrangements', reqs: ['Art.29(1)'] },
-        { code: 'NIS2-NS2', title: 'National cybersecurity strategy compliance', reqs: ['Art.7(1)'] },
-    ];
+    const nis2Templates = require('./fixtures/nis2-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
     for (const t of nis2Templates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
             const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: 'NIS2', defaultFrequency: 'QUARTERLY' },
+                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
-            for (const rk of t.reqs) {
+            for (const rk of t.requirements) {
                 if (nis2ReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: nis2ReqMap[rk] } }).catch(() => { });
                 }
@@ -1195,42 +1174,17 @@ Reviewed at least annually.` },
     // requirement. Stable codes (DORA-<article>) keep the pack + install
     // flow idempotent. Rides the generic ControlTemplate/Pack machinery —
     // no DORA-specific install path.
-    const doraTemplates = [
-        { code: 'DORA-5',  title: 'ICT governance and management-body accountability', reqs: ['DORA.Art.5'] },
-        { code: 'DORA-6',  title: 'ICT risk management framework', reqs: ['DORA.Art.6'] },
-        { code: 'DORA-7',  title: 'ICT systems, protocols and tools', reqs: ['DORA.Art.7'] },
-        { code: 'DORA-8',  title: 'Asset and dependency identification', reqs: ['DORA.Art.8'] },
-        { code: 'DORA-9',  title: 'Protection and prevention controls', reqs: ['DORA.Art.9'] },
-        { code: 'DORA-10', title: 'Anomalous-activity detection', reqs: ['DORA.Art.10'] },
-        { code: 'DORA-11', title: 'Response and recovery / ICT business continuity', reqs: ['DORA.Art.11'] },
-        { code: 'DORA-12', title: 'Backup, restoration and recovery procedures', reqs: ['DORA.Art.12'] },
-        { code: 'DORA-13', title: 'Learning and evolving (post-incident review)', reqs: ['DORA.Art.13'] },
-        { code: 'DORA-14', title: 'Crisis communication', reqs: ['DORA.Art.14'] },
-        { code: 'DORA-16', title: 'Simplified ICT risk management framework', reqs: ['DORA.Art.16'] },
-        { code: 'DORA-17', title: 'ICT-related incident management process', reqs: ['DORA.Art.17'] },
-        { code: 'DORA-18', title: 'Incident classification', reqs: ['DORA.Art.18'] },
-        { code: 'DORA-19', title: 'Major-incident reporting to competent authority', reqs: ['DORA.Art.19'] },
-        { code: 'DORA-23', title: 'Payment-related operational/security incident handling', reqs: ['DORA.Art.23'] },
-        { code: 'DORA-24', title: 'Digital operational resilience testing programme', reqs: ['DORA.Art.24'] },
-        { code: 'DORA-25', title: 'Testing of ICT tools and systems', reqs: ['DORA.Art.25'] },
-        { code: 'DORA-26', title: 'Threat-led penetration testing (TLPT)', reqs: ['DORA.Art.26'] },
-        { code: 'DORA-27', title: 'TLPT tester suitability and independence', reqs: ['DORA.Art.27'] },
-        { code: 'DORA-28', title: 'ICT third-party risk strategy and Register of Information', reqs: ['DORA.Art.28'] },
-        { code: 'DORA-29', title: 'ICT concentration-risk assessment', reqs: ['DORA.Art.29'] },
-        { code: 'DORA-30', title: 'Key contractual provisions for ICT services', reqs: ['DORA.Art.30'] },
-        { code: 'DORA-31', title: 'Critical ICT third-party provider tracking', reqs: ['DORA.Art.31'] },
-        { code: 'DORA-45', title: 'Cyber threat information-sharing arrangements', reqs: ['DORA.Art.45'] },
-    ];
+    const doraTemplates = require('./fixtures/dora-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
     for (const t of doraTemplates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
             const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: 'DORA', defaultFrequency: 'QUARTERLY' },
+                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
-            for (const rk of t.reqs) {
+            for (const rk of t.requirements) {
                 if (doraReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: doraReqMap[rk] } }).catch(() => { });
                 }
@@ -1240,40 +1194,17 @@ Reviewed at least annually.` },
     console.log('✅ DORA control templates seeded');
 
     // ─── ISO 9001 Control Templates ───
-    const iso9001Templates = [
-        { code: 'QMS-CTX', title: 'Organizational context determination', reqs: ['4.1', '4.2'] },
-        { code: 'QMS-SCP', title: 'QMS scope definition', reqs: ['4.3'] },
-        { code: 'QMS-PRC', title: 'QMS process management', reqs: ['4.4'] },
-        { code: 'QMS-LDR', title: 'Leadership commitment and customer focus', reqs: ['5.1', '5.1.2'] },
-        { code: 'QMS-POL', title: 'Quality policy establishment', reqs: ['5.2'] },
-        { code: 'QMS-ROL', title: 'Roles and responsibilities assignment', reqs: ['5.3'] },
-        { code: 'QMS-RSK', title: 'Risk and opportunity management', reqs: ['6.1'] },
-        { code: 'QMS-OBJ', title: 'Quality objectives planning', reqs: ['6.2'] },
-        { code: 'QMS-CHG', title: 'Change planning', reqs: ['6.3'] },
-        { code: 'QMS-RES', title: 'Resource management', reqs: ['7.1', '7.1.5', '7.1.6'] },
-        { code: 'QMS-CMP', title: 'Competence and awareness', reqs: ['7.2', '7.3'] },
-        { code: 'QMS-COM', title: 'Communication management', reqs: ['7.4'] },
-        { code: 'QMS-DOC', title: 'Documented information control', reqs: ['7.5'] },
-        { code: 'QMS-OPC', title: 'Operational planning and control', reqs: ['8.1'] },
-        { code: 'QMS-REQ', title: 'Product/service requirements', reqs: ['8.2'] },
-        { code: 'QMS-DES', title: 'Design and development control', reqs: ['8.3'] },
-        { code: 'QMS-EXT', title: 'External provider control', reqs: ['8.4'] },
-        { code: 'QMS-PRD', title: 'Production and service provision', reqs: ['8.5', '8.5.1', '8.6', '8.7'] },
-        { code: 'QMS-MON', title: 'Performance monitoring and evaluation', reqs: ['9.1', '9.1.2', '9.1.3'] },
-        { code: 'QMS-AUD', title: 'Internal audit program', reqs: ['9.2'] },
-        { code: 'QMS-MGR', title: 'Management review', reqs: ['9.3'] },
-        { code: 'QMS-IMP', title: 'Improvement and corrective action', reqs: ['10.1', '10.2', '10.3'] },
-    ];
+    const iso9001Templates = require('./fixtures/iso9001-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
     for (const t of iso9001Templates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
             const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: 'ISO9001', defaultFrequency: 'QUARTERLY' },
+                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
-            for (const rk of t.reqs) {
+            for (const rk of t.requirements) {
                 if (iso9001ReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso9001ReqMap[rk] } }).catch(() => { });
                 }
@@ -1283,33 +1214,17 @@ Reviewed at least annually.` },
     console.log('✅ ISO 9001 control templates seeded');
 
     // ─── ISO 28000 Control Templates ───
-    const iso28000Templates = [
-        { code: 'SCS-CTX', title: 'Supply chain context determination', reqs: ['4.1', '4.2'] },
-        { code: 'SCS-SCP', title: 'Security management system scope', reqs: ['4.3', '4.4'] },
-        { code: 'SCS-LDR', title: 'Leadership and security policy', reqs: ['5.1', '5.2'] },
-        { code: 'SCS-ROL', title: 'Security roles and authorities', reqs: ['5.3'] },
-        { code: 'SCS-RSK', title: 'Security risk assessment and treatment', reqs: ['6.1', '8.2', '8.3'] },
-        { code: 'SCS-OBJ', title: 'Security objectives planning', reqs: ['6.2'] },
-        { code: 'SCS-RES', title: 'Resource and competence management', reqs: ['7.1', '7.2', '7.3'] },
-        { code: 'SCS-COM', title: 'Communication management', reqs: ['7.4'] },
-        { code: 'SCS-DOC', title: 'Documented information', reqs: ['7.5'] },
-        { code: 'SCS-OPC', title: 'Operational control', reqs: ['8.1'] },
-        { code: 'SCS-SUP', title: 'Supply chain security management', reqs: ['8.4'] },
-        { code: 'SCS-MON', title: 'Performance monitoring', reqs: ['9.1'] },
-        { code: 'SCS-AUD', title: 'Internal audit program', reqs: ['9.2'] },
-        { code: 'SCS-MGR', title: 'Management review', reqs: ['9.3'] },
-        { code: 'SCS-IMP', title: 'Improvement and corrective action', reqs: ['10.1', '10.2'] },
-    ];
+    const iso28000Templates = require('./fixtures/iso28000-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
     for (const t of iso28000Templates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
             const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: 'ISO28000', defaultFrequency: 'QUARTERLY' },
+                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
-            for (const rk of t.reqs) {
+            for (const rk of t.requirements) {
                 if (iso28000ReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso28000ReqMap[rk] } }).catch(() => { });
                 }
@@ -1319,35 +1234,17 @@ Reviewed at least annually.` },
     console.log('✅ ISO 28000 control templates seeded');
 
     // ─── ISO 39001 Control Templates ───
-    const iso39001Templates = [
-        { code: 'RTS-CTX', title: 'Organization context and interested parties', reqs: ['4.1', '4.2'] },
-        { code: 'RTS-SCP', title: 'RTS management system scope', reqs: ['4.3', '4.4'] },
-        { code: 'RTS-LDR', title: 'Leadership and RTS policy', reqs: ['5.1', '5.2'] },
-        { code: 'RTS-ROL', title: 'RTS roles and authorities', reqs: ['5.3'] },
-        { code: 'RTS-RSK', title: 'RTS risk and opportunity management', reqs: ['6.1'] },
-        { code: 'RTS-OBJ', title: 'RTS performance factors and objectives', reqs: ['6.2'] },
-        { code: 'RTS-CHG', title: 'RTS change planning', reqs: ['6.3'] },
-        { code: 'RTS-RES', title: 'Resource and competence management', reqs: ['7.1', '7.2', '7.3'] },
-        { code: 'RTS-COM', title: 'Communication management', reqs: ['7.4'] },
-        { code: 'RTS-DOC', title: 'Documented information', reqs: ['7.5'] },
-        { code: 'RTS-OPC', title: 'Operational planning and control', reqs: ['8.1'] },
-        { code: 'RTS-EMR', title: 'Emergency preparedness and response', reqs: ['8.2'] },
-        { code: 'RTS-MON', title: 'Performance monitoring and evaluation', reqs: ['9.1'] },
-        { code: 'RTS-INV', title: 'Crash and incident investigation', reqs: ['9.2'] },
-        { code: 'RTS-AUD', title: 'Internal audit program', reqs: ['9.3'] },
-        { code: 'RTS-MGR', title: 'Management review', reqs: ['9.4'] },
-        { code: 'RTS-IMP', title: 'Improvement and corrective action', reqs: ['10.1', '10.2'] },
-    ];
+    const iso39001Templates = require('./fixtures/iso39001-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
     for (const t of iso39001Templates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
             const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: 'ISO39001', defaultFrequency: 'QUARTERLY' },
+                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
                 await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
-            for (const rk of t.reqs) {
+            for (const rk of t.requirements) {
                 if (iso39001ReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso39001ReqMap[rk] } }).catch(() => { });
                 }
@@ -2145,18 +2042,7 @@ Reviewed at least annually.` },
     console.log('✅ All Framework Packs seeded');
 
     // ─── Legacy Control Templates ───
-    const legacyTemplates = [
-        { code: 'AC-01', title: 'Access Control Policy', category: 'Access Control', description: 'Define and enforce access control policies.', defaultFrequency: 'ANNUALLY' as const },
-        { code: 'AC-02', title: 'Account Management', category: 'Access Control', description: 'Manage user accounts lifecycle.', defaultFrequency: 'QUARTERLY' as const },
-        { code: 'IR-01', title: 'Incident Response Plan', category: 'Incident Management', description: 'Establish incident response plan.', defaultFrequency: 'ANNUALLY' as const },
-        { code: 'RA-01', title: 'Risk Assessment', category: 'Risk Management', description: 'Conduct regular risk assessments.', defaultFrequency: 'ANNUALLY' as const },
-        { code: 'CM-01', title: 'Change Management', category: 'Operations', description: 'Control changes to production systems.', defaultFrequency: 'MONTHLY' as const },
-        { code: 'SC-01', title: 'System Protection', category: 'Technical', description: 'Protect communications and enforce encryption.', defaultFrequency: 'QUARTERLY' as const },
-        { code: 'BC-01', title: 'Business Continuity', category: 'Business Continuity', description: 'Maintain BC plans.', defaultFrequency: 'ANNUALLY' as const },
-        { code: 'SA-01', title: 'Security Awareness', category: 'Human Resource', description: 'Security training for employees.', defaultFrequency: 'ANNUALLY' as const },
-        { code: 'AU-01', title: 'Audit Logging', category: 'Operations', description: 'Audit logging and monitoring.', defaultFrequency: 'MONTHLY' as const },
-        { code: 'VN-01', title: 'Vendor Risk Management', category: 'Supply Chain', description: 'Assess vendor security risks.', defaultFrequency: 'ANNUALLY' as const },
-    ];
+    const legacyTemplates = require('./fixtures/legacy-control-templates.json') as Array<{ code: string; title: string; category: string; description: string; defaultFrequency: ControlFrequency }>;
     for (const tpl of legacyTemplates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: tpl.code } });
         if (!existing) {
