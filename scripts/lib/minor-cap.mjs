@@ -13,13 +13,35 @@
  *
  * The rule recurs at every century boundary: 2.999.x --feat--> 3.0.0.
  *
- * IMPORTANT — this makes such a `major` bump COSMETIC: there is no
- * breaking change behind it, only the digit-width rollover. It exists
- * because this app is `npmPublish: false` (no external consumer reads
- * the semver contract) and the version merely feeds the Helm
- * `appVersion` + Docker image tags. A genuine breaking change still
- * bumps the major the normal way (via `feat!` / `BREAKING CHANGE`),
- * independent of this cap.
+ * IMPORTANT — a `major` here is a DIGIT-WIDTH EVENT, not a
+ * compatibility claim. It says the minor reached 1000 and nothing
+ * else: the rolling release may or may not contain a breaking change,
+ * and a breaking change in any other release rolls nothing. It exists
+ * because the major has NO machine consumer at all — measured, not
+ * assumed: `npmPublish: false`; `infra/helm` and its version-sync
+ * script were deleted on 2026-09-02; and the GHCR image is tagged
+ * `:latest` + `:sha-<short>`, never by version. Every runtime reader
+ * (OTel `service.version`, the diagnostics route, openapi
+ * `info.version`) takes the whole string and parses no component.
+ *
+ * AND THE ROLLOVER IS NOW THE ONLY THING THAT BUMPS THE MAJOR. This
+ * paragraph used to end "a genuine breaking change still bumps the
+ * major the normal way, independent of this cap" — true when written,
+ * and the reason the odometer never once rolled over. Two `!` commits
+ * spent a major each: `fix(authz)!` took 1.903.12 to 2.0.0 and
+ * `chore(infra)!` took 2.0.5 to 3.0.0, so major 2 lasted six releases
+ * against major 1's nine hundred. Since the major carries no contract
+ * here, spending one on a breaking change buys nothing and shortens
+ * the odometer, so `.releaserc.json` now maps `breaking` to `minor`
+ * and a breaking change climbs like anything else.
+ *
+ * That mapping lives in the CONFIG, not here — this module stays a
+ * pure function of (baseType, lastVersion). If you are looking for why
+ * a `feat!` produced a minor, read `.releaserc.json`'s releaseRules,
+ * and read the warning there before touching them: DELETING the
+ * `breaking` rule does not do the same thing as setting it, because
+ * commit-analyzer falls back to its own defaults when no custom rule
+ * matches.
  *
  * This module is intentionally DEPENDENCY-FREE and pure so it can be
  * unit-tested in isolation (see tests/unit/minor-cap.test.ts, which

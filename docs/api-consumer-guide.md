@@ -161,24 +161,37 @@ an attack.
 
 ## 4. Versioning
 
-`openapi.json`'s `info.version` carries the **release version** of the
-deployed API (semver, sourced from `package.json`). The contract — the
-schema shapes, paths, and security — is what's versioned, not the
-package number per se.
+**Do not read compatibility out of `info.version`.** It carries the
+deployed release number (sourced from `package.json`), and that number
+is a build counter, not a contract. Every push to `main` that ships
+anything cuts a release, so the number moves several times a day, and
+its **major component is an odometer digit**: the minor climbs to 999
+and the next bump rolls the major. A major therefore means "the
+thousandth minor landed" — nothing more. It is not a breaking-change
+signal and never announces one.
 
-- **PATCH / MINOR bumps** are backward-compatible: added endpoints,
-  added optional fields, new enum values in responses, relaxed
-  constraints. Your integration keeps working. Don't hard-fail on an
-  unknown field — tolerate additive change.
-- **MAJOR bumps** signal a breaking change (a removed/renamed field, a
-  tightened constraint, a removed endpoint, a changed auth requirement).
-  Breaking changes are announced ahead of the bump.
+**`X-API-Version` is the compatibility contract.** It is on every
+response from the routes that share the canonical error contract, and
+it is a **date** (`2026-04-29` today), bumped in lockstep with a
+breaking change and never otherwise. Dates compare lexically, so
+"newer wins" needs no semver parsing, and the value names when the
+break shipped. Watch that header; it is the one that stays still while
+the release number runs.
 
-Pin the spec you generated your client from, diff `openapi.json` between
-releases (it's byte-stable, so a `git`/`jq` diff is meaningful), and
-regenerate your client on a MAJOR bump. The per-schema contract is
-regression-gated in our CI, so an accidental breaking change can't ship
-silently.
+What you can rely on between releases, regardless of either number:
+
+- **Additive change is routine and unannounced** — new endpoints, new
+  optional fields, new enum values in responses, relaxed constraints.
+  Don't hard-fail on an unknown field.
+- **A breaking change** — a removed or renamed field, a tightened
+  constraint, a removed endpoint, a changed auth requirement — moves
+  `X-API-Version` and is announced ahead of it.
+
+Pin the spec you generated your client from and diff `openapi.json`
+between releases (it's byte-stable, so a `git`/`jq` diff is
+meaningful). Regenerate your client when `X-API-Version` moves. The
+per-schema contract is regression-gated in our CI, so an accidental
+breaking change can't ship silently.
 
 ---
 

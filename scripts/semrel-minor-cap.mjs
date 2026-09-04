@@ -8,6 +8,13 @@
  * scripts/lib/minor-cap.mjs for the full rationale and the COSMETIC-
  * major caveat.
  *
+ * That rollover is the ONLY source of a major bump. Breaking changes
+ * are mapped to `minor` by the `releaseRules` in `.releaserc.json`
+ * (which this wrapper forwards verbatim), so nothing reaches capMinor
+ * already carrying `major` — the promotion below is the whole story.
+ * Deliberately expressed as config rather than a demotion here: one
+ * seam decides the release type, and this file stays a pure wrapper.
+ *
  * Wired as the SOLE `analyzeCommits` plugin in `.releaserc.json` — it
  * REPLACES the bare `@semantic-release/commit-analyzer` entry (whose
  * preset + releaseRules config it receives verbatim as `pluginConfig`
@@ -35,7 +42,9 @@ export async function analyzeCommits(pluginConfig, context) {
         context?.logger?.log?.(
             `minor-cap: promoting release type ${baseType}→${finalType} — ` +
                 `last release ${lastVersion || '(none)'} would push the minor past 999, ` +
-                'rolling the major instead (cosmetic; no breaking change).',
+                'rolling the major instead. The major is an odometer digit here, not a ' +
+                'compatibility claim: the rollover is what moved it, whether or not this ' +
+                'release happens to contain a breaking change.',
         );
     }
     return finalType;

@@ -7,7 +7,7 @@
     [
       "./scripts/semrel-minor-cap.mjs",
       {
-        "_comment": "Wraps @semantic-release/commit-analyzer (forwarded this preset + releaseRules verbatim) to cap the MINOR component at three digits: the release that would become X.1000.0 rolls over to (X+1).0.0 instead. That rollover major is COSMETIC \u2014 no breaking change behind it \u2014 and is safe here because the app is npmPublish:false (the version only feeds Helm appVersion + Docker tags). A real breaking change still bumps the major the normal way via feat!/BREAKING CHANGE. See scripts/lib/minor-cap.mjs.",
+        "_comment": "Wraps @semantic-release/commit-analyzer (forwarded this preset + releaseRules verbatim) to make the MINOR component an odometer: it climbs to 999, and the release that would become X.1000.0 rolls over to (X+1).0.0 instead. THAT ROLLOVER IS NOW THE ONLY THING THAT BUMPS THE MAJOR — the `breaking` rule below maps to `minor` deliberately. The major has ZERO machine consumers, measured: npmPublish:false, infra/helm was deleted with its sync script (2026-09-02), and the GHCR image is tagged :latest + :sha-<short>, never by version (ghcr-publish.yml:68-70). Every runtime reader takes the whole string (OTel service.version, the diagnostics route, openapi info.version). So spending a major on a breaking change buys nothing and only shortens the odometer, and it had spent two: fix(authz)! took 1.903.12 to 2.0.0 and chore(infra)! took 2.0.5 to 3.0.0, which is why major 2 lasted six releases. DO NOT DELETE THE `breaking` RULE TO GET THIS — SET IT. commit-analyzer falls back to its DEFAULT rules whenever no custom rule matches (index.js:57-66) and default rule 0 is {breaking:true, release:major}, so deleting it yields three different answers by commit type: chore! falls through to major, feat! lands on minor via the feat rule, and fix! lands on PATCH. Verified by execution; pinned by tests/unit/minor-cap.test.ts. See scripts/lib/minor-cap.mjs.",
         "preset": "conventionalcommits",
         "releaseRules": [
           {
@@ -45,57 +45,57 @@
           "types": [
             {
               "type": "feat",
-              "section": "\u2728 Features",
+              "section": "✨ Features",
               "hidden": false
             },
             {
               "type": "fix",
-              "section": "\ud83d\udc1b Bug Fixes",
+              "section": "🐛 Bug Fixes",
               "hidden": false
             },
             {
               "type": "perf",
-              "section": "\u26a1 Performance",
+              "section": "⚡ Performance",
               "hidden": false
             },
             {
               "type": "refactor",
-              "section": "\u267b\ufe0f Refactoring",
+              "section": "♻️ Refactoring",
               "hidden": false
             },
             {
               "type": "revert",
-              "section": "\u23ea Reverted",
+              "section": "⏪ Reverted",
               "hidden": false
             },
             {
               "type": "docs",
-              "section": "\ud83d\udcda Documentation",
+              "section": "📚 Documentation",
               "hidden": false
             },
             {
               "type": "chore",
-              "section": "\ud83d\udd27 Maintenance",
+              "section": "🔧 Maintenance",
               "hidden": true
             },
             {
               "type": "test",
-              "section": "\u2705 Tests",
+              "section": "✅ Tests",
               "hidden": true
             },
             {
               "type": "ci",
-              "section": "\ud83c\udfd7\ufe0f CI/CD",
+              "section": "🏗️ CI/CD",
               "hidden": true
             },
             {
               "type": "build",
-              "section": "\ud83d\udce6 Build",
+              "section": "📦 Build",
               "hidden": true
             },
             {
               "type": "style",
-              "section": "\ud83d\udc84 Style",
+              "section": "💄 Style",
               "hidden": true
             }
           ]
@@ -124,7 +124,7 @@
           "package-lock.json"
         ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
-        "_comment": "Assets committed with the release. `infra/helm/inflect/Chart.yaml` was removed from this list on 2026-09-02 together with `infra/helm/` itself \u2014 the chart described a Kubernetes deployment that was never provisioned. The paired `@semantic-release/exec` step that ran `scripts/sync-chart-version.mjs` went with it: that script exits non-zero when its regex misses, so leaving it would have failed the PREPARE phase of every release once the file was gone, taking the release pipeline dark on the next push to main."
+        "_comment": "Assets committed with the release. `infra/helm/inflect/Chart.yaml` was removed from this list on 2026-09-02 together with `infra/helm/` itself — the chart described a Kubernetes deployment that was never provisioned. The paired `@semantic-release/exec` step that ran `scripts/sync-chart-version.mjs` went with it: that script exits non-zero when its regex misses, so leaving it would have failed the PREPARE phase of every release once the file was gone, taking the release pipeline dark on the next push to main."
       }
     ],
     "@semantic-release/github"
