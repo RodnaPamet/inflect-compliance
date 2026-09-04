@@ -23,6 +23,12 @@ jest.mock('node:child_process', () => ({
 }));
 
 import { AwsPostureProvider } from '@/app-layer/integrations/aws-posture-provider';
+import {
+    powerpipeControl,
+    powerpipeErroredControl,
+    groupShapedControlSummary,
+    type PowerpipeRowStatus,
+} from '../../helpers/powerpipe-benchmark-fixture';
 
 type Cb = (err: unknown, stdout: string, stderr: string) => void;
 
@@ -41,11 +47,12 @@ const exitCode = (code: number) => Object.assign(new Error('exited'), { code });
 const provider = () => new AwsPostureProvider();
 
 const benchmarkJson = (controls: unknown[]) => JSON.stringify({ controls });
-const control = (id: string, status: string) => ({
-    control_id: `aws_compliance.control.${id}`,
-    title: id,
-    summary: { status: { [status]: 1 } },
-});
+/**
+ * Controls in the REAL wire shape, from the source-cited builder. The inline
+ * `summary: { status: { … } }` this fixture used to carry is the shape a result
+ * GROUP wears, not a control — see the fixture module's provenance note.
+ */
+const control = (id: string, status: PowerpipeRowStatus) => powerpipeControl(id, status);
 
 const CREDS = { accessKeyId: 'AKIA_TEST_KEY', secretAccessKey: 'SECRET_TEST_KEY' };
 
@@ -287,7 +294,7 @@ describe('AwsPostureProvider.runCheck — verdicts', () => {
         const res = await provider().runCheck(input() as never);
 
         expect(res.status).toBe('PASSED');
-        expect(res.summary).toContain('1 ok / 0 alarm / 1 skip of 2');
+        expect(res.summary).toContain('1 ok / 0 alarm / 0 error / 1 skip / 0 unknown of 2');
         expect(res.durationMs).toBeGreaterThanOrEqual(0);
     });
 
@@ -296,6 +303,48 @@ describe('AwsPostureProvider.runCheck — verdicts', () => {
             stdout: benchmarkJson([control('a', 'ok'), control('b', 'alarm')]),
         });
         expect((await provider().runCheck(input() as never)).status).toBe('FAILED');
+    });
+
+    it('ERRORs — never PASSES — when every control errored on a dead credential', async () => {
+        // The collector exits ZERO here and writes well-formed JSON, so no
+        // refusal above fires: the verdict rests entirely on reading the
+        // controls. Scoring those errors as skips is what produced a PASSED
+        // verdict off a fully revoked credential.
+        cliResult({
+            stdout: benchmarkJson([
+                powerpipeErroredControl('a'),
+                powerpipeErroredControl('b'),
+            ]),
+        });
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('ERROR');
+        expect(res.summary).toContain('2 error');
+    });
+
+    it('ERRORs — never PASSES — when the controls arrive in a shape it cannot read', async () => {
+        // The AWS provider carries its OWN verdict ladder, separate from the
+        // shared core's. Without this, the `unknown` arm of that copy is
+        // untested and could be dropped with every suite still green.
+        cliResult({
+            stdout: benchmarkJson([
+                { ...powerpipeControl('a', 'ok'), summary: groupShapedControlSummary('ok'), results: null },
+            ]),
+        });
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('ERROR');
+        expect(res.summary).toContain('1 unknown');
+    });
+
+    it('produces no evidence from a run whose controls all errored', async () => {
+        // The consequence that reaches the auditor: a broken run must not leave
+        // a passing artefact behind.
+        cliResult({ stdout: benchmarkJson([powerpipeErroredControl('a')]) });
+        const res = await provider().runCheck(input() as never);
+        expect(provider().mapResultToEvidence(input() as never, res)).toBeNull();
     });
 
     it('ERRORs when controls errored but none alarmed', async () => {

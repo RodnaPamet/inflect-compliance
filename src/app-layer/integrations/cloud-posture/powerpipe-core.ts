@@ -101,7 +101,8 @@ export interface RunBenchmarkInput {
  * Run a Powerpipe benchmark and return a bounded `CheckResult`. The
  * per-control status array + counts land in `details` (already size-capped
  * by `summariseBenchmark`); creds are scrubbed. `status` is FAILED on any
- * alarm, ERROR on collector/parse failure, else PASSED.
+ * alarm, ERROR on collector/parse failure OR on any control we could not read,
+ * else PASSED.
  */
 export async function runPowerpipeBenchmark(input: RunBenchmarkInput): Promise<CheckResult & { summaryObj: BenchmarkSummary | null }> {
     const exec = input.exec ?? runCli;
@@ -130,10 +131,15 @@ export async function runPowerpipeBenchmark(input: RunBenchmarkInput): Promise<C
     if (summary.counts.total === 0) {
         return { status: 'ERROR', summary: `${input.benchmarkId}: no controls parsed (insufficient data).`, details: summary as unknown as Record<string, unknown>, durationMs: nowMs() - start, errorMessage: 'collector returned zero controls', summaryObj: summary };
     }
-    const status: CheckResult['status'] = summary.counts.alarm > 0 ? 'FAILED' : summary.counts.error > 0 ? 'ERROR' : 'PASSED';
+    // An illegible control is not a passing one: `unknown` joins `error` in the
+    // ERROR arm so a run we could not read never reports compliant.
+    const status: CheckResult['status'] =
+        summary.counts.alarm > 0 ? 'FAILED'
+        : summary.counts.error > 0 || summary.counts.unknown > 0 ? 'ERROR'
+        : 'PASSED';
     return {
         status,
-        summary: `${input.benchmarkId}: ${summary.counts.ok} ok / ${summary.counts.alarm} alarm / ${summary.counts.skip} skip of ${summary.counts.total}`,
+        summary: `${input.benchmarkId}: ${summary.counts.ok} ok / ${summary.counts.alarm} alarm / ${summary.counts.error} error / ${summary.counts.skip} skip / ${summary.counts.unknown} unknown of ${summary.counts.total}`,
         details: summary as unknown as Record<string, unknown>,
         durationMs: nowMs() - start,
         summaryObj: summary,

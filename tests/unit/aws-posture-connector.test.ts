@@ -66,7 +66,7 @@ describe('aws-posture — bounded summary', () => {
     it('counts by status and stays under the size cap', () => {
         const controls = parsePowerpipeBenchmarkJson(FIXTURE);
         const summary = summariseBenchmark('aws_compliance.benchmark.soc_2', controls);
-        expect(summary.counts).toEqual({ ok: 3, alarm: 1, skip: 1, error: 0, total: 5 });
+        expect(summary.counts).toEqual({ ok: 3, alarm: 1, skip: 1, error: 0, unknown: 0, total: 5 });
         expect(Buffer.byteLength(JSON.stringify(summary))).toBeLessThanOrEqual(RESULT_JSON_MAX_BYTES);
     });
 

@@ -33,6 +33,10 @@ import {
     CLOUD_POSTURE_FRAMEWORK_KEYS,
     type CloudPostureControlMapEntry,
 } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
+import {
+    powerpipeControl,
+    type PowerpipeRowStatus,
+} from '../../helpers/powerpipe-benchmark-fixture';
 
 /**
  * This repo augments `NodeJS.ProcessEnv` so `NODE_ENV` is REQUIRED, which a bare
@@ -62,11 +66,13 @@ function cliResult(opts: { stdout?: string; stderr?: string; err?: unknown }) {
 const enoent = () => Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
 const exitCode = (code: number) => Object.assign(new Error('exited'), { code });
 
-const control = (id: string, status: string) => ({
-    control_id: `x.control.${id}`,
-    title: id,
-    summary: { status: { [status]: 1 } },
-});
+/**
+ * Controls in the REAL wire shape, from the source-cited builder. The inline
+ * `summary: { status: { … } }` these fixtures used to carry is the shape a
+ * result GROUP wears, not a control — see the fixture module's provenance note.
+ */
+const control = (id: string, status: PowerpipeRowStatus) =>
+    powerpipeControl(`x.control.${id}`, status, { title: id });
 const benchmarkJson = (controls: unknown[]) => JSON.stringify({ controls });
 
 /** An injected runner — the seam the provider suites use. */
@@ -391,7 +397,7 @@ describe('runPowerpipeBenchmark — fail-closed ladder (H2)', () => {
         // nothing" from "collector never ran".
         expect(res.summaryObj).toEqual({
             benchmark: 'bench',
-            counts: { ok: 0, alarm: 0, skip: 0, error: 0, total: 0 },
+            counts: { ok: 0, alarm: 0, skip: 0, error: 0, unknown: 0, total: 0 },
             controls: [],
             truncated: false,
         });
@@ -423,13 +429,13 @@ describe('runPowerpipeBenchmark — verdict ladder', () => {
     it('PASSES when every control is ok or skipped', async () => {
         const res = await run([control('a', 'ok'), control('b', 'skip')]);
         expect(res.status).toBe('PASSED');
-        expect(res.summary).toBe('bench: 1 ok / 0 alarm / 1 skip of 2');
+        expect(res.summary).toBe('bench: 1 ok / 0 alarm / 0 error / 1 skip / 0 unknown of 2');
     });
 
     it('FAILS when any control alarms', async () => {
         const res = await run([control('a', 'ok'), control('b', 'alarm')]);
         expect(res.status).toBe('FAILED');
-        expect(res.summary).toBe('bench: 1 ok / 1 alarm / 0 skip of 2');
+        expect(res.summary).toBe('bench: 1 ok / 1 alarm / 0 error / 0 skip / 0 unknown of 2');
     });
 
     it('ERRORs when controls errored and none alarmed', async () => {
@@ -437,7 +443,7 @@ describe('runPowerpipeBenchmark — verdict ladder', () => {
         // counts, so the summary is a verdict rather than a refusal reason.
         const res = await run([control('a', 'ok'), control('b', 'error')]);
         expect(res.status).toBe('ERROR');
-        expect(res.summary).toBe('bench: 1 ok / 0 alarm / 0 skip of 2');
+        expect(res.summary).toBe('bench: 1 ok / 0 alarm / 1 error / 0 skip / 0 unknown of 2');
         expect(res.summaryObj?.counts.error).toBe(1);
         expect(res.errorMessage).toBeUndefined();
     });
@@ -456,7 +462,7 @@ describe('runPowerpipeBenchmark — verdict ladder', () => {
         const res = await run([control('a', 'ok')]);
         expect(res.details).toEqual({
             benchmark: 'bench',
-            counts: { ok: 1, alarm: 0, skip: 0, error: 0, total: 1 },
+            counts: { ok: 1, alarm: 0, skip: 0, error: 0, unknown: 0, total: 1 },
             controls: [{ id: 'a', status: 'ok' }],
             truncated: false,
         });

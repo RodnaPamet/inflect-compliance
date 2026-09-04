@@ -27,6 +27,10 @@ import { scrubSecrets } from '@/app-layer/integrations/cloud-posture/powerpipe-c
 import { AzurePostureProvider } from '@/app-layer/integrations/providers/azure-posture-provider';
 import { GcpPostureProvider } from '@/app-layer/integrations/providers/gcp-posture-provider';
 import type { CheckInput, CheckResult } from '@/app-layer/integrations/types';
+import {
+    powerpipeControl,
+    type PowerpipeRowStatus,
+} from '../../helpers/powerpipe-benchmark-fixture';
 
 interface ExecCall {
     file: string;
@@ -64,11 +68,9 @@ function recordingExec(
     return { exec, calls };
 }
 
-const control = (id: string, status: string) => ({
-    control_id: `x.control.${id}`,
-    title: id,
-    summary: { status: { [status]: 1 } },
-});
+/** Controls in the REAL wire shape, from the source-cited fixture module. */
+const control = (id: string, status: PowerpipeRowStatus) =>
+    powerpipeControl(`x.control.${id}`, status, { title: id });
 const benchmarkJson = (controls: unknown[]) => JSON.stringify({ controls });
 const OK_JSON = benchmarkJson([control('a', 'ok')]);
 const MIXED_JSON = benchmarkJson([control('a', 'ok'), control('b', 'alarm')]);
