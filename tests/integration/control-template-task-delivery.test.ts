@@ -85,7 +85,19 @@ describe('authored control-template tasks reach the database', () => {
     });
 
     it('every authored task lands as a ControlTemplateTask row', async () => {
-        expect(seeded.created).toBe(authored.taskCount);
+        // created + unchanged, not created alone. `resetDatabase` PRESERVES the
+        // global catalogue, so a template whose authored tasks already carry
+        // matching content hashes reports them as `unchanged` and this run
+        // creates nothing — correct behaviour, and asserting `created` alone
+        // made the test pass only on a database that had never seen this
+        // content. CI gets a fresh one every run, so it stayed green there
+        // while failing locally the moment the same content was seeded twice.
+        //
+        // What actually needs to be true is that this run ACCOUNTED FOR every
+        // authored task, however it got there, and that they are all live
+        // below. The anti-vacuity assertion above is what stops 0 === 0
+        // satisfying this.
+        expect(seeded.created + seeded.unchanged).toBe(authored.taskCount);
 
         const live = await prisma.controlTemplateTask.count({
             where: { templateId: { in: templateIds }, deprecatedAt: null },
