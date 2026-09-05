@@ -1185,3 +1185,50 @@ export function recordAiDecisionOutcome(attrs: {
 }): void {
     getAiDecisionOutcomes().add(1, { outcome: attrs.outcome });
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// AGENTIC WORKFLOW CONTEXT INTEGRITY — OWASP ASI06
+// ════════════════════════════════════════════════════════════════════════
+//
+// Two instruments, and they answer different questions. The counter answers
+// "did a run stop because its memory could not be trusted?", which is an
+// incident. The histogram answers "how close are healthy runs to the cap?",
+// which is the question you want answered BEFORE the counter moves — a cap
+// that only shows up as halts is a cap nobody can plan around.
+//
+// Cardinality: the counter's only label is the integrity code, a closed set of
+// five (see `ContextIntegrityCode`). No run id, no tenant id.
+
+let _workflowContextHalts: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _workflowContextBytes: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
+
+function getWorkflowContextHalts() {
+    if (!_workflowContextHalts) {
+        _workflowContextHalts = getMeter().createCounter('agentic.workflow.context_integrity.halt', {
+            description:
+                'Workflow runs halted because the accumulated context failed validation, the hash chain, or the size cap. Labelled by integrity code.',
+            unit: '1',
+        });
+    }
+    return _workflowContextHalts;
+}
+
+function getWorkflowContextBytes() {
+    if (!_workflowContextBytes) {
+        _workflowContextBytes = getMeter().createHistogram('agentic.workflow.context.bytes', {
+            description: 'Size of a sealed workflow context at each step, in bytes. Watch the upper percentiles against MAX_CONTEXT_BYTES.',
+            unit: 'By',
+        });
+    }
+    return _workflowContextBytes;
+}
+
+/** One workflow run halted on a context-integrity failure. */
+export function recordWorkflowContextIntegrityHalt(attrs: { code: string }): void {
+    getWorkflowContextHalts().add(1, { code: attrs.code });
+}
+
+/** The size of one sealed context, recorded at every commit. */
+export function recordWorkflowContextBytes(bytes: number): void {
+    getWorkflowContextBytes().record(bytes);
+}

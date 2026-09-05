@@ -101,6 +101,27 @@ model WorkflowRun {
   startedAt         DateTime          @default(now())
   completedAt       DateTime?
   contextJson       String?
+  /// Chain head over `contextJson` — the SHA-256 link computed by
+  /// `sealContext` in `src/lib/agentic/context-integrity.ts` (OWASP ASI06).
+  ///
+  /// A COLUMN rather than a field inside the envelope, and that is the whole
+  /// point: `contextJson` is encrypted at rest, which protects confidentiality
+  /// and says nothing about whether the blob is the one the previous step
+  /// wrote. A head stored inside the blob it protects could be recomputed by
+  /// whoever rewrote the blob. `AuditLog.entryHash` is a column for the same
+  /// reason.
+  ///
+  /// NOT in the Epic B encryption manifest, deliberately: it is a digest, it
+  /// carries no content, and it is compared for equality on every step — an
+  /// encrypted column would compare ciphertext.
+  ///
+  /// NULLABLE because the column was added to a populated table. NULL means
+  /// UNSEALED, and unsealed FAILS CLOSED: the run halts with
+  /// `CONTEXT_UNSEALED` at its next step rather than adopting a blob nobody
+  /// sealed. Any run in flight across the deploy that adds this column is
+  /// therefore halted, on purpose — trust-on-first-use here would let anyone
+  /// who can clear the head bypass the chain entirely.
+  contextHash       String?
   summary           String?
   stepCount         Int               @default(0)
   costTokens        Int               @default(0)

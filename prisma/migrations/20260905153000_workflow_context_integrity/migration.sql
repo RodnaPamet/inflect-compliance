@@ -1,0 +1,32 @@
+-- Workflow CONTEXT INTEGRITY — OWASP ASI06 (Memory and Context Poisoning).
+--
+-- `WorkflowRun.contextJson` is the agent's memory: it accumulates across steps,
+-- survives an arbitrarily long HUMAN_CHECKPOINT pause, and every later step
+-- reads its instructions out of it. It is encrypted at rest (Epic B), which
+-- protects confidentiality and proves nothing about whether the blob is the one
+-- the previous step wrote.
+--
+-- This column is the chain head over that blob — the SHA-256 link computed by
+-- `sealContext` in `src/lib/agentic/context-integrity.ts`, using the audit
+-- trail's own canonical serializer. Verified on every read; rewritten on every
+-- write, in the same statement as the context.
+--
+-- A COLUMN, not a field inside the envelope. A head stored inside the blob it
+-- protects can be recomputed by whoever rewrote the blob, so it would certify
+-- nothing. `AuditLog.entryHash` is a column for exactly the same reason.
+--
+-- NOT ENCRYPTED. It is a digest — no content, and compared for equality on
+-- every step, which an encrypted column could not be.
+--
+-- NO BACKFILL, and that is a behavioural decision rather than an omission.
+-- Existing rows were never sealed, so any value written here would be a seal
+-- nobody computed. NULL means UNSEALED and unsealed FAILS CLOSED: a run in
+-- flight across this deploy halts with `CONTEXT_UNSEALED` at its next step and
+-- has to be restarted. Adopting an unsealed blob on first sight would be
+-- trust-on-first-use, i.e. a bypass available to anyone who can clear the
+-- column.
+--
+-- No index: the column is read by primary key with the run row and never
+-- filtered or sorted on.
+
+ALTER TABLE "WorkflowRun" ADD COLUMN "contextHash" TEXT;
