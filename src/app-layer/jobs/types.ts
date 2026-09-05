@@ -1216,6 +1216,27 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnComplete: 50,
         removeOnFail: 200,
     },
+    'agent-proposal-expiry': {
+        // A retry is safe here and worth having: expiry is a conditional
+        // `updateMany` over rows whose deadline has passed, so a second run
+        // finds the ones the first did not reach and re-finds none it did.
+        attempts: 3,
+        backoff: { type: 'fixed', delay: 30_000 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'agent-proposal-sample-audit': {
+        // ONE attempt, and it is a correctness constraint rather than courtesy —
+        // the same reasoning as `identity-leaver-pass`. This job DRAWS a sample.
+        // A retry after a partial run draws again, so the second attempt would
+        // enlarge the sample beyond what `sampleSizeFor` decided and make the
+        // disagreement rate a statistic over a population nobody chose. A missed
+        // week is recoverable; a silently doubled draw is not detectable.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
 };
 
 /** The single queue name used for all jobs (BullMQ supports named jobs within a queue) */

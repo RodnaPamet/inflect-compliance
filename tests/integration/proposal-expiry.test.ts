@@ -45,6 +45,7 @@ import {
     createAgentProposal,
     listAgentProposals,
     rejectAgentProposal,
+    wasApplied,
 } from '@/app-layer/usecases/agent-proposals';
 import { runAgentProposalExpiry } from '@/app-layer/jobs/agent-proposal-expiry';
 import {
@@ -289,6 +290,9 @@ describeFn('agent proposals expire, and an expired one cannot be approved', () =
             expect(result.status).toBe('ACCEPTED');
             expect(result.createdEntityId).toBeTruthy();
 
+            // An approval that only RECORDED a signature applies nothing, so there is
+            // no row to look for — narrow before reading the id.
+            if (!wasApplied(result)) throw new Error('expected the proposal to be applied');
             const risk = await prisma.risk.findFirst({ where: { id: result.createdEntityId } });
             expect(risk).not.toBeNull();
             const row = await prisma.agentProposal.findFirstOrThrow({ where: { id: created.id } });

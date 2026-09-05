@@ -59,7 +59,9 @@ jest.mock('@/app-layer/ai/guard', () => ({
     assertGuardAllowed: jest.fn(),
 }));
 
-import { approveAgentProposal } from '@/app-layer/usecases/agent-proposals';
+import { approveAgentProposal,
+    wasApplied,
+} from '@/app-layer/usecases/agent-proposals';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -114,7 +116,7 @@ describe('an UPDATE cannot be approved without naming the base that was read', (
         // this a check on the guard rather than on a substring.
         expect(err).toBeInstanceOf(Error);
         expect((err as { code?: string }).code).toBe('BAD_REQUEST');
-        expect(err.message).toMatch(/requires the baseDigest of the diff/);
+        expect((err as Error).message).toMatch(/requires the baseDigest of the diff/);
 
         // Nothing was applied AND nothing was claimed - a refusal that burned
         // the proposal would turn a missing token into a lost proposal.
@@ -166,6 +168,9 @@ describe('an UPDATE approved against the base that was read applies', () => {
         expect(targetId).toBe('risk-77');
         expect(data.likelihood).toBe(9);
         // The proposal resolves to the record it CHANGED, not to a new one.
+        // Narrowed first: an approval that only recorded a signature applies
+        // nothing, and asserting an id off that arm would assert about a null.
+        if (!wasApplied(result)) throw new Error('expected the proposal to be applied');
         expect(result.createdEntityId).toBe('risk-77');
         expect(result.operation).toBe('UPDATE');
         // And no create path was touched - an update that also created would be
@@ -191,6 +196,7 @@ describe('a CREATE proposal is exempt, because it has no base', () => {
 
         expect(createRisk).toHaveBeenCalledTimes(1);
         expect(updateRisk).not.toHaveBeenCalled();
+        if (!wasApplied(result)) throw new Error('expected the proposal to be applied');
         expect(result.operation).toBe('CREATE');
         expect(result.createdEntityId).toBe('risk-new');
     });

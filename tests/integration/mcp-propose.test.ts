@@ -23,6 +23,7 @@ import {
     approveAgentProposal,
     rejectAgentProposal,
     listAgentProposals,
+    wasApplied,
 } from '@/app-layer/usecases/agent-proposals';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -187,6 +188,9 @@ describeFn('MCP propose-not-commit (real route + approval)', () => {
         expect(result.status).toBe('ACCEPTED');
 
         // The real risk exists, linked from the proposal.
+        // An approval that only RECORDED a signature applies nothing, so there is
+        // no row to look for — narrow before reading the id.
+        if (!wasApplied(result)) throw new Error('expected the proposal to be applied');
         const risk = await prisma.risk.findFirst({ where: { id: result.createdEntityId } });
         expect(risk?.tenantId).toBe(TENANT_A);
         const proposal = await prisma.agentProposal.findFirst({ where: { id } });

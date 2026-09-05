@@ -280,6 +280,9 @@ async function resolveRequirementForRow(
             viaApiKey: row.proposedViaKeyId !== null,
         });
     });
+}
+
+/**
  * The refusal every review path shares for a CLOSED WINDOW.
  *
  * A 403 + `AUTHZ_DENIED` rather than a 400, and that is a claim about what kind
@@ -364,6 +367,9 @@ async function pinnedApprovalRung(
         select: { approvalRung: true },
     });
     return row ? narrowApprovalRung(row.approvalRung) : null;
+}
+
+/**
  * The STRUCTURAL half of an UPDATE proposal's well-formedness - the two checks
  * that must hold even for a row the guard is about to quarantine, because a
  * quarantined row is still a row and the database CHECK
@@ -872,6 +878,19 @@ export interface ApprovalRecordedResult {
 }
 
 export type ApproveOutcome = ApproveResult | ApprovalRecordedResult;
+
+/**
+ * Did this approval APPLY the proposal, or only record a signature?
+ *
+ * The distinction is the whole tiering contract, and `status` is the
+ * discriminant. A caller that reads `createdEntityId` without asking this
+ * question is the automation-bias failure in miniature — it treats "your
+ * signature was recorded" as "the change was made", which is exactly what a
+ * reviewer must not be told.
+ */
+export function wasApplied(outcome: ApproveOutcome): outcome is ApproveResult {
+    return outcome.status !== 'AWAITING_APPROVAL';
+}
 
 /**
  * Which four-eyes constraint refused, as the database reported it.

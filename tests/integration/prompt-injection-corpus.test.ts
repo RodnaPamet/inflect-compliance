@@ -41,6 +41,7 @@ import {
     listAgentProposals,
     listQuarantinedAgentProposals,
     rejectAgentProposal,
+    wasApplied,
 } from '@/app-layer/usecases/agent-proposals';
 import { makeRequestContext } from '../helpers/make-context';
 import { getExecutiveDashboard } from '@/app-layer/usecases/dashboard';
@@ -362,6 +363,9 @@ describeFn('prompt-injection corpus — an obeyed injection never reaches the re
 
             const approved = await approveAgentProposal(secondHumanCtx(), id);
             expect(approved.status).toBe('ACCEPTED');
+            // An approval that only RECORDED a signature applies nothing, so there is
+            // no row to look for — narrow before reading the id.
+            if (!wasApplied(approved)) throw new Error('expected the proposal to be applied');
             const risk = await prisma.risk.findFirst({ where: { id: approved.createdEntityId } });
             expect(risk?.tenantId).toBe(TENANT);
         }, 60_000);

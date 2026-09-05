@@ -361,7 +361,7 @@ describe('a two-approver proposal is signed as proposed', () => {
         // ever agreed on.
         const proposalId = await propose(T1, seeded[T1].highAgentId, 'edits-refused-high');
         await expect(
-            approveAgentProposal(reviewerCtx(T1, 'alice'), proposalId, { title: 'something else' }),
+            approveAgentProposal(reviewerCtx(T1, 'alice'), proposalId, { edits: { title: 'something else' } }),
         ).rejects.toThrow(/approved exactly as proposed/);
         expect(await signaturesOn(proposalId)).toHaveLength(0);
     });

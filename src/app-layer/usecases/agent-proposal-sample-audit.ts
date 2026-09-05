@@ -65,11 +65,17 @@ import type { RequestContext } from '@/app-layer/types';
  * to allow is an invisible dead end, whereas a new non-answer nobody remembers
  * to exclude fails the tests that pin this list.
  */
-export const NON_ANSWERABLE_OUTCOMES: readonly AgentSampleAuditOutcome[] = ['PENDING'];
+// `as const satisfies`, NOT a `readonly AgentSampleAuditOutcome[]` annotation.
+// The annotation widens the element type to the whole union, and
+// `z.enum(...).exclude([...])` then subtracts the whole union — leaving `never`,
+// so every call site that passes a real verdict fails to typecheck. `satisfies`
+// keeps the membership check (a typo here is still an error) while preserving
+// the literal type the subtraction needs.
+export const NON_ANSWERABLE_OUTCOMES = ['PENDING'] as const satisfies readonly AgentSampleAuditOutcome[];
 
 export const ANSWERABLE_OUTCOMES: AgentSampleAuditOutcome[] = Object.values(
     AgentSampleAuditOutcome,
-).filter((o) => !NON_ANSWERABLE_OUTCOMES.includes(o));
+).filter((o) => !(NON_ANSWERABLE_OUTCOMES as readonly AgentSampleAuditOutcome[]).includes(o));
 
 /**
  * Built by SUBTRACTION from the generated enum rather than from a second list
