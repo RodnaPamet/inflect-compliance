@@ -127,6 +127,16 @@ and ISO 28000 have no YAML library, and their templates carry a title and a
 requirement reference and nothing else. Say so in the PR rather than
 synthesising from knowledge of the standard.
 
+Those three are FROZEN rather than queued —
+`FROZEN_UNGROUNDED_POPULATIONS` in
+`tests/guardrails/control-task-actionability.test.ts`. They sit outside
+`LEGACY_GENERIC_ALLOWLIST` on purpose: that list is a downward ratchet whose end
+state is zero, and a population that can never leave it makes that end state
+unreachable, turning a temporary exemption into a permanent one nobody re-reads.
+The freeze names its own precondition instead, and checks it — a guard fails the
+moment a matching library lands under `src/data/libraries/`, telling whoever
+added it to unfreeze. So the refusal cannot outlive its reason.
+
 ### When a template should carry no tasks at all
 
 Sometimes the honest output is nothing, and it is a finding rather than a gap.
