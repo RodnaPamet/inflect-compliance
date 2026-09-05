@@ -75,6 +75,12 @@ await build({
     entryPoints: ['scripts/seed-framework-catalogs.ts'],
     outfile: 'dist/seed-framework-catalogs.mjs',
 });
+
+await build({
+    ...common,
+    entryPoints: ['scripts/catalog-check.ts'],
+    outfile: 'dist/catalog-check.mjs',
+});
 // Built-in vendor-assessment questionnaire seeder — run from the entrypoint
 // after migrate deploy so the Supplier Due Diligence + Supplier Security
 // Assessment templates (RLS-tenant-scoped, seeded per-tenant) self-heal on
@@ -85,4 +91,4 @@ await build({
     outfile: 'dist/seed-vendor-questionnaires.mjs',
 });
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs');
+console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/catalog-check.mjs');
