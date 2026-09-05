@@ -48,7 +48,15 @@ import {
 /** A tenant control that stands behind a risk, directly or by inheritance. */
 export interface CoveringControl {
     readonly id: string;
-    readonly code: string;
+    /**
+     * The control's short code, which is genuinely OPTIONAL — `Control.code` is
+     * `String?` (controls.prisma:18) and a tenant-authored control need not have
+     * one. Carried as `null` rather than coerced to `''` so a reader cannot
+     * mistake "no code" for a control whose code is the empty string, and so an
+     * assessor-facing readout can fall back to the name instead of rendering a
+     * blank cell where an identifier is expected.
+     */
+    readonly code: string | null;
     readonly name: string;
     readonly status: string;
 }

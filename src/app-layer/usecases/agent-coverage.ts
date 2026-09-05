@@ -430,5 +430,11 @@ async function loadInheritedCoverage(
 function dedupeControls(controls: readonly CoveringControl[]): CoveringControl[] {
     const byId = new Map<string, CoveringControl>();
     for (const control of controls) if (!byId.has(control.id)) byId.set(control.id, control);
-    return [...byId.values()].sort((a, b) => a.code.localeCompare(b.code));
+    // Sort by code, falling back to the name for controls that have none —
+    // `Control.code` is optional, and an uncoded control would otherwise sort
+    // as an empty string and clump at the top of an assessor-facing list ahead
+    // of everything with a real identifier.
+    return [...byId.values()].sort((a, b) =>
+        (a.code ?? a.name).localeCompare(b.code ?? b.name),
+    );
 }
