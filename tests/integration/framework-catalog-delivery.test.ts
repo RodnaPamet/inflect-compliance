@@ -115,6 +115,49 @@ describe('a CatalogFile fixture reaches the database', () => {
         expect(pack.templateLinks).toHaveLength(file.pack!.templateCodes!.length);
     });
 
+    it('upserts a framework whose existing version differs — including NULL', async () => {
+        // THE PRODUCTION FAILURE, reproduced. Prod carried SOC2 with
+        // `version: null` while the catalog declared '2017'. The applier keyed
+        // its upsert on the compound `key_version` whenever a version was
+        // present, and `version = '2017'` matches no NULL row — so the upsert
+        // found nothing, could not create (the separate `key` unique
+        // constraint), and Prisma returned NULL rather than raising. The next
+        // line read `.id` off it:
+        //
+        //   TypeError: Cannot read properties of null (reading 'id')
+        //
+        // It failed on every deploy, and only the container log said so — the
+        // entrypoint runs seeders non-fatally by design, so the app came up
+        // healthy with the catalogue silently absent.
+        //
+        // `Framework.key` is `@unique`, so the key alone IS the identity and
+        // the version belongs in the payload. This asserts that a pre-existing
+        // row is adopted and updated rather than collided with.
+        const key = `CATREPRO-${Date.now().toString(36)}`;
+        await prisma.$executeRawUnsafe(
+            `INSERT INTO "Framework" (id, key, name, version, kind) VALUES ('${key}', '${key}', 'Repro', NULL, 'ISO_STANDARD')`,
+        );
+
+        const suffixed = {
+            ...file,
+            framework: { ...file.framework, key },
+            templates: file.templates.map((t) => ({ ...t, code: `${t.code}-${key}` })),
+            pack: file.pack
+                ? {
+                      ...file.pack,
+                      key: `PACK-${key}`,
+                      templateCodes: file.templates.map((t) => `${t.code}-${key}`),
+                  }
+                : undefined,
+        };
+
+        await expect(applyCatalogFile(prisma, suffixed, FIXTURE)).resolves.toBeTruthy();
+
+        const rows = await prisma.framework.findMany({ where: { key } });
+        expect(rows).toHaveLength(1); // adopted, not duplicated
+        expect(rows[0]!.version).toBe(file.framework.version); // and updated
+    });
+
     it('re-running is idempotent — no duplicates, no churn', async () => {
         // The seeder runs on EVERY production deploy. A second pass that
         // created rows would grow the catalogue without bound.
