@@ -113,6 +113,12 @@ import type { RequestContext } from '@/app-layer/types';
 import type { AgentPrincipal } from '@/lib/agentic/agent-authority';
 
 import { enforceMcpCapability } from './auth';
+import {
+    toolIsLoadable,
+    loadableToolsDigest,
+    toolWasOffered,
+    type LoadableToolSet,
+} from './loadable-tools';
 import type { McpToolAuthorization, ScopeAction } from './tools/types';
 
 /** The MCP surface, for the audit row. Mirrors `requirePermission`'s reqMeta. */
@@ -138,6 +144,19 @@ export interface McpInvocation {
      * the only state that skips the exposure check.
      */
     grantedTools: ReadonlySet<string> | null;
+    /**
+     * The tool names this build put on the table WHEN THIS INVOCATION WAS
+     * ASSEMBLED — the third list of `LoadableToolSet`, and the only one that is a
+     * snapshot of the server rather than of the tenant.
+     *
+     * Resolution enumerates THIS, never the live registry arrays, so a tool that
+     * enters the registry after assembly is not loadable by an invocation
+     * already in flight. See `tool-manifest.ts` for why the property is stated
+     * as "resolution enumerates the manifest" rather than as a detection of the
+     * addition, and for what "mid-session" means when the session is an
+     * `McpInvocation`.
+     */
+    offeredTools: readonly string[];
     /**
      * The RFC 8693 audience the presented token was minted for, or `null` when
      * the caller presented the long-lived API key itself.
@@ -217,6 +236,7 @@ export type McpDenialReason =
     | 'audience_denied'
     | 'credential_revoked'
     | 'credential_expired'
+    | 'tool_not_offered'
     | 'tool_not_granted'
     | 'tool_manifest_unapproved'
     | 'autonomy_denied'
@@ -282,6 +302,96 @@ function permissionsFor(inv: McpInvocation, authorize: McpToolAuthorization): Pe
 export function isToolExposed(inv: McpInvocation, toolName: string): boolean {
     if (inv.grantedTools === null) return true;
     return inv.grantedTools.has(toolName);
+}
+
+/**
+ * The three pinned lists this invocation's loadable set is the intersection of.
+ *
+ * A VIEW over fields the invocation already carries — it stores nothing and
+ * derives nothing that is not already decided. The adapter lives here rather
+ * than in `tool-manifest.ts` because that module must not import
+ * `McpInvocation`: the manifest describes an invocation, so importing the
+ * invocation back would make the two a cycle, and would also tie a
+ * deliberately-leaf module to the whole authorization graph.
+ */
+export function loadableSetOf(inv: McpInvocation): LoadableToolSet {
+    return {
+        offered: inv.offeredTools,
+        grantedTools: inv.grantedTools,
+        permittedTools: inv.policyCard?.inForce.value.permittedTools ?? null,
+    };
+}
+
+/**
+ * May this invocation LOAD this tool — offered at assembly, granted in the
+ * register, and permitted by the policy card?
+ *
+ * This is what `tools/list` filters on. Before it existed the catalogue applied
+ * the grants and skipped the CARD, so an agent was advertised tools its own
+ * declared policy forbade; every such call then 403'd and wrote an
+ * `AUTHZ_DENIED` row, which is exactly the "manufacture denials until an
+ * operator learns to ignore them" failure `listReadToolDescriptors`'s own
+ * docstring names as the reason to filter at all.
+ *
+ * It is NOT a replacement for the per-call gate and must never become one. The
+ * gate re-checks the grant (step 3) and the card (step 5) SEPARATELY, because
+ * each refusal has to name its own rule; and it checks four more things this
+ * cannot know — the data rung a call reaches depends on its arguments, and the
+ * budgets depend on how many calls came before.
+ */
+export function isToolLoadable(inv: McpInvocation, toolName: string): boolean {
+    return toolIsLoadable(loadableSetOf(inv), toolName);
+}
+
+/**
+ * LOAD a tool, or refuse. The one door between a tool NAME and a tool OBJECT.
+ *
+ * Returns `null` when this build has no such tool at all — the caller turns that
+ * into its own `MethodNotFound`, because an unknown name is a protocol error and
+ * not a denied access attempt, and auditing it would let any caller fill the
+ * trail with typos.
+ *
+ * Refuses — with one hash-chained `AUTHZ_DENIED` row — when the registry DOES
+ * hold the tool but this invocation's manifest did not offer it. That is the
+ * mid-session case, and the reason the check is here rather than inside
+ * `authorizeToolCall` is that it is a property of LOADING, not of authority:
+ * `authorizeToolCall` is handed a tool object, so a check inside it would run
+ * after the object had already been taken out of the live registry. Resolving
+ * through the manifest means the object is never obtained.
+ *
+ * It runs ahead of audience and liveness, which is a deliberate exception to
+ * this file's "credential checks first" ordering: it needs no credential and no
+ * query, and its refusal says something none of the others can — "the authority
+ * this run holds was fixed before that tool existed; start a new run" rather
+ * than "fix your configuration". The information it can leak is which tool names
+ * this build shipped, to a caller whose credential was already validated at the
+ * HTTP boundary before any of this ran.
+ */
+export async function resolveOfferedTool<T extends { name: string }>(
+    inv: McpInvocation,
+    registry: readonly T[],
+    name: string,
+): Promise<T | null> {
+    const tool = registry.find((t) => t.name === name);
+    if (!tool) return null;
+    if (toolWasOffered(loadableSetOf(inv), name)) return tool;
+
+    await denyToolCall(inv.ctx, 'tool_not_offered', {
+        tool: name,
+        agentId: inv.agentId,
+        message:
+            `The tool "${name}" was not offered when this session began, so it ` +
+            'cannot be loaded by it. A tool that appears after a run has started ' +
+            'is never callable by that run — start a new one.',
+        extra: {
+            // The SET, as a fingerprint, not a list: an operator comparing two
+            // rows from one run needs "same or different", and an audit row is
+            // not a place to accumulate payload.
+            loadableToolsDigest: loadableToolsDigest(loadableSetOf(inv)),
+            offeredAtAssembly: inv.offeredTools.length,
+        },
+    });
+    return null;
 }
 
 /**

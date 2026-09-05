@@ -81,6 +81,7 @@ import { listRisksTool } from '@/lib/mcp/tools/risk-tools';
 import { getFrameworkStatusTool } from '@/lib/mcp/tools/framework-tools';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { makeRequestContext } from '../helpers/make-context';
+import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 
 const findFirst = (prisma as any).tenantApiKey.findFirst as jest.Mock;
 const reserve = reserveDailyAction as unknown as jest.Mock;
@@ -125,6 +126,7 @@ function invocationFor(
         },
         agentId: AGENT,
         grantedTools: new Set(['list_risks', 'get_framework_status']),
+        offeredTools: [...MCP_TOOL_NAMES],
         audience: null,
         autonomyCeiling: 6,
         riskTier: opts.riskTier === undefined ? 'HIGH' : opts.riskTier,
