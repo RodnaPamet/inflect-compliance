@@ -40,7 +40,7 @@ const FIXTURES: Array<{ label: string; data: TemplateFixture }> = [
     {
         label: 'ciso-toolkit',
         data: fixtureObject<TemplateFixture>(
-            'fixtures/policy-templates-ciso-toolkit.json',
+            'fixtures/policy-templates-ciso-toolkit',
             require('../prisma/fixtures/policy-templates-ciso-toolkit.json'),
             'templates',
         ),
@@ -48,7 +48,7 @@ const FIXTURES: Array<{ label: string; data: TemplateFixture }> = [
     {
         label: 'imported',
         data: fixtureObject<TemplateFixture>(
-            'fixtures/policy-templates-imported.json',
+            'fixtures/policy-templates-imported',
             require('../prisma/fixtures/policy-templates-imported.json'),
             'templates',
         ),
@@ -56,7 +56,7 @@ const FIXTURES: Array<{ label: string; data: TemplateFixture }> = [
     {
         label: 'original-gaps',
         data: fixtureObject<TemplateFixture>(
-            'fixtures/policy-templates-original-gaps.json',
+            'fixtures/policy-templates-original-gaps',
             require('../prisma/fixtures/policy-templates-original-gaps.json'),
             'templates',
         ),

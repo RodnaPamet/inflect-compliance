@@ -56,12 +56,12 @@ type Fixture = {
 // require() so esbuild inlines the fixture JSON into the bundled entrypoint.
 const FIXTURES: Fixture[] = [
     fixtureObject<Fixture>(
-        'fixtures/vendor-questionnaire-supplier-due-diligence.json',
+        'fixtures/vendor-questionnaire-supplier-due-diligence',
         require('../prisma/fixtures/vendor-questionnaire-supplier-due-diligence.json'),
         'sections',
     ),
     fixtureObject<Fixture>(
-        'fixtures/vendor-questionnaire-supplier-security-assessment.json',
+        'fixtures/vendor-questionnaire-supplier-security-assessment',
         require('../prisma/fixtures/vendor-questionnaire-supplier-security-assessment.json'),
         'sections',
     ),

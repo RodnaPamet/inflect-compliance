@@ -35,7 +35,7 @@ async function main() {
     const annexAData = fixtureArray<{
         key: string; theme: string; themeNumber: number; sortOrder: number; title: string; summary?: string;
     }>(
-        'fixtures/iso27001_2022_annexA.json',
+        'fixtures/iso27001_2022_annexA',
         require('./fixtures/iso27001_2022_annexA.json'),
     );
     const iso27001 = await prisma.framework.upsert({
@@ -86,7 +86,7 @@ async function main() {
 
     // ── NIS2 ─────────────────────────────────────────────────────
     const nis2Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/nis2_requirements.json',
+        'fixtures/nis2_requirements',
         require('./fixtures/nis2_requirements.json'),
     );
     const nis2 = await prisma.framework.upsert({
@@ -107,7 +107,7 @@ async function main() {
 
     // ── ISO 9001:2015 ────────────────────────────────────────────
     const iso9001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/iso9001_clauses.json',
+        'fixtures/iso9001_clauses',
         require('./fixtures/iso9001_clauses.json'),
     );
     const iso9001 = await prisma.framework.upsert({
@@ -128,7 +128,7 @@ async function main() {
 
     // ── ISO 28000:2022 ───────────────────────────────────────────
     const iso28000Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/iso28000_clauses.json',
+        'fixtures/iso28000_clauses',
         require('./fixtures/iso28000_clauses.json'),
     );
     const iso28000 = await prisma.framework.upsert({
@@ -149,7 +149,7 @@ async function main() {
 
     // ── ISO 39001:2012 ───────────────────────────────────────────
     const iso39001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/iso39001_clauses.json',
+        'fixtures/iso39001_clauses',
         require('./fixtures/iso39001_clauses.json'),
     );
     const iso39001 = await prisma.framework.upsert({

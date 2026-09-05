@@ -35,7 +35,7 @@ async function seedNis2GapAssessment(): Promise<void> {
             timeToFix: string; day: number; dependsOn: string[];
         }>;
     }>(
-        'fixtures/nis2-gap-assessment.json',
+        'fixtures/nis2-gap-assessment',
         require('../prisma/fixtures/nis2-gap-assessment.json'),
         'version', 'domains', 'questions',
     );
@@ -71,7 +71,7 @@ async function seedAiGovAssessment(): Promise<void> {
         domains: Array<{ id: number; code: string; name: string }>;
         questions: Array<{ id: string; domainId: number; criticality: string; conditional: string | null; text: string; mappings: { aisvs: string[]; iso42001: string[]; euAiAct: string[] } }>;
     }>(
-        'fixtures/ai-governance-self-assessment.json',
+        'fixtures/ai-governance-self-assessment',
         require('../prisma/fixtures/ai-governance-self-assessment.json'),
         'questionSetVersion', 'domains', 'questions',
     );
@@ -95,7 +95,7 @@ async function seedAgentRiskAssessment(): Promise<void> {
         domains: Array<{ id: number; code: string; name: string; description: string; sortOrder: number }>;
         questions: Array<{ id: string; domainId: number; criticality: string; text: string; guidance: string | null; mappings: { asi: string[]; imda: string[] } }>;
     }>(
-        'fixtures/agent-risk-assessment.json',
+        'fixtures/agent-risk-assessment',
         require('../prisma/fixtures/agent-risk-assessment.json'),
         'questionSetVersion', 'domains', 'questions',
     );

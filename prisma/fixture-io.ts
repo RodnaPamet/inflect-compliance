@@ -36,6 +36,20 @@
  * than anything here.
  */
 
+/**
+ * The label names the fixture WITHOUT its extension, and this adds it back.
+ *
+ * Not cosmetic. Callers pass the label beside a `require` of the same path, so
+ * a label carrying `.json` puts the filename in the source twice — which
+ * silently doubles the match count for every existing assertion that greps a
+ * seeder for that filename, and an assertion matching two places no longer
+ * pins the one it names. The Class D reach ratchet caught exactly that across
+ * twelve sites.
+ */
+function label(name: string): string {
+    return name.endsWith('.json') ? name : `${name}.json`;
+}
+
 /** Describe what we actually got, for an error message worth reading. */
 function describe(value: unknown): string {
     if (value === null) return 'null';
@@ -53,10 +67,10 @@ function describe(value: unknown): string {
  * @param label  The fixture path, for the error message. Callers pass the same
  *               string they `require`, so a failure names the file to open.
  */
-export function fixtureArray<T>(label: string, value: unknown): T[] {
+export function fixtureArray<T>(name: string, value: unknown): T[] {
     if (!Array.isArray(value)) {
         throw new Error(
-            `${label}: expected a JSON array, got ${describe(value)}. ` +
+            `${label(name)}: expected a JSON array, got ${describe(value)}. ` +
                 `If this fixture was reshaped, its consumer needs updating too — ` +
                 `a cast would have compiled and thrown later somewhere else.`,
         );
@@ -71,14 +85,14 @@ export function fixtureArray<T>(label: string, value: unknown): T[] {
  * "undefined is not iterable" three frames later into a message naming the
  * fixture and the key it lacks.
  */
-export function fixtureObject<T>(label: string, value: unknown, ...keys: string[]): T {
+export function fixtureObject<T>(name: string, value: unknown, ...keys: string[]): T {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        throw new Error(`${label}: expected a JSON object, got ${describe(value)}.`);
+        throw new Error(`${label(name)}: expected a JSON object, got ${describe(value)}.`);
     }
     const missing = keys.filter((k) => !(k in (value as Record<string, unknown>)));
     if (missing.length > 0) {
         throw new Error(
-            `${label}: object is missing required key(s) [${missing.join(', ')}] — got ${describe(value)}.`,
+            `${label(name)}: object is missing required key(s) [${missing.join(', ')}] — got ${describe(value)}.`,
         );
     }
     return value as T;

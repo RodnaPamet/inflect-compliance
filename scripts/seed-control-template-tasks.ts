@@ -53,7 +53,7 @@ const prisma = new PrismaClient({
 // image needs no fixture files present.
 const FIXTURE = require('../prisma/fixtures/internal-controls.json') as unknown;
 const POLICY_MAP = fixtureObject<{ policies: PolicyFrameworkMap }>(
-    'fixtures/internal-controls-policy-framework-map.json',
+    'fixtures/internal-controls-policy-framework-map',
     require('../prisma/fixtures/internal-controls-policy-framework-map.json'),
     'policies',
 ).policies;
