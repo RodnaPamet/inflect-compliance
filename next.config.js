@@ -266,6 +266,39 @@ const nextConfig = {
     // tech fingerprinting aids attackers and adds no value. Closes the
     // nightly ZAP baseline finding 10037 (Server Leaks Information via
     // "X-Powered-By"). See docs/dast.md.
+    // ── Image optimizer: OFF ────────────────────────────────────────
+    //
+    // `/_next/image` fetches a same-origin URL and runs the bytes through
+    // Next's VENDORED copy of `image-size`
+    // (node_modules/next/dist/compiled/image-size), which carries the ICNS,
+    // JXL and HEIF parsers covered by GHSA-w3rx-r6r6-pgpr and
+    // GHSA-5p2g-fcmc-qvqq — two HIGH denial-of-service advisories with no
+    // published fix (image-size 2.0.2 is simultaneously the newest release
+    // and inside the vulnerable range).
+    //
+    // That copy is bundled into Next's dist rather than resolved through the
+    // lockfile, so npm audit and Dependabot cannot see it and neither can the
+    // exemption in security/audit-allowlist.json, which covers only the
+    // pptxgenjs edge. Before this flag the route answered 200 in production
+    // and was excluded from the middleware matcher (src/middleware.ts), so it
+    // was reachable without authentication or rate limiting.
+    //
+    // Turning it off costs nothing: this codebase renders ZERO <Image>
+    // components. Every image site deliberately uses a plain <img>, each with
+    // a written eslint-disable explaining why next/image does not fit
+    // (runtime tenant-scoped /api URLs, blob previews, unknown dimensions).
+    //
+    // The guard is exact rather than incidental — next-server.js does
+    // `if (imagesConfig.loader !== 'default' || imagesConfig.unoptimized) {
+    //   await this.render404(req, res); return true; }`
+    // BEFORE validateParams, before the upstream fetch, and before image-size
+    // sees a byte.
+    //
+    // Locked by tests/guardrails/next-image-optimizer-disabled.test.ts. If you
+    // need next/image, removing this flag re-opens a known-vulnerable parser
+    // to unauthenticated traffic — read that test before you do.
+    images: { unoptimized: true },
+
     poweredByHeader: false,
     // Use a separate build directory for E2E tests to avoid .next cache
     // contention when multiple dev servers run concurrently.
