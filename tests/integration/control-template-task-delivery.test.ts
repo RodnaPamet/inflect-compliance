@@ -216,22 +216,38 @@ describe('authored control-template tasks reach the database', () => {
         // A tenant may already have installed it, and its Task rows outlive the
         // template by design. Deprecation stops re-installation without
         // disturbing what exists.
+        //
+        // Asserted as DELTAS, not absolutes. Every run of this test leaves one
+        // deprecated row behind and the restore below creates a fresh live row
+        // at the same sortOrder, so the template's total row count grows by one
+        // per run — correct behaviour (nothing is ever deleted) that an
+        // absolute count reads as failure on the second run. That is the same
+        // state-dependence #2319 fixed one assertion up, and it was mine both
+        // times: a test that only passes against a database it has not already
+        // touched is testing the database, not the code.
         const [code, tasks] = [...authored.byCode.entries()][0]!;
         const template = await prisma.controlTemplate.findUniqueOrThrow({ where: { code } });
+        const where = { templateId: template.id };
+
+        const before = await prisma.controlTemplateTask.findMany({ where });
+        const beforeDeprecated = before.filter((r) => r.deprecatedAt !== null).length;
+
         // `title` is required — the seeder filters malformed controls, and a
         // fixture entry without one is exactly that.
         const trimmed = {
             controls: [{ code, title: `Template ${code}`, tasks: tasks.slice(0, -1) }],
         };
-
         const r = await seedInternalControls(prisma, trimmed);
         expect(r.deprecated).toBe(1);
 
-        const rows = await prisma.controlTemplateTask.findMany({ where: { templateId: template.id } });
-        expect(rows).toHaveLength(tasks.length); // nothing deleted
-        expect(rows.filter((t) => t.deprecatedAt !== null)).toHaveLength(1);
+        const after = await prisma.controlTemplateTask.findMany({ where });
+        expect(after).toHaveLength(before.length); // nothing deleted
+        expect(after.filter((t) => t.deprecatedAt !== null)).toHaveLength(beforeDeprecated + 1);
 
         // Restore, so ordering between tests cannot leak.
         await seedInternalControls(prisma, FIXTURE);
+        expect(
+            await prisma.controlTemplateTask.count({ where: { ...where, deprecatedAt: null } }),
+        ).toBe(tasks.length);
     });
 });
