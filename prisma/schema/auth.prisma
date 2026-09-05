@@ -191,6 +191,7 @@ model Tenant {
   agentPolicyCards                  AgentPolicyCard[]
   agentPolicyCardVersions           AgentPolicyCardVersion[]
   agentProposalApprovals            AgentProposalApproval[]
+  agentProposalSampleAudits         AgentProposalSampleAudit[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?

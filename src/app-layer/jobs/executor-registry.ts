@@ -1303,3 +1303,44 @@ executorRegistry.register('hris-sync-dispatch', async () => {
     const r = await runHrisSyncDispatch();
     return makeResult('hris-sync-dispatch', startedAt, startMs, r.connections, r.dispatched, 0, { connections: r.connections });
 });
+
+// ── agent-proposal-expiry ───────────────────────────────────────────
+//
+// OWASP ASI09. Bounds the propose-not-commit review queue: a proposal past its
+// window moves to the terminal EXPIRED status. Nothing is deleted — the row is
+// the record of something no human agreed to. The refusal to APPROVE past the
+// deadline lives in the usecase and reads the clock, so this job's failure
+// costs tidiness, not safety.
+executorRegistry.register('agent-proposal-expiry', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAgentProposalExpiry } = await import('./agent-proposal-expiry');
+    const { prisma } = await import('@/lib/prisma');
+    const r = await runAgentProposalExpiry(prisma, { tenantId: payload.tenantId });
+    return makeResult('agent-proposal-expiry', startedAt, startMs, r.scanned, r.expired, r.raced, {
+        backfilled: r.backfilled,
+        raced: r.raced,
+    });
+});
+
+// ── agent-proposal-sample-audit ─────────────────────────────────────
+//
+// OWASP ASI09. Draws a keyed random sample of already-APPROVED proposals and
+// opens a retrospective review on each, so the disagreement rate — the only
+// measure of whether the human gate is doing anything — is computable.
+executorRegistry.register('agent-proposal-sample-audit', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAgentProposalSampleAudit } = await import('./agent-proposal-sample-audit');
+    const { prisma } = await import('@/lib/prisma');
+    const r = await runAgentProposalSampleAudit(prisma, { tenantId: payload.tenantId });
+    return makeResult(
+        'agent-proposal-sample-audit',
+        startedAt,
+        startMs,
+        r.candidates,
+        r.opened,
+        0,
+        { tenants: r.tenants },
+    );
+});

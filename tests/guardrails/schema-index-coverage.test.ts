@@ -453,6 +453,12 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // with no sort, over at most one row per agent.
     AgentPolicyCard:
         'computeAgentReviewQuality filters by tenantId + agentId IN (…) and does not sort — covered by the tenantId-leading @@unique([tenantId, agentId]); at most one row per agent and bounded take ≤5000.',
+        'listAgentProposals filters by tenantId (+status), orders by createdAt — covered by @@index([tenantId, status, createdAt]); bounded take ≤100. The two ASI09 sweeps read this model too and neither needs a new registry entry: the expiry sweep is system-wide on (status, expiresAt) and has its own non-tenant-leading @@index for exactly that reason, and the sample-audit sweep filters (tenantId, status, reviewedAt) which the same tenant-leading composite serves. Both are bounded.',
+    // ASI09 sample audits — the reviewer queue filters (tenantId, outcome) and
+    // orders by sampledAt asc; the disagreement rate groups by outcome over the
+    // same key. Both are covered by @@index([tenantId, outcome, sampledAt]).
+    AgentProposalSampleAudit:
+        'listAgentProposalSampleAudits filters by (tenantId, outcome), orders by sampledAt — covered by @@index([tenantId, outcome, sampledAt]); bounded take ≤200. The sampler reads back by (proposalId, samplingEpoch) on the tenantId-leading @@unique([tenantId, proposalId]).',
     // Agent-action receipts — listReceipts filters by tenantId (+ optional
     // verified / toolName), orders by occurredAt desc; covered by
     // @@index([tenantId, occurredAt]) (tenantId is RLS-bound; verified/toolName

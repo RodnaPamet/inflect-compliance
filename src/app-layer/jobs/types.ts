@@ -209,6 +209,33 @@ export interface ExceptionExpiryMonitorPayload {
     tenantId?: string;
 }
 
+/**
+ * Agent-proposal expiry sweep (OWASP ASI09) — moves PENDING proposals whose
+ * review window has closed to the terminal EXPIRED status, and stamps a
+ * deadline onto pre-`expiresAt` rows.
+ *
+ * Nothing is deleted: an expired proposal is the record of something an agent
+ * asked for and no human agreed to. The sweep is BOOKKEEPING — the refusal to
+ * approve past the deadline lives in the usecase and reads the clock, so a dead
+ * worker costs tidiness rather than safety.
+ */
+export interface AgentProposalExpiryPayload {
+    /** Optional: scope to a single tenant. Omit for the system-wide sweep. */
+    tenantId?: string;
+}
+
+/**
+ * Agent-proposal sample audit (OWASP ASI09) — draws a keyed random sample of
+ * already-APPROVED proposals and opens a retrospective review on each, so the
+ * disagreement rate is measurable. The only write seam for
+ * `AgentProposalSampleAudit`; a human cannot open one by hand, or the sample
+ * would stop being a sample.
+ */
+export interface AgentProposalSampleAuditPayload {
+    /** Optional: scope to a single tenant. Omit for the system-wide sweep. */
+    tenantId?: string;
+}
+
 /** Evidence retention sweep */
 export interface RetentionSweepPayload {
     tenantId?: string;
@@ -674,6 +701,8 @@ export interface JobPayloadMap {
     'hris-sync': HrisSyncPayload;
     'hris-sync-dispatch': HrisSyncDispatchPayload;
     'av-rescan': AvRescanPayload;
+    'agent-proposal-expiry': AgentProposalExpiryPayload;
+    'agent-proposal-sample-audit': AgentProposalSampleAuditPayload;
 }
 
 /** aws-posture connector — run one tenant connection's benchmark + collect evidence. */
