@@ -2650,4 +2650,21 @@ Reviewed at least annually.` },
     console.log('\n🎉 Seed complete! Login as admin@acme.com — password set via SEED_PASSWORD (default in prisma/seed.ts)');
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect());
+main()
+    .catch((err) => {
+        // `catch(console.error)` here for the life of this file, which meant the
+        // seed COULD NOT FAIL: console.error logs and returns, so a throw
+        // anywhere in 2,600 lines was printed and the process still exited 0.
+        //
+        // The cost is not theoretical. A fixture reshaped on 2026-09-05 broke a
+        // consumer forty lines in; the seed died there, reported success, and
+        // the failure surfaced fifteen minutes later as E2E specs for ISO 27001
+        // and AI governance failing on data that was never seeded. The error was
+        // in the log the entire time, above a green tick.
+        //
+        // Every standalone seeder in scripts/ already does this correctly.
+        // This one — the largest, and the one CI depends on — did not.
+        console.error('❌ Seed failed:', err);
+        process.exitCode = 1;
+    })
+    .finally(() => prisma.$disconnect());
