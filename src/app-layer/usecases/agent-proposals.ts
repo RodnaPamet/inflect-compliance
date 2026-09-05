@@ -24,7 +24,7 @@ import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
-import { badRequest, forbidden, notFound } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound, staleData } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -39,14 +39,30 @@ import {
     CreateControlSchema,
     CreatePolicySchema,
     CreateFindingSchema,
+    UpdateRiskSchema,
+    UpdateControlSchema,
+    UpdateFindingSchema,
 } from '@/lib/schemas';
-import { createRisk } from '@/app-layer/usecases/risk';
-import { createControl } from '@/app-layer/usecases/control/mutations';
+import { createRisk, updateRisk } from '@/app-layer/usecases/risk';
+import { createControl, updateControl } from '@/app-layer/usecases/control/mutations';
 import { createPolicy } from '@/app-layer/usecases/policy';
-import { createFinding } from '@/app-layer/usecases/finding';
+import { createFinding, updateFinding } from '@/app-layer/usecases/finding';
+import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
+import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
 import type { RequestContext } from '@/app-layer/types';
 
 export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING';
+
+/**
+ * WHAT a proposal would do. Mirrors the `AgentProposalOperation` enum.
+ *
+ * Stored on the row rather than inferred from the payload, because the review
+ * UI's whole job depends on this answer: a CREATE is rendered as full content,
+ * an UPDATE as a field-level before/after against a base read at review time.
+ * Guessing it from payload shape ("it has an id, so probably an update") would
+ * put a guess in front of the human-oversight gate.
+ */
+export type AgentProposalOperation = 'CREATE' | 'UPDATE';
 
 /** The create-schema each proposal kind validates against at the boundary. */
 const SCHEMA_BY_KIND = {
@@ -55,6 +71,33 @@ const SCHEMA_BY_KIND = {
     POLICY: CreatePolicySchema,
     FINDING: CreateFindingSchema,
 } as const;
+
+/**
+ * The PARTIAL-update schema each kind validates an UPDATE proposal against.
+ *
+ * POLICY is deliberately ABSENT, and the omission is the feature. There is no
+ * `UpdatePolicySchema` in the contract: policy content moves through versions
+ * and approvals (`createPolicyVersion`, `updatePolicyMetadata`), which is a
+ * different shape from "merge these fields", and a policy edit approved as a
+ * flat field merge would bypass the version chain that makes policy history
+ * auditable. So `propose an update to a policy` is refused at the boundary
+ * rather than approximated - see `assertUpdateProposalIsWellFormed`.
+ *
+ * A kind added here without a matching arm in `applyProposedUpdate` fails to
+ * compile, because that switch is exhaustive over this table's keys.
+ */
+const UPDATE_SCHEMA_BY_KIND = {
+    RISK: UpdateRiskSchema,
+    CONTROL: UpdateControlSchema,
+    FINDING: UpdateFindingSchema,
+} as const;
+
+export type UpdatableProposalKind = keyof typeof UPDATE_SCHEMA_BY_KIND;
+
+/** Kinds an UPDATE proposal may name. Exported so the UI and tests read the same list. */
+export const UPDATABLE_PROPOSAL_KINDS = Object.keys(
+    UPDATE_SCHEMA_BY_KIND,
+) as UpdatableProposalKind[];
 
 /** Recursively sanitise every string in a validated payload (Epic D boundary). */
 function sanitizeDeep(value: unknown): unknown {
@@ -70,6 +113,15 @@ function sanitizeDeep(value: unknown): unknown {
 
 export interface ProposeInput {
     kind: AgentProposalKind;
+    /**
+     * CREATE (default) or UPDATE. An UPDATE additionally requires
+     * `targetEntityId`, and the pair is checked here AND by a database CHECK
+     * (`AgentProposal_update_requires_target`) - an update naming no target
+     * cannot be diffed, so it must not be storable.
+     */
+    operation?: AgentProposalOperation;
+    /** The id of the record an UPDATE would change. Must be null for a CREATE. */
+    targetEntityId?: string | null;
     payload: unknown;
     rationale?: string | null;
     proposedBySessionRef?: string | null;
@@ -93,6 +145,8 @@ export interface ProposeInput {
 export interface ProposalResult {
     id: string;
     kind: AgentProposalKind;
+    /** CREATE or UPDATE - see `AgentProposalOperation`. */
+    operation: AgentProposalOperation;
     /** `PENDING` when queued for review, `QUARANTINED` when the guard refused it. */
     status: string;
     /** The agentic output-guard verdict written on the row. */
@@ -146,6 +200,68 @@ async function refuseQuarantined(
 }
 
 /**
+ * The STRUCTURAL half of an UPDATE proposal's well-formedness - the two checks
+ * that must hold even for a row the guard is about to quarantine, because a
+ * quarantined row is still a row and the database CHECK
+ * (`AgentProposal_update_requires_target`) applies to it too.
+ *
+ *   1. the kind must be updatable at all (POLICY is not - see
+ *      `UPDATE_SCHEMA_BY_KIND`);
+ *   2. a target id must be present.
+ */
+function requireStorableUpdateTarget(
+    kind: AgentProposalKind,
+    targetEntityId: string | null | undefined,
+): string {
+    if (!(kind in UPDATE_SCHEMA_BY_KIND)) {
+        throw badRequest(
+            `Cannot propose an update to a ${kind}: only ${UPDATABLE_PROPOSAL_KINDS.join(', ')} support partial updates`,
+        );
+    }
+    if (!targetEntityId) {
+        throw badRequest('An UPDATE proposal must name the record it would change (targetEntityId)');
+    }
+    // RETURNED rather than asserted, so every caller holds a `string` the
+    // compiler can see. An `asserts` signature would narrow only at the call
+    // site and widen again at the next branch, which is how the later
+    // `as string` casts this replaces got there.
+    return targetEntityId;
+}
+
+/**
+ * The SEMANTIC half: the target must EXIST right now, in this tenant.
+ *
+ * Enforced at PROPOSE time, not only at approve time, because a proposal that
+ * can never be reviewed is worse than a rejected one - it sits in the queue
+ * looking actionable and consumes the reviewer attention this whole gate
+ * depends on. Checked by asking the diff builder for a diff and requiring it to
+ * be REVIEWABLE, the same predicate the approve control is gated on, so nothing
+ * can be queued in a state the review UI would have to refuse.
+ *
+ * It is a point-in-time check and makes no promise about approve time - the
+ * target can still be deleted afterwards. That is handled where it has to be:
+ * the diff resolves to TARGET_MISSING at review, and `approveAgentProposal`
+ * refuses. This check exists to keep the queue clean, not to be that guarantee.
+ */
+async function assertUpdateTargetIsDiffable(
+    ctx: RequestContext,
+    input: { kind: AgentProposalKind; targetEntityId: string; payloadJson: string },
+): Promise<void> {
+    const diff = await buildProposalDiff(ctx, {
+        id: 'unsaved',
+        kind: input.kind,
+        operation: 'UPDATE',
+        payloadJson: input.payloadJson,
+        targetEntityId: input.targetEntityId,
+    });
+    if (!isDiffReviewable(diff)) {
+        // The status names WHY, and it carries no proposal content - it is one
+        // of five fixed tokens. Safe to return to the proposing agent.
+        throw badRequest(`Cannot propose an update that cannot be diffed: ${diff.status}`);
+    }
+}
+
+/**
  * Create a PENDING proposal from an agent. Validates the payload against the
  * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
  * row. Does NOT create the real entity. Attributed to the API key.
@@ -154,10 +270,32 @@ export async function createAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
 ): Promise<ProposalResult> {
-    const schema = SCHEMA_BY_KIND[input.kind];
+    const operation: AgentProposalOperation = input.operation ?? 'CREATE';
+    // Resolves to a `string` for an UPDATE (refusing POLICY and a missing id
+    // first) and to `null` for a CREATE. Runs before anything else so the two
+    // errors a proposing agent can actually act on come back first.
+    const targetEntityId =
+        operation === 'UPDATE'
+            ? requireStorableUpdateTarget(input.kind, input.targetEntityId)
+            : null;
+    if (operation !== 'UPDATE' && input.targetEntityId) {
+        // A CREATE that names a target is not a harmless extra field: it is a
+        // caller that believes it is proposing an edit. Approving it would
+        // silently create a SECOND record beside the one it meant to change.
+        throw badRequest('A CREATE proposal must not name a targetEntityId');
+    }
+
+    // 1. Validate against the SAME schema the equivalent REST route uses - the
+    // create-schema for a create, the PARTIAL update-schema for an update. The
+    // two differ in more than optionality: the update schemas accept explicit
+    // `null` on nullable columns ("clear this"), which a create schema rejects,
+    // and a proposal is exactly the place that distinction has to survive.
+    const schema =
+        operation === 'UPDATE'
+            ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
+            : SCHEMA_BY_KIND[input.kind];
     if (!schema) throw badRequest(`Unknown proposal kind: ${input.kind}`);
 
-    // 1. Validate against the SAME create-schema the REST route uses.
     const parsed = schema.safeParse(input.payload);
     if (!parsed.success) {
         throw badRequest(`Proposed ${input.kind} is invalid: ${parsed.error.message}`);
@@ -205,6 +343,17 @@ export async function createAgentProposal(
     if (!guard.quarantined) {
         assertGuardAllowed(inputOutcome);
         assertGuardAllowed(egressOutcome);
+        // Only for a row that is about to JOIN THE QUEUE. A quarantined
+        // proposal is written as evidence of the attempt and is never
+        // reviewable, so refusing it for naming a deleted record would delete
+        // the evidence instead of the proposal.
+        if (targetEntityId) {
+            await assertUpdateTargetIsDiffable(ctx, {
+                kind: input.kind,
+                targetEntityId,
+                payloadJson: JSON.stringify(sanitized),
+            });
+        }
     }
 
     // 3. Persist the proposal (RLS-scoped). NOT the real entity — and, when the
@@ -214,6 +363,13 @@ export async function createAgentProposal(
             data: {
                 tenantId: ctx.tenantId,
                 kind: input.kind,
+                // WHAT this would do, and to WHICH row. Stored, never inferred:
+                // the review UI decides between "full proposed content" and
+                // "field-level before/after against a base" on this column, and
+                // a reviewer shown the wrong one of those is being asked to
+                // consent to something nobody rendered.
+                operation,
+                targetEntityId,
                 status: guard.quarantined ? 'QUARANTINED' : 'PENDING',
                 payloadJson: JSON.stringify(sanitized),
                 rationale,
@@ -242,7 +398,7 @@ export async function createAgentProposal(
                 // later cannot rewrite what the rules were when it was made.
                 policyCardVersion: input.policyCardVersion,
             },
-            select: { id: true, kind: true, status: true },
+            select: { id: true, kind: true, status: true, operation: true },
         });
 
         // The AI-FEATURE record, for the agentic path. Same three properties
@@ -281,6 +437,14 @@ export async function createAgentProposal(
         detailsJson: {
             category: 'access',
             kind: input.kind,
+            // Named fields, never a spread, and spelled as MEMBER READS of the
+            // input rather than as the locals holding the same values: a bare
+            // identifier at a sink is a name `local/no-raw-prompt-logging`
+            // cannot resolve, so it is counted as a hole in that rule's
+            // denominator. Both are a fixed token and an opaque id; nothing of
+            // the payload joins them.
+            operation: input.operation ?? 'CREATE',
+            targetEntityId: input.targetEntityId ?? null,
             agentId: ctx.agentId ?? null,
             policyCardVersion: input.policyCardVersion,
             guardVerdict: guard.verdict,
@@ -301,6 +465,7 @@ export async function createAgentProposal(
     return {
         id: proposal.id,
         kind: proposal.kind as AgentProposalKind,
+        operation: proposal.operation as AgentProposalOperation,
         status: proposal.status,
         guardVerdict: guard.verdict,
     };
@@ -399,8 +564,74 @@ const editsSchema = z.record(z.string(), z.unknown());
 export interface ApproveResult {
     proposalId: string;
     kind: AgentProposalKind;
+    operation: AgentProposalOperation;
+    /**
+     * The record this proposal resolved to: the row it CREATED, or - for an
+     * UPDATE - the row it changed. The column behind it is still named
+     * `createdEntityId` for the same reason the `@@map("WorkItem*")` pins
+     * survive: renaming it would be a migration for a word.
+     */
     createdEntityId: string;
     status: 'ACCEPTED' | 'EDITED';
+}
+
+/** Options a REVIEWER supplies with an approval. */
+export interface ApproveOptions {
+    /** Field-level edits merged over the proposed payload before it is applied. */
+    edits?: Record<string, unknown>;
+    /**
+     * The `baseDigest` of the diff the reviewer actually read.
+     *
+     * REQUIRED for an UPDATE proposal and meaningless for a CREATE. This is the
+     * whole anti-automation-bias contract expressed at the write seam: a
+     * reviewer consents to a specific delta from a specific base, so an
+     * approval that cannot name the base it read is not consent to this change,
+     * it is consent to whatever the row happens to say at the moment the button
+     * is pressed. A mismatch is a 409 telling the reviewer to look again.
+     */
+    baseDigest?: string | null;
+}
+
+/**
+ * Apply an approved UPDATE through the REAL update-usecase for the kind.
+ *
+ * The same rule the create path follows, for the same reason: the proposal is
+ * data until a human approves it, and the write that follows must be the write
+ * a human doing it by hand would make - same validation, same sanitisation,
+ * same cache invalidation, same audit event, same permission assertion inside
+ * the usecase. Nothing here reaches a repository or Prisma directly.
+ *
+ * POLICY is absent from the switch and cannot reach it: `UPDATE_SCHEMA_BY_KIND`
+ * has no POLICY key, so `assertUpdateShapeIsStorable` refuses a policy update
+ * at the propose boundary and no such row can exist to be approved.
+ */
+async function applyProposedUpdate(
+    ctx: RequestContext,
+    kind: AgentProposalKind,
+    targetEntityId: string,
+    merged: Record<string, unknown>,
+): Promise<string> {
+    switch (kind) {
+        case 'RISK':
+            await updateRisk(
+                ctx,
+                targetEntityId,
+                UpdateRiskSchema.parse(merged) as Parameters<typeof updateRisk>[2],
+            );
+            return targetEntityId;
+        case 'CONTROL':
+            await updateControl(
+                ctx,
+                targetEntityId,
+                UpdateControlSchema.parse(merged) as Parameters<typeof updateControl>[2],
+            );
+            return targetEntityId;
+        case 'FINDING':
+            await updateFinding(ctx, targetEntityId, UpdateFindingSchema.parse(merged));
+            return targetEntityId;
+        default:
+            throw badRequest(`Cannot apply an update to a ${kind}`);
+    }
 }
 
 /**
@@ -412,10 +643,10 @@ export interface ApproveResult {
 export async function approveAgentProposal(
     ctx: RequestContext,
     id: string,
-    edits?: Record<string, unknown>,
+    opts?: ApproveOptions,
 ): Promise<ApproveResult> {
     assertCanWrite(ctx);
-    const parsedEdits = edits ? editsSchema.parse(edits) : undefined;
+    const parsedEdits = opts?.edits ? editsSchema.parse(opts.edits) : undefined;
 
     const proposal = await getAgentProposal(ctx, id);
     // ═══ QUARANTINE IS REFUSED BEFORE ANYTHING ELSE ═══
@@ -434,6 +665,51 @@ export async function approveAgentProposal(
     const base = JSON.parse(proposal.payloadJson) as Record<string, unknown>;
     const merged = parsedEdits ? { ...base, ...parsedEdits } : base;
     const kind = proposal.kind as AgentProposalKind;
+    const operation = (proposal.operation ?? 'CREATE') as AgentProposalOperation;
+
+    // ═══ THE REVIEWER MUST HAVE READ THE DIFF THEY ARE APPROVING ═══
+    //
+    // Re-derived here rather than trusted from the client, and required to
+    // MATCH what the client says it saw. Three failures are closed by the same
+    // check, and each is a way for an approval to mean less than it looks:
+    //
+    //   * the diff was never computed (the reviewer approved an opaque blob);
+    //   * the diff could not be computed - the target was deleted between
+    //     proposal and review, or the payload is not readable. `isDiffReviewable`
+    //     is false, and approving would apply a change nobody could render;
+    //   * the diff WAS computed, and the base has moved since. A diff against a
+    //     stale base is not a smaller lie than no diff - it is a worse one,
+    //     because it reads as authoritative. The reviewer consented to
+    //     `before -> after`; the row no longer says `before`.
+    //
+    // CREATE proposals are exempt because they have no base: `computeProposalDiff`
+    // returns `baseDigest: null` for one, so there is nothing to bind and
+    // demanding a token would be theatre.
+    if (operation === 'UPDATE') {
+        const diff = await buildProposalDiff(ctx, {
+            id: proposal.id,
+            kind: proposal.kind,
+            operation,
+            payloadJson: proposal.payloadJson,
+            targetEntityId: proposal.targetEntityId,
+        });
+        if (!isDiffReviewable(diff)) {
+            throw badRequest(`Cannot approve a proposal whose diff is ${diff.status}`);
+        }
+        if (!opts?.baseDigest) {
+            throw badRequest(
+                'Approving an update requires the baseDigest of the diff that was reviewed',
+            );
+        }
+        if (opts?.baseDigest !== diff.baseDigest) {
+            // 409 STALE_DATA, the same shape the rest of the product uses for
+            // "somebody moved this under you" - so the client can tell this
+            // apart from a malformed request and re-render the diff.
+            throw staleData(
+                'The record changed since this diff was reviewed - re-review before approving',
+            );
+        }
+    }
 
     // AI Guard — the load-bearing auto-commit-block invariant. This is the ONE
     // path where agent-proposed content becomes a live compliance record, so
@@ -488,29 +764,44 @@ export async function approveAgentProposal(
     // would read as ACCEPTED with nothing created and no way to retry.
     let createdEntityId: string;
     try {
-        switch (kind) {
-            case 'RISK': {
-                const risk = await createRisk(ctx, CreateRiskSchema.parse(merged) as Parameters<typeof createRisk>[1]);
-                createdEntityId = risk.id;
-                break;
+        if (operation === 'UPDATE') {
+            // `targetEntityId` is NOT NULL for an UPDATE row by database CHECK
+            // (`AgentProposal_update_requires_target`); the guard below is the
+            // type-level acknowledgement of that, not a second opinion about it.
+            if (!proposal.targetEntityId) {
+                throw badRequest('This update proposal names no target record');
             }
-            case 'CONTROL': {
-                const control = await createControl(ctx, CreateControlSchema.parse(merged) as Parameters<typeof createControl>[1]);
-                createdEntityId = control.id;
-                break;
+            createdEntityId = await applyProposedUpdate(
+                ctx,
+                kind,
+                proposal.targetEntityId,
+                merged,
+            );
+        } else {
+            switch (kind) {
+                case 'RISK': {
+                    const risk = await createRisk(ctx, CreateRiskSchema.parse(merged) as Parameters<typeof createRisk>[1]);
+                    createdEntityId = risk.id;
+                    break;
+                }
+                case 'CONTROL': {
+                    const control = await createControl(ctx, CreateControlSchema.parse(merged) as Parameters<typeof createControl>[1]);
+                    createdEntityId = control.id;
+                    break;
+                }
+                case 'POLICY': {
+                    const policy = await createPolicy(ctx, CreatePolicySchema.parse(merged) as Parameters<typeof createPolicy>[1]);
+                    createdEntityId = policy.id;
+                    break;
+                }
+                case 'FINDING': {
+                    const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
+                    createdEntityId = finding.id;
+                    break;
+                }
+                default:
+                    throw badRequest(`Unknown proposal kind: ${kind}`);
             }
-            case 'POLICY': {
-                const policy = await createPolicy(ctx, CreatePolicySchema.parse(merged) as Parameters<typeof createPolicy>[1]);
-                createdEntityId = policy.id;
-                break;
-            }
-            case 'FINDING': {
-                const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
-                createdEntityId = finding.id;
-                break;
-            }
-            default:
-                throw badRequest(`Unknown proposal kind: ${kind}`);
         }
     } catch (err) {
         // ═══ THE CLAIM IS DELIBERATELY *NOT* HANDED BACK ═══
@@ -567,6 +858,7 @@ export async function approveAgentProposal(
             detailsJson: {
                 category: 'access',
                 kind,
+                operation: proposal.operation ?? 'CREATE',
                 claimedStatus: status,
                 error: err instanceof Error ? err.message : String(err),
             },
@@ -593,11 +885,26 @@ export async function approveAgentProposal(
         entityId: id,
         action: 'AGENT_PROPOSAL_APPROVED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', kind, createdEntityId },
-        metadataJson: { proposedByApiKeyId: proposal.proposedViaKeyId, createdEntityId, edited: !!parsedEdits },
+        detailsJson: {
+            category: 'access',
+            kind,
+            operation: proposal.operation ?? 'CREATE',
+            createdEntityId,
+        },
+        metadataJson: {
+            proposedByApiKeyId: proposal.proposedViaKeyId,
+            createdEntityId,
+            edited: !!parsedEdits,
+            operation: proposal.operation ?? 'CREATE',
+            // The fingerprint of the base the reviewer read - null for a CREATE,
+            // which has no base. An id-shaped digest carrying no content: it is
+            // what makes "a human reviewed THIS delta" a checkable claim rather
+            // than a checkbox.
+            reviewedBaseDigest: opts?.baseDigest ?? null,
+        },
     }).catch(() => undefined);
 
-    return { proposalId: id, kind, createdEntityId, status };
+    return { proposalId: id, kind, operation, createdEntityId, status };
 }
 
 /** Reject a PENDING proposal — nothing is created. */

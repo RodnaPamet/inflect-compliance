@@ -739,6 +739,24 @@ enum AgentProposalKind {
   FINDING
 }
 
+/// WHAT a proposal would do to the record it names — the discriminator the
+/// review UI needs before it can show a reviewer anything truthful.
+///
+/// A CREATE proposal has no prior state, so the honest rendering is the FULL
+/// proposed content. An UPDATE proposal's meaning lives entirely in the
+/// difference between the payload and the row it targets, and a reviewer shown
+/// only the payload is being asked to approve a delta they cannot see. Storing
+/// the operation rather than inferring it from payload shape is deliberate:
+/// "this payload happens to carry an id" is a guess, and a guess that decides
+/// whether a human is shown a before-column is not a guess worth making.
+///
+/// CREATE is the default because every row written before this column existed
+/// was a create — the four propose tools only ever queued new records.
+enum AgentProposalOperation {
+  CREATE
+  UPDATE
+}
+
 /// Agentic workflow-engine run lifecycle (Epic Agentic 1A). A run PAUSES to
 /// AWAITING_APPROVAL at a HUMAN_CHECKPOINT (or after a PROPOSE step queues
 /// proposals) and resumes only after a human acts. It never commits a write.

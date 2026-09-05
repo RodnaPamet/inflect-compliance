@@ -186,7 +186,7 @@ describe('an edited approval claims as EDITED', () => {
     it('claims with EDITED, and the failure audit says so', async () => {
         createRisk.mockRejectedValue(new Error('nope'));
         await expect(
-            approveAgentProposal(ctx, 'p1', { title: 'Edited title' }),
+            approveAgentProposal(ctx, 'p1', { edits: { title: 'Edited title' } }),
         ).rejects.toThrow();
 
         expect(db.agentProposal.updateMany.mock.calls[0][0].data.status).toBe('EDITED');
