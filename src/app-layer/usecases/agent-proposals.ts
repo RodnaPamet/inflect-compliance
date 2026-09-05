@@ -283,8 +283,6 @@ export async function createAgentProposal(
             kind: input.kind,
             agentId: ctx.agentId ?? null,
             policyCardVersion: input.policyCardVersion,
-        },
-        metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
             guardVerdict: guard.verdict,
             // Rule ids carry no user content — that is the contract the whole
             // guard is built on (`patterns.ts`: "Rules never capture or return

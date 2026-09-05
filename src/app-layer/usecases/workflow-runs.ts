@@ -643,7 +643,23 @@ async function haltRun(
         entityId: runId,
         action: 'WORKFLOW_CONTEXT_INTEGRITY_HALTED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', code: err.code, ...err.detail },
+        // `err.detail`'s fields named rather than spread. The type is closed and
+        // carries no context CONTENT by construction — but a spread is opaque to
+        // `local/no-raw-prompt-logging`, which must then count this position as
+        // unjudged, and it would silently carry a future field into a permanent
+        // audit row. These five are structural facts about the failure.
+        detailsJson: {
+            category: 'access',
+            code: err.code,
+            seq: err.detail.seq ?? null,
+            bytes: err.detail.bytes ?? null,
+            cap: err.detail.cap ?? null,
+            expectedHash: err.detail.expectedHash ?? null,
+            observedHash: err.detail.observedHash ?? null,
+            blobDigest: err.detail.blobDigest ?? null,
+            issueCount: err.detail.issueCount ?? null,
+            issueFields: err.detail.issueFields ?? null,
+        },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
     return 'FAILED';
