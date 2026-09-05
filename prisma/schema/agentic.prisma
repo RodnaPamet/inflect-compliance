@@ -51,6 +51,27 @@ model AgentProposal {
   /// afterwards: "the version that allowed this" and "the version in force a
   /// moment later" are different claims, and only the first is evidence.
   policyCardVersion    Int?
+
+  /// ─── The agentic OUTPUT GUARD verdict (see ai/guard/proposal-guard.ts) ───
+  ///
+  /// Written on EVERY proposal, not only refused ones, because "the guard ran
+  /// and found nothing" and "the guard never ran" are otherwise the same row.
+  /// The default is CLEAN so pre-guard rows read as unscanned-but-permitted
+  /// rather than as scanned-and-clean — which they were, since the queue they
+  /// entered had no guard.
+  guardVerdict         AgentGuardVerdict    @default(CLEAN)
+  /// The stable rule ids that fired. Ids ONLY — never the matched text, so this
+  /// column can be read by an operator surface without leaking the payload.
+  guardRuleIds         String[]
+  /// `sha256:<hex>` over (kind, payload, rationale). The join key that proves
+  /// "the same content was guarded" without persisting the content. Same
+  /// construction as `AiDecisionLog.inputDigest`.
+  guardInputDigest     String?
+  /// The trust label the guarded content carried. Defaults to the untrusted
+  /// value: an agent proposal is third-party content by construction, and a row
+  /// that somehow arrives without a label must not read as tenant-authored.
+  guardProvenance      AgentContentProvenance @default(THIRD_PARTY_INGESTED)
+
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -58,6 +79,9 @@ model AgentProposal {
 
   @@index([tenantId, status, createdAt])
   @@index([tenantId, agentId])
+  /// The quarantine-triage listing: the operator surface that shows what the
+  /// guard refused. Tenant-leading, like every other index here.
+  @@index([tenantId, guardVerdict, createdAt])
 }
 
 /// Epic Agentic 1A — a durable, audited, human-gated agentic workflow run. The

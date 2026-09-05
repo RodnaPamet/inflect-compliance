@@ -105,6 +105,17 @@ interface Case {
     label: string;
     /** The route that reaches this usecase with an unvalidated string. */
     route: string;
+    /**
+     * What `where.status` must be when the caller supplies NO filter.
+     *
+     * Undefined for every listing but one. `listAgentProposals` names the
+     * REVIEWABLE set even with no filter, because the review queue must never
+     * be able to return a QUARANTINED proposal — not through an absent
+     * parameter, and not through `?status=QUARANTINED` either (that is a 400,
+     * asserted by the invalid-member case above, since QUARANTINED is not in
+     * the vocabulary this listing parses against).
+     */
+    absentStatus?: unknown;
 }
 
 const CASES: Case[] = [
@@ -128,6 +139,7 @@ const CASES: Case[] = [
         invalid: 'ACTIVE',
         label: 'proposal status',
         route: 'GET /api/t/:slug/agent-proposals?status=',
+        absentStatus: { in: ['PENDING', 'ACCEPTED', 'REJECTED', 'EDITED'] },
     },
     {
         name: 'listTenantFrameworkDeltas',
@@ -153,7 +165,7 @@ const CASES: Case[] = [
 
 describe.each(CASES)(
     '$name — enum filters are validated, not cast',
-    ({ seam, model, list, validPair, invalid, label, route }) => {
+    ({ seam, model, list, validPair, invalid, label, route, absentStatus }) => {
         it('passes a single valid member through as a scalar', async () => {
             const findMany = arrange(seam(), model);
             await list(validPair[0]);
@@ -192,12 +204,12 @@ describe.each(CASES)(
             expect(findMany).not.toHaveBeenCalled();
         });
 
-        it('still scopes to the tenant and omits the filter when absent', async () => {
+        it('still scopes to the tenant and applies the declared default when absent', async () => {
             const findMany = arrange(seam(), model);
             await list(undefined);
             const where = capturedWhere(findMany);
             expect(where.tenantId).toBe(ctx.tenantId);
-            expect(where.status).toBeUndefined();
+            expect(where.status).toEqual(absentStatus);
         });
 
         it('tolerates duplicates and whitespace in the multi-select', async () => {
