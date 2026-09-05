@@ -65,7 +65,7 @@ export type AuthoredTask = {
  *   unchanged   the hash is already on a live row  -> skip
  *   new         the hash is absent                 -> create
  *   changed     same sortOrder, different hash     -> update in place
- *   missing     a live row no file task claims     -> set deprecatedAt
+ *   missing     a live row this run never matched  -> set deprecatedAt
  *
  * NOTHING IS EVER DELETED, and that is the load-bearing rule rather than a
  * preference: a tenant may have installed the task, and its `Task` rows
@@ -90,17 +90,34 @@ export async function reconcileTemplateTasks(
         where: { templateId },
         select: { id: true, contentHash: true, sortOrder: true, deprecatedAt: true },
     });
-    const liveHashes = new Set(
-        existing.filter((e) => !e.deprecatedAt && e.contentHash).map((e) => e.contentHash as string),
-    );
-    const bySortOrder = new Map(existing.filter((e) => !e.deprecatedAt).map((e) => [e.sortOrder, e]));
-    const seenSortOrders = new Set<number>();
+    const live = existing.filter((e) => !e.deprecatedAt);
+
+    // Rows this run accounted for. Tracked by ROW ID rather than by sortOrder,
+    // because sortOrder is NOT unique in the wild: every one of production's
+    // 1,155 pre-existing template tasks sits at sortOrder 0, since the loops
+    // that created them predate the column and took its default. Keying the
+    // map by sortOrder collapses those five rows per template into one, and
+    // the four it drops are then invisible to BOTH the update and the
+    // deprecation pass — so they would survive as live boilerplate sitting
+    // beside the authored tasks, which is the exact state this reconcile
+    // exists to end.
+    const matched = new Set<string>();
+
+    const byHash = new Map<string, (typeof live)[number]>();
+    for (const row of live) {
+        if (row.contentHash && !byHash.has(row.contentHash)) byHash.set(row.contentHash, row);
+    }
+    const bySortOrder = new Map<number, (typeof live)[number]>();
+    for (const row of live) {
+        if (!bySortOrder.has(row.sortOrder)) bySortOrder.set(row.sortOrder, row);
+    }
 
     for (const task of authored) {
         const hash = taskContentHash(task);
-        seenSortOrders.add(task.sortOrder);
 
-        if (liveHashes.has(hash)) {
+        const sameContent = byHash.get(hash);
+        if (sameContent && !matched.has(sameContent.id)) {
+            matched.add(sameContent.id);
             result.unchanged++;
             continue;
         }
@@ -122,8 +139,9 @@ export async function reconcileTemplateTasks(
         };
 
         const atSameOrder = bySortOrder.get(task.sortOrder);
-        if (atSameOrder) {
+        if (atSameOrder && !matched.has(atSameOrder.id)) {
             await prisma.controlTemplateTask.update({ where: { id: atSameOrder.id }, data });
+            matched.add(atSameOrder.id);
             result.updated++;
         } else {
             await prisma.controlTemplateTask.create({ data: { templateId, ...data } });
@@ -131,10 +149,10 @@ export async function reconcileTemplateTasks(
         }
     }
 
-    // A live row at a sortOrder the file no longer claims. Deprecated, never
-    // deleted — see the docblock.
-    for (const [sortOrder, row] of bySortOrder) {
-        if (seenSortOrders.has(sortOrder)) continue;
+    // Every live row this run did not account for. Deprecated, never deleted —
+    // see the docblock. This is what retires the leftover generic placeholders.
+    for (const row of live) {
+        if (matched.has(row.id)) continue;
         await prisma.controlTemplateTask.update({
             where: { id: row.id },
             data: { deprecatedAt: new Date() },

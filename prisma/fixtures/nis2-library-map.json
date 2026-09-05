@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "purpose": "Maps each NIS2 control template to the src/data/libraries/nis2-2022.yaml node that grounds its authored tasks.",
+    "why": "The template's own `requirements` code (Art.21(2)(a)) and the library's ref_id (NIS2-RM) are different naming schemes, so nothing joined them and 0 of 20 resolved. This map is the join, in data, so a guardrail can check it. Derived from the '(Paraphrase — Art. …)' citation each library node carries in its own description, not from judgement: 11 match on the exact article, and Art.20 / Art.23 match at article level because the library carries one node for each of those whole articles.",
+    "guardedBy": "tests/guardrails/nis2-library-map.test.ts"
+  },
+  "map": {
+    "NIS2-RA": "NIS2-RM",
+    "NIS2-IH": "NIS2-IR",
+    "NIS2-BC": "NIS2-BC",
+    "NIS2-SC": "NIS2-SC",
+    "NIS2-NS": "NIS2-SD",
+    "NIS2-EF": "NIS2-AS",
+    "NIS2-CH": "NIS2-CH",
+    "NIS2-CR": "NIS2-CR",
+    "NIS2-HR": "NIS2-HR",
+    "NIS2-MFA": "NIS2-AM",
+    "NIS2-EW": "NIS2-RE",
+    "NIS2-IN": "NIS2-RE",
+    "NIS2-FR": "NIS2-RE",
+    "NIS2-GO": "NIS2-GOV",
+    "NIS2-TR": "NIS2-GOV"
+  },
+  "unmapped": {
+    "_why": "These five carry no library node, and that is the library being CORRECT rather than incomplete: it covers entity-facing obligations, and these are not. Authoring compliance tasks against them would tell a customer they must satisfy an obligation the directive does not place on them. Each needs a product decision, recorded here rather than silently filled with generic content.",
+    "NIS2-NS2": "Art.7(1) — national cybersecurity strategy. Addressed to MEMBER STATES. An entity cannot satisfy it.",
+    "NIS2-ST": "Art.25 — standards and technical specifications. Addressed to Member States and ENISA, who promote their use.",
+    "NIS2-CE": "Art.24(1) — certification schemes. Permissive: Member States MAY require entities to use certified products.",
+    "NIS2-DN": "Art.28(1) — domain name registration data. Applies only to TLD registries and DNS service providers, not to entities generally.",
+    "NIS2-IS": "Art.29(1) — information-sharing arrangements. Voluntary: entities MAY exchange information."
+  }
+}

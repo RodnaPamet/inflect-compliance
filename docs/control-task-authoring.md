@@ -90,11 +90,62 @@ material supports only three tasks gets three tasks. Padding to reach six
 reintroduces the boilerplate this document exists to prevent, and it is worse
 than a short task set because it looks complete.
 
-Where a framework's metadata is too thin to ground specific content — most of
-them, outside `ICN-` — say so in the PR rather than synthesising. Note that
-**ISO 27001 Annex A has no control templates at all**: its 93 entries are
-`FrameworkRequirement` rows, so there is nothing to attach tasks to until
-templates exist.
+### Where the grounding actually lives
+
+**Look in `src/data/libraries/*.yaml` before concluding a framework is
+ungroundable.** Fifteen framework libraries live there, and a requirement node
+in one carries more than the control template does:
+
+```yaml
+ref_id: DORA.Art.5
+description: >
+  The management body defines, approves, oversees and is accountable for the
+  ICT risk management framework... (Paraphrase — Art. 5)
+artifacts: "ICT governance policy, Management body responsibilities matrix, ..."
+checklist:
+  - Assign management-body accountability for the ICT risk framework
+  - Define roles and responsibilities for ICT functions
+```
+
+`artifacts` **is** the `evidenceHint` and `checklist` **is** the spine of the
+task set, so the projection is nearly direct. This paragraph previously said the
+metadata was "too thin to ground specific content — most of them, outside
+`ICN-`", which was wrong, and wrong in an expensive way: it was written after
+searching only `prisma/`, and it would have sent the next author to synthesise
+content that had a real source sitting one directory away.
+
+**Check the join before authoring.** DORA needs none — a template's
+`requirements` entry *is* the node's `ref_id`, so all 24 resolve by equality and
+a typo fails loudly. NIS2 needed one: its templates say `Art.21(2)(a)` and its
+nodes say `NIS2-RM`, so zero of twenty resolved and nothing said so, because
+nothing had tried. That join now lives in `prisma/fixtures/nis2-library-map.json`
+with a guardrail, because a mapping in data with nothing checking it rots exactly
+the way a missing one does.
+
+**A framework with no library is the real "too thin" case.** ISO 9001, ISO 39001
+and ISO 28000 have no YAML library, and their templates carry a title and a
+requirement reference and nothing else. Say so in the PR rather than
+synthesising from knowledge of the standard.
+
+### When a template should carry no tasks at all
+
+Sometimes the honest output is nothing, and it is a finding rather than a gap.
+Five NIS2 templates have no library node because the library covers
+*entity-facing* obligations and those five are not: Art.7 and Art.25 address
+Member States, Art.28 addresses TLD registries and DNS providers, and Art.24 and
+Art.29 are permissive. Authoring tasks against them would tell a customer they
+must satisfy an obligation the directive does not place on them. Record the
+reason where a reviewer will find it and escalate the product decision.
+
+### Authored content must be DELIVERED
+
+A fixture is not a database. `prisma/seed.ts` is not run on production deploys,
+so authored tasks reach prod only through the standalone seeder wired into
+`scripts/entrypoint.sh`. 865 tasks once shipped through a conformance gate, an
+actionability ratchet and 24 green CI checks into a database that received none
+of them, because every gate read the fixture and none crossed the delivery
+boundary. `tests/guardrails/authored-tasks-are-delivered.test.ts` now fails when
+a fixture gains authored tasks that nothing delivers.
 
 ## Phases
 

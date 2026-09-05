@@ -42,9 +42,7 @@ const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {
     'CIS-': 'CIS v8 IG1 (15). Its existing tasks are formulaic ("Implement IG1 safeguards for Control {n}").',
     'ASVS-': 'OWASP ASVS L1 (13). Same formulaic shape as CIS.',
     'PIMS-': 'ISO 27701 (10).',
-    'DORA-': 'DORA (24). Fixture extracted from seed.ts, no authored tasks yet.',
     'QMS-': 'ISO 9001 (22). Fixture extracted from seed.ts, no authored tasks yet.',
-    'NIS2-': 'NIS2 (20). Fixture extracted from seed.ts, no authored tasks yet.',
     'RTS-': 'ISO 39001 (17). Fixture extracted from seed.ts, no authored tasks yet.',
     'SCS-': 'ISO 28000 (15). Fixture extracted from seed.ts, no authored tasks yet.',
     'AC-': 'Legacy starter templates. Belong to no framework and carry ZERO tasks — the worst current state of any population.',
@@ -87,21 +85,23 @@ export const UNSCANNABLE_INLINE_POPULATIONS: Record<string, number> = {};
  * as verbs does not admit 'Check compliance' or 'Update documentation'.
  */
 const IMPERATIVE_VERBS = new Set([
-    'Account', 'Add', 'Agree', 'Align', 'Allocate', 'Analyse', 'Annotate', 'Apply', 'Approve',
-    'Assemble', 'Assess', 'Assign', 'Audit', 'Authorise', 'Baseline', 'Build', 'Capture',
-    'Catalogue', 'Check', 'Cite', 'Classify', 'Close', 'Collect', 'Compare', 'Compile',
-    'Complete', 'Configure', 'Confirm', 'Consolidate', 'Correlate', 'Cross-check',
-    'Cross-reference', 'Define', 'Deliver', 'Deploy', 'Design', 'Destroy', 'Detect',
-    'Determine', 'Diagram', 'Disable', 'Document', 'Enable', 'Enforce', 'Enrol', 'Establish',
-    'Evaluate', 'Examine', 'Exercise', 'Export', 'Express', 'Extend', 'Extract', 'File', 'Flag',
-    'Generate', 'Group', 'Identify', 'Implement', 'Inspect', 'Inventory', 'Issue', 'Label',
-    'Limit', 'List', 'Log', 'Maintain', 'Map', 'Mark', 'Match', 'Measure', 'Minute', 'Monitor',
-    'Move', 'Name', 'Notify', 'Onboard', 'Photograph', 'Populate', 'Produce', 'Publish',
-    'Raise', 'Rate', 'Re-verify', 'Reassess', 'Reconcile', 'Record', 'Register', 'Remove',
-    'Report', 'Restore', 'Restrict', 'Retest', 'Retire', 'Review', 'Revoke', 'Rotate', 'Run',
-    'Sample', 'Sanitise', 'Scan', 'Schedule', 'Scope', 'Score', 'Search', 'Seed', 'Segment',
-    'Select', 'Send', 'Separate', 'Set', 'Spot-check', 'Store', 'Summarise', 'Test', 'Trace',
-    'Track', 'Train', 'Triage', 'Turn', 'Update', 'Validate', 'Verify', 'Walk', 'Write',
+    'Account', 'Add', 'Adopt', 'Agree', 'Align', 'Allocate', 'Analyse', 'Annotate', 'Apply',
+    'Approve', 'Assemble', 'Assess', 'Assign', 'Audit', 'Authorise', 'Baseline', 'Build',
+    'Capture', 'Catalogue', 'Check', 'Cite', 'Classify', 'Close', 'Collect', 'Compare',
+    'Compile', 'Complete', 'Conduct', 'Configure', 'Confirm', 'Consolidate', 'Correlate',
+    'Cross-check', 'Cross-reference', 'Define', 'Deliver', 'Deploy', 'Design', 'Destroy',
+    'Detect', 'Determine', 'Diagram', 'Disable', 'Document', 'Enable', 'Enforce', 'Enrol',
+    'Establish', 'Estimate', 'Evaluate', 'Examine', 'Exercise', 'Export', 'Express', 'Extend',
+    'Extract', 'File', 'Flag', 'Generate', 'Group', 'Hold', 'Identify', 'Implement', 'Inspect',
+    'Inventory', 'Issue', 'Label', 'Limit', 'List', 'Log', 'Maintain', 'Map', 'Mark', 'Match',
+    'Measure', 'Minute', 'Monitor', 'Move', 'Name', 'Notify', 'Obtain', 'Onboard', 'Open',
+    'Photograph', 'Populate', 'Produce', 'Publish', 'Raise', 'Rate', 'Re-check', 'Re-read',
+    'Re-verify', 'Reassess', 'Recertify', 'Reconcile', 'Record', 'Register', 'Remove', 'Report',
+    'Restore', 'Restrict', 'Retest', 'Retire', 'Review', 'Revise', 'Revoke', 'Rewrite',
+    'Rotate', 'Route', 'Run', 'Sample', 'Sanitise', 'Scan', 'Schedule', 'Scope', 'Score',
+    'Search', 'Seed', 'Segment', 'Select', 'Send', 'Separate', 'Set', 'Sign', 'Spot-check',
+    'Store', 'Summarise', 'Test', 'Trace', 'Track', 'Train', 'Triage', 'Turn', 'Update',
+    'Validate', 'Verify', 'Walk', 'Write',
 ]);
 
 /**
@@ -309,7 +309,7 @@ describe('the allowlist is honest', () => {
         // A downward ratchet. Each content PR deletes its prefix here in the
         // same diff that authors the content; at zero, every shipped template
         // is held to the bar and this whole allowlist is deleted.
-        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(19);
+        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(17);
     });
 
     it('no framework is seeded from an inline array any more', () => {
