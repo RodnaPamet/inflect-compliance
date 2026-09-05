@@ -45,12 +45,26 @@ interface StarterControl {
     category: string;
     defaultFrequency: string;
     defaultOwnerHint: string;
-    requirements: string[];
-    tasks: Array<{ title: string; description: string }>;
+    /** Renamed from `requirements` when the fixture became a CatalogFile —
+     *  `applyCatalogFile` reads `requirementCodes`. */
+    requirementCodes: string[];
+    /** Locale objects since the same move; the old shape was bare strings. */
+    tasks: Array<{ title: { en: string }; description: { en: string } }>;
 }
-const controls = JSON.parse(
-    read('prisma/fixtures/soc2-control-templates.json'),
-) as StarterControl[];
+
+/**
+ * The fixture is now a CatalogFile — `{ framework, requirements, templates,
+ * pack }` — rather than the bare array this guard was written against, so that
+ * `applyCatalogFile` can create the framework, its criteria, the templates,
+ * their links and the pack together. Every assertion below is unchanged; only
+ * the reader moved, which is the right split: the docblock above says these
+ * assertions are about RESOLUTION, not shape, and that stayed true.
+ */
+const catalog = JSON.parse(read('prisma/fixtures/soc2-control-templates.json')) as {
+    requirements: Array<{ code: string }>;
+    templates: StarterControl[];
+};
+const controls = catalog.templates;
 
 /** The criterion codes the seed actually creates — the link lookup's domain. */
 function seededCriterionCodes(rel: string): string[] {
@@ -89,8 +103,8 @@ describe('SOC 2 Starter Pack — curated control templates', () => {
             expect(c.defaultOwnerHint).toBeTruthy();
             expect(c.tasks.length).toBeGreaterThanOrEqual(1);
             for (const t of c.tasks) {
-                expect(t.title).toBeTruthy();
-                expect(t.description).toBeTruthy();
+                expect(t.title.en).toBeTruthy();
+                expect(t.description.en).toBeTruthy();
             }
         }
     });
@@ -99,8 +113,8 @@ describe('SOC 2 Starter Pack — curated control templates', () => {
         const seeded = new Set(SEEDED);
         const dangling: string[] = [];
         for (const c of controls) {
-            expect(c.requirements.length).toBeGreaterThanOrEqual(1);
-            for (const r of c.requirements) {
+            expect(c.requirementCodes.length).toBeGreaterThanOrEqual(1);
+            for (const r of c.requirementCodes) {
                 if (!seeded.has(r)) dangling.push(`${c.code} → ${r}`);
             }
         }
@@ -111,7 +125,7 @@ describe('SOC 2 Starter Pack — curated control templates', () => {
         const live = new Set(LIBRARY_ASSESSABLE);
         const dangling: string[] = [];
         for (const c of controls) {
-            for (const r of c.requirements) {
+            for (const r of c.requirementCodes) {
                 if (!live.has(r)) dangling.push(`${c.code} → ${r}`);
             }
         }
@@ -120,20 +134,31 @@ describe('SOC 2 Starter Pack — curated control templates', () => {
 
     it('covers every Common Criteria category CC1–CC9', () => {
         const covered = new Set(
-            controls.flatMap((c) => c.requirements.map((r) => r.split('.')[0])),
+            controls.flatMap((c) => c.requirementCodes.map((r) => r.split('.')[0])),
         );
         const missing = CC_CATEGORIES.filter((g) => !covered.has(g));
         expect(missing).toEqual([]);
     });
 
     it('leaves no seeded criterion uncovered — the day-one baseline is 100%, not partial', () => {
-        const targeted = new Set(controls.flatMap((c) => c.requirements));
+        const targeted = new Set(controls.flatMap((c) => c.requirementCodes));
         const uncovered = SEEDED.filter((code) => !targeted.has(code));
         expect(uncovered).toEqual([]);
     });
 });
 
-describe('SOC 2 criteria — seed and library agree', () => {
+describe('SOC 2 criteria — every declaration agrees', () => {
+    it("the catalog file's own requirements match the criteria the seed creates", () => {
+        // The CatalogFile now declares the criteria itself, so they are stated
+        // in THREE places: prisma/seed.ts's soc2Reqs, this fixture, and
+        // src/data/libraries/soc2-2017.yaml. Two of the three were already
+        // cross-checked below; leaving the third unchecked would let the
+        // catalog seeder create a criterion set the seed's link lookup does
+        // not know, which is exactly the silent no-link failure this file was
+        // written to prevent — one source further out.
+        expect(catalog.requirements.map((r) => r.code).sort()).toEqual([...SEEDED].sort());
+    });
+
     it('the seed carries exactly the library\'s assessable Common Criteria', () => {
         const libraryCC = LIBRARY_ASSESSABLE.filter((r) => r.startsWith('CC')).sort();
         expect([...SEEDED].sort()).toEqual(libraryCC);
