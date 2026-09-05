@@ -288,10 +288,14 @@ describeFn('a seeded policy card is one the tool boundary can actually exercise'
         it('the PREVIEW names the withheld tool before anybody presses create', async () => {
             const preview = await getAgentPolicyCard(ctx(), agentId);
             expect(preview.card).toBeNull();
-            // `in` rather than a cast: the read returns one shape for an agent
-            // with a card and another for an agent without one, and the preview
-            // fields live only on the second.
-            if (!('wouldSeed' in preview)) throw new Error('expected the no-card shape');
+            // Narrowed on `card`, NOT on `'wouldSeed' in preview`. The read
+            // returns one shape for an agent with a card and another for an
+            // agent without one, but TypeScript normalises the two returns into
+            // a union whose members carry each other's keys as `?: undefined` —
+            // so BOTH members have a `wouldSeed` key and `in` discriminates
+            // nothing. `card` is a real discriminant (`null` against an object),
+            // and it is the field whose absence the preview shape is defined by.
+            if (preview.card !== null) throw new Error('expected the no-card shape');
             expect(preview.wouldSeed.permittedTools).toEqual(['get_framework_status']);
             expect(preview.wouldWithhold).toEqual([
                 {

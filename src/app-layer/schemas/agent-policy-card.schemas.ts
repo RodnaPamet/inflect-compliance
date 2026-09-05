@@ -21,6 +21,8 @@ import {
     AUTONOMY_LADDER,
     DATA_SCOPE_LADDER,
     POLICY_CARD_RULES,
+    isActionCap,
+    type ActionCap,
 } from '@/lib/agentic/policy-card';
 
 /**
@@ -42,13 +44,13 @@ export const PolicyCardVersionSchema = z
         maxActionsPerRun: z
             .number()
             .int()
-            .refine((n) => (ACTION_CAP_LADDER as readonly number[]).includes(n), {
+            .refine((n): n is ActionCap => isActionCap(n), {
                 message: `maxActionsPerRun must be one of ${ACTION_CAP_LADDER.join(', ')}`,
             }),
         maxActionsPerDay: z
             .number()
             .int()
-            .refine((n) => (ACTION_CAP_LADDER as readonly number[]).includes(n), {
+            .refine((n): n is ActionCap => isActionCap(n), {
                 message: `maxActionsPerDay must be one of ${ACTION_CAP_LADDER.join(', ')}`,
             }),
         escalationTriggers: z.array(z.enum(POLICY_CARD_RULES)),
