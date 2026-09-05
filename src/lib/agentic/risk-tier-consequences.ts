@@ -16,10 +16,12 @@
  * eventual caller. When 3/10 came to wire it, the decision was already made and
  * could only be undone by deleting a line.
  *
- * Both functions below follow that exactly. Neither has a caller today. Both
- * resolve an UNSCORED or UNKNOWN tier to the STRICTEST answer they can express,
- * so a caller that forgets to handle the null gets the safe result rather than
- * the convenient one.
+ * Both functions below follow that exactly. `defaultPolicyCardForRiskTier` was
+ * wired by 5/10 and is now the seeding of every policy card;
+ * `reviewRequirementForRiskTier` still waits for 8/10. Both resolve an UNSCORED
+ * or UNKNOWN tier to the STRICTEST answer they can express, so a caller that
+ * forgets to handle the null gets the safe result rather than the convenient
+ * one.
  *
  * ## Why these are consequences of the tier and not new settings
  *
@@ -28,11 +30,25 @@
  * and that threshold. Adding a genuinely new dimension (a rate limit, an egress
  * allowlist) is a decision for the prompt that needs it — and it belongs HERE,
  * beside the others, not in that prompt's own module.
+ *
+ * 5/10 took that instruction and added the per-run and per-day ACTION BUDGETS,
+ * which are genuinely new: nothing before them limited how MANY times an agent
+ * could exercise authority it legitimately holds. They are composed here and
+ * their per-tier values live with the scorer, exactly as `ceilingForRiskTier`
+ * composes `MAX_AUTONOMY_BY_TIER`. What 5/10 did NOT add here is the card's data
+ * ceiling: the register already carries the operator's own `dataAccessScope`
+ * declaration for each agent, and deriving a second answer from the tier would
+ * be two numbers for one question.
  */
 import type { AgentRiskTier } from '@prisma/client';
 
 import { DENY_CEILING, ceilingForRiskTier } from './autonomy-ceiling';
-import { RISK_TIER_ORDER } from './agent-risk-scoring';
+import {
+    MAX_ACTIONS_PER_DAY_BY_TIER,
+    MAX_ACTIONS_PER_RUN_BY_TIER,
+    RISK_TIER_ORDER,
+} from './agent-risk-scoring';
+import type { ActionCap } from './policy-card';
 
 /**
  * The tier at and above which a second human must approve. HIGH, because that
@@ -109,18 +125,52 @@ export interface AgentPolicyCardDefaults {
      * other default here is a guess.
      */
     assessmentRequired: boolean;
+    /**
+     * How many tool calls one run of this agent may make. A rung of
+     * `ACTION_CAP_LADDER`, so the default is a value an operator could also have
+     * typed — a seeded number that no hand edit can reproduce is a number the
+     * ladder does not govern.
+     */
+    maxActionsPerRun: ActionCap;
+    /** How many tool calls this agent may make in one UTC day. */
+    maxActionsPerDay: ActionCap;
 }
 
 /**
- * ── SEAM (Agentic 5/10) — POLICY-CARD DEFAULTS. ─────────────────────
+ * The two budgets a tier permits, fail-closed.
  *
- * 5/10 builds the per-agent policy card. When it does, THIS is where its
- * defaults come from, so that opening a card on a HIGH agent starts from what
- * the assessment already decided rather than from a blank form somebody fills
- * in from memory.
+ * ZERO for an unscored agent and for a tier this build does not recognise —
+ * the same direction `ceilingForRiskTier` takes for the autonomy term, and for
+ * the same reason. A budget is authority measured in calls, and the least-
+ * assessed agent must not be the one with the largest allowance.
  *
- * Wired by: 5/10, when it builds the card's initial state. Nothing calls it
- * today.
+ * A tier PRESENT in the enum but MISSING from either table also resolves to
+ * zero. The lookup is written as a possibly-undefined read for exactly that
+ * reason: the type says it cannot happen, and the fail direction is what decides
+ * whether being wrong about that is a refusal or an unbounded agent.
+ */
+export function actionCapsForRiskTier(tier: AgentRiskTier | null | undefined): {
+    perRun: ActionCap;
+    perDay: ActionCap;
+} {
+    if (tier === null || tier === undefined) return { perRun: 0, perDay: 0 };
+    const perRun: number | undefined = MAX_ACTIONS_PER_RUN_BY_TIER[tier];
+    const perDay: number | undefined = MAX_ACTIONS_PER_DAY_BY_TIER[tier];
+    return {
+        perRun: (perRun ?? 0) as ActionCap,
+        perDay: (perDay ?? 0) as ActionCap,
+    };
+}
+
+/**
+ * ── POLICY-CARD DEFAULTS. WIRED (5/10). ─────────────────────────────
+ *
+ * 5/10 built the per-agent policy card, and THIS is where its defaults come
+ * from, so that opening a card on a HIGH agent starts from what the assessment
+ * already decided rather than from a blank form somebody fills in from memory.
+ *
+ * Wired by: 5/10, in `seedPolicyCardValue` (`policy-card-evaluation.ts`), which
+ * is the only place a card's opening state is built.
  *
  * Fails CLOSED: an unscored agent gets `maxAutonomyLevel: DENY_CEILING`, both
  * approval controls at their strictest, and `assessmentRequired: true`.
@@ -136,10 +186,13 @@ export function defaultPolicyCardForRiskTier(
 ): AgentPolicyCardDefaults {
     const review = reviewRequirementForRiskTier(tier);
     const unscored = tier === null || tier === undefined;
+    const budgets = actionCapsForRiskTier(tier);
     return {
         maxAutonomyLevel: unscored ? DENY_CEILING : ceilingForRiskTier(tier),
         requireSecondApprover: review.requireSecondApprover,
         allowAutoApproval: review.autoApprovable,
         assessmentRequired: unscored,
+        maxActionsPerRun: budgets.perRun,
+        maxActionsPerDay: budgets.perDay,
     };
 }

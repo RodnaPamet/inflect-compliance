@@ -240,7 +240,12 @@ async function executeFrom(
     // the same freshness a direct tool call gets between requests". That was the
     // defect stated as a design: a run is exactly where the two differ, because
     // a run keeps executing after the operator has acted.
-    const invocation = await resolveMcpInvocation(ctx);
+    // `actionsAlready: fromSeq` is what keeps the policy card's PER-RUN action
+    // budget a property of the RUN rather than of the segment. This function is
+    // re-entered after every human checkpoint with a fresh invocation, so a
+    // counter that started at zero here would hand a run one full budget per
+    // checkpoint — and a run with three checkpoints would quietly get four.
+    const invocation = await resolveMcpInvocation(ctx, { actionsAlready: fromSeq });
 
     for (let seq = fromSeq; seq < def.steps.length; seq++) {
         // ── Guardrails ──

@@ -11,17 +11,20 @@
  *   3. EXPOSURE — is this tool on the agent's allowlist? Deny-by-default.
  *   4. AUTONOMY — is the rung this tool represents at or below the effective
  *      ceiling, `min(key max, agent autonomyLevel)`?
- *   5. CAPABILITY — does the CREDENTIAL carry `mcp:propose`? (propose tools).
- *   6. RESOURCE SCOPE — does the CREDENTIAL carry `risks:read`?
- *   7. PERMISSION — may the PRINCIPAL do this? `assertPermission`, the SAME
+ *   5. POLICY CARD — is this call inside the agent's own declared, versioned
+ *      runtime policy: its permitted tools, its data rung, its autonomy rung and
+ *      its per-run and per-day action budgets?
+ *   6. CAPABILITY — does the CREDENTIAL carry `mcp:propose`? (propose tools).
+ *   7. RESOURCE SCOPE — does the CREDENTIAL carry `risks:read`?
+ *   8. PERMISSION — may the PRINCIPAL do this? `assertPermission`, the SAME
  *      function `requirePermission` calls on the equivalent human route.
- *   8. POLICY — the shared `assertCanRead` / `assertCanWrite` the mirrored route
+ *   9. POLICY — the shared `assertCanRead` / `assertCanWrite` the mirrored route
  *      applies, where `PermissionSet` has no key to name.
  *
  * Cheapest and least-revealing first, and CREDENTIAL checks before PRINCIPAL
- * checks. That ordering is not cosmetic: 1-6 are configuration — a key scoped
+ * checks. That ordering is not cosmetic: 1-7 are configuration — a key scoped
  * for controls calling a risks tool is an integration that needs a wider key,
- * and its refusal should say "scope", by name, so somebody can fix it. 7-8 are
+ * and its refusal should say "scope", by name, so somebody can fix it. 8-9 are
  * the authority question, and a refusal there means the human this agent speaks
  * for genuinely may not do this. If the order were reversed, every under-scoped
  * integration would surface as a generic "Permission denied" and the audit trail
@@ -48,7 +51,7 @@
  *
  * ## Exactly one audit row per denial
  *
- * Every refusal writes ONE hash-chained `AUTHZ_DENIED` row and throws. Step 4
+ * Every refusal writes ONE hash-chained `AUTHZ_DENIED` row and throws. Step 8
  * does it inside `assertPermission` (the same row a denied human route writes,
  * `entity: 'Permission'`); every other step does it through `denyToolCall`
  * below (`entity: 'McpTool'`). The steps are ordered and each returns by
@@ -71,6 +74,14 @@ import {
     withinCeiling,
     type McpCapabilityClass,
 } from '@/lib/agentic/autonomy-ceiling';
+import {
+    evaluateCardDailyBudget,
+    evaluateCardReach,
+    type PolicyCardInForce,
+} from '@/lib/agentic/policy-card-evaluation';
+import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
+import { RESOURCE_READ_DATA_SCOPE, dataScopeForToolCall } from './tool-data-scope';
+import type { AgentDataAccessScope } from '@prisma/client';
 import { checkCredentialLiveness } from '@/lib/agentic/agent-credential-state';
 import {
     audienceCovers,
@@ -139,6 +150,18 @@ export interface McpInvocation {
      * registration, and those need different fixes.
      */
     riskTier: AgentRiskTier | null;
+    /**
+     * The agent's POLICY CARD, or `null` when it has none.
+     *
+     * `null` contributes NO term — the call is bounded exactly as 2/10 left it.
+     * That is not a hole and it is not deny-by-default inverted: the tool GRANTS
+     * are already deny-by-default, and a card only ever narrows them further.
+     * Reading an absent card as "may do nothing" would make creating the
+     * register's own governance artefact the thing that takes a working agent
+     * dark — the composition failure this subsystem has now written down three
+     * times.
+     */
+    policyCard: PolicyCardBinding | null;
     /** What must still be TRUE at every tool boundary, not merely at auth. */
     credential: {
         /** The `TenantApiKey.id` revocation is re-checked against. */
@@ -154,6 +177,27 @@ export interface McpInvocation {
     now: Clock;
 }
 
+/**
+ * The policy card in force for this invocation, plus the one piece of state the
+ * card needs that no table holds: how many calls THIS invocation has made.
+ *
+ * `actionsThisRun` is MUTABLE, deliberately, and it is the only mutable field on
+ * an invocation. The per-run budget bounds one execution, and one execution is
+ * exactly what an `McpInvocation` is — the workflow engine resolves one per run
+ * segment and drives every step on it, and `/api/mcp` resolves one per request.
+ * There is nowhere else for that count to live: a database column would make it
+ * a per-agent counter (which is the per-DAY budget, and already exists), and a
+ * module-level map would leak between concurrent runs.
+ *
+ * It is seeded from the run's own step count on resume, so a run that pauses at
+ * a checkpoint and comes back does not get a fresh budget for each segment.
+ */
+export interface PolicyCardBinding {
+    inForce: PolicyCardInForce;
+    /** Calls this invocation has already made. Excludes the one being gated. */
+    actionsThisRun: number;
+}
+
 /** Why a tool call was refused, for the audit row an operator reads. */
 export type McpDenialReason =
     | 'audience_denied'
@@ -161,6 +205,7 @@ export type McpDenialReason =
     | 'credential_expired'
     | 'tool_not_granted'
     | 'autonomy_denied'
+    | 'policy_card_denied'
     | 'capability_denied'
     | 'scope_denied'
     | 'policy_denied';
@@ -360,6 +405,86 @@ async function assertAutonomy(
 }
 
 /**
+ * Step 5 — THE POLICY CARD. The refusal that happens BEFORE anything runs.
+ *
+ * Everything above this line asks whether the CALLER may reach the tool. This
+ * asks whether the AGENT's own declared, versioned policy permits the call —
+ * which tools, how far into tenant data, how autonomous, and how many times.
+ *
+ * ## Pre-execution, and why the ordering inside this function matters
+ *
+ * The card is evaluated here, inside the gate, so a refusal happens before
+ * `tool.run` is ever entered. Detection and prevention answer the next request
+ * identically — both 403 — so the property is "no side effect occurred", and it
+ * is tested with a spy on the tool rather than with a status code.
+ *
+ * REACH IS EVALUATED BEFORE THE BUDGET IS SPENT. `evaluateCardReach` decides
+ * everything that costs no write; only if it passes does `reserveDailyAction`
+ * increment the day counter. A call refused for naming a tool the card does not
+ * permit must not burn a unit of the day's budget on its way out, or one
+ * misconfiguration exhausts the agent's day and the operator ends up reading
+ * `DAILY_ACTION_CAP_EXCEEDED` while the actual fault was `TOOL_NOT_PERMITTED`.
+ *
+ * The reservation is an increment-and-return rather than a read-then-write, so
+ * two concurrent calls can never both see the last unit of the budget.
+ *
+ * ## The refusal names the RULE, and the VERSION
+ *
+ * `reason: 'policy_card_denied'` alone would be the same defect one level down
+ * as "denied" is one level up. The audit row carries `policyCardRule` (which
+ * declaration refused), `policyCardVersion` (which version said so) and
+ * `escalate` (whether this card asked to be woken for that rule), because those
+ * are three different things an operator does next.
+ */
+async function assertWithinPolicyCard(
+    inv: McpInvocation,
+    target: string,
+    tool: string | null,
+    dataScope: AgentDataAccessScope,
+    requiredAutonomy: number,
+): Promise<void> {
+    const binding = inv.policyCard;
+    if (binding === null) return;
+
+    const deny = async (verdict: Exclude<ReturnType<typeof evaluateCardReach>, { allowed: true }>) =>
+        denyToolCall(inv.ctx, 'policy_card_denied', {
+            tool: target,
+            agentId: inv.agentId,
+            message: verdict.message,
+            extra: {
+                // Per-rule detail FIRST, so the three fields an operator triages
+                // on can never be shadowed by a detail key that happens to share
+                // a name. None does today; the ordering is what keeps that from
+                // being a fact somebody has to re-check when a rule is added.
+                ...verdict.detail,
+                policyCardRule: verdict.rule,
+                policyCardVersion: verdict.cardVersion,
+                escalate: verdict.escalate,
+            },
+        });
+
+    const reach = evaluateCardReach(binding.inForce, {
+        tool,
+        dataScope,
+        requiredAutonomy,
+        actionsThisRun: binding.actionsThisRun,
+    });
+    if (!reach.allowed) await deny(reach);
+
+    const reserved = await reserveDailyAction(
+        inv.ctx.tenantId,
+        binding.inForce.cardId,
+        inv.now(),
+    );
+    const budget = evaluateCardDailyBudget(binding.inForce, reserved);
+    if (!budget.allowed) await deny(budget);
+
+    // Counted only once the call is cleared, so a refused call does not consume
+    // the run's budget either. The two budgets are spent on the same terms.
+    binding.actionsThisRun += 1;
+}
+
+/**
  * The gate applied to the MCP RESOURCES surface.
  *
  * Resources used to be gated by `enforceApiKeyScope` alone — a throw that wrote
@@ -381,6 +506,18 @@ export async function authorizeResourceRead(inv: McpInvocation): Promise<void> {
     await assertAudience(inv, MCP_RESOURCES_AUDIENCE);
     await assertCredentialLive(inv, MCP_RESOURCES_AUDIENCE);
     await assertAutonomy(inv, MCP_RESOURCES_AUDIENCE, 'read', undefined);
+    // The policy card applies here too, minus the one rule that has nothing to
+    // name: `tool: null` skips the permitted-TOOL list, for exactly the reason
+    // the paragraph above gives for the exposure allowlist. The data rung, the
+    // autonomy rung and BOTH budgets apply unchanged — a resource read is a
+    // tenant-data read and it spends the agent's day like any other.
+    await assertWithinPolicyCard(
+        inv,
+        MCP_RESOURCES_AUDIENCE,
+        null,
+        RESOURCE_READ_DATA_SCOPE,
+        requiredAutonomyFor('read', undefined),
+    );
 }
 
 /**
@@ -403,6 +540,16 @@ export async function authorizeToolCall(
          */
         capabilityClass: McpCapabilityClass;
     },
+    /**
+     * The arguments as the caller sent them, UNVALIDATED.
+     *
+     * The data rung a call reaches can depend on an argument — see
+     * `tool-data-scope.ts` — and the gate necessarily runs before the tool's Zod
+     * schema, because nothing may run ahead of the gate. Only property PRESENCE
+     * is read, and an argument rule can only RAISE the rung, so a caller cannot
+     * reach a higher rung by sending something malformed.
+     */
+    rawArgs?: unknown,
 ): Promise<void> {
     // 1. Was this token minted for this tool?
     await assertAudience(inv, tool.name);
@@ -424,7 +571,17 @@ export async function authorizeToolCall(
     // 4. Is this rung within the agent's ceiling?
     await assertAutonomy(inv, tool.name, tool.capabilityClass, tool.authorize.autonomy);
 
-    // 5. Credential capability (propose tools). Message preserved verbatim from
+    // 5. Is this call inside the agent's own versioned policy card? Evaluated
+    //    HERE, before anything runs — a violation is a refusal, not a note.
+    await assertWithinPolicyCard(
+        inv,
+        tool.name,
+        tool.name,
+        dataScopeForToolCall(tool.name, rawArgs),
+        requiredAutonomyFor(tool.capabilityClass, tool.authorize.autonomy),
+    );
+
+    // 6. Credential capability (propose tools). Message preserved verbatim from
     //    `enforceMcpCapability` — it names a scope, not a permission key.
     if (tool.capability) {
         try {
@@ -440,7 +597,7 @@ export async function authorizeToolCall(
         }
     }
 
-    // 6. Credential resource scope. Same treatment: the existing message is the
+    // 7. Credential resource scope. Same treatment: the existing message is the
     //    actionable one and is safe (it echoes scopes the caller already holds).
     try {
         enforceApiKeyScope(inv.ctx, tool.resourceScope.resource, tool.resourceScope.action);
@@ -459,7 +616,7 @@ export async function authorizeToolCall(
 
     const { authorize } = tool;
 
-    // 7. Permission keys — through the SAME `assertPermission` the human
+    // 8. Permission keys — through the SAME `assertPermission` the human
     //    route's `requirePermission` calls. It audits its own denial and
     //    throws the generic 403, so nothing is added here.
     if (authorize.keys && authorize.keys.length > 0) {
@@ -470,7 +627,7 @@ export async function authorizeToolCall(
         );
     }
 
-    // 8. The shared read/write policy, for a mirrored route that has no
+    // 9. The shared read/write policy, for a mirrored route that has no
     //    permission key to name. `assertCanRead` / `assertCanWrite` throw
     //    without auditing — which is precisely how an agent denial used to be
     //    invisible — so the throw is caught and turned into the one row.

@@ -188,6 +188,8 @@ model Tenant {
   registeredAgentTools              RegisteredAgentTool[]
   agentRiskAssessments              AgentRiskAssessment[]
   agentRiskAssessmentAnswers        AgentRiskAssessmentAnswer[]
+  agentPolicyCards                  AgentPolicyCard[]
+  agentPolicyCardVersions           AgentPolicyCardVersion[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?

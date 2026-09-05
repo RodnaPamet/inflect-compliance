@@ -91,6 +91,7 @@ import {
     type PrincipalDenialReason,
 } from '@/lib/agentic/agent-authority';
 import { listGrantedToolNames } from '@/lib/agentic/agent-tool-exposure';
+import { loadPolicyCardInForce } from '@/lib/agentic/policy-card-store';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import { unauthorized, forbidden, badRequest } from '@/lib/errors/types';
@@ -280,6 +281,18 @@ export interface BuildInvocationOptions {
     tokenExpiresAt?: Date | null;
     /** Injected clock, threaded onto the invocation for the funnel to use. */
     now?: Clock;
+    /**
+     * Tool calls this run has ALREADY made, for the policy card's per-run
+     * budget.
+     *
+     * The workflow engine resolves a fresh invocation for each execution
+     * SEGMENT — a run that pauses at a human checkpoint and resumes gets a
+     * second one — so a counter that started at zero every time would hand a run
+     * a full budget per checkpoint, and the per-run cap would bound a segment
+     * rather than a run. The engine passes its resume position; a direct tool
+     * call has nothing before it and correctly starts at zero.
+     */
+    actionsAlready?: number;
 }
 
 export async function buildMcpInvocation(
@@ -321,6 +334,15 @@ export async function buildMcpInvocation(
     const agentId = verdict.agentId;
     const grantedTools = agentId ? await listGrantedToolNames(ctx.tenantId, agentId) : null;
 
+    // The agent's policy card, read fresh per request for the same reason the
+    // grants are: an operator who narrows a card has to see the NEXT call
+    // refused, not the next deploy. `null` when there is no agent, and `null`
+    // when the agent has no card — two different states with the same answer
+    // here, because in both of them there is no declared policy to apply, and a
+    // card that does not exist must never read as a card that forbids
+    // everything.
+    const inForce = agentId ? await loadPolicyCardInForce(ctx.tenantId, agentId) : null;
+
     // The autonomy ceiling: min(key max, agent's registered level, tier cap).
     //
     // The tier term is 3/10's, and it is the one that can DENY outright: an
@@ -345,6 +367,9 @@ export async function buildMcpInvocation(
         grantedTools,
         audience: options.audience ?? null,
         autonomyCeiling,
+        policyCard: inForce
+            ? { inForce, actionsThisRun: options.actionsAlready ?? 0 }
+            : null,
         // Carried so a refusal can say WHY the ceiling is where it is. A
         // denial reading `ceiling: -1` with no tier beside it sends an operator
         // to the agent's autonomy level, which is not the thing refusing.
@@ -371,7 +396,7 @@ export async function buildMcpInvocation(
  */
 export async function resolveMcpInvocation(
     ctx: RequestContext,
-    options: { now?: Clock } = {},
+    options: { now?: Clock; actionsAlready?: number } = {},
 ): Promise<McpInvocation> {
     const verdict = await evaluateAgentRegistration(ctx);
     return buildMcpInvocation(
@@ -385,6 +410,11 @@ export async function resolveMcpInvocation(
             // if that ever changes this is the line that has to change with it.
             audience: null,
             now: options.now,
+            // How many steps of this run have already executed. See
+            // `BuildInvocationOptions.actionsAlready`: without it the per-run
+            // action budget would reset at every human checkpoint, and a run
+            // with three checkpoints would get four budgets.
+            actionsAlready: options.actionsAlready,
         },
     );
 }

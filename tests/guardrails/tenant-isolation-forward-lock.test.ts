@@ -43,6 +43,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     RegisteredAgentTool: "tests/integration/mcp-tool-authz-per-invocation.test.ts",
     AgentRiskAssessment: "tests/integration/agent-assessment-isolation.test.ts",
     AgentRiskAssessmentAnswer: "tests/integration/agent-assessment-isolation.test.ts",
+    AgentPolicyCard: "tests/integration/agent-policy-card-isolation.test.ts",
+    AgentPolicyCardVersion: "tests/integration/agent-policy-card-isolation.test.ts",
 };
 
 /**
