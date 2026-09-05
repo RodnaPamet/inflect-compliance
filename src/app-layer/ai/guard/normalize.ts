@@ -144,8 +144,20 @@ export function normalizeForScan(input: string): string {
     out = foldHomoglyphs(out);
     // (4) zero-width / bidi strip.
     out = out.replace(ZERO_WIDTH_RE, '');
-    // (5) whitespace collapse.
-    out = out.replace(/\s+/g, ' ').trim();
+    // (5) whitespace collapse — but NEWLINES SURVIVE.
+    //
+    // This collapsed `\s+` to a single space, which erased every newline before
+    // any rule ran. Several rules are anchored to a line start (`(?:^|[\n>])`
+    // in `inj.system_role.declared`, for one), so after the collapse they could
+    // only ever match at position 0 of the scanned text. A `System:` line in the
+    // middle of a description was unreachable — the rule was live in the table
+    // and dead in practice.
+    //
+    // Horizontal runs still collapse to one space; a newline plus any
+    // surrounding blank space collapses to a single newline. So the flattening
+    // that made the rules robust is kept, and the one structural feature they
+    // are written against is kept too.
+    out = out.replace(/[^\S\n]+/g, ' ').replace(/ ?\n[\s]*/g, '\n').trim();
     // (6) case fold.
     out = out.toLowerCase();
     return out;

@@ -56,5 +56,6 @@ module.exports = {
         'no-fail-open-teardown-filter': noFailOpenTeardownFilter,
         'require-agent-attribution': require('./rules/require-agent-attribution'),
         'require-mcp-tool-authorization': require('./rules/require-mcp-tool-authorization'),
+        'no-raw-prompt-logging': require('./rules/no-raw-prompt-logging'),
     },
 };

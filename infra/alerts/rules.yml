@@ -519,3 +519,45 @@ groups:
             alert: the controls lapse invisibly otherwise. Check database
             reachability from the auth path.
           dashboard: "/d/inflect-app-overview"
+
+      # A workflow context failed integrity verification and the run was HALTED.
+      #
+      # Not a performance signal. Every code here means the agent's own memory
+      # could not be trusted: a schema that no longer parses, a chain head that
+      # does not match its blob (tampering), an earlier sealed pair restored on
+      # top of a later one (replay), or a context over the cap. The run stops
+      # rather than continuing on it, so the user-visible symptom is a FAILED
+      # run — this alert is what says WHY, and CONTEXT_CHAIN_BROKEN /
+      # CONTEXT_REPLAYED specifically mean somebody wrote to the database
+      # underneath a running agent.
+      #
+      # Threshold is any occurrence, deliberately. These are zero in normal
+      # operation; a rate threshold would hide the single event that matters.
+      - alert: AgenticWorkflowContextIntegrityHalt
+        expr: |
+          increase(agentic_workflow_context_integrity_halt_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: inflect-compliance
+        annotations:
+          summary: "Agent workflow context failed integrity verification ({{ $labels.code }})"
+          description: |
+            A workflow run halted because its context could not be verified.
+            Code: {{ $labels.code }}
+
+            CONTEXT_CHAIN_BROKEN and CONTEXT_REPLAYED are SECURITY events — the
+            blob and its head disagree, or an earlier sealed pair was restored
+            over a later one. Neither happens through normal application writes.
+
+            Runbook:
+            1. Find the halted run: WorkflowRun where status=FAILED and
+               errorMessage LIKE 'context integrity halt%'.
+            2. Read the WORKFLOW_CONTEXT_INTEGRITY_HALTED audit row — it carries
+               seq, minSeq, the two hashes and a blob digest, never content.
+            3. CONTEXT_REPLAYED: compare WorkflowStep.contextSeq (append-only)
+               against the run's envelope seq — the ledger is the anchor and does
+               not move when the run row is restored.
+            4. CONTEXT_SIZE_CAP_EXCEEDED is the benign one: the run outgrew the
+               cap. Check the context-size panel before treating it as an attack.
+            5. Rule out a database restore or a manual UPDATE before escalating.

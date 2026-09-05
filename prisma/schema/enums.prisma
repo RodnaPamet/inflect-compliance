@@ -688,6 +688,46 @@ enum SuggestionItemStatus {
   ACCEPTED
   REJECTED
   EDITED
+
+  /// TERMINAL, and reachable only on `AgentProposal`. Set when the agentic
+  /// output guard finds instruction-following from untrusted content in a
+  /// proposal's own text. A quarantined row is NOT in the review queue and
+  /// `approveAgentProposal` refuses it outright — the point is that a human
+  /// cannot be handed an injected proposal to rubber-stamp.
+  ///
+  /// Shared with `RiskSuggestionItem`, which never writes it: the value widens
+  /// that model's domain without widening its behaviour. Added rather than
+  /// given AgentProposal its own status enum because changing a live column's
+  /// type is a rewrite, and `ALTER TYPE … ADD VALUE` is the additive half of
+  /// the same hazard the `@@map("WorkItem*")` pins record.
+  QUARANTINED
+}
+
+/// The agentic output guard's verdict on ONE agent proposal, persisted on the
+/// row so `approveAgentProposal` can refuse without re-scanning (and so the
+/// refusal survives a later change to the rule table).
+///
+///   CLEAN       — nothing fired.
+///   FLAGGED     — a low/medium rule fired; the proposal is queued, and the
+///                 reviewer is told.
+///   QUARANTINED — a high-severity injection rule or a secret/exfil hit on
+///                 content that may not carry instruction. Terminal.
+enum AgentGuardVerdict {
+  CLEAN
+  FLAGGED
+  QUARANTINED
+}
+
+/// The trust label a piece of content carries — see
+/// `src/lib/agentic/content-provenance.ts`, which mirrors these three values.
+/// The DEFAULT on every column is THIRD_PARTY_INGESTED: an untagged or unknown
+/// source is untrusted, never trusted, so a new ingestion path added later
+/// inherits the untrusted label rather than falling through to the safe-looking
+/// one.
+enum AgentContentProvenance {
+  TENANT_AUTHORED
+  THIRD_PARTY_INGESTED
+  SYSTEM
 }
 
 /// The entity kind an AgentProposal (Epic MCP Phase 3) proposes. On approval,

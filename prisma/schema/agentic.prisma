@@ -51,6 +51,27 @@ model AgentProposal {
   /// afterwards: "the version that allowed this" and "the version in force a
   /// moment later" are different claims, and only the first is evidence.
   policyCardVersion    Int?
+
+  /// ─── The agentic OUTPUT GUARD verdict (see ai/guard/proposal-guard.ts) ───
+  ///
+  /// Written on EVERY proposal, not only refused ones, because "the guard ran
+  /// and found nothing" and "the guard never ran" are otherwise the same row.
+  /// The default is CLEAN so pre-guard rows read as unscanned-but-permitted
+  /// rather than as scanned-and-clean — which they were, since the queue they
+  /// entered had no guard.
+  guardVerdict         AgentGuardVerdict    @default(CLEAN)
+  /// The stable rule ids that fired. Ids ONLY — never the matched text, so this
+  /// column can be read by an operator surface without leaking the payload.
+  guardRuleIds         String[]
+  /// `sha256:<hex>` over (kind, payload, rationale). The join key that proves
+  /// "the same content was guarded" without persisting the content. Same
+  /// construction as `AiDecisionLog.inputDigest`.
+  guardInputDigest     String?
+  /// The trust label the guarded content carried. Defaults to the untrusted
+  /// value: an agent proposal is third-party content by construction, and a row
+  /// that somehow arrives without a label must not read as tenant-authored.
+  guardProvenance      AgentContentProvenance @default(THIRD_PARTY_INGESTED)
+
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -77,6 +98,27 @@ model WorkflowRun {
   startedAt         DateTime          @default(now())
   completedAt       DateTime?
   contextJson       String?
+  /// Chain head over `contextJson` — the SHA-256 link computed by
+  /// `sealContext` in `src/lib/agentic/context-integrity.ts` (OWASP ASI06).
+  ///
+  /// A COLUMN rather than a field inside the envelope, and that is the whole
+  /// point: `contextJson` is encrypted at rest, which protects confidentiality
+  /// and says nothing about whether the blob is the one the previous step
+  /// wrote. A head stored inside the blob it protects could be recomputed by
+  /// whoever rewrote the blob. `AuditLog.entryHash` is a column for the same
+  /// reason.
+  ///
+  /// NOT in the Epic B encryption manifest, deliberately: it is a digest, it
+  /// carries no content, and it is compared for equality on every step — an
+  /// encrypted column would compare ciphertext.
+  ///
+  /// NULLABLE because the column was added to a populated table. NULL means
+  /// UNSEALED, and unsealed FAILS CLOSED: the run halts with
+  /// `CONTEXT_UNSEALED` at its next step rather than adopting a blob nobody
+  /// sealed. Any run in flight across the deploy that adds this column is
+  /// therefore halted, on purpose — trust-on-first-use here would let anyone
+  /// who can clear the head bypass the chain entirely.
+  contextHash       String?
   summary           String?
   stepCount         Int               @default(0)
   costTokens        Int               @default(0)
@@ -115,6 +157,18 @@ model WorkflowStep {
   runId       String
   tenantId    String
   seq         Int
+  /// The CONTEXT-CHAIN position in force when this step was recorded.
+  ///
+  /// The replay anchor, and it lives HERE rather than on `WorkflowRun` for one
+  /// reason: restoring an earlier `(contextJson, contextHash)` pair onto the run
+  /// row rolls the run's memory back, and the chain verifies, because the link
+  /// is recomputed from the very envelope being replayed. This ledger is
+  /// append-only and a different table, so the same restore does not move it —
+  /// which is what lets the next step notice that the memory went backwards.
+  ///
+  /// Nullable: added to a populated table, and a step recorded before this
+  /// column existed genuinely does not know its position.
+  contextSeq  Int?
   kind        WorkflowStepKind
   toolCalled  String?
   inputJson   String?

@@ -25,6 +25,7 @@ const LOCAL_RULES = [
     'no-request-derived-public-url',
     'require-agent-attribution',
     'require-mcp-tool-authorization',
+    'no-raw-prompt-logging',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {
