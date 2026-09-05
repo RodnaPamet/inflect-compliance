@@ -17,7 +17,14 @@ eslint-rules/
   index.js                          the plugin object, registered as `local`
   rules/<rule-name>.js              one rule per file
   __tests__/<rule-name>.test.ts     RuleTester, run by Jest's `node` project
+  agentic-path.js                   a shared SCOPE, not a rule — see below
 ```
+
+`agentic-path.js` is the one exception to "one rule per file, nothing else":
+it holds the glob list that scopes `no-raw-prompt-logging`, because both
+`eslint.config.mjs` and that rule's companion guard need the same list and a
+path list copied into two places is a scope that can disagree with itself. Put a
+shared scope here rather than duplicating it; put a rule in `rules/`.
 
 `eslint.config.mjs` imports `index.js`, registers it as the `local` plugin, and
 turns each rule on by its `local/<rule-name>` id.
@@ -154,3 +161,37 @@ afterAll(async () => {
     }
 });
 ```
+
+### `no-raw-prompt-logging`
+
+Flags a logging or audit call **on the agentic path** whose argument names raw
+content — `prompt`, `messages`, `payloadJson`, `contextJson`, `args` — rather
+than a digest, an id or a count. Scoped by `agentic-path.js` from
+`eslint.config.mjs`, not from inside the rule.
+
+**Why.** `src/app-layer/ai/decision-log/index.ts` keeps exactly this discipline
+for the AI-FEATURE path and states it in a comment: the row holds "a DIGEST of
+the sanitised input (never the raw prompt/PII)". A comment binds one module. The
+agentic path — the MCP server, the workflow engine, the propose-not-commit queue
+— had no equivalent, and it is where the content arrives from a principal nobody
+vetted. `AgentProposal.payloadJson` and `WorkflowRun.contextJson` are ENCRYPTED
+at rest for that reason; `AuditLog.detailsJson` is plaintext, hash-chained and
+never deleted. One `detailsJson: { prompt }` moves the content from the first
+store to the second, and nothing can take it back out.
+
+**What it cannot see.** No data-flow analysis at all — it is a name check at a
+syntactic position. A prompt renamed on the way in (`const detail = prompt`), a
+helper that builds the field bag, and an object spread are all invisible to it.
+Those are not swept under the rug: `{ reportUnanalysable: true }` reports each
+one under its own messageId, and `tests/guards/no-raw-prompt-logging.test.ts`
+pins the exact set of them so a new hole is a failing test. `{ reportSinks:
+true }` reports the sink calls it recognised, so the same guard can floor the
+denominator — "zero violations" and "zero sinks found" are otherwise the same
+output.
+
+`message` (singular) is deliberately not content vocabulary: `err.message` is at
+nearly every sink in the repo, while `messages` is the LLM transcript. A prompt
+in a variable called `message` is invisible.
+
+**Two census options, both OFF in `eslint.config.mjs`.** They report facts, not
+findings; only the guard turns them on.
