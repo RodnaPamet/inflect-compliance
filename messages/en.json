@@ -4094,7 +4094,8 @@
             "apiKeys": "API keys",
             "emailNotifications": "Email Notifications",
             "vendorTemplates": "Vendor Templates",
-            "privacy": "Privacy & data protection"
+            "privacy": "Privacy & data protection",
+            "reviewQuality": "Review quality"
         },
         "sso": {
             "crumbSelf": "SSO & Identity",
@@ -5276,6 +5277,40 @@
                 "AUTOMATIC": "The product will write to your directory without asking. Nothing stands between a terminated worker in the HR feed and a disabled account, except the safety rails. You can narrow this at any time."
             },
             "linkLabel": "Write policy"
+        },
+        "reviewQuality": {
+            "title": "Review quality",
+            "pageDesc": "Whether approvals on the agent-proposal queue mean anything. Every number here is read from columns the queue already keeps — nothing new is recorded about anybody.",
+            "windowLabel": "Last {days} days",
+            "decided": "Decided",
+            "approved": "Approved",
+            "rejected": "Rejected",
+            "truncated": "Only the most recent {max} decisions were read, so every figure below is over that suffix rather than the whole window.",
+            "empty": "No proposal has been decided in this window, so there is nothing to measure. That is an answer, not a gap.",
+            "signalsTitle": "Outstanding patterns",
+            "signalsNone": "No pattern crossed its threshold in this window.",
+            "signalSubject": "Subject {subject}",
+            "signalMeasure": "observed {observed} against a threshold of {threshold}, over {sample} decisions",
+            "reviewersTitle": "Reviewers",
+            "agentsTitle": "Agents",
+            "fastest": "Fastest decision {seconds}s",
+            "estimateRefused": "Rate and median not reported: {observed} of {required} decisions needed.",
+            "estimateReported": "Approves {rate}% of {decided} decided · median {median}s · fastest tenth {p10}s",
+            "burstCount": "{count} bulk-approval bursts",
+            "rungLabel": "{rung} × {count}",
+            "secondApprover": "{count} decided under a card declaring SECOND_APPROVER — the queue records one approver per proposal, so the declaration is not evidenced.",
+            "upperTailNote": "Only the fast end of the distribution is reported. Time-to-decision is queue latency plus review time, so a short one bounds how long anybody looked; a long one measures backlog and says nothing about care.",
+            "signal": {
+                "BULK_APPROVAL_BURST": "Bulk approval burst",
+                "IMPLAUSIBLY_FAST_DECISION": "Decisions faster than the row can be read",
+                "FAST_MEDIAN_REVIEW": "Median decision below the reading floor",
+                "NEVER_REJECTED": "Never rejected anything",
+                "SECOND_APPROVER_UNRECORDED": "Second approver declared, one recorded"
+            },
+            "unobservableTitle": "What this report cannot tell you",
+            "unobservable": {
+                "DIFF_EXPANSION": "Whether a reviewer actually looked at the proposed content before approving it. The queue renders every payload in full with nothing to expand, and nothing records that a proposal was read — only that it was decided. No number here is a stand-in for that: a fast decision is reported as a fast decision, not as an unread one."
+            }
         }
     },
     "riskManager": {
